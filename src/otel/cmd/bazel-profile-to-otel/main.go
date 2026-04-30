@@ -5,33 +5,40 @@
 // verself.deploy_run_key and joins the surrounding ansible.task span on
 // a single deploy timeline.
 //
-// Scope: this tool is the *timing* projection of a Bazel build —
-// analysis-phase Starlark calls, skyframe evaluation, repository fetches,
-// critical-path components. The *execution* projection (per-action
-// target, mnemonic, runner, cache hit) lives in
-// //src/otel/cmd/bazel-execlog-to-otel; the two pipelines coexist
-// because the Bazel profile JSON does not carry the action's Bazel
-// label, only its mnemonic and a free-form event name. Anything that
-// needs an authoritative target label belongs in the execlog projection.
+// Scope: this tool is the *analysis-phase timing* projection of a
+// Bazel build — Starlark calls, skyframe evaluation, repository
+// fetches, package loading, conflict checking, critical-path
+// components. Per-action timing and presence are NOT in scope here:
+// they live in //src/otel/cmd/bazel-execlog-to-otel, which reads
+// Bazel's authoritative execution log and emits one span per spawn
+// with target_label, runner, cache_hit, and duration. The two
+// pipelines coexist because the profile JSON does not carry the
+// action's Bazel label.
 //
 // Bazel writes the profile in Chrome Trace Event Format (one JSON
 // object with `otherData` + `traceEvents`). otherData.profile_start_ts
 // is the absolute epoch milliseconds at build start; each event's `ts`
 // is microseconds since profile start, `dur` is microseconds.
 //
-// Filter: phase == "X" AND cat in keptCategories. There is no
-// duration threshold — sub-millisecond Starlark events are useful for
-// `Total time spent in <function>` aggregation queries, and a global
-// threshold is the wrong knob for noise reduction (it silently masks
-// short codegen actions, which is exactly the regression that motivated
-// this rewrite). If profile volume ever becomes a real problem, the
-// answer is per-category sampling, not a duration cliff.
+// Filter: phase == "X" AND cat in keptCategories AND dur >= floor.
+// keptCategories deliberately excludes every per-action category
+// (action processing, complete action execution, local/remote action
+// execution, subprocess, include scanning, action dependency
+// checking) because the execlog projection covers those
+// authoritatively. The "general information" category is also
+// excluded — it is sub-millisecond Bazel-internal bookkeeping
+// (checkOutputs, ParallelEvaluator.eval) that adds thousands of
+// no-signal spans per noop deploy. The 50ms floor cuts the long
+// tail of micro-events the kept categories still produce; a code
+// hot-path that takes <50ms is not interesting timing data, and the
+// "did codegen run" question is now owned by the execlog.
 //
 // Usage:
 //
 //	bazel-profile-to-otel \
 //	  --profile=/path/to/profile.json.gz \
-//	  --service-name=bazel
+//	  --service-name=bazel \
+//	  --min-duration-ms=50
 package main
 
 import (
@@ -53,36 +60,27 @@ import (
 )
 
 // keptCategories is the set of Bazel profile event categories worth
-// projecting as OTel spans. The dropped ones ("build phase marker",
-// "gc notification", "bazel module processing") are sub-millisecond
-// debug bread crumbs.
+// projecting as OTel spans. Every per-action category is omitted on
+// purpose — the execlog projection (//src/otel/cmd/bazel-execlog-to-otel)
+// owns "what action ran with what target/runner/cache_hit", and a
+// duplicate timing-only span here adds nothing.
 //
-// A real cold-cache deploy commonly spends the bulk of its time in
-// `skyframe evaluator` (analysis) rather than `action processing`
-// (execution). The `skyframe evaluator` umbrella is monolithic — its
-// 53s "Parallel Evaluator evaluation" wall is unactionable on its own;
-// the children that explain it live in the categories below
+// A cold-cache deploy commonly spends the bulk of its time in
+// `skyframe evaluator` (analysis) rather than action execution. The
+// `skyframe evaluator` umbrella is monolithic — its multi-second
+// "Parallel Evaluator evaluation" wall is unactionable on its own;
+// the children that explain it live in the other kept categories
 // ("Fetching repository", "package creation", "Starlark *", "Conflict
-// checking", "general information").
+// checking", "critical path component").
 var keptCategories = map[string]bool{
-	"action processing":              true,
-	"complete action execution":      true,
 	"critical path component":        true,
-	"remote action execution":        true,
-	"remote action upload":           true,
-	"remote action download":         true,
-	"local action execution":         true,
-	"subprocess":                     true,
-	"include scanning":               true,
 	"skyframe evaluator":             true,
-	"action dependency checking":     true,
 	"Fetching repository":            true,
 	"package creation":               true,
 	"Starlark user function call":    true,
 	"Starlark builtin function call": true,
 	"Starlark thread context":        true,
 	"Conflict checking":              true,
-	"general information":            true,
 }
 
 type profile struct {
@@ -106,6 +104,7 @@ type event struct {
 func main() {
 	profilePath := flag.String("profile", "", "Path to Bazel profile JSON (gz or plain)")
 	serviceName := flag.String("service-name", "bazel", "OTel service.name for emitted spans")
+	minDurationMs := flag.Int64("min-duration-ms", 50, "Skip kept-category events shorter than this (ms); see package doc for why action presence is not at risk")
 	flag.Parse()
 
 	if *profilePath == "" {
@@ -138,47 +137,50 @@ func main() {
 	}()
 
 	tracer := otel.Tracer(*serviceName)
-	emitted := 0
+	minDurMicros := *minDurationMs * 1000
+	emitted, droppedShort, droppedCategory := 0, 0, 0
 	for _, e := range prof.TraceEvents {
-		if e.Ph != "X" || !keptCategories[e.Cat] {
+		if e.Ph != "X" {
+			continue
+		}
+		if !keptCategories[e.Cat] {
+			droppedCategory++
+			continue
+		}
+		if e.Dur < minDurMicros {
+			droppedShort++
 			continue
 		}
 		emitSpan(ctx, tracer, startBase, e)
 		emitted++
 	}
-	fmt.Fprintf(os.Stderr, "bazel-profile-to-otel: emitted %d spans from %s\n", emitted, *profilePath)
+	fmt.Fprintf(os.Stderr,
+		"bazel-profile-to-otel: emitted %d spans (min-duration-ms=%d); dropped %d below threshold, %d outside kept categories; from %s\n",
+		emitted, *minDurationMs, droppedShort, droppedCategory, *profilePath)
 }
 
 func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event) {
 	start := base.Add(time.Duration(e.Ts) * time.Microsecond)
 	end := start.Add(time.Duration(e.Dur) * time.Microsecond)
 
-	mnemonic, _ := e.Args["mnemonic"].(string)
-
 	spanName := "bazel.event"
-	switch {
-	case mnemonic != "":
-		spanName = "bazel.action." + mnemonic
-	case e.Cat == "critical path component":
+	switch e.Cat {
+	case "critical path component":
 		spanName = "bazel.critical_path"
-	case e.Cat == "skyframe evaluator":
+	case "skyframe evaluator":
 		spanName = "bazel.skyframe"
-	case e.Cat == "action dependency checking":
-		spanName = "bazel.action_dep_check"
-	case e.Cat == "Fetching repository":
+	case "Fetching repository":
 		spanName = "bazel.repo_fetch"
-	case e.Cat == "package creation":
+	case "package creation":
 		spanName = "bazel.package"
-	case e.Cat == "Starlark user function call":
+	case "Starlark user function call":
 		spanName = "bazel.starlark_user"
-	case e.Cat == "Starlark builtin function call":
+	case "Starlark builtin function call":
 		spanName = "bazel.starlark_builtin"
-	case e.Cat == "Starlark thread context":
+	case "Starlark thread context":
 		spanName = "bazel.starlark_thread"
-	case e.Cat == "Conflict checking":
+	case "Conflict checking":
 		spanName = "bazel.conflict_check"
-	case e.Cat == "general information":
-		spanName = "bazel.info." + sanitizeName(e.Name)
 	}
 
 	attrs := []attribute.KeyValue{
@@ -186,7 +188,7 @@ func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event)
 		attribute.String("bazel.event_name", e.Name),
 		attribute.Int64("bazel.duration_ms", e.Dur/1000),
 	}
-	if mnemonic != "" {
+	if mnemonic, ok := e.Args["mnemonic"].(string); ok && mnemonic != "" {
 		attrs = append(attrs, attribute.String("bazel.mnemonic", mnemonic))
 	}
 
@@ -225,15 +227,3 @@ func fail(format string, args ...any) {
 	os.Exit(1)
 }
 
-// sanitizeName turns a free-form Bazel event name into a span-name suffix.
-// Skyframe and "general information" events use camelCase identifiers like
-// "skyframeExecutor.evaluateBuildDriverKeys"; we pass those through but
-// strip whitespace and runs of punctuation so the resulting span name
-// is stable to GROUP BY in ClickHouse.
-func sanitizeName(s string) string {
-	if s == "" {
-		return "anon"
-	}
-	r := strings.NewReplacer(" ", "_", "/", "_", "\\", "_")
-	return r.Replace(s)
-}
