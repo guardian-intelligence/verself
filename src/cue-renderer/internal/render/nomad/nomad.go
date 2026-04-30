@@ -234,7 +234,7 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	}
 
 	endpoints, _ := component.Value["endpoints"].(map[string]any)
-	reservedPorts, primaryPort, err := reservedPorts(component.Name, endpoints, unit)
+	reservedPorts, primaryPort, err := reservedPorts(component, endpoints, unit)
 	if err != nil {
 		return nil, err
 	}
@@ -419,11 +419,11 @@ func resourceStanza(deployment map[string]any) (map[string]any, error) {
 	return map[string]any{"CPU": cpu, "MemoryMB": memory}, nil
 }
 
-func reservedPorts(componentName string, endpoints map[string]any, unit map[string]any) ([]map[string]any, string, error) {
+func reservedPorts(component projection.NamedMap, endpoints map[string]any, unit map[string]any) ([]map[string]any, string, error) {
 	if len(endpoints) == 0 {
 		return nil, "", nil
 	}
-	ownedEndpoints, err := endpointsForUnit(componentName, endpoints, unit)
+	ownedEndpoints, err := serviceenv.EndpointsForUnit(component, unit)
 	if err != nil {
 		return nil, "", err
 	}
@@ -434,7 +434,7 @@ func reservedPorts(componentName string, endpoints map[string]any, unit map[stri
 		if !ok {
 			continue
 		}
-		port, err := projection.Int(endpoint, "topology.components."+componentName+".endpoints."+name, "port")
+		port, err := projection.Int(endpoint, "topology.components."+component.Name+".endpoints."+name, "port")
 		if err != nil {
 			return nil, "", err
 		}
@@ -444,27 +444,6 @@ func reservedPorts(componentName string, endpoints map[string]any, unit map[stri
 		}
 	}
 	return reserved, primary, nil
-}
-
-// endpointsForUnit returns the endpoint labels owned by the unit. The
-// primary unit owns every endpoint declared on the component; named
-// processes own only their `endpoints` list. Mirrors serviceenv's
-// process resolution but at the topology-endpoints level rather than the
-// derived env-var level.
-func endpointsForUnit(componentName string, endpoints map[string]any, unit map[string]any) ([]string, error) {
-	out := make([]string, 0, len(endpoints))
-	for name := range endpoints {
-		out = append(out, name)
-	}
-	// Sort for deterministic output.
-	for i := 0; i < len(out); i++ {
-		for j := i + 1; j < len(out); j++ {
-			if out[j] < out[i] {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
-	}
-	return out, nil
 }
 
 func buildServices(componentName, unitName string, unit map[string]any, primaryPort string, endpoints map[string]any) ([]map[string]any, error) {

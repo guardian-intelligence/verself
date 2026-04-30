@@ -155,6 +155,49 @@ func appendPostgresPoolEnvironment(environment map[string]string, path string, p
 	return nil
 }
 
+// EndpointsForUnit returns the endpoint labels the given unit *binds*,
+// sorted alphabetically. This is the port-reservation view (used by the
+// Nomad renderer) and is stricter than the env-var view that
+// `serviceenv.Unit` derives internally:
+//
+//   - A named worker process binds exactly the endpoints listed in
+//     `process.endpoints`.
+//   - The primary unit binds the component endpoints that no named
+//     process claims. (For env-var derivation the primary still knows
+//     about every endpoint — being aware of an endpoint and binding it
+//     are different.)
+//
+// The split keeps two TaskGroups from racing for the same Nomad
+// ReservedPort label when a multi-process component opts into Nomad
+// supervision.
+//
+// Errors when the unit name doesn't match runtime.systemd or any
+// processes.<n>.systemd entry.
+func EndpointsForUnit(component projection.NamedMap, unit map[string]any) ([]string, error) {
+	process, err := processForUnit(component, mustString(unit, "name"))
+	if err != nil {
+		return nil, err
+	}
+	owned := endpointSet(component, process)
+	if process["name"] == "primary" {
+		processes, err := projection.NestedFields(component, "processes")
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range processes {
+			for _, claimed := range mustStringSlice(p.Value, "endpoints") {
+				delete(owned, claimed)
+			}
+		}
+	}
+	out := make([]string, 0, len(owned))
+	for name := range owned {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // processForUnit returns the per-process record (primary or named worker)
 // that owns the given unit name. The primary unit is the component's
 // `runtime.systemd`; named workers come from the `processes` block.
