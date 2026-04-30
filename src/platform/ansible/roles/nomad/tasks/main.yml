@@ -32,7 +32,14 @@
     state: directory
     owner: "{{ nomad_user }}"
     group: "{{ nomad_group }}"
-    mode: "0700"
+    # 0711: traverse-only for non-root. Required so raw_exec tasks
+    # running as a non-root user (e.g. profile_service uid 965) can
+    # chdir into <data_dir>/alloc/<id>/<task>/ and execve the binary.
+    # 0700 silently fails with "fork/exec ...: permission denied"
+    # because the unprivileged uid can't traverse the path. Listing
+    # is still denied (no read bit for `other`); only traverse leaks.
+    # Refs: hashicorp/nomad#10850, #17871, discuss/16597.
+    mode: "0711"
 
 - name: Deploy Nomad agent configuration
   ansible.builtin.template:

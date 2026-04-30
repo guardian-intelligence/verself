@@ -162,29 +162,6 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		}
 		envOut[key] = resolved
 	}
-	// Bind own listeners on 0.0.0.0 so Nomad's native-registry HTTP
-	// check (which always uses the host's external advertise address)
-	// can reach them. The host firewall's per-component nftables
-	// drop_non_loopback rule still enforces loopback-only at L3 — the
-	// L4 bind is widened only enough to satisfy same-host check
-	// traffic that arrives via the kernel's local routing path.
-	endpointsForBindOverride, _ := component.Value["endpoints"].(map[string]any)
-	for label, raw := range endpointsForBindOverride {
-		ep, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		port, err := projection.Int(ep, component.Name+".endpoints."+label, "port")
-		if err != nil {
-			return nil, err
-		}
-		switch label {
-		case "public_http":
-			envOut["VERSELF_LISTEN_ADDR"] = fmt.Sprintf("0.0.0.0:%d", port)
-		case "internal_https":
-			envOut["VERSELF_INTERNAL_LISTEN_ADDR"] = fmt.Sprintf("0.0.0.0:%d", port)
-		}
-	}
 
 	count := int64(1)
 	if c, ok := deployment["count"].(int64); ok && c > 0 {
@@ -214,28 +191,18 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		return nil, err
 	}
 
-	// Nomad's raw_exec uses libcontainer to set up the alloc (cgroup-v2,
-	// mount namespace). When `User` is set to a non-root user, libcontainer's
-	// cgroup write happens AFTER the setuid drop, and on systemd-managed
-	// hosts the unprivileged child can't enter the alloc cgroup — fork/exec
-	// fails with EACCES regardless of the binary's own permissions. The
-	// fix: keep the alloc itself running as nomad-agent's user (root) and
-	// wrap the command with runuser, which switches uid via PAM after the
-	// alloc setup is complete. SPIRE's unix workload attestor reads the
-	// effective uid of the calling process from /proc/<pid>/status, so the
-	// `unix:uid:<topology user>` selector still matches.
 	task := map[string]any{
 		"Name":   unitName,
 		"Driver": "raw_exec",
+		"User":   unitUser,
 		"Config": map[string]any{
-			"command": "/usr/sbin/runuser",
-			"args":    []string{"-u", unitUser, "--", resolvedExec},
+			"command": resolvedExec,
 		},
-		"Env":          envOut,
-		"Resources":    resources,
-		"KillSignal":   killSignal,
-		"KillTimeout":  killTimeout,
-		"Services":     services,
+		"Env":         envOut,
+		"Resources":   resources,
+		"KillSignal":  killSignal,
+		"KillTimeout": killTimeout,
+		"Services":    services,
 		"RestartPolicy": map[string]any{
 			"Attempts": 3,
 			"Interval": int64(5 * time.Minute / time.Nanosecond),
@@ -252,10 +219,29 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	}
 	if len(reservedPorts) > 0 {
 		group["Networks"] = []map[string]any{
-			{"Mode": "host", "ReservedPorts": reservedPorts},
+			// host_network "loopback" is registered in nomad.hcl client
+			// config and pins ReservedPorts to 127.0.0.1. The native
+			// registry's auto address-mode then advertises 127.0.0.1
+			// for HTTP/TCP checks — services keep their loopback bind
+			// and defense-in-depth is preserved (the per-component
+			// nftables ruleset is the second layer, not the first).
+			{"Mode": "host", "ReservedPorts": reservedPortsWithHostNetwork(reservedPorts, "loopback")},
 		}
 	}
 	return group, nil
+}
+
+func reservedPortsWithHostNetwork(reserved []map[string]any, hostNetwork string) []map[string]any {
+	out := make([]map[string]any, 0, len(reserved))
+	for _, p := range reserved {
+		copy := map[string]any{}
+		for k, v := range p {
+			copy[k] = v
+		}
+		copy["HostNetwork"] = hostNetwork
+		out = append(out, copy)
+	}
+	return out
 }
 
 func updateStanza(deployment map[string]any) (map[string]any, error) {
