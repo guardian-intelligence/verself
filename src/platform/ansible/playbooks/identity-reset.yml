@@ -6,4 +6,4 @@
   vars:
     wipe_pg_db_name: identity_service
 
-- import_playbook: site.yml
+- import_playbook: box.yml

@@ -26,7 +26,7 @@ $EDITOR src/platform/terraform/terraform.tfvars.json   # set project_id
 aspect platform setup-sops
 aspect platform provision
 
-# 4. Deploy. Idempotent; safe to repeat. Scope with --tags=caddy,company,...
+# 4. Deploy. Idempotent; safe to repeat.
 aspect deploy
 
 # 5. Seed tenants, billing, mailboxes, and auth fixtures.
@@ -105,14 +105,12 @@ aspect billing documents --org=platform
 aspect billing finalizations --org=platform
 aspect billing events --event=billing_clock_reset_to_wall_clock --minutes=30
 aspect db pg query --db=billing --query='SELECT current_database()'
-src/platform/scripts/verify-console-billing-flow.sh
+aspect observe --what=service --service=billing-service
 ```
 
-`scripts/verify-console-billing-flow.sh` runs the deployed billing Playwright
-flow and writes artifacts under `smoke-artifacts/console-billing/<run-id>/`. If
-the browser test exits before it writes a structured run JSON, the wrapper
-still collects a time-windowed fallback evidence bundle from ClickHouse and
-billing PostgreSQL.
+Use `aspect deploy` plus ClickHouse queries through `aspect observe` or
+`aspect db ch query` for live completion evidence. The old handwritten
+`verify-*` shell canaries were removed with the Nomad cutover.
 
 Billing naming is intentionally split: `--product-id=sandbox` is the product
 catalog/metering ID, `--db=billing` is the billing-service PostgreSQL database,

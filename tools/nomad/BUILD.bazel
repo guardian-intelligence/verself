@@ -1,0 +1,5 @@
+exports_files([
+    "artifact.bzl",
+    "jobs.bzl",
+    "resolve_jobs.py",
+])

@@ -31,7 +31,7 @@ The one exception: `useEffect` is acceptable for DOM manipulation that has no li
 
 ### Auth + Query Cache
 
-Auth state is server-owned (`@verself/auth-web/server` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser.
+Auth state is server-owned (`@verself/auth-web/server` + HTTP-only session cookie + the `frontend_auth.auth_sessions` table). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser.
 
 `src/routes/__root.tsx` calls `getClientAuthSnapshot()` once per navigation, seeds `AuthProvider`, and syncs the React Query cache through `syncAuthPartitionedCache(...)` using the server-issued auth cache partition. Component code should read `useAuth()`, `useSignedInAuth()`, `useUser()`, or `useSession()` from `@verself/auth-web/react`; it should not call server auth helpers directly.
 

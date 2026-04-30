@@ -24,6 +24,12 @@ go_test(
     ],
 )
 
+go_test(
+    name = "compatibility_test",
+    srcs = ["compatibility_test.go"],
+    embed = [":nomad"],
+)
+
 alias(
     name = "go_default_library",
     actual = ":nomad",

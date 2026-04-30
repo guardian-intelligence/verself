@@ -56,8 +56,6 @@ load(
 load(
     ".aspect/tasks/dev.axl",
     dev_verself_web = "verself_web",
-    dev_sandbox_inner = "sandbox_inner",
-    dev_sandbox_middle = "sandbox_middle",
 )
 load(
     ".aspect/tasks/persona.axl",
@@ -130,8 +128,6 @@ def config(ctx):
 
     # aspect dev ...
     ctx.tasks.add(dev_verself_web)
-    ctx.tasks.add(dev_sandbox_inner)
-    ctx.tasks.add(dev_sandbox_middle)
 
     # aspect persona ...
     ctx.tasks.add(persona_assume)

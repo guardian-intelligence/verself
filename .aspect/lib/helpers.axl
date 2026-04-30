@@ -78,7 +78,7 @@ def inventory_check(ctx, site = DEFAULT_SITE):
 
 def render_site(ctx, site = DEFAULT_SITE):
     """Materialise .cache/render/<site>/ — generated group_vars, rendered
-    nftables/systemd, staged inventory. The deploy flow consumes this cache
+    Nomad jobs and host files, staged inventory. The deploy flow consumes this cache
     via -i .cache/render/<site>/inventory/, so callers must run this before
     invoking ansible-with-otel.sh.
     """
@@ -129,18 +129,7 @@ def render_site(ctx, site = DEFAULT_SITE):
     )
     if rc != 0:
         return rc
-    # Mirror the cache-rendered handler back into the gitignored sibling of
-    # site.yml so that playbook's static `import_tasks` resolves at parse
-    # time. Handlers must be discoverable before inventory loads, so
-    # `{{ inventory_dir }}/...` cannot be used here.
-    return checked_spawn(
-        ctx, "cp",
-        [
-            cache_abs + "/handlers/component-systemd.yml",
-            ws_path(ctx, "src/platform/ansible/handlers/component-systemd.yml"),
-        ],
-        label = "stage handlers/component-systemd.yml",
-    )
+    return 0
 
 def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     """Spawn a subprocess attached to the parent's stdio and return its exit code.

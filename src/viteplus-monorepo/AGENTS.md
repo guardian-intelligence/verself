@@ -104,20 +104,15 @@ The dev app must have:
 
 ```bash
 # run verself-web locally against the deployed services
-aspect dev sandbox-inner
+aspect dev verself-web
 
-# separate terminal: verify the local dev server and collect ClickHouse evidence
-SANDBOX_INNER_MODE=verify aspect dev sandbox-inner
-
-# targeted deploy + targeted verification against the current remote stack
-aspect dev sandbox-middle
-
-# final merge smoke test: reset, redeploy, reseed, live repo-exec verification
-src/platform/scripts/verify-sandbox-live.sh
+# print the resolved env without starting HMR
+aspect dev verself-web --print-env
 ```
 
-`aspect dev sandbox-inner` opens the required SSH tunnels, re-queries the `verself-web-dev`
-client ID from Zitadel, and exports the current runtime env for the local server:
+`aspect dev verself-web` opens the required SSH tunnels, reads the rendered
+Nomad job env for production facts, re-queries the `verself-web-dev` client ID
+from Zitadel, and exports the current runtime env for the local server:
 
 - `VERSELF_DOMAIN`
 - `AUTH_SUBDOMAIN`
@@ -128,21 +123,15 @@ client ID from Zitadel, and exports the current runtime env for the local server
 - `SANDBOX_RENTAL_SERVICE_BASE_URL`
 - `ELECTRIC_URL`
 
-Open the `app:` URL printed by `aspect dev sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
-but will move to a higher local port if that one is busy, then records the chosen
-URL in `/tmp/verself-web-dev.env` so `SANDBOX_INNER_MODE=verify aspect dev sandbox-inner` can target
-the same dev server from another terminal. Vite HMR gives sub-second feedback on
-every file save. API calls, Electric shapes, auth sessions, and OTLP traces all
-flow through the SSH tunnels to the deployed single-node stack.
+Open the `app:` URL printed by `aspect dev verself-web`. The launcher prefers
+`http://127.0.0.1:4244` but will move to a higher local port if that one is
+busy, then records the chosen URL in `/tmp/verself-web-dev.env`. Vite HMR gives
+sub-second feedback on every file save. API calls, Electric shapes, auth
+sessions, and OTLP traces all flow through the SSH tunnels to the deployed
+single-node stack.
 
-`aspect dev sandbox-middle` is the non-destructive remote loop. By default it deploys
-the `verself_web` frontend role and runs the fast admin smoke. Override
-`SANDBOX_DEPLOY_TARGET=ui|service|both|none`, `SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none`,
-and `SANDBOX_SEED_VERIFY=1` when you need a different targeted rehearsal.
-
-`src/platform/scripts/verify-sandbox-live.sh` is the only destructive/full smoke-test path. It resets the
-verification state, redeploys the required stack, reseeds, runs the omnibus live
-repo execution smoke test, and collects ClickHouse-linked artifacts.
+Remote frontend deploys go through `aspect deploy`; Nomad supervises the
+Bazel-built node-app artifacts.
 
 ### External Data Sources
 

@@ -116,15 +116,16 @@ config: s.#InstanceConfig & {
 	}
 
 	ansible_vars: {
-		verself_version: "0.1.0"
-		verself_bin:     "/opt/verself/profile/bin"
+		verself_version:     "0.1.0"
+		verself_bin:         "/opt/verself/profile/bin"
+		nomad_artifacts_dir: "/var/lib/verself/nomad-artifacts"
 
 		// Public domains, organization labels, and per-site sender
 		// addresses are split into site.cue. Both files contribute to
 		// `config.ansible_vars` via CUE unification.
 
 		// Object-storage UIDs are also CUE-side identifiers used by
-		// firewall and convergence rules; reference them via
+		// firewall and service runtime facts; reference them via
 		// config.ansible_vars rather than redeclaring per call site.
 		object_storage_service_uid: 960
 		object_storage_admin_uid:   961
@@ -180,15 +181,15 @@ config: s.#InstanceConfig & {
 		seed_system_forgejo_project_name:  "forgejo"
 		seed_system_mailbox_project_name:  "mailbox-service"
 		seed_system_users: {
-			ceo: {key:             "ceo", org_key:             "platform", email: "ceo@{{ verself_domain }}", username:        "ceo", first_name:        "CEO", last_name:        "Operator", password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"}
-			platform_agent: {key:  "platform_agent", org_key:  "platform", email: "agent@{{ verself_domain }}", username:      "agent", first_name:      "Platform", last_name:    "Agent", password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"}
-			acme_admin: {key:      "acme_admin", org_key:      "acme", email:     "acme-admin@{{ verself_domain }}", username: "acme-admin", first_name: "Acme", last_name:        "Admin", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"}
-			acme_user: {key:       "acme_user", org_key:       "acme", email:     "acme-user@{{ verself_domain }}", username:  "acme-user", first_name:  "Acme", last_name:        "User", password_credstore_path:  "{{ seed_system_credstore_dir }}/acme-user-password"}
+			ceo: {key: "ceo", org_key: "platform", email: "ceo@{{ verself_domain }}", username: "ceo", first_name: "CEO", last_name: "Operator", password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"}
+			platform_agent: {key: "platform_agent", org_key: "platform", email: "agent@{{ verself_domain }}", username: "agent", first_name: "Platform", last_name: "Agent", password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"}
+			acme_admin: {key: "acme_admin", org_key: "acme", email: "acme-admin@{{ verself_domain }}", username: "acme-admin", first_name: "Acme", last_name: "Admin", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"}
+			acme_user: {key: "acme_user", org_key: "acme", email: "acme-user@{{ verself_domain }}", username: "acme-user", first_name: "Acme", last_name: "User", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-user-password"}
 		}
 		seed_system_machine_users: {
 			platform_admin: {key: "platform_admin", org_key: "platform", username: "assume-platform-admin", name: "Assume Platform Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-platform-admin-client-secret"}
-			acme_admin: {key:     "acme_admin", org_key:     "acme", username:     "assume-acme-admin", name:     "Assume Acme Admin", secret_credstore_path:     "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"}
-			acme_member: {key:    "acme_member", org_key:    "acme", username:     "assume-acme-member", name:    "Assume Acme Member", secret_credstore_path:    "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"}
+			acme_admin: {key: "acme_admin", org_key: "acme", username: "assume-acme-admin", name: "Assume Acme Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"}
+			acme_member: {key: "acme_member", org_key: "acme", username: "assume-acme-member", name: "Assume Acme Member", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"}
 		}
 		seed_system_product_id:           "sandbox"
 		seed_system_product_display_name: "Sandbox"
@@ -200,7 +201,7 @@ config: s.#InstanceConfig & {
 		seed_system_plan_entitlements: {}
 		seed_system_contract_tiers: [
 			{plan_id: "sandbox-hobby", display_name: "Hobby", tier: "hobby", currency: "usd", cadence: "monthly", unit_amount_cents: 500, entitlements: {compute: 30000000, memory: 15000000, execution_root_storage: 5000000}},
-			{plan_id: "sandbox-pro", display_name:   "Pro", tier:   "pro", currency:   "usd", cadence:   "monthly", unit_amount_cents: 2000, entitlements: {compute: 120000000, memory: 60000000, execution_root_storage: 20000000}},
+			{plan_id: "sandbox-pro", display_name: "Pro", tier: "pro", currency: "usd", cadence: "monthly", unit_amount_cents: 2000, entitlements: {compute: 120000000, memory: 60000000, execution_root_storage: 20000000}},
 		]
 		seed_system_platform_target_prepaid_units: 500000000000
 		seed_system_customer_target_prepaid_units: 500000000000

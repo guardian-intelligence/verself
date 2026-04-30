@@ -4,12 +4,11 @@
     that:
       - (postgresql_db_reset_name | default('')) is match('^[a-z_][a-z0-9_]*$')
       - (postgresql_db_reset_owner | default('')) is match('^[a-z_][a-z0-9_]*$')
-      - postgresql_db_reset_stop_units is defined
-      - postgresql_db_reset_stop_units is not string
+      - (postgresql_db_reset_stop_units | default([])) is not string
     fail_msg: >-
       postgresql_db_reset_name and postgresql_db_reset_owner must be lowercase
       PostgreSQL identifiers matching ^[a-z_][a-z0-9_]*$, and
-      postgresql_db_reset_stop_units must be a list.
+      postgresql_db_reset_stop_units must be a list when provided.
 
 - name: Initialize PostgreSQL database reset recovery state
   ansible.builtin.set_fact:
@@ -19,19 +18,21 @@
 - name: Probe PostgreSQL database reset client unit state
   verself_systemd_status:
     unit: "{{ item }}"
-  loop: "{{ postgresql_db_reset_stop_units }}"
+  loop: "{{ postgresql_db_reset_stop_units | default([]) }}"
   loop_control:
     label: "{{ item }}"
   register: postgresql_db_reset_client_states
+  when: (postgresql_db_reset_stop_units | default([])) | length > 0
 
 - name: Stop PostgreSQL database reset clients
   ansible.builtin.systemd:
     name: "{{ item }}"
     state: stopped
-  loop: "{{ postgresql_db_reset_stop_units }}"
+  loop: "{{ postgresql_db_reset_stop_units | default([]) }}"
   loop_control:
     label: "{{ item }}"
   failed_when: false
+  when: (postgresql_db_reset_stop_units | default([])) | length > 0
 
 - name: Reset PostgreSQL database
   module_defaults:

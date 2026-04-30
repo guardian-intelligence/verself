@@ -21,8 +21,8 @@ import (
 // guest bridge cycles through. Each state has a single allowed set of
 // inbound frame types, and any deviation is reported as
 // "control protocol violation in <state>" so traces and the
-// verify-vm-orchestrator-live.sh smoke flow can pin failures to a
-// labeled state machine rather than free-form strings.
+// live smoke flows can pin failures to a labeled state machine rather than
+// free-form strings.
 type bridgeState int
 
 const (

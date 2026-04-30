@@ -34,7 +34,6 @@ import (
 	"github.com/verself/cue-renderer/internal/render/catalog"
 	"github.com/verself/cue-renderer/internal/render/clusters"
 	"github.com/verself/cue-renderer/internal/render/components"
-	"github.com/verself/cue-renderer/internal/render/deploy"
 	"github.com/verself/cue-renderer/internal/render/dns"
 	"github.com/verself/cue-renderer/internal/render/endpoints"
 	"github.com/verself/cue-renderer/internal/render/nftables"
@@ -42,9 +41,7 @@ import (
 	"github.com/verself/cue-renderer/internal/render/ops"
 	"github.com/verself/cue-renderer/internal/render/postgres"
 	"github.com/verself/cue-renderer/internal/render/routes"
-	"github.com/verself/cue-renderer/internal/render/runtime"
 	"github.com/verself/cue-renderer/internal/render/spire"
-	"github.com/verself/cue-renderer/internal/render/systemd"
 	"github.com/verself/cue-renderer/internal/spans"
 )
 
@@ -66,7 +63,6 @@ func renderers() []render.Renderer {
 		catalog.Renderer{},
 		clusters.Renderer{},
 		components.Renderer{},
-		deploy.Renderer{},
 		dns.Renderer{},
 		endpoints.Renderer{},
 		nftables.Renderer{},
@@ -74,9 +70,7 @@ func renderers() []render.Renderer {
 		ops.Renderer{},
 		postgres.Renderer{},
 		routes.Renderer{},
-		runtime.Renderer{},
 		spire.Renderer{},
-		systemd.Renderer{},
 	}
 }
 

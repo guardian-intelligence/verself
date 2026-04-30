@@ -2,9 +2,8 @@ import { expect, test } from "@playwright/test";
 
 // Company-site canary. Walks every IA route, the seeded Letter, each
 // dynamic OG card, and the press brand-kit download, then asserts the basic
-// content shape on each. The accompanying scripts/verify-company-live.sh
-// queries ClickHouse for the corresponding `company.*` spans after this
-// Playwright run finishes.
+// content shape on each. Deploy verification queries ClickHouse for the
+// corresponding `company.*` spans after this Playwright run finishes.
 
 const IA_ROUTES: readonly string[] = [
   "/",
@@ -156,13 +155,13 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   // span only fires on a user gesture, so drive the giant bulletin click
   // here — that also navigates to /newsroom/<slug>, which fires
   // company.newsroom_article.view on the destination route (asserted
-  // independently in poll #5 of verify-company-live.sh).
+  // independently in the ClickHouse verification window).
   await page.goto("/newsroom");
   const bulletin = page.locator("[data-newsroom-bulletin]");
   await expect(bulletin).toBeVisible();
   await bulletin.click();
   await expect(page).toHaveURL(/\/newsroom\/[a-z0-9-]+$/);
   // The browser tracer batches for 2s; wait one batch interval so the
-  // click-time span lands before verify-company-live.sh polls ClickHouse.
+  // click-time span lands before ClickHouse is queried.
   await page.waitForTimeout(2_500);
 });

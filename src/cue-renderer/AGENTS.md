@@ -36,10 +36,10 @@ not a CUE-only addition.
   `bazel` version in `versions.cue`.
 - bazel — version pin only; bazelisk reads `.bazelversion` and downloads.
 
-`pinned_http_file` (16): go, zig, tofu, protoc, cue, buf, buildifier,
+`pinned_http_file` (17): go, zig, tofu, protoc, cue, buf, buildifier,
 shellcheck, jq, sops, age, uv, clickhouse, osv-scanner, stripe,
-agent-browser. These flow through `dev_tools.tar.zst` via Bazel
-`http_file` rules.
+agent-browser, otelcol-contrib. These flow through `dev_tools.tar.zst`
+via Bazel `http_file` rules.
 
 `source_built_go` (6): golangci-lint, gosec, gofumpt, protoc-gen-go,
 protoc-gen-go-grpc, sqlc. Compiled from vendored sources via rules_go's
@@ -91,10 +91,9 @@ exactly. Read these files together:
 4. Root `MODULE.bazel` includes `server_tools.MODULE.bazel`. Root
    `binaries/BUILD.bazel` calls `server_tools_archive()`. Bazel
    produces `:server_tools.tar.zst`.
-5. `roles/deploy_profile/tasks/static_binaries.yml` runs
+5. `roles/substrate_profile/tasks/static_binaries.yml` runs
    `bazelisk build`, cqueries the output path, stats the sha256,
-   uploads, untars to `/`, and emits a `server_tools.artifact.publish`
-   smoke span carrying `bazel_label`, `version`, `archive_sha256`.
+   uploads, and untars to `/`.
 
 The dev-tools mirror uses `devToolDownloads` + `devToolPackaging`,
 emits `dev_tools.MODULE.bazel` + `dev_tools.bzl`, and produces
@@ -152,7 +151,16 @@ when `aspect render --site=<site>` runs, alongside the rest of the deploy
 cache the Ansible roles consume. Adding a ruleset is a CUE-only change:
 extend `topology.nftables.rulesets` and the next render picks it up.
 
-## Verification: Ansible trusts the render, canaries verify out-of-band
+Components that opt into Nomad supervision via
+`deployment.supervisor: "nomad"` emit a per-component
+`jobs/<id>.nomad.json` plus a `jobs/index.json` enumeration. The
+`//src/cue-renderer:prod_nomad_jobs` Bazel target resolves the specs with
+artifact URLs and checksums. `nomad-deploy-all.sh` publishes immutable task
+artifacts and invokes `nomad-deploy` (`cmd/nomad-deploy`) for each opted-in
+component. Substrate daemons remain Ansible/systemd-managed until they move to
+a dedicated substrate reconciler.
+
+## Verification: Ansible Trusts the Render
 
 Ansible roles do not emit ClickHouse spans, do not re-validate the shape
 of generated topology, and do not re-introspect what Bazel/uv just laid
@@ -160,25 +168,13 @@ down. That pattern duplicated work CUE schemas and module-level pins
 already enforce, drifted span-attribute schemas across emitters of the
 same span name, and coupled deploy progress to the observability stack.
 
-Two distinct surfaces, one role each:
+Ansible owns idempotent host mutation. It trusts the rendered topology and
+Bazel artifacts, runs the apt/copy/unarchive/symlink steps, and exits non-zero
+on real OS failures. It does not emit observability spans and does not re-assert
+facts the renderer or Bazel already enforce.
 
-- **Ansible** owns idempotent host mutation. It trusts the rendered
-  topology and the Bazel artefact, runs the apt/copy/unarchive/symlink
-  steps, and exits non-zero on real OS failures (apt failure, file
-  copy permission, etc.). It does not emit observability spans and does
-  not re-assert facts the renderer or Bazel already enforce.
-- **e2e canaries** under `src/platform/scripts/verify-*-live.sh` own
-  continuous verification. Each canary re-execs itself through
-  `scripts/with-otel-agent.sh` (the same controller-side OTLP buffer
-  agent `aspect deploy` uses), emits a smoke span via
-  `go run //src/otel/cmd/smoke-span`, then polls `default.otel_traces`
-  for the row. They run from CI and on a loop; see `verify-bazel-live.sh`
-  as the reference shape.
-
-When adding a new role or extending one: write `assert` tasks for
-in-band gates, and (if continuous external verification is meaningful)
-add or extend a `verify-<area>-live.sh` canary. Do not include
-`//src/otel/cmd/smoke-span` invocations in role tasks.
+Deployment verification is live evidence: `verself.deploy_events`, Nomad job
+state, and OTel traces/metrics in ClickHouse after `aspect deploy`.
 
 ## Boundaries that intentionally stay outside CUE
 

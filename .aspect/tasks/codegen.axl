@@ -121,8 +121,12 @@ def _topology_run(ctx):
     )
 
 def _topology_check(ctx):
-    inv = ctx.bazel.test("//src/cue-renderer:freshness_tests", inherit_stderr = True)
-    return inv.exit_code
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        ["test", "//src/cue-renderer:freshness_tests"],
+        label = "bazelisk test //src/cue-renderer:freshness_tests",
+    )
 
 def _sqlc_run(ctx):
     # Iterate sqlc.yaml files discovered on disk so a new service appears here
@@ -225,8 +229,12 @@ def _clients_check(ctx):
     return checked_spawn(ctx, "bash", ["-c", cmd], label = "rg generated-client guard")
 
 def _wire_check(ctx):
-    inv = ctx.bazel.test("//src/apiwire/wirecheck:legacy_specs_test", inherit_stderr = True)
-    return inv.exit_code
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        ["test", "//src/apiwire/wirecheck:legacy_specs_test"],
+        label = "bazelisk test //src/apiwire/wirecheck:legacy_specs_test",
+    )
 
 _RUN_KINDS = {
     "topology": _topology_run,
@@ -294,4 +302,3 @@ codegen_check = task(
         "kind": args.string(default = "all", description = "Which generated set to verify."),
     },
 )
-

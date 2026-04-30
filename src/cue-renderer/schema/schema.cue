@@ -25,9 +25,9 @@ package schema
 }
 
 #Process: {
-	systemd: string & !=""
-	user:    string & !=""
-	group:   string & !=""
+	unit:  string & !=""
+	user:  string & !=""
+	group: string & !=""
 
 	artifact: #Artifact
 
@@ -38,7 +38,7 @@ package schema
 	wants: [...string] | *[]
 	environment: {[string]: string} | *{}
 	privileged: bool | *false
-	restart_units: [...string] | *[systemd]
+	restart_units: [...string] | *[]
 	readiness_endpoint?:   string
 	requires_spiffe_sock?: bool | *false
 }
@@ -322,9 +322,9 @@ package schema
 	{kind: "catch_all_drop"}
 
 #NftablesFirecrackerChain: {
-	target:     string & =~"^/etc/nftables\\.d/[A-Za-z0-9._-]+\\.nft$"
-	table:      string & =~"^[A-Za-z0-9_]+$"
-	guest_cidr: string & !="" @go(GuestCIDR)
+	target:             string & =~"^/etc/nftables\\.d/[A-Za-z0-9._-]+\\.nft$"
+	table:              string & =~"^[A-Za-z0-9_]+$"
+	guest_cidr:         string & !=""                         @go(GuestCIDR)
 	uplink_placeholder: string & !="" | *"__VERSELF_UPLINK__" @go(UplinkPlaceholder)
 	forward: [...#NftablesFirecrackerForwardRule]
 }
@@ -356,11 +356,11 @@ package schema
 	// a future customer-uploaded image is structurally distinguishable
 	// from the platform's own toolchains.
 	tier:             "substrate" | "platform_toolchain" | "customer_uploaded" @go(Tier)
-	size_bytes:       int & >0                                                  @go(SizeBytes)
-	volblocksize:     string | *"16K"                                           @go(VolBlockSize)
-	strategy:         "dd_from_file" | "mkfs_ext4"                              @go(Strategy)
-	source_path:      string | *""                                              @go(SourcePath)
-	filesystem_label: string | *""                                              @go(FilesystemLabel)
+	size_bytes:       int & >0                                                 @go(SizeBytes)
+	volblocksize:     string | *"16K"                                          @go(VolBlockSize)
+	strategy:         "dd_from_file" | "mkfs_ext4"                             @go(Strategy)
+	source_path:      string | *""                                             @go(SourcePath)
+	filesystem_label: string | *""                                             @go(FilesystemLabel)
 }
 
 #SpireConfig: {
@@ -492,12 +492,29 @@ package schema
 } | {
 	kind:                   "owned_project"
 	project_name:           string & !="" @go(ProjectName)
+	audience:               string & !="" @go(Audience)
 	project_role_assertion: bool          @go(ProjectRoleAssertion)
 	project_role_check:     bool          @go(ProjectRoleCheck)
 	roles: [...#ZitadelProjectRole] | *[]
 } | {
 	kind:         "identity_project_audience"
 	project_name: string & !="" @go(ProjectName)
+	audience:     string & !="" @go(Audience)
+}
+
+#FrontendOIDCBootstrap: {
+	app_name:     string & !="" @go(AppName)
+	project_name: string & !="" @go(ProjectName)
+	redirect_uris: [...string & =~"^https://"] @go(RedirectURIs)
+	post_logout_redirect_uris: [...string & =~"^https://"] @go(PostLogoutRedirectURIs)
+	credstore_dir:   string & =~"^/" @go(CredstoreDir)
+	credstore_group: string & !=""   @go(CredstoreGroup)
+	role_assertions: bool | *false   @go(RoleAssertions)
+	grant_types: [...string & !=""] | *[
+		"OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+		"OIDC_GRANT_TYPE_REFRESH_TOKEN",
+	] @go(GrantTypes)
+	project_roles: [...#ZitadelProjectRole] | *[] @go(ProjectRoles)
 }
 
 #SystemdCredential: {
@@ -541,7 +558,7 @@ package schema
 	ca_path?:        string & =~"^/" @go(CAPath)
 }
 
-#SystemdUnit: {
+#WorkloadUnit: {
 	name:        string & !=""
 	description: string & !=""
 	user:        string & !=""
@@ -549,7 +566,6 @@ package schema
 	uid?:        int & >0
 	home:        string | *""
 	create_home: bool | *false @go(CreateHome)
-	exec:        string & !=""
 	type:        "simple" | "exec" | "forking" | "oneshot" | "dbus" | "notify" | "idle" | *"simple"
 	after: [...string] | *[]
 	wants: [...string] | *[]
@@ -560,9 +576,9 @@ package schema
 	environment: {[string]: string} | *{}
 	restart:     "always" | "on-failure" | "no" | *"on-failure"
 	restart_sec: int & >=0 | *5 @go(RestartSec)
-	hardening: #SystemdHardening
+	hardening:   #SystemdHardening
 	readiness: [...#ReadinessProbe] | *[]
-	wanted_by: [...string] | *["multi-user.target"]                    @go(WantedBy)
+	wanted_by: [...string] | *["multi-user.target"] @go(WantedBy)
 	requires_spiffe_sock: bool | *false @go(RequiresSpiffeSock)
 }
 
@@ -577,16 +593,17 @@ package schema
 
 #ComponentBootstrapConfig: {
 	sandbox_github_app?: #SandboxGithubAppBootstrap @go(SandboxGithubApp)
+	frontend_oidc?:      #FrontendOIDCBootstrap     @go(FrontendOIDC)
 }
 
 #BootstrapHookName:
 	"billing_stripe_webhook" |
 	"identity_zitadel_actions" |
-	"secrets_platform_org" |
 	"openbao_tenancy" |
 	"object_storage_tls" |
 	"object_storage_garage_proxy" |
-	"sandbox_vm_socket_acl"
+	"sandbox_vm_socket_acl" |
+	"verself_web_oidc"
 
 #BootstrapHookClass:
 	"external_provider" |
@@ -603,32 +620,23 @@ package schema
 	reason: string & !=""
 }
 
-#ComponentConverge: {
-	enabled:    bool | *false
-	deploy_tag: string | *"" @go(DeployTag)
-	order:      int | *0
+#ComponentWorkload: {
+	order: int | *0
 	directories: [...#ComponentDirectory] | *[]
 	secret_refs: [...#SecretRef] | *[] @go(SecretRefs)
 	clickhouse?: #ClickHouseBinding
 	auth: #ZitadelAuth | *{kind: "none"}
-	// units describes the runnable processes the supervisor manages.
-	// The shape is systemd-flavored today (hardening, BindReadOnlyPaths,
-	// LoadCredential are mapped 1:1 to systemd unit fields); the
-	// systemd renderer projects it to a /etc/systemd/system/<name>.service
-	// file, the nomad renderer projects it to a Nomad TaskGroup.
-	// Components may carry the same `units` block irrespective of
-	// `deployment.supervisor` — fields that don't translate (e.g.
-	// hardening on Nomad raw_exec) are ignored by the projection.
-	units: [...#SystemdUnit] | *[]
+	// units describes the runnable processes Nomad manages. The executable
+	// comes from the component or named process artifact; this block carries
+	// runtime facts, environment, endpoint ownership, and substrate needs.
+	units: [...#WorkloadUnit] | *[]
 	bootstrap: [...#ComponentBootstrapHook] | *[]
 	bootstrap_config: #ComponentBootstrapConfig | *{} @go(BootstrapConfig)
 }
 
 // #Deployment is the supervisor-shape contract for a component's runtime.
-// supervisor selects between the legacy systemd path (default) and Nomad.
 // The update / drain / resources knobs map directly to Nomad's JSON job
-// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs); they
-// are inert when supervisor == "systemd".
+// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs).
 //
 // Single rolling-restart is the only mode here. Blue/green and canary
 // arrive as per-component CUE additions on top of Nomad's update {}
@@ -637,19 +645,19 @@ package schema
 	supervisor: "systemd" | "nomad" | *"systemd"
 	count:      int & >0 | *1
 	update: {
-		max_parallel:      int & >0 | *1                   @go(MaxParallel)
-		min_healthy_time:  string & !="" | *"30s"          @go(MinHealthyTime)
-		healthy_deadline:  string & !="" | *"5m"           @go(HealthyDeadline)
-		progress_deadline: string & !="" | *"10m"          @go(ProgressDeadline)
-		auto_revert:       bool | *true                    @go(AutoRevert)
+		max_parallel:      int & >0 | *1          @go(MaxParallel)
+		min_healthy_time:  string & !="" | *"30s" @go(MinHealthyTime)
+		healthy_deadline:  string & !="" | *"5m"  @go(HealthyDeadline)
+		progress_deadline: string & !="" | *"10m" @go(ProgressDeadline)
+		auto_revert:       bool | *true           @go(AutoRevert)
 	}
 	drain: {
-		kill_signal:  string & !="" | *"SIGTERM"           @go(KillSignal)
-		kill_timeout: string & !="" | *"30s"               @go(KillTimeout)
+		kill_signal:  string & !="" | *"SIGTERM" @go(KillSignal)
+		kill_timeout: string & !="" | *"30s"     @go(KillTimeout)
 	}
 	resources: {
-		cpu_mhz:   int & >0 | *500                         @go(CPUMHz)
-		memory_mb: int & >0 | *256                         @go(MemoryMB)
+		cpu_mhz:   int & >0 | *500 @go(CPUMHz)
+		memory_mb: int & >0 | *256 @go(MemoryMB)
 	}
 }
 
@@ -674,12 +682,12 @@ package schema
 	processes?: {
 		[string]: #Process
 	}
-	probes?:    #Probes
-	garage?:    #GarageCluster
-	temporal?:  #TemporalCluster
-	postgres:   #PostgresBinding
-	electric?:  #ElectricSync
-	converge:   #ComponentConverge | *{}
+	probes?:   #Probes
+	garage?:   #GarageCluster
+	temporal?: #TemporalCluster
+	postgres:  #PostgresBinding
+	electric?: #ElectricSync
+	workload: #ComponentWorkload | *{}
 	deployment: #Deployment | *{}
 }
 

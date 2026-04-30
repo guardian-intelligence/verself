@@ -10,8 +10,8 @@
 # carries verself.* on ResourceAttributes.
 #
 # Idempotent: if VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY are already set
-# by a caller (e.g. a verify-*-live.sh canary that wants its own correlation
-# id), those are preserved and the rest is derived from them.
+# by a caller that wants its own correlation id, those are preserved and the
+# rest is derived from them.
 #
 # Usage:
 #   source "${VERSELF_PLATFORM}/scripts/deploy_identity.sh"

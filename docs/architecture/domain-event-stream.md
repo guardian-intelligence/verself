@@ -95,18 +95,17 @@ Grafana receives one dashboard under
 
 ## Live verification
 
-`src/platform/scripts/verify-spiffe-rotation-live.sh` asserts the NATS rotation
-contract: no legacy restart watcher units exist, `spiffe-helper` is
+Live evidence asserts the NATS rotation contract: no legacy restart watcher
+units exist, `spiffe-helper` is
 configured with `pid_file_name` plus `renew_signal = "SIGHUP"`, and
 `systemctl reload nats.service` leaves the broker PID stable while the
-health endpoint remains ready. The canary emits
-`workload_identity.rotation.*` spans and asserts them in ClickHouse.
+health endpoint remains ready. The check should emit
+`workload_identity.rotation.*` spans and assert them in ClickHouse.
 
 A NATS publish/subscribe canary (authorized vs. unauthorized subjects,
 JetStream durability across broker restart, trace propagation with
 `spiffe.peer_id` on both peers) is not yet implemented; when added it
-should live alongside the other `verify-*-live.sh` scripts and assert via
-spans rather than via Ansible self-checks.
+should assert via spans rather than via Ansible self-checks.
 
 ## Source notes
 

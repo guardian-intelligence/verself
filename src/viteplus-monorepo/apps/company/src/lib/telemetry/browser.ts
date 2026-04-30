@@ -35,11 +35,11 @@ function buildResourceAttributes() {
   const runKey = readMetaContent(DEPLOY_META.runKey);
   const id = readMetaContent(DEPLOY_META.id);
   const commitSha = readMetaContent(DEPLOY_META.commitSha);
-  const profile = readMetaContent(DEPLOY_META.profile);
+  const supervisor = readMetaContent(DEPLOY_META.supervisor);
   if (runKey) attrs[RESOURCE_ATTR_KEYS.runKey] = runKey;
   if (id) attrs[RESOURCE_ATTR_KEYS.id] = id;
   if (commitSha) attrs[RESOURCE_ATTR_KEYS.commitSha] = commitSha;
-  if (profile) attrs[RESOURCE_ATTR_KEYS.profile] = profile;
+  if (supervisor) attrs[RESOURCE_ATTR_KEYS.supervisor] = supervisor;
   return attrs;
 }
 

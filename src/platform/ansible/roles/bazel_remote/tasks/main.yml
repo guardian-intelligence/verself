@@ -1,5 +1,5 @@
 ---
-# bazel-remote: build cache daemon. The binary is laid down by deploy_profile
+# bazel-remote: build cache daemon. The binary is laid down by substrate_profile
 # from the Bazel-owned server tools archive; the state dir is a dedicated ZFS dataset
 # managed by the zfs role, and access is bounded by host_firewall (loopback +
 # wg-ops trusted interfaces only).

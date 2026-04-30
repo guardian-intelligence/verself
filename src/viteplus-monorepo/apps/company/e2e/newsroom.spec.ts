@@ -6,8 +6,7 @@ import { expect, test } from "@playwright/test";
 // subscribe band are retired until we have a second bulletin and a
 // newsletter service — the rule is one Flare giant bulletin per page. Each
 // interaction fires a browser span (newsroom.index.view / bulletin_click);
-// the post-deploy canary asserts those land in ClickHouse
-// (verify-company-live.sh).
+// deployment verification asserts those land in ClickHouse.
 //
 // Everything is local bare metal; actions run inside the 5-second cap set by
 // playwright.config.ts per the repo convention (timeouts above 5s are a

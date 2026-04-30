@@ -1,6 +1,7 @@
-// Package envconfig loads process configuration from environment variables
-// and systemd LoadCredential= files. It is the single source of truth for how
-// Verself Go binaries consume their runtime settings.
+// Package envconfig loads process configuration from environment variables,
+// explicit credential paths, and systemd LoadCredential= files. It is the
+// single source of truth for how Verself Go binaries consume their runtime
+// settings.
 //
 // The Loader accumulates errors instead of failing on the first missing value
 // so one misconfigured deploy reports every missing env and credential at once
@@ -21,6 +22,8 @@ import (
 // CredentialsDirectoryEnv is the systemd-provided env pointing at the
 // per-unit credential directory (LoadCredential=, LoadCredentialEncrypted=).
 const CredentialsDirectoryEnv = "CREDENTIALS_DIRECTORY"
+
+const credentialPathPrefix = "VERSELF_CRED_"
 
 // Loader accumulates every env/credential failure encountered during startup.
 // Call Err() once all values have been read.
@@ -199,9 +202,17 @@ func validateURL(raw string) error {
 	return nil
 }
 
-// CredentialPath returns <CREDENTIALS_DIRECTORY>/<name> without reading the
-// file. Records a failure if CREDENTIALS_DIRECTORY is unset.
+// CredentialPath returns an explicit VERSELF_CRED_* path when present, or
+// <CREDENTIALS_DIRECTORY>/<name> without reading the file. Records a failure
+// if no credential source is configured.
 func (l *Loader) CredentialPath(name string) string {
+	if path, ok := explicitCredentialPath(name); ok {
+		if !filepath.IsAbs(path) {
+			l.fail(credentialPathEnv(name), "must be an absolute credential path")
+			return ""
+		}
+		return path
+	}
 	base := strings.TrimSpace(os.Getenv(CredentialsDirectoryEnv))
 	if base == "" {
 		l.fail(CredentialsDirectoryEnv, "is required for credential "+name)
@@ -248,6 +259,20 @@ func (l *Loader) RequireCredential(name string) string {
 // otherwise. Use only for genuinely optional credentials (e.g. mailbox
 // forward-to overrides). No error is accumulated.
 func (l *Loader) CredentialOr(name, fallback string) string {
+	if path, ok := explicitCredentialPath(name); ok {
+		if !filepath.IsAbs(path) {
+			return fallback
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fallback
+		}
+		value := strings.TrimSpace(string(data))
+		if value == "" {
+			return fallback
+		}
+		return value
+	}
 	base := strings.TrimSpace(os.Getenv(CredentialsDirectoryEnv))
 	if base == "" {
 		return fallback
@@ -261,6 +286,29 @@ func (l *Loader) CredentialOr(name, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func explicitCredentialPath(name string) (string, bool) {
+	value := strings.TrimSpace(os.Getenv(credentialPathEnv(name)))
+	return value, value != ""
+}
+
+func credentialPathEnv(name string) string {
+	var b strings.Builder
+	b.WriteString(credentialPathPrefix)
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - ('a' - 'A'))
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // RequireFile reads the absolute path and returns its trimmed contents.

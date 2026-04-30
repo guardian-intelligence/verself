@@ -1,6 +1,6 @@
 ---
 # Base system configuration for all nodes.
-# No package installs — all software comes from the deploy_profile role.
+# No package installs — all software comes from the substrate_profile role.
 # This role only handles system-level configuration (ZFS, users, sudoers, etc.).
 
 - name: Install ZFS and ext4 utilities

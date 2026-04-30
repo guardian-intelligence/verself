@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "sandbox-rental-recurring-worker_lib",
@@ -21,4 +22,10 @@ go_binary(
     name = "sandbox-rental-recurring-worker",
     embed = [":sandbox-rental-recurring-worker_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "sandbox-rental-recurring-worker_nomad_artifact",
+    binary = ":sandbox-rental-recurring-worker",
+    output = "sandbox-rental-recurring-worker",
 )

@@ -1,14 +1,4 @@
 ---
-- name: Verify component unit binaries exist in deploy profile
-  ansible.builtin.stat:
-    path: "{{ unit.exec }}"
-  loop: "{{ component_units }}"
-  loop_control:
-    loop_var: unit
-    label: "{{ unit.name }}"
-  register: component_unit_binary_stats
-  failed_when: not component_unit_binary_stats.stat.exists
-
 - name: Ensure component primary groups exist
   ansible.builtin.group:
     name: "{{ unit.group }}"
@@ -36,7 +26,7 @@
     name: "{{ unit.user }}"
     uid: "{{ unit.uid | default(omit) }}"
     group: "{{ unit.group }}"
-    # Multiple units can share one runtime user; converge the union so later units do not drop required groups.
+    # Multiple units can share one runtime user; compute the union so later units do not drop required groups.
     groups: >-
       {{
         component_units
@@ -63,6 +53,6 @@
     owner: "{{ item.owner }}"
     group: "{{ item.group }}"
     mode: "{{ item.mode }}"
-  loop: "{{ component.converge.directories }}"
+  loop: "{{ component.workload.directories }}"
   loop_control:
     label: "{{ item.path }}"

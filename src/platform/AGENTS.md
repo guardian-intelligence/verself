@@ -1,13 +1,16 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and the deploy catalog source. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `aspect render --site=<site>` materialises typed Ansible inputs under `.cache/render/<site>/inventory/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
+All remote substrate configuration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and the deploy catalog source. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `aspect render --site=<site>` materialises typed Ansible inputs under `.cache/render/<site>/inventory/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
 
-## Server profile
+## Server Profile
 
-All server software is managed by the `deploy_profile` Ansible role, which populates `/opt/verself/profile/bin/` via three strategies:
+Ansible installs host and substrate software only. `substrate_profile`
+populates `/opt/verself/profile/bin/` for long-lived substrate daemons and
+deploy helper binaries; application and frontend artifacts are Bazel-produced
+Nomad artifacts published by `scripts/nomad-deploy-all.sh`.
 
-- **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service, identity-service, vm-orchestrator): built on the controller via `go build`, copied to server.
-- **Static binaries** (Caddy, ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned and fetched by Bazel under `//src/cue-renderer/binaries`, packed as `//src/cue-renderer/binaries:server_tools.tar.zst`, copied to the server, and unpacked by Ansible.
+- **Go substrate binaries and service helper tools** (Temporal platform, vm-orchestrator, `nomad-deploy`, and deploy-time helper commands): built on the controller via Bazel and copied to the server by `substrate_profile`.
+- **Static binaries** (Caddy, ClickHouse, TigerBeetle, Zitadel, OpenBao, SPIRE server + agent, spiffe-helper, NATS, Garage, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, Temporal, containerd, Node.js, Stalwart, stalwart-cli, bazel-remote, Nomad): pinned and fetched by Bazel under `//src/cue-renderer/binaries`, packed as `//src/cue-renderer/binaries:server_tools.tar.zst`, copied to the server, and unpacked by Ansible.
 - **apt packages** (PostgreSQL 16, wireguard-tools, unpack/runtime support such as zstd): installed from PGDG / Ubuntu repos, with selected binaries symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel). Ubuntu 24.04 only.
@@ -20,7 +23,7 @@ Non-vm-orchestrator services must not receive `zfs allow`, `/dev/zvol`, `/dev/kv
 
 ## Ansible playbooks
 
-Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Global preflight checks run regardless of tag selection; Firecracker guest artifact preflight runs with the `firecracker` tag.
+Run from `src/platform/ansible/` for low-level debugging. The public deploy surface is `aspect deploy`; it renders the cache, applies `playbooks/box.yml` for host/substrate configuration, and then rolls application jobs through Nomad.
 
 | Playbook | Purpose |
 |---|---|
@@ -28,12 +31,12 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `setup-sops.yml` | Bootstrap SOPS + Age encryption for secrets |
 | `provision.yml` | Provision bare metal via OpenTofu, generate inventory |
 | `deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
-| `site.yml` | Canonical idempotent deploy for the current inventory topology |
+| `box.yml` | Idempotent host/substrate configuration for the current inventory topology |
 | `guest-rootfs.yml` | Build guest rootfs, stage Firecracker guest artifacts |
 | `security-patch.yml` | Rolling OS security updates |
 | `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart callers |
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |
-| `seed-system.yml` | Seed platform tenant + Acme tenant, billing, mailboxes, auth verify. `--tags identity,billing,stalwart,verify,dev-oidc` |
+| `seed-system.yml` | Seed platform tenant + Acme tenant, billing, mailboxes, auth verify. |
 
 Read `aspect` (no args) for the full task surface; `aspect <task> --help` documents flags.
 
@@ -84,7 +87,10 @@ aspect observe --what=deploy --run-key=<deploy-run-key>
 
 Use `aspect db ch query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
 
-Product-surface canaries (`scripts/verify-*-live.sh`) are the supported way to assert that a deploy emitted the spans/logs/metrics it should — Ansible no longer self-checks ClickHouse.
+Deploy completion evidence comes from `verself.deploy_events`, Nomad job state,
+and ClickHouse OTel traces/metrics queried through `aspect observe` or
+`aspect db ch query`. The old handwritten `scripts/verify-*` canaries were
+removed with the Nomad cutover.
 
 **Deterministic deploy correlation**:
 
@@ -99,7 +105,7 @@ Product-surface canaries (`scripts/verify-*-live.sh`) are the supported way to a
 ```bash
 cd src/platform/ansible
 sops group_vars/all/secrets.sops.yml  # set verself_domain, company_domain, and cloudflare_api_token
-ansible-playbook playbooks/site.yml
+aspect deploy --site=prod
 ```
 
 Services get subdomains automatically:
@@ -109,7 +115,7 @@ Services get subdomains automatically:
 | `dashboard.<domain>` | Grafana |
 | `git.<domain>` | Forgejo |
 | `auth.<domain>` | Zitadel |
-| `mail.<domain>` | Stalwart (JMAP API + mailbox-service) — webmail frontend retired; surfaces will be folded into console |
+| `mail.<domain>` | Stalwart (JMAP API + mailbox-service) — webmail frontend retired; surfaces will be folded into verself-web |
 
 ## nftables boot-order
 
@@ -119,4 +125,4 @@ All listeners require `nftables.service` at boot. Future programmatic enforcemen
 
 `roles/*/templates/otelcol-config.yaml.j2` holds the on-server otelcol pipelines. Changes here land in every service's trace/metric/log story simultaneously.
 
-`controller-agent/otelcol.yaml` is the controller-side twin: a single-process otelcol-contrib that `scripts/with-otel-agent.sh` stands up around every `aspect deploy` / canary invocation. Receivers bind 127.0.0.1:14317 (gRPC OTLP); the exporter ships to the bare-metal otelcol over an SSH `-L`. The `file_storage` extension persists the sending queue under `.cache/render/<site>/otelcol-data/`, so a flush-after-exit race between ansible's BSP atexit hook and the wrapper's tunnel teardown can no longer drop spans.
+`controller-agent/otelcol.yaml` is the controller-side twin: a single-process otelcol-contrib that `scripts/with-otel-agent.sh` stands up around `aspect deploy` and other operator commands that need controller-originated telemetry. Receivers bind 127.0.0.1:14317 (gRPC OTLP); the exporter ships to the bare-metal otelcol over an SSH `-L`. The `file_storage` extension persists the sending queue under `.cache/render/<site>/otelcol-data/`, so a flush-after-exit race between ansible's BSP atexit hook and the wrapper's tunnel teardown can no longer drop spans.

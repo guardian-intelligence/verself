@@ -1,0 +1,24 @@
+---
+- name: Reconcile frontend OIDC application
+  ansible.builtin.include_role:
+    name: zitadel_oauth_app
+  vars:
+    zitadel_oauth_app_name: "{{ component.workload.bootstrap_config.frontend_oidc.app_name }}"
+    zitadel_oauth_app_project_name: "{{ component.workload.bootstrap_config.frontend_oidc.project_name }}"
+    zitadel_oauth_app_redirect_uris: "{{ component.workload.bootstrap_config.frontend_oidc.redirect_uris }}"
+    zitadel_oauth_app_post_logout_redirect_uris: "{{ component.workload.bootstrap_config.frontend_oidc.post_logout_redirect_uris }}"
+    zitadel_oauth_app_credstore_dir: "{{ component.workload.bootstrap_config.frontend_oidc.credstore_dir }}"
+    zitadel_oauth_app_credstore_group: "{{ component.workload.bootstrap_config.frontend_oidc.credstore_group }}"
+    zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_POST
+    zitadel_oauth_app_grant_types: "{{ component.workload.bootstrap_config.frontend_oidc.grant_types }}"
+    zitadel_oauth_app_role_assertions: "{{ component.workload.bootstrap_config.frontend_oidc.role_assertions }}"
+    zitadel_oauth_app_cutover_marker_filename: oidc-web-cutover
+
+- name: Reconcile frontend project roles
+  ansible.builtin.include_role:
+    name: zitadel_project_roles
+  vars:
+    zitadel_project_roles_admin_pat: "{{ zitadel_oauth_app_pat }}"
+    zitadel_project_roles_project_id: "{{ zitadel_oauth_app_out_project_id }}"
+    zitadel_project_roles_definitions: "{{ component.workload.bootstrap_config.frontend_oidc.project_roles }}"
+  when: component.workload.bootstrap_config.frontend_oidc.project_roles | length > 0

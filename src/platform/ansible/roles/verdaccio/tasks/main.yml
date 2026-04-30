@@ -1,6 +1,6 @@
 ---
 # Sealed Verdaccio npm mirror for worker nodes.
-# Installed via npm using Node.js from deploy_profile role into a writable
+# Installed via npm using Node.js from substrate_profile role into a writable
 # prefix under /opt/verself (Verdaccio has no static binary).
 
 - name: Create Verdaccio system user

@@ -32,7 +32,7 @@
 // The standard verselfotel.Init plumbing inherits OTLP endpoint and
 // OTEL_RESOURCE_ATTRIBUTES from the calling shell, so spans land in
 // default.otel_traces tagged with verself.deploy_run_key when invoked
-// inside the deploy_profile play.
+// inside a deploy command.
 //
 // Usage:
 //

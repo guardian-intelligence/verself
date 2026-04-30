@@ -39,7 +39,7 @@ type Runtime struct {
 }
 
 type Process struct {
-	Systemd string `json:"systemd"`
+	Unit string `json:"unit"`
 
 	User string `json:"user"`
 
@@ -558,6 +558,26 @@ type ZitadelProjectRole struct {
 
 type ZitadelAuth map[string]any
 
+type FrontendOIDCBootstrap struct {
+	AppName string `json:"app_name"`
+
+	ProjectName string `json:"project_name"`
+
+	RedirectURIs []string `json:"redirect_uris"`
+
+	PostLogoutRedirectURIs []string `json:"post_logout_redirect_uris"`
+
+	CredstoreDir string `json:"credstore_dir"`
+
+	CredstoreGroup string `json:"credstore_group"`
+
+	RoleAssertions bool `json:"role_assertions"`
+
+	GrantTypes []any/* CUE closed list */ `json:"grant_types"`
+
+	ProjectRoles []any/* CUE closed list */ `json:"project_roles"`
+}
+
 type SystemdCredential struct {
 	Name string `json:"name"`
 
@@ -606,7 +626,7 @@ type SystemdHardening struct {
 
 type ReadinessProbe map[string]any
 
-type SystemdUnit struct {
+type WorkloadUnit struct {
 	Name string `json:"name"`
 
 	Description string `json:"description"`
@@ -620,8 +640,6 @@ type SystemdUnit struct {
 	Home string `json:"home"`
 
 	CreateHome bool `json:"create_home"`
-
-	Exec string `json:"exec"`
 
 	Type string `json:"type"`
 
@@ -668,6 +686,8 @@ type SandboxGithubAppBootstrap struct {
 
 type ComponentBootstrapConfig struct {
 	SandboxGithubApp SandboxGithubAppBootstrap `json:"sandbox_github_app,omitempty"`
+
+	FrontendOIDC FrontendOIDCBootstrap `json:"frontend_oidc,omitempty"`
 }
 
 type BootstrapHookName string
@@ -682,11 +702,7 @@ type ComponentBootstrapHook struct {
 	Reason string `json:"reason"`
 }
 
-type ComponentConverge struct {
-	Enabled bool `json:"enabled"`
-
-	DeployTag string `json:"deploy_tag"`
-
+type ComponentWorkload struct {
 	Order int64 `json:"order"`
 
 	Directories []any/* CUE closed list */ `json:"directories"`
@@ -697,14 +713,9 @@ type ComponentConverge struct {
 
 	Auth map[string]any `json:"auth"`
 
-	// units describes the runnable processes the supervisor manages.
-	// The shape is systemd-flavored today (hardening, BindReadOnlyPaths,
-	// LoadCredential are mapped 1:1 to systemd unit fields); the
-	// systemd renderer projects it to a /etc/systemd/system/<name>.service
-	// file, the nomad renderer projects it to a Nomad TaskGroup.
-	// Components may carry the same `units` block irrespective of
-	// `deployment.supervisor` — fields that don't translate (e.g.
-	// hardening on Nomad raw_exec) are ignored by the projection.
+	// units describes the runnable processes Nomad manages. The executable
+	// comes from the component or named process artifact; this block carries
+	// runtime facts, environment, endpoint ownership, and substrate needs.
 	Units []any/* CUE closed list */ `json:"units"`
 
 	Bootstrap []any/* CUE closed list */ `json:"bootstrap"`
@@ -713,10 +724,8 @@ type ComponentConverge struct {
 }
 
 // #Deployment is the supervisor-shape contract for a component's runtime.
-// supervisor selects between the legacy systemd path (default) and Nomad.
 // The update / drain / resources knobs map directly to Nomad's JSON job
-// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs); they
-// are inert when supervisor == "systemd".
+// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs).
 //
 // Single rolling-restart is the only mode here. Blue/green and canary
 // arrive as per-component CUE additions on top of Nomad's update {}
@@ -782,7 +791,7 @@ type Component struct {
 
 	Electric ElectricSync `json:"electric,omitempty"`
 
-	Converge map[string]any `json:"converge"`
+	Workload map[string]any `json:"workload"`
 
 	Deployment map[string]any `json:"deployment"`
 }

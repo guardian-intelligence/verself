@@ -1,5 +1,5 @@
 # Controller-side OTLP agent — owns the durable queue between every
-# `aspect deploy` / verify-*-live.sh invocation and the bare-metal
+# `aspect deploy` and other controller-originated telemetry invocations and the bare-metal
 # otelcol's :4317. The wrapper script (scripts/with-otel-agent.sh)
 # exports two env vars before exec'ing otelcol-contrib:
 #

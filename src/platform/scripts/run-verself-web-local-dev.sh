@@ -12,10 +12,10 @@ if [[ "${1:-}" == "--print-env" ]]; then
 fi
 
 state_file="${VERSELF_WEB_DEV_STATE_FILE:-/tmp/verself-web-dev.env}"
-remote_env_path="${VERSELF_WEB_DEV_REMOTE_ENV_PATH:-/etc/verself-web/env}"
 control_dir="$(mktemp -d)"
 control_socket="${control_dir}/ssh-control"
 state_file_tmp="$(mktemp "${state_file}.XXXXXX")"
+job_spec_path="${VERIFICATION_CACHE_DIR}/jobs/verself-web.nomad.json"
 
 cleanup() {
   set +e
@@ -73,23 +73,36 @@ wait_for_local_tcp_port() {
   return 1
 }
 
-read_remote_env_value() {
+job_env_value() {
   local key="$1"
-  verification_remote_sudo_cat "${remote_env_path}" | python3 -c '
-import sys
-
-target = sys.argv[1]
-for raw in sys.stdin:
-    line = raw.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-    key, value = line.split("=", 1)
-    if key == target:
-        print(value)
-        raise SystemExit(0)
-raise SystemExit(1)
-' "${key}"
+  jq -er --arg key "${key}" '
+.Job.TaskGroups[]
+| .Tasks[]
+| select(.Name == "verself-web")
+| .Env[$key]
+' "${job_spec_path}"
 }
+
+if [[ ! -f "${job_spec_path}" ]]; then
+  echo "missing rendered Nomad job spec: ${job_spec_path}" >&2
+  exit 1
+fi
+
+auth_project_id="${AUTH_PROJECT_ID:-$(job_env_value AUTH_PROJECT_ID)}"
+if [[ -z "${auth_project_id}" ]]; then
+  echo "failed to resolve AUTH_PROJECT_ID from ${job_spec_path}" >&2
+  exit 1
+fi
+identity_service_auth_audience="${IDENTITY_SERVICE_AUTH_AUDIENCE:-$(job_env_value IDENTITY_SERVICE_AUTH_AUDIENCE)}"
+if [[ -z "${identity_service_auth_audience}" ]]; then
+  echo "failed to resolve IDENTITY_SERVICE_AUTH_AUDIENCE from ${job_spec_path}" >&2
+  exit 1
+fi
+auth_database_password_file="${AUTH_DATABASE_PASSWORD_FILE:-$(job_env_value AUTH_DATABASE_PASSWORD_FILE)}"
+if [[ -z "${auth_database_password_file}" ]]; then
+  echo "failed to resolve AUTH_DATABASE_PASSWORD_FILE from ${job_spec_path}" >&2
+  exit 1
+fi
 
 fetch_dev_client_id() {
   local admin_pat="$1"
@@ -130,19 +143,8 @@ local_electric_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_ELECTRIC_PORT:-}" 
 local_otel_http_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_OTEL_HTTP_PORT:-}" 14318 24318 34318 44318 54318)"
 local_app_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_APP_PORT:-}" 4244 5244 6244 7244 8244)"
 
-auth_project_id="${AUTH_PROJECT_ID:-$(read_remote_env_value AUTH_PROJECT_ID)}"
-if [[ -z "${auth_project_id}" ]]; then
-  echo "failed to resolve AUTH_PROJECT_ID from ${remote_env_path}" >&2
-  exit 1
-fi
-identity_service_auth_audience="${IDENTITY_SERVICE_AUTH_AUDIENCE:-$(read_remote_env_value IDENTITY_SERVICE_AUTH_AUDIENCE)}"
-if [[ -z "${identity_service_auth_audience}" ]]; then
-  echo "failed to resolve IDENTITY_SERVICE_AUTH_AUDIENCE from ${remote_env_path}" >&2
-  exit 1
-fi
-
 frontend_auth_password="$(
-  verification_remote_sudo_cat /etc/credstore/frontend-auth/pg-password
+  verification_remote_sudo_cat "${auth_database_password_file}"
 )"
 admin_pat="$(
   verification_remote_sudo_cat /etc/zitadel/admin.pat
@@ -217,7 +219,7 @@ export GOVERNANCE_SERVICE_BASE_URL=${GOVERNANCE_SERVICE_BASE_URL}
 export ELECTRIC_URL=${ELECTRIC_URL}
 export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
 export OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
-export CONSOLE_DEV_LOCAL_APP_PORT=${CONSOLE_DEV_LOCAL_APP_PORT}
+export CONSOLE_DEV_LOCAL_APP_PORT=${local_app_port}
 export BASE_URL=${BASE_URL}
 export TEST_BASE_URL=${BASE_URL}
 EOF

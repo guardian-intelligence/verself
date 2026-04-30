@@ -323,6 +323,21 @@
   when: zitadel_oauth_app_persist_client_secret | bool
   no_log: true
 
+- name: Store resolved identifiers for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.copy:
+    dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ item.name }}"
+    content: "{{ item.value }}"
+    owner: "{{ zitadel_oauth_app_credstore_owner }}"
+    group: "{{ zitadel_oauth_app_credstore_group }}"
+    mode: "{{ zitadel_oauth_app_credstore_mode }}"
+  loop:
+    - {name: "oidc-app-id", value: "{{ zitadel_oauth_app_out_id }}"}
+    - {name: "oidc-client-id", value: "{{ zitadel_oauth_app_out_client_id }}"}
+    - {name: "oidc-project-id", value: "{{ zitadel_oauth_app_out_project_id }}"}
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
 - name: Persist cutover marker for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.copy:
     dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"

@@ -169,8 +169,7 @@ This is enough to answer the practical operator questions:
 
 ## Verification
 
-`src/platform/scripts/verify-temporal-live.sh` is the Temporal deployment gate. It does three
-concrete things:
+Temporal deployment evidence should cover three concrete checks:
 
 1. Asserts the retired `temporal-proof` binary, `temporal-proof-worker`
    unit, and `verself-temporal-proof` SPIRE entry are absent.
@@ -180,10 +179,8 @@ concrete things:
 3. Asserts ClickHouse traces/logs/metrics and PostgreSQL namespace rows
    for the supported bootstrap surface.
 
-`src/platform/scripts/verify-grafana-live.sh` and `src/platform/scripts/verify-workload-identity-live.sh` are the two
-supporting gates. Together they verify that Temporal is visible from the
-standard operator surface and participates correctly in the repo's SPIFFE
-boundary model.
+ClickHouse and the standard operator surface should verify that Temporal is
+visible and participates correctly in the repo's SPIFFE boundary model.
 
 ## Current drawbacks and tailwinds
 
@@ -211,8 +208,7 @@ Drawbacks:
   `src/temporal-platform/cmd/verself-temporal-server/main.go`,
   `src/temporal-platform/internal/tlsprovider/tlsprovider.go`,
   `src/temporal-platform/internal/spiffeauth/spiffeauth.go`,
-  `src/platform/ansible/roles/temporal/*`,
-  `src/platform/scripts/verify-temporal-live.sh`.
+  `src/platform/ansible/roles/temporal/*`.
 - Temporal self-hosted security and mTLS configuration:
   <https://docs.temporal.io/self-hosted-guide/security>.
 - Temporal platform documentation: <https://docs.temporal.io/>.

@@ -251,17 +251,18 @@ secrets-service: secrets.bao.transit.verify_hmac
 
 ## Deployment
 
-The Ansible roles create:
+The box playbook creates substrate state for `secrets-service`:
 
 - `secrets_service` Unix user with SPIRE workload socket group access.
-- loopback-only public and internal listeners; the internal listener requires
-  SPIFFE mTLS.
 - loopback-only nftables rules for Zitadel, OpenBao, SPIRE JWT bundle endpoint,
   billing, governance audit, source-code-hosting-service, and OTLP egress.
 - a Zitadel project named `secrets-service` with `owner`, `admin`, and
   `member` roles.
 - per-org OpenBao KV, Transit, JWT roles, direct API policies, and SPIFFE
   workload policies.
+
+Nomad owns the service process, loopback listeners, rolling update, and
+health gating.
 
 `seed-system.yml` grants the platform and Acme seed personas matching
 secrets-service roles. `assume-persona.sh` emits
@@ -272,25 +273,18 @@ secrets-service roles. `assume-persona.sh` emits
 Completion requires live ClickHouse evidence, not only unit tests:
 
 ```bash
-aspect deploy --tags=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
+aspect deploy --site=prod
 src/platform/scripts/ansible-with-otel.sh playbooks/seed-system.yml
-src/platform/scripts/verify-secrets-live.sh
-src/platform/scripts/verify-source-code-hosting-live.sh
+aspect observe --what=service --service=secrets-service
+aspect observe --what=service --service=source-code-hosting-service
 ```
 
-`scripts/verify-secrets-live.sh` creates and deletes a secret, creates and deletes a
-variable, creates/reads/lists/rolls/revokes an opaque credential, creates and
-uses transit keys, exercises API-credential access, and asserts:
+Inspect the deploy window and assert:
 
 - `default.otel_traces` contains the expected secrets-service spans.
 - `verself.audit_events` contains the expected secrets audit sequence.
 - `verself.metering` contains settled secrets operation rows.
 - OpenBao does not contain legacy service-token bootstrap material.
-
-`scripts/verify-source-code-hosting-live.sh` creates a Git credential through
-source-code-hosting-service, pushes to `git.<domain>`, verifies the credential
-through secrets-service over SPIFFE mTLS, asserts source PostgreSQL projections,
-and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
 
 ## Invariants
 

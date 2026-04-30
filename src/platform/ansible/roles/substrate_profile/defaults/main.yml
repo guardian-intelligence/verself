@@ -1,0 +1,17 @@
+---
+# substrate_profile: install host packages and substrate binaries.
+
+# Repo root on the Ansible controller.
+substrate_profile_repo_root: "{{ playbook_dir }}/../../../.."
+
+# Bazelisk command on the Ansible controller.
+substrate_profile_bazelisk: bazelisk
+
+# Staging directory for Bazel-built deployment archives on the remote host.
+substrate_profile_staging_dir: /opt/verself/staging
+
+# PostgreSQL major version (determines apt package and binary paths)
+substrate_profile_postgresql_version: "16"
+
+# First-party substrate and bootstrap helper binaries packaged by Bazel.
+substrate_profile_go_tools_label: //tools/substrate:substrate_go_tools

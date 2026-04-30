@@ -30,22 +30,15 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		if err != nil {
 			return err
 		}
-		converge, ok := component.Value["converge"].(map[string]any)
+		workload, ok := component.Value["workload"].(map[string]any)
 		if !ok {
-			converge = map[string]any{}
+			workload = map[string]any{}
 		}
-		deployTag, err := projection.OptionalString(converge, component.Name+".converge", "deploy_tag")
+		order, err := optionalInt(workload, component.Name+".workload", "order")
 		if err != nil {
 			return err
 		}
-		if deployTag == "" {
-			deployTag = component.Name
-		}
-		order, err := optionalInt(converge, component.Name+".converge", "order")
-		if err != nil {
-			return err
-		}
-		convergeProjection, err := componentConvergeProjection(component.Name, converge, deployTag, order)
+		workloadProjection, err := componentWorkloadProjection(component.Name, workload, order)
 		if err != nil {
 			return err
 		}
@@ -61,11 +54,10 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		item := map[string]any{
 			"name":              component.Name,
 			"kind":              kind,
-			"deploy_tag":        deployTag,
 			"order":             order,
 			"postgres":          postgres,
 			"identities":        mapValue(component.Value, "identities"),
-			"converge":          convergeProjection,
+			"workload":          workloadProjection,
 			"deployment":        deploymentProjection(mapValue(component.Value, "deployment")),
 			"nftables_rulesets": componentRulesets,
 		}
@@ -87,10 +79,10 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 }
 
 // deploymentProjection materialises the supervisor knob for downstream
-// Ansible. Only `supervisor` flows to converge_component.yml; the rest of
-// the #Deployment knobs land in the rendered Nomad job spec, not in the
-// per-component fact bundle. The default ("systemd") is what every
-// component without an explicit opt-in receives.
+// substrate configuration. Only `supervisor` flows to the Ansible component
+// fact bundle; the rest of the #Deployment knobs land in the rendered Nomad
+// job spec. The default ("systemd") is what every component without an
+// explicit opt-in receives.
 func deploymentProjection(deployment map[string]any) map[string]any {
 	supervisor := stringValue(deployment, "supervisor")
 	if supervisor == "" {
@@ -106,29 +98,27 @@ func optionalInt(parent map[string]any, path, key string) (int64, error) {
 	return projection.Int(parent, path, key)
 }
 
-func componentConvergeProjection(name string, converge map[string]any, deployTag string, order int64) (map[string]any, error) {
+func componentWorkloadProjection(name string, workload map[string]any, order int64) (map[string]any, error) {
 	out := map[string]any{
-		"enabled":          boolValue(converge, "enabled"),
-		"deploy_tag":       deployTag,
 		"order":            order,
-		"directories":      sliceValue(converge, "directories"),
-		"secret_refs":      sliceValue(converge, "secret_refs"),
-		"auth":             authValue(converge),
-		"bootstrap":        sliceValue(converge, "bootstrap"),
-		"bootstrap_config": mapValue(converge, "bootstrap_config"),
+		"directories":      sliceValue(workload, "directories"),
+		"secret_refs":      sliceValue(workload, "secret_refs"),
+		"auth":             authValue(workload),
+		"bootstrap":        sliceValue(workload, "bootstrap"),
+		"bootstrap_config": mapValue(workload, "bootstrap_config"),
 		"units":            []map[string]any{},
 	}
-	if clickhouse, ok := converge["clickhouse"]; ok {
+	if clickhouse, ok := workload["clickhouse"]; ok {
 		out["clickhouse"] = clickhouse
 	}
 
 	// Non-service components (resources, gateways) don't carry a units
 	// list. Treat missing as empty so the projection stays uniform
 	// and downstream consumers can blanket-iterate `topology_components`.
-	if _, has := converge["units"]; !has {
+	if _, has := workload["units"]; !has {
 		return out, nil
 	}
-	rawUnits, err := projection.Slice(converge, name+".converge", "units")
+	rawUnits, err := projection.Slice(workload, name+".workload", "units")
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +126,7 @@ func componentConvergeProjection(name string, converge map[string]any, deployTag
 	for i, raw := range rawUnits {
 		unit, ok := raw.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s.converge.units[%d]: expected map, got %T", name, i, raw)
+			return nil, fmt.Errorf("%s.workload.units[%d]: expected map, got %T", name, i, raw)
 		}
 		units = append(units, unitProjection(unit))
 	}
@@ -147,7 +137,6 @@ func componentConvergeProjection(name string, converge map[string]any, deployTag
 func unitProjection(unit map[string]any) map[string]any {
 	out := map[string]any{
 		"name":                 unit["name"],
-		"exec":                 unit["exec"],
 		"user":                 unit["user"],
 		"group":                unit["group"],
 		"home":                 stringValue(unit, "home"),

@@ -1,7 +1,7 @@
-"""aspect dev verself-web|sandbox-inner|sandbox-middle — local-loop entry points.
+"""aspect dev verself-web — local frontend loop.
 
-Each subtask shells out to the existing run-*-local-dev.sh / sandbox-*.sh script
-so the env discovery and tunnel setup remain in one place.
+The task shells out to run-verself-web-local-dev.sh so env discovery and tunnel
+setup remain in one place.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
@@ -22,28 +22,6 @@ def _verself_web_impl(ctx):
         label = "run-verself-web-local-dev.sh",
     )
 
-def _sandbox_inner_impl(ctx):
-    if inventory_check(ctx) != 0:
-        return 1
-    return checked_spawn(
-        ctx,
-        ws_path(ctx, _PLATFORM, "scripts/sandbox-inner.sh"),
-        [],
-        cwd = ws_path(ctx, _PLATFORM),
-        label = "sandbox-inner.sh",
-    )
-
-def _sandbox_middle_impl(ctx):
-    if inventory_check(ctx) != 0:
-        return 1
-    return checked_spawn(
-        ctx,
-        ws_path(ctx, _PLATFORM, "scripts/sandbox-middle.sh"),
-        [],
-        cwd = ws_path(ctx, _PLATFORM),
-        label = "sandbox-middle.sh",
-    )
-
 verself_web = task(
     implementation = _verself_web_impl,
     name = "verself-web",
@@ -52,18 +30,4 @@ verself_web = task(
     args = {
         "print_env": args.boolean(default = False, description = "Print resolved env and exit before starting HMR."),
     },
-)
-
-sandbox_inner = task(
-    implementation = _sandbox_inner_impl,
-    name = "sandbox-inner",
-    group = ["dev"],
-    summary = "Inner loop: default starts local HMR; SANDBOX_INNER_MODE=verify for local smoke evidence.",
-)
-
-sandbox_middle = task(
-    implementation = _sandbox_middle_impl,
-    name = "sandbox-middle",
-    group = ["dev"],
-    summary = "Middle loop: default deploys UI and runs admin smoke. See SANDBOX_DEPLOY_TARGET / SANDBOX_VERIFY_TARGET / SANDBOX_SEED_VERIFY env vars.",
 )

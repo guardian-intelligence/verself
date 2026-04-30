@@ -3,8 +3,8 @@
 A Go tool that compiles the CUE topology in this module into the
 artefacts the rest of the platform consumes.
 
-This is the renderer side of a deliberate split: the CUE *is* the program;
-this tool is just how Go projects that program onto disk.
+This is the renderer side of a deliberate split: CUE holds declarative
+platform facts; Go and shell code project those facts onto deployable files.
 
 ## Outputs
 
@@ -23,8 +23,8 @@ with `--output-dir=.cache/render/<site>/`, producing:
   snippets driven by CUE `topology.nftables.rulesets`.
 - `share/rendered/etc/nftables.conf`, `share/rendered/etc/systemd/system/verself-firewall.target`
   — host firewall final files copied directly by the nftables role.
-- `handlers/component-systemd.yml` — generated handler fragment imported
-  statically by `playbooks/site.yml`.
+- `jobs/<component>.nomad.json`, `jobs/index.json` — Nomad job specs and
+  the controller-side submit/build enumeration for application components.
 
 Bazel-input artefacts (`binaries/{server,dev}_tools.MODULE.bazel`,
 `binaries/{server,dev}_tools.bzl`, `vm-orchestrator/guest-images/guest_images.MODULE.bazel`)
@@ -91,10 +91,9 @@ via `write_source_files`.
    `*.bzl`, or other file Bazel evaluates at load time), add a genrule
    in `src/cue-renderer/BUILD.bazel` and register it in `_RENDERED_FILES`
    under `write_source_files(name = "freshness")`. Per-component
-   nftables fragments and systemd unit files are NOT tracked through
-   write_source_files — they flow through `aspect render --site=<site>`
-   into `.cache/render/<site>/` along with the rest of the rendered
-   tree.
+   nftables fragments and Nomad job specs are not tracked through
+   write_source_files; they flow through `aspect render --site=<site>`
+   into `.cache/render/<site>/` along with the rest of the deploy cache.
 
 ## Boundaries that intentionally stay outside CUE
 

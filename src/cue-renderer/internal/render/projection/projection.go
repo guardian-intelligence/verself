@@ -2,7 +2,6 @@ package projection
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -228,103 +227,6 @@ func WorkloadIdentities(loaded load.Loaded) ([]map[string]any, error) {
 	return out, nil
 }
 
-func Processes(loaded load.Loaded) ([]map[string]any, error) {
-	components, err := Components(loaded)
-	if err != nil {
-		return nil, err
-	}
-	var rendered []map[string]any
-	for _, component := range components {
-		runtime, err := Map(component.Value, component.Name, "runtime")
-		if err != nil {
-			return nil, err
-		}
-		systemd, err := String(runtime, component.Name+".runtime", "systemd")
-		if err != nil {
-			return nil, err
-		}
-		endpoints, err := NestedFields(component, "endpoints")
-		if err != nil {
-			return nil, err
-		}
-		endpointNames := make([]string, 0, len(endpoints))
-		for _, endpoint := range endpoints {
-			endpointNames = append(endpointNames, endpoint.Name)
-		}
-		identities, err := NestedFields(component, "identities")
-		if err != nil {
-			return nil, err
-		}
-		identityNames := make([]string, 0, len(identities))
-		for _, identity := range identities {
-			identityNames = append(identityNames, identity.Name)
-		}
-		kind, err := String(component.Value, component.Name, "kind")
-		if err != nil {
-			return nil, err
-		}
-		// supervisor is the same per-component for all of its processes;
-		// readers (deploy_profile/build_go.yml's restart loop) use it to
-		// skip systemd-restart bookkeeping for nomad-supervised tasks.
-		supervisor := "systemd"
-		if dep, ok := component.Value["deployment"].(map[string]any); ok {
-			if s, ok := dep["supervisor"].(string); ok && s != "" {
-				supervisor = s
-			}
-		}
-		rendered = append(rendered, map[string]any{
-			"key":                  component.Name + ".primary",
-			"component":            component.Name,
-			"name":                 "primary",
-			"supervisor":           supervisor,
-			"systemd":              systemd,
-			"user":                 runtime["user"],
-			"group":                runtime["group"],
-			"artifact":             component.Value["artifact"],
-			"privileged":           kind == "privileged_daemon",
-			"endpoints":            endpointNames,
-			"identities":           identityNames,
-			"after":                []string{},
-			"wants":                []string{},
-			"environment":          map[string]string{},
-			"supplementary_groups": []string{},
-			"requires_spiffe_sock": len(identityNames) > 0,
-			"restart_units":        []string{systemd},
-		})
-
-		processes, err := NestedFields(component, "processes")
-		if err != nil {
-			return nil, err
-		}
-		for _, process := range processes {
-			item := map[string]any{
-				"key":                  component.Name + "." + process.Name,
-				"component":            component.Name,
-				"name":                 process.Name,
-				"supervisor":           supervisor,
-				"systemd":              process.Value["systemd"],
-				"user":                 process.Value["user"],
-				"group":                process.Value["group"],
-				"artifact":             process.Value["artifact"],
-				"privileged":           process.Value["privileged"],
-				"endpoints":            process.Value["endpoints"],
-				"identities":           process.Value["identities"],
-				"after":                process.Value["after"],
-				"wants":                process.Value["wants"],
-				"environment":          process.Value["environment"],
-				"supplementary_groups": process.Value["supplementary_groups"],
-				"requires_spiffe_sock": process.Value["requires_spiffe_sock"],
-				"restart_units":        process.Value["restart_units"],
-			}
-			if readinessEndpoint, ok := process.Value["readiness_endpoint"]; ok {
-				item["readiness_endpoint"] = readinessEndpoint
-			}
-			rendered = append(rendered, item)
-		}
-	}
-	return rendered, nil
-}
-
 func ElectricComponents(loaded load.Loaded) ([]ElectricComponent, error) {
 	components, err := Components(loaded)
 	if err != nil {
@@ -417,75 +319,6 @@ func PostgresRoleConnectionLimits(loaded load.Loaded) (map[string]any, error) {
 		limits[role] = limit
 	}
 	return limits, nil
-}
-
-func DeployArtifacts(loaded load.Loaded) ([]map[string]any, error) {
-	components, err := Components(loaded)
-	if err != nil {
-		return nil, err
-	}
-	var rendered []map[string]any
-	byOutput := map[string]map[string]any{}
-	appendArtifact := func(componentName, source, name string, artifact map[string]any) error {
-		kind, err := String(artifact, componentName+"."+source+"."+name+".artifact", "kind")
-		if err != nil {
-			return err
-		}
-		if kind == "none" {
-			return nil
-		}
-		output, err := String(artifact, componentName+"."+source+"."+name+".artifact", "output")
-		if err != nil {
-			return err
-		}
-		item := map[string]any{
-			"component": componentName,
-			"source":    source,
-			"name":      name,
-			"artifact":  artifact,
-		}
-		if existing, ok := byOutput[output]; ok {
-			if !reflect.DeepEqual(existing["artifact"], artifact) {
-				return fmt.Errorf("deploy artifact output %s has conflicting definitions: %s.%s.%s and %s.%s.%s", output, existing["component"], existing["source"], existing["name"], componentName, source, name)
-			}
-			return nil
-		}
-		byOutput[output] = item
-		rendered = append(rendered, item)
-		return nil
-	}
-	for _, component := range components {
-		artifact, err := Map(component.Value, component.Name, "artifact")
-		if err != nil {
-			return nil, err
-		}
-		if err := appendArtifact(component.Name, "component", "primary", artifact); err != nil {
-			return nil, err
-		}
-		tools, err := NestedFields(component, "tools")
-		if err != nil {
-			return nil, err
-		}
-		for _, tool := range tools {
-			if err := appendArtifact(component.Name, "tool", tool.Name, tool.Value); err != nil {
-				return nil, err
-			}
-		}
-		processes, err := NestedFields(component, "processes")
-		if err != nil {
-			return nil, err
-		}
-		for _, process := range processes {
-			artifact, err := Map(process.Value, component.Name+".processes."+process.Name, "artifact")
-			if err != nil {
-				return nil, err
-			}
-			if err := appendArtifact(component.Name, "process", process.Name, artifact); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return rendered, nil
 }
 
 func CloneMap(in map[string]any) map[string]any {

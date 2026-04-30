@@ -136,22 +136,40 @@ def _hooks_install_impl(ctx):
         .spawn().wait())
     return checked_spawn(ctx, "pre-commit", ["install"], label = "pre-commit install")
 
+def _nomad_apps(ctx, site):
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/nomad-deploy-all.sh"),
+        ["--site=" + site],
+        cwd = ws_path(ctx),
+        label = "nomad-deploy-all --site=" + site,
+    )
+
 def _reset_identity_impl(ctx):
-    return _ansible_remote(ctx, "playbooks/identity-reset.yml")
+    rc = _ansible_remote(ctx, "playbooks/identity-reset.yml")
+    if rc != 0:
+        return rc
+    return _nomad_apps(ctx, DEFAULT_SITE)
 
 def _reset_billing_impl(ctx):
-    return _ansible_remote(ctx, "playbooks/billing-reset.yml")
+    rc = _ansible_remote(ctx, "playbooks/billing-reset.yml")
+    if rc != 0:
+        return rc
+    return _nomad_apps(ctx, DEFAULT_SITE)
 
 def _reset_verification_impl(ctx):
     rc = _ansible_remote(ctx, "playbooks/verification-reset.yml")
     if rc != 0:
         return rc
-    return _ansible_remote(
+    rc = _ansible_remote(
         ctx,
-        "playbooks/site.yml",
+        "playbooks/box.yml",
         "-e", "temporal_force_schema_reset=true",
         "-e", "clickhouse_force_schema_reset=true",
     )
+    if rc != 0:
+        return rc
+    return _nomad_apps(ctx, DEFAULT_SITE)
 
 setup_dev = task(
     implementation = _setup_dev_impl,

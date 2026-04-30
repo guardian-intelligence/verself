@@ -1,13 +1,9 @@
 // Package serviceenv projects a component + unit pair into the
-// environment-variable map every supervisor (systemd, Nomad) injects into
-// the running service. The wrapping (systemd Environment= or Nomad task
-// Env) differs; the values are identical because they come from the same
-// CUE inputs.
+// environment-variable map that Nomad injects into the running service.
 //
 // Authoring contract: services declare their env in
-// `convergence.cue.<service>.converge.units[*]`. That block is the
-// source of truth even for nomad-supervised components — the unit
-// shape is the cross-supervisor contract.
+// `service_facts.cue.<service>.workload.units[*]`. That block is the
+// source of truth for Nomad-supervised components.
 package serviceenv
 
 import (
@@ -40,7 +36,7 @@ func Unit(component projection.NamedMap, unit map[string]any) (map[string]string
 	for key, value := range mustMap(unit, "environment") {
 		stringValue, ok := value.(string)
 		if !ok {
-			return nil, fmt.Errorf("%s.converge.units.%s.environment.%s: expected string, got %T", component.Name, mustString(unit, "name"), key, value)
+			return nil, fmt.Errorf("%s.workload.units.%s.environment.%s: expected string, got %T", component.Name, mustString(unit, "name"), key, value)
 		}
 		environment[key] = stringValue
 	}
@@ -57,6 +53,10 @@ func derivedServiceEnvironment(component projection.NamedMap, unit map[string]an
 	environment := map[string]string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}",
 		"OTEL_SERVICE_NAME":           unitName,
+	}
+	if supervisor(component) == "nomad" {
+		environment["VERSELF_SUPERVISOR"] = "nomad"
+		environment["OTEL_RESOURCE_ATTRIBUTES"] = "verself.supervisor=nomad"
 	}
 	if _, ok := endpoints["public_http"]; ok {
 		environment["VERSELF_LISTEN_ADDR"] = topologyEndpointAddress(component.Name, "public_http")
@@ -92,43 +92,47 @@ func derivedServiceEnvironment(component projection.NamedMap, unit map[string]an
 			return nil, err
 		}
 	}
-	if UnitHasCredential(unit, "clickhouse-ca-cert") {
-		converge, err := projection.Map(component.Value, component.Name, "converge")
+	workload, err := projection.Map(component.Value, component.Name, "workload")
+	if err != nil {
+		return nil, err
+	}
+	if raw, ok := workload["clickhouse"]; ok && unitHasClickHouseCredential(unit) {
+		clickhouse, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s.workload.clickhouse: expected map, got %T", component.Name, raw)
+		}
+		user, err := projection.String(clickhouse, component.Name+".workload.clickhouse", "user")
 		if err != nil {
 			return nil, err
 		}
-		if raw, ok := converge["clickhouse"]; ok {
-			clickhouse, ok := raw.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("%s.converge.clickhouse: expected map, got %T", component.Name, raw)
-			}
-			user, err := projection.String(clickhouse, component.Name+".converge.clickhouse", "user")
-			if err != nil {
-				return nil, err
-			}
-			environment["VERSELF_CLICKHOUSE_ADDRESS"] = "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-			environment["VERSELF_CLICKHOUSE_USER"] = user
-		}
+		environment["VERSELF_CLICKHOUSE_ADDRESS"] = "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
+		environment["VERSELF_CLICKHOUSE_USER"] = user
 	}
 	if len(endpoints) > 0 {
-		converge, err := projection.Map(component.Value, component.Name, "converge")
+		auth, err := projection.Map(workload, component.Name+".workload", "auth")
 		if err != nil {
 			return nil, err
 		}
-		auth, err := projection.Map(converge, component.Name+".converge", "auth")
-		if err != nil {
-			return nil, err
-		}
-		authKind, err := projection.String(auth, component.Name+".converge.auth", "kind")
+		authKind, err := projection.String(auth, component.Name+".workload.auth", "kind")
 		if err != nil {
 			return nil, err
 		}
 		if authKind != "none" {
+			audience, err := projection.String(auth, component.Name+".workload.auth", "audience")
+			if err != nil {
+				return nil, err
+			}
 			environment["VERSELF_AUTH_ISSUER_URL"] = "https://auth.{{ verself_domain }}"
-			environment["VERSELF_AUTH_AUDIENCE"] = "{{ component_auth_audience }}"
+			environment["VERSELF_AUTH_AUDIENCE"] = audience
 		}
 	}
 	return environment, nil
+}
+
+func supervisor(component projection.NamedMap) string {
+	deployment, _ := component.Value["deployment"].(map[string]any)
+	value, _ := deployment["supervisor"].(string)
+	return value
 }
 
 func appendPostgresPoolEnvironment(environment map[string]string, path string, pool map[string]any) error {
@@ -171,8 +175,8 @@ func appendPostgresPoolEnvironment(environment map[string]string, path string, p
 // ReservedPort label when a multi-process component opts into Nomad
 // supervision.
 //
-// Errors when the unit name doesn't match runtime.systemd or any
-// processes.<n>.systemd entry.
+// Errors when the unit name doesn't match the component artifact output
+// or any processes.<n>.unit entry.
 func EndpointsForUnit(component projection.NamedMap, unit map[string]any) ([]string, error) {
 	process, err := processForUnit(component, mustString(unit, "name"))
 	if err != nil {
@@ -199,18 +203,15 @@ func EndpointsForUnit(component projection.NamedMap, unit map[string]any) ([]str
 }
 
 // processForUnit returns the per-process record (primary or named worker)
-// that owns the given unit name. The primary unit is the component's
-// `runtime.systemd`; named workers come from the `processes` block.
+// that owns the given unit name. The primary unit is the component artifact
+// output; named workers come from the `processes` block.
 func processForUnit(component projection.NamedMap, unitName string) (map[string]any, error) {
-	runtime, err := projection.Map(component.Value, component.Name, "runtime")
+	artifact, err := projection.Map(component.Value, component.Name, "artifact")
 	if err != nil {
 		return nil, err
 	}
-	primarySystemd, err := projection.String(runtime, component.Name+".runtime", "systemd")
-	if err != nil {
-		return nil, err
-	}
-	if unitName == primarySystemd {
+	primaryUnit, _ := artifact["output"].(string)
+	if unitName == primaryUnit {
 		return map[string]any{"name": "primary"}, nil
 	}
 	processes, err := projection.NestedFields(component, "processes")
@@ -218,17 +219,14 @@ func processForUnit(component projection.NamedMap, unitName string) (map[string]
 		return nil, err
 	}
 	for _, process := range processes {
-		systemd, err := projection.String(process.Value, component.Name+".processes."+process.Name, "systemd")
-		if err != nil {
-			return nil, err
-		}
-		if unitName == systemd {
+		processUnit, _ := process.Value["unit"].(string)
+		if unitName == processUnit {
 			out := projection.CloneMap(process.Value)
 			out["name"] = process.Name
 			return out, nil
 		}
 	}
-	return nil, fmt.Errorf("%s.converge.units.%s: no matching runtime or process", component.Name, unitName)
+	return nil, fmt.Errorf("%s.workload.units.%s: no matching runtime or process", component.Name, unitName)
 }
 
 // endpointSet returns the labels of the endpoints this unit/process owns.
@@ -254,8 +252,7 @@ func topologyEndpointAddress(componentName, endpointName string) string {
 }
 
 // UnitHasCredential reports whether the unit's load_credentials list
-// includes a credential with the given name. Exported so the systemd
-// renderer can also reuse it for ordering hints around credstore reads.
+// includes a credential with the given name.
 func UnitHasCredential(unit map[string]any, name string) bool {
 	for _, credential := range mustMapSlice(unit, "load_credentials") {
 		if mustString(credential, "name") == name {
@@ -263,6 +260,14 @@ func UnitHasCredential(unit map[string]any, name string) bool {
 		}
 	}
 	return false
+}
+
+func unitHasClickHouseCredential(unit map[string]any) bool {
+	if UnitHasCredential(unit, "clickhouse-ca-cert") {
+		return true
+	}
+	_, ok := mustMap(unit, "environment")["VERSELF_CRED_CLICKHOUSE_CA_CERT"]
+	return ok
 }
 
 func mustMap(values map[string]any, key string) map[string]any {

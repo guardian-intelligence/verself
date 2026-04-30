@@ -1,13 +1,12 @@
 // Package nomad projects a CUE component with `deployment.supervisor:
-// "nomad"` into a JSON job spec consumable by Nomad's HTTP API and by
-// `community.general.nomad_job` (content_format=json).
+// "nomad"` into a JSON job spec consumable by Nomad's HTTP API.
 //
 // Output layout: one file per opted-in component at
 // `jobs/<component>.nomad.json`, anchored under the cache root that
 // `aspect render --site=<site>` populates.
 //
 // Spec shape: a single TaskGroup per unit declared in
-// `converge.units`. The unit block is the cross-supervisor authoring
+// `workload.units`. The unit block is the cross-supervisor authoring
 // contract (env vars, dependency wiring, readiness probes);
 // this renderer just rewrites it into Nomad JSON. raw_exec is the only
 // driver: workloads need peer-auth access to the Postgres Unix socket
@@ -34,35 +33,37 @@ import (
 )
 
 // placeholderRE matches `{{ key.path }}` substrings in serviceenv-derived
-// strings. The systemd path lets Ansible substitute these at deploy time;
-// the Nomad path resolves them at render time so the spec the box submits
-// is fully formed JSON. component_auth_audience is the lone exception —
-// it's persisted to disk by the substrate Ansible flow and resolved by
-// nomad-deploy at submit time.
+// strings. The Nomad renderer resolves topology placeholders at render time
+// so the spec the deploy wrapper submits is fully formed JSON except for
+// artifact URLs, which are derived from Bazel build outputs after render.
 var placeholderRE = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}`)
-
-// AuthAudiencePlaceholder is the sentinel the renderer leaves in the
-// Nomad spec for VERSELF_AUTH_AUDIENCE; nomad-deploy substitutes the
-// resolved Zitadel audience from /etc/verself/<component>/auth_audience.
-const AuthAudiencePlaceholder = "{{ component_auth_audience }}"
 
 type Renderer struct{}
 
 func (Renderer) Name() string { return "nomad" }
 
-// IndexEntry is one row of jobs/index.json. nomad-deploy enumerate
-// reads this file to drive its per-component build/scp/submit loop —
-// the JSON tags are part of the public contract between renderer and
-// tool, do not bump without updating cmd/nomad-deploy.
+// IndexEntry is one row of jobs/index.json. The Bazel Nomad resolver
+// reads this file to wire artifact tarball outputs into the rendered
+// specs; JSON tags are part of that renderer/rule contract.
 type IndexEntry struct {
-	Component  string `json:"component"`
-	JobID      string `json:"job_id"`
-	BazelLabel string `json:"bazel_label"`
-	Output     string `json:"output"`
+	Component  string          `json:"component"`
+	JobID      string          `json:"job_id"`
+	BazelLabel string          `json:"bazel_label"`
+	Output     string          `json:"output"`
+	Artifacts  []IndexArtifact `json:"artifacts"`
+}
+
+type IndexArtifact struct {
+	BazelLabel         string `json:"bazel_label"`
+	NomadArtifactLabel string `json:"nomad_artifact_label"`
+	Output             string `json:"output"`
 }
 
 type indexFile struct {
-	Components []IndexEntry `json:"components"`
+	ArtifactBaseURL   string       `json:"artifact_base_url"`
+	ArtifactStorePath string       `json:"artifact_store_path"`
+	NomadAddr         string       `json:"nomad_addr"`
+	Components        []IndexEntry `json:"components"`
 }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
@@ -74,7 +75,12 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err != nil {
 		return err
 	}
-	var index indexFile
+	artifactStorePath, _ := loaded.Config.AnsibleVars["nomad_artifacts_dir"].(string)
+	var index = indexFile{
+		ArtifactBaseURL:   "http://" + resolver.endpointAddrs["topology_endpoints.nomad_artifacts.endpoints.http.address"],
+		ArtifactStorePath: artifactStorePath,
+		NomadAddr:         "http://" + resolver.endpointAddrs["topology_endpoints.nomad.endpoints.http.address"],
+	}
 	for _, component := range components {
 		deployment, _ := component.Value["deployment"].(map[string]any)
 		supervisor, _ := deployment["supervisor"].(string)
@@ -94,15 +100,16 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 			return err
 		}
 
-		bazelLabel, output, err := primaryArtifact(component)
+		artifacts, err := taskArtifacts(component)
 		if err != nil {
 			return fmt.Errorf("%s: %w", component.Name, err)
 		}
 		index.Components = append(index.Components, IndexEntry{
 			Component:  component.Name,
 			JobID:      jobID(component.Name),
-			BazelLabel: bazelLabel,
-			Output:     output,
+			BazelLabel: artifacts[0].BazelLabel,
+			Output:     artifacts[0].Output,
+			Artifacts:  artifacts,
 		})
 	}
 	if len(index.Components) == 0 {
@@ -116,56 +123,125 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	return out.WriteFile("jobs/index.json", indexBody)
 }
 
-// primaryArtifact extracts the bazel_label + output for the component's
-// primary go_binary so nomad-deploy enumerate can drive build + scp
-// without re-reading the whole topology. Errors when the component
-// lacks a primary go_binary artifact — this is invariant: any
-// nomad-supervised component must declare one.
-func primaryArtifact(component projection.NamedMap) (string, string, error) {
-	artifact, _ := component.Value["artifact"].(map[string]any)
-	kind, _ := artifact["kind"].(string)
-	if kind != "go_binary" {
-		return "", "", fmt.Errorf("artifact.kind=%q: nomad supervisor requires a go_binary primary artifact", kind)
+const (
+	nodeRuntimeOutput = "nodejs-runtime"
+	nodeRuntimeLabel  = "//src/viteplus-monorepo:nodejs_runtime_nomad_artifact"
+)
+
+// taskArtifacts extracts every artifact that a rendered Nomad task may
+// execute. The first item is the primary component artifact; additional
+// items come from named processes such as sandbox-rental's recurring worker
+// and shared runtime artifacts required by node_app tasks.
+func taskArtifacts(component projection.NamedMap) ([]IndexArtifact, error) {
+	artifacts := []IndexArtifact{}
+	seen := map[string]struct{}{}
+	appendArtifact := func(artifact map[string]any) error {
+		next, err := indexArtifact(component.Name, artifact)
+		if err != nil {
+			return err
+		}
+		if _, ok := seen[next.Output]; ok {
+			return nil
+		}
+		seen[next.Output] = struct{}{}
+		artifacts = append(artifacts, next)
+		return nil
 	}
+	artifact, _ := component.Value["artifact"].(map[string]any)
+	if err := appendArtifact(artifact); err != nil {
+		return nil, err
+	}
+	if artifactKind(artifact) == "node_app" {
+		appendStaticArtifact(IndexArtifact{BazelLabel: nodeRuntimeLabel, NomadArtifactLabel: nodeRuntimeLabel, Output: nodeRuntimeOutput}, &artifacts, seen)
+	}
+	processes, err := projection.NestedFields(component, "processes")
+	if err != nil {
+		return nil, err
+	}
+	for _, process := range processes {
+		artifact, err := projection.Map(process.Value, component.Name+".processes."+process.Name, "artifact")
+		if err != nil {
+			return nil, err
+		}
+		if err := appendArtifact(artifact); err != nil {
+			return nil, err
+		}
+		if artifactKind(artifact) == "node_app" {
+			appendStaticArtifact(IndexArtifact{BazelLabel: nodeRuntimeLabel, NomadArtifactLabel: nodeRuntimeLabel, Output: nodeRuntimeOutput}, &artifacts, seen)
+		}
+	}
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("nomad supervisor requires at least one task artifact")
+	}
+	return artifacts, nil
+}
+
+func appendStaticArtifact(next IndexArtifact, artifacts *[]IndexArtifact, seen map[string]struct{}) {
+	if _, ok := seen[next.Output]; ok {
+		return
+	}
+	seen[next.Output] = struct{}{}
+	*artifacts = append(*artifacts, next)
+}
+
+func indexArtifact(componentName string, artifact map[string]any) (IndexArtifact, error) {
+	kind := artifactKind(artifact)
 	label, _ := artifact["bazel_label"].(string)
 	output, _ := artifact["output"].(string)
 	if label == "" || output == "" {
-		return "", "", fmt.Errorf("artifact: bazel_label and output required, got label=%q output=%q", label, output)
+		return IndexArtifact{}, fmt.Errorf("%s artifact: bazel_label and output required, got label=%q output=%q", componentName, label, output)
 	}
-	return label, output, nil
+	switch kind {
+	case "go_binary":
+		return IndexArtifact{BazelLabel: label, NomadArtifactLabel: nomadArtifactLabel(label, output), Output: output}, nil
+	case "node_app":
+		return IndexArtifact{BazelLabel: label, NomadArtifactLabel: label, Output: output}, nil
+	default:
+		return IndexArtifact{}, fmt.Errorf("artifact.kind=%q: nomad supervisor requires go_binary or node_app task artifacts", kind)
+	}
+}
+
+func artifactKind(artifact map[string]any) string {
+	kind, _ := artifact["kind"].(string)
+	return kind
+}
+
+func nomadArtifactLabel(binaryLabel, output string) string {
+	pkg, _, ok := strings.Cut(binaryLabel, ":")
+	if !ok {
+		return binaryLabel + "_nomad_artifact"
+	}
+	return pkg + ":" + output + "_nomad_artifact"
 }
 
 func jobPath(id string) string { return "jobs/" + id + ".nomad.json" }
 
 // jobID converts a component name (snake_case) to the Nomad-side
-// identifier (kebab-case) that lines up with the systemd unit name on
-// the existing systemd path. Keeping these aligned lets operators grep
-// either `journalctl -u <name>` or `nomad job status <name>` for the
-// same string.
+// identifier (kebab-case) operators use with `nomad job status <name>`.
 func jobID(componentName string) string {
 	return strings.ReplaceAll(componentName, "_", "-")
 }
 
 func buildJobSpec(component projection.NamedMap, deployment map[string]any, resolver *resolver) (map[string]any, error) {
-	converge, ok := component.Value["converge"].(map[string]any)
+	workload, ok := component.Value["workload"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%s.converge: missing", component.Name)
+		return nil, fmt.Errorf("%s.workload: missing", component.Name)
 	}
-	rawUnits, err := projection.Slice(converge, component.Name+".converge", "units")
+	rawUnits, err := projection.Slice(workload, component.Name+".workload", "units")
 	if err != nil {
 		return nil, err
 	}
 	if len(rawUnits) == 0 {
-		return nil, fmt.Errorf("%s.converge.units: nomad supervisor requires at least one unit", component.Name)
+		return nil, fmt.Errorf("%s.workload.units: nomad supervisor requires at least one unit", component.Name)
 	}
 
 	taskGroups := make([]map[string]any, 0, len(rawUnits))
 	for i, raw := range rawUnits {
 		unit, ok := raw.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s.converge.units[%d]: expected map, got %T", component.Name, i, raw)
+			return nil, fmt.Errorf("%s.workload.units[%d]: expected map, got %T", component.Name, i, raw)
 		}
-		group, err := buildTaskGroup(component, unit, deployment, resolver)
+		group, err := buildTaskGroup(component, unit, deployment, resolver, i == 0)
 		if err != nil {
 			return nil, err
 		}
@@ -178,29 +254,35 @@ func buildJobSpec(component projection.NamedMap, deployment map[string]any, reso
 		"Type":        "service",
 		"Datacenters": []string{"dc1"},
 		"TaskGroups":  taskGroups,
-		// Meta is filled at submit time with binary_sha256 so Nomad sees
-		// a new job version when the binary on disk changes. Keeping the
-		// key declared (empty) here means the Ansible nomad_submit task
-		// merges into an existing object rather than creating one.
+		// Meta is filled by the Bazel Nomad resolver with artifact/spec
+		// digests so Nomad sees a new job version when the deploy unit
+		// changes.
 		"Meta": map[string]any{},
 	}
 	return map[string]any{"Job": jobBody}, nil
 }
 
-func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployment map[string]any, resolver *resolver) (map[string]any, error) {
+func componentHasDatabase(component projection.NamedMap) bool {
+	postgres, _ := component.Value["postgres"].(map[string]any)
+	database, _ := postgres["database"].(string)
+	return database != ""
+}
+
+func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployment map[string]any, resolver *resolver, firstUnit bool) (map[string]any, error) {
 	unitName, _ := unit["name"].(string)
 	unitUser, _ := unit["user"].(string)
-	exec, _ := unit["exec"].(string)
-	if unitName == "" || unitUser == "" || exec == "" {
-		return nil, fmt.Errorf("%s.converge.units: name/user/exec required", component.Name)
+	if unitName == "" || unitUser == "" {
+		return nil, fmt.Errorf("%s.workload.units: name/user required", component.Name)
 	}
 	if err := checkUnitCompatibility(component.Name, unit); err != nil {
 		return nil, err
 	}
-	resolvedExec, err := resolver.resolve(exec)
+	artifact, err := artifactForUnit(component, unitName)
 	if err != nil {
-		return nil, fmt.Errorf("%s.exec: %w", component.Name, err)
+		return nil, err
 	}
+	output, _ := artifact["output"].(string)
+	kind := artifactKind(artifact)
 
 	env, err := serviceenv.Unit(component, unit)
 	if err != nil {
@@ -249,8 +331,9 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		"Driver": "raw_exec",
 		"User":   unitUser,
 		"Config": map[string]any{
-			"command": resolvedExec,
+			"command": "local/bin/" + output,
 		},
+		"Artifacts":   artifactStanzas(kind, output),
 		"Env":         envOut,
 		"Resources":   resources,
 		"KillSignal":  killSignal,
@@ -264,10 +347,43 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		},
 	}
 
+	tasks := []map[string]any{}
+	if firstUnit && componentHasDatabase(component) {
+		migrationCommand, migrationArgs, err := migrationCommand(kind, output)
+		if err != nil {
+			return nil, err
+		}
+		migrationEnv := map[string]string{}
+		for k, v := range envOut {
+			migrationEnv[k] = v
+		}
+		migrationEnv["OTEL_SERVICE_NAME"] = unitName + "-migration"
+		tasks = append(tasks, map[string]any{
+			"Name":   unitName + "-migrate",
+			"Driver": "raw_exec",
+			"User":   unitUser,
+			"Lifecycle": map[string]any{
+				"Hook":    "prestart",
+				"Sidecar": false,
+			},
+			"Config": map[string]any{
+				"command": migrationCommand,
+				"args":    migrationArgs,
+			},
+			"Artifacts": artifactStanzas(kind, output),
+			"Env":       migrationEnv,
+			"Resources": map[string]any{
+				"CPU":      int64(100),
+				"MemoryMB": int64(128),
+			},
+		})
+	}
+	tasks = append(tasks, task)
+
 	group := map[string]any{
 		"Name":   unitName,
 		"Count":  count,
-		"Tasks":  []map[string]any{task},
+		"Tasks":  tasks,
 		"Update": updateBlock,
 	}
 	if len(reservedPorts) > 0 {
@@ -282,6 +398,66 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		}
 	}
 	return group, nil
+}
+
+func migrationCommand(kind, output string) (string, []string, error) {
+	switch kind {
+	case "go_binary":
+		return "local/bin/" + output, []string{"migrate", "up"}, nil
+	case "node_app":
+		return "local/bin/" + output + "-migrate", []string{}, nil
+	default:
+		return "", nil, fmt.Errorf("%s components with PostgreSQL need an explicit Nomad migration command", kind)
+	}
+}
+
+func artifactForUnit(component projection.NamedMap, unitName string) (map[string]any, error) {
+	artifact, err := projection.Map(component.Value, component.Name, "artifact")
+	if err != nil {
+		return nil, err
+	}
+	primaryOutput, _ := artifact["output"].(string)
+	if primaryOutput == "" {
+		return nil, fmt.Errorf("%s.artifact.output: missing", component.Name)
+	}
+	if unitName == primaryOutput {
+		return artifact, nil
+	}
+	processes, err := projection.NestedFields(component, "processes")
+	if err != nil {
+		return nil, err
+	}
+	for _, process := range processes {
+		processUnit, _ := process.Value["unit"].(string)
+		if unitName != processUnit {
+			continue
+		}
+		artifact, err := projection.Map(process.Value, component.Name+".processes."+process.Name, "artifact")
+		if err != nil {
+			return nil, err
+		}
+		output, _ := artifact["output"].(string)
+		if output == "" {
+			return nil, fmt.Errorf("%s.processes.%s.artifact.output: missing", component.Name, process.Name)
+		}
+		return artifact, nil
+	}
+	return nil, fmt.Errorf("%s.workload.units.%s: no component or process artifact matches unit", component.Name, unitName)
+}
+
+func artifactStanzas(kind, output string) []map[string]any {
+	stanzas := []map[string]any{artifactStanza(output)}
+	if kind == "node_app" {
+		stanzas = append(stanzas, artifactStanza(nodeRuntimeOutput))
+	}
+	return stanzas
+}
+
+func artifactStanza(output string) map[string]any {
+	return map[string]any{
+		"GetterSource": "verself-artifact://" + output,
+		"RelativeDest": "local",
+	}
 }
 
 func reservedPortsWithHostNetwork(reserved []map[string]any, hostNetwork string) []map[string]any {
@@ -299,7 +475,7 @@ func reservedPortsWithHostNetwork(reserved []map[string]any, hostNetwork string)
 
 // checkUnitCompatibility refuses to render a Nomad TaskGroup for a unit
 // that uses systemd-only knobs we haven't translated yet. The two
-// load-bearing knobs from convergence.cue are load_credentials (which
+// load-bearing knobs from service_facts.cue are load_credentials (which
 // systemd materialises as a tmpfs at $CREDENTIALS_DIRECTORY/<name>)
 // and bind_read_only_paths (per-unit mount-namespace overlays). Both
 // have raw_exec equivalents, but neither is automatic — fail loud at
@@ -307,42 +483,34 @@ func reservedPortsWithHostNetwork(reserved []map[string]any, hostNetwork string)
 //
 // Translation guidance:
 //
-//   load_credentials: [{name: "x", path: "/host/path"}]
-//     systemd: LoadCredential=x:/host/path → $CREDENTIALS_DIRECTORY/x
-//     nomad:   the alloc runs as the topology user and inherits read
-//              access to /etc/credstore/<id>/ (group-readable). Set
-//              an explicit env var (VERSELF_CRED_X=/host/path) and
-//              update the service binary to read from that env var
-//              instead of $CREDENTIALS_DIRECTORY/x. The
-//              defense-in-depth gap (no per-alloc tmpfs) is
-//              accepted: same uid as systemd path, same on-disk
-//              perms, same blast radius if the workload is breached.
+//	load_credentials: [{name: "x", path: "/host/path"}]
+//	  systemd: LoadCredential=x:/host/path → $CREDENTIALS_DIRECTORY/x
+//	  nomad:   set an explicit env var
+//	           VERSELF_CRED_<NAME>=/etc/credstore/<job>/<name>. If the
+//	           source path is already under that service's credstore,
+//	           reuse it directly. Otherwise add a secret_refs entry with
+//	           source.kind="remote_src" so Ansible copies the source into
+//	           the service-owned credstore path before nomad-deploy
+//	           submits the job. envconfig reads the explicit path in both
+//	           supervisor worlds.
 //
-//   bind_read_only_paths: ["/etc/verself/foo:/etc/foo"]
-//     systemd: per-unit mount namespace overlay
-//     nomad:   raw_exec has no mount namespace. Two paths:
-//              (a) merge the host-side content into the host's
-//                  /etc/<foo> directly (what we did for the
-//                  auth-discovery-hosts → /etc/hosts case via the
-//                  base role). Use this when content is identical
-//                  across services.
-//              (b) emit a Nomad `template { source = "/host/path"
-//                  destination = "secrets/foo" }` block. Note
-//                  Nomad's template SourcePath is task-local;
-//                  use the `data` form with EmbeddedTmpl that
-//                  reads from a host-volume mount instead.
+//	bind_read_only_paths: ["/etc/verself/foo:/etc/foo"]
+//	  systemd: per-unit mount namespace overlay
+//	  nomad:   raw_exec has no mount namespace. Two paths:
+//	           (a) merge the host-side content into the host's
+//	               /etc/<foo> directly (what we did for the
+//	               auth-discovery-hosts → /etc/hosts case via the
+//	               base role). Use this when content is identical
+//	               across services.
+//	           (b) emit a Nomad `template { source = "/host/path"
+//	               destination = "secrets/foo" }` block. Note
+//	               Nomad's template SourcePath is task-local;
+//	               use the `data` form with EmbeddedTmpl that
+//	               reads from a host-volume mount instead.
 func checkUnitCompatibility(componentName string, unit map[string]any) error {
 	if creds, _ := unit["load_credentials"].([]any); len(creds) > 0 {
-		names := make([]string, 0, len(creds))
-		for _, c := range creds {
-			if cm, ok := c.(map[string]any); ok {
-				if n, _ := cm["name"].(string); n != "" {
-					names = append(names, n)
-				}
-			}
-		}
-		return fmt.Errorf("%s.converge.units.%s.load_credentials: nomad supervisor doesn't auto-translate %v; see internal/render/nomad/nomad.go:checkUnitCompatibility for migration guidance",
-			componentName, mustUnitName(unit), names)
+		return fmt.Errorf("%s.workload.units.%s.load_credentials: nomad supervisor needs explicit credential translation:\n%s",
+			componentName, mustUnitName(unit), credentialTranslationRecipes(componentName, unit, creds))
 	}
 	if paths, _ := unit["bind_read_only_paths"].([]any); len(paths) > 0 {
 		strs := make([]string, 0, len(paths))
@@ -351,10 +519,66 @@ func checkUnitCompatibility(componentName string, unit map[string]any) error {
 				strs = append(strs, s)
 			}
 		}
-		return fmt.Errorf("%s.converge.units.%s.bind_read_only_paths: nomad supervisor doesn't auto-translate %v; see internal/render/nomad/nomad.go:checkUnitCompatibility for migration guidance",
+		return fmt.Errorf("%s.workload.units.%s.bind_read_only_paths: nomad supervisor doesn't auto-translate %v; see internal/render/nomad/nomad.go:checkUnitCompatibility for migration guidance",
 			componentName, mustUnitName(unit), strs)
 	}
 	return nil
+}
+
+func credentialTranslationRecipes(componentName string, unit map[string]any, creds []any) string {
+	componentCredstore := "/etc/credstore/" + jobID(componentName)
+	group, _ := unit["group"].(string)
+	if group == "" {
+		group = componentName
+	}
+
+	var b strings.Builder
+	for _, c := range creds {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := cm["name"].(string)
+		sourcePath, _ := cm["path"].(string)
+		if name == "" || sourcePath == "" {
+			continue
+		}
+		envName := credentialPathEnvName(name)
+		ownedPrefix := componentCredstore + "/"
+		if strings.HasPrefix(sourcePath, ownedPrefix) {
+			fmt.Fprintf(&b, "- %s from %s:\n", name, sourcePath)
+			fmt.Fprintf(&b, "  remove this load_credentials entry\n")
+			fmt.Fprintf(&b, "  environment += {%s: %q}\n", envName, sourcePath)
+			continue
+		}
+		targetPath := componentCredstore + "/" + name
+		fmt.Fprintf(&b, "- %s from %s:\n", name, sourcePath)
+		fmt.Fprintf(&b, "  secret_refs += {name: %q, path: %q, owner: %q, group: %q, mode: %q, source: {kind: %q, remote_src: %q}}\n",
+			name, targetPath, "root", group, "0640", "remote_src", sourcePath)
+		fmt.Fprintf(&b, "  environment += {%s: %q}\n", envName, targetPath)
+	}
+	if b.Len() == 0 {
+		return "no named credentials found; each entry must include name and path"
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func credentialPathEnvName(name string) string {
+	var b strings.Builder
+	b.WriteString("VERSELF_CRED_")
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - ('a' - 'A'))
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func mustUnitName(unit map[string]any) string {
@@ -482,7 +706,7 @@ func buildServices(componentName, unitName string, unit map[string]any, primaryP
 				check["TLSSkipVerify"] = true
 			}
 		default:
-			return nil, fmt.Errorf("%s.converge.units.%s.readiness: unsupported probe kind %q", componentName, unitName, kind)
+			return nil, fmt.Errorf("%s.workload.units.%s.readiness: unsupported probe kind %q", componentName, unitName, kind)
 		}
 		checks = append(checks, check)
 	}
@@ -540,40 +764,34 @@ func optionalDuration(m map[string]any, key string, fallback time.Duration) (tim
 }
 
 // resolver substitutes Jinja-style `{{ key }}` references in
-// serviceenv-derived strings to literal values. The systemd renderer
-// leaves them for Ansible to template; the Nomad renderer resolves at
-// render time so the spec the bare-metal node submits is fully formed.
+// serviceenv-derived strings to literal values at render time so the spec the
+// bare-metal node submits is fully formed.
 //
 // Three known-static buckets land here:
-//   - `verself_bin`, `verself_domain`, `spire_agent_socket_path` from
-//     loaded.Config (ansible_vars + spire blocks).
+//   - string-valued ansible_vars and `spire_agent_socket_path` from
+//     loaded.Config.
 //   - `topology_endpoints.<comp>.endpoints.<ep>.{address,port}` and
 //     `topology_endpoints.<comp>.host` from the topology projection.
-//
-// `component_auth_audience` is the lone dynamic value; it stays as a
-// `{{ component_auth_audience }}` substring for nomad-deploy to swap
-// at submit time using /etc/verself/<component>/auth_audience.
 type resolver struct {
-	verselfBin            string
-	verselfDomain         string
-	spireAgentSocketPath  string
-	endpointAddrs         map[string]string // "topology_endpoints.<c>.endpoints.<e>.address"
-	endpointPorts         map[string]string
-	componentHosts        map[string]string // "topology_endpoints.<c>.host"
+	spireAgentSocketPath string
+	ansibleVars          map[string]string
+	endpointAddrs        map[string]string // "topology_endpoints.<c>.endpoints.<e>.address"
+	endpointPorts        map[string]string
+	componentHosts       map[string]string // "topology_endpoints.<c>.host"
 }
 
 func newResolver(loaded load.Loaded) (*resolver, error) {
 	r := &resolver{
 		spireAgentSocketPath: loaded.Config.Spire.AgentSocketPath,
+		ansibleVars:          map[string]string{},
 		endpointAddrs:        map[string]string{},
 		endpointPorts:        map[string]string{},
 		componentHosts:       map[string]string{},
 	}
-	if v, ok := loaded.Config.AnsibleVars["verself_bin"].(string); ok {
-		r.verselfBin = v
-	}
-	if v, ok := loaded.Config.AnsibleVars["verself_domain"].(string); ok {
-		r.verselfDomain = v
+	for key, raw := range loaded.Config.AnsibleVars {
+		if value, ok := raw.(string); ok {
+			r.ansibleVars[key] = value
+		}
 	}
 	for compName, comp := range loaded.Topology.Components {
 		host := comp.Host
@@ -592,6 +810,10 @@ func newResolver(loaded load.Loaded) (*resolver, error) {
 }
 
 func (r *resolver) resolve(in string) (string, error) {
+	return r.resolveWithStack(in, map[string]bool{})
+}
+
+func (r *resolver) resolveWithStack(in string, stack map[string]bool) (string, error) {
 	var resolveErr error
 	out := placeholderRE.ReplaceAllStringFunc(in, func(match string) string {
 		m := placeholderRE.FindStringSubmatch(match)
@@ -600,15 +822,25 @@ func (r *resolver) resolve(in string) (string, error) {
 		}
 		key := m[1]
 		switch key {
-		case "verself_bin":
-			return r.verselfBin
-		case "verself_domain":
-			return r.verselfDomain
 		case "spire_agent_socket_path":
 			return r.spireAgentSocketPath
-		case "component_auth_audience":
-			// Resolved by nomad-deploy at submit time.
-			return match
+		}
+		if v, ok := r.ansibleVars[key]; ok {
+			if stack[key] {
+				resolveErr = fmt.Errorf("nomad renderer: recursive ansible var %q in %q", key, in)
+				return match
+			}
+			nextStack := map[string]bool{}
+			for k, value := range stack {
+				nextStack[k] = value
+			}
+			nextStack[key] = true
+			resolved, err := r.resolveWithStack(v, nextStack)
+			if err != nil {
+				resolveErr = err
+				return match
+			}
+			return resolved
 		}
 		if v, ok := r.endpointAddrs[key]; ok {
 			return v
@@ -626,12 +858,9 @@ func (r *resolver) resolve(in string) (string, error) {
 		return "", resolveErr
 	}
 	// Fail loud on residual `{{` that snuck past the regex (mismatched
-	// braces, bare `{{` on a literal value, etc.). The auth-audience
-	// sentinel is the only allowed remainder.
-	for _, fragment := range strings.Split(out, AuthAudiencePlaceholder) {
-		if strings.Contains(fragment, "{{") || strings.Contains(fragment, "}}") {
-			return "", fmt.Errorf("nomad renderer: unresolved braces in %q", in)
-		}
+	// braces, bare `{{` on a literal value, etc.).
+	if strings.Contains(out, "{{") || strings.Contains(out, "}}") {
+		return "", fmt.Errorf("nomad renderer: unresolved braces in %q", in)
 	}
 	return out, nil
 }

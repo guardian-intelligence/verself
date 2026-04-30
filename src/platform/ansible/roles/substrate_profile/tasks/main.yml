@@ -1,0 +1,22 @@
+---
+# Install host packages and Bazel-owned substrate binaries. Application
+# services are resolved as Nomad job specs and never copied into /opt.
+
+- name: Create profile directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/verself
+    - "{{ verself_bin }}"
+    - "{{ substrate_profile_staging_dir }}"
+
+- name: Include path setup
+  ansible.builtin.include_tasks: path_setup.yml
+
+- name: Include apt packages
+  ansible.builtin.include_tasks: apt_packages.yml
+
+- name: Include static binary downloads
+  ansible.builtin.include_tasks: static_binaries.yml

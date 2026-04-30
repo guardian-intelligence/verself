@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "source-code-hosting-service_lib",
@@ -24,4 +25,10 @@ go_binary(
     name = "source-code-hosting-service",
     embed = [":source-code-hosting-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "source-code-hosting-service_nomad_artifact",
+    binary = ":source-code-hosting-service",
+    output = "source-code-hosting-service",
 )

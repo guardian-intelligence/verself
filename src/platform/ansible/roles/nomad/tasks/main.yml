@@ -1,6 +1,6 @@
 ---
 # Nomad single-node supervisor (server + client co-resident).
-# Binary is laid down by deploy_profile from the server-tools archive;
+# Binary is laid down by substrate_profile from the server-tools archive;
 # config lives at /etc/nomad/nomad.hcl, state at /var/lib/nomad. The HTTP
 # API binds loopback-only — operator access flows over wg-ops / SSH-
 # forwarded loopback, never the public interface.
