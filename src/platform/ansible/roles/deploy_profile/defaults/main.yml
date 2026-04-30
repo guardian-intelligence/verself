@@ -15,8 +15,16 @@ deploy_profile_postgresql_version: "16"
 
 # Path the controller-side bazelisk build writes its Chrome-trace profile
 # to. The follow-up `Emit Bazel build profile as OTel spans` task reads
-# this file and replays each action as an OTel span via the controller
+# this file and replays each event as an OTel span via the controller
 # agent, so the otherwise-opaque ~50s `Build topology Go artifacts`
-# ansible.task span is broken down per Bazel target / mnemonic in
-# default.otel_traces.
+# ansible.task span is broken down per category in default.otel_traces.
 deploy_profile_bazel_profile_path: "{{ deploy_profile_repo_root }}/.cache/bazel-build-go-profile.json.gz"
+
+# Path the controller-side bazelisk build writes its execution log to
+# (--execution_log_json_file). The follow-up `Emit Bazel execution log
+# as OTel spans` task replays each spawn as a `bazel.spawn.<mnemonic>`
+# span carrying authoritative bazel.target_label, bazel.runner, and
+# bazel.cache_hit. Sized for a few thousand spawns per build (single-
+# digit MB) — kept distinct from the profile because the two artifacts
+# answer different questions ("how long" vs. "what ran").
+deploy_profile_bazel_execution_log_path: "{{ deploy_profile_repo_root }}/.cache/bazel-build-go-execlog.json"

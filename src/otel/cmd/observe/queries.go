@@ -67,6 +67,8 @@ func buildQueries(cfg config) ([]query, error) {
 			return []query{
 				newQuery("deploy.run", deployRunSQL, params),
 				newQuery("deploy.bazel_build_run", deployBazelBuildRunSQL, params),
+				newQuery("deploy.codegen_actions", deployCodegenActionsSQL, params),
+				newQuery("deploy.rebuild_blast_radius", deployRebuildBlastRadiusSQL, params),
 			}, nil
 		}
 		return []query{
@@ -895,6 +897,59 @@ CROSS JOIN (
   GROUP BY status
 ) AS cache
 ORDER BY cache.status`
+
+// deployCodegenActionsSQL surfaces every codegen Bazel spawn that ran
+// inside one deploy's bazel-build window. The spans are emitted by
+// src/otel/cmd/bazel-execlog-to-otel from --execution_log_json_file.
+// Mnemonics come from //tools/codegen:openapi.bzl (OpenAPISpec for
+// `cmd/<svc>-openapi` runs, OAPICodegen for the Go client gen) and
+// src/viteplus-monorepo/viteplus_rules.bzl (OpenapiTsGen for the
+// frontend TS SDK gen). The cache_hit column distinguishes "the action
+// graph correctly invalidated and re-ran" (cache_hit=0) from "every
+// codegen target was already cached" (cache_hit=1) — both are valid
+// outcomes for a deploy, but they answer different operator questions.
+const deployCodegenActionsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SpanAttributes['bazel.mnemonic'] AS mnemonic,
+  SpanAttributes['bazel.target_label'] AS target,
+  SpanAttributes['bazel.runner'] AS runner,
+  SpanAttributes['bazel.cache_hit'] = 'true' AS cache_hit,
+  toUInt64OrZero(SpanAttributes['bazel.duration_ms']) AS ms
+FROM default.otel_traces
+WHERE ServiceName = 'bazel'
+  AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND startsWith(SpanName, 'bazel.spawn.')
+  AND SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage')
+ORDER BY Timestamp
+LIMIT {row_limit:UInt32}`
+
+// deployRebuildBlastRadiusSQL groups every Bazel spawn with a
+// //src/<svc>/... target by service so the operator can verify a
+// deploy rebuilt the right things and only the right things. Cached
+// spawns count toward total_spawns but execution_spawns isolates the
+// ones that actually ran — useful after a Huma-route change to confirm
+// the right cross-service consumers re-executed while unrelated
+// services stayed cached.
+const deployRebuildBlastRadiusSQL = `
+SELECT
+  extract(SpanAttributes['bazel.target_label'], '^//src/([^/]+)') AS service,
+  countIf(SpanAttributes['bazel.cache_hit'] != 'true') AS execution_spawns,
+  countIf(SpanAttributes['bazel.cache_hit'] = 'true') AS cached_spawns,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoCompilePkg') AS go_compiles,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoLink') AS go_links,
+  countIf(SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage')) AS codegen_spawns,
+  count() AS total_spawns,
+  sum(toUInt64OrZero(SpanAttributes['bazel.duration_ms'])) AS total_ms
+FROM default.otel_traces
+WHERE ServiceName = 'bazel'
+  AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND startsWith(SpanName, 'bazel.spawn.')
+  AND startsWith(SpanAttributes['bazel.target_label'], '//src/')
+GROUP BY service
+HAVING service != ''
+ORDER BY execution_spawns DESC, total_spawns DESC
+LIMIT {row_limit:UInt32}`
 
 const traceDetailSQL = `
 SELECT

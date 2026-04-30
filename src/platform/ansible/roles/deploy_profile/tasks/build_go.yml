@@ -34,7 +34,7 @@
     fail_msg: >-
       topology_deploy.artifacts must contain unique Go artifacts with non-empty Bazel labels and output names.
 
-- name: Ensure deploy_profile bazel profile cache directory exists
+- name: Ensure deploy_profile bazel artifact cache directory exists
   delegate_to: localhost
   become: false
   run_once: true
@@ -53,13 +53,16 @@
     # for the shared cache; laptop dev workflows use --config=remote (read-
     # only) to avoid poisoning the cache with local builds.
     #
-    # --profile writes a Chrome-trace JSON of every action; the follow-up
-    # task replays it as OTel spans for per-target timing visibility.
+    # --profile writes a Chrome-trace JSON of every event for analysis-phase
+    # timing visibility (replayed by bazel-profile-to-otel). The execution
+    # log is the authoritative record of *what* ran, with target labels and
+    # cache-hit status — replayed by bazel-execlog-to-otel.
     argv: >-
       {{
         [
           deploy_profile_bazelisk, 'build', '--config=remote-writer',
           '--profile=' + deploy_profile_bazel_profile_path,
+          '--execution_log_json_file=' + deploy_profile_bazel_execution_log_path,
         ] + deploy_profile_go_artifact_labels
       }}
     chdir: "{{ deploy_profile_repo_root }}"
@@ -80,6 +83,26 @@
       - "//src/otel/cmd/bazel-profile-to-otel"
       - "--"
       - "--profile={{ deploy_profile_bazel_profile_path }}"
+      - --service-name=bazel
+  changed_when: false
+
+- name: Emit Bazel execution log as OTel spans
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    # The execution log carries authoritative bazel.target_label,
+    # bazel.runner ("local" / "linux-sandbox" / "remote cache hit" / ...),
+    # and bazel.cache_hit per spawn. The deploy.codegen_actions and
+    # deploy.rebuild_blast_radius observe queries read these spans.
+    argv:
+      - "{{ deploy_profile_bazelisk }}"
+      - run
+      - --config=remote-writer
+      - --profile=/dev/null
+      - "//src/otel/cmd/bazel-execlog-to-otel"
+      - "--"
+      - "--execution-log={{ deploy_profile_bazel_execution_log_path }}"
       - --service-name=bazel
   changed_when: false
 
