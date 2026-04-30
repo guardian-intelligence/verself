@@ -136,3 +136,10 @@ http_file(
     url = "https://github.com/caddyserver/caddy/releases/download/v2.11.2/caddy_2.11.2_linux_amd64.tar.gz",
 )
 
+http_file(
+    name = "server_tool_nomad",
+    downloaded_file_path = "nomad_1.11.3_linux_amd64.zip",
+    sha256 = "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
+    url = "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
+)
+

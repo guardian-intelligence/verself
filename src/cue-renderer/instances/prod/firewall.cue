@@ -131,6 +131,16 @@ topology: {
 				rules: [{kind: "accept_non_tcp_udp"}]
 			}
 		}
+		nomad: {
+			target:    "/etc/nftables.d/nomad.nft"
+			table:     "verself_nomad"
+			component: "nomad"
+			// nomad runs as root and supervises raw_exec allocs, so its
+			// egress is unrestricted. Ingress is loopback-only — the
+			// HTTP API is reachable only from operator tunnels via
+			// SSH-forwarded loopback or from on-host clients.
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "nomad", endpoint: "http"}]}]
+		}
 		notifications_service: {
 			target:    "/etc/nftables.d/notifications-service.nft"
 			table:     "verself_notifications_service"

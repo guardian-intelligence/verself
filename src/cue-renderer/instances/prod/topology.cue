@@ -551,6 +551,14 @@ topology: s.#Topology & {
 			endpoints: bundle: {protocol: "http", port: 8082, exposure: "loopback"}
 			interfaces: bundle: {kind: "resource_protocol", endpoint: "bundle", auth: "none"}
 		}
+		nomad: {
+			kind: "resource"
+			host: "127.0.0.1"
+			runtime: {systemd: "nomad", user: "root", group: "root"}
+			artifact: {kind: "static_binary", output: "nomad", role: "nomad"}
+			endpoints: http: {protocol: "http", port: 4646, exposure: "loopback"}
+			interfaces: api: {kind: "admin_api", endpoint: "http", auth: "operator"}
+		}
 		stalwart: {
 			kind: "protocol_backend"
 			host: "127.0.0.1"

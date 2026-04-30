@@ -1,0 +1,25 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nomad
+Documentation=https://developer.hashicorp.com/nomad/docs
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
+
+[Service]
+Type=notify
+User={{ nomad_user }}
+Group={{ nomad_group }}
+Environment=OTEL_SERVICE_NAME=nomad
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStart={{ verself_bin }}/nomad agent -config={{ nomad_config_dir }}/nomad.hcl
+KillMode=process
+KillSignal=SIGINT
+LimitNOFILE=65536
+LimitNPROC=infinity
+TasksMax=infinity
+OOMScoreAdjust=-1000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

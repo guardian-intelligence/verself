@@ -1,0 +1,70 @@
+# {{ ansible_managed }}
+# Single-node Nomad: server + client co-resident. Listens on loopback only;
+# remote operator access is via wg-ops or SSH-forwarded loopback. raw_exec
+# is the only enabled task driver — workloads run as host processes under
+# the topology-declared uid so they keep peer-auth access to the Postgres
+# Unix socket and the SPIRE workload-API socket. The exec driver's
+# chroot/PID-namespace isolation would cut both.
+
+data_dir  = "{{ nomad_data_dir }}"
+log_level = "INFO"
+
+bind_addr = "{{ topology_endpoints.nomad.host }}"
+
+ports {
+  http = {{ topology_endpoints.nomad.endpoints.http.port }}
+}
+
+advertise {
+  http = "{{ topology_endpoints.nomad.endpoints.http.address }}"
+  rpc  = "{{ topology_endpoints.nomad.endpoints.http.address }}"
+  serf = "{{ topology_endpoints.nomad.endpoints.http.address }}"
+}
+
+server {
+  enabled          = true
+  bootstrap_expect = 1
+}
+
+client {
+  enabled = true
+}
+
+plugin "raw_exec" {
+  config {
+    enabled = true
+  }
+}
+
+# exec, java, qemu drivers are unused on this node; raw_exec is the only
+# allowed driver. We declare the others as disabled to make the contract
+# visible to operators reading `nomad node status -self`.
+plugin "exec" {
+  config {
+    enabled = false
+  }
+}
+
+plugin "java" {
+  config {
+    enabled = false
+  }
+}
+
+plugin "qemu" {
+  config {
+    enabled = false
+  }
+}
+
+telemetry {
+  collection_interval        = "10s"
+  disable_hostname           = true
+  prometheus_metrics         = true
+  publish_allocation_metrics = true
+  publish_node_metrics       = true
+}
+
+acl {
+  enabled = false
+}
