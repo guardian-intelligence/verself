@@ -20,6 +20,13 @@ TasksMax=infinity
 OOMScoreAdjust=-1000
 Restart=on-failure
 RestartSec=2
+# Delegate the cgroup-v2 hierarchy to Nomad so it can create child
+# cgroups for each alloc. Without this, raw_exec tasks running as a
+# non-root user (e.g. profile_service) fail at fork/exec with
+# "permission denied" — systemd's cgroup ownership keeps the alloc
+# scope unwritable by the unprivileged child even though Nomad itself
+# runs as root.
+Delegate=yes
 
 [Install]
 WantedBy=multi-user.target

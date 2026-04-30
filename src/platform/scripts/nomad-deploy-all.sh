@@ -106,7 +106,7 @@ component = sys.argv[1]
 with open(sys.argv[2]) as f:
     data = yaml.safe_load(f) or {}
 for art in data.get("topology_deploy", {}).get("artifacts", []):
-    if art.get("component") != component or art.get("source") != "primary":
+    if art.get("component") != component or art.get("name") != "primary":
         continue
     a = art.get("artifact", {}) or {}
     if a.get("kind") != "go_binary":
