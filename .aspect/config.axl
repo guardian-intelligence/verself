@@ -52,7 +52,6 @@ load(
     ".aspect/tasks/codegen.axl",
     codegen_run = "codegen_run",
     codegen_check = "codegen_check",
-    codegen_verify = "codegen_verify",
 )
 load(
     ".aspect/tasks/dev.axl",
@@ -125,10 +124,9 @@ def config(ctx):
     ctx.tasks.add(db_tb_shell)
     ctx.tasks.add(db_tb_command)
 
-    # aspect codegen run|check|verify ...
+    # aspect codegen run|check ...
     ctx.tasks.add(codegen_run)
     ctx.tasks.add(codegen_check)
-    ctx.tasks.add(codegen_verify)
 
     # aspect dev ...
     ctx.tasks.add(dev_verself_web)

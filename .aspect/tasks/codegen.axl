@@ -11,8 +11,9 @@ Concrete bindings:
               go run --check (verifies). Also generates internal-openapi specs.
   clients   — go generate ./<svc>/{client,internalclient}/... + assert no
               hand-written http.NewRequest in the generated tree.
-  wire      — go run ./src/apiwire/cmd/openapi-wire-check across the
-              frontend-consumed 3.1 specs.
+  wire      — bazelisk test //src/apiwire/wirecheck:legacy_specs_test;
+              billing's spec is covered by its own bazel-graph
+              //src/billing-service/openapi:wire_check_test.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
@@ -28,7 +29,6 @@ _PS = "src/profile-service"
 _NS = "src/notifications-service"
 _PJS = "src/projects-service"
 _SR = "src/sandbox-rental-service"
-_AW = "src/apiwire"
 
 # Each tuple is (svc_dir, [(cmd_pkg, format, output_path), ...]).
 # Billing-service is omitted: its spec + Go client are now Bazel-graph
@@ -110,26 +110,6 @@ _CLIENT_DIRS = [
     _NS + "/client",
     _PJS + "/client",
     _PJS + "/internalclient",
-]
-
-_WIRE_SPECS = [
-    # _BS/openapi-3.1 is omitted: covered by
-    # //src/billing-service/openapi:wire_check_test.
-    _GS + "/openapi/openapi-3.1.yaml",
-    _IS + "/openapi/openapi-3.1.yaml",
-    _IS + "/openapi/internal-openapi-3.1.yaml",
-    _SS + "/openapi/openapi-3.1.yaml",
-    _SCH + "/openapi/openapi-3.1.yaml",
-    _SCH + "/openapi/internal-openapi-3.1.yaml",
-    _MS + "/openapi/openapi-3.1.yaml",
-    _OSS + "/openapi/openapi-3.1.yaml",
-    _PS + "/openapi/openapi-3.1.yaml",
-    _PS + "/openapi/internal-openapi-3.1.yaml",
-    _NS + "/openapi/openapi-3.1.yaml",
-    _PJS + "/openapi/openapi-3.1.yaml",
-    _PJS + "/openapi/internal-openapi-3.1.yaml",
-    _SR + "/openapi/openapi-3.1.yaml",
-    _SR + "/openapi/internal-openapi-3.1.yaml",
 ]
 
 def _topology_run(ctx):
@@ -245,8 +225,8 @@ def _clients_check(ctx):
     return checked_spawn(ctx, "bash", ["-c", cmd], label = "rg generated-client guard")
 
 def _wire_check(ctx):
-    args_list = ["run", "./" + _AW + "/cmd/openapi-wire-check"] + _WIRE_SPECS
-    return checked_spawn(ctx, "go", args_list, env = _gowork_env(ctx), label = "openapi-wire-check")
+    inv = ctx.bazel.test("//src/apiwire/wirecheck:legacy_specs_test", inherit_stderr = True)
+    return inv.exit_code
 
 _RUN_KINDS = {
     "topology": _topology_run,
@@ -315,30 +295,3 @@ codegen_check = task(
     },
 )
 
-def _verify_impl(ctx):
-    """Run the codegen-canary against the bazel-graph codegen surface.
-
-    The canary mutates each manifest source, rebuilds with
-    --execution_log_json_file, parses the log, and asserts the expected
-    (mnemonic, target_label, cache_hit) invariants — see
-    //tools/codegen/cmd/codegen-canary for the manifest and assertions.
-
-    Invoked via `bazelisk run` rather than ctx.bazel.run() because the
-    pinned Aspect version does not expose run() on ctx.bazel.
-    """
-    return checked_spawn(
-        ctx,
-        "bazelisk",
-        ["run", "//tools/codegen/cmd/codegen-canary", "--", "--target=" + ctx.args.target],
-        label = "bazelisk run //tools/codegen/cmd/codegen-canary --target=" + ctx.args.target,
-    )
-
-codegen_verify = task(
-    implementation = _verify_impl,
-    name = "verify",
-    group = ["codegen"],
-    summary = "Assert the bazel-graph codegen invariants by mutating an upstream source and inspecting the execution log.",
-    args = {
-        "target": args.string(default = "billing", description = "Manifest entry to run (or 'all')."),
-    },
-)
