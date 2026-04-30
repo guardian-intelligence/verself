@@ -112,14 +112,24 @@ func run(ctx context.Context, args runArgs) error {
 		return err
 	}
 
-	currentDigest, currentVersion, err := currentJobMeta(ctx, args.nomadAddr, args.jobID)
+	specDigest := sha256Bytes(specBytes)
+
+	currentBinaryDigest, currentSpecDigest, currentVersion, err := currentJobMeta(ctx, args.nomadAddr, args.jobID)
 	if err != nil {
 		return fmt.Errorf("inspect current job: %w", err)
 	}
-	if currentDigest == digest {
-		fmt.Fprintf(os.Stdout, "nomad-deploy: %s already at binary_sha256=%s (job version %d); no submit\n",
-			args.jobID, digest[:12], currentVersion)
+	// Short-circuit only when BOTH the binary digest AND the rendered
+	// spec digest match what Nomad already has. Either drift is a real
+	// reason to re-submit; the binary digest catches code changes, and
+	// the spec digest catches schema/topology changes that didn't move
+	// the binary (env vars, ports, resources, supervisor knobs).
+	if currentBinaryDigest == digest && currentSpecDigest == specDigest {
+		fmt.Fprintf(os.Stdout, "nomad-deploy: %s already at binary_sha256=%s spec_sha256=%s (job version %d); no submit\n",
+			args.jobID, digest[:12], specDigest[:12], currentVersion)
 		return nil
+	}
+	if err := injectMeta(spec, "spec_sha256", specDigest); err != nil {
+		return err
 	}
 
 	deployment, err := submit(ctx, args.nomadAddr, spec)
@@ -147,6 +157,11 @@ func sha256File(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func sha256Bytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // substituteAuthAudience walks Tasks > Env and replaces the
@@ -202,30 +217,32 @@ func injectMeta(spec map[string]any, key, value string) error {
 	return nil
 }
 
-// currentJobMeta returns the binary_sha256 + Version of the currently-
-// registered job, or "" / 0 when the job is unknown to the Nomad agent.
-func currentJobMeta(ctx context.Context, nomadAddr, jobID string) (string, int64, error) {
+// currentJobMeta returns the (binary_sha256, spec_sha256, Version)
+// tuple of the currently-registered job, or ("", "", 0) when the job
+// is unknown to the Nomad agent. Both digests live in Job.Meta and are
+// the only knobs the deploy short-circuit consults.
+func currentJobMeta(ctx context.Context, nomadAddr, jobID string) (string, string, int64, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, nomadAddr+"/v1/job/"+jobID, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return "", 0, nil
+		return "", "", 0, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", 0, fmt.Errorf("GET /v1/job/%s: %d %s", jobID, resp.StatusCode, body)
+		return "", "", 0, fmt.Errorf("GET /v1/job/%s: %d %s", jobID, resp.StatusCode, body)
 	}
 	var payload struct {
 		Meta    map[string]string `json:"Meta"`
 		Version int64             `json:"Version"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
-	return payload.Meta["binary_sha256"], payload.Version, nil
+	return payload.Meta["binary_sha256"], payload.Meta["spec_sha256"], payload.Version, nil
 }
 
 type submitResult struct {
