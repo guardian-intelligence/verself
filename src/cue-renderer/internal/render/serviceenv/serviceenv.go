@@ -5,8 +5,8 @@
 // CUE inputs.
 //
 // Authoring contract: services declare their env in
-// `convergence.cue.<service>.converge.systemd.units[*]`. That block is
-// the source of truth even for nomad-supervised components — the unit
+// `convergence.cue.<service>.converge.units[*]`. That block is the
+// source of truth even for nomad-supervised components — the unit
 // shape is the cross-supervisor contract.
 package serviceenv
 
@@ -40,7 +40,7 @@ func Unit(component projection.NamedMap, unit map[string]any) (map[string]string
 	for key, value := range mustMap(unit, "environment") {
 		stringValue, ok := value.(string)
 		if !ok {
-			return nil, fmt.Errorf("%s.converge.systemd.units.%s.environment.%s: expected string, got %T", component.Name, mustString(unit, "name"), key, value)
+			return nil, fmt.Errorf("%s.converge.units.%s.environment.%s: expected string, got %T", component.Name, mustString(unit, "name"), key, value)
 		}
 		environment[key] = stringValue
 	}
@@ -185,7 +185,7 @@ func processForUnit(component projection.NamedMap, unitName string) (map[string]
 			return out, nil
 		}
 	}
-	return nil, fmt.Errorf("%s.converge.systemd.units.%s: no matching runtime or process", component.Name, unitName)
+	return nil, fmt.Errorf("%s.converge.units.%s: no matching runtime or process", component.Name, unitName)
 }
 
 // endpointSet returns the labels of the endpoints this unit/process owns.

@@ -37,20 +37,16 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		if !enabled {
 			continue
 		}
-		systemdConfig, err := projection.Map(converge, component.Name+".converge", "systemd")
-		if err != nil {
-			return err
-		}
-		units, err := projection.Slice(systemdConfig, component.Name+".converge.systemd", "units")
+		units, err := projection.Slice(converge, component.Name+".converge", "units")
 		if err != nil {
 			return err
 		}
 		for i, raw := range units {
 			unit, ok := raw.(map[string]any)
 			if !ok {
-				return fmt.Errorf("%s.converge.systemd.units[%d]: expected map, got %T", component.Name, i, raw)
+				return fmt.Errorf("%s.converge.units[%d]: expected map, got %T", component.Name, i, raw)
 			}
-			name, err := projection.String(unit, component.Name+".converge.systemd.units", "name")
+			name, err := projection.String(unit, component.Name+".converge.units", "name")
 			if err != nil {
 				return err
 			}

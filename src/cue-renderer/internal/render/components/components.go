@@ -116,19 +116,19 @@ func componentConvergeProjection(name string, converge map[string]any, deployTag
 		"auth":             authValue(converge),
 		"bootstrap":        sliceValue(converge, "bootstrap"),
 		"bootstrap_config": mapValue(converge, "bootstrap_config"),
-		"systemd": map[string]any{
-			"units": []map[string]any{},
-		},
+		"units":            []map[string]any{},
 	}
 	if clickhouse, ok := converge["clickhouse"]; ok {
 		out["clickhouse"] = clickhouse
 	}
 
-	systemdConfig, ok := converge["systemd"].(map[string]any)
-	if !ok {
+	// Non-service components (resources, gateways) don't carry a units
+	// list. Treat missing as empty so the projection stays uniform
+	// and downstream consumers can blanket-iterate `topology_components`.
+	if _, has := converge["units"]; !has {
 		return out, nil
 	}
-	rawUnits, err := projection.Slice(systemdConfig, name+".converge.systemd", "units")
+	rawUnits, err := projection.Slice(converge, name+".converge", "units")
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +136,11 @@ func componentConvergeProjection(name string, converge map[string]any, deployTag
 	for i, raw := range rawUnits {
 		unit, ok := raw.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s.converge.systemd.units[%d]: expected map, got %T", name, i, raw)
+			return nil, fmt.Errorf("%s.converge.units[%d]: expected map, got %T", name, i, raw)
 		}
 		units = append(units, unitProjection(unit))
 	}
-	out["systemd"] = map[string]any{"units": units}
+	out["units"] = units
 	return out, nil
 }
 

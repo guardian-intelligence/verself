@@ -5,14 +5,14 @@
       - component.name | length > 0
       - component.kind == "service"
       - component.converge.enabled | bool
-      - component.converge.systemd.units | length > 0
+      - component.converge.units | length > 0
     fail_msg: "converge_component.yml requires one enabled service component."
 
 - name: Initialize component convergence context
   ansible.builtin.set_fact:
     component_auth_audience: ""
     component_secret_values: {}
-    component_units: "{{ component.converge.systemd.units }}"
+    component_units: "{{ component.converge.units }}"
 
 - name: Converge component users and directories
   ansible.builtin.include_tasks:
