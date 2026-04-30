@@ -5,14 +5,17 @@
 # temporal_force_schema_reset=true / clickhouse_force_schema_reset=true on
 # the follow-up box.yml call when the wipe requires a schema rebuild.
 
-- import_playbook: wipe-pg-db.yml
+- name: Wipe billing state for verification reset
+  import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: billing
 
-- import_playbook: wipe-pg-db.yml
+- name: Wipe sandbox-rental state for verification reset
+  import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: sandbox_rental
 
-- import_playbook: wipe-pg-db.yml
+- name: Wipe governance-service state for verification reset
+  import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: governance_service

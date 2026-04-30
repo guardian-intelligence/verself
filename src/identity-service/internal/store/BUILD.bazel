@@ -4,6 +4,7 @@ go_library(
     name = "store",
     srcs = [
         "api_credentials.sql.go",
+        "browser_auth.sql.go",
         "capabilities.sql.go",
         "commands.sql.go",
         "db.go",

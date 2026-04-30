@@ -2,7 +2,7 @@
 
 Single TanStack Start (SSR) + React Query + Electric SQL app served at the
 verself.sh apex. Hosts the signed-in console (`_shell/_authenticated/*`),
-auth flows (`/login`, `/callback`, `/logout`), public docs (`/docs`), public
+auth entry routes (`/login`, `/logout`), public docs (`/docs`), public
 policy (`/policy`), and the same-origin OTLP forwarder (`/api/otel/v1/traces`).
 Public routes nest under the `_workshop` pathless layout, which carries the
 ink-on-argent workshop chrome from `@verself/brand`; the console keeps its
@@ -23,7 +23,7 @@ Do not introduce useEffect. Every common `useEffect` pattern has a proper TanSta
 | `useEffect` to fetch data                                                         | `useQuery` from `@tanstack/react-query`                                                                                      |
 | `useEffect` + `useState(mounted)` for SSR hydration guard                         | `useHydrated()` or `<ClientOnly>` from `@tanstack/react-router`                                                              |
 | `useEffect` to run side effects on navigation (e.g. Stripe redirect invalidation) | `beforeLoad` on the route definition — it runs once per navigation, not per render                                           |
-| `useEffect` to trigger login/logout/callback auth flows                           | Route-level `beforeLoad` plus `@verself/auth-web/server` helpers                                                             |
+| `useEffect` to trigger login/logout auth flows                                    | Route-level `beforeLoad` plus identity-service `/api/v1/auth/*` navigation                                                   |
 | `useEffect` to invalidate queries when external data changes                      | `onSuccess` / `onSettled` on the `useMutation` that caused the change                                                        |
 | `useEffect` for DOM interactions (scroll, focus, resize)                          | `use-stick-to-bottom` for scroll-follow; for other DOM cases, evaluate whether a library exists before writing a `useEffect` |
 
@@ -31,9 +31,9 @@ The one exception: `useEffect` is acceptable for DOM manipulation that has no li
 
 ### Auth + Query Cache
 
-Auth state is server-owned (`@verself/auth-web/server` + HTTP-only session cookie + the `frontend_auth.auth_sessions` table). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser.
+Auth state is owned by identity-service through same-origin `/api/v1/auth/*` endpoints and an HTTP-only session cookie. `/login` is a thin TanStack UI that starts the identity-service login endpoint, and `/logout` redirects to the identity-service logout endpoint. Do not mirror auth state into React Query or persist bearer tokens in the browser.
 
-`src/routes/__root.tsx` calls `getClientAuthSnapshot()` once per navigation, seeds `AuthProvider`, and syncs the React Query cache through `syncAuthPartitionedCache(...)` using the server-issued auth cache partition. Component code should read `useAuth()`, `useSignedInAuth()`, `useUser()`, or `useSession()` from `@verself/auth-web/react`; it should not call server auth helpers directly.
+`src/routes/__root.tsx` calls `getClientAuthSnapshot()` once per navigation, seeds `AuthProvider`, and syncs the React Query cache through `syncAuthPartitionedCache(...)` using the identity-service-issued auth cache partition. Component code should read `useAuth()`, `useSignedInAuth()`, `useUser()`, or `useSession()` from `@verself/auth-web/react`; it should not call identity-service auth endpoints directly except through the auth provider navigation hooks.
 
 ### Routing + Auth
 

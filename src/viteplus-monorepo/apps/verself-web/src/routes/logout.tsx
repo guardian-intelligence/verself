@@ -1,14 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { getSignOutRedirectURL } from "~/server-fns/auth";
-
-async function getRouteSignOutRedirectURL(): Promise<string> {
-  return getSignOutRedirectURL();
-}
 
 export const Route = createFileRoute("/logout")({
-  beforeLoad: async () => {
-    const logoutURL = await getRouteSignOutRedirectURL();
-    throw redirect({ href: logoutURL });
+  beforeLoad: () => {
+    throw redirect({ href: "/api/v1/auth/logout" });
   },
   component: LogoutPage,
 });

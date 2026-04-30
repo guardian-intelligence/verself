@@ -97,8 +97,8 @@ def _ansible_lint(ctx):
         return rc
     return checked_spawn(
         ctx,
-        "ansible-lint",
-        ["playbooks", "roles"],
+        "bash",
+        ["-c", "uv sync --frozen --project ../uv-tools/ansible-core >/dev/null && ../uv-tools/ansible-core/.venv/bin/ansible-lint playbooks roles"],
         cwd = ws_path(ctx, "src/platform/ansible"),
         env = {"VERSELF_RENDER_CACHE_DIR": ws_path(ctx, ".cache/render/" + site)},
         label = "ansible-lint",

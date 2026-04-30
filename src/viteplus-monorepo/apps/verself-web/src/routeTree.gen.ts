@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as WorkshopRouteImport } from './routes/_workshop'
 import { Route as ShellRouteRouteImport } from './routes/_shell/route'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
@@ -59,11 +58,6 @@ const LogoutRoute = LogoutRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CallbackRoute = CallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkshopRoute = WorkshopRouteImport.update({
@@ -276,7 +270,6 @@ const ShellAuthenticatedSettingsBillingCreditsRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
-  '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/docs': typeof WorkshopDocsRouteRouteWithChildren
@@ -316,7 +309,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof ShellIndexRoute
-  '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/notifications': typeof ShellAuthenticatedNotificationsRoute
@@ -355,7 +347,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteRouteWithChildren
   '/_workshop': typeof WorkshopRouteWithChildren
-  '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/_shell/_authenticated': typeof ShellAuthenticatedRouteRouteWithChildren
@@ -399,7 +390,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/callback'
     | '/login'
     | '/logout'
     | '/docs'
@@ -439,7 +429,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/callback'
     | '/login'
     | '/logout'
     | '/notifications'
@@ -477,7 +466,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_shell'
     | '/_workshop'
-    | '/callback'
     | '/login'
     | '/logout'
     | '/_shell/_authenticated'
@@ -521,7 +509,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ShellRouteRoute: typeof ShellRouteRouteWithChildren
   WorkshopRoute: typeof WorkshopRouteWithChildren
-  CallbackRoute: typeof CallbackRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
@@ -541,13 +528,6 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/callback': {
-      id: '/callback'
-      path: '/callback'
-      fullPath: '/callback'
-      preLoaderRoute: typeof CallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_workshop': {
@@ -965,7 +945,6 @@ const WorkshopRouteWithChildren = WorkshopRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ShellRouteRoute: ShellRouteRouteWithChildren,
   WorkshopRoute: WorkshopRouteWithChildren,
-  CallbackRoute: CallbackRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,

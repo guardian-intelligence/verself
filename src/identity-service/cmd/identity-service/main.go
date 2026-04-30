@@ -77,6 +77,8 @@ func run() error {
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
+	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
+	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "identity_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
@@ -85,10 +87,16 @@ func run() error {
 	governanceAuditURL := cfg.String("IDENTITY_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	browserAuthPublicBaseURL := cfg.RequireURL("IDENTITY_BROWSER_AUTH_PUBLIC_BASE_URL")
+	browserAuthLoginAudiencesRaw := cfg.RequireString("IDENTITY_BROWSER_AUTH_LOGIN_AUDIENCES")
 	zitadelBaseURL := cfg.RequireURL("IDENTITY_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IDENTITY_ZITADEL_HOST")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
+		return err
+	}
+	browserAuthLoginAudiences, err := splitRequiredCSV("IDENTITY_BROWSER_AUTH_LOGIN_AUDIENCES", browserAuthLoginAudiencesRaw)
+	if err != nil {
 		return err
 	}
 
@@ -147,6 +155,22 @@ func run() error {
 		ProjectID: authAudience,
 	}
 	api.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
+		PG:             pg,
+		Logger:         logger,
+		IssuerURL:      authIssuerURL,
+		ClientID:       browserOIDCClientID,
+		ClientSecret:   browserOIDCClientSecret,
+		PublicBaseURL:  browserAuthPublicBaseURL,
+		LoginAudiences: browserAuthLoginAudiences,
+		HTTPClient: &http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   5 * time.Second,
+		},
+	})
+	if err != nil {
+		return err
+	}
 
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	defer bgCancel()
@@ -170,6 +194,7 @@ func run() error {
 		_, _ = w.Write([]byte("ok"))
 	})
 	api.RegisterZitadelActionRoutes(rootMux, identityService, zitadelActionSigningKey)
+	api.RegisterBrowserAuthRoutes(rootMux, browserAuth)
 
 	privateMux := http.NewServeMux()
 	api.NewAPI(privateMux, api.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: identityService})
@@ -264,6 +289,27 @@ func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func splitRequiredCSV(name, raw string) ([]string, error) {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("%s must contain at least one value", name)
+	}
+	return values, nil
 }
 
 func requestMayHaveBody(r *http.Request) bool {

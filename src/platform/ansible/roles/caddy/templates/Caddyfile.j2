@@ -499,6 +499,19 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		reverse_proxy {{ topology_endpoints.electric_notifications.endpoints.http.address }}
 	}
 
+	@identity_browser_auth {
+		path /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/logout
+	}
+	handle @identity_browser_auth {
+		request_body {
+			max_size 65536
+		}
+		import api_security_headers
+		reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
+	}
+
 	handle {
 		import frontend_security_headers
 		reverse_proxy {{ topology_endpoints.verself_web.endpoints.http.address }}

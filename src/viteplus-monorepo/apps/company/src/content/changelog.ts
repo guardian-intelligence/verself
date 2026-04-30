@@ -19,7 +19,7 @@ export const changelog: readonly ChangelogEntry[] = [
   {
     date: "2026-04-29",
     title: "Verself docs, policy, and console consolidate at verself.sh",
-    body: "The product apex (docs, policy) and the authenticated console merge into a single TanStack Start app at verself.sh. The console.verself.sh subdomain is retired — bookmarks should point at verself.sh. Auth still flows through auth.verself.sh and lands on verself.sh/callback.",
+    body: "The product apex (docs, policy) and the authenticated console merge into a single TanStack Start app at verself.sh. The console.verself.sh subdomain is retired — bookmarks should point at verself.sh. Auth still flows through auth.verself.sh and returns to verself.sh.",
   },
   {
     date: "2026-04-20",

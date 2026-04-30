@@ -60,11 +60,5 @@ config: ansible_vars: {
 	stalwart_subdomain: "mail"
 	stalwart_domain:    "{{ stalwart_subdomain }}.{{ verself_domain }}"
 
-	// Fixed organization identities for this site. The platform org is the
-	// dogfooding tenant; the acme org is the canonical fixture customer.
-	seed_system_platform_org_name:     "Guardian Intelligence LLC"
-	seed_system_platform_org_slug:     "guardian-platform"
-	seed_system_acme_org_name:         "Acme Corp"
-	seed_system_acme_org_slug:         "acme-corp"
 	openbao_tenancy_platform_org_name: "Guardian Intelligence LLC"
 }

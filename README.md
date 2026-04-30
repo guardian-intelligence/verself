@@ -29,10 +29,7 @@ aspect platform provision
 # 4. Deploy. Idempotent; safe to repeat.
 aspect deploy
 
-# 5. Seed tenants, billing, mailboxes, and auth fixtures.
-src/platform/scripts/ansible-with-otel.sh playbooks/seed-system.yml
-
-# 6. Mint a persona env file and start working.
+# 5. Mint a persona env file and start working.
 aspect persona assume platform-admin
 ```
 

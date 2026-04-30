@@ -13,14 +13,6 @@
       "types": "./src/isomorphic.ts",
       "default": "./src/isomorphic.ts"
     },
-    "./server": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
-    },
-    "./config": {
-      "types": "./src/config.ts",
-      "default": "./src/config.ts"
-    },
     "./isomorphic": {
       "types": "./src/isomorphic.ts",
       "default": "./src/isomorphic.ts"
@@ -40,15 +32,11 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@opentelemetry/api": "catalog:",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
-    "@tanstack/react-start": "catalog:",
     "@verself/ui": "workspace:*",
-    "jose": "catalog:",
     "lucide-react": "catalog:",
-    "postgres": "catalog:",
     "valibot": "catalog:"
   },
   "devDependencies": {

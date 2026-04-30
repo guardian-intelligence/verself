@@ -45,6 +45,7 @@ verification_context_init() {
     echo "failed to resolve verification context from inventory/group vars" >&2
     return 1
   fi
+  export VERIFICATION_SITE VERIFICATION_CACHE_DIR
 }
 
 verification_ssh() {

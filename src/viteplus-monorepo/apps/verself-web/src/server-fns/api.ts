@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
-import { requireURLFromEnv } from "@verself/web-env";
+import { requireEnv, requireURLFromEnv } from "@verself/web-env";
 import {
   IdentityApiError,
   getMembers as getMembersRequest,
@@ -175,10 +175,11 @@ import type {
   ContractRequest,
   ContractsResponse,
 } from "~/lib/sandbox-rental-api";
-import type { AuthSession } from "@verself/auth-web/server";
-import { getAccessTokenForAudience, getAuthSession } from "@verself/auth-web/server";
-import { getAuthConfig } from "../server/auth";
-import { consoleAuthMiddleware } from "./auth";
+import {
+  consoleAuthMiddleware,
+  getAccessTokenForAudience,
+  type ConsoleAuthContext,
+} from "./auth";
 
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
@@ -189,17 +190,14 @@ const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
   "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
 );
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
-const IDENTITY_SERVICE_AUTH_AUDIENCE = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
-const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE =
-  process.env.SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE?.trim() || process.env.AUTH_PROJECT_ID?.trim();
-const PROFILE_SERVICE_AUTH_AUDIENCE =
-  process.env.PROFILE_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
-const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE =
-  process.env.NOTIFICATIONS_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
-const PROJECTS_SERVICE_AUTH_AUDIENCE =
-  process.env.PROJECTS_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
-const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE =
-  process.env.SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
+const IDENTITY_SERVICE_AUTH_AUDIENCE = requireEnv("IDENTITY_SERVICE_AUTH_AUDIENCE");
+const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE = requireEnv("SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE");
+const PROFILE_SERVICE_AUTH_AUDIENCE = requireEnv("PROFILE_SERVICE_AUTH_AUDIENCE");
+const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireEnv("NOTIFICATIONS_SERVICE_AUTH_AUDIENCE");
+const PROJECTS_SERVICE_AUTH_AUDIENCE = requireEnv("PROJECTS_SERVICE_AUTH_AUDIENCE");
+const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireEnv(
+  "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
+);
 
 export { IdentityApiError, isIdentityApiError };
 export { GovernanceApiError, isGovernanceApiError };
@@ -275,56 +273,25 @@ export type {
   UpdateMemberRolesRequest,
 };
 
-async function resolveAuthContext(
-  context: { auth?: AuthSession } | undefined,
-): Promise<AuthSession> {
-  if (context?.auth) {
-    return context.auth;
-  }
-  // Start server functions invoked during SSR can miss middleware context; re-read the server-owned session before crossing the service boundary.
-  const auth = await getAuthSession(getAuthConfig());
-  if (!auth) {
-    throw new Error("Authentication required");
-  }
-  return auth;
-}
-
-async function sandboxRentalClientOptions(context: { auth?: AuthSession } | undefined) {
-  const auth = await resolveAuthContext(context);
-  if (!SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE) {
-    throw new Error("SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE or AUTH_PROJECT_ID is required");
-  }
+async function sandboxRentalClientOptions(context: ConsoleAuthContext | undefined) {
   return {
-    accessToken: await getAccessTokenForAudience(
-      getAuthConfig(),
-      auth,
-      SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE,
-    ),
+    accessToken: await getAccessTokenForAudience(context, SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE),
     baseUrl: SANDBOX_RENTAL_SERVICE_BASE_URL,
   };
 }
 
 async function identityClientOptions(
-  context: { auth?: AuthSession } | undefined,
+  context: ConsoleAuthContext | undefined,
   options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
 ) {
-  const auth = await resolveAuthContext(context);
-  if (!IDENTITY_SERVICE_AUTH_AUDIENCE) {
-    throw new Error("IDENTITY_SERVICE_AUTH_AUDIENCE is required");
-  }
-  const accessToken = await getAccessTokenForAudience(
-    getAuthConfig(),
-    auth,
-    IDENTITY_SERVICE_AUTH_AUDIENCE,
-    options,
-  );
+  const accessToken = await getAccessTokenForAudience(context, IDENTITY_SERVICE_AUTH_AUDIENCE, options);
   return {
     accessToken,
     baseUrl: IDENTITY_SERVICE_BASE_URL,
   };
 }
 
-async function governanceClientOptions(context: { auth?: AuthSession } | undefined) {
+async function governanceClientOptions(context: ConsoleAuthContext | undefined) {
   const identityOptions = await identityClientOptions(context);
   return {
     ...identityOptions,
@@ -332,68 +299,32 @@ async function governanceClientOptions(context: { auth?: AuthSession } | undefin
   };
 }
 
-async function profileClientOptions(context: { auth?: AuthSession } | undefined) {
-  const auth = await resolveAuthContext(context);
-  if (!PROFILE_SERVICE_AUTH_AUDIENCE) {
-    throw new Error("PROFILE_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required");
-  }
-  const accessToken = await getAccessTokenForAudience(
-    getAuthConfig(),
-    auth,
-    PROFILE_SERVICE_AUTH_AUDIENCE,
-  );
+async function profileClientOptions(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, PROFILE_SERVICE_AUTH_AUDIENCE);
   return {
     accessToken,
     baseUrl: PROFILE_SERVICE_BASE_URL,
   };
 }
 
-async function notificationsClientOptions(context: { auth?: AuthSession } | undefined) {
-  const auth = await resolveAuthContext(context);
-  if (!NOTIFICATIONS_SERVICE_AUTH_AUDIENCE) {
-    throw new Error(
-      "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required",
-    );
-  }
-  const accessToken = await getAccessTokenForAudience(
-    getAuthConfig(),
-    auth,
-    NOTIFICATIONS_SERVICE_AUTH_AUDIENCE,
-  );
+async function notificationsClientOptions(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, NOTIFICATIONS_SERVICE_AUTH_AUDIENCE);
   return {
     accessToken,
     baseUrl: NOTIFICATIONS_SERVICE_BASE_URL,
   };
 }
 
-async function projectsClientOptions(context: { auth?: AuthSession } | undefined) {
-  const auth = await resolveAuthContext(context);
-  if (!PROJECTS_SERVICE_AUTH_AUDIENCE) {
-    throw new Error("PROJECTS_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required");
-  }
-  const accessToken = await getAccessTokenForAudience(
-    getAuthConfig(),
-    auth,
-    PROJECTS_SERVICE_AUTH_AUDIENCE,
-  );
+async function projectsClientOptions(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, PROJECTS_SERVICE_AUTH_AUDIENCE);
   return {
     accessToken,
     baseUrl: PROJECTS_SERVICE_BASE_URL,
   };
 }
 
-async function sourceCodeHostingClientOptions(context: { auth?: AuthSession } | undefined) {
-  const auth = await resolveAuthContext(context);
-  if (!SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE) {
-    throw new Error(
-      "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required",
-    );
-  }
-  const accessToken = await getAccessTokenForAudience(
-    getAuthConfig(),
-    auth,
-    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
-  );
+async function sourceCodeHostingClientOptions(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE);
   return {
     accessToken,
     baseUrl: SOURCE_CODE_HOSTING_SERVICE_BASE_URL,

@@ -501,7 +501,7 @@ package schema
 	audience:     string & !="" @go(Audience)
 }
 
-#FrontendOIDCBootstrap: {
+#BrowserOIDCBootstrap: {
 	app_name:     string & !="" @go(AppName)
 	project_name: string & !="" @go(ProjectName)
 	redirect_uris: [...string & =~"^https://"] @go(RedirectURIs)
@@ -592,7 +592,7 @@ package schema
 
 #ComponentBootstrapConfig: {
 	sandbox_github_app?: #SandboxGithubAppBootstrap @go(SandboxGithubApp)
-	frontend_oidc?:      #FrontendOIDCBootstrap     @go(FrontendOIDC)
+	browser_oidc?:       #BrowserOIDCBootstrap      @go(BrowserOIDC)
 }
 
 #BootstrapHookName:
@@ -602,7 +602,7 @@ package schema
 	"object_storage_tls" |
 	"object_storage_garage_proxy" |
 	"sandbox_vm_socket_acl" |
-	"verself_web_oidc"
+	"browser_oidc"
 
 #BootstrapHookClass:
 	"external_provider" |

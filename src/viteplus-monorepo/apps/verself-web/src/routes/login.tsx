@@ -11,7 +11,7 @@ function signedInRedirectTarget(redirectTo: string | undefined): string {
     const base = new URL("https://console.invalid");
     const parsed = new URL(redirectTo, base);
     if (parsed.origin !== base.origin) return defaultSignedInRedirect;
-    if (["/login", "/callback", "/logout"].includes(parsed.pathname)) {
+    if (["/login", "/api/v1/auth/callback", "/logout"].includes(parsed.pathname)) {
       return defaultSignedInRedirect;
     }
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;

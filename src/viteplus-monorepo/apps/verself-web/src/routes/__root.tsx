@@ -10,11 +10,7 @@ import {
   syncAuthPartitionedCache,
 } from "@verself/auth-web/isomorphic";
 import { BrandTelemetryProvider } from "@verself/brand";
-import {
-  getClientAuthSnapshot,
-  getSignInRedirectURL,
-  getSignOutRedirectURL,
-} from "~/server-fns/auth";
+import { getClientAuthSnapshot } from "~/server-fns/auth";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
@@ -23,6 +19,18 @@ import "~/styles/app.css";
 async function loadAuthSnapshot(): Promise<AuthSnapshot> {
   return getClientAuthSnapshot();
 }
+
+const authNavigationClient = {
+  getSignInRedirectURL: async ({ data }: { data: { redirectTo?: string | null } }) => {
+    const params = new URLSearchParams();
+    if (data.redirectTo) {
+      params.set("redirect_to", data.redirectTo);
+    }
+    const query = params.toString();
+    return `/api/v1/auth/login${query ? `?${query}` : ""}`;
+  },
+  getSignOutRedirectURL: async () => "/api/v1/auth/logout",
+};
 
 export const Route = createRootRouteWithContext<{
   auth: Auth;
@@ -72,12 +80,12 @@ export const Route = createRootRouteWithContext<{
 // __root.tsx owns the document and global providers (auth + query + brand
 // telemetry). Visual chrome lives in pathless route layers: signed-in surfaces
 // nest under _shell/_authenticated; public docs + policy nest under _workshop.
-// Auth flows (login/callback/logout) render with no chrome at all.
+// Auth entry routes render with no chrome; identity-service owns the OIDC callback.
 function RootComponent() {
   const routeContext = Route.useRouteContext();
   const authSnapshot = parseAuthSnapshot(routeContext);
   return (
-    <AuthProvider client={{ getSignInRedirectURL, getSignOutRedirectURL }} snapshot={authSnapshot}>
+    <AuthProvider client={authNavigationClient} snapshot={authSnapshot}>
       <QueryClientProvider client={routeContext.queryClient} key={authCacheKey(authSnapshot)}>
         <BrandTelemetryProvider emitSpan={emitSpan}>
           <RootDocument>

@@ -556,7 +556,7 @@ type ZitadelProjectRole struct {
 
 type ZitadelAuth map[string]any
 
-type FrontendOIDCBootstrap struct {
+type BrowserOIDCBootstrap struct {
 	AppName string `json:"app_name"`
 
 	ProjectName string `json:"project_name"`
@@ -685,7 +685,7 @@ type SandboxGithubAppBootstrap struct {
 type ComponentBootstrapConfig struct {
 	SandboxGithubApp SandboxGithubAppBootstrap `json:"sandbox_github_app,omitempty"`
 
-	FrontendOIDC FrontendOIDCBootstrap `json:"frontend_oidc,omitempty"`
+	BrowserOIDC BrowserOIDCBootstrap `json:"browser_oidc,omitempty"`
 }
 
 type BootstrapHookName string

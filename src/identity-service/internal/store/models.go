@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IdentityBrowserLoginTransaction struct {
+	StateHash    string
+	Nonce        string
+	CodeVerifier string
+	RedirectTo   string
+	ExpiresAt    pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+}
+
 type IdentityMemberCapability struct {
 	OrgID       string
 	EnabledKeys []string
