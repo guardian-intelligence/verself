@@ -50,6 +50,21 @@ type Renderer struct{}
 
 func (Renderer) Name() string { return "nomad" }
 
+// IndexEntry is one row of jobs/index.json. nomad-deploy enumerate
+// reads this file to drive its per-component build/scp/submit loop —
+// the JSON tags are part of the public contract between renderer and
+// tool, do not bump without updating cmd/nomad-deploy.
+type IndexEntry struct {
+	Component  string `json:"component"`
+	JobID      string `json:"job_id"`
+	BazelLabel string `json:"bazel_label"`
+	Output     string `json:"output"`
+}
+
+type indexFile struct {
+	Components []IndexEntry `json:"components"`
+}
+
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
 	components, err := projection.Components(loaded)
 	if err != nil {
@@ -59,6 +74,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err != nil {
 		return err
 	}
+	var index indexFile
 	for _, component := range components {
 		deployment, _ := component.Value["deployment"].(map[string]any)
 		supervisor, _ := deployment["supervisor"].(string)
@@ -77,8 +93,46 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		if err := out.WriteFile(jobPath(jobID(component.Name)), body); err != nil {
 			return err
 		}
+
+		bazelLabel, output, err := primaryArtifact(component)
+		if err != nil {
+			return fmt.Errorf("%s: %w", component.Name, err)
+		}
+		index.Components = append(index.Components, IndexEntry{
+			Component:  component.Name,
+			JobID:      jobID(component.Name),
+			BazelLabel: bazelLabel,
+			Output:     output,
+		})
 	}
-	return nil
+	if len(index.Components) == 0 {
+		return nil
+	}
+	indexBody, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+	indexBody = append(indexBody, '\n')
+	return out.WriteFile("jobs/index.json", indexBody)
+}
+
+// primaryArtifact extracts the bazel_label + output for the component's
+// primary go_binary so nomad-deploy enumerate can drive build + scp
+// without re-reading the whole topology. Errors when the component
+// lacks a primary go_binary artifact — this is invariant: any
+// nomad-supervised component must declare one.
+func primaryArtifact(component projection.NamedMap) (string, string, error) {
+	artifact, _ := component.Value["artifact"].(map[string]any)
+	kind, _ := artifact["kind"].(string)
+	if kind != "go_binary" {
+		return "", "", fmt.Errorf("artifact.kind=%q: nomad supervisor requires a go_binary primary artifact", kind)
+	}
+	label, _ := artifact["bazel_label"].(string)
+	output, _ := artifact["output"].(string)
+	if label == "" || output == "" {
+		return "", "", fmt.Errorf("artifact: bazel_label and output required, got label=%q output=%q", label, output)
+	}
+	return label, output, nil
 }
 
 func jobPath(id string) string { return "jobs/" + id + ".nomad.json" }
