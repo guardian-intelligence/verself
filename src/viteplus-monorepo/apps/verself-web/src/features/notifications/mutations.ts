@@ -35,9 +35,8 @@ export function useDismissNotificationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: withInteractionSpan(
-      "notifications.dismiss",
-      (body: DismissNotificationRequest) => dismissNotification({ data: body }),
+    mutationFn: withInteractionSpan("notifications.dismiss", (body: DismissNotificationRequest) =>
+      dismissNotification({ data: body }),
     ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({

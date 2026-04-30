@@ -25,7 +25,7 @@ own boundary.
 ## Product Surface
 
 The first user-facing surface is a shared React organization widget, initially
-embedded in `console` and later reused by other frontend apps. The widget
+embedded in `verself-web` and later reused by other frontend apps. The widget
 talks to frontend server functions, and those server functions call
 `identity-service` with server-owned Zitadel access tokens. Browser code must not
 read or persist Zitadel bearer tokens.
