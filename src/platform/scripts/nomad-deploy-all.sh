@@ -76,7 +76,9 @@ fi
 # Build nomad-deploy once on the controller; we reuse this binary for the
 # `enumerate` subcommand below and ignore it for the per-host invocation
 # (the box has its own copy at /opt/verself/profile/bin/nomad-deploy).
-(cd "${REPO_ROOT}" && bazelisk build --config=remote-writer //src/cue-renderer/cmd/nomad-deploy:nomad-deploy >/dev/null 2>&1)
+# Let stderr through so build failures surface here instead of cascading
+# into a confusing "no such file" later.
+(cd "${REPO_ROOT}" && bazelisk build --config=remote-writer //src/cue-renderer/cmd/nomad-deploy:nomad-deploy)
 NOMAD_DEPLOY=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer/cmd/nomad-deploy:nomad-deploy 2>/dev/null | tail -1)
 NOMAD_DEPLOY="${REPO_ROOT}/${NOMAD_DEPLOY}"
 
