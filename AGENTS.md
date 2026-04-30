@@ -8,7 +8,7 @@ Canonical layout in `docs/architecture/directory-structure.md`. Read that file d
 Polyglot monorepo structured as a modular monolith.
 Layers:
 
-1. Substrate layer: vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo
+1. Substrate layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything below.
 2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
@@ -135,35 +135,41 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Avoid excitement around counting commits/LOC changed/number of tests passing. Maintain an intellectually curious, skeptical posture.
 </assistant_contract>
 
+<writing_guidelines>
+The contained instructions in this block are guidelines that apply to writing markdown architecture documents in docs/ directories.
+
+- Avoid framing rhetoric, e.g. "X is Y, not Z". Just write "X is Y".
+- Avoid attention-grabby language like "The same X and Y that do A also does B" or "both X and Y". Or short punchy sentences like "One binary. Five nodes. Infinite possibilities." Prefer to be straightforward: "X and Y do A and B via a single binary across five nodes and are designed to be extensible."
+- Avoid 
+- Preferred writing style: advanced industry-level textbook sans historical context.
+- Write for an audience of expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.
+</writing_guidelines>
+
 <tool_use_contract>
 - Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`.
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
-- use `aspect tidy` to run `go mod tidy` per service and format the JS monorepo.
+- Use `aspect tidy` to run `go mod tidy` and other language-specific formatters across the code base.
 - When using agent-browser, don't use the sandbox (`--no-sandbox`)
-- Deploy frontend changes to prod fearlessly (e.g. `aspect deploy --tags=company` to deploy the company marketing website) -- I can't see your dev server.
+- Deploy frontend changes to prod fearlessly (e.g. `aspect deploy site=prod`) -- I can't see your dev server.
 </tool_use_contract>
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term* in terms of functionality, elegance of architecture, security, performance, and best-practices.
 - Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise the modified code are the only admissible completion evidence. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed, create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
-- Do not stop work short of verifying changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them. Prefer that over time-consuming, tricky migrations during this early phase.
-- The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through `sandbox-rental-service`, and verifies ClickHouse evidence.
-- Design docs, code comments, architecture diagrams, and API documentation target expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.
-- Risky commands like `git restore`, `git checkout -- <file>`, and `rm -rf` are blocked.
+- Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 - Avoid emojis.
 </output_contract>
 
 <coding_contract>
 - When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
 - Treat errors as data. Use tagged and structured errors to aid control flow.
-- Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
-- 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in a tiny set of niche cases, but a comprehensive suite of e2e tests is preferred.
+- Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
+- 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in a tiny set of niche cases, but a comprehensive suite of e2e tests is preferred. <note>We are moving to ongoing e2e canaries instead of our verify/smoke test scripts. Keep using the scripts in the meantime.</note>
 - Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
-- PostgreSQL migrations live with the service that owns the schema (e.g. `src/billing-service/migrations/`), one database per service. The platform provisions databases and roles; the service's Ansible role applies its migrations.
-- ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. Never use positional `batch.Append` — it silently corrupts data when columns are added or reordered.
-- ClickHouse queries must pass dynamic values (including `Map` keys) through driver parameter binding (`$1`, `$2`, ...); never interpolate values into query strings with `fmt.Sprintf`. Use `arrayElement(map_col, $N)` instead of `map_col['{interpolated}']`.
+- One database per service on a single PG instance, provisioned via Ansible only at substrate configuration time.
+- ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. `batch.Append` silently corrupts data when columns are added or reordered.
 - ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden `UInt8` column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (`UInt8` over `Int32` when the range fits).
 - Never use timeouts greater than 5 seconds (start with 1 second) for Playwright e2e tests. Playwright has a quirk where every test failure is reported as a timeout issue, which is misleading; the underlying issue is behavior/logic, not latency. Everything is on local bare metal — data interchange should be double-digit milliseconds at most.
 - Our customers use our services via API and browser. Fix issues at the service level; don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that API consumers call directly.
@@ -177,7 +183,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 <note>
 Our Ansible code today is extremely far off what is desirable. Consider all Ansible, including generated Ansible, as being 99% tech-debt and only 1% what should remain after we thin it out in favor of other more purpose built tools. Do not read Ansible yamls thinking "I should copy this pattern" or "I should maintain backwards compatibility with the existing Ansible structure". Almost all of it will be deleted and only a small amount rewritten after we get Bazel + Cue + Nomad in place.
 
-After the migration: **all software-deployment convergence is owned by Nomad.** Ansible's job is reduced to configuring the host — system users, ZFS datasets, package installs, substrate daemons (Postgres, ClickHouse, SPIRE, OpenBao, NATS, Temporal, Caddy, Forgejo, Zitadel, Stalwart, Garage, vm-orchestrator, Nomad itself), and per-component substrate state (DB/role/migrations, credstore files, Zitadel auth audience). Roles/tags-as-software-selectors go away. The actual lifecycle of application services and frontends — start, restart, rolling update, drain, health-check, auto-revert — runs through Nomad. Bazel owns build artefacts; CUE owns desired shape; the controller-side `aspect deploy` invokes `nomad-deploy` over SSH for each opted-in component, and `nomad-deploy` is the single primitive that talks to Nomad's API. Nothing else writes Nomad jobs. Don't add Ansible roles or tasks for software supervision; if you find yourself reaching for `community.general.systemd` or `nomad_job` in a playbook, the work belongs in `nomad-deploy` or the renderer, not Ansible.
+Target post-migration: **all software-deployment convergence is owned by Nomad.** Ansible's job is reduced to configuring the host — system users, ZFS datasets, package installs, substrate daemons (Postgres, ClickHouse, SPIRE, OpenBao, NATS, Temporal, Caddy, Forgejo, Zitadel, Stalwart, Garage, vm-orchestrator, Nomad itself), and per-component substrate state (DB/role/migrations, credstore files, Zitadel auth audience). Roles/tags-as-software-selectors go away. The actual lifecycle of application services and frontends — start, restart, rolling update, drain, health-check, auto-revert — runs through Nomad. Bazel owns build artefacts; CUE owns desired shape; the controller-side `aspect deploy` invokes `nomad-deploy` over SSH for each opted-in component, and `nomad-deploy` is the single primitive that talks to Nomad's API. Nothing else writes Nomad jobs. Don't add Ansible roles or tasks for software supervision; if you find yourself reaching for `community.general.systemd` or `nomad_job` in a playbook, the work belongs in `nomad-deploy` or the renderer, not Ansible.
 </note>
 
 
