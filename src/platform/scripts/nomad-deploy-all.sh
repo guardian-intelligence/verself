@@ -72,7 +72,8 @@ while IFS=$'\t' read -r output local_path remote_path sha; do
 
     echo "[nomad-deploy-all] publish ${output}.tar sha256=${sha:0:12}"
     scp -q -o BatchMode=yes "${local_file}" "${HOST}:${tmp_remote_path}"
-    ssh -o BatchMode=yes "${HOST}" "sudo install -d -o caddy -g caddy -m 0755 ${remote_dir_q} && sudo install -o caddy -g caddy -m 0644 ${tmp_remote_path_q} ${remote_path_q} && rm -f ${tmp_remote_path_q}"
+    # ssh reads stdin by default; -n keeps it from draining the publish manifest.
+    ssh -n -o BatchMode=yes "${HOST}" "sudo install -d -o caddy -g caddy -m 0755 ${remote_dir_q} && sudo install -o caddy -g caddy -m 0644 ${tmp_remote_path_q} ${remote_path_q} && rm -f ${tmp_remote_path_q}"
 done <"${publish_manifest}"
 
 local_nomad_port="${NOMAD_DEPLOY_LOCAL_PORT:-14646}"
