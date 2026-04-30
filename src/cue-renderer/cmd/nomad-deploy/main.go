@@ -13,6 +13,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -24,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -44,15 +46,46 @@ const (
 )
 
 func main() {
-	var (
-		component  = flag.String("component", "", "component name (snake_case)")
-		specPath   = flag.String("spec", "", "rendered job spec path; default /etc/verself/jobs/<id>.nomad.json")
-		binaryPath = flag.String("binary", "", "service binary path; default /opt/verself/profile/bin/<id>")
-		audPath    = flag.String("auth-audience-file", "", "auth audience file; default /etc/verself/<id>/auth_audience")
-		nomadAddr  = flag.String("nomad-addr", defaultNomadAddr, "Nomad agent HTTP address")
-		timeout    = flag.Duration("timeout", defaultTimeout, "deployment poll timeout")
-	)
-	flag.Parse()
+	if len(os.Args) > 1 && os.Args[1] == "enumerate" {
+		runEnumerate(os.Args[2:])
+		return
+	}
+	runSubmit(os.Args[1:])
+}
+
+// runEnumerate prints one TSV row per nomad-supervised component:
+//   <component>\t<job_id>\t<bazel_label>\t<output>
+//
+// Reads .cache/render/<site>/jobs/index.json (written by the Nomad
+// renderer) directly. The shell wrapper iterates the output; no Python
+// heredocs and no YAML parser needed.
+func runEnumerate(args []string) {
+	fs := flag.NewFlagSet("enumerate", flag.ExitOnError)
+	indexPath := fs.String("index", "", "rendered jobs index (e.g. .cache/render/prod/jobs/index.json)")
+	fs.Parse(args)
+	if *indexPath == "" {
+		fail("enumerate: --index is required")
+	}
+	rows, err := enumerate(*indexPath)
+	if err != nil {
+		fail(err.Error())
+	}
+	w := bufio.NewWriter(os.Stdout)
+	for _, r := range rows {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Component, r.JobID, r.BazelLabel, r.Output)
+	}
+	w.Flush()
+}
+
+func runSubmit(args []string) {
+	fs := flag.NewFlagSet("submit", flag.ExitOnError)
+	component := fs.String("component", "", "component name (snake_case)")
+	specPath := fs.String("spec", "", "rendered job spec path; default /etc/verself/jobs/<id>.nomad.json")
+	binaryPath := fs.String("binary", "", "service binary path; default /opt/verself/profile/bin/<id>")
+	audPath := fs.String("auth-audience-file", "", "auth audience file; default /etc/verself/<id>/auth_audience")
+	nomadAddr := fs.String("nomad-addr", defaultNomadAddr, "Nomad agent HTTP address")
+	timeout := fs.Duration("timeout", defaultTimeout, "deployment poll timeout")
+	fs.Parse(args)
 
 	if *component == "" {
 		fail("--component is required")
@@ -357,6 +390,34 @@ func awaitHealthy(ctx context.Context, nomadAddr, jobID string, jobModifyIndex i
 func fail(msg string) {
 	fmt.Fprintf(os.Stderr, "ERROR: %s\n", msg)
 	os.Exit(1)
+}
+
+// enumerateRow is the per-component shape both the Nomad renderer
+// (writer) and nomad-deploy enumerate (reader) agree on. JSON tags
+// must stay stable — bumping them breaks the shell wrapper.
+type enumerateRow struct {
+	Component  string `json:"component"`
+	JobID      string `json:"job_id"`
+	BazelLabel string `json:"bazel_label"`
+	Output     string `json:"output"`
+}
+
+type jobsIndex struct {
+	Components []enumerateRow `json:"components"`
+}
+
+func enumerate(indexPath string) ([]enumerateRow, error) {
+	body, err := os.ReadFile(indexPath)
+	if err != nil {
+		return nil, fmt.Errorf("read jobs index: %w", err)
+	}
+	var idx jobsIndex
+	if err := json.Unmarshal(body, &idx); err != nil {
+		return nil, fmt.Errorf("parse jobs index: %w", err)
+	}
+	out := append([]enumerateRow(nil), idx.Components...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Component < out[j].Component })
+	return out, nil
 }
 
 // allocSummary is the slice of /v1/job/<id>/allocations we care about

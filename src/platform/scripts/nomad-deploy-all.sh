@@ -16,9 +16,9 @@
 #                    iterate on code without re-running the substrate
 #                    playbook.
 #
-# Return code: non-zero on the FIRST failure (binary build, scp, or
-# nomad-deploy). The aspect deploy verb propagates the rc into
-# verself.deploy_events.error_message.
+# The component list comes from `nomad-deploy enumerate --index=...`,
+# which reads the renderer-emitted .cache/render/<site>/jobs/index.json.
+# No YAML parsing or Python heredocs.
 set -euo pipefail
 
 usage() {
@@ -57,11 +57,11 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 CACHE_DIR="${REPO_ROOT}/.cache/render/${SITE}"
 JOBS_DIR="${CACHE_DIR}/jobs"
-COMPONENTS_YML="${CACHE_DIR}/inventory/group_vars/all/generated/components.yml"
+INDEX="${JOBS_DIR}/index.json"
 INVENTORY="${REPO_ROOT}/src/platform/ansible/inventory/${SITE}.ini"
 
-if [[ ! -d "${JOBS_DIR}" ]]; then
-    echo "[nomad-deploy-all] no ${JOBS_DIR} — no nomad-supervised components in this render" >&2
+if [[ ! -f "${INDEX}" ]]; then
+    echo "[nomad-deploy-all] no ${INDEX} — no nomad-supervised components in this render" >&2
     exit 0
 fi
 
@@ -73,65 +73,26 @@ if [[ -z "${HOST}" ]]; then
     exit 1
 fi
 
-shopt -s nullglob
-specs=("${JOBS_DIR}"/*.nomad.json)
-if [[ ${#specs[@]} -eq 0 ]]; then
-    echo "[nomad-deploy-all] no *.nomad.json under ${JOBS_DIR}" >&2
+# Build nomad-deploy once on the controller; we reuse this binary for the
+# `enumerate` subcommand below and ignore it for the per-host invocation
+# (the box has its own copy at /opt/verself/profile/bin/nomad-deploy).
+(cd "${REPO_ROOT}" && bazelisk build --config=remote-writer //src/cue-renderer/cmd/nomad-deploy:nomad-deploy >/dev/null 2>&1)
+NOMAD_DEPLOY=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer/cmd/nomad-deploy:nomad-deploy 2>/dev/null | tail -1)
+NOMAD_DEPLOY="${REPO_ROOT}/${NOMAD_DEPLOY}"
+
+# Index format: TSV rows of <component>\t<job_id>\t<bazel_label>\t<output>
+mapfile -t INDEX_ROWS < <("${NOMAD_DEPLOY}" enumerate --index="${INDEX}")
+if [[ ${#INDEX_ROWS[@]} -eq 0 ]]; then
+    echo "[nomad-deploy-all] index.json is empty" >&2
     exit 0
 fi
 
-# Resolve the bazel_label for a component name from the rendered
-# components.yml. Lets --push-binaries skip a separate label lookup.
-bazel_label_for() {
-    local component="$1"
-    python3 - "$component" "$COMPONENTS_YML" <<'PY'
-import sys, yaml
-component = sys.argv[1]
-with open(sys.argv[2]) as f:
-    data = yaml.safe_load(f) or {}
-for c in data.get("topology_components", []):
-    if c.get("name") != component:
-        continue
-    for src in (c.get("converge", {}).get("systemd", {}).get("units", []) or []):
-        # No bazel_label on units; fall through to topology_deploy below.
-        pass
-PY
-}
-
-resolve_artifact() {
-    local component="$1"
-    python3 - "$component" "$CACHE_DIR/inventory/group_vars/all/generated/deploy.yml" <<'PY'
-import sys, yaml
-component = sys.argv[1]
-with open(sys.argv[2]) as f:
-    data = yaml.safe_load(f) or {}
-for art in data.get("topology_deploy", {}).get("artifacts", []):
-    if art.get("component") != component or art.get("name") != "primary":
-        continue
-    a = art.get("artifact", {}) or {}
-    if a.get("kind") != "go_binary":
-        continue
-    print(a.get("bazel_label", ""))
-    print(a.get("output", ""))
-    sys.exit(0)
-sys.exit("no go_binary primary artifact for {}".format(component))
-PY
-}
-
-for spec in "${specs[@]}"; do
-    component_id=$(basename "${spec}" .nomad.json)
-    component=${component_id//-/_}
-
+for row in "${INDEX_ROWS[@]}"; do
+    IFS=$'\t' read -r component job_id bazel_label output <<<"${row}"
+    spec="${JOBS_DIR}/${job_id}.nomad.json"
     echo "[nomad-deploy-all] ${component} -> ${HOST}"
 
     if [[ "${PUSH_BINARIES}" == "1" ]]; then
-        mapfile -t artifact < <(resolve_artifact "${component}")
-        bazel_label="${artifact[0]}"
-        output_name="${artifact[1]}"
-        if [[ -z "${bazel_label}" || -z "${output_name}" ]]; then
-            echo "[nomad-deploy-all] ${component}: no go_binary artifact in deploy.yml" >&2
-            exit 1
-        fi
         echo "[nomad-deploy-all]   build ${bazel_label}"
         (cd "${REPO_ROOT}" && bazelisk build --config=remote-writer "${bazel_label}")
         bin_path=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files "${bazel_label}" 2>/dev/null | tail -1)
@@ -139,14 +100,14 @@ for spec in "${specs[@]}"; do
             echo "[nomad-deploy-all] ${component}: bazel cquery did not resolve to a file" >&2
             exit 1
         fi
-        echo "[nomad-deploy-all]   scp ${output_name} (sha256=$(sha256sum "${REPO_ROOT}/${bin_path}" | awk '{print substr($1,1,12)}'))"
-        scp -q -o BatchMode=yes "${REPO_ROOT}/${bin_path}" "${HOST}:/tmp/${output_name}"
-        ssh -o BatchMode=yes "${HOST}" "sudo install -o root -g root -m 0755 /tmp/${output_name} /opt/verself/profile/bin/${output_name} && rm -f /tmp/${output_name}"
+        echo "[nomad-deploy-all]   scp ${output} (sha256=$(sha256sum "${REPO_ROOT}/${bin_path}" | awk '{print substr($1,1,12)}'))"
+        scp -q -o BatchMode=yes "${REPO_ROOT}/${bin_path}" "${HOST}:/tmp/${output}"
+        ssh -o BatchMode=yes "${HOST}" "sudo install -o root -g root -m 0755 /tmp/${output} /opt/verself/profile/bin/${output} && rm -f /tmp/${output}"
     fi
 
-    echo "[nomad-deploy-all]   scp ${component_id}.nomad.json"
-    scp -q -o BatchMode=yes "${spec}" "${HOST}:/tmp/${component_id}.nomad.json"
-    ssh -o BatchMode=yes "${HOST}" "sudo install -o root -g root -m 0644 /tmp/${component_id}.nomad.json /etc/verself/jobs/${component_id}.nomad.json && rm -f /tmp/${component_id}.nomad.json"
+    echo "[nomad-deploy-all]   scp ${job_id}.nomad.json"
+    scp -q -o BatchMode=yes "${spec}" "${HOST}:/tmp/${job_id}.nomad.json"
+    ssh -o BatchMode=yes "${HOST}" "sudo install -o root -g root -m 0644 /tmp/${job_id}.nomad.json /etc/verself/jobs/${job_id}.nomad.json && rm -f /tmp/${job_id}.nomad.json"
 
     ssh -o BatchMode=yes "${HOST}" "/opt/verself/profile/bin/nomad-deploy --component=${component}"
 done
