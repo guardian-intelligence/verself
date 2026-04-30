@@ -6,9 +6,6 @@
 - name: Configure component users and directories
   ansible.builtin.include_tasks: component/users.yml
 
-- name: Remove legacy component systemd units
-  ansible.builtin.include_tasks: component/legacy_systemd.yml
-
 - name: Configure component credentials
   ansible.builtin.include_tasks: component/secrets.yml
 
