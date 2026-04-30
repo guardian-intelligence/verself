@@ -83,9 +83,23 @@ AS SELECT
     -- verbs are stable across OpenSSH 8.x and 9.x; if a future upgrade adds
     -- a new shape, it lands as user='' in 'other' rows and stays queryable
     -- via Body.
-    extract(
-        Body,
-        '(?:Accepted (?:publickey|password) for|Invalid user|Failed password for invalid user|Failed password for|Connection closed by invalid user|Disconnected from invalid user|Connection closed by authenticating user|Disconnected from authenticating user) (\\S+)'
+    --
+    -- POSIX LOGIN_NAME_MAX is 32; sshd accepts up to 256 because it has no
+    -- way to know which usernames the underlying OS supports. Anything
+    -- longer than 32 in this column is almost certainly a fat-finger
+    -- (a user typed their password into the username field). Cap to
+    -- __truncated__ so the indexed analytics column never holds a
+    -- credential. Body retains the raw line for diagnostics.
+    if(
+        length(extract(
+            Body,
+            '(?:Accepted (?:publickey|password) for|Invalid user|Failed password for invalid user|Failed password for|Connection closed by invalid user|Disconnected from invalid user|Connection closed by authenticating user|Disconnected from authenticating user) (\\S+)'
+        )) > 32,
+        '__truncated__',
+        extract(
+            Body,
+            '(?:Accepted (?:publickey|password) for|Invalid user|Failed password for invalid user|Failed password for|Connection closed by invalid user|Disconnected from invalid user|Connection closed by authenticating user|Disconnected from authenticating user) (\\S+)'
+        )
     )                                                                      AS user,
     -- Two source_ip shapes: "from <ip> port <n>" (most lines) and
     -- "user <name> <ip> port <n>" (the preauth-close family). Try the

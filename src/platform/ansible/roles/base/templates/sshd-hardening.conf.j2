@@ -9,6 +9,14 @@ PubkeyAuthentication yes
 MaxAuthTries 3
 X11Forwarding no
 
+# LogLevel INFO is the default; pin it explicitly so a future change can't
+# silently bump to DEBUG/DEBUG2/DEBUG3, which makes sshd log session-setup
+# internals (PAM module trace, channel multiplexing, key-exchange) that
+# could carry credential-shaped strings into journald and onward into
+# verself.host_auth_events. INFO records "who attempted what from where"
+# without dumping protocol internals.
+LogLevel INFO
+
 # Concurrency: multiple operator agents multiplex many channels through one
 # ControlMaster TCP session; each channel counts against MaxSessions. Default
 # (10) was too low for the agent fleet; 3 was catastrophic. MaxStartups loosened
