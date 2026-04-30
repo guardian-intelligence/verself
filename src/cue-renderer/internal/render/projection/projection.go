@@ -263,10 +263,20 @@ func Processes(loaded load.Loaded) ([]map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
+		// supervisor is the same per-component for all of its processes;
+		// readers (deploy_profile/build_go.yml's restart loop) use it to
+		// skip systemd-restart bookkeeping for nomad-supervised tasks.
+		supervisor := "systemd"
+		if dep, ok := component.Value["deployment"].(map[string]any); ok {
+			if s, ok := dep["supervisor"].(string); ok && s != "" {
+				supervisor = s
+			}
+		}
 		rendered = append(rendered, map[string]any{
 			"key":                  component.Name + ".primary",
 			"component":            component.Name,
 			"name":                 "primary",
+			"supervisor":           supervisor,
 			"systemd":              systemd,
 			"user":                 runtime["user"],
 			"group":                runtime["group"],
@@ -291,6 +301,7 @@ func Processes(loaded load.Loaded) ([]map[string]any, error) {
 				"key":                  component.Name + "." + process.Name,
 				"component":            component.Name,
 				"name":                 process.Name,
+				"supervisor":           supervisor,
 				"systemd":              process.Value["systemd"],
 				"user":                 process.Value["user"],
 				"group":                process.Value["group"],
