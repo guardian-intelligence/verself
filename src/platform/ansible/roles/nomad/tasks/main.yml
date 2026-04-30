@@ -1,0 +1,79 @@
+---
+# Nomad single-node supervisor (server + client co-resident).
+# Binary is laid down by deploy_profile from the server-tools archive;
+# config lives at /etc/nomad/nomad.hcl, state at /var/lib/nomad. The HTTP
+# API binds loopback-only — operator access flows over wg-ops / SSH-
+# forwarded loopback, never the public interface.
+
+- name: Capture Nomad version
+  ansible.builtin.command:
+    cmd: "{{ verself_bin }}/nomad version"
+  register: nomad_version_output
+  changed_when: false
+
+- name: Assert Nomad version matches server-tools pin
+  ansible.builtin.assert:
+    that: "'Nomad v' + topology_versions.production.nomad in nomad_version_output.stdout"
+    fail_msg: >-
+      Expected Nomad v{{ topology_versions.production.nomad }},
+      got: {{ nomad_version_output.stdout_lines[0] }}
+
+- name: Create Nomad configuration directory
+  ansible.builtin.file:
+    path: "{{ nomad_config_dir }}"
+    state: directory
+    owner: "{{ nomad_user }}"
+    group: "{{ nomad_group }}"
+    mode: "0750"
+
+- name: Create Nomad state directory
+  ansible.builtin.file:
+    path: "{{ nomad_data_dir }}"
+    state: directory
+    owner: "{{ nomad_user }}"
+    group: "{{ nomad_group }}"
+    mode: "0700"
+
+- name: Deploy Nomad agent configuration
+  ansible.builtin.template:
+    src: nomad.hcl.j2
+    dest: "{{ nomad_config_dir }}/nomad.hcl"
+    owner: "{{ nomad_user }}"
+    group: "{{ nomad_group }}"
+    mode: "0640"
+  notify: restart nomad
+
+- name: Deploy Nomad systemd unit
+  ansible.builtin.template:
+    src: nomad.service.j2
+    dest: /etc/systemd/system/nomad.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nomad
+
+- name: Apply Nomad unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start nomad
+  ansible.builtin.systemd:
+    name: nomad
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Nomad HTTP API
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.nomad.host }}"
+    port: "{{ topology_endpoints.nomad.endpoints.http.port }}"
+    timeout: 30
+
+- name: Wait for Nomad to leave bootstrapping
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.nomad.endpoints.http.address }}/v1/agent/health"
+    method: GET
+    status_code: 200
+  register: nomad_health
+  retries: 30
+  delay: 1
+  until: nomad_health.status == 200

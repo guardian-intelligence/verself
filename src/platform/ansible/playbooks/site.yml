@@ -191,6 +191,8 @@
       tags: [garage, object_storage_service]
     - role: bazel_remote
       tags: [bazel_remote]
+    - role: nomad
+      tags: [nomad, profile_service]
     - role: clickhouse
       tags:
         - clickhouse

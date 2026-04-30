@@ -25,6 +25,7 @@ TAR_SINGLE_BINARIES = [
 
 ZIP_SINGLE_BINARIES = [
     ("tigerbeetle", "@server_tool_tigerbeetle//file", "tigerbeetle", "tigerbeetle"),
+    ("nomad", "@server_tool_nomad//file", "nomad", "nomad"),
 ]
 
 DEB_BINARY_SPECS = [
@@ -54,6 +55,7 @@ SERVER_TOOL_DEPS = [
     ":grafana_clickhouse_datasource_version",
     ":nats_server",
     ":nodejs",
+    ":nomad",
     ":openbao",
     ":otelcol_contrib",
     ":spiffe_helper",

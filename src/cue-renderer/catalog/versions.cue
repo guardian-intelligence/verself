@@ -47,6 +47,7 @@ versions: {
 		containerd:                  "2.2.2"
 		nodejs:                      "22.22.2"
 		caddy:                       "2.11.2"
+		nomad:                       "1.11.3"
 		stalwart:                    "0.15.5"
 		stalwartCli:                 "0.15.5"
 		stalwartWebadmin:            "0.1.37"
@@ -120,7 +121,7 @@ versions: {
 // re-unpack on the host.
 serverTools: {
 	bazel_label: "//src/cue-renderer/binaries:server_tools.tar.zst"
-	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)"
+	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)_nomad-\(versions.production.nomad)"
 }
 
 // devToolsArchive is the dev-tools twin of serverTools: the single Bazel
@@ -365,6 +366,12 @@ serverToolDownloads: {
 		sha256:               "94391dfefe1f278ac8f387ab86162f0e88d87ff97df367f360e51e3cda3df56f"
 		url:                  "https://github.com/caddyserver/caddy/releases/download/v\(versions.production.caddy)/caddy_\(versions.production.caddy)_linux_amd64.tar.gz"
 	}
+	nomad: {
+		name:                 "server_tool_nomad"
+		downloaded_file_path: "nomad_\(versions.production.nomad)_linux_amd64.zip"
+		sha256:               "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12"
+		url:                  "https://releases.hashicorp.com/nomad/\(versions.production.nomad)/nomad_\(versions.production.nomad)_linux_amd64.zip"
+	}
 }
 
 serverToolPackaging: {
@@ -388,6 +395,7 @@ serverToolPackaging: {
 	]
 	zip_single: [
 		{name: "tigerbeetle", repo: "server_tool_tigerbeetle", binary: "tigerbeetle", dest: "tigerbeetle"},
+		{name: "nomad", repo: "server_tool_nomad", binary: "nomad", dest: "nomad"},
 	]
 	deb_member: [
 		{name: "openbao", repo: "server_tool_openbao", binary: "usr/bin/bao", dest: "bao"},
