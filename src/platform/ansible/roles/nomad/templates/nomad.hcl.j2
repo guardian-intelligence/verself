@@ -39,6 +39,15 @@ client {
   # Single-node: server is co-resident on loopback. Setting servers
   # explicitly skips Consul discovery (we don't run Consul).
   servers = ["127.0.0.1:4647"]
+
+  # Pin every reserved port to 127.0.0.1 so the native service registry
+  # advertises loopback for HTTP/TCP checks. Components bind 127.0.0.1
+  # at L4; nftables enforces loopback-only at L3 as defense-in-depth.
+  # Filtering by CIDR avoids fingerprinting ::1 alongside 127.0.0.1
+  # (per hashicorp/nomad#15341).
+  host_network "loopback" {
+    cidr = "127.0.0.0/8"
+  }
 }
 
 # Disable Consul auto-discovery: we don't run a Consul agent, so leaving
