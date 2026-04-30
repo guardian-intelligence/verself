@@ -30,8 +30,15 @@ import (
 
 const (
 	defaultNomadAddr = "http://127.0.0.1:4646"
-	defaultTimeout   = 5 * time.Minute
+	defaultTimeout   = 2 * time.Minute
 	pollInterval     = 2 * time.Second
+	// failFastDeadAllocs aborts the await-healthy loop once at least
+	// this many distinct allocs for the deployment have entered a
+	// terminal failed state. The default rolling-restart contract
+	// (max_parallel=1, auto_revert=true) gives Nomad three chances by
+	// design; if all three die the same way, no amount of further
+	// waiting fixes it and the operator wants the error now.
+	failFastDeadAllocs = 3
 
 	authAudienceSentinel = "{{ component_auth_audience }}"
 )
@@ -276,11 +283,19 @@ func submit(ctx context.Context, nomadAddr string, spec map[string]any) (submitR
 // awaitHealthy polls the latest deployment for the job. For service-type
 // jobs Nomad creates a deployment per submission; we wait for that
 // deployment to either reach Status="successful" or fail.
+//
+// The poller also fail-fasts on a wedged deployment: if
+// failFastDeadAllocs distinct allocs in the latest deployment have
+// already terminated, no further waiting helps. We extract the failure
+// reason from the most recent alloc's TaskStates and surface it.
 func awaitHealthy(ctx context.Context, nomadAddr, jobID string, jobModifyIndex int64) error {
 	deadline := time.NewTimer(0)
 	for {
 		select {
 		case <-ctx.Done():
+			if reason := latestAllocFailureReason(context.Background(), nomadAddr, jobID); reason != "" {
+				return fmt.Errorf("await timeout (deployment never became healthy); last alloc failure: %s", reason)
+			}
 			return ctx.Err()
 		case <-deadline.C:
 		}
@@ -315,7 +330,15 @@ func awaitHealthy(ctx context.Context, nomadAddr, jobID string, jobModifyIndex i
 			case "successful":
 				return nil
 			case "failed", "cancelled":
+				if reason := latestAllocFailureReason(ctx, nomadAddr, jobID); reason != "" {
+					return fmt.Errorf("deployment %s ended with status=%s: %s; last alloc failure: %s",
+						payload.ID, payload.Status, payload.StatusDescription, reason)
+				}
 				return fmt.Errorf("deployment %s ended with status=%s: %s", payload.ID, payload.Status, payload.StatusDescription)
+			}
+			if dead := countDeadAllocs(ctx, nomadAddr, jobID); dead >= failFastDeadAllocs {
+				reason := latestAllocFailureReason(ctx, nomadAddr, jobID)
+				return fmt.Errorf("fail-fast: %d allocs already dead; last alloc failure: %s", dead, reason)
 			}
 		} else if resp.StatusCode == http.StatusNotFound {
 			// service-type jobs always create a deployment, but on the
@@ -334,4 +357,89 @@ func awaitHealthy(ctx context.Context, nomadAddr, jobID string, jobModifyIndex i
 func fail(msg string) {
 	fmt.Fprintf(os.Stderr, "ERROR: %s\n", msg)
 	os.Exit(1)
+}
+
+// allocSummary is the slice of /v1/job/<id>/allocations we care about
+// for fail-fast detection and error reporting.
+type allocSummary struct {
+	ID           string `json:"ID"`
+	ClientStatus string `json:"ClientStatus"`
+	ModifyIndex  int64  `json:"ModifyIndex"`
+	TaskStates   map[string]struct {
+		State  string `json:"State"`
+		Failed bool   `json:"Failed"`
+		Events []struct {
+			Type            string `json:"Type"`
+			DisplayMessage  string `json:"DisplayMessage"`
+			DriverError     string `json:"DriverError"`
+			Time            int64  `json:"Time"`
+		} `json:"Events"`
+	} `json:"TaskStates"`
+}
+
+func listAllocs(ctx context.Context, nomadAddr, jobID string) []allocSummary {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, nomadAddr+"/v1/job/"+jobID+"/allocations", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var allocs []allocSummary
+	if err := json.NewDecoder(resp.Body).Decode(&allocs); err != nil {
+		return nil
+	}
+	return allocs
+}
+
+func countDeadAllocs(ctx context.Context, nomadAddr, jobID string) int {
+	dead := 0
+	for _, a := range listAllocs(ctx, nomadAddr, jobID) {
+		if a.ClientStatus == "failed" || a.ClientStatus == "lost" {
+			dead++
+		}
+	}
+	return dead
+}
+
+// latestAllocFailureReason walks the most recently-modified failed
+// alloc's TaskStates and returns the most-informative event message —
+// the DriverError when present, the DisplayMessage otherwise. Empty
+// when no failed allocs exist or no diagnostic event was found.
+func latestAllocFailureReason(ctx context.Context, nomadAddr, jobID string) string {
+	allocs := listAllocs(ctx, nomadAddr, jobID)
+	var newest *allocSummary
+	for i := range allocs {
+		a := &allocs[i]
+		if a.ClientStatus != "failed" && a.ClientStatus != "lost" {
+			continue
+		}
+		if newest == nil || a.ModifyIndex > newest.ModifyIndex {
+			newest = a
+		}
+	}
+	if newest == nil {
+		return ""
+	}
+	var lastEvent string
+	var lastEventTime int64
+	for _, ts := range newest.TaskStates {
+		for _, ev := range ts.Events {
+			if ev.Time < lastEventTime {
+				continue
+			}
+			msg := ev.DriverError
+			if msg == "" {
+				msg = ev.DisplayMessage
+			}
+			if msg == "" {
+				continue
+			}
+			lastEventTime = ev.Time
+			lastEvent = ev.Type + ": " + msg
+		}
+	}
+	return lastEvent
 }
