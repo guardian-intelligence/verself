@@ -20,6 +20,7 @@ go_library(
         "//src/cue-renderer/internal/render/dns",
         "//src/cue-renderer/internal/render/endpoints",
         "//src/cue-renderer/internal/render/nftables",
+        "//src/cue-renderer/internal/render/nomad",
         "//src/cue-renderer/internal/render/ops",
         "//src/cue-renderer/internal/render/postgres",
         "//src/cue-renderer/internal/render/routes",

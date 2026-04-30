@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "systemd",
-    srcs = ["systemd.go"],
-    importpath = "github.com/verself/cue-renderer/internal/render/systemd",
+    name = "nomad",
+    srcs = ["nomad.go"],
+    importpath = "github.com/verself/cue-renderer/internal/render/nomad",
     visibility = ["//src/cue-renderer:__subpackages__"],
     deps = [
         "//src/cue-renderer/internal/load",
@@ -15,6 +15,6 @@ go_library(
 
 alias(
     name = "go_default_library",
-    actual = ":systemd",
+    actual = ":nomad",
     visibility = ["//src/cue-renderer:__subpackages__"],
 )

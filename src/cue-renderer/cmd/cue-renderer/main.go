@@ -38,6 +38,7 @@ import (
 	"github.com/verself/cue-renderer/internal/render/dns"
 	"github.com/verself/cue-renderer/internal/render/endpoints"
 	"github.com/verself/cue-renderer/internal/render/nftables"
+	"github.com/verself/cue-renderer/internal/render/nomad"
 	"github.com/verself/cue-renderer/internal/render/ops"
 	"github.com/verself/cue-renderer/internal/render/postgres"
 	"github.com/verself/cue-renderer/internal/render/routes"
@@ -69,6 +70,7 @@ func renderers() []render.Renderer {
 		dns.Renderer{},
 		endpoints.Renderer{},
 		nftables.Renderer{},
+		nomad.Renderer{},
 		ops.Renderer{},
 		postgres.Renderer{},
 		routes.Renderer{},
