@@ -20,7 +20,7 @@ topology: components: {
 				]
 			}
 			auth: {kind: "owned_project", project_name: "billing", project_role_assertion: false, project_role_check: false}
-			systemd: units: [{
+			units: [{
 				name:        "billing-service"
 				description: "Billing Service"
 				user:        "billing"
@@ -98,7 +98,7 @@ topology: components: {
 				api_base_url: "https://api.github.com"
 				web_base_url: "https://github.com"
 			}
-			systemd: units: [
+			units: [
 				{
 					name:        "sandbox-rental-service"
 					description: "Sandbox Rental Service"
@@ -201,7 +201,7 @@ topology: components: {
 					{key: "member", display_name: "Member", group: "identity"},
 				]
 			}
-			systemd: units: [{
+			units: [{
 				name:        "identity-service"
 				description: "Identity Service"
 				user:        "identity_service"
@@ -257,7 +257,7 @@ topology: components: {
 				]
 			}
 			auth: {kind: "identity_project_audience", project_name: "identity-service"}
-			systemd: units: [{
+			units: [{
 				name:        "governance-service"
 				description: "Governance Service"
 				user:        "governance_service"
@@ -300,7 +300,7 @@ topology: components: {
 					{key: "member", display_name: "Member", group: "secrets"},
 				]
 			}
-			systemd: units: [{
+			units: [{
 				name:        "secrets-service"
 				description: "Secrets Service"
 				user:        "secrets_service"
@@ -354,7 +354,7 @@ topology: components: {
 			directories: [{path: "/etc/credstore/profile-service", owner: "root", group: "profile_service", mode: "0750"}]
 			secret_refs: [{name: "pg-password", path: "/etc/credstore/profile-service/pg-password", owner: "root", group: "profile_service", mode: "0640", expose_as: "postgres_password", source: {kind: "generated", generate: {kind: "password", length: 64, chars: "ascii_letters,digits"}}}]
 			auth: {kind: "identity_project_audience", project_name: "identity-service"}
-			systemd: units: [{
+			units: [{
 				name:        "profile-service"
 				description: "Profile Service"
 				user:        "profile_service"
@@ -392,7 +392,7 @@ topology: components: {
 				]
 			}
 			auth: {kind: "identity_project_audience", project_name: "identity-service"}
-			systemd: units: [{
+			units: [{
 				name:        "notifications-service"
 				description: "Notifications Service"
 				user:        "notifications_service"
@@ -419,7 +419,7 @@ topology: components: {
 			directories: [{path: "/etc/credstore/projects-service", owner: "root", group: "projects_service", mode: "0750"}]
 			secret_refs: [{name: "pg-password", path: "/etc/credstore/projects-service/pg-password", owner: "root", group: "projects_service", mode: "0640", expose_as: "postgres_password", source: {kind: "generated", generate: {kind: "password", length: 64, chars: "ascii_letters,digits"}}}]
 			auth: {kind: "identity_project_audience", project_name: "identity-service"}
-			systemd: units: [{
+			units: [{
 				name:        "projects-service"
 				description: "Projects Service"
 				user:        "projects_service"
@@ -445,7 +445,7 @@ topology: components: {
 				{name: "webhook-secret", path: "/etc/credstore/source-code-hosting-service/webhook-secret", owner: "root", group: "source_code_hosting_service", mode: "0640", source: {kind: "generated", generate: {kind: "password", length: 64, chars: "ascii_letters,digits"}}},
 			]
 			auth: {kind: "identity_project_audience", project_name: "identity-service"}
-			systemd: units: [{
+			units: [{
 				name:        "source-code-hosting-service"
 				description: "Source Code Hosting Service"
 				user:        "source_code_hosting_service"
@@ -494,7 +494,7 @@ topology: components: {
 				project_role_check:     true
 				roles: [{key: "mailbox_user", display_name: "Mailbox User", group: "mailbox"}]
 			}
-			systemd: units: [{
+			units: [{
 				name:        "mailbox-service"
 				description: "Mailbox Service"
 				user:        "mailbox_service"
@@ -563,7 +563,7 @@ topology: components: {
 					{action: "SELECT", table: "verself.object_access_events"},
 				]
 			}
-			systemd: units: [
+			units: [
 				{
 					name:        "object-storage-service"
 					description: "Object Storage Service"

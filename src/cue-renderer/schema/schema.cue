@@ -611,9 +611,15 @@ package schema
 	secret_refs: [...#SecretRef] | *[] @go(SecretRefs)
 	clickhouse?: #ClickHouseBinding
 	auth: #ZitadelAuth | *{kind: "none"}
-	systemd: {
-		units: [...#SystemdUnit] | *[]
-	}
+	// units describes the runnable processes the supervisor manages.
+	// The shape is systemd-flavored today (hardening, BindReadOnlyPaths,
+	// LoadCredential are mapped 1:1 to systemd unit fields); the
+	// systemd renderer projects it to a /etc/systemd/system/<name>.service
+	// file, the nomad renderer projects it to a Nomad TaskGroup.
+	// Components may carry the same `units` block irrespective of
+	// `deployment.supervisor` — fields that don't translate (e.g.
+	// hardening on Nomad raw_exec) are ignored by the projection.
+	units: [...#SystemdUnit] | *[]
 	bootstrap: [...#ComponentBootstrapHook] | *[]
 	bootstrap_config: #ComponentBootstrapConfig | *{} @go(BootstrapConfig)
 }

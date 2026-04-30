@@ -6,9 +6,9 @@
 // `jobs/<component>.nomad.json`, anchored under the cache root that
 // `aspect render --site=<site>` populates.
 //
-// Spec shape: a single TaskGroup per systemd unit declared in
-// `converge.systemd.units`. The unit block stays the cross-supervisor
-// authoring contract (env vars, dependency wiring, readiness probes);
+// Spec shape: a single TaskGroup per unit declared in
+// `converge.units`. The unit block is the cross-supervisor authoring
+// contract (env vars, dependency wiring, readiness probes);
 // this renderer just rewrites it into Nomad JSON. raw_exec is the only
 // driver: workloads need peer-auth access to the Postgres Unix socket
 // and the SPIRE workload-API socket, which the exec driver's
@@ -97,23 +97,19 @@ func buildJobSpec(component projection.NamedMap, deployment map[string]any, reso
 	if !ok {
 		return nil, fmt.Errorf("%s.converge: missing", component.Name)
 	}
-	systemdConfig, err := projection.Map(converge, component.Name+".converge", "systemd")
-	if err != nil {
-		return nil, err
-	}
-	rawUnits, err := projection.Slice(systemdConfig, component.Name+".converge.systemd", "units")
+	rawUnits, err := projection.Slice(converge, component.Name+".converge", "units")
 	if err != nil {
 		return nil, err
 	}
 	if len(rawUnits) == 0 {
-		return nil, fmt.Errorf("%s.converge.systemd.units: nomad supervisor requires at least one unit", component.Name)
+		return nil, fmt.Errorf("%s.converge.units: nomad supervisor requires at least one unit", component.Name)
 	}
 
 	taskGroups := make([]map[string]any, 0, len(rawUnits))
 	for i, raw := range rawUnits {
 		unit, ok := raw.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s.converge.systemd.units[%d]: expected map, got %T", component.Name, i, raw)
+			return nil, fmt.Errorf("%s.converge.units[%d]: expected map, got %T", component.Name, i, raw)
 		}
 		group, err := buildTaskGroup(component, unit, deployment, resolver)
 		if err != nil {
@@ -142,7 +138,7 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	unitUser, _ := unit["user"].(string)
 	exec, _ := unit["exec"].(string)
 	if unitName == "" || unitUser == "" || exec == "" {
-		return nil, fmt.Errorf("%s.converge.systemd.units: name/user/exec required", component.Name)
+		return nil, fmt.Errorf("%s.converge.units: name/user/exec required", component.Name)
 	}
 	resolvedExec, err := resolver.resolve(exec)
 	if err != nil {
@@ -385,7 +381,7 @@ func buildServices(componentName, unitName string, unit map[string]any, primaryP
 				check["TLSSkipVerify"] = true
 			}
 		default:
-			return nil, fmt.Errorf("%s.converge.systemd.units.%s.readiness: unsupported probe kind %q", componentName, unitName, kind)
+			return nil, fmt.Errorf("%s.converge.units.%s.readiness: unsupported probe kind %q", componentName, unitName, kind)
 		}
 		checks = append(checks, check)
 	}
