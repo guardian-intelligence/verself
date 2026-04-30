@@ -76,23 +76,30 @@ def _run_ansible(ctx, site, env):
         label = "ansible-with-otel " + " ".join(args_list),
     )
 
-def _run_nomad_deploy(ctx, site, env):
+def _run_nomad_deploy(ctx, site, env, push_binaries):
     """SSH-exec /opt/verself/profile/bin/nomad-deploy on the bare-metal node
     for every component the cue-renderer marked supervisor=="nomad". The
     script reads .cache/render/<site>/jobs/*.nomad.json to enumerate
-    targets, then runs one ssh per component. Skipped when the renderer
-    produced no nomad jobs (script exits 0).
+    targets, scps the rendered spec to /etc/verself/jobs/, then runs one
+    ssh per component. Skipped when the renderer produced no nomad jobs
+    (script exits 0).
+
+    push_binaries=True also rebuilds + scps the matching service binary
+    so iteration on Go code can skip the substrate playbook entirely.
     """
+    args_list = ["--site=" + site]
+    if push_binaries:
+        args_list.append("--push-binaries")
     return checked_spawn(
         ctx,
         ws_path(ctx, _PLATFORM, "scripts/nomad-deploy-all.sh"),
-        ["--site=" + site],
+        args_list,
         cwd = ws_path(ctx),
         env = env,
-        label = "nomad-deploy-all --site=" + site,
+        label = "nomad-deploy-all " + " ".join(args_list),
     )
 
-def _deploy_one(ctx, site, sha, scope):
+def _deploy_one(ctx, site, sha, scope, no_ansible):
     env = derive_deploy_env(ctx, site = site, sha = sha, scope = scope)
     if env == None:
         return 1
@@ -124,26 +131,33 @@ def _deploy_one(ctx, site, sha, scope):
         event_kind = "started",
     )
 
-    rc = _run_ansible(ctx, site, env)
-    if rc != 0:
-        record_deploy_event(
-            ctx,
-            env = env,
-            site = site,
-            sha = sha,
-            scope = scope,
-            components = components,
-            event_kind = "failed",
-            error_message = "ansible-with-otel exited " + str(rc),
-        )
-        return rc
+    if not no_ansible:
+        rc = _run_ansible(ctx, site, env)
+        if rc != 0:
+            record_deploy_event(
+                ctx,
+                env = env,
+                site = site,
+                sha = sha,
+                scope = scope,
+                components = components,
+                event_kind = "failed",
+                error_message = "ansible-with-otel exited " + str(rc),
+            )
+            return rc
 
     # Nomad supervises a per-component subset of the topology. Substrate
     # convergence (above) leaves the rendered job spec at
     # /etc/verself/jobs/<id>.nomad.json on the box; nomad-deploy then
     # owns the actual submit + deployment-poll. Ansible never touches
     # Nomad's API.
-    rc = _run_nomad_deploy(ctx, site, env)
+    #
+    # When --no-ansible skips the substrate playbook, the spec push step
+    # inside nomad-deploy-all.sh AND the --push-binaries flag together
+    # cover the host-state nomad-deploy needs (spec + binary). Substrate
+    # state (Postgres roles, secrets, auth audience, etc.) MUST already
+    # be in place from a prior full deploy.
+    rc = _run_nomad_deploy(ctx, site, env, push_binaries = no_ansible)
     if rc != 0:
         record_deploy_event(
             ctx,
@@ -168,7 +182,7 @@ def _deploy_one(ctx, site, sha, scope):
     )
     return rc
 
-def _deploy_in_worktree(ctx, site, sha, scope):
+def _deploy_in_worktree(ctx, site, sha, scope, no_ansible):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
     and clean up. Inside the worktree HEAD == sha, so the inner invocation
     falls through to the in-tree path with no further branching.
@@ -182,9 +196,12 @@ def _deploy_in_worktree(ctx, site, sha, scope):
     )
     if rc != 0:
         return rc
+    inner_args = ["deploy", "--site=" + site, "--scope=" + scope]
+    if no_ansible:
+        inner_args.append("--no-ansible")
     deploy_rc = checked_spawn(
         ctx, "aspect",
-        ["deploy", "--site=" + site, "--scope=" + scope],
+        inner_args,
         cwd = wt,
         label = "aspect deploy (worktree " + sha[:12] + ")",
     )
@@ -198,13 +215,14 @@ def _deploy_in_worktree(ctx, site, sha, scope):
 def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
     scope = ctx.args.scope or "all"
+    no_ansible = ctx.args.no_ansible
     sha = resolve_sha(ctx, ctx.args.sha or "")
     if sha == "":
         return 1
     head = git_head(ctx)
     if sha != head:
-        return _deploy_in_worktree(ctx, site, sha, scope)
-    return _deploy_one(ctx, site, sha, scope)
+        return _deploy_in_worktree(ctx, site, sha, scope, no_ansible)
+    return _deploy_one(ctx, site, sha, scope, no_ansible)
 
 deploy = task(
     implementation = _deploy_impl,
@@ -217,6 +235,11 @@ deploy = task(
         "tags": args.string_list(
             long = "tags",
             description = "Ansible tags to scope this deploy (e.g. --tags=company,caddy). May be repeated.",
+        ),
+        "no_ansible": args.boolean(
+            long = "no-ansible",
+            default = False,
+            description = "Skip the substrate playbook entirely. Renders the cache, then runs nomad-deploy-all.sh with --push-binaries so component binaries + specs land on the box without re-running Ansible. Use only after a prior full deploy has converged substrate.",
         ),
     },
 )
