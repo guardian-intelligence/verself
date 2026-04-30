@@ -4,7 +4,7 @@
 # layout, and the canonical /usr/local/{go,zig} symlinks; Ansible only
 # applies the resulting artifact, marker-gated for idempotency.
 #
-# Mirror of roles/deploy_profile/tasks/static_binaries.yml.
+# Mirror of roles/substrate_profile/tasks/static_binaries.yml.
 
 - name: Set dev tools archive facts
   ansible.builtin.set_fact:

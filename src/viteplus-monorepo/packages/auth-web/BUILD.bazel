@@ -11,3 +11,8 @@ viteplus_source_package(
     ],
     npm_name = "@verself/auth-web",
 )
+
+filegroup(
+    name = "auth_session_schema",
+    srcs = ["schema/001_auth_sessions.up.sql"],
+)

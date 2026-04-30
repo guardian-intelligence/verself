@@ -35,7 +35,7 @@ options:
 EXAMPLES = r"""
 - name: Probe worker state
   verself_systemd_status:
-    unit: sandbox-rental-recurring-worker.service
+    unit: temporal-server.service
   register: worker_status
   until: worker_status.active
   retries: 30

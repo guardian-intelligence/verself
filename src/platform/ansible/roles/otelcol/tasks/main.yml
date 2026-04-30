@@ -1,6 +1,6 @@
 ---
 # OpenTelemetry Collector configuration.
-# Binary provided by deploy_profile role (pinned static binary).
+# Binary provided by substrate_profile role (pinned static binary).
 
 - name: Create OTel Collector system group
   ansible.builtin.group:

@@ -66,14 +66,12 @@ func buildQueries(cfg config) ([]query, error) {
 		if cfg.runKey != "" {
 			return []query{
 				newQuery("deploy.run", deployRunSQL, params),
-				newQuery("deploy.bazel_build_run", deployBazelBuildRunSQL, params),
 				newQuery("deploy.codegen_actions", deployCodegenActionsSQL, params),
 				newQuery("deploy.rebuild_blast_radius", deployRebuildBlastRadiusSQL, params),
 			}, nil
 		}
 		return []query{
 			newQuery("deploy.tasks", deployTasksSQL, params),
-			newQuery("deploy.bazel_builds", deployBazelBuildsSQL, params),
 			newQuery("deploy.bazel_cache", deployBazelCacheSQL, params),
 		}, nil
 	case "trace":
@@ -796,26 +794,6 @@ WHERE ServiceName = 'ansible'
 ORDER BY Timestamp
 LIMIT {row_limit:UInt32}`
 
-// deployBazelBuildsSQL surfaces the deploy_profile bazel build task duration
-// per deploy_run_key. Cold deploys with an empty bazel-remote land near 60s;
-// warm deploys served by the cache land in the single-digit seconds. Filter
-// uses LIKE on the role:task suffix because the upstream callback prepends
-// '[host] play:' to ansible.task.name.
-const deployBazelBuildsSQL = `
-SELECT
-  formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S') AS started,
-  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
-  round(Duration / 1e9, 2) AS bazel_seconds,
-  StatusCode AS status,
-  TraceId AS trace_id
-FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName = 'ansible'
-  AND SpanName = 'ansible.task'
-  AND SpanAttributes['ansible.task.name'] LIKE '%: deploy_profile : Build topology Go artifacts with Bazel'
-ORDER BY Timestamp DESC
-LIMIT {row_limit:UInt32}`
-
 // deployBazelCacheSQL totals bazel-remote hit and miss counts in the lookback
 // window by summing the per-(kind, method, status) counter delta. Counter
 // resets (process restarts) make max-min slightly understate the true total
@@ -839,67 +817,8 @@ FROM (
 GROUP BY status
 ORDER BY status`
 
-// deployBazelBuildRunSQL intersects one deploy's bazel-build window with the
-// bazel-remote counter to attribute hits and misses to the specific run. The
-// window is padded by 30 seconds on each side so warm-cache builds (which can
-// finish in under a second) reliably bracket the prometheus scrape interval
-// of 10s and still produce a non-empty delta.
-const deployBazelBuildRunSQL = `
-SELECT
-  formatDateTime(window.started, '%Y-%m-%d %H:%i:%S') AS started,
-  round(window.bazel_seconds, 2) AS bazel_seconds,
-  cache.status,
-  cache.total
-FROM (
-  SELECT
-    min(Timestamp) AS started,
-    max(Timestamp + toIntervalNanosecond(toUInt64(Duration))) AS finished,
-    sum(Duration) / 1e9 AS bazel_seconds
-  FROM default.otel_traces
-  WHERE ServiceName = 'ansible'
-    AND SpanName = 'ansible.task'
-    AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
-    AND SpanAttributes['ansible.task.name'] LIKE '%: deploy_profile : Build topology Go artifacts with Bazel'
-) AS window
-CROSS JOIN (
-  SELECT
-    status,
-    sum(delta) AS total
-  FROM (
-    SELECT
-      Attributes['status'] AS status,
-      Attributes['kind'] AS kind,
-      Attributes['method'] AS method,
-      max(Value) - min(Value) AS delta
-    FROM default.otel_metrics_sum
-    WHERE ServiceName = 'bazel-remote'
-      AND MetricName = 'bazel_remote_incoming_requests_total'
-      AND TimeUnix BETWEEN
-        (
-          SELECT min(Timestamp) - INTERVAL 30 SECOND
-          FROM default.otel_traces
-          WHERE ServiceName = 'ansible'
-            AND SpanName = 'ansible.task'
-            AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
-            AND SpanAttributes['ansible.task.name'] LIKE '%: deploy_profile : Build topology Go artifacts with Bazel'
-        )
-        AND
-        (
-          SELECT max(Timestamp + toIntervalNanosecond(toUInt64(Duration))) + INTERVAL 30 SECOND
-          FROM default.otel_traces
-          WHERE ServiceName = 'ansible'
-            AND SpanName = 'ansible.task'
-            AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
-            AND SpanAttributes['ansible.task.name'] LIKE '%: deploy_profile : Build topology Go artifacts with Bazel'
-        )
-    GROUP BY status, kind, method
-  )
-  GROUP BY status
-) AS cache
-ORDER BY cache.status`
-
 // deployCodegenActionsSQL surfaces every codegen Bazel spawn that ran
-// inside one deploy's bazel-build window. The spans are emitted by
+// for one deploy. The spans are emitted by
 // src/otel/cmd/bazel-execlog-to-otel from --execution_log_json_file.
 // Mnemonics come from //tools/codegen:openapi.bzl (OpenAPISpec for
 // `cmd/<svc>-openapi` runs, OAPICodegen for the Go client gen) and

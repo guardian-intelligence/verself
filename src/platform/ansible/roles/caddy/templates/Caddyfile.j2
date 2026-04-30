@@ -54,6 +54,12 @@
 	}
 }
 
+http://{{ topology_endpoints.nomad_artifacts.endpoints.http.address }} {
+	bind {{ topology_endpoints.nomad_artifacts.host }}
+	root * {{ nomad_artifacts_dir }}
+	file_server
+}
+
 # connect-src 'self' is load-bearing: it blocks the browser from calling any
 # Go service origin directly (billing.api.<domain>, auth.<domain>, etc.), which
 # enforces the architectural rule that browser code never holds Zitadel bearer

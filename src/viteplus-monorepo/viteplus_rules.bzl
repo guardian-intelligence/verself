@@ -3,8 +3,8 @@ load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
-_VITEPLUS_TOOL = "//src/viteplus-monorepo:vp"
 _INSTRUMENTATION_BUNDLER = "//src/viteplus-monorepo/scripts:bundle_instrumentation"
+_NODEJS_ARCHIVE = "@server_tool_nodejs//file"
 
 def viteplus_source_package(npm_name, srcs):
     """Source-only workspace package linked into the rules_js npm graph.
@@ -32,7 +32,8 @@ def viteplus_source_package(npm_name, srcs):
 def viteplus_app(npm_name, srcs):
     """Bazel surface for a viteplus app — deliberately narrow.
 
-    Bazel does NOT run `vp build` for the app. Putting Vite/Rolldown inside a
+    `:node_app_nomad_artifact` runs `vp build` as a local, unsandboxed action.
+    Putting Vite/Rolldown inside a
     Bazel action sandbox breaks TanStack Start's route-level code splitting:
     the compiler plugin computes route filenames via `import.meta.url`, and
     the `node_modules/.aspect_rules_js/...` layout in the sandbox produces a
@@ -40,16 +41,10 @@ def viteplus_app(npm_name, srcs):
     rejects, collapsing every route into a single 1.6 MB monolithic main
     bundle (vs. ~148 route-split chunks the source-tree build produces).
 
-    Bazel's job here is to build the small hermetic OTel preload bundle
+    The base app macro builds the small hermetic OTel preload bundle
     (`:instrumentation_bundle`) — `instrumentation.mts` plus its
     `@verself/nitro-plugins` deps, bundled by Rolldown. That action is
     genuinely sandbox-safe (no filesystem-walking plugin involved).
-
-    The Ansible verself_web/company roles compose the deploy: they run
-    `vp build` in the source tree to produce `.output/`, then
-    `bazelisk build :instrumentation_bundle` for the preload, then sync both
-    into the release dir and start systemd with
-    `node --import ./instrumentation.mjs ./.output/server/index.mjs`.
 
     `srcs` is kept as a filegroup so a future Bazel target (e.g. a typecheck
     test, an e2e harness) can reference the app's input set without
@@ -69,11 +64,14 @@ def viteplus_app(npm_name, srcs):
     # `instrumentation.mjs` that runs without a node_modules tree on the host.
     # The driver runs Rolldown (same bundler `vp build` uses for the server
     # output) with `platform=node`, leaving Node built-ins external and
-    # inlining everything else. systemd loads it via Node's `--import` flag.
+    # inlining everything else. The Nomad launcher loads it via Node's
+    # `--import` flag.
     js_run_binary(
         name = "instrumentation_bundle",
         srcs = [
+            "//src/viteplus-monorepo:workspace_config",
             ":node_modules",
+            ":sources",
             "instrumentation.mts",
         ],
         outs = ["instrumentation.mjs"],
@@ -84,6 +82,113 @@ def viteplus_app(npm_name, srcs):
         chdir = native.package_name(),
         progress_message = "Bundling %s OTel preload" % npm_name,
         tool = _INSTRUMENTATION_BUNDLER,
+    )
+
+def viteplus_node_runtime_artifact(name):
+    native.genrule(
+        name = name,
+        srcs = [_NODEJS_ARCHIVE],
+        outs = ["nodejs-runtime.tar"],
+        cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/runtime/nodejs"
+tar -xJf "$(location {nodejs_archive})" -C "$$tmp/runtime/nodejs" --strip-components=1
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+""".format(nodejs_archive = _NODEJS_ARCHIVE),
+    )
+
+def viteplus_node_app_artifact(name, output, migration_entry = None, migration_data = {}):
+    package_dir = native.package_name()
+    migration_bundle = "_" + name + "_migration_bundle"
+    srcs = [
+        ":instrumentation_bundle",
+        ":sources",
+    ]
+    migration_cmds = ""
+    if migration_entry:
+        js_run_binary(
+            name = migration_bundle,
+            srcs = [
+                "//src/viteplus-monorepo:workspace_config",
+                ":node_modules",
+                ":sources",
+                migration_entry,
+            ],
+            outs = [output + "-migration.mjs"],
+            args = [
+                "--entry=" + migration_entry,
+                "--outfile=" + output + "-migration.mjs",
+            ],
+            chdir = native.package_name(),
+            progress_message = "Bundling %s Nomad migration" % output,
+            tool = _INSTRUMENTATION_BUNDLER,
+        )
+        srcs.append(":" + migration_bundle)
+        srcs.extend(migration_data.keys())
+        migration_data_copies = []
+        for label, dest in migration_data.items():
+            migration_data_copies.append("""
+mkdir -p "$$tmp/app/$$(dirname "{dest}")"
+cp "$$execroot/$(location {label})" "$$tmp/app/{dest}"
+""".format(label = label, dest = dest))
+        migration_cmds = """
+cp "$$execroot/$(location :{migration_bundle})" "$$tmp/app/{output}-migration.mjs"
+{migration_data_copies}
+cat > "$$tmp/bin/{output}-migrate" <<'EOF'
+#!/usr/bin/env sh
+set -eu
+script_dir=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)
+root=$$(CDPATH= cd -- "$$script_dir/.." && pwd)
+exec "$$root/runtime/nodejs/bin/node" --import "$$root/app/instrumentation.mjs" "$$root/app/{output}-migration.mjs" "$$@"
+EOF
+chmod 0755 "$$tmp/bin/{output}-migrate"
+""".format(
+            migration_bundle = migration_bundle,
+            migration_data_copies = "\n".join(migration_data_copies),
+            output = output,
+        )
+    native.genrule(
+        name = name,
+        srcs = srcs,
+        outs = [output + ".tar"],
+        cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+
+cd "{package_dir}"
+rm -rf .output
+../../node_modules/.bin/vp build
+
+mkdir -p "$$tmp/app" "$$tmp/bin"
+cp -a .output "$$tmp/app/.output"
+cp "$$execroot/$(location :instrumentation_bundle)" "$$tmp/app/instrumentation.mjs"
+cat > "$$tmp/bin/{output}" <<'EOF'
+#!/usr/bin/env sh
+set -eu
+script_dir=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)
+root=$$(CDPATH= cd -- "$$script_dir/.." && pwd)
+exec "$$root/runtime/nodejs/bin/node" --import "$$root/app/instrumentation.mjs" "$$root/app/.output/server/index.mjs" "$$@"
+EOF
+chmod 0755 "$$tmp/bin/{output}"
+{migration_cmds}
+
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$$out" -C "$$tmp" .
+""".format(
+            output = output,
+            package_dir = package_dir,
+            migration_cmds = migration_cmds,
+        ),
+        local = True,
+        tags = [
+            "local",
+            "no-remote",
+            "no-sandbox",
+        ],
     )
 
 def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None):

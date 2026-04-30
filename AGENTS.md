@@ -91,7 +91,7 @@ The below documents contain critical sources of truth about the system, extremel
 
 <operational_runbook>
 
-Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the `deploy_profile` server-binaries strategy, Ansible playbooks table.
+Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the substrate server-binaries strategy, Ansible playbooks table.
 
 The repo started as a CI orchestrator; that history lives in `README.md`.
 

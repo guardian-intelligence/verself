@@ -4,7 +4,7 @@
 # private substrate access). Driven by `wireguard_tunnels`, a list of
 # tunnel definitions sourced from topology_wireguard.
 #
-# wireguard-tools is laid down by deploy_profile (apt). The kernel module
+# wireguard-tools is laid down by substrate_profile (apt). The kernel module
 # is built-in on Linux 6.8+, so the role only needs to manage userspace
 # config + systemd units.
 

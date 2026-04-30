@@ -222,7 +222,7 @@ act.
 
 ## Observability And Smoke Tests
 
-The smoke-test entry point is `src/platform/scripts/verify-data-rights-live.sh`. It should:
+The data-rights e2e path should:
 
 1. seed a user with data in at least identity, profile, billing, governance, and
    one product service;

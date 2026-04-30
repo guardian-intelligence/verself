@@ -20,7 +20,7 @@ package catalog
 // substring "upstream" so an empty or boilerplate string fails CUE
 // evaluation rather than passing silently.
 #SystemPackage: {
-	risk_acknowledgement: string & =~"upstream"
+	risk_acknowledgement:    string & =~"upstream"
 	apt_version_constraint?: string
 	version_cmd:             string & !=""
 }
@@ -77,38 +77,38 @@ versions: {
 		ansibleOpentelemetryExporterOtlpProtoGrpc: "1.41.0"
 		ansibleOpentelemetryExporterOtlpProtoHttp: "1.41.0"
 		// otelcol-contrib runs on the controller as a single-process OTLP buffer.
-		// `aspect deploy` and the verify-*-live.sh canaries point their OTLP
+		// `aspect deploy` and controller-originated telemetry commands point their OTLP
 		// exporters at it instead of an SSH-tunneled :4317 on the bare-metal
 		// node; the controller agent persists spans to a file_storage queue and
 		// forwards via its own SSH tunnel, decoupling the upstream tunnel's
 		// lifetime from the playbook/canary process. Same version + artifact as
 		// the server-side build (`versions.production.otelcolContrib`).
-		otelcolContrib: "0.149.0"
-		preCommit:                                 "4.5.1"
-		protoc:                                    "34.0"
-		cue:                                       "0.16.1"
-		buf:                                       "1.66.1"
-		shellcheck:                                "0.11.0"
-		jq:                                        "1.8.1"
-		sops:                                      "3.12.2"
-		age:                                       "1.3.1"
-		uv:                                        "0.11.3"
-		clickhouse:                                "26.3.2.3"
-		golangciLint:                              "2.11.3"
-		gosec:                                     "2.25.0"
-		gofumpt:                                   "0.9.2"
-		sqlc:                                      "1.30.0"
-		protocGenGo:                               "1.36.11"
-		protocGenGoGrpc:                           "1.6.1"
-		crun:                                      "1.14.1"
-		debootstrap:                               "1.0.134"
-		guarddog:                                  "2.9.0"
-		osvScanner:                                "2.3.5"
-		stripe:                                    "1.40.0"
-		agentBrowser:                              "0.25.4"
-		latitudeProvider:                          "2.9.4"
-		pnpm:                                      "10.33.0"
-		viteplus:                                  "0.1.19"
+		otelcolContrib:   "0.149.0"
+		preCommit:        "4.5.1"
+		protoc:           "34.0"
+		cue:              "0.16.1"
+		buf:              "1.66.1"
+		shellcheck:       "0.11.0"
+		jq:               "1.8.1"
+		sops:             "3.12.2"
+		age:              "1.3.1"
+		uv:               "0.11.3"
+		clickhouse:       "26.3.2.3"
+		golangciLint:     "2.11.3"
+		gosec:            "2.25.0"
+		gofumpt:          "0.9.2"
+		sqlc:             "1.30.0"
+		protocGenGo:      "1.36.11"
+		protocGenGoGrpc:  "1.6.1"
+		crun:             "1.14.1"
+		debootstrap:      "1.0.134"
+		guarddog:         "2.9.0"
+		osvScanner:       "2.3.5"
+		stripe:           "1.40.0"
+		agentBrowser:     "0.25.4"
+		latitudeProvider: "2.9.4"
+		pnpm:             "10.33.0"
+		viteplus:         "0.1.19"
 	}
 }
 
@@ -818,17 +818,17 @@ devToolDownloads: {
 devToolPackaging: {
 	// One binary extracted from a tarball. tar_flag: z=gz, J=xz.
 	tar_single: [
-		{name: "cue", repo:             "dev_tool_cue", tar_flag:             "z", binary: "cue", dest:                                                                   "usr/local/bin/cue"},
-		{name: "shellcheck", repo:      "dev_tool_shellcheck", tar_flag:      "J", binary: "shellcheck-v\(versions.development.shellcheck)/shellcheck", dest:             "usr/local/bin/shellcheck"},
-		{name: "stripe", repo:          "dev_tool_stripe", tar_flag:          "z", binary: "stripe", dest:                                                                "usr/local/bin/stripe"},
-		{name: "clickhouse", repo:      "dev_tool_clickhouse", tar_flag:      "z", binary: "clickhouse-common-static-\(versions.development.clickhouse)/usr/bin/clickhouse", dest: "usr/local/bin/clickhouse"},
-		{name: "otelcol_contrib", repo: "dev_tool_otelcol_contrib", tar_flag: "z", binary: "otelcol-contrib", dest:                                                       "usr/local/bin/otelcol-contrib"},
+		{name: "cue", repo: "dev_tool_cue", tar_flag: "z", binary: "cue", dest: "usr/local/bin/cue"},
+		{name: "shellcheck", repo: "dev_tool_shellcheck", tar_flag: "J", binary: "shellcheck-v\(versions.development.shellcheck)/shellcheck", dest: "usr/local/bin/shellcheck"},
+		{name: "stripe", repo: "dev_tool_stripe", tar_flag: "z", binary: "stripe", dest: "usr/local/bin/stripe"},
+		{name: "clickhouse", repo: "dev_tool_clickhouse", tar_flag: "z", binary: "clickhouse-common-static-\(versions.development.clickhouse)/usr/bin/clickhouse", dest: "usr/local/bin/clickhouse"},
+		{name: "otelcol_contrib", repo: "dev_tool_otelcol_contrib", tar_flag: "z", binary: "otelcol-contrib", dest: "usr/local/bin/otelcol-contrib"},
 	]
 
 	// One binary extracted from a zip.
 	zip_single: [
-		{name: "tofu", repo:       "dev_tool_tofu", binary:    "tofu", dest:       "usr/local/bin/tofu"},
-		{name: "protoc_bin", repo: "dev_tool_protoc", binary:  "bin/protoc", dest: "usr/local/bin/protoc"},
+		{name: "tofu", repo: "dev_tool_tofu", binary: "tofu", dest: "usr/local/bin/tofu"},
+		{name: "protoc_bin", repo: "dev_tool_protoc", binary: "bin/protoc", dest: "usr/local/bin/protoc"},
 	]
 
 	// Subdirectory copied from a zip, contents merged into dest. Used for
@@ -840,29 +840,29 @@ devToolPackaging: {
 	// Multiple binaries from one tarball with --strip-components.
 	tar_multi: [
 		{name: "age", repo: "dev_tool_age", tar_flag: "z", strip_components: 1, binaries: [
-			{member: "age", dest:        "usr/local/bin/age"},
+			{member: "age", dest: "usr/local/bin/age"},
 			{member: "age-keygen", dest: "usr/local/bin/age-keygen"},
 		]},
 		{name: "uv", repo: "dev_tool_uv", tar_flag: "z", strip_components: 1, binaries: [
-			{member: "uv", dest:  "usr/local/bin/uv"},
+			{member: "uv", dest: "usr/local/bin/uv"},
 			{member: "uvx", dest: "usr/local/bin/uvx"},
 		]},
 	]
 
 	// Raw single-file binaries (no archive).
 	raw: [
-		{name: "buf", repo:           "dev_tool_buf", dest:           "usr/local/bin/buf"},
-		{name: "buildifier", repo:    "dev_tool_buildifier", dest:    "usr/local/bin/buildifier"},
-		{name: "jq", repo:            "dev_tool_jq", dest:            "usr/local/bin/jq"},
-		{name: "sops", repo:          "dev_tool_sops", dest:          "usr/local/bin/sops"},
-		{name: "osv_scanner", repo:   "dev_tool_osv_scanner", dest:   "usr/local/bin/osv-scanner"},
+		{name: "buf", repo: "dev_tool_buf", dest: "usr/local/bin/buf"},
+		{name: "buildifier", repo: "dev_tool_buildifier", dest: "usr/local/bin/buildifier"},
+		{name: "jq", repo: "dev_tool_jq", dest: "usr/local/bin/jq"},
+		{name: "sops", repo: "dev_tool_sops", dest: "usr/local/bin/sops"},
+		{name: "osv_scanner", repo: "dev_tool_osv_scanner", dest: "usr/local/bin/osv-scanner"},
 		{name: "agent_browser", repo: "dev_tool_agent_browser", dest: "usr/local/bin/agent-browser"},
 	]
 
 	// Whole archive extracted into a versioned install dir. Symlinks
 	// below pin the canonical path to the version that just landed.
 	archive_dir: [
-		{name: "go_install", repo:  "dev_tool_go", tar_flag: "z", dest: "usr/local/go-\(versions.development.go)", strip_components:   1},
+		{name: "go_install", repo: "dev_tool_go", tar_flag: "z", dest: "usr/local/go-\(versions.development.go)", strip_components: 1},
 		{name: "zig_install", repo: "dev_tool_zig", tar_flag: "J", dest: "usr/local/zig-\(versions.development.zig)", strip_components: 1},
 	]
 

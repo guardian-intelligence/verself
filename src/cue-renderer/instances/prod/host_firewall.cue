@@ -55,7 +55,7 @@ topology: nftables: host: s.#NftablesHostChain & {
 		// and must come first so an emergency `iifname "lo" accept` can never
 		// be shadowed by a later rule.
 		_trusted_wg_iifnames: list.Sort([
-			for _, t in config.wireguard.tunnels {t.interface}
+			for _, t in config.wireguard.tunnels {t.interface},
 		], list.Ascending)
 
 		// Endpoints reachable from Firecracker guest TAPs to the host service

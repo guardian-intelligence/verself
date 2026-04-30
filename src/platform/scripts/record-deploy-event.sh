@@ -109,5 +109,5 @@ SQL
 # agent's lifetime). The row carries the same dimensions.
 
 cd "${repo_root}/src/platform"
-INVENTORY="ansible/inventory/${site}.ini" ./scripts/clickhouse.sh \
+INVENTORY="ansible/inventory/${site}.ini" timeout 5s ./scripts/clickhouse.sh \
   --database verself --query "${query}" >/dev/null

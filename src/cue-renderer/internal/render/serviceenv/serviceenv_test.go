@@ -64,6 +64,40 @@ func componentByName(t testing.TB, components []projection.NamedMap, name string
 	return projection.NamedMap{}
 }
 
+func unitByName(t testing.TB, component projection.NamedMap, name string) map[string]any {
+	t.Helper()
+	workload, ok := component.Value["workload"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s.workload missing", component.Name)
+	}
+	rawUnits, _ := workload["units"].([]any)
+	for _, raw := range rawUnits {
+		unit, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if got, _ := unit["name"].(string); got == name {
+			return unit
+		}
+	}
+	t.Fatalf("%s.workload.units.%s not found", component.Name, name)
+	return nil
+}
+
+func TestUnit_NomadServicesCarrySupervisorTelemetry(t *testing.T) {
+	profile := componentByName(t, loadComponents(t), "profile_service")
+	env, err := serviceenv.Unit(profile, unitByName(t, profile, "profile-service"))
+	if err != nil {
+		t.Fatalf("Unit: %v", err)
+	}
+	if env["VERSELF_SUPERVISOR"] != "nomad" {
+		t.Fatalf("VERSELF_SUPERVISOR: got %q want nomad", env["VERSELF_SUPERVISOR"])
+	}
+	if env["OTEL_RESOURCE_ATTRIBUTES"] != "verself.supervisor=nomad" {
+		t.Fatalf("OTEL_RESOURCE_ATTRIBUTES: got %q", env["OTEL_RESOURCE_ATTRIBUTES"])
+	}
+}
+
 // TestEndpointsForUnit_PrimaryGetsAllEndpoints asserts the primary unit
 // owns every endpoint declared on the component. profile_service is the
 // minimal real fixture (single endpoint pair, no processes block).
@@ -121,11 +155,11 @@ func TestEndpointsForUnit_RecurringWorkerOwnsNothing(t *testing.T) {
 // invalid spec.
 func TestEndpointsForUnit_NoOverlapBetweenUnitsOfOneComponent(t *testing.T) {
 	for _, c := range loadComponents(t) {
-		converge, ok := c.Value["converge"].(map[string]any)
+		workload, ok := c.Value["workload"].(map[string]any)
 		if !ok {
 			continue
 		}
-		rawUnits, _ := converge["units"].([]any)
+		rawUnits, _ := workload["units"].([]any)
 		if len(rawUnits) < 2 {
 			continue
 		}

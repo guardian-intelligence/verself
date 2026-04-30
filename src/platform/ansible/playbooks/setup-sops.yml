@@ -178,4 +178,4 @@
 
             Next steps:
               Edit secrets:  sops ansible/group_vars/all/secrets.sops.yml
-              Deploy:        cd ansible && ansible-playbook playbooks/site.yml
+              Deploy:        aspect deploy --site=prod

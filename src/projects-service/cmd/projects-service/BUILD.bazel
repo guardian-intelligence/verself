@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "projects-service_lib",
@@ -24,4 +25,10 @@ go_binary(
     name = "projects-service",
     embed = [":projects-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "projects-service_nomad_artifact",
+    binary = ":projects-service",
+    output = "projects-service",
 )

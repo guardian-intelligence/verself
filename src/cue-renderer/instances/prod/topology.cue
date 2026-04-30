@@ -102,7 +102,7 @@ import s "verself.sh/cue-renderer/schema"
 		entry_id:    string & !=""
 		user:        runtime.user
 		group:       runtime.group
-		restart_units: [...string] | *[runtime.systemd]
+		restart_units: [...string] | *[]
 		...
 	}
 	...
@@ -313,7 +313,7 @@ topology: s.#Topology & {
 		}
 		billing: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/billing-service/cmd/billing-service", output: "billing-service", role: "billing_service", bazel_label: "//src/billing-service/cmd/billing-service:billing-service"}
-			runtime: {systemd: "billing-service", user: "billing", group: "billing"}
+			runtime: {user: "billing", group: "billing"}
 			identities: default: {ansible_var: "spire_billing_service_id", path: "/svc/billing-service", entry_id: "verself-billing-service"}
 			endpoints: {
 				public_http: port:    4242
@@ -329,12 +329,12 @@ topology: s.#Topology & {
 		}
 		sandbox_rental: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/sandbox-rental-service/cmd/sandbox-rental-service", output: "sandbox-rental-service", role: "sandbox_rental_service", bazel_label: "//src/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service"}
-			runtime: {systemd: "sandbox-rental-service", user: "sandbox_rental", group: "sandbox_rental"}
+			runtime: {user: "sandbox_rental", group: "sandbox_rental"}
 			identities: default: {ansible_var: "spire_sandbox_rental_id", path: "/svc/sandbox-rental-service", entry_id: "verself-sandbox-rental-service"}
 			processes: recurring_worker: {
-				systemd: "sandbox-rental-recurring-worker"
-				user:    "sandbox_rental"
-				group:   "sandbox_rental"
+				unit:  "sandbox-rental-recurring-worker"
+				user:  "sandbox_rental"
+				group: "sandbox_rental"
 				artifact: {kind: "go_binary", package: "./src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker", output: "sandbox-rental-recurring-worker", role: "sandbox_rental_service", bazel_label: "//src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker"}
 				identities: ["default"]
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "temporal-server.service", "spire-agent.service", "otelcol.service", "source-code-hosting-service.service"]
@@ -356,7 +356,7 @@ topology: s.#Topology & {
 		}
 		identity_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/identity-service/cmd/identity-service", output: "identity-service", role: "identity_service", bazel_label: "//src/identity-service/cmd/identity-service:identity-service"}
-			runtime: {systemd: "identity-service", user: "identity_service", group: "identity_service"}
+			runtime: {user: "identity_service", group: "identity_service"}
 			identities: default: {ansible_var: "spire_identity_service_id", path: "/svc/identity-service", entry_id: "verself-identity-service"}
 			endpoints: {
 				public_http: port:    4248
@@ -371,7 +371,7 @@ topology: s.#Topology & {
 		}
 		governance_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/governance-service/cmd/governance-service", output: "governance-service", role: "governance_service", bazel_label: "//src/governance-service/cmd/governance-service:governance-service"}
-			runtime: {systemd: "governance-service", user: "governance_service", group: "governance_service"}
+			runtime: {user: "governance_service", group: "governance_service"}
 			identities: default: {ansible_var: "spire_governance_service_id", path: "/svc/governance-service", entry_id: "verself-governance-service"}
 			endpoints: {
 				public_http: port:    4250
@@ -386,7 +386,7 @@ topology: s.#Topology & {
 		}
 		secrets_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/secrets-service/cmd/secrets-service", output: "secrets-service", role: "secrets_service", bazel_label: "//src/secrets-service/cmd/secrets-service:secrets-service"}
-			runtime: {systemd: "secrets-service", user: "secrets_service", group: "secrets_service"}
+			runtime: {user: "secrets_service", group: "secrets_service"}
 			identities: default: {ansible_var: "spire_secrets_service_id", path: "/svc/secrets-service", entry_id: "verself-secrets-service"}
 			endpoints: {
 				public_http: port:    4251
@@ -396,7 +396,7 @@ topology: s.#Topology & {
 		}
 		profile_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/profile-service/cmd/profile-service", output: "profile-service", role: "profile_service", bazel_label: "//src/profile-service/cmd/profile-service:profile-service"}
-			runtime: {systemd: "profile-service", user: "profile_service", group: "profile_service"}
+			runtime: {user: "profile_service", group: "profile_service"}
 			identities: default: {ansible_var: "spire_profile_service_id", path: "/svc/profile-service", entry_id: "verself-profile-service"}
 			endpoints: {
 				public_http: port:    4258
@@ -411,7 +411,7 @@ topology: s.#Topology & {
 		}
 		notifications_service: #PublicGoService & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/notifications-service/cmd/notifications-service", output: "notifications-service", role: "notifications_service", bazel_label: "//src/notifications-service/cmd/notifications-service:notifications-service"}
-			runtime: {systemd: "notifications-service", user: "notifications_service", group: "notifications_service"}
+			runtime: {user: "notifications_service", group: "notifications_service"}
 			identities: default: {ansible_var: "spire_notifications_service_id", path: "/svc/notifications-service", entry_id: "verself-notifications-service"}
 			endpoints: public_http: port: 4260
 			postgres: {
@@ -423,7 +423,7 @@ topology: s.#Topology & {
 		}
 		projects_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/projects-service/cmd/projects-service", output: "projects-service", role: "projects_service", bazel_label: "//src/projects-service/cmd/projects-service:projects-service"}
-			runtime: {systemd: "projects-service", user: "projects_service", group: "projects_service"}
+			runtime: {user: "projects_service", group: "projects_service"}
 			identities: default: {ansible_var: "spire_projects_service_id", path: "/svc/projects-service", entry_id: "verself-projects-service"}
 			endpoints: {
 				public_http: port:    4264
@@ -438,7 +438,7 @@ topology: s.#Topology & {
 		}
 		source_code_hosting_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/source-code-hosting-service/cmd/source-code-hosting-service", output: "source-code-hosting-service", role: "source_code_hosting_service", bazel_label: "//src/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service"}
-			runtime: {systemd: "source-code-hosting-service", user: "source_code_hosting_service", group: "source_code_hosting_service"}
+			runtime: {user: "source_code_hosting_service", group: "source_code_hosting_service"}
 			identities: default: {ansible_var: "spire_source_code_hosting_service_id", path: "/svc/source-code-hosting-service", entry_id: "verself-source-code-hosting-service"}
 			endpoints: {
 				public_http: port:    4261
@@ -458,8 +458,8 @@ topology: s.#Topology & {
 			}
 		}
 		verself_web: #Frontend & {
-			artifact: {package: "src/viteplus-monorepo/apps/verself-web", output: "verself-web", role: "verself_web"}
-			runtime: {systemd: "verself-web", user: "verself-web", group: "verself-web"}
+			artifact: {package: "src/viteplus-monorepo/apps/verself-web", output: "verself-web", role: "verself_web", bazel_label: "//src/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact"}
+			runtime: {user: "verself-web", group: "verself-web"}
 			endpoints: http: port: 4244
 			postgres: {database: "frontend_auth", owner: "frontend_auth", connection_limit: 15}
 		}
@@ -558,10 +558,18 @@ topology: s.#Topology & {
 			artifact: {kind: "static_binary", output: "nomad", role: "nomad"}
 			endpoints: http: {protocol: "http", port: 4646, exposure: "loopback"}
 			interfaces: api: {kind: "admin_api", endpoint: "http", auth: "operator"}
-			// nomad-deploy is the only software-deploy primitive on the
-			// bare-metal node: aspect deploy SSHes to the box and runs
-			// it for each component with deployment.supervisor=="nomad".
+			// nomad-deploy is the controller-side wrapper around the
+			// Nomad API. It publishes Bazel-built artifacts, submits the
+			// rendered job spec, and waits for the deployment result.
 			tools: deploy: {kind: "go_binary", package: "./src/cue-renderer/cmd/nomad-deploy", output: "nomad-deploy", role: "nomad", bazel_label: "//src/cue-renderer/cmd/nomad-deploy:nomad-deploy"}
+		}
+		nomad_artifacts: {
+			kind: "resource"
+			host: "127.0.0.1"
+			runtime: {systemd: "caddy", user: "caddy", group: "caddy"}
+			artifact: {kind: "static_binary", output: "caddy", role: "caddy"}
+			endpoints: http: {protocol: "http", port: 4647, exposure: "loopback"}
+			interfaces: http: {kind: "resource_protocol", endpoint: "http", auth: "none"}
 		}
 		stalwart: {
 			kind: "protocol_backend"
@@ -589,7 +597,7 @@ topology: s.#Topology & {
 		}
 		mailbox_service: #PublicGoService & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/mailbox-service/cmd/mailbox-service", output: "mailbox-service", role: "mailbox_service", bazel_label: "//src/mailbox-service/cmd/mailbox-service:mailbox-service"}
-			runtime: {systemd: "mailbox-service", user: "mailbox_service", group: "mailbox_service"}
+			runtime: {user: "mailbox_service", group: "mailbox_service"}
 			identities: default: {ansible_var: "spire_mailbox_service_id", path: "/svc/mailbox-service", entry_id: "verself-mailbox-service"}
 			endpoints: public_http: port: 4246
 			postgres: {
@@ -601,16 +609,16 @@ topology: s.#Topology & {
 		}
 		object_storage_service: #PublicGoService & {
 			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-service:object-storage-service"}
-			runtime: {systemd: "object-storage-service", user: "object_storage_service", group: "object_storage_service"}
+			runtime: {user: "object_storage_service", group: "object_storage_service"}
 			identities: {
-				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
-				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
+				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: []}
+				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: []}
 			}
 			tools: secret_sync: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-secret-sync", output: "object-storage-secret-sync", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync"}
 			processes: admin: {
-				systemd: "object-storage-admin"
-				user:    "object_storage_admin"
-				group:   "object_storage_admin"
+				unit:  "object-storage-admin"
+				user:  "object_storage_admin"
+				group: "object_storage_admin"
 				artifact: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-service:object-storage-service"}
 				endpoints: ["admin_http"]
 				identities: ["service", "admin"]
@@ -720,8 +728,8 @@ topology: s.#Topology & {
 			}
 		}
 		company: #Frontend & {
-			artifact: {package: "src/viteplus-monorepo/apps/company", output: "company", role: "company"}
-			runtime: {systemd: "company", user: "company", group: "company"}
+			artifact: {package: "src/viteplus-monorepo/apps/company", output: "company", role: "company", bazel_label: "//src/viteplus-monorepo/apps/company:node_app_nomad_artifact"}
+			runtime: {user: "company", group: "company"}
 			endpoints: http: port: 4252
 		}
 		firecracker_host_service: {

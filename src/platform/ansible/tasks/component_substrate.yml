@@ -1,0 +1,29 @@
+- name: Initialize component substrate context
+  ansible.builtin.set_fact:
+    component_secret_values: {}
+    component_units: "{{ component.workload.units }}"
+
+- name: Configure component users and directories
+  ansible.builtin.include_tasks: component/users.yml
+
+- name: Configure component credentials
+  ansible.builtin.include_tasks: component/secrets.yml
+
+- name: Configure component PostgreSQL binding
+  ansible.builtin.include_tasks: component/postgres.yml
+  when: component.postgres.database | length > 0
+
+- name: Configure component ClickHouse binding
+  ansible.builtin.include_tasks: component/clickhouse.yml
+  when: component.workload.clickhouse is defined
+
+- name: Reconcile component Zitadel auth
+  ansible.builtin.include_tasks: component/auth.yml
+  when: component.workload.auth.kind != "none"
+
+- name: Run component substrate bootstrap hooks
+  ansible.builtin.include_tasks: "bootstrap/{{ component_bootstrap_hook.name }}.yml"
+  loop: "{{ component.workload.bootstrap }}"
+  loop_control:
+    loop_var: component_bootstrap_hook
+    label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"

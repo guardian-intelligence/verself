@@ -23,7 +23,6 @@ src/platform/ansible/inventory/*.ini
 .cache/
 src/platform/ansible/group_vars/all/generated/
 src/platform/ansible/share/rendered/
-src/platform/ansible/handlers/component-systemd.yml
 
 # Age private keys (NEVER commit)
 **/keys.txt

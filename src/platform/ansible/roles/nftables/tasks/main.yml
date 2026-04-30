@@ -17,11 +17,24 @@
     mode: "0644"
   notify: reload nftables
 
-- name: Deploy host firewall ruleset
+- name: Collect rendered nftables rulesets
+  ansible.builtin.set_fact:
+    nftables_rendered_rulesets: >-
+      {{
+        lookup('ansible.builtin.fileglob', platform_rendered_dir + '/etc/nftables.d/*.nft', wantlist=True)
+        | reject('search', '/firecracker\\.nft$')
+        | sort
+        | list
+      }}
+
+- name: Deploy rendered nftables rulesets
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/host-firewall.nft"
-    dest: /etc/nftables.d/host-firewall.nft
+    src: "{{ item }}"
+    dest: "/etc/nftables.d/{{ item | basename }}"
     mode: "0644"
+  loop: "{{ nftables_rendered_rulesets }}"
+  loop_control:
+    label: "{{ item | basename }}"
   notify: reload nftables
 
 - name: Enable and start nftables service

@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "identity-service_lib",
@@ -26,4 +27,10 @@ go_binary(
     name = "identity-service",
     embed = [":identity-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "identity-service_nomad_artifact",
+    binary = ":identity-service",
+    output = "identity-service",
 )

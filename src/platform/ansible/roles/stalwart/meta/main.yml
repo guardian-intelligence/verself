@@ -1,5 +1,5 @@
 ---
-# deploy_profile: provides stalwart binary at verself_bin.
+# substrate_profile: provides stalwart binary at verself_bin.
 dependencies:
-  - role: deploy_profile
+  - role: substrate_profile
   - role: nftables

@@ -32,12 +32,12 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Platform (`src/platform/`)
 
 - `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
-- Per-deploy generated files (host firewall fragments, systemd unit files,
+- Per-deploy generated files (host firewall fragments,
   group_vars projections) materialise under `.cache/render/<site>/` when
   `aspect render --site=<site>` runs; roles copy from that cache rather
   than re-rendering topology through Jinja.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
-- `scripts/` — founder/agent shell wrappers invoked by AXL tasks (deploy, persona, billing, mail, db, etc.) and directly callable canaries (`verify-*-live.sh`).
+- `scripts/` — founder/agent shell wrappers invoked by AXL tasks (deploy, persona, billing, mail, db, etc.).
 
 The Bazel-owned third-party server-tool package definitions, including
 `//src/cue-renderer/binaries:server_tools.tar.zst`, live under

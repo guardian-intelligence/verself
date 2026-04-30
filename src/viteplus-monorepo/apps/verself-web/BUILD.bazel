@@ -2,7 +2,7 @@ load(
     "@npm//src/viteplus-monorepo/apps/verself-web:@hey-api/openapi-ts/package_json.bzl",
     openapi_ts_bin = "bin",
 )
-load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_openapi_clients")
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,6 +16,15 @@ viteplus_app(
         "vite.config.ts",
     ],
     npm_name = "@verself/verself-web",
+)
+
+viteplus_node_app_artifact(
+    name = "node_app_nomad_artifact",
+    migration_data = {
+        "//src/viteplus-monorepo/packages/auth-web:auth_session_schema": "schema/auth_sessions.sql",
+    },
+    migration_entry = "src/server/migrate-auth-sessions.ts",
+    output = "verself-web",
 )
 
 # Customer-facing OpenAPI client SDKs for every service the verself-web app

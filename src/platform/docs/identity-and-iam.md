@@ -272,8 +272,9 @@ diverged.
 TanStack Start frontends use server-owned OAuth web sessions. The frontend
 server performs the Zitadel code exchange, stores access and refresh tokens in
 the `frontend_auth` PostgreSQL database's `auth_sessions` table, and issues an
-HTTP-only session cookie to the browser. The platform provisions that database
-through the `frontend_auth_sessions` Ansible role.
+HTTP-only session cookie to the browser. CUE declares the frontend component's
+database and credential facts; Ansible applies the substrate state and Nomad
+supervises the frontend job.
 
 Server functions, loaders, and route hooks read the server-owned session and
 forward bearer tokens to Go services from the server side. Browser code must not

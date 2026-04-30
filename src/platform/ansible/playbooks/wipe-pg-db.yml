@@ -1,5 +1,7 @@
 ---
-# Wipe one managed PostgreSQL service database and re-run the owning schema path.
+# Wipe one managed PostgreSQL service database and recreate substrate state.
+# Application migrations run through nomad-deploy-all during the follow-up
+# Nomad deploy.
 #
 # Usage:
 #   src/platform/scripts/ansible-with-otel.sh playbooks/wipe-pg-db.yml -e wipe_pg_db_name=sandbox_rental
@@ -107,21 +109,18 @@
             | first
           }}
 
-    - name: Resolve units to stop for PostgreSQL wipe target
+    - name: Resolve Nomad jobs to stop for PostgreSQL wipe target
       ansible.builtin.set_fact:
-        wipe_pg_db_stop_units: "{{ wipe_pg_db_stop_unit_map[wipe_pg_db_name] }}"
+        wipe_pg_db_stop_nomad_jobs: "{{ wipe_pg_db_stop_nomad_job_map[wipe_pg_db_name] }}"
       vars:
-        wipe_pg_db_stop_unit_map:
+        wipe_pg_db_stop_nomad_job_map:
           billing:
-            - sandbox-rental-service
-            - billing-service
+            - sandbox-rental
+            - billing
           sandbox_rental:
-            - electric
-            - sandbox-rental-service
-            - sandbox-rental-recurring-worker
+            - sandbox-rental
           mailbox_service:
             - mailbox-service
-            - electric-mail
           governance_service:
             - governance-service
           identity_service:
@@ -139,15 +138,74 @@
           source_code_hosting:
             - source-code-hosting-service
 
+    - name: Resolve substrate systemd units to stop for PostgreSQL wipe target
+      ansible.builtin.set_fact:
+        wipe_pg_db_stop_systemd_units: "{{ wipe_pg_db_stop_systemd_unit_map[wipe_pg_db_name] }}"
+      vars:
+        wipe_pg_db_stop_systemd_unit_map:
+          billing: []
+          sandbox_rental:
+            - electric
+          mailbox_service:
+            - electric-mail
+          governance_service: []
+          identity_service: []
+          notifications_service:
+            - electric-notifications
+          object_storage_service: []
+          profile: []
+          projects_service: []
+          source_code_hosting: []
+
+    - name: Probe Nomad jobs before PostgreSQL wipe target
+      ansible.builtin.command:
+        argv:
+          - "{{ verself_bin }}/nomad"
+          - job
+          - status
+          - "{{ item }}"
+      environment:
+        NOMAD_ADDR: http://127.0.0.1:4646
+      changed_when: false
+      failed_when: false
+      loop: "{{ wipe_pg_db_stop_nomad_jobs }}"
+      loop_control:
+        label: "{{ item }}"
+      register: wipe_pg_db_nomad_job_status
+
+    - name: Stop Nomad jobs before PostgreSQL wipe target
+      ansible.builtin.command:
+        argv:
+          - "{{ verself_bin }}/nomad"
+          - job
+          - stop
+          - -detach
+          - "{{ item.item }}"
+      environment:
+        NOMAD_ADDR: http://127.0.0.1:4646
+      loop: "{{ wipe_pg_db_nomad_job_status.results | selectattr('rc', 'equalto', 0) | list }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: wipe_pg_db_nomad_job_stop
+      changed_when: true
+
+    - name: Stop substrate systemd units before PostgreSQL wipe target
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ wipe_pg_db_stop_systemd_units }}"
+      loop_control:
+        label: "{{ item }}"
+      failed_when: false
+
     - name: Include nftables handler role for component wipe
       ansible.builtin.include_role:
         name: nftables
-      tags: [nftables]
 
     - name: Classify PostgreSQL wipe target ClickHouse binding
       ansible.builtin.set_fact:
         wipe_pg_db_uses_clickhouse: >-
-          {{ wipe_pg_db_component.converge.clickhouse is defined }}
+          {{ wipe_pg_db_component.workload.clickhouse is defined }}
 
     - name: Load deployed ClickHouse operator defaults for PostgreSQL wipe target
       ansible.builtin.include_vars:
@@ -193,7 +251,6 @@
     - name: Include TigerBeetle for billing PostgreSQL wipe
       ansible.builtin.include_role:
         name: tigerbeetle
-      tags: [tigerbeetle]
       when: wipe_pg_db_name == 'billing'
 
     - name: Reset selected PostgreSQL database
@@ -202,7 +259,6 @@
       vars:
         postgresql_db_reset_name: "{{ wipe_pg_db_component.postgres.database }}"
         postgresql_db_reset_owner: "{{ wipe_pg_db_component.postgres.owner }}"
-        postgresql_db_reset_stop_units: "{{ wipe_pg_db_stop_units }}"
 
     - name: Reset TigerBeetle for billing PostgreSQL wipe
       when: wipe_pg_db_name == 'billing'
@@ -255,18 +311,15 @@
         mode: "0750"
       when: wipe_pg_db_name == 'sandbox_rental'
 
-    - name: Converge selected service component after PostgreSQL wipe
+    - name: Configure selected service substrate after PostgreSQL wipe
       ansible.builtin.include_tasks:
-        file: ../tasks/converge_component.yml
-        apply:
-          tags: always
+        file: ../tasks/component_substrate.yml
       vars:
         component: "{{ wipe_pg_db_component }}"
 
     - name: Include Electric after sandbox_rental PostgreSQL wipe
       ansible.builtin.include_role:
         name: electric
-      tags: [electric]
       vars:
         electric_config: "{{ topology_electric_instances.default }}"
       when: wipe_pg_db_name == 'sandbox_rental'
@@ -274,7 +327,6 @@
     - name: Include Electric Mail after mailbox_service PostgreSQL wipe
       ansible.builtin.include_role:
         name: electric
-      tags: [electric_mail]
       vars:
         electric_config: "{{ topology_electric_instances.mail }}"
       when: wipe_pg_db_name == 'mailbox_service'
@@ -282,11 +334,6 @@
     - name: Include Electric Notifications after notifications_service PostgreSQL wipe
       ansible.builtin.include_role:
         name: electric
-      tags: [electric_notifications]
       vars:
         electric_config: "{{ topology_electric_instances.notifications }}"
       when: wipe_pg_db_name == 'notifications_service'
-
-  handlers:
-    - name: Import generated component systemd handlers
-      ansible.builtin.import_tasks: ../handlers/component-systemd.yml

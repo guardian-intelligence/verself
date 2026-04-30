@@ -1,6 +1,6 @@
 ---
 # PostgreSQL database server.
-# Binary provided by deploy_profile role (apt from PGDG repo).
+# Binary provided by substrate_profile role (apt from PGDG repo).
 
 - name: Capture PostgreSQL version
   ansible.builtin.command:

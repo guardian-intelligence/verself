@@ -8,8 +8,7 @@ import (
 )
 
 // parseBridgeFaultMode for verification builds: parses the fault-injection
-// env var and lets the host drive deterministic protocol violations from
-// verify-vm-orchestrator-live.sh.
+// env var and lets the host drive deterministic protocol violations.
 func parseBridgeFaultMode(raw string) (bridgeFaultMode, error) {
 	mode := bridgeFaultMode(strings.TrimSpace(raw))
 	switch mode {

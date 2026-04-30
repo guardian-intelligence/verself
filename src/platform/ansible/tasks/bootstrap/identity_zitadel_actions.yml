@@ -95,7 +95,6 @@
     group: identity_service
     mode: "0640"
   no_log: true
-  notify: restart identity-service
 
 - name: Deploy identity-service Zitadel action signing key credential
   ansible.builtin.copy:
@@ -105,5 +104,3 @@
     group: identity_service
     mode: "0640"
   no_log: true
-  notify: restart identity-service
-

@@ -1,0 +1,176 @@
+---
+# Materialize the Bazel-owned static server tool archive and unpack it onto
+# the host. Bazel owns third-party fetches, checksums, extraction layout,
+# and symlinks; Ansible only applies the resulting artifact, marker-gated
+# for idempotency.
+
+- name: Set substrate profile server tools artifact facts
+  ansible.builtin.set_fact:
+    substrate_profile_server_tools_artifact: "{{ topology_server_tools }}"
+    substrate_profile_server_tools_marker_path: /opt/verself/profile/.server-tools-version
+
+- name: Build server tools archive with Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ substrate_profile_bazelisk }}"
+      - build
+      - --config=remote-writer
+      - "{{ substrate_profile_server_tools_artifact.bazel_label }}"
+    chdir: "{{ substrate_profile_repo_root }}"
+  changed_when: false
+
+- name: Resolve server tools archive output path
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ substrate_profile_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ substrate_profile_server_tools_artifact.bazel_label }}"
+    chdir: "{{ substrate_profile_repo_root }}"
+  changed_when: false
+  register: substrate_profile_server_tools_bazel_output
+
+- name: Inspect server tools archive produced by Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.stat:
+    path: "{{ substrate_profile_repo_root }}/{{ substrate_profile_server_tools_bazel_output.stdout | trim }}"
+    checksum_algorithm: sha256
+  register: substrate_profile_server_tools_archive_stat
+
+- name: Set server tools archive deployment facts
+  ansible.builtin.set_fact:
+    substrate_profile_server_tools_expected_marker: |-
+      version={{ substrate_profile_server_tools_artifact.version }}
+      sha256={{ substrate_profile_server_tools_archive_stat.stat.checksum }}
+    substrate_profile_server_tools_remote_archive: >-
+      {{ substrate_profile_staging_dir }}/server_tools-{{ (substrate_profile_server_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
+
+- name: Read installed server tools version marker
+  ansible.builtin.slurp:
+    src: "{{ substrate_profile_server_tools_marker_path }}"
+  register: substrate_profile_server_tools_marker
+  failed_when: false
+
+- name: Decide whether server tools archive needs unpacking
+  ansible.builtin.set_fact:
+    substrate_profile_server_tools_needs_unpack: >-
+      {{
+        substrate_profile_server_tools_marker is failed
+        or (
+          substrate_profile_server_tools_marker.content | default('') | b64decode | trim
+        ) != (substrate_profile_server_tools_expected_marker | trim)
+      }}
+
+- name: Upload server tools archive
+  ansible.builtin.copy:
+    src: "{{ substrate_profile_repo_root }}/{{ substrate_profile_server_tools_bazel_output.stdout | trim }}"
+    dest: "{{ substrate_profile_server_tools_remote_archive }}"
+    mode: "0644"
+  when: substrate_profile_server_tools_needs_unpack | bool
+
+- name: Unpack server tools archive
+  ansible.builtin.unarchive:
+    src: "{{ substrate_profile_server_tools_remote_archive }}"
+    dest: /
+    remote_src: true
+    owner: root
+    group: root
+  when: substrate_profile_server_tools_needs_unpack | bool
+
+- name: Record installed server tools version
+  ansible.builtin.copy:
+    content: "{{ substrate_profile_server_tools_expected_marker }}\n"
+    dest: "{{ substrate_profile_server_tools_marker_path }}"
+    mode: "0644"
+  when: substrate_profile_server_tools_needs_unpack | bool
+
+- name: Build substrate Go tools archive with Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ substrate_profile_bazelisk }}"
+      - build
+      - --config=remote-writer
+      - "{{ substrate_profile_go_tools_label }}"
+    chdir: "{{ substrate_profile_repo_root }}"
+  changed_when: false
+
+- name: Resolve substrate Go tools archive output path
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ substrate_profile_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ substrate_profile_go_tools_label }}"
+    chdir: "{{ substrate_profile_repo_root }}"
+  changed_when: false
+  register: substrate_profile_go_tools_bazel_output
+
+- name: Inspect substrate Go tools archive produced by Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.stat:
+    path: "{{ substrate_profile_repo_root }}/{{ substrate_profile_go_tools_bazel_output.stdout | trim }}"
+    checksum_algorithm: sha256
+  register: substrate_profile_go_tools_archive_stat
+
+- name: Set substrate Go tools archive deployment facts
+  ansible.builtin.set_fact:
+    substrate_profile_go_tools_marker_path: /opt/verself/profile/.substrate-go-tools-version
+    substrate_profile_go_tools_expected_marker: |-
+      sha256={{ substrate_profile_go_tools_archive_stat.stat.checksum }}
+    substrate_profile_go_tools_remote_archive: >-
+      {{ substrate_profile_staging_dir }}/substrate_go_tools-{{ (substrate_profile_go_tools_archive_stat.stat.checksum)[:16] }}.tar
+
+- name: Read installed substrate Go tools version marker
+  ansible.builtin.slurp:
+    src: "{{ substrate_profile_go_tools_marker_path }}"
+  register: substrate_profile_go_tools_marker
+  failed_when: false
+
+- name: Decide whether substrate Go tools archive needs unpacking
+  ansible.builtin.set_fact:
+    substrate_profile_go_tools_needs_unpack: >-
+      {{
+        substrate_profile_go_tools_marker is failed
+        or (
+          substrate_profile_go_tools_marker.content | default('') | b64decode | trim
+        ) != (substrate_profile_go_tools_expected_marker | trim)
+      }}
+
+- name: Upload substrate Go tools archive
+  ansible.builtin.copy:
+    src: "{{ substrate_profile_repo_root }}/{{ substrate_profile_go_tools_bazel_output.stdout | trim }}"
+    dest: "{{ substrate_profile_go_tools_remote_archive }}"
+    mode: "0644"
+  when: substrate_profile_go_tools_needs_unpack | bool
+
+- name: Unpack substrate Go tools archive
+  ansible.builtin.unarchive:
+    src: "{{ substrate_profile_go_tools_remote_archive }}"
+    dest: /
+    remote_src: true
+    owner: root
+    group: root
+  when: substrate_profile_go_tools_needs_unpack | bool
+
+- name: Record installed substrate Go tools version
+  ansible.builtin.copy:
+    content: "{{ substrate_profile_go_tools_expected_marker }}\n"
+    dest: "{{ substrate_profile_go_tools_marker_path }}"
+    mode: "0644"
+  when: substrate_profile_go_tools_needs_unpack | bool

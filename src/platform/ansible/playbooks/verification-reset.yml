@@ -1,9 +1,9 @@
 ---
 # Wipe verification-environment PostgreSQL state to a clean slate.
 #
-# Wipe-only: run site.yml separately after this playbook to redeploy. Pass
+# Wipe-only: run box.yml separately after this playbook to reconfigure substrate. Pass
 # temporal_force_schema_reset=true / clickhouse_force_schema_reset=true on
-# the follow-up site.yml call when the wipe requires a schema rebuild.
+# the follow-up box.yml call when the wipe requires a schema rebuild.
 
 - import_playbook: wipe-pg-db.yml
   vars:

@@ -1,6 +1,6 @@
 ---
 # Caddy reverse proxy with automatic TLS.
-# Binary provided by deploy_profile role via server_tools.tar.zst.
+# Binary provided by substrate_profile role via server_tools.tar.zst.
 
 - name: Create Caddy system group
   ansible.builtin.group:
@@ -36,6 +36,7 @@
   loop:
     - /var/lib/caddy
     - /var/cache/caddy
+    - "{{ nomad_artifacts_dir }}"
 
 - name: Create Caddy log directory
   ansible.builtin.file:

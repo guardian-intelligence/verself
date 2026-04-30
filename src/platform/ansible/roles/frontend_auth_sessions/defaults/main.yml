@@ -1,4 +1,0 @@
----
-frontend_auth_sessions_db_name: frontend_auth
-frontend_auth_sessions_db_user: frontend_auth
-frontend_auth_sessions_credstore_dir: /etc/credstore/frontend-auth

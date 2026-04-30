@@ -313,8 +313,8 @@ the narrowest reload primitive that workload supports. Current consumers:
 | OTel collector | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh; exporter TLS uses `reload_interval: 60s`. |
 | Grafana | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh and runs the datasource provisioning refresh command on renewal. |
 
-`src/platform/scripts/verify-spiffe-rotation-live.sh` verifies the file-backed rotation contract
-without a canary dependency: it reloads NATS and ClickHouse in place,
+Live verification of the file-backed rotation contract reloads NATS and
+ClickHouse in place,
 asserts stable PIDs and healthy post-reload queries, verifies helper
 configuration for every file-backed consumer, and asserts the smoke-test spans
 and ClickHouse query-log evidence in ClickHouse.

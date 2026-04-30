@@ -526,25 +526,6 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
-		ID:      "deploy.bazel_builds",
-		Family:  "deploy",
-		Title:   "Deploy Bazel Build Times",
-		Purpose: "Per-deploy duration of the deploy_profile bazel build task. Cold deploys with an empty bazel-remote land near 60s; warm deploys served by the cache land in the single digits.",
-		Optional: []string{
-			"--minutes=<lookback>",
-			"--limit=<rows>",
-			"--format=table|json|markdown",
-		},
-		Examples: []string{
-			"aspect observe --what=deploy",
-			"aspect observe --what=deploy --minutes=1440",
-		},
-		Next: []string{
-			"aspect observe --what=deploy --run-key=<deploy-run-key>",
-			"aspect observe --what=trace --trace-id=<trace-id>",
-		},
-	},
-	{
 		ID:      "deploy.bazel_cache",
 		Family:  "deploy",
 		Title:   "Deploy Bazel Cache Hit/Miss Totals",
@@ -559,24 +540,6 @@ var queryDocs = []queryDoc{
 		},
 		Next: []string{
 			"aspect observe --what=deploy --run-key=<deploy-run-key>",
-		},
-	},
-	{
-		ID:      "deploy.bazel_build_run",
-		Family:  "deploy",
-		Title:   "Deploy Bazel Build (One Run)",
-		Purpose: "Bazel build wall-clock plus bazel-remote hit/miss counts intersected with the chosen deploy_run_key's build window.",
-		Required: []string{
-			"--run-key=<deploy-run-key>",
-		},
-		Optional: []string{
-			"--format=table|json|markdown",
-		},
-		Examples: []string{
-			"aspect observe --what=deploy --run-key=2026-04-27.000057@rust-forge-01",
-		},
-		Next: []string{
-			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{

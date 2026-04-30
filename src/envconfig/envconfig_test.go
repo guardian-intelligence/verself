@@ -107,6 +107,38 @@ func TestRequireCredentialReadsTrimmedFile(t *testing.T) {
 	}
 }
 
+func TestRequireCredentialReadsExplicitNomadPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "forgejo-token")
+	if err := os.WriteFile(path, []byte("  token-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VERSELF_CRED_FORGEJO_TOKEN", path)
+
+	l := envconfig.New()
+	got := l.RequireCredential("forgejo-token")
+	if got != "token-value" {
+		t.Errorf("RequireCredential: got %q", got)
+	}
+	if err := l.Err(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRequireCredentialPathRejectsRelativeExplicitNomadPath(t *testing.T) {
+	t.Setenv("VERSELF_CRED_CLICKHOUSE_CA_CERT", "relative.pem")
+
+	l := envconfig.New()
+	_ = l.RequireCredentialPath("clickhouse-ca-cert")
+	err := l.Err()
+	if err == nil {
+		t.Fatal("expected relative-path failure")
+	}
+	if !strings.Contains(err.Error(), "VERSELF_CRED_CLICKHOUSE_CA_CERT") {
+		t.Fatalf("expected env name in error, got %v", err)
+	}
+}
+
 func TestRequireCredentialEmptyFileFails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty")

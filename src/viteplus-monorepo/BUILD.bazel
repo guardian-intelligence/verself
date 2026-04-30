@@ -1,6 +1,7 @@
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@npm//src/viteplus-monorepo:vite-plus/package_json.bzl", vite_plus_bin = "bin")
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_node_runtime_artifact")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -30,4 +31,8 @@ copy_to_bin(
 vite_plus_bin.vp_binary(
     name = "vp",
     data = [":node_modules"],
+)
+
+viteplus_node_runtime_artifact(
+    name = "nodejs_runtime_nomad_artifact",
 )

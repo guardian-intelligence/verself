@@ -1,7 +1,7 @@
 """aspect render --site=prod
 
 Materialises a site's deploy cache at .cache/render/<site>/ — every
-generated group_var, every nftables fragment, every systemd unit file,
+generated group_var, every nftables fragment, every rendered host file,
 the staged inventory, and the hand-written group_vars copied alongside.
 Ansible's `host_group_vars` plugin auto-discovers
 `<inventory_dir>/group_vars/all/...`, so pointing

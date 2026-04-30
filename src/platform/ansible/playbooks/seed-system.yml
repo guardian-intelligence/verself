@@ -1212,42 +1212,11 @@
         state: absent
       tags: [stalwart]
 
-    - name: Read deployed mailbox-service unit # noqa: command-instead-of-module
-      ansible.builtin.command:
-        cmd: systemctl cat mailbox-service.service
-      register: seed_system_mailbox_service_unit
-      changed_when: false
-      failed_when: false
-      tags: [stalwart]
-
-    - name: Set split-credential mailbox-service support fact
-      ansible.builtin.set_fact:
-        seed_system_mailbox_service_supports_split_credentials: >-
-          {{
-            seed_system_mailbox_service_unit.rc == 0
-            and
-            ('LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password' in seed_system_mailbox_service_unit.stdout)
-            and
-            ('LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password' in seed_system_mailbox_service_unit.stdout)
-          }}
-      tags: [stalwart]
-
-    - name: Restart mailbox-service after mailbox reseed
-      ansible.builtin.systemd:
-        name: mailbox-service
-        enabled: true
-        state: restarted
-        daemon_reload: true
-      when: seed_system_mailbox_service_supports_split_credentials
-      tags: [stalwart]
-
-    - name: Note mailbox-service restart is deferred until deploy
+    - name: Note mailbox-service restart is handled by Nomad deploy
       ansible.builtin.debug:
         msg: >-
-          mailbox-service remains stopped after mailbox reseed because the
-          deployed unit does not yet load split Stalwart credentials. Run the
-          mailbox_service deploy next.
-      when: not seed_system_mailbox_service_supports_split_credentials
+          mailbox-service consumes reseeded Stalwart credentials on the next
+          Nomad allocation restart or application deploy.
       tags: [stalwart]
 
     - name: Set seeded mailbox bindings fact

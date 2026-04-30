@@ -34,19 +34,6 @@
   register: object_storage_service_proxy_credential_files
   no_log: true
 
-- name: Assert object-storage-service Garage proxy credentials are either both present or both absent
-  ansible.builtin.assert:
-    that:
-      - >-
-        (
-          object_storage_service_proxy_credential_files.results[0].stat.exists
-          and object_storage_service_proxy_credential_files.results[1].stat.exists
-        ) or (
-          not object_storage_service_proxy_credential_files.results[0].stat.exists
-          and not object_storage_service_proxy_credential_files.results[1].stat.exists
-        )
-    fail_msg: Garage proxy credentials are partially present; delete both files and redeploy.
-
 - name: Read Garage admin token for object-storage-service bootstrap
   ansible.builtin.slurp:
     src: /etc/garage/admin-token

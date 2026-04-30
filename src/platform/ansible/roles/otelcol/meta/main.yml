@@ -1,4 +1,4 @@
 ---
-# deploy_profile: provides otelcol-contrib at verself_bin.
+# substrate_profile: provides otelcol-contrib at verself_bin.
 dependencies:
-  - role: deploy_profile
+  - role: substrate_profile

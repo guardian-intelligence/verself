@@ -18,7 +18,7 @@
       {{
         (
           component_zitadel_projects.json.result
-          | selectattr('name', 'equalto', component.converge.auth.project_name)
+          | selectattr('name', 'equalto', component.workload.auth.project_name)
           | list
           | first
         ) | default({})
@@ -34,17 +34,17 @@
       Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
-      name: "{{ component.converge.auth.project_name }}"
-      projectRoleAssertion: "{{ component.converge.auth.project_role_assertion }}"
-      projectRoleCheck: "{{ component.converge.auth.project_role_check }}"
+      name: "{{ component.workload.auth.project_name }}"
+      projectRoleAssertion: "{{ component.workload.auth.project_role_assertion }}"
+      projectRoleCheck: "{{ component.workload.auth.project_role_check }}"
     return_content: true
   register: component_auth_project_created
   when: component_auth_project == {}
   no_log: true
 
-- name: Set owned component auth audience
+- name: Resolve owned component Zitadel project ID
   ansible.builtin.set_fact:
-    component_auth_audience: >-
+    component_auth_project_id: >-
       {{
         component_auth_project.id
         | default(component_auth_project_created.json.id, true)
@@ -52,16 +52,16 @@
 
 - name: Ensure owned component Zitadel project settings are current
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ component_auth_audience }}"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ component_auth_project_id }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"
       Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
-      name: "{{ component.converge.auth.project_name }}"
-      projectRoleAssertion: "{{ component.converge.auth.project_role_assertion }}"
-      projectRoleCheck: "{{ component.converge.auth.project_role_check }}"
+      name: "{{ component.workload.auth.project_name }}"
+      projectRoleAssertion: "{{ component.workload.auth.project_role_assertion }}"
+      projectRoleCheck: "{{ component.workload.auth.project_role_check }}"
     status_code: 200
   when: component_auth_project != {}
   no_log: true
@@ -71,7 +71,7 @@
     name: zitadel_project_roles
   vars:
     zitadel_project_roles_admin_pat: "{{ component_zitadel_admin_pat }}"
-    zitadel_project_roles_project_id: "{{ component_auth_audience }}"
-    zitadel_project_roles_definitions: "{{ component.converge.auth.roles }}"
-  when: component.converge.auth.roles | length > 0
+    zitadel_project_roles_project_id: "{{ component_auth_project_id }}"
+    zitadel_project_roles_definitions: "{{ component.workload.auth.roles }}"
+  when: component.workload.auth.roles | length > 0
   no_log: true

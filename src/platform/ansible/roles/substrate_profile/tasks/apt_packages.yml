@@ -1,0 +1,78 @@
+---
+# Install apt-managed software and symlink binaries into verself_bin.
+
+# ── PostgreSQL 16 (PGDG repo) ────────────────────────────────────────────────
+
+- name: Install PGDG apt signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/keyrings/pgdg.asc
+    mode: "0644"
+
+- name: Add PGDG apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_facts['distribution_release'] }}-pgdg main"
+    filename: pgdg
+    state: present
+
+- name: Install PostgreSQL {{ substrate_profile_postgresql_version }}
+  ansible.builtin.apt:
+    name: "postgresql-{{ substrate_profile_postgresql_version }}"
+    state: present
+    update_cache: true
+
+- name: Install PostgreSQL Ansible module runtime dependency
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+
+# Disable the auto-started PostgreSQL cluster — we manage our own data directory.
+- name: Stop default PostgreSQL cluster
+  ansible.builtin.command:
+    cmd: "pg_dropcluster --stop {{ substrate_profile_postgresql_version }} main"
+    removes: "/var/lib/postgresql/{{ substrate_profile_postgresql_version }}/main"
+  failed_when: false
+
+- name: Symlink PostgreSQL binaries into verself_bin
+  ansible.builtin.file:
+    src: "/usr/lib/postgresql/{{ substrate_profile_postgresql_version }}/bin/{{ item }}"
+    dest: "{{ verself_bin }}/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - postgres
+    - psql
+    - initdb
+    - pg_dump
+    - pg_restore
+    - pg_isready
+
+# ── wireguard-tools ──────────────────────────────────────────────────────────
+
+- name: Install wireguard-tools
+  ansible.builtin.apt:
+    name: wireguard-tools
+    state: present
+
+- name: Symlink wg into verself_bin
+  ansible.builtin.file:
+    src: /usr/bin/wg
+    dest: "{{ verself_bin }}/wg"
+    state: link
+    force: true
+
+# ── System tools (not in verself_bin, just need to be present) ────────────────────
+
+- name: Install system tools
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - jq
+      - python3
+      - sqlite3
+      - unzip
+      - xz-utils
+      - zstd
+      - e2fsprogs
+    state: present

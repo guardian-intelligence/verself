@@ -5,8 +5,8 @@
 
 # `aspect render --site=<site>` materialises the rendered tree alongside
 # the staged inventory under .cache/render/<site>/. inventory_dir resolves
-# to .cache/render/<site>/inventory/ at deploy time, putting the rendered
-# nftables/systemd files exactly one level up.
+# to .cache/render/<site>/inventory/ at deploy time, putting rendered host
+# files exactly one level up.
 platform_rendered_dir: "{{ inventory_dir }}/../share/rendered"
 postgresql_log_dir: /var/log/postgresql
 

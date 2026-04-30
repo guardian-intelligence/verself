@@ -1,0 +1,5 @@
+Contact: mailto:security@guardianintelligence.org
+Expires: 2027-04-30T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://guardianintelligence.org/.well-known/security.txt
+Policy: https://verself.sh/policy/security#disclosure

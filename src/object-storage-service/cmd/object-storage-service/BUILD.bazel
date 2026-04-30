@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "object-storage-service_lib",
@@ -27,4 +28,10 @@ go_binary(
     name = "object-storage-service",
     embed = [":object-storage-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "object-storage-service_nomad_artifact",
+    binary = ":object-storage-service",
+    output = "object-storage-service",
 )

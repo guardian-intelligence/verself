@@ -75,7 +75,7 @@ Then redeploy:
 
 ```bash
 cd src/platform/ansible
-ansible-playbook playbooks/site.yml --tags sandbox_rental_service,caddy
+aspect deploy --site=prod
 ```
 
 The sandbox-rental-service role fails before restarting the service when any

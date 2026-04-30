@@ -11,13 +11,6 @@
   when: component.postgres.password_ref.kind == "secret_ref"
   no_log: true
 
-- name: Assert component PostgreSQL password is available
-  ansible.builtin.assert:
-    that:
-      - component_pg_password | default('', true) | length > 0
-    fail_msg: "PostgreSQL-bound component {{ component.name }} did not resolve a password."
-  no_log: true
-
 - name: Ensure component PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:

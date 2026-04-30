@@ -1,69 +1,31 @@
 #!/usr/bin/env bash
-# nomad-deploy-all.sh — push freshly-rendered job specs onto the bare-metal
-# node and invoke /opt/verself/profile/bin/nomad-deploy for every
-# component the cue-renderer marked deployment.supervisor=="nomad".
-#
-# Always-on:
-#   - re-render is a caller responsibility (`aspect render --site=<site>`)
-#   - scp each rendered .nomad.json to /etc/verself/jobs/<id>.nomad.json
-#     so spec drift between controller and box can never sneak past the
-#     digest short-circuit
-#   - ssh-exec nomad-deploy per component
-#
-# Optional:
-#   --push-binaries  also bazelisk-build + scp the matching service binary
-#                    to /opt/verself/profile/bin/<id>. Lets developers
-#                    iterate on code without re-running the substrate
-#                    playbook.
-#
-# The component list comes from `nomad-deploy enumerate --index=...`,
-# which reads the renderer-emitted .cache/render/<site>/jobs/index.json.
-# No YAML parsing or Python heredocs.
+# Publish Bazel-resolved Nomad artifacts and submit resolved job specs.
 set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-usage: nomad-deploy-all.sh --site=<site> [--host=<ssh-host>] [--push-binaries]
+usage: nomad-deploy-all.sh --site=<site> [--host=<ssh-host>]
 
-  --site=<site>     Per-site cache root under .cache/render/<site>/.
+  --site=<site>     Site inventory under src/platform/ansible/inventory/.
   --host=<alias>    SSH host alias. Defaults to the first inventory entry
-                    in the [infra] group of src/platform/ansible/inventory/
-                    <site>.ini.
-  --push-binaries   Also rebuild + scp each component's service binary to
-                    /opt/verself/profile/bin/<id> before invoking
-                    nomad-deploy. Required when iterating on Go code
-                    without re-running the substrate playbook.
+                    in the [infra] group for the site.
 EOF
     exit 2
 }
 
-SITE=""
+SITE="prod"
 HOST=""
-PUSH_BINARIES=0
 for arg in "$@"; do
     case "${arg}" in
         --site=*) SITE="${arg#--site=}" ;;
         --host=*) HOST="${arg#--host=}" ;;
-        --push-binaries) PUSH_BINARIES=1 ;;
         -h|--help) usage ;;
         *) echo "unknown arg: ${arg}" >&2; usage ;;
     esac
 done
 
-if [[ -z "${SITE}" ]]; then
-    SITE="prod"
-fi
-
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-CACHE_DIR="${REPO_ROOT}/.cache/render/${SITE}"
-JOBS_DIR="${CACHE_DIR}/jobs"
-INDEX="${JOBS_DIR}/index.json"
 INVENTORY="${REPO_ROOT}/src/platform/ansible/inventory/${SITE}.ini"
-
-if [[ ! -f "${INDEX}" ]]; then
-    echo "[nomad-deploy-all] no ${INDEX} — no nomad-supervised components in this render" >&2
-    exit 0
-fi
 
 if [[ -z "${HOST}" ]]; then
     HOST=$(awk '/^\[infra\]/{flag=1; next} /^\[/{flag=0} flag && NF && $1 !~ /^#/ {print $1; exit}' "${INVENTORY}")
@@ -73,43 +35,64 @@ if [[ -z "${HOST}" ]]; then
     exit 1
 fi
 
-# Build nomad-deploy once on the controller; we reuse this binary for the
-# `enumerate` subcommand below and ignore it for the per-host invocation
-# (the box has its own copy at /opt/verself/profile/bin/nomad-deploy).
-# Let stderr through so build failures surface here instead of cascading
-# into a confusing "no such file" later.
-(cd "${REPO_ROOT}" && bazelisk build --config=remote-writer //src/cue-renderer/cmd/nomad-deploy:nomad-deploy)
+(cd "${REPO_ROOT}" && bazelisk build --config=remote-writer \
+    //src/cue-renderer:prod_nomad_jobs \
+    //src/cue-renderer/cmd/nomad-deploy:nomad-deploy)
+
+NOMAD_JOBS_DIR=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer:prod_nomad_jobs 2>/dev/null | tail -1)
 NOMAD_DEPLOY=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer/cmd/nomad-deploy:nomad-deploy 2>/dev/null | tail -1)
+NOMAD_JOBS_DIR="${REPO_ROOT}/${NOMAD_JOBS_DIR}"
 NOMAD_DEPLOY="${REPO_ROOT}/${NOMAD_DEPLOY}"
 
-# Index format: TSV rows of <component>\t<job_id>\t<bazel_label>\t<output>
-mapfile -t INDEX_ROWS < <("${NOMAD_DEPLOY}" enumerate --index="${INDEX}")
-if [[ ${#INDEX_ROWS[@]} -eq 0 ]]; then
-    echo "[nomad-deploy-all] index.json is empty" >&2
+publish_manifest="${NOMAD_JOBS_DIR}/publish.tsv"
+submit_manifest="${NOMAD_JOBS_DIR}/submit.tsv"
+if [[ ! -s "${submit_manifest}" ]]; then
+    echo "[nomad-deploy-all] no nomad-supervised components in resolved job set" >&2
     exit 0
 fi
 
-for row in "${INDEX_ROWS[@]}"; do
-    IFS=$'\t' read -r component job_id bazel_label output <<<"${row}"
-    spec="${JOBS_DIR}/${job_id}.nomad.json"
-    echo "[nomad-deploy-all] ${component} -> ${HOST}"
-
-    if [[ "${PUSH_BINARIES}" == "1" ]]; then
-        echo "[nomad-deploy-all]   build ${bazel_label}"
-        (cd "${REPO_ROOT}" && bazelisk build --config=remote-writer "${bazel_label}")
-        bin_path=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files "${bazel_label}" 2>/dev/null | tail -1)
-        if [[ -z "${bin_path}" || ! -f "${REPO_ROOT}/${bin_path}" ]]; then
-            echo "[nomad-deploy-all] ${component}: bazel cquery did not resolve to a file" >&2
-            exit 1
-        fi
-        echo "[nomad-deploy-all]   scp ${output} (sha256=$(sha256sum "${REPO_ROOT}/${bin_path}" | awk '{print substr($1,1,12)}'))"
-        scp -q -o BatchMode=yes "${REPO_ROOT}/${bin_path}" "${HOST}:/tmp/${output}"
-        ssh -o BatchMode=yes "${HOST}" "sudo install -o root -g root -m 0755 /tmp/${output} /opt/verself/profile/bin/${output} && rm -f /tmp/${output}"
+declare -A PUBLISHED_REMOTE_PATHS=()
+while IFS=$'\t' read -r output local_path remote_path sha; do
+    [[ -n "${output}" ]] || continue
+    if [[ -n "${PUBLISHED_REMOTE_PATHS[${remote_path}]+x}" ]]; then
+        continue
+    fi
+    PUBLISHED_REMOTE_PATHS["${remote_path}"]=1
+    local_file="${REPO_ROOT}/${local_path}"
+    if [[ ! -f "${local_file}" ]]; then
+        echo "[nomad-deploy-all] artifact ${output} missing at ${local_file}" >&2
+        exit 1
     fi
 
-    echo "[nomad-deploy-all]   scp ${job_id}.nomad.json"
-    scp -q -o BatchMode=yes "${spec}" "${HOST}:/tmp/${job_id}.nomad.json"
-    ssh -o BatchMode=yes "${HOST}" "sudo install -o root -g root -m 0644 /tmp/${job_id}.nomad.json /etc/verself/jobs/${job_id}.nomad.json && rm -f /tmp/${job_id}.nomad.json"
+    remote_dir="$(dirname "${remote_path}")"
+    tmp_remote_path="/tmp/${output}.tar"
+    remote_dir_q=$(printf "%q" "${remote_dir}")
+    remote_path_q=$(printf "%q" "${remote_path}")
+    tmp_remote_path_q=$(printf "%q" "${tmp_remote_path}")
 
-    ssh -o BatchMode=yes "${HOST}" "/opt/verself/profile/bin/nomad-deploy --component=${component}"
+    echo "[nomad-deploy-all] publish ${output}.tar sha256=${sha:0:12}"
+    scp -q -o BatchMode=yes "${local_file}" "${HOST}:${tmp_remote_path}"
+    ssh -o BatchMode=yes "${HOST}" "sudo install -d -o caddy -g caddy -m 0755 ${remote_dir_q} && sudo install -o caddy -g caddy -m 0644 ${tmp_remote_path_q} ${remote_path_q} && rm -f ${tmp_remote_path_q}"
+done <"${publish_manifest}"
+
+local_nomad_port="${NOMAD_DEPLOY_LOCAL_PORT:-14646}"
+ssh -N -L "127.0.0.1:${local_nomad_port}:127.0.0.1:4646" -o BatchMode=yes "${HOST}" &
+tunnel_pid=$!
+cleanup() {
+    kill "${tunnel_pid}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+for _ in {1..50}; do
+    if (echo >"/dev/tcp/127.0.0.1/${local_nomad_port}") >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.1
 done
+
+while IFS=$'\t' read -r job_id spec_file; do
+    [[ -n "${job_id}" ]] || continue
+    spec="${NOMAD_JOBS_DIR}/${spec_file}"
+    echo "[nomad-deploy-all] submit ${job_id}"
+    "${NOMAD_DEPLOY}" --spec="${spec}" --nomad-addr="http://127.0.0.1:${local_nomad_port}"
+done <"${submit_manifest}"

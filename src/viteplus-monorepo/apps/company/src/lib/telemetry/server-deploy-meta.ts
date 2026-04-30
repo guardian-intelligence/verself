@@ -17,7 +17,7 @@ export function deployMetaTags(): DeployMetaTag[] {
     { name: DEPLOY_META.runKey, content: env.VERSELF_DEPLOY_RUN_KEY ?? "" },
     { name: DEPLOY_META.id, content: env.VERSELF_DEPLOY_ID ?? "" },
     { name: DEPLOY_META.commitSha, content: env.VERSELF_COMMIT_SHA ?? "" },
-    { name: DEPLOY_META.profile, content: env.VERSELF_DEPLOY_PROFILE ?? "" },
+    { name: DEPLOY_META.supervisor, content: env.VERSELF_SUPERVISOR ?? "" },
   ];
   return tags.filter((tag) => tag.content !== "");
 }

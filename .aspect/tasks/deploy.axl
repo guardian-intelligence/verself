@@ -1,4 +1,4 @@
-"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--tags=...]
+"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--apps-only]
 
 The single deploy verb. The body:
 
@@ -14,14 +14,17 @@ The single deploy verb. The body:
   4. Records a `started` row in verself.deploy_events.
   5. If --scope=affected, prints a stderr breadcrumb. Phase A.5 wires the
      real bazel-diff machinery and lifts the breadcrumb to a real span.
-  6. Invokes scripts/ansible-with-otel.sh against playbooks/site.yml.
+  6. Unless --apps-only, invokes scripts/ansible-with-otel.sh against
+     playbooks/box.yml for host/substrate configuration.
      The wrapper inherits VERSELF_DEPLOY_RUN_KEY (deploy_identity.sh's
      idempotency check preserves it), stands up a controller-side
      otelcol-contrib agent with a file_storage queue, and points the
      ansible OTel callback at the agent. The agent's SIGTERM-on-wrapper-
      exit drain window is what lets ansible.task spans from a *failed*
      run still land in ClickHouse.
-  7. Records `succeeded` or `failed` in verself.deploy_events.
+  7. Runs scripts/nomad-deploy-all.sh to build the Bazel-resolved Nomad
+     deploy set, publish task artifacts, submit jobs, and wait for health.
+  8. Records `succeeded` or `failed` in verself.deploy_events.
 
 Reset playbooks (identity, billing, verification) live under `aspect platform
 reset ...` because aspect's CLI treats a name as either a task or a group,
@@ -60,10 +63,7 @@ def _merge_env(base, *overrides):
     return out
 
 def _run_ansible(ctx, site, env):
-    args_list = ["playbooks/site.yml"]
-    if ctx.args.tags:
-        args_list.append("--tags")
-        args_list.append(",".join(ctx.args.tags))
+    args_list = ["playbooks/box.yml"]
     return checked_spawn(
         ctx,
         ws_path(ctx, _PLATFORM, "scripts/ansible-with-otel.sh"),
@@ -76,20 +76,18 @@ def _run_ansible(ctx, site, env):
         label = "ansible-with-otel " + " ".join(args_list),
     )
 
-def _run_nomad_deploy(ctx, site, env, push_binaries):
-    """SSH-exec /opt/verself/profile/bin/nomad-deploy on the bare-metal node
-    for every component the cue-renderer marked supervisor=="nomad". The
-    script reads .cache/render/<site>/jobs/*.nomad.json to enumerate
-    targets, scps the rendered spec to /etc/verself/jobs/, then runs one
-    ssh per component. Skipped when the renderer produced no nomad jobs
-    (script exits 0).
+def _run_nomad_deploy(ctx, site, env):
+    """Publish Nomad task artifacts and submit every rendered job spec.
 
-    push_binaries=True also rebuilds + scps the matching service binary
-    so iteration on Go code can skip the substrate playbook entirely.
+    The script reads .cache/render/<site>/jobs/index.json, builds the Bazel
+    tarball targets listed there, publishes immutable artifacts to the
+    host-local artifact server, opens an SSH tunnel to Nomad's loopback API,
+    and runs nomad-deploy locally for each component. Skipped when the renderer
+    produced no nomad jobs (script exits 0).
+
+    Ansible installs substrate binaries and service helper tools only.
     """
     args_list = ["--site=" + site]
-    if push_binaries:
-        args_list.append("--push-binaries")
     return checked_spawn(
         ctx,
         ws_path(ctx, _PLATFORM, "scripts/nomad-deploy-all.sh"),
@@ -99,7 +97,7 @@ def _run_nomad_deploy(ctx, site, env, push_binaries):
         label = "nomad-deploy-all " + " ".join(args_list),
     )
 
-def _deploy_one(ctx, site, sha, scope, no_ansible):
+def _deploy_one(ctx, site, sha, scope, apps_only):
     env = derive_deploy_env(ctx, site = site, sha = sha, scope = scope)
     if env == None:
         return 1
@@ -131,7 +129,7 @@ def _deploy_one(ctx, site, sha, scope, no_ansible):
         event_kind = "started",
     )
 
-    if not no_ansible:
+    if not apps_only:
         rc = _run_ansible(ctx, site, env)
         if rc != 0:
             record_deploy_event(
@@ -142,22 +140,14 @@ def _deploy_one(ctx, site, sha, scope, no_ansible):
                 scope = scope,
                 components = components,
                 event_kind = "failed",
-                error_message = "ansible-with-otel exited " + str(rc),
+                error_message = "box playbook exited " + str(rc),
             )
             return rc
 
-    # Nomad supervises a per-component subset of the topology. Substrate
-    # convergence (above) leaves the rendered job spec at
-    # /etc/verself/jobs/<id>.nomad.json on the box; nomad-deploy then
-    # owns the actual submit + deployment-poll. Ansible never touches
-    # Nomad's API.
-    #
-    # When --no-ansible skips the substrate playbook, the spec push step
-    # inside nomad-deploy-all.sh AND the --push-binaries flag together
-    # cover the host-state nomad-deploy needs (spec + binary). Substrate
-    # state (Postgres roles, secrets, auth audience, etc.) MUST already
-    # be in place from a prior full deploy.
-    rc = _run_nomad_deploy(ctx, site, env, push_binaries = no_ansible)
+    # Nomad supervises application components. The box playbook stops at
+    # host/substrate state; Bazel resolves the deploy specs and artifact
+    # checksums, then nomad-deploy submits each spec and waits for health.
+    rc = _run_nomad_deploy(ctx, site, env)
     if rc != 0:
         record_deploy_event(
             ctx,
@@ -182,7 +172,7 @@ def _deploy_one(ctx, site, sha, scope, no_ansible):
     )
     return rc
 
-def _deploy_in_worktree(ctx, site, sha, scope, no_ansible):
+def _deploy_in_worktree(ctx, site, sha, scope, apps_only):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
     and clean up. Inside the worktree HEAD == sha, so the inner invocation
     falls through to the in-tree path with no further branching.
@@ -197,8 +187,8 @@ def _deploy_in_worktree(ctx, site, sha, scope, no_ansible):
     if rc != 0:
         return rc
     inner_args = ["deploy", "--site=" + site, "--scope=" + scope]
-    if no_ansible:
-        inner_args.append("--no-ansible")
+    if apps_only:
+        inner_args.append("--apps-only")
     deploy_rc = checked_spawn(
         ctx, "aspect",
         inner_args,
@@ -215,31 +205,27 @@ def _deploy_in_worktree(ctx, site, sha, scope, no_ansible):
 def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
     scope = ctx.args.scope or "all"
-    no_ansible = ctx.args.no_ansible
+    apps_only = ctx.args.apps_only
     sha = resolve_sha(ctx, ctx.args.sha or "")
     if sha == "":
         return 1
     head = git_head(ctx)
     if sha != head:
-        return _deploy_in_worktree(ctx, site, sha, scope, no_ansible)
-    return _deploy_one(ctx, site, sha, scope, no_ansible)
+        return _deploy_in_worktree(ctx, site, sha, scope, apps_only)
+    return _deploy_one(ctx, site, sha, scope, apps_only)
 
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Render the deploy cache, record a deploy_events row, and apply playbooks/site.yml against a site.",
+    summary = "Render the deploy cache, configure the box, and roll Nomad application jobs.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site (selects instances/<site>/ and inventory/<site>.ini)."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
         "scope": args.string(default = "all", description = "all | affected. The affected machinery is a Phase A.5 stub — same behavior as `all`, with a stderr breadcrumb."),
-        "tags": args.string_list(
-            long = "tags",
-            description = "Ansible tags to scope this deploy (e.g. --tags=company,caddy). May be repeated.",
-        ),
-        "no_ansible": args.boolean(
-            long = "no-ansible",
+        "apps_only": args.boolean(
+            long = "apps-only",
             default = False,
-            description = "Skip the substrate playbook entirely. Renders the cache, then runs nomad-deploy-all.sh with --push-binaries so component binaries + specs land on the box without re-running Ansible. Use only after a prior full deploy has converged substrate.",
+            description = "Skip box/substrate Ansible. Render, resolve, publish, and submit Nomad application jobs only.",
         ),
     },
 )
