@@ -455,6 +455,7 @@ func artifactStanzas(kind, output string) []map[string]any {
 
 func artifactStanza(output string) map[string]any {
 	return map[string]any{
+		"Chown":        true,
 		"GetterSource": "verself-artifact://" + output,
 		"RelativeDest": "local",
 	}
