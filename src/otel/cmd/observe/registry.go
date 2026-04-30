@@ -580,6 +580,44 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
+		ID:      "deploy.codegen_actions",
+		Family:  "deploy",
+		Title:   "Deploy Codegen Actions",
+		Purpose: "Every codegen Bazel spawn (OpenAPISpec, OAPICodegen, OpenapiTsGen, NpmPackage) that ran during one deploy. cache_hit=1 means the action graph was warm; cache_hit=0 means a Huma route or spec source change forced a real codegen run.",
+		Required: []string{
+			"--run-key=<deploy-run-key>",
+		},
+		Optional: []string{
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=deploy --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
+		},
+	},
+	{
+		ID:      "deploy.rebuild_blast_radius",
+		Family:  "deploy",
+		Title:   "Deploy Rebuild Blast Radius",
+		Purpose: "Per-service breakdown of every Bazel spawn that ran in one deploy, split by execution vs. cache hit. Verifies a Huma-route change rebuilt the right consuming services and only the right ones.",
+		Required: []string{
+			"--run-key=<deploy-run-key>",
+		},
+		Optional: []string{
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=deploy --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=catalog --signal=deploys",
+		},
+	},
+	{
 		ID:      "mail.events",
 		Family:  "mail",
 		Title:   "Mail Events",
