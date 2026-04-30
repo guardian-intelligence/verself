@@ -181,6 +181,13 @@
   when:
     - item.artifact.kind == 'go_binary'
     - item.artifact.output in deploy_profile_changed_go_outputs
+    # Nomad-supervised processes don't have systemd units to restart;
+    # nomad-deploy handles their lifecycle via the rendered job spec
+    # and the binary digest in Job.Meta. Filtering here keeps the
+    # systemd-restart loop from doing dead work and from emitting a
+    # misleading log line for every nomad-supervised binary that
+    # changes.
+    - item.supervisor != 'nomad'
 
 - name: Deduplicate changed topology Go restart units
   ansible.builtin.set_fact:
