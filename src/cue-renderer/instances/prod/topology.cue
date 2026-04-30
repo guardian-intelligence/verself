@@ -568,7 +568,8 @@ topology: s.#Topology & {
 			host: "127.0.0.1"
 			runtime: {systemd: "caddy", user: "caddy", group: "caddy"}
 			artifact: {kind: "static_binary", output: "caddy", role: "caddy"}
-			endpoints: http: {protocol: "http", port: 4647, exposure: "loopback"}
+			// Nomad reserves 4646-4648 for HTTP, RPC, and Serf.
+			endpoints: http: {protocol: "http", port: 14647, exposure: "loopback"}
 			interfaces: http: {kind: "resource_protocol", endpoint: "http", auth: "none"}
 		}
 		stalwart: {
