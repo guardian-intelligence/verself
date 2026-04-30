@@ -1,0 +1,50 @@
+---
+# Host-side substrate for a nomad-supervised component:
+#   1. Copy the rendered job spec onto the box so nomad-deploy reads it.
+#   2. Tear down any stale systemd unit left over from the legacy supervisor.
+# All actual deploy logic — sha256 + submit + deployment polling — lives
+# in /opt/verself/profile/bin/nomad-deploy and is invoked by aspect deploy
+# after this playbook returns.
+
+- name: Ensure /etc/verself/jobs exists
+  ansible.builtin.file:
+    path: /etc/verself/jobs
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Copy rendered Nomad job spec onto the host
+  ansible.builtin.copy:
+    src: "{{ inventory_dir }}/../jobs/{{ component.name | replace('_', '-') }}.nomad.json"
+    dest: "/etc/verself/jobs/{{ component.name | replace('_', '-') }}.nomad.json"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Read existing systemd unit state for component
+  ansible.builtin.systemd:
+    name: "{{ component.name | replace('_', '-') }}.service"
+  register: nomad_substrate_unit_state
+  failed_when: false
+  changed_when: false
+
+- name: Stop legacy systemd unit (cutover from systemd to nomad)
+  ansible.builtin.systemd:
+    name: "{{ component.name | replace('_', '-') }}.service"
+    state: stopped
+    enabled: false
+  when:
+    - nomad_substrate_unit_state.status is defined
+    - nomad_substrate_unit_state.status.LoadState | default('not-found') != 'not-found'
+
+- name: Remove legacy systemd unit file (cutover from systemd to nomad)
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ component.name | replace('_', '-') }}.service"
+    state: absent
+  register: nomad_substrate_unit_removed
+
+- name: Reload systemd after legacy unit removal
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: nomad_substrate_unit_removed.changed

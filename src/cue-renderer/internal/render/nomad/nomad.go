@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -31,6 +32,19 @@ import (
 	"github.com/verself/cue-renderer/internal/render/projection"
 	"github.com/verself/cue-renderer/internal/render/serviceenv"
 )
+
+// placeholderRE matches `{{ key.path }}` substrings in serviceenv-derived
+// strings. The systemd path lets Ansible substitute these at deploy time;
+// the Nomad path resolves them at render time so the spec the box submits
+// is fully formed JSON. component_auth_audience is the lone exception —
+// it's persisted to disk by the substrate Ansible flow and resolved by
+// nomad-deploy at submit time.
+var placeholderRE = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}`)
+
+// AuthAudiencePlaceholder is the sentinel the renderer leaves in the
+// Nomad spec for VERSELF_AUTH_AUDIENCE; nomad-deploy substitutes the
+// resolved Zitadel audience from /etc/verself/<component>/auth_audience.
+const AuthAudiencePlaceholder = "{{ component_auth_audience }}"
 
 type Renderer struct{}
 
@@ -41,13 +55,17 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err != nil {
 		return err
 	}
+	resolver, err := newResolver(loaded)
+	if err != nil {
+		return err
+	}
 	for _, component := range components {
 		deployment, _ := component.Value["deployment"].(map[string]any)
 		supervisor, _ := deployment["supervisor"].(string)
 		if supervisor != "nomad" {
 			continue
 		}
-		spec, err := buildJobSpec(component, deployment)
+		spec, err := buildJobSpec(component, deployment, resolver)
 		if err != nil {
 			return fmt.Errorf("render %s: %w", component.Name, err)
 		}
@@ -74,7 +92,7 @@ func jobID(componentName string) string {
 	return strings.ReplaceAll(componentName, "_", "-")
 }
 
-func buildJobSpec(component projection.NamedMap, deployment map[string]any) (map[string]any, error) {
+func buildJobSpec(component projection.NamedMap, deployment map[string]any, resolver *resolver) (map[string]any, error) {
 	converge, ok := component.Value["converge"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%s.converge: missing", component.Name)
@@ -97,7 +115,7 @@ func buildJobSpec(component projection.NamedMap, deployment map[string]any) (map
 		if !ok {
 			return nil, fmt.Errorf("%s.converge.systemd.units[%d]: expected map, got %T", component.Name, i, raw)
 		}
-		group, err := buildTaskGroup(component, unit, deployment)
+		group, err := buildTaskGroup(component, unit, deployment, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -119,12 +137,16 @@ func buildJobSpec(component projection.NamedMap, deployment map[string]any) (map
 	return map[string]any{"Job": jobBody}, nil
 }
 
-func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployment map[string]any) (map[string]any, error) {
+func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployment map[string]any, resolver *resolver) (map[string]any, error) {
 	unitName, _ := unit["name"].(string)
 	unitUser, _ := unit["user"].(string)
 	exec, _ := unit["exec"].(string)
 	if unitName == "" || unitUser == "" || exec == "" {
 		return nil, fmt.Errorf("%s.converge.systemd.units: name/user/exec required", component.Name)
+	}
+	resolvedExec, err := resolver.resolve(exec)
+	if err != nil {
+		return nil, fmt.Errorf("%s.exec: %w", component.Name, err)
 	}
 
 	env, err := serviceenv.Unit(component, unit)
@@ -134,7 +156,11 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 
 	envOut := make(map[string]string, len(env))
 	for _, key := range serviceenv.SortedKeys(env) {
-		envOut[key] = env[key]
+		resolved, err := resolver.resolve(env[key])
+		if err != nil {
+			return nil, fmt.Errorf("%s.env.%s: %w", component.Name, key, err)
+		}
+		envOut[key] = resolved
 	}
 
 	count := int64(1)
@@ -170,12 +196,7 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		"Driver": "raw_exec",
 		"User":   unitUser,
 		"Config": map[string]any{
-			// Strip the `{{ verself_bin }}/` prefix used in CUE so the
-			// Nomad alloc has an absolute path. verself_bin is a deploy-
-			// time fact (/opt/verself/profile/bin) populated by the
-			// deploy_profile role; the Ansible nomad_submit task
-			// substitutes it before submission.
-			"command": exec,
+			"command": resolvedExec,
 		},
 		"Env":          envOut,
 		"Resources":    resources,
@@ -395,4 +416,101 @@ func optionalDuration(m map[string]any, key string, fallback time.Duration) (tim
 		return 0, fmt.Errorf("%s: %w", key, err)
 	}
 	return d, nil
+}
+
+// resolver substitutes Jinja-style `{{ key }}` references in
+// serviceenv-derived strings to literal values. The systemd renderer
+// leaves them for Ansible to template; the Nomad renderer resolves at
+// render time so the spec the bare-metal node submits is fully formed.
+//
+// Three known-static buckets land here:
+//   - `verself_bin`, `verself_domain`, `spire_agent_socket_path` from
+//     loaded.Config (ansible_vars + spire blocks).
+//   - `topology_endpoints.<comp>.endpoints.<ep>.{address,port}` and
+//     `topology_endpoints.<comp>.host` from the topology projection.
+//
+// `component_auth_audience` is the lone dynamic value; it stays as a
+// `{{ component_auth_audience }}` substring for nomad-deploy to swap
+// at submit time using /etc/verself/<component>/auth_audience.
+type resolver struct {
+	verselfBin            string
+	verselfDomain         string
+	spireAgentSocketPath  string
+	endpointAddrs         map[string]string // "topology_endpoints.<c>.endpoints.<e>.address"
+	endpointPorts         map[string]string
+	componentHosts        map[string]string // "topology_endpoints.<c>.host"
+}
+
+func newResolver(loaded load.Loaded) (*resolver, error) {
+	r := &resolver{
+		spireAgentSocketPath: loaded.Config.Spire.AgentSocketPath,
+		endpointAddrs:        map[string]string{},
+		endpointPorts:        map[string]string{},
+		componentHosts:       map[string]string{},
+	}
+	if v, ok := loaded.Config.AnsibleVars["verself_bin"].(string); ok {
+		r.verselfBin = v
+	}
+	if v, ok := loaded.Config.AnsibleVars["verself_domain"].(string); ok {
+		r.verselfDomain = v
+	}
+	for compName, comp := range loaded.Topology.Components {
+		host := comp.Host
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		r.componentHosts["topology_endpoints."+compName+".host"] = string(host)
+		for epName, ep := range comp.Endpoints {
+			r.endpointAddrs["topology_endpoints."+compName+".endpoints."+epName+".address"] =
+				fmt.Sprintf("%s:%d", string(host), ep.Port)
+			r.endpointPorts["topology_endpoints."+compName+".endpoints."+epName+".port"] =
+				fmt.Sprintf("%d", ep.Port)
+		}
+	}
+	return r, nil
+}
+
+func (r *resolver) resolve(in string) (string, error) {
+	var resolveErr error
+	out := placeholderRE.ReplaceAllStringFunc(in, func(match string) string {
+		m := placeholderRE.FindStringSubmatch(match)
+		if len(m) != 2 {
+			return match
+		}
+		key := m[1]
+		switch key {
+		case "verself_bin":
+			return r.verselfBin
+		case "verself_domain":
+			return r.verselfDomain
+		case "spire_agent_socket_path":
+			return r.spireAgentSocketPath
+		case "component_auth_audience":
+			// Resolved by nomad-deploy at submit time.
+			return match
+		}
+		if v, ok := r.endpointAddrs[key]; ok {
+			return v
+		}
+		if v, ok := r.endpointPorts[key]; ok {
+			return v
+		}
+		if v, ok := r.componentHosts[key]; ok {
+			return v
+		}
+		resolveErr = fmt.Errorf("nomad renderer: unresolved placeholder %q in %q", key, in)
+		return match
+	})
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+	// Fail loud on residual `{{` that snuck past the regex (mismatched
+	// braces, bare `{{` on a literal value, etc.). The auth-audience
+	// sentinel is the only allowed remainder.
+	for _, fragment := range strings.Split(out, AuthAudiencePlaceholder) {
+		if strings.Contains(fragment, "{{") || strings.Contains(fragment, "}}") {
+			return "", fmt.Errorf("nomad renderer: unresolved braces in %q", in)
+		}
+	}
+	return out, nil
 }

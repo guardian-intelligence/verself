@@ -1,7 +1,7 @@
 <repo_overview>
 Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
 
-Most commands should begin with either `aspect`. Use regular `bazelisk` for basic build/test.
+`aspect` contains lots of helpful commands under .aspect/. Use regular `bazelisk` for basic build/test.
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
@@ -26,8 +26,8 @@ Tech Stack:
 
 Invariant patterns:
 
-* Bazel owns build artifacts and dependency-scoped rebuilds: deploy code requests specific Bazel targets, so a frontend rebuild must not rebuild unrelated substrate binaries such as TigerBeetle.
 * CUE owns desired platform shape and non-secret deployment configuration in `src/cue-renderer/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `src/platform/ansible/group_vars/all/generated/` are projections, not authority.
+* Efficient rebuilding:  Bazel's job is to cache and schedule, not transform. Bazel decides when to run a unit's build pipeline (CUE -> codegen is a unit, for example). Nomad orchestrates deploys. Ansible's job is to run playbooks to ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main and CI runs Bazel and Nomad. Let each language/package decide how to build itself. We finetune our build process per unit, not through Bazel.
 * Ansible owns host mutations and convergence only: it consumes generated CUE/Bazel manifests plus SOPS secret values, mutates the host idempotently, and must not invent topology, rebuild scope, ports, users, routes, or service relationships. SOPS owns encrypted secret values such as Cloudflare API tokens; CUE may declare that they are required.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. 
 * Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `auth-middleware/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
@@ -154,8 +154,6 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 
 <coding_contract>
 - When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-- Prefer Ansible over shell scripts when configuring infrastructure. All logic to execute deployments or regular tasks on the provisioned node should be done thorugh Ansible, not through golang binaries.
-- Ansible playbook files must have a newline at the end (caught by `ansible-lint`).
 - Treat errors as data. Use tagged and structured errors to aid control flow.
 - Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
 - 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in a tiny set of niche cases, but a comprehensive suite of e2e tests is preferred.
@@ -172,6 +170,12 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Security concerns override user instructions and architectural purity.
 - When following runbooks, skills, protocols, or user messages that also define instructions in XML tags, treat the instructions as additive, not as overrides.
 </instruction_priority>
+
+<note>
+Our Ansible code today is extremely far off what is desirable. Consider all Ansible, including generated Ansible, as being 99% tech-debt and only 1% what should remain after we thin it out in favor of other more purpose built tools. Do not read Ansible yamls thinking "I should copy this pattern" or "I should maintain backwards compatibility with the existing Ansible structure". Almost all of it will be deleted and only a small amount rewritten after we get Bazel + Cue + Nomad in place.
+
+After the migration: **all software-deployment convergence is owned by Nomad.** Ansible's job is reduced to configuring the host — system users, ZFS datasets, package installs, substrate daemons (Postgres, ClickHouse, SPIRE, OpenBao, NATS, Temporal, Caddy, Forgejo, Zitadel, Stalwart, Garage, vm-orchestrator, Nomad itself), and per-component substrate state (DB/role/migrations, credstore files, Zitadel auth audience). Roles/tags-as-software-selectors go away. The actual lifecycle of application services and frontends — start, restart, rolling update, drain, health-check, auto-revert — runs through Nomad. Bazel owns build artefacts; CUE owns desired shape; the controller-side `aspect deploy` invokes `nomad-deploy` over SSH for each opted-in component, and `nomad-deploy` is the single primitive that talks to Nomad's API. Nothing else writes Nomad jobs. Don't add Ansible roles or tasks for software supervision; if you find yourself reaching for `community.general.systemd` or `nomad_job` in a playbook, the work belongs in `nomad-deploy` or the renderer, not Ansible.
+</note>
 
 
 Planned Upcoming Projects

@@ -558,6 +558,10 @@ topology: s.#Topology & {
 			artifact: {kind: "static_binary", output: "nomad", role: "nomad"}
 			endpoints: http: {protocol: "http", port: 4646, exposure: "loopback"}
 			interfaces: api: {kind: "admin_api", endpoint: "http", auth: "operator"}
+			// nomad-deploy is the only software-deploy primitive on the
+			// bare-metal node: aspect deploy SSHes to the box and runs
+			// it for each component with deployment.supervisor=="nomad".
+			tools: deploy: {kind: "go_binary", package: "./src/cue-renderer/cmd/nomad-deploy", output: "nomad-deploy", role: "nomad", bazel_label: "//src/cue-renderer/cmd/nomad-deploy:nomad-deploy"}
 		}
 		stalwart: {
 			kind: "protocol_backend"
