@@ -272,19 +272,21 @@ func awaitHealthy(ctx context.Context, nomadAddr, jobID string, jobModifyIndex i
 		if err != nil {
 			return err
 		}
+		// Nomad deployment shape: timeouts are nanosecond int64;
+		// RequireProgressBy is a nullable RFC3339 string. We only act on
+		// Status here, but keep the per-group counts decoded so future
+		// progress logging needs no shape change.
 		var payload struct {
-			ID     string `json:"ID"`
-			Status string `json:"Status"`
-			TaskGroups map[string]struct {
-				DesiredTotal     int  `json:"DesiredTotal"`
-				HealthyAllocs    int  `json:"HealthyAllocs"`
-				UnhealthyAllocs  int  `json:"UnhealthyAllocs"`
-				PlacedAllocs     int  `json:"PlacedAllocs"`
-				RequireProgressBy string `json:"RequireProgressBy"`
-				ProgressDeadline string `json:"ProgressDeadline"`
-			} `json:"TaskGroups"`
-			JobVersion       int64  `json:"JobVersion"`
+			ID                string `json:"ID"`
+			Status            string `json:"Status"`
 			StatusDescription string `json:"StatusDescription"`
+			JobVersion        int64  `json:"JobVersion"`
+			TaskGroups        map[string]struct {
+				DesiredTotal    int `json:"DesiredTotal"`
+				HealthyAllocs   int `json:"HealthyAllocs"`
+				UnhealthyAllocs int `json:"UnhealthyAllocs"`
+				PlacedAllocs    int `json:"PlacedAllocs"`
+			} `json:"TaskGroups"`
 		}
 		if resp.StatusCode == http.StatusOK {
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {

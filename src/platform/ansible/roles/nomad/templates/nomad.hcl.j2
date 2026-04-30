@@ -11,14 +11,12 @@ log_level = "INFO"
 
 bind_addr = "{{ topology_endpoints.nomad.host }}"
 
+# HTTP is the only port mirrored into topology — operators connect here
+# over wg-ops or SSH-forwarded loopback. RPC (4647) and Serf (4648) stay
+# on Nomad's defaults; both are loopback-only on a single-node deploy
+# and the host firewall already drops non-loopback ingress.
 ports {
   http = {{ topology_endpoints.nomad.endpoints.http.port }}
-}
-
-advertise {
-  http = "{{ topology_endpoints.nomad.endpoints.http.address }}"
-  rpc  = "{{ topology_endpoints.nomad.endpoints.http.address }}"
-  serf = "{{ topology_endpoints.nomad.endpoints.http.address }}"
 }
 
 server {
@@ -28,6 +26,18 @@ server {
 
 client {
   enabled = true
+  # Single-node: server is co-resident on loopback. Setting servers
+  # explicitly skips Consul discovery (we don't run Consul).
+  servers = ["127.0.0.1:4647"]
+}
+
+# Disable Consul auto-discovery: we don't run a Consul agent, so leaving
+# auto_advertise on produces a steady stream of refused connections in
+# the Nomad log.
+consul {
+  auto_advertise   = false
+  client_auto_join = false
+  server_auto_join = false
 }
 
 plugin "raw_exec" {
