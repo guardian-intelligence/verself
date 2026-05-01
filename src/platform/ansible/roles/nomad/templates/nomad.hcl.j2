@@ -40,6 +40,10 @@ client {
   # explicitly skips Consul discovery (we don't run Consul).
   servers = ["127.0.0.1:4647"]
 
+  artifact {
+    set_environment_variables = "AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION,AWS_EC2_METADATA_DISABLED"
+  }
+
   # Pin every reserved port to 127.0.0.1 so the native service registry
   # advertises loopback for HTTP/TCP checks. Components bind 127.0.0.1
   # at L4; nftables enforces loopback-only at L3 as defense-in-depth.

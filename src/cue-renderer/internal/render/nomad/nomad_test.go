@@ -312,6 +312,47 @@ func TestRender_IndexEnumeratesAllOptedIn(t *testing.T) {
 	if !ok {
 		t.Fatalf("jobs/index.json missing despite %d spec files", len(specs))
 	}
+	if _, ok := idx["artifact_base_url"]; ok {
+		t.Fatal("jobs/index.json still exposes legacy artifact_base_url")
+	}
+	if _, ok := idx["artifact_store_path"]; ok {
+		t.Fatal("jobs/index.json still exposes legacy artifact_store_path")
+	}
+	delivery, ok := idx["artifact_delivery"].(map[string]any)
+	if !ok {
+		t.Fatalf("jobs/index.json artifact_delivery missing or wrong type")
+	}
+	if got, _ := delivery["kind"].(string); got != "garage_s3_private_origin" {
+		t.Fatalf("artifact_delivery.kind: got %q", got)
+	}
+	if got, _ := delivery["getter_source_prefix"].(string); got != "s3::https://artifacts.internal.verself.sh:9443/nomad-artifacts" {
+		t.Fatalf("artifact_delivery.getter_source_prefix: got %q", got)
+	}
+	if got, _ := delivery["key_prefix"].(string); got != "sha256" {
+		t.Fatalf("artifact_delivery.key_prefix: got %q", got)
+	}
+	if got, _ := delivery["public"].(bool); got {
+		t.Fatal("artifact_delivery.public: got true")
+	}
+	origin, ok := delivery["origin"].(map[string]any)
+	if !ok {
+		t.Fatalf("artifact_delivery.origin missing or wrong type")
+	}
+	if got, _ := origin["hostname"].(string); got != "artifacts.internal.verself.sh" {
+		t.Fatalf("artifact_delivery.origin.hostname: got %q", got)
+	}
+	if got, _ := origin["placement"].(string); got != "node_local" {
+		t.Fatalf("artifact_delivery.origin.placement: got %q", got)
+	}
+	if got, _ := origin["listen_host"].(string); got != "127.0.0.1" {
+		t.Fatalf("artifact_delivery.origin.listen_host: got %q", got)
+	}
+	if got, _ := origin["public_dns"].(bool); got {
+		t.Fatal("artifact_delivery.origin.public_dns: got true")
+	}
+	if got, _ := origin["public_ingress"].(bool); got {
+		t.Fatal("artifact_delivery.origin.public_ingress: got true")
+	}
 	rows, _ := idx["components"].([]any)
 	indexed := map[string]bool{}
 	for _, raw := range rows {
@@ -377,20 +418,8 @@ func TestRender_FrontendNodeAppUsesRuntimeArtifact(t *testing.T) {
 	}
 	group := groups[0].(map[string]any)
 	tasks, _ := group["Tasks"].([]any)
-	if len(tasks) != 2 {
-		t.Fatalf("verself-web Tasks: got %d, want migrate + service", len(tasks))
-	}
-	migrate := tasks[0].(map[string]any)
-	if got, _ := migrate["Name"].(string); got != "verself-web-migrate" {
-		t.Fatalf("frontend migration task name: got %q", got)
-	}
-	lifecycle, _ := migrate["Lifecycle"].(map[string]any)
-	if got, _ := lifecycle["Hook"].(string); got != "prestart" {
-		t.Fatalf("frontend migration Lifecycle.Hook: got %q", got)
-	}
-	migrateConfig, _ := migrate["Config"].(map[string]any)
-	if got, _ := migrateConfig["command"].(string); got != "local/bin/verself-web-migrate" {
-		t.Fatalf("frontend migration command: got %q", got)
+	if len(tasks) != 1 {
+		t.Fatalf("verself-web Tasks: got %d, want service", len(tasks))
 	}
 	task := serviceTask(t, group)
 	config, _ := task["Config"].(map[string]any)

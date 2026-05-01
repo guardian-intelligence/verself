@@ -1,0 +1,34 @@
+"""aspect artifacts publish --site=prod
+
+Builds the rendered Nomad artifact set and uploads every content-addressed
+tarball to the private Garage artifact origin. Deployment calls the same
+publisher before submitting jobs; this task exists for operator rehearsal and
+for verifying Garage artifact substrate independently.
+"""
+
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "checked_spawn", "render_site", "ws_path")
+
+_PLATFORM = "src/platform"
+
+def _publish_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/nomad-deploy-all.sh"),
+        ["--site=" + site, "--publish-only"],
+        cwd = ws_path(ctx),
+        label = "nomad-deploy-all --publish-only --site=" + site,
+    )
+
+publish = task(
+    implementation = _publish_impl,
+    name = "publish",
+    group = ["artifacts"],
+    summary = "Build and publish content-addressed Nomad artifacts to private Garage.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)

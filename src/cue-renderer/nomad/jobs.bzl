@@ -20,7 +20,10 @@ def _nomad_resolved_jobs_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._resolver,
         arguments = [args],
-        inputs = depset(ctx.files.topology_srcs + artifact_files),
+        inputs = depset(ctx.files.topology_srcs + artifact_files + [
+            ctx.executable.cue_renderer,
+            ctx.executable._resolver,
+        ]),
         tools = [ctx.executable.cue_renderer],
         outputs = [out_dir],
         mnemonic = "NomadResolveJobs",

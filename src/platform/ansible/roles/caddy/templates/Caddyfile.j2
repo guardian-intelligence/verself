@@ -505,7 +505,9 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		# `/var/www/verself/.well-known/`. file_server's hide patterns
 		# are matched against the file's full on-disk path, so hiding
 		# `.*` would suppress every file under the directory.
-		file_server browse=false
+		file_server {
+			browse off
+		}
 	}
 
 	handle /v1/shape {

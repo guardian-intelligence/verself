@@ -5,3 +5,8 @@
     daemon_reload: true
     name: caddy
     state: restarted
+
+- name: Update CA certificates
+  listen: update ca certificates
+  ansible.builtin.command:
+    cmd: update-ca-certificates

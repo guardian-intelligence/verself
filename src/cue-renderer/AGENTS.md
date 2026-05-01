@@ -155,10 +155,10 @@ Components that opt into Nomad supervision via
 `deployment.supervisor: "nomad"` emit a per-component
 `jobs/<id>.nomad.json` plus a `jobs/index.json` enumeration. The
 `//src/cue-renderer:prod_nomad_jobs` Bazel target resolves the specs with
-artifact URLs and checksums. `nomad-deploy-all.sh` publishes immutable task
-artifacts and invokes `nomad-deploy` (`cmd/nomad-deploy`) for each opted-in
-component. Substrate daemons remain Ansible/systemd-managed until they move to
-a dedicated substrate reconciler.
+private Garage artifact URLs and checksums. `nomad-deploy-all.sh` invokes
+`nomad-deploy` (`cmd/nomad-deploy`) for each opted-in component after the
+resolved artifacts are present in Garage. Substrate daemons remain
+Ansible/systemd-managed until they move to a dedicated substrate reconciler.
 
 ## Verification: Ansible Trusts the Render
 

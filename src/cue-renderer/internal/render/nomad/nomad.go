@@ -23,8 +23,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
+
+	"cuelang.org/go/cue"
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
@@ -50,6 +53,7 @@ type IndexEntry struct {
 	JobID      string          `json:"job_id"`
 	BazelLabel string          `json:"bazel_label"`
 	Output     string          `json:"output"`
+	DependsOn  []string        `json:"depends_on,omitempty"`
 	Artifacts  []IndexArtifact `json:"artifacts"`
 }
 
@@ -59,11 +63,42 @@ type IndexArtifact struct {
 	Output             string `json:"output"`
 }
 
+type indexArtifactDelivery struct {
+	Kind                 string              `json:"kind"`
+	Bucket               string              `json:"bucket"`
+	KeyPrefix            string              `json:"key_prefix"`
+	GetterSourcePrefix   string              `json:"getter_source_prefix"`
+	GetterOptions        map[string]string   `json:"getter_options"`
+	GetterCredentials    indexCredentials    `json:"getter_credentials"`
+	PublisherCredentials indexCredentials    `json:"publisher_credentials"`
+	ChecksumAlgorithm    string              `json:"checksum_algorithm"`
+	Public               bool                `json:"public"`
+	Origin               indexArtifactOrigin `json:"origin"`
+}
+
+type indexCredentials struct {
+	Source             string `json:"source"`
+	EnvironmentFile    string `json:"environment_file"`
+	AccessKeyIDEnv     string `json:"access_key_id_env"`
+	SecretAccessKeyEnv string `json:"secret_access_key_env"`
+}
+
+type indexArtifactOrigin struct {
+	Scheme        string `json:"scheme"`
+	Hostname      string `json:"hostname"`
+	Port          int64  `json:"port"`
+	Placement     string `json:"placement"`
+	Resolution    string `json:"resolution"`
+	ListenHost    string `json:"listen_host"`
+	PublicDNS     bool   `json:"public_dns"`
+	PublicIngress bool   `json:"public_ingress"`
+	CABundlePath  string `json:"ca_bundle_path"`
+}
+
 type indexFile struct {
-	ArtifactBaseURL   string       `json:"artifact_base_url"`
-	ArtifactStorePath string       `json:"artifact_store_path"`
-	NomadAddr         string       `json:"nomad_addr"`
-	Components        []IndexEntry `json:"components"`
+	ArtifactDelivery indexArtifactDelivery `json:"artifact_delivery"`
+	NomadAddr        string                `json:"nomad_addr"`
+	Components       []IndexEntry          `json:"components"`
 }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
@@ -75,11 +110,17 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err != nil {
 		return err
 	}
-	artifactStorePath, _ := loaded.Config.AnsibleVars["nomad_artifacts_dir"].(string)
+	artifactDelivery, err := artifactDeliveryIndex(loaded)
+	if err != nil {
+		return err
+	}
 	var index = indexFile{
-		ArtifactBaseURL:   "http://" + resolver.endpointAddrs["topology_endpoints.nomad_artifacts.endpoints.http.address"],
-		ArtifactStorePath: artifactStorePath,
-		NomadAddr:         "http://" + resolver.endpointAddrs["topology_endpoints.nomad.endpoints.http.address"],
+		ArtifactDelivery: artifactDelivery,
+		NomadAddr:        "http://" + resolver.endpointAddrs["topology_endpoints.nomad.endpoints.http.address"],
+	}
+	unitOwners, err := nomadUnitOwners(components)
+	if err != nil {
+		return err
 	}
 	for _, component := range components {
 		deployment, _ := component.Value["deployment"].(map[string]any)
@@ -104,11 +145,16 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		if err != nil {
 			return fmt.Errorf("%s: %w", component.Name, err)
 		}
+		dependsOn, err := nomadDependencies(component, unitOwners)
+		if err != nil {
+			return fmt.Errorf("%s: %w", component.Name, err)
+		}
 		index.Components = append(index.Components, IndexEntry{
 			Component:  component.Name,
 			JobID:      jobID(component.Name),
 			BazelLabel: artifacts[0].BazelLabel,
 			Output:     artifacts[0].Output,
+			DependsOn:  dependsOn,
 			Artifacts:  artifacts,
 		})
 	}
@@ -121,6 +167,61 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	}
 	indexBody = append(indexBody, '\n')
 	return out.WriteFile("jobs/index.json", indexBody)
+}
+
+func artifactDeliveryIndex(loaded load.Loaded) (indexArtifactDelivery, error) {
+	delivery := loaded.Config.Artifacts.Nomad
+	if delivery.Kind != "garage_s3_private_origin" {
+		return indexArtifactDelivery{}, fmt.Errorf("config.artifacts.nomad.kind=%q: only garage_s3_private_origin is supported", delivery.Kind)
+	}
+	if delivery.Origin.PublicDNS || delivery.Origin.PublicIngress {
+		return indexArtifactDelivery{}, fmt.Errorf("config.artifacts.nomad.origin must be private; public_dns=%v public_ingress=%v", delivery.Origin.PublicDNS, delivery.Origin.PublicIngress)
+	}
+	if delivery.Origin.Scheme != "https" {
+		return indexArtifactDelivery{}, fmt.Errorf("config.artifacts.nomad.origin.scheme=%q: Nomad artifacts require https", delivery.Origin.Scheme)
+	}
+	if delivery.NomadGetter.Protocol != "s3" || !strings.HasPrefix(delivery.NomadGetter.SourcePrefix, "s3::https://") {
+		return indexArtifactDelivery{}, fmt.Errorf("config.artifacts.nomad.nomad_getter.source_prefix=%q: expected s3::https://...", delivery.NomadGetter.SourcePrefix)
+	}
+	if delivery.Storage.Bucket == "" || delivery.Storage.KeyPrefix == "" {
+		return indexArtifactDelivery{}, fmt.Errorf("config.artifacts.nomad.storage bucket and key_prefix are required")
+	}
+	options := make(map[string]string, len(delivery.NomadGetter.Options))
+	for key, value := range delivery.NomadGetter.Options {
+		options[key] = value
+	}
+	return indexArtifactDelivery{
+		Kind:               delivery.Kind,
+		Bucket:             delivery.Storage.Bucket,
+		KeyPrefix:          delivery.Storage.KeyPrefix,
+		GetterSourcePrefix: strings.TrimRight(delivery.NomadGetter.SourcePrefix, "/"),
+		GetterOptions:      options,
+		GetterCredentials: indexCredentials{
+			Source:             delivery.NomadGetter.Credentials.Source,
+			EnvironmentFile:    delivery.NomadGetter.Credentials.EnvironmentFile,
+			AccessKeyIDEnv:     delivery.NomadGetter.Credentials.AccessKeyIDEnv,
+			SecretAccessKeyEnv: delivery.NomadGetter.Credentials.SecretAccessKeyEnv,
+		},
+		PublisherCredentials: indexCredentials{
+			Source:             delivery.Publisher.Credentials.Source,
+			EnvironmentFile:    delivery.Publisher.Credentials.EnvironmentFile,
+			AccessKeyIDEnv:     delivery.Publisher.Credentials.AccessKeyIDEnv,
+			SecretAccessKeyEnv: delivery.Publisher.Credentials.SecretAccessKeyEnv,
+		},
+		ChecksumAlgorithm: delivery.NomadGetter.ChecksumAlgorithm,
+		Public:            false,
+		Origin: indexArtifactOrigin{
+			Scheme:        delivery.Origin.Scheme,
+			Hostname:      string(delivery.Origin.Hostname),
+			Port:          int64(delivery.Origin.Port),
+			Placement:     delivery.Origin.Placement,
+			Resolution:    delivery.Origin.Resolution,
+			ListenHost:    string(delivery.Origin.ListenHost),
+			PublicDNS:     delivery.Origin.PublicDNS,
+			PublicIngress: delivery.Origin.PublicIngress,
+			CABundlePath:  delivery.Origin.TLS.CABundlePath,
+		},
+	}, nil
 }
 
 const (
@@ -222,25 +323,131 @@ func jobID(componentName string) string {
 	return strings.ReplaceAll(componentName, "_", "-")
 }
 
-func buildJobSpec(component projection.NamedMap, deployment map[string]any, resolver *resolver) (map[string]any, error) {
-	workload, ok := component.Value["workload"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("%s.workload: missing", component.Name)
+func nomadUnitOwners(components []projection.NamedMap) (map[string]string, error) {
+	out := map[string]string{}
+	for _, component := range components {
+		deployment, _ := component.Value["deployment"].(map[string]any)
+		supervisor, _ := deployment["supervisor"].(string)
+		if supervisor != "nomad" {
+			continue
+		}
+		units, err := workloadUnitValues(component)
+		if err != nil {
+			return nil, err
+		}
+		for _, unit := range units {
+			unitName, err := cueString(unit, "name")
+			if err != nil {
+				return nil, fmt.Errorf("%s.workload.units.name: %w", component.Name, err)
+			}
+			if unitName == "" {
+				return nil, fmt.Errorf("%s.workload.units: name required", component.Name)
+			}
+			owner := jobID(component.Name)
+			out[unitName] = owner
+			out[unitName+".service"] = owner
+		}
 	}
-	rawUnits, err := projection.Slice(workload, component.Name+".workload", "units")
+	return out, nil
+}
+
+func nomadDependencies(component projection.NamedMap, unitOwners map[string]string) ([]string, error) {
+	units, err := workloadUnitValues(component)
 	if err != nil {
 		return nil, err
 	}
-	if len(rawUnits) == 0 {
+	self := jobID(component.Name)
+	deps := map[string]struct{}{}
+	for _, unit := range units {
+		for _, field := range []string{"after", "wants"} {
+			values, err := cueStringList(unit, field)
+			if err != nil {
+				return nil, fmt.Errorf("%s.workload.units.%s: %w", component.Name, field, err)
+			}
+			for _, raw := range values {
+				dep, ok := unitOwners[raw]
+				if !ok || dep == self {
+					continue
+				}
+				deps[dep] = struct{}{}
+			}
+		}
+	}
+	return sortedKeys(deps), nil
+}
+
+func workloadUnitValues(component projection.NamedMap) ([]cue.Value, error) {
+	value := component.CUE.LookupPath(cue.ParsePath("workload.units"))
+	if err := value.Err(); err != nil {
+		return nil, fmt.Errorf("lookup %s.workload.units: %w", component.Name, err)
+	}
+	iter, err := value.List()
+	if err != nil {
+		return nil, fmt.Errorf("list %s.workload.units: %w", component.Name, err)
+	}
+	var units []cue.Value
+	for iter.Next() {
+		units = append(units, iter.Value())
+	}
+	if len(units) == 0 {
 		return nil, fmt.Errorf("%s.workload.units: nomad supervisor requires at least one unit", component.Name)
 	}
+	return units, nil
+}
 
-	taskGroups := make([]map[string]any, 0, len(rawUnits))
-	for i, raw := range rawUnits {
-		unit, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%s.workload.units[%d]: expected map, got %T", component.Name, i, raw)
+func workloadUnitMaps(component projection.NamedMap) ([]map[string]any, error) {
+	values, err := workloadUnitValues(component)
+	if err != nil {
+		return nil, err
+	}
+	units := make([]map[string]any, 0, len(values))
+	for i, value := range values {
+		var unit map[string]any
+		if err := value.Decode(&unit); err != nil {
+			return nil, fmt.Errorf("decode %s.workload.units[%d]: %w", component.Name, i, err)
 		}
+		units = append(units, unit)
+	}
+	return units, nil
+}
+
+func cueString(value cue.Value, field string) (string, error) {
+	var out string
+	if err := value.LookupPath(cue.ParsePath(field)).Decode(&out); err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+func cueStringList(value cue.Value, field string) ([]string, error) {
+	fieldValue := value.LookupPath(cue.ParsePath(field))
+	if err := fieldValue.Err(); err != nil {
+		return nil, err
+	}
+	var out []string
+	if err := fieldValue.Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func sortedKeys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for key := range m {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func buildJobSpec(component projection.NamedMap, deployment map[string]any, resolver *resolver) (map[string]any, error) {
+	units, err := workloadUnitMaps(component)
+	if err != nil {
+		return nil, err
+	}
+
+	taskGroups := make([]map[string]any, 0, len(units))
+	for i, unit := range units {
 		group, err := buildTaskGroup(component, unit, deployment, resolver, i == 0)
 		if err != nil {
 			return nil, err

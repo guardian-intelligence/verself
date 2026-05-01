@@ -376,3 +376,165 @@
     GARAGE_ZONE_REDUNDANCY: "{{ garage_zone_redundancy | string }}"
   register: garage_bootstrap
   changed_when: "(garage_bootstrap.stdout | from_json).changed"
+
+- name: Create Nomad artifact credential directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/garage/nomad-artifacts, mode: "0700" }
+    - { path: "{{ topology_artifacts.nomad.nomad_getter.credentials.environment_file | dirname }}", mode: "0750" }
+    - { path: "{{ topology_artifacts.nomad.publisher.credentials.environment_file | dirname }}", mode: "0700" }
+
+- name: Bootstrap private Nomad artifact bucket and keys
+  ansible.builtin.command:
+    cmd: python3 -
+    stdin: |
+      import json
+      import os
+      import re
+      import sys
+      import urllib.error
+      import urllib.parse
+      import urllib.request
+
+      base = os.environ["GARAGE_ADMIN_URL"].rstrip("/")
+      token = os.environ["GARAGE_ADMIN_TOKEN"]
+      bucket_name = os.environ["GARAGE_ARTIFACT_BUCKET"]
+      reader_name = "verself-nomad-artifacts-reader"
+      publisher_name = "verself-nomad-artifacts-publisher"
+      changed = False
+
+      def api(method, endpoint, payload=None, query=None, missing_ok=False):
+          url = f"{base}/v2/{endpoint}"
+          if query:
+              url += "?" + urllib.parse.urlencode(query)
+          body = None
+          headers = {"Authorization": "Bearer " + token}
+          if payload is not None:
+              body = json.dumps(payload).encode()
+              headers["Content-Type"] = "application/json"
+          req = urllib.request.Request(url, data=body, headers=headers, method=method)
+          try:
+              with urllib.request.urlopen(req, timeout=5) as response:
+                  data = response.read()
+          except urllib.error.HTTPError as exc:
+              detail = exc.read().decode(errors="replace")
+              if missing_ok and exc.code == 404:
+                  return None
+              raise SystemExit(f"{method} {endpoint} failed with HTTP {exc.code}: {detail}")
+          if not data:
+              return {}
+          return json.loads(data.decode())
+
+      def create_bucket_if_missing(name):
+          global changed
+          found = api("GET", "GetBucketInfo", query={"globalAlias": name}, missing_ok=True)
+          if found is not None:
+              return found
+          changed = True
+          return api("POST", "CreateBucket", payload={"globalAlias": name})
+
+      def key_info(name):
+          return api(
+              "GET",
+              "GetKeyInfo",
+              query={"search": name, "showSecretKey": "true"},
+              missing_ok=True,
+          )
+
+      def create_key_if_missing(name):
+          global changed
+          found = key_info(name)
+          if found is not None:
+              return found
+          changed = True
+          return api("POST", "CreateKey", payload={"name": name, "neverExpires": True})
+
+      def ensure_key_permission(bucket, key, read, write, owner):
+          global changed
+          desired = {"read": read, "write": write, "owner": owner}
+          for entry in bucket.get("keys", []):
+              if entry.get("accessKeyId") == key["accessKeyId"]:
+                  current = entry.get("permissions", {})
+                  if all(bool(current.get(name)) == value for name, value in desired.items()):
+                      return bucket
+                  deny = {name: True for name, value in desired.items() if not value and bool(current.get(name))}
+                  if deny:
+                      changed = True
+                      bucket = api(
+                          "POST",
+                          "DenyBucketKey",
+                          payload={
+                              "bucketId": bucket["id"],
+                              "accessKeyId": key["accessKeyId"],
+                              "permissions": deny,
+                          },
+                      )
+                  break
+          changed = True
+          return api(
+              "POST",
+              "AllowBucketKey",
+              payload={
+                  "bucketId": bucket["id"],
+                  "accessKeyId": key["accessKeyId"],
+                  "permissions": desired,
+              },
+          )
+
+      def assert_env_safe(key):
+          for field in ("accessKeyId", "secretAccessKey"):
+              value = key.get(field, "")
+              if not re.fullmatch(r"[A-Za-z0-9/+=._:-]+", value):
+                  raise SystemExit(f"Garage generated unsafe {field} for environment-file serialization")
+
+      bucket = create_bucket_if_missing(bucket_name)
+      reader = create_key_if_missing(reader_name)
+      publisher = create_key_if_missing(publisher_name)
+      assert_env_safe(reader)
+      assert_env_safe(publisher)
+
+      bucket = ensure_key_permission(bucket, reader, True, False, False)
+      bucket = ensure_key_permission(bucket, publisher, True, True, False)
+
+      print(json.dumps({"changed": changed, "reader": reader, "publisher": publisher}, sort_keys=True))
+  environment:
+    GARAGE_ADMIN_URL: "http://{{ topology_clusters.garage.host }}:{{ topology_clusters.garage.nodes[0].admin_port }}"
+    GARAGE_ADMIN_TOKEN: "{{ garage_admin_token }}"
+    GARAGE_ARTIFACT_BUCKET: "{{ topology_artifacts.nomad.storage.bucket }}"
+  register: garage_artifact_bootstrap_raw
+  changed_when: "(garage_artifact_bootstrap_raw.stdout | from_json).changed"
+  no_log: true
+
+- name: Set Nomad artifact credential facts
+  ansible.builtin.set_fact:
+    garage_artifact_bootstrap: "{{ garage_artifact_bootstrap_raw.stdout | from_json }}"
+  no_log: true
+
+- name: Deploy Nomad artifact reader environment
+  ansible.builtin.copy:
+    dest: "{{ topology_artifacts.nomad.nomad_getter.credentials.environment_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      {{ topology_artifacts.nomad.nomad_getter.credentials.access_key_id_env }}={{ garage_artifact_bootstrap.reader.accessKeyId }}
+      {{ topology_artifacts.nomad.nomad_getter.credentials.secret_access_key_env }}={{ garage_artifact_bootstrap.reader.secretAccessKey }}
+      AWS_REGION={{ topology_artifacts.nomad.storage.region }}
+      AWS_EC2_METADATA_DISABLED=true
+  no_log: true
+
+- name: Deploy Nomad artifact publisher environment
+  ansible.builtin.copy:
+    dest: "{{ topology_artifacts.nomad.publisher.credentials.environment_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      {{ topology_artifacts.nomad.publisher.credentials.access_key_id_env }}={{ garage_artifact_bootstrap.publisher.accessKeyId }}
+      {{ topology_artifacts.nomad.publisher.credentials.secret_access_key_env }}={{ garage_artifact_bootstrap.publisher.secretAccessKey }}
+  no_log: true

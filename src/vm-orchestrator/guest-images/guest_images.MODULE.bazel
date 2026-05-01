@@ -44,4 +44,3 @@ http_file(
     sha256 = "41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
     url = "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
 )
-
