@@ -55,7 +55,7 @@ if [[ ! -f "${ops_yml}" ]]; then
 fi
 
 # Extract the trusted suffixes via python (yq isn't a guaranteed dep).
-suffixes_csv=$(KNOWN_OPS_YML="${ops_yml}" python3 -c '
+suffixes_csv=$(KNOWN_OPS_YML="${ops_yml}" python3 <<'PY'
 import os, sys
 import yaml
 
@@ -68,8 +68,12 @@ if not suffixes:
     sys.exit(1)
 
 # CSV-safe single-quoted SQL literal list.
-print(",".join("'\''" + s.replace("'\''", "'\''\\'\''") + "'\''" for s in suffixes))
-')
+def ch_string(value):
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+print(",".join(ch_string(s) for s in suffixes))
+PY
+)
 
 # A cert_id stamped by aspect-operator + verself-workload-bootstrap is
 # `verself-<principal>-<suffix>`. The regex below is anchored, so any
