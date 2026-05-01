@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Stream is the parsed result of one BEP file. Keep what the deploy
@@ -53,13 +55,32 @@ type File struct {
 }
 
 // AbsolutePath converts URI ("file:///abs/path") to the absolute
-// filesystem path. Returns the raw URI when the scheme isn't file:.
+// filesystem path. With remote-cache configurations Bazel may emit
+// `bytestream://` URIs instead — for those, reconstruct from the
+// (pathPrefix + name) tuple anchored at workspaceRoot.
+//
+// Use WorkspacePath when the workspace anchor is known; AbsolutePath
+// is a convenience for tests that don't have one.
 func (f File) AbsolutePath() string {
 	u, err := url.Parse(f.URI)
-	if err != nil || u.Scheme != "file" {
-		return f.URI
+	if err == nil && u.Scheme == "file" {
+		return u.Path
 	}
-	return u.Path
+	// Without a workspace anchor we have no good answer for
+	// bytestream URIs; surface the URI to make the failure obvious.
+	return f.URI
+}
+
+// WorkspacePath resolves the file under workspaceRoot using the
+// pathPrefix + name tuple Bazel emits in BEP. Works for both file:
+// and bytestream: URI variants.
+func (f File) WorkspacePath(workspaceRoot string) string {
+	if workspaceRoot == "" {
+		return f.AbsolutePath()
+	}
+	parts := append([]string{workspaceRoot}, f.PathPrefix...)
+	parts = append(parts, f.Name)
+	return strings.Join(parts, string(filepath.Separator))
 }
 
 // TargetComplete captures the relevant fields of a `completed`
@@ -121,12 +142,18 @@ func Parse(path string) (*Stream, error) {
 	return stream, nil
 }
 
-// ResolveOutputs returns the absolute paths of the files in the
-// "default" output group of the given target. Transitive
-// NamedSetOfFiles references are walked once and cached; cycles
-// (which the Bazel scheduler does not produce but a malformed stream
-// could) are tolerated.
-func (s *Stream) ResolveOutputs(label string) ([]string, error) {
+// ResolveOutputs returns the workspace-anchored filesystem paths of
+// the files in the "default" output group of the given target.
+// Transitive NamedSetOfFiles references are walked once and cached;
+// cycles (which the Bazel scheduler does not produce but a malformed
+// stream could) are tolerated.
+//
+// workspaceRoot is the directory `bazelisk` was invoked from. It
+// anchors `bazel-out`, the symlink the path-prefix tuple refers to.
+// BEP files generated under a remote-cache configuration carry
+// `bytestream://` URIs instead of `file:///`; this resolver still
+// returns valid local paths for them by composing pathPrefix + name.
+func (s *Stream) ResolveOutputs(label, workspaceRoot string) ([]string, error) {
 	tc, ok := s.Targets[label]
 	if !ok {
 		return nil, fmt.Errorf("bep: no targetCompleted event for %s", label)
@@ -141,7 +168,7 @@ func (s *Stream) ResolveOutputs(label string) ([]string, error) {
 		seen := make(map[string]struct{})
 		paths := make([]string, 0, 16)
 		for _, setID := range og.FileSets {
-			s.collectFiles(setID, seen, &paths)
+			s.collectFiles(setID, workspaceRoot, seen, &paths)
 		}
 		if len(paths) == 0 {
 			return nil, fmt.Errorf("bep: %s default output group is empty", label)
@@ -174,7 +201,7 @@ func (s *Stream) CountTargetCompletes() int { return len(s.Targets) }
 // ErrEmpty is returned when the BEP file has no relevant events.
 var ErrEmpty = errors.New("bep: no NamedSetOfFiles or TargetComplete events found")
 
-func (s *Stream) collectFiles(setID string, seen map[string]struct{}, out *[]string) {
+func (s *Stream) collectFiles(setID, workspaceRoot string, seen map[string]struct{}, out *[]string) {
 	if _, ok := seen[setID]; ok {
 		return
 	}
@@ -184,10 +211,10 @@ func (s *Stream) collectFiles(setID string, seen map[string]struct{}, out *[]str
 		return
 	}
 	for _, f := range set.Files {
-		*out = append(*out, f.AbsolutePath())
+		*out = append(*out, f.WorkspacePath(workspaceRoot))
 	}
 	for _, child := range set.FileSets {
-		s.collectFiles(child, seen, out)
+		s.collectFiles(child, workspaceRoot, seen, out)
 	}
 }
 

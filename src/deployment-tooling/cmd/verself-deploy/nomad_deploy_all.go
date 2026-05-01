@@ -87,14 +87,18 @@ func deployAll(ctx context.Context, span trace.Span, site, repoRoot string, publ
 	if err != nil {
 		return err
 	}
-	jobsDirs, err := build.Stream.ResolveOutputs(jobsTarget)
+	files, err := build.Stream.ResolveOutputs(jobsTarget, repoRoot)
 	if err != nil {
 		return fmt.Errorf("resolve %s outputs: %w", jobsTarget, err)
 	}
-	if len(jobsDirs) != 1 {
-		return fmt.Errorf("expected 1 output for %s, got %d", jobsTarget, len(jobsDirs))
+	// prod_nomad_jobs declares a TreeArtifact directory; BEP enumerates
+	// each leaf file inside, so we recover the directory by taking the
+	// common parent. The renderer's contract is "all rendered specs live
+	// in one directory" — anything else is a renderer regression.
+	nomadJobsDir := commonParentDir(files)
+	if nomadJobsDir == "" {
+		return fmt.Errorf("%s outputs have no common parent: %v", jobsTarget, files)
 	}
-	nomadJobsDir := jobsDirs[0]
 	span.SetAttributes(attribute.String("verself.nomad_jobs_dir", nomadJobsDir))
 
 	manifest, err := render.LoadManifest(filepath.Join(nomadJobsDir, "publish.json"))
@@ -228,6 +232,28 @@ func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclien
 	}
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+// commonParentDir returns the longest path that is a directory
+// prefix of every input. Empty input or paths with disjoint roots
+// returns the empty string. The renderer guarantees one parent per
+// TreeArtifact, so this is a safe substitute for declaring a
+// directory output in BEP terms.
+func commonParentDir(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	prefix := filepath.Dir(paths[0])
+	for _, p := range paths[1:] {
+		dir := filepath.Dir(p)
+		for !strings.HasPrefix(dir+string(filepath.Separator), prefix+string(filepath.Separator)) && dir != prefix {
+			prefix = filepath.Dir(prefix)
+			if prefix == "/" || prefix == "." {
+				return ""
+			}
+		}
+	}
+	return prefix
 }
 
 // sudoCat reads a controller-side file the operator user can read
