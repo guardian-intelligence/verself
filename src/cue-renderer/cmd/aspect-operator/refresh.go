@@ -13,6 +13,11 @@ import (
 // pre-flight; no interactivity. Fails loudly with a clear recovery
 // message when the token has exceeded explicit_max_ttl and OIDC
 // re-auth is mandatory.
+//
+// Pre-onboarding state — no operator-config dir, no Vault token — is
+// not an error: the binary exits 0 with a notice so `aspect deploy`
+// pre-flight on a fresh controller (or in CI) doesn't trip on a
+// missing prerequisite the deploy itself is about to provide.
 func cmdRefresh(args []string) error {
 	fs := flagSet("refresh")
 	device := fs.String("device", "", "Operator device whose cert to re-sign (defaults to the most-recently-onboarded device on this machine)")
@@ -26,9 +31,18 @@ func cmdRefresh(args []string) error {
 		return err
 	}
 
+	if _, err := os.Stat(filepath.Join(cfg, "ssh")); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "aspect-operator: no devices onboarded on this machine; skipping refresh\n")
+		return nil
+	}
+
 	dev := *device
 	if dev == "" {
 		dev, err = inferDeviceName(cfg)
+		if errors.Is(err, errNoOnboardedDevice) {
+			fmt.Fprintf(os.Stderr, "aspect-operator: no devices onboarded on this machine; skipping refresh\n")
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -41,17 +55,18 @@ func cmdRefresh(args []string) error {
 		return fmt.Errorf("device %q is not onboarded on this machine: %w (run `aspect operator onboard --device=%s`)", dev, err, dev)
 	}
 
-	anchors, err := fetchTrustAnchors(*domain, cfg)
-	if err != nil {
-		return err
-	}
-
 	tokenPath := vaultTokenPath()
 	tokenBytes, err := os.ReadFile(tokenPath)
 	if err != nil || strings.TrimSpace(string(tokenBytes)) == "" {
-		return fmt.Errorf(
-			"no cached Vault token at %s — run `aspect operator onboard --device=%s --refresh-oidc` to OIDC-re-auth",
+		fmt.Fprintf(os.Stderr,
+			"aspect-operator: no cached Vault token at %s; skipping refresh (run `aspect operator onboard --device=%s --refresh-oidc` to OIDC-re-auth)\n",
 			tokenPath, dev)
+		return nil
+	}
+
+	anchors, err := fetchTrustAnchors(*domain, cfg)
+	if err != nil {
+		return err
 	}
 
 	bao, err := newBaoClient(
@@ -86,6 +101,12 @@ func cmdRefresh(args []string) error {
 	return nil
 }
 
+// errNoOnboardedDevice is returned by inferDeviceName when the
+// operator-config dir contains no priv keys. Callers (refresh) treat
+// this as a soft no-op so a fresh controller's deploy pre-flight isn't
+// tripped on a chicken-and-egg.
+var errNoOnboardedDevice = errors.New("no onboarded devices on this machine")
+
 // inferDeviceName picks a device name when --device is omitted: it
 // returns the only entry under ~/.config/verself/ssh/ (excluding -pub
 // / -cert files) when there is exactly one, else an error pointing at
@@ -95,6 +116,9 @@ func cmdRefresh(args []string) error {
 func inferDeviceName(cfg string) (string, error) {
 	entries, err := os.ReadDir(filepath.Join(cfg, "ssh"))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return "", errNoOnboardedDevice
+		}
 		return "", err
 	}
 	var devices []string
@@ -109,7 +133,7 @@ func inferDeviceName(cfg string) (string, error) {
 		devices = append(devices, name)
 	}
 	if len(devices) == 0 {
-		return "", errors.New("no onboarded devices found under ~/.config/verself/ssh/; run `aspect operator onboard --device=<name>` first")
+		return "", errNoOnboardedDevice
 	}
 	if len(devices) > 1 {
 		return "", fmt.Errorf("multiple onboarded devices on this machine (%s); pass --device=<name>", strings.Join(devices, ", "))
