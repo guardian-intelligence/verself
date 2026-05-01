@@ -1,0 +1,78 @@
+---
+# Batched user/group creation across the union of every Nomad-supervised
+# component's workload.units. Replaces the per-component loop that previously
+# walked tasks/component/users.yml inside component_substrate.yml — that loop
+# ran on every converge regardless of input changes; the batched form runs
+# only when L2's input hash changes.
+#
+# Multiple units across multiple components can share one runtime user; we
+# union supplementary_groups across all units that target the same user so
+# later units do not drop required groups.
+
+- name: Compute every Nomad-supervised component's workload units
+  ansible.builtin.set_fact:
+    all_application_components: >-
+      {{
+        topology_components
+        | selectattr('deployment.supervisor', 'equalto', 'nomad')
+        | selectattr('workload.units')
+        | sort(attribute='workload.order')
+        | list
+      }}
+
+- name: Compute the union of every component's units
+  ansible.builtin.set_fact:
+    all_component_units: >-
+      {{
+        all_application_components
+        | map(attribute='workload.units')
+        | flatten
+        | list
+      }}
+
+- name: Ensure component primary groups exist
+  ansible.builtin.group:
+    name: "{{ unit.group }}"
+    system: true
+  loop: "{{ all_component_units }}"
+  loop_control:
+    loop_var: unit
+    label: "{{ unit.group }}"
+
+- name: Ensure SPIRE workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Ensure component supplementary groups exist
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+  loop: "{{ all_component_units | map(attribute='supplementary_groups') | flatten | unique | list }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Ensure component users exist
+  ansible.builtin.user:
+    name: "{{ unit.user }}"
+    uid: "{{ unit.uid | default(omit) }}"
+    group: "{{ unit.group }}"
+    # Multiple units can share one runtime user; compute the union so later units do not drop required groups.
+    groups: >-
+      {{
+        all_component_units
+        | selectattr('user', 'equalto', unit.user)
+        | map(attribute='supplementary_groups')
+        | flatten
+        | unique
+        | list
+      }}
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ unit.home if (unit.home | default('', true) | length > 0) else omit }}"
+    create_home: "{{ unit.create_home | default(false) }}"
+  loop: "{{ all_component_units }}"
+  loop_control:
+    loop_var: unit
+    label: "{{ unit.user }}"

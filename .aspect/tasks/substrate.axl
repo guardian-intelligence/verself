@@ -3,6 +3,11 @@
 Substrate owns machine convergence: host packages, trust roots, stateful
 daemons, operator daemons, and per-component prerequisites. Nomad owns product
 application rollout.
+
+The convergence loop is layered (L1 OS, L2 userspace, L3 daemons,
+L4a per-component + API reconcile). `aspect substrate converge` forces every
+layer regardless of hash; `aspect deploy` hash-gates layer-by-layer. Both
+share run_layered_substrate in helpers.axl.
 """
 
 load(
@@ -10,117 +15,41 @@ load(
     "DEFAULT_SITE",
     "SUBSTRATE_DIR",
     "checked_spawn",
+    "compute_layer_digest",
     "derive_deploy_env",
     "git_head",
     "render_site",
+    "run_layered_substrate",
     "site_cache_inventory",
     "ws_path",
 )
 
-def _merge_env(base, *overrides):
-    out = {}
-    if base != None:
-        for k, v in base.items():
-            out[k] = v
-    for override in overrides:
-        if override == None:
-            continue
-        for k, v in override.items():
-            out[k] = v
-    return out
-
-def _substrate_changed_tasks_file(ctx, site):
-    return ws_path(ctx, ".cache/render/" + site + "/substrate.changed_tasks")
-
-def _read_changed_tasks(ctx, path, required):
-    read = (ctx.std.process.command("cat")
-         .args([path])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if read.status.code != 0 or read.stdout.strip() == "":
-        if required:
-            ctx.std.io.stderr.write("ERROR: substrate changed-task count was not recorded at " + path + "\n")
-            return None
-        return "0"
-    return read.stdout.strip()
+# Layer order matches helpers.SUBSTRATE_LAYERS; substrate verify reads the
+# same sequence to produce a per-layer convergence report.
+_LAYER_NAMES = ["l1_os", "l2_userspace", "l3_binaries", "l4a_components"]
 
 def _run_ansible(ctx, site, env, playbook, *extra_args):
+    """Run a single ad-hoc playbook (security-patch, guest-rootfs, reset/wipe).
+
+    Layered convergence goes through run_layered_substrate; this entry point
+    exists only for one-shot maintenance playbooks that don't have a layer
+    home and won't ever benefit from hash-gating.
+    """
     args_list = [playbook] + list(extra_args)
+    extra_env = {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))}
+    merged_env = {}
+    if env != None:
+        for k, v in env.items():
+            merged_env[k] = v
+    for k, v in extra_env.items():
+        merged_env[k] = v
     return checked_spawn(
         ctx,
         ws_path(ctx, SUBSTRATE_DIR, "scripts/ansible-with-otel.sh"),
         args_list,
         cwd = ws_path(ctx, SUBSTRATE_DIR),
-        env = _merge_env(
-            env,
-            {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
-        ),
+        env = merged_env,
         label = "ansible-with-otel " + " ".join(args_list),
-    )
-
-def _compute_substrate_digest(ctx, site):
-    target = "//src/substrate:" + site + "_substrate_digest"
-    rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
-    if rc != 0:
-        return ""
-    query = (ctx.std.process.command("bazelisk")
-         .args(["cquery", "--output=files", target])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if query.status.code != 0:
-        ctx.std.io.stderr.write("ERROR: substrate digest cquery failed:\n" + query.stderr)
-        return ""
-    out_path = query.stdout.strip()
-    if "\n" in out_path:
-        out_path = out_path.split("\n")[-1]
-    if out_path == "":
-        ctx.std.io.stderr.write("ERROR: substrate digest cquery returned no output\n")
-        return ""
-    digest_file = out_path
-    if not digest_file.startswith("/"):
-        digest_file = ws_path(ctx, out_path)
-    read = (ctx.std.process.command("cat")
-         .args([digest_file])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if read.status.code != 0:
-        ctx.std.io.stderr.write("ERROR: reading substrate digest failed:\n" + read.stderr)
-        return ""
-    digest = read.stdout.strip()
-    if len(digest) != 64:
-        ctx.std.io.stderr.write("ERROR: substrate digest target produced invalid digest: " + digest + "\n")
-        return ""
-    return digest
-
-def _substrate_status(ctx, site, digest):
-    inventory = ws_path(ctx, site_cache_inventory(site))
-    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/substrate-status.sh"))
-         .args(["--site=" + site, "--digest=" + digest, "--inventory=" + inventory])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if r.stdout != "":
-        ctx.std.io.stderr.write(r.stdout)
-    if r.stderr != "":
-        ctx.std.io.stderr.write(r.stderr)
-    return r.status.code
-
-def _record_substrate_event(ctx, site, digest, event_kind, env, error_message = "", changed_tasks = "0"):
-    args_list = [
-        "--site=" + site,
-        "--digest=" + digest,
-        "--mode=always",
-        "--event-kind=" + event_kind,
-        "--inventory=" + ws_path(ctx, site_cache_inventory(site)),
-        "--changed-tasks=" + changed_tasks,
-    ]
-    if error_message != "":
-        args_list.append("--error-message=" + error_message)
-    return checked_spawn(
-        ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/record-substrate-event.sh"),
-        args_list,
-        env = env,
-        label = "record-substrate-event " + event_kind,
     )
 
 def _converge_impl(ctx):
@@ -128,9 +57,6 @@ def _converge_impl(ctx):
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    digest = _compute_substrate_digest(ctx, site)
-    if digest == "":
-        return 1
     sha = git_head(ctx)
     if sha == "":
         ctx.std.io.stderr.write("ERROR: could not resolve git HEAD\n")
@@ -138,60 +64,58 @@ def _converge_impl(ctx):
     env = derive_deploy_env(ctx, site = site, sha = sha, scope = "substrate")
     if env == None:
         return 1
-    _ = _record_substrate_event(ctx, site, digest, "started", env)
-    changed_tasks_file = _substrate_changed_tasks_file(ctx, site)
-    rm_rc = checked_spawn(ctx, "rm", ["-f", changed_tasks_file], label = "clean substrate changed-task count")
-    if rm_rc != 0:
-        return rm_rc
-    rc = _run_ansible(
-        ctx,
-        site,
-        _merge_env(env, {"VERSELF_SUBSTRATE_CHANGED_TASKS_FILE": changed_tasks_file}),
-        "playbooks/box.yml",
-    )
-    changed_tasks = _read_changed_tasks(ctx, changed_tasks_file, rc == 0)
-    if changed_tasks == None:
-        return 1
-    if rc != 0:
-        _ = _record_substrate_event(
-            ctx,
-            site,
-            digest,
-            "failed",
-            env,
-            error_message = "box playbook exited " + str(rc),
-            changed_tasks = changed_tasks,
-        )
-        return rc
-    record_rc = _record_substrate_event(ctx, site, digest, "succeeded", env, changed_tasks = changed_tasks)
-    if record_rc != 0:
-        ctx.std.io.stderr.write("ERROR: substrate convergence succeeded but evidence recording failed\n")
-        return record_rc
-    return 0
+    layered = run_layered_substrate(ctx, site = site, env = env, force = True)
+    return layered["rc"]
 
 def _verify_impl(ctx):
+    """Print the per-layer last-applied vs current digest comparison.
+
+    Exit 0 when every layer's last_applied_hash equals its current input_hash;
+    exit 10 on at least one mismatch. Useful for CI gates that want to assert
+    'this commit's substrate is fully converged on this site'.
+    """
     site = ctx.args.site or DEFAULT_SITE
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    digest = _compute_substrate_digest(ctx, site)
-    if digest == "":
-        return 1
-    return _substrate_status(ctx, site, digest)
+    mismatched = []
+    for layer in _LAYER_NAMES:
+        digest = compute_layer_digest(ctx, site, layer)
+        if digest == "":
+            return 1
+        last = _read_last_applied_for_verify(ctx, site, layer)
+        if last == digest:
+            ctx.std.io.stderr.write("[" + layer + "] fresh (" + digest[:12] + "…)\n")
+        else:
+            short_last = last[:12] + "…" if last != "" else "<none>"
+            ctx.std.io.stderr.write("[" + layer + "] STALE current=" + digest[:12] + "… last_applied=" + short_last + "\n")
+            mismatched.append(layer)
+    if len(mismatched) > 0:
+        return 10
+    return 0
+
+def _read_last_applied_for_verify(ctx, site, layer):
+    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/layer-last-applied.sh"))
+         .args(["--site=" + site, "--layer=" + layer])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        return ""
+    return r.stdout.strip()
 
 def _security_patch_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    return _run_ansible(ctx, site, {}, "playbooks/security-patch.yml")
+    return _run_ansible(ctx, site, None, "playbooks/security-patch.yml")
 
 def _guest_rootfs_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    return _run_ansible(ctx, site, {}, "playbooks/guest-rootfs.yml")
+    return _run_ansible(ctx, site, None, "playbooks/guest-rootfs.yml")
 
 def _nomad_apps(ctx, site):
     return checked_spawn(
@@ -222,51 +146,58 @@ def _wipe_server_impl(ctx):
         label = "wipe-server.sh",
     )
 
-def _reset_identity_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
+def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_layer_args):
+    """Wipe a per-service slice via its reset playbook, then force-converge
+    every substrate layer (the wipe invalidates per-component state that L4a
+    bindings rebuild) and resubmit Nomad apps.
+    """
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    rc = _run_ansible(ctx, site, {}, "playbooks/identity-reset.yml")
+    rc = _run_ansible(ctx, site, None, wipe_playbook)
     if rc != 0:
         return rc
+    sha = git_head(ctx)
+    if sha == "":
+        ctx.std.io.stderr.write("ERROR: could not resolve git HEAD\n")
+        return 1
+    env = derive_deploy_env(ctx, site = site, sha = sha, scope = "substrate-reset")
+    if env == None:
+        return 1
+    layered = run_layered_substrate(
+        ctx,
+        site = site,
+        env = env,
+        force = True,
+        extra_ansible_args = list(extra_layer_args),
+    )
+    if layered["rc"] != 0:
+        return layered["rc"]
     return _nomad_apps(ctx, site)
+
+def _reset_identity_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    return _reset_then_reconverge(ctx, site, "playbooks/identity-reset.yml")
 
 def _reset_billing_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
-    rc = _run_ansible(ctx, site, {}, "playbooks/billing-reset.yml")
-    if rc != 0:
-        return rc
-    return _nomad_apps(ctx, site)
+    return _reset_then_reconverge(ctx, site, "playbooks/billing-reset.yml")
 
 def _reset_verification_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
-    rc = _run_ansible(ctx, site, {}, "playbooks/verification-reset.yml")
-    if rc != 0:
-        return rc
-    rc = _run_ansible(
+    return _reset_then_reconverge(
         ctx,
         site,
-        {},
-        "playbooks/box.yml",
+        "playbooks/verification-reset.yml",
         "-e", "temporal_force_schema_reset=true",
         "-e", "clickhouse_force_schema_reset=true",
     )
-    if rc != 0:
-        return rc
-    return _nomad_apps(ctx, site)
 
 converge = task(
     implementation = _converge_impl,
     name = "converge",
     group = ["substrate"],
-    summary = "Render, converge host/substrate state, and record substrate digest evidence.",
+    summary = "Force-converge every substrate layer regardless of hash; aspect deploy hash-gates layer-by-layer.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -276,7 +207,7 @@ verify = task(
     implementation = _verify_impl,
     name = "verify",
     group = ["substrate"],
-    summary = "Verify ClickHouse evidence for the current substrate digest.",
+    summary = "Compare each layer's current input_hash to its last_applied_hash; exit 10 if any layer is stale.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -323,7 +254,7 @@ reset_identity = task(
     implementation = _reset_identity_impl,
     name = "identity",
     group = ["substrate", "reset"],
-    summary = "Wipe identity-service PostgreSQL state and restart dependents.",
+    summary = "Wipe identity-service PostgreSQL state and force-reconverge every layer.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -333,7 +264,7 @@ reset_billing = task(
     implementation = _reset_billing_impl,
     name = "billing",
     group = ["substrate", "reset"],
-    summary = "Wipe billing state and restart billing callers.",
+    summary = "Wipe billing state and force-reconverge every layer.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -343,7 +274,7 @@ reset_verification = task(
     implementation = _reset_verification_impl,
     name = "verification",
     group = ["substrate", "reset"],
-    summary = "Wipe verification state and redeploy with schema reset.",
+    summary = "Wipe verification state and force-reconverge every layer with schema reset flags.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },

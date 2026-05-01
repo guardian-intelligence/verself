@@ -1,0 +1,59 @@
+---
+# L4a — External-API reconciliation + per-component substrate bindings.
+#
+# Hash input: src/substrate/ansible/{playbooks/l4a_components.yml,
+# tasks/component_substrate.yml, tasks/component/*.yml, tasks/bootstrap/*.yml,
+# roles/{cloudflare_dns,resend,spire_registrations,openbao_tenancy,zitadel_oauth_app,zitadel_project_roles}/**}
+# plus all rendered substrate inputs. Skipped by aspect deploy when the input
+# hash matches.
+#
+# This layer talks to external APIs (Cloudflare DNS, Zitadel, OpenBao, SPIRE,
+# Resend) and provisions per-component PG/CH/credstore state. Phases 4-6 of
+# the substrate-decomposition plan extract each of these external-API roles
+# to dedicated Go reconcilers; until then they live here.
+
+- name: "L4a: External-API reconciliation + per-component bindings"
+  hosts: infra
+  become: true
+  gather_facts: false
+  roles:
+    # Top-level (whole-site) reconciliations. The per-invocation roles
+    # (zitadel_oauth_app, zitadel_project_roles, openbao_tenancy) are not
+    # listed here — they take per-call args and are invoked via include_role
+    # from tasks/bootstrap/*.yml and tasks/component/auth_owned_project.yml.
+    - role: cloudflare_dns
+    - role: resend
+    - role: spire_registrations
+
+  tasks:
+    # set_fact does not cross play boundaries, so facts derived inside L3 role
+    # bodies (clickhouse_operator_client_command, openbao_*_pat, …) are gone
+    # by the time L4a runs. Re-derive the values L4a's per-component tasks
+    # consume. Keep this list aligned with the defaults files of the roles
+    # named in the comment beside each fact.
+    - name: Re-derive cross-layer L3 facts that L4a per-component tasks consume
+      ansible.builtin.set_fact:
+        # roles/clickhouse/defaults/main.yml — read by tasks/component/clickhouse.yml.
+        clickhouse_operator_client_command: >-
+          sudo -u {{ clickhouse_operator_system_user | default('clickhouse_operator') }}
+          {{ verself_bin }}/clickhouse-client
+          --config-file {{ clickhouse_operator_client_config_path | default('/etc/clickhouse-client/operator.xml') }}
+          --user {{ clickhouse_operator_db_user | default('clickhouse_operator') }}
+
+    - name: Select Nomad application components for substrate configuration
+      ansible.builtin.set_fact:
+        application_components: >-
+          {{
+            topology_components
+            | selectattr('deployment.supervisor', 'equalto', 'nomad')
+            | selectattr('workload.units')
+            | sort(attribute='workload.order')
+            | list
+          }}
+
+    - name: Configure Nomad application substrate state
+      ansible.builtin.include_tasks: ../tasks/component_substrate.yml
+      loop: "{{ application_components }}"
+      loop_control:
+        loop_var: component
+        label: "{{ component.name }}"

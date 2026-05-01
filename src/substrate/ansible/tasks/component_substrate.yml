@@ -1,10 +1,27 @@
+---
+# Per-component substrate state for a single Nomad-supervised component.
+# Invoked from L4a's loop over application_components. User/group creation
+# moved to L2's batched userspace_batch.yml; what remains here is component-
+# specific state that varies per workload (directories, credstore files, PG /
+# CH bindings, Zitadel auth reconcile, bootstrap hooks).
+#
+# Loop variable contract: caller binds `component` to the topology component.
+
 - name: Initialize component substrate context
   ansible.builtin.set_fact:
     component_secret_values: {}
     component_units: "{{ component.workload.units }}"
 
-- name: Configure component users and directories
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/users.yml"
+- name: Create component directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ component.workload.directories }}"
+  loop_control:
+    label: "{{ item.path }}"
 
 - name: Configure component credentials
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/secrets.yml"

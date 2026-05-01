@@ -1,11 +1,9 @@
 ---
-# Exhaustively wipe identity-service PostgreSQL state, then run the canonical
-# deploy path.
+# Wipe-only: aspect substrate reset identity invokes this playbook first,
+# then drives the layered substrate converge via run_layered_substrate to
+# rebuild per-component state.
 
 - name: Wipe identity-service PostgreSQL state
   import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: identity_service
-
-- name: Re-apply substrate after identity reset
-  import_playbook: box.yml

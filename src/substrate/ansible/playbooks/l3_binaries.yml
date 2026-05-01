@@ -1,0 +1,57 @@
+---
+# L3 — Substrate daemon binaries + per-daemon foundational config.
+#
+# Hash input: src/substrate/ansible/{playbooks/l3_binaries.yml, roles for every
+# substrate daemon (postgresql, clickhouse, zitadel, openbao, nats, temporal,
+# stalwart, electric, otelcol, grafana, verdaccio, caddy, forgejo, garage,
+# spire, ssh_ca, bazel_remote, nomad, tigerbeetle), plus the wireguard ops
+# re-converge}, src/cue-renderer/catalog/versions.cue, all rendered substrate
+# inputs. Skipped by aspect deploy when the input hash matches.
+#
+# Order constraints:
+#   - SPIRE first: every workload that follows asks SPIRE for an SVID.
+#   - openbao before ssh_ca: ssh_ca reads the CA pubkey openbao materialises.
+#   - openbao before wireguard ops re-converge: wg-ops slot pubkeys are
+#     populated by openbao at /etc/credstore/workload-pool/slots.json on first
+#     deploy and on slot_count bumps.
+
+- name: "L3: Substrate daemons"
+  hosts: infra
+  become: true
+  gather_facts: false
+  roles:
+    - role: spire
+    - role: garage
+    - role: bazel_remote
+    - role: nomad
+    - role: clickhouse
+    - role: tigerbeetle
+    - role: postgresql
+    - role: zitadel
+    - role: openbao
+    # wg-ops re-converge AFTER openbao publishes the workload-pool slot pubkeys.
+    # The L1 wireguard run sees an empty slots.json on first deploy and on
+    # slot_count bumps; this re-render picks up the freshly populated set.
+    - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            ['ops']
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
+    - role: ssh_ca
+    - role: nats
+    - role: temporal
+    - role: stalwart
+    - role: electric
+      vars:
+        electric_config: "{{ topology_electric_instances.notifications }}"
+    - role: electric
+      vars:
+        electric_config: "{{ topology_electric_instances.default }}"
+    - role: otelcol
+    - role: grafana
+    - role: verdaccio
+    - role: caddy
+    - role: forgejo
