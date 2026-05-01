@@ -3,13 +3,16 @@ module github.com/verself/deployment-tooling
 go 1.25.8
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.41.6
 	github.com/hashicorp/nomad/api v0.0.0-20260501195443-d922fcdd63e4
 	github.com/verself/otel v0.0.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
+	golang.org/x/crypto v0.49.0
 )
 
 require (
+	github.com/aws/smithy-go v1.25.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

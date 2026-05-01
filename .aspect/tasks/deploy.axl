@@ -88,31 +88,50 @@ def _run_external_reconcilers(ctx, site, env):
 def _run_nomad_deploy(ctx, site, env):
     """Publish Nomad task artifacts and submit every rendered job spec.
 
-    The script reads .cache/render/<site>/jobs/index.json, builds the Bazel
-    tarball targets listed there, expects immutable artifacts to exist at the
-    private Garage artifact origin, opens an SSH tunnel to Nomad's loopback API,
-    and runs verself-deploy locally for each component. Skipped when the
-    renderer produced no nomad jobs (script exits 0).
+    verself-deploy is a typed Go binary that:
+      * runs `bazelisk build --build_event_json_file=…` for the per-site
+        nomad-jobs target and resolves outputs through BEP (no cquery
+        multi-config bug);
+      * opens one SSH session, multiplexes artifact + nomad local-port
+        forwards over it, and reads publisher.env / ca-bundle.pem
+        through `sudo cat` over the same session;
+      * publishes every Garage artifact and submits every Nomad job
+        through the official `hashicorp/nomad/api` client (ParseHCL
+        bypassed: specs are already JSON; Plan + EnforceRegister with
+        CAS on JobModifyIndex; Deployments.Info blocking-query monitor).
 
-    The shell-out is wrapped in scripts/with-otel-agent.sh so spans emitted
-    by verself-deploy (verself_deploy.nomad.{decide,plan,register,
-    deployment_monitor}) reach the controller-side OTLP buffer for the
-    duration of the submit phase. Phase 3 inverts this: verself-deploy
+    The shell-out is wrapped in scripts/with-otel-agent.sh so spans
+    emitted by verself-deploy reach the controller-side OTLP buffer
+    for the duration of the deploy. Phase 3 inverts this: verself-deploy
     will own the OTLP path directly and the agent's role shrinks to
     Ansible's Python callback only.
     """
+    target = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
+    rc = checked_spawn(
+        ctx, "bazelisk",
+        ["build", "--config=remote-writer", target],
+        cwd = ws_path(ctx),
+        env = env,
+        label = "bazelisk build " + target,
+    )
+    if rc != 0:
+        return rc
+    bin = ws_path(ctx, "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy")
+
     nomad_env = dict(env)
     nomad_env["VERSELF_ANSIBLE_INVENTORY"] = ws_path(ctx, ".cache/render/" + site + "/inventory")
     return checked_spawn(
         ctx,
         ws_path(ctx, SUBSTRATE_DIR, "scripts/with-otel-agent.sh"),
         [
-            ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
+            bin,
+            "nomad", "deploy-all",
             "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
         env = nomad_env,
-        label = "with-otel-agent nomad-deploy-all --site=" + site,
+        label = "with-otel-agent verself-deploy nomad deploy-all --site=" + site,
     )
 
 def _run_divergence_canary(ctx, site, env):
