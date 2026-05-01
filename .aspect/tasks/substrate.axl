@@ -29,6 +29,21 @@ def _merge_env(base, *overrides):
             out[k] = v
     return out
 
+def _substrate_changed_tasks_file(ctx, site):
+    return ws_path(ctx, ".cache/render/" + site + "/substrate.changed_tasks")
+
+def _read_changed_tasks(ctx, path, required):
+    read = (ctx.std.process.command("cat")
+         .args([path])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if read.status.code != 0 or read.stdout.strip() == "":
+        if required:
+            ctx.std.io.stderr.write("ERROR: substrate changed-task count was not recorded at " + path + "\n")
+            return None
+        return "0"
+    return read.stdout.strip()
+
 def _run_ansible(ctx, site, env, playbook, *extra_args):
     args_list = [playbook] + list(extra_args)
     return checked_spawn(
@@ -89,13 +104,14 @@ def _substrate_status(ctx, site, digest):
         ctx.std.io.stderr.write(r.stderr)
     return r.status.code
 
-def _record_substrate_event(ctx, site, digest, event_kind, env, error_message = ""):
+def _record_substrate_event(ctx, site, digest, event_kind, env, error_message = "", changed_tasks = "0"):
     args_list = [
         "--site=" + site,
         "--digest=" + digest,
         "--mode=always",
         "--event-kind=" + event_kind,
         "--inventory=" + ws_path(ctx, site_cache_inventory(site)),
+        "--changed-tasks=" + changed_tasks,
     ]
     if error_message != "":
         args_list.append("--error-message=" + error_message)
@@ -123,7 +139,19 @@ def _converge_impl(ctx):
     if env == None:
         return 1
     _ = _record_substrate_event(ctx, site, digest, "started", env)
-    rc = _run_ansible(ctx, site, env, "playbooks/box.yml")
+    changed_tasks_file = _substrate_changed_tasks_file(ctx, site)
+    rm_rc = checked_spawn(ctx, "rm", ["-f", changed_tasks_file], label = "clean substrate changed-task count")
+    if rm_rc != 0:
+        return rm_rc
+    rc = _run_ansible(
+        ctx,
+        site,
+        _merge_env(env, {"VERSELF_SUBSTRATE_CHANGED_TASKS_FILE": changed_tasks_file}),
+        "playbooks/box.yml",
+    )
+    changed_tasks = _read_changed_tasks(ctx, changed_tasks_file, rc == 0)
+    if changed_tasks == None:
+        return 1
     if rc != 0:
         _ = _record_substrate_event(
             ctx,
@@ -132,9 +160,10 @@ def _converge_impl(ctx):
             "failed",
             env,
             error_message = "box playbook exited " + str(rc),
+            changed_tasks = changed_tasks,
         )
         return rc
-    record_rc = _record_substrate_event(ctx, site, digest, "succeeded", env)
+    record_rc = _record_substrate_event(ctx, site, digest, "succeeded", env, changed_tasks = changed_tasks)
     if record_rc != 0:
         ctx.std.io.stderr.write("ERROR: substrate convergence succeeded but evidence recording failed\n")
         return record_rc
