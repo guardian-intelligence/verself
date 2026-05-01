@@ -3,3 +3,13 @@
   ansible.builtin.service:
     name: ssh
     state: reloaded
+
+- name: Reload sshd-systemd
+  # systemd drop-in changes need daemon-reload before the sshd unit
+  # picks them up, then a restart for the new ordering to apply.
+  # Reload (not restart) keeps existing sessions alive so the operator
+  # making this change isn't booted out mid-deploy.
+  ansible.builtin.systemd:
+    name: ssh
+    state: reloaded
+    daemon_reload: true
