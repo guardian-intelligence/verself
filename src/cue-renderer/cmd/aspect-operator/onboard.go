@@ -423,19 +423,22 @@ func ensureVaultLogin(domain string, anchors fetchedAnchors, force bool) (string
 			}
 		}
 	}
-	printOIDCInstructions(anchors)
 	bao := exec.Command("bao", "login",
 		"-method=oidc",
 		"-path=oidc-ssh-ca",
 		"-no-print",
 		"role=operator",
-		// skip_browser=true makes bao print the auth URL and wait
-		// without trying to launch xdg-open / open / start. Auto-open
-		// is unreliable across operator devices (headless controllers,
-		// macOS terminals over SSH, machines without xdg-utils) and a
-		// missing browser-launcher historically presents as a
-		// confusing "executable file not found" error rather than a
-		// clear "paste this URL" prompt.
+		// Device-code flow: bao prints a verification URL + user_code,
+		// the operator opens the URL in any browser on any device and
+		// types the code. No localhost:8250 callback, no SSH tunnel
+		// for headless controllers, no xdg-open dependency. Requires
+		// the Zitadel OIDC app to carry OIDC_GRANT_TYPE_DEVICE_CODE
+		// (configured in src/platform/ansible/roles/openbao/tasks/
+		// ssh-ca.yml).
+		"callbackmode=device",
+		// skip_browser=true is harmless under callbackmode=device but
+		// keeps the binary's behaviour identical if the device-code
+		// grant ever has to be temporarily rolled back to client mode.
 		"skip_browser=true",
 	)
 	bao.Env = append(os.Environ(),
@@ -453,38 +456,6 @@ func ensureVaultLogin(domain string, anchors fetchedAnchors, force bool) (string
 	return tokenPath, nil
 }
 
-// printOIDCInstructions explains the localhost-callback constraint to
-// operators on headless machines. The OIDC method bao uses is the
-// authorization-code flow with a redirect_uri of localhost:8250 — the
-// auth URL bao is about to print MUST be opened by a browser that can
-// reach the bao process's localhost:8250 listener. On a headless
-// controller the operator typically SSH-tunnels 8250 from a laptop
-// session, then opens the URL on the laptop. Suppressed when DISPLAY
-// or WAYLAND_DISPLAY is set (graphical machine; bao's URL print +
-// browser paste is sufficient).
-func printOIDCInstructions(anchors fetchedAnchors) {
-	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-		return
-	}
-	host, _ := os.Hostname()
-	if host == "" {
-		host = "<this-host>"
-	}
-	fmt.Fprintf(os.Stderr, `
-This machine has no graphical session — the OIDC callback at
-localhost:8250 must be reachable from whichever browser you use.
-
-If you're SSH'd in from a machine with a browser, open a SECOND SSH
-session from that machine with port forwarding before continuing:
-
-    ssh -L 8250:localhost:8250 ubuntu@%s
-
-Then paste the URL bao prints below into the laptop browser. The
-redirect lands on localhost:8250 of the laptop, tunnels back here,
-and bao completes the login.
-
-`, host)
-}
 
 func vaultTokenPath() string {
 	if v := os.Getenv("BAO_TOKEN_FILE"); v != "" {
