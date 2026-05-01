@@ -143,9 +143,15 @@ config: s.#InstanceConfig & {
 
 		principals: {
 			operator: {
-				name:                 "operator"
-				role:                 "operator"
-				max_ttl_seconds:      900 // 15 minutes
+				name: "operator"
+				role: "operator"
+				// 1h matches a normal interactive work block; longer than
+				// 15min so a deploy or a debug session doesn't re-auth
+				// through Zitadel mid-flight, shorter than the breakglass
+				// window so a leaked cert can't outlive a shift. The
+				// Vault token TTL matches, so one OIDC login covers up to
+				// 1h of cert re-signing.
+				max_ttl_seconds:      3600
 				source_address_cidrs: ["10.66.66.0/24"]
 				permit_pty:           true
 			}
@@ -167,10 +173,59 @@ config: s.#InstanceConfig & {
 		}
 	}
 
+	let nomadArtifactHost = "artifacts.internal.\(config.ansible_vars.verself_domain)"
+
+	artifacts: {
+		nomad: {
+			kind: "garage_s3_private_origin"
+			storage: {
+				provider:   "garage"
+				bucket:     "nomad-artifacts"
+				key_prefix: "sha256"
+				region:     "garage"
+			}
+			origin: {
+				scheme:         "https"
+				hostname:       nomadArtifactHost
+				port:           9443
+				placement:      "node_local"
+				resolution:     "per_node_hosts_file"
+				listen_host:    "127.0.0.1"
+				public_dns:     false
+				public_ingress: false
+				tls: {
+					server_name:    nomadArtifactHost
+					ca_bundle_path: "/etc/verself/pki/nomad-artifacts-ca.pem"
+				}
+			}
+			nomad_getter: {
+				protocol:           "s3"
+				source_prefix:      "s3::https://\(nomadArtifactHost):9443/nomad-artifacts"
+				checksum_algorithm: "sha256"
+				options: {
+					region: "garage"
+				}
+				credentials: {
+					source:                "host_environment"
+					environment_file:      "/etc/nomad/nomad-artifacts.env"
+					access_key_id_env:     "AWS_ACCESS_KEY_ID"
+					secret_access_key_env: "AWS_SECRET_ACCESS_KEY"
+				}
+			}
+			publisher: {
+				credentials: {
+					source:                "controller_environment"
+					environment_file:      "/etc/garage/nomad-artifacts/publisher.env"
+					access_key_id_env:     "VERSELF_NOMAD_ARTIFACTS_AWS_ACCESS_KEY_ID"
+					secret_access_key_env: "VERSELF_NOMAD_ARTIFACTS_AWS_SECRET_ACCESS_KEY"
+				}
+			}
+		}
+	}
+
 	ansible_vars: {
-		verself_version:     "0.1.0"
-		verself_bin:         "/opt/verself/profile/bin"
-		nomad_artifacts_dir: "/var/lib/verself/nomad-artifacts"
+		verself_version: "0.1.0"
+		verself_bin:     "/opt/verself/profile/bin"
 
 		// Public domains, organization labels, and per-site sender
 		// addresses are split into site.cue. Both files contribute to
