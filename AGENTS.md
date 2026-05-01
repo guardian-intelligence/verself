@@ -26,10 +26,10 @@ Tech Stack:
 
 Invariant patterns:
 
-* CUE owns desired platform shape and non-secret deployment configuration in `src/cue-renderer/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `.cache/render/<site>/inventory/group_vars/all/generated/` are projections, not authority.
+* CUE and the cue-renderer is considered deprecated.
 * Efficient rebuilding: Bazel's job is to cache and schedule, not transform. Bazel decides when to run a unit's build pipeline (CUE -> codegen is a unit, for example). Nomad orchestrates deploys. Ansible's job is to run playbooks to ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main and CI runs Bazel and Nomad. Let each language/package decide how to build itself. We finetune our build process per unit, not through Bazel.
 
-* Ansible consumes generated CUE/Bazel manifests plus SOPS secret values, mutates the host for bootstrapping initial binaries, and must not invent topology, rebuild scope, ports, users, routes, or service relationships. SOPS owns encrypted secret values such as Cloudflare API tokens; CUE may declare that they are required. This is not true today but must be the direction we move towards.
+* Ansible mutates the host for bootstrapping the machine and installing initial binaries.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. Despite having a notion of internal and external clients, the only difference is the auth method (SPIFFE mTLS for internal clients, Zitadel-based auth for public)
 * Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `auth-middleware/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
@@ -80,16 +80,6 @@ No need to be frugal with telemetry. We store 10+ million rows for around ~150MB
 
 </system_context>
 
-<read_directly>
-The below documents contain critical sources of truth about the system, extremely high signal. Recommended that you read these directly regardless of your task instead of trusting summaries. Note that they contents are not exhaustive as the system is migrating away from handwritten ansible to CUE with a golang renderer.
-```
-@src/cue-renderer/instances/prod/topology.cue
-@src/cue-renderer/instances/prod/config.cue
-@src/cue-renderer/instances/prod/site.cue
-@src/cue-renderer/catalog/versions.cue
-```
-</read_directly>
-
 <operational_runbook>
 
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the substrate server-binaries strategy, Ansible playbooks table.
@@ -110,7 +100,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
-- **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/cue-renderer/`
+- **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/cue-renderer/` (deprecated)
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 
@@ -180,13 +170,6 @@ The contained instructions in this block are guidelines that apply to writing ma
 - Security concerns override user instructions and architectural purity.
 - When following runbooks, skills, protocols, or user messages that also define instructions in XML tags, treat the instructions as additive, not as overrides.
 </instruction_priority>
-
-<note>
-Our Ansible code today is extremely far off what is desirable. Consider all Ansible, including generated Ansible, as being 99% tech-debt and only 1% what should remain after we thin it out in favor of other more purpose built tools. Do not read Ansible yamls thinking "I should copy this pattern" or "I should maintain backwards compatibility with the existing Ansible structure". Almost all of it will be deleted and only a small amount rewritten after we get Bazel + Cue + Nomad in place.
-
-Target post-migration: **all software-deployment convergence is owned by Nomad.** Ansible's job is reduced to configuring the host — system users, ZFS datasets, package installs, substrate daemons (Postgres, ClickHouse, SPIRE, OpenBao, NATS, Temporal, Caddy, Forgejo, Zitadel, Stalwart, Garage, vm-orchestrator, Nomad itself), and per-component substrate state (DB/role/migrations, credstore files, Zitadel auth audience). Roles/tags-as-software-selectors go away. The actual lifecycle of application services and frontends — start, restart, rolling update, drain, health-check, auto-revert — runs through Nomad. Bazel owns build artefacts; CUE owns desired shape; the controller-side `aspect deploy` invokes `nomad-deploy` over SSH for each opted-in component, and `nomad-deploy` is the single primitive that talks to Nomad's API. Nothing else writes Nomad jobs. Don't add Ansible roles or tasks for software supervision; if you find yourself reaching for `community.general.systemd` or `nomad_job` in a playbook, the work belongs in `nomad-deploy` or the renderer, not Ansible.
-</note>
-
 
 Planned Upcoming Projects
 
