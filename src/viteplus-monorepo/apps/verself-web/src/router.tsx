@@ -17,7 +17,7 @@ function createQueryClient() {
 
 export function getRouter() {
   const queryClient = createQueryClient();
-  console.info("verself-web deploy timing probe: router initialized");
+  console.info("verself-web deploy timing probe: router initialized after substrate digest RCA");
 
   return createRouter({
     routeTree,
