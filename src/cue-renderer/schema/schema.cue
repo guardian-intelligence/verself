@@ -788,20 +788,6 @@ package schema
 	read_write_paths: [...string & =~"^/"] | *[] @go(ReadWritePaths)
 }
 
-#ReadinessProbe: {
-	kind:            "tcp"
-	endpoint:        string & !=""
-	timeout_seconds: int & >0 | *5 @go(TimeoutSeconds)
-} | {
-	kind:            "http"
-	endpoint:        string & !=""
-	path:            string & =~"^/"
-	status_code:     int & >=100 & <=599 | *200 @go(StatusCode)
-	timeout_seconds: int & >0 | *5              @go(TimeoutSeconds)
-	scheme:          "http" | "https" | *"http"
-	ca_path?:        string & =~"^/" @go(CAPath)
-}
-
 #WorkloadUnit: {
 	name:        string & !=""
 	description: string & !=""
@@ -821,7 +807,6 @@ package schema
 	restart:     "always" | "on-failure" | "no" | *"on-failure"
 	restart_sec: int & >=0 | *5 @go(RestartSec)
 	hardening:   #SystemdHardening
-	readiness: [...#ReadinessProbe] | *[]
 	wanted_by: [...string] | *["multi-user.target"] @go(WantedBy)
 	requires_spiffe_sock: bool | *false @go(RequiresSpiffeSock)
 }
@@ -879,22 +864,16 @@ package schema
 }
 
 // #Deployment is the supervisor-shape contract for a component's runtime.
-// The update / drain / resources knobs map directly to Nomad's JSON job
-// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs).
+// The drain / resources knobs map directly to Nomad's JSON job spec
+// (https://developer.hashicorp.com/nomad/api-docs/json-jobs).
 //
-// Single rolling-restart is the only mode here. Blue/green and canary
-// arrive as per-component CUE additions on top of Nomad's update {}
-// stanza, not as enum knobs in the schema.
+// Update policy and readiness checks are runtime contracts owned by each
+// service, not topology — they live in src/<service>/.../nomad-overrides.json
+// and get spliced onto the rendered spec by the Bazel resolver. Adding
+// blue/green or canary is a per-component override, not a schema knob.
 #Deployment: {
 	supervisor: "systemd" | "nomad" | *"systemd"
 	count:      int & >0 | *1
-	update: {
-		max_parallel:      int & >0 | *1          @go(MaxParallel)
-		min_healthy_time:  string & !="" | *"3s"  @go(MinHealthyTime)
-		healthy_deadline:  string & !="" | *"5m"  @go(HealthyDeadline)
-		progress_deadline: string & !="" | *"10m" @go(ProgressDeadline)
-		auto_revert:       bool | *true           @go(AutoRevert)
-	}
 	drain: {
 		kill_signal:  string & !="" | *"SIGTERM" @go(KillSignal)
 		kill_timeout: string & !="" | *"30s"     @go(KillTimeout)

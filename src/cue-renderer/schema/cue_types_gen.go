@@ -853,8 +853,6 @@ type SystemdHardening struct {
 	ReadWritePaths []any/* CUE closed list */ `json:"read_write_paths"`
 }
 
-type ReadinessProbe map[string]any
-
 type WorkloadUnit struct {
 	Name string `json:"name"`
 
@@ -891,8 +889,6 @@ type WorkloadUnit struct {
 	RestartSec int64 `json:"restart_sec"`
 
 	Hardening SystemdHardening `json:"hardening"`
-
-	Readiness []any/* CUE closed list */ `json:"readiness"`
 
 	WantedBy []any/* CUE closed list */ `json:"wanted_by"`
 
@@ -953,28 +949,17 @@ type ComponentWorkload struct {
 }
 
 // #Deployment is the supervisor-shape contract for a component's runtime.
-// The update / drain / resources knobs map directly to Nomad's JSON job
-// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs).
+// The drain / resources knobs map directly to Nomad's JSON job spec
+// (https://developer.hashicorp.com/nomad/api-docs/json-jobs).
 //
-// Single rolling-restart is the only mode here. Blue/green and canary
-// arrive as per-component CUE additions on top of Nomad's update {}
-// stanza, not as enum knobs in the schema.
+// Update policy and readiness checks are runtime contracts owned by each
+// service, not topology — they live in src/<service>/.../nomad-overrides.json
+// and get spliced onto the rendered spec by the Bazel resolver. Adding
+// blue/green or canary is a per-component override, not a schema knob.
 type Deployment struct {
 	Supervisor string `json:"supervisor"`
 
 	Count int64 `json:"count"`
-
-	Update struct {
-		MaxParallel int64 `json:"max_parallel"`
-
-		MinHealthyTime string `json:"min_healthy_time"`
-
-		HealthyDeadline string `json:"healthy_deadline"`
-
-		ProgressDeadline string `json:"progress_deadline"`
-
-		AutoRevert bool `json:"auto_revert"`
-	} `json:"update"`
 
 	Drain struct {
 		KillSignal string `json:"kill_signal"`

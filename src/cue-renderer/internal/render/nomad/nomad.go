@@ -7,8 +7,10 @@
 //
 // Spec shape: a single TaskGroup per unit declared in
 // `workload.units`. The unit block is the cross-supervisor authoring
-// contract (env vars, dependency wiring, readiness probes);
-// this renderer just rewrites it into Nomad JSON. raw_exec is the only
+// contract (env vars, dependency wiring); this renderer just rewrites
+// it into Nomad JSON. Readiness checks and the rollout policy are
+// runtime contracts owned by each service — see
+// src/<service>/.../nomad-overrides.json. raw_exec is the only
 // driver: workloads need peer-auth access to the Postgres Unix socket
 // and the SPIRE workload-API socket, which the exec driver's
 // chroot/PID-namespace isolation would cut.
@@ -509,10 +511,6 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	if c, ok := deployment["count"].(int64); ok && c > 0 {
 		count = c
 	}
-	updateBlock, err := updateStanza(deployment)
-	if err != nil {
-		return nil, err
-	}
 	resources, err := resourceStanza(deployment)
 	if err != nil {
 		return nil, err
@@ -523,16 +521,17 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	}
 
 	endpoints, _ := component.Value["endpoints"].(map[string]any)
-	reservedPorts, primaryPort, err := reservedPorts(component, endpoints, unit)
+	reservedPorts, _, err := reservedPorts(component, endpoints, unit)
 	if err != nil {
 		return nil, err
 	}
 
-	services, err := buildServices(component.Name, unitName, unit, primaryPort, endpoints)
-	if err != nil {
-		return nil, err
-	}
-
+	// Services and TaskGroup.Update are not the renderer's concern: they
+	// are spliced onto the spec by src/cue-renderer/nomad/resolve_jobs.py
+	// from each component's nomad-overrides.json before spec_sha256 is
+	// stamped. The renderer reserves the keys so the resolver always
+	// updates an existing field rather than introducing one — this keeps
+	// the canonical-JSON shape stable across topology-only changes.
 	task := map[string]any{
 		"Name":   unitName,
 		"Driver": "raw_exec",
@@ -545,7 +544,7 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		"Resources":   resources,
 		"KillSignal":  killSignal,
 		"KillTimeout": killTimeout,
-		"Services":    services,
+		"Services":    nil,
 		"RestartPolicy": map[string]any{
 			"Attempts": 3,
 			"Interval": int64(5 * time.Minute / time.Nanosecond),
@@ -588,10 +587,13 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	tasks = append(tasks, task)
 
 	group := map[string]any{
-		"Name":   unitName,
-		"Count":  count,
-		"Tasks":  tasks,
-		"Update": updateBlock,
+		"Name":  unitName,
+		"Count": count,
+		"Tasks": tasks,
+		// Update is filled by src/cue-renderer/nomad/resolve_jobs.py from
+		// the per-component nomad-overrides.json; declared here so the
+		// resolver overwrites an existing key rather than introducing one.
+		"Update": nil,
 	}
 	if len(reservedPorts) > 0 {
 		group["Networks"] = []map[string]any{
@@ -794,37 +796,6 @@ func mustUnitName(unit map[string]any) string {
 	return n
 }
 
-func updateStanza(deployment map[string]any) (map[string]any, error) {
-	update, _ := deployment["update"].(map[string]any)
-	maxParallel, err := optionalInt64(update, "max_parallel", 1)
-	if err != nil {
-		return nil, err
-	}
-	minHealthy, err := optionalDuration(update, "min_healthy_time", 3*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	healthyDeadline, err := optionalDuration(update, "healthy_deadline", 5*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	progressDeadline, err := optionalDuration(update, "progress_deadline", 10*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	autoRevert := true
-	if v, ok := update["auto_revert"].(bool); ok {
-		autoRevert = v
-	}
-	return map[string]any{
-		"MaxParallel":      maxParallel,
-		"MinHealthyTime":   int64(minHealthy / time.Nanosecond),
-		"HealthyDeadline":  int64(healthyDeadline / time.Nanosecond),
-		"ProgressDeadline": int64(progressDeadline / time.Nanosecond),
-		"AutoRevert":       autoRevert,
-	}, nil
-}
-
 func drainStanza(deployment map[string]any) (string, int64, error) {
 	drain, _ := deployment["drain"].(map[string]any)
 	signal, _ := drain["kill_signal"].(string)
@@ -876,65 +847,6 @@ func reservedPorts(component projection.NamedMap, endpoints map[string]any, unit
 		}
 	}
 	return reserved, primary, nil
-}
-
-func buildServices(componentName, unitName string, unit map[string]any, primaryPort string, endpoints map[string]any) ([]map[string]any, error) {
-	rawReadiness, _ := unit["readiness"].([]any)
-	if len(rawReadiness) == 0 {
-		return nil, nil
-	}
-	_ = endpoints // referenced through PortLabel resolution at the Nomad client side
-	checks := make([]map[string]any, 0, len(rawReadiness))
-	for _, item := range rawReadiness {
-		probe, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		kind, _ := probe["kind"].(string)
-		endpoint, _ := probe["endpoint"].(string)
-		check := map[string]any{
-			"Name":      unitName + "-" + kind + "-" + endpoint,
-			"PortLabel": endpoint,
-			"Interval":  int64(1 * time.Second / time.Nanosecond),
-			"Timeout":   int64(3 * time.Second / time.Nanosecond),
-		}
-		switch kind {
-		case "tcp":
-			check["Type"] = "tcp"
-		case "http":
-			check["Type"] = "http"
-			path, _ := probe["path"].(string)
-			if path == "" {
-				path = "/"
-			}
-			check["Path"] = path
-			scheme, _ := probe["scheme"].(string)
-			if scheme == "https" {
-				check["Protocol"] = "https"
-				check["TLSSkipVerify"] = true
-			}
-		default:
-			return nil, fmt.Errorf("%s.workload.units.%s.readiness: unsupported probe kind %q", componentName, unitName, kind)
-		}
-		checks = append(checks, check)
-	}
-	if len(checks) == 0 {
-		return nil, nil
-	}
-	if primaryPort == "" {
-		// No port to bind the service to — Nomad rejects services
-		// without a PortLabel when the group declares Networks. Skip.
-		return nil, nil
-	}
-	return []map[string]any{{
-		"Name":      unitName,
-		"PortLabel": primaryPort,
-		// Use Nomad's native service registry (1.3+). The default is
-		// Consul, which adds an automatic ${attr.consul.version} >= 1.8.0
-		// constraint and prevents placement on Consul-less hosts.
-		"Provider": "nomad",
-		"Checks":   checks,
-	}}, nil
 }
 
 func optionalInt64(m map[string]any, key string, fallback int64) (int64, error) {

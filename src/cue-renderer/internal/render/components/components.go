@@ -143,7 +143,6 @@ func unitProjection(unit map[string]any) map[string]any {
 		"create_home":          boolValue(unit, "create_home"),
 		"supplementary_groups": sliceValue(unit, "supplementary_groups"),
 		"load_credentials":     sliceValue(unit, "load_credentials"),
-		"readiness":            sliceValue(unit, "readiness"),
 	}
 	if uid, ok := unit["uid"]; ok {
 		out["uid"] = uid

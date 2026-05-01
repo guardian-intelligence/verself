@@ -16,10 +16,13 @@ go_library(
 
 go_test(
     name = "nomad_test",
-    srcs = ["nomad_test.go"],
+    srcs = [
+        "compatibility_test.go",
+        "nomad_test.go",
+    ],
     data = ["//src/cue-renderer:topology_srcs"],
+    embed = [":nomad"],
     deps = [
-        ":nomad",
         "//src/cue-renderer/internal/load",
         "//src/cue-renderer/internal/render",
     ],
