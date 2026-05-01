@@ -428,17 +428,22 @@ func ensureVaultLogin(domain string, anchors fetchedAnchors, force bool) (string
 		"-path=oidc-ssh-ca",
 		"-no-print",
 		"role=operator",
-		// Device-code flow: bao prints a verification URL + user_code,
-		// the operator opens the URL in any browser on any device and
-		// types the code. No localhost:8250 callback, no SSH tunnel
-		// for headless controllers, no xdg-open dependency. Requires
-		// the Zitadel OIDC app to carry OIDC_GRANT_TYPE_DEVICE_CODE
-		// (configured in src/substrate/ansible/roles/openbao/tasks/
-		// ssh-ca.yml).
-		"callbackmode=device",
-		// skip_browser=true is harmless under callbackmode=device but
-		// keeps the binary's behaviour identical if the device-code
-		// grant ever has to be temporarily rolled back to client mode.
+		// skip_browser=true makes bao print the auth URL and wait
+		// without trying to launch xdg-open / open / start. The
+		// localhost:8250 callback still has to be reachable from
+		// whichever browser the operator uses; on a headless
+		// controller this means an SSH local-forward from the laptop
+		// SSH session: `ssh -L 8250:localhost:8250 ubuntu@<host>`.
+		//
+		// callbackmode=device would eliminate the localhost callback
+		// entirely — Zitadel advertises the device endpoint and
+		// grant_types_supported lists urn:ietf:params:oauth:grant-
+		// type:device_code, and the verself-ssh-ca app carries
+		// OIDC_GRANT_TYPE_DEVICE_CODE. But OpenBao 2.5.2's OIDC
+		// plugin returns "no state returned in device callback mode"
+		// when the polling response lands; tracked for re-enable
+		// once OpenBao ships a fix. The Zitadel grant stays in place
+		// so the flip becomes a one-line change here.
 		"skip_browser=true",
 	)
 	bao.Env = append(os.Environ(),
