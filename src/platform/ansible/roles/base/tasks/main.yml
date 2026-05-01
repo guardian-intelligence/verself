@@ -25,7 +25,11 @@
     state: directory
     owner: root
     group: root
-    mode: "0700"
+    # 0755 so substrate users (caddy, openbao, wireguard) can traverse
+    # into their per-component config subdirs without needing
+    # supplementary group membership on /etc/verself itself. The
+    # contents stay tight: each subdirectory carries its own mode.
+    mode: "0755"
 
 - name: Disable unsupported GSSAPIAuthentication in ssh_config
   ansible.builtin.lineinfile:
