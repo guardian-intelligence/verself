@@ -25,3 +25,17 @@ openbao_workload_token_max_ttl: 1h
 openbao_audit_request_headers:
   - name: X-Verself-Request-Id
     hmac: false
+
+# Operator-OIDC Vault token lifetime knobs. token_period sets the
+# auto-renewal cadence (14d → `aspect operator refresh` keeps the token
+# alive across normal operator activity); token_explicit_max_ttl is the
+# hard cap (30d) past which OIDC re-auth is mandatory.
+openbao_ssh_ca_oidc_token_period: "1209600s"
+openbao_ssh_ca_oidc_token_explicit_max_ttl: "2592000s"
+
+# Workload-pool credstore + KV mount. KV stores per-slot wg priv keys;
+# the credstore JSON file feeds the wireguard role at template render
+# time so kernel WG state can include the slot peers without first
+# fetching anything from the OpenBao API.
+openbao_workload_pool_credstore_dir: /etc/credstore/workload-pool
+openbao_workload_pool_kv_mount: kv-workload-pool

@@ -302,6 +302,19 @@
     - { name: cert.pem, mode: "0640" }
     - { name: key.pem, mode: "0640" }
 
+# Publish the OpenBao TLS server cert on the public discovery surface.
+# It is the only trust anchor a clean operator device has for verifying
+# OpenBao's API responses during the OIDC SSH-CA flow. Public exposure
+# is safe: the cert is the public half of the TLS keypair.
+- name: Publish OpenBao TLS server cert under /.well-known
+  ansible.builtin.copy:
+    src: "{{ openbao_tls_dir }}/cert.pem"
+    dest: /var/www/verself/well-known/verself-openbao-ca.pem
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Deploy OpenBao private hosts file
   ansible.builtin.copy:
     dest: "{{ openbao_hosts_file }}"

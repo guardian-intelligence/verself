@@ -31,6 +31,18 @@
     mode: "0644"
   notify: Reload sshd
 
+# Publish the CA pubkey on the public discovery surface. A clean
+# operator device fetches https://verself.sh/.well-known/verself-ssh-ca.pub
+# before it has any other trust anchor; the binary pins the sha256 on
+# first contact and refuses subsequent fetches that drift from the pin.
+- name: Publish SSH CA public key under /.well-known
+  ansible.builtin.copy:
+    content: "{{ ssh_ca_pubkey_raw.content | b64decode }}"
+    dest: /var/www/verself/well-known/verself-ssh-ca.pub
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Render the per-user principals file
   ansible.builtin.copy:
     # One principal name per line. AuthorizedPrincipalsFile %u expands

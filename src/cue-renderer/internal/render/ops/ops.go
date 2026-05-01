@@ -6,7 +6,9 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"maps"
+	"sort"
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
@@ -22,12 +24,50 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if payload == nil {
 		payload = map[string]any{}
 	}
+	if artifacts, ok := loaded.ConfigMap["artifacts"]; ok {
+		payload["topology_artifacts"] = artifacts
+	}
 	electric, err := electricInstances(loaded)
 	if err != nil {
 		return err
 	}
 	payload["topology_electric_instances"] = electric
+
+	// Cert-id allowlist for the detect-recent-intrusions query. Every
+	// cert OpenBao mints carries a KeyID `verself-<principal>-<suffix>`
+	// where suffix is either an operator device name or
+	// `slot-<index>` for a workload-pool slot. Anything outside this
+	// set arriving in verself.host_auth_events is, by construction, a
+	// machine that escaped the trust set — exactly the Blacksmith-CI
+	// class of incident.
+	suffixes, err := knownCertIDSuffixes(loaded)
+	if err != nil {
+		return err
+	}
+	payload["known_cert_id_suffixes"] = suffixes
+
 	return projection.WriteYAML(out, "ops", payload)
+}
+
+// knownCertIDSuffixes flattens operators.<op>.devices.<device>.name plus
+// `slot-0`..`slot-{count-1}` into a sorted []string. Sorting keeps the
+// rendered ops.yml byte-stable across re-runs (CUE map iteration order
+// is unspecified).
+func knownCertIDSuffixes(loaded load.Loaded) ([]string, error) {
+	out := []string{}
+	for _, op := range loaded.Config.Operators {
+		for _, dev := range op.Devices {
+			if dev.Name == "" {
+				return nil, fmt.Errorf("operator device name is empty")
+			}
+			out = append(out, dev.Name)
+		}
+	}
+	for i := int64(0); i < loaded.Config.Workloads.Pool.SlotCount; i++ {
+		out = append(out, fmt.Sprintf("slot-%d", i))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func electricInstances(loaded load.Loaded) (map[string]any, error) {

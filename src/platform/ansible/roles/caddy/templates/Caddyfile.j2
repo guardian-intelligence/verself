@@ -43,6 +43,12 @@
 	}
 }
 
+https://{{ topology_artifacts.nomad.origin.hostname }}:{{ topology_artifacts.nomad.origin.port }} {
+	bind {{ topology_artifacts.nomad.origin.listen_host }}
+	tls /etc/verself/pki/nomad-artifacts-server.pem /etc/verself/pki/private/nomad-artifacts-server-key.pem
+	reverse_proxy{% for garage_node in topology_clusters.garage.nodes %} http://{{ topology_clusters.garage.host }}:{{ garage_node.s3_port }}{% endfor %}{{ "\n" }}
+}
+
 (api_security_headers) {
 	header {
 		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
@@ -52,12 +58,6 @@
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 	}
-}
-
-http://{{ topology_endpoints.nomad_artifacts.endpoints.http.address }} {
-	bind {{ topology_endpoints.nomad_artifacts.host }}
-	root * {{ nomad_artifacts_dir }}
-	file_server
 }
 
 # connect-src 'self' is load-bearing: it blocks the browser from calling any
@@ -486,6 +486,25 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 {{ verself_domain }} {
 	import access_log
+
+	# Public discovery surface for operator-device + workload-VM
+	# onboarding. Files under /var/www/verself/well-known/ are dropped
+	# by the ssh_ca, openbao, and wireguard roles. Cache-Control gives
+	# operator devices a 5-min reuse window without preventing CA
+	# rotation from propagating quickly.
+	@verself_well_known {
+		method GET
+		path /.well-known/verself-*
+	}
+	handle @verself_well_known {
+		root * /var/www/verself
+		header Cache-Control "public, max-age=300"
+		header X-Content-Type-Options nosniff
+		file_server {
+			browse off
+			hide .*
+		}
+	}
 
 	handle /v1/shape {
 		uri query -secret

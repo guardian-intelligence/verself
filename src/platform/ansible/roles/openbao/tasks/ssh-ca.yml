@@ -228,10 +228,21 @@
       allowed_redirect_uris: "{{ topology_ssh_ca.oidc.allowed_redirect_uris }}"
       token_policies:
         - "ssh-ca-{{ item.key }}"
-      # token TTL matches cert TTL: a leaked Vault token can't outlive
-      # the cert it would issue.
-      token_ttl: "{{ item.value.max_ttl_seconds }}s"
-      token_max_ttl: "{{ item.value.max_ttl_seconds }}s"
+      # Periodic Vault tokens. The user logs in via OIDC once per
+      # token_explicit_max_ttl (30d) and `aspect operator refresh`
+      # renews indefinitely within that window — so deploying every few
+      # days never re-prompts the browser, but a stolen token can't
+      # outlast 30d.
+      #
+      # token_period: how often the token must be renewed (14d). Renew
+      #   resets the expiry to now+token_period, capped at
+      #   token_explicit_max_ttl from the original issuance.
+      # token_explicit_max_ttl: hard cap on the lifetime of any one
+      #   token chain (30d). After this, OIDC re-auth is mandatory.
+      # The cert max_ttl_seconds (1h for the operator principal) caps
+      # the SSH cert lifetime independently of the Vault token TTL.
+      token_period: "{{ openbao_ssh_ca_oidc_token_period }}"
+      token_explicit_max_ttl: "{{ openbao_ssh_ca_oidc_token_explicit_max_ttl }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   loop: "{{ topology_ssh_ca.principals | dict2items }}"
@@ -246,3 +257,6 @@
   loop: "{{ topology_ssh_ca.principals | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
+
+- name: Reconcile OpenBao workload-pool (KV slot keypairs + AppRole bootstrap)
+  ansible.builtin.include_tasks: workload-pool.yml
