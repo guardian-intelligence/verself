@@ -166,17 +166,6 @@
     group: openbao
     mode: "0644"
 
-- name: Build Vault policy documents per SSH principal
-  ansible.builtin.set_fact:
-    openbao_ssh_ca_policy_documents: >-
-      {{
-        openbao_ssh_ca_policy_documents | default({}) |
-        combine({
-          item: 'path "' ~ topology_ssh_ca.mount ~ '/sign/' ~ item ~ '" {\n  capabilities = ["update"]\n}\n'
-        })
-      }}
-  loop: "{{ topology_ssh_ca.principals.keys() | list }}"
-
 - name: Write Vault policies for SSH CA principals
   ansible.builtin.uri:
     url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/ssh-ca-{{ item }}"
@@ -185,9 +174,12 @@
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
     body_format: json
     body:
-      policy: "{{ openbao_ssh_ca_policy_documents[item] }}"
+      # HCL accepts single-line policies; avoiding embedded newlines
+      # sidesteps Jinja's literal-\n behaviour inside single-quoted
+      # strings. The policy grants exactly the per-principal sign path.
+      policy: "path \"{{ topology_ssh_ca.mount }}/sign/{{ item }}\" { capabilities = [\"update\"] }"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
-    status_code: 204
+    status_code: [200, 204]
   loop: "{{ topology_ssh_ca.principals.keys() | list }}"
   changed_when: true
   no_log: true
