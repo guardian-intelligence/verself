@@ -568,10 +568,10 @@ topology: s.#Topology & {
 			artifact: {kind: "static_binary", output: "nomad", role: "nomad"}
 			endpoints: http: {protocol: "http", port: 4646, exposure: "loopback"}
 			interfaces: api: {kind: "admin_api", endpoint: "http", auth: "operator"}
-			// nomad-deploy is the controller-side wrapper around the
-			// Nomad API. It publishes Bazel-built artifacts, submits the
-			// rendered job spec, and waits for the deployment result.
-			tools: deploy: {kind: "go_binary", package: "./src/cue-renderer/cmd/nomad-deploy", output: "nomad-deploy", role: "nomad", bazel_label: "//src/cue-renderer/cmd/nomad-deploy:nomad-deploy"}
+			// The controller-side submitter (verself-deploy) is built on
+			// the operator's workstation by aspect deploy and invoked over
+			// an SSH tunnel into the loopback Nomad API; it does not need
+			// to be installed on the bare-metal node.
 		}
 		stalwart: {
 			kind: "protocol_backend"

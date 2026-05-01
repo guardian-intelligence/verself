@@ -1,0 +1,1 @@
+# Empty package marker; Go targets live under cmd/ and internal/.

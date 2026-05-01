@@ -5,6 +5,7 @@ use (
 	./src/auth-middleware
 	./src/billing-service
 	./src/cue-renderer
+	./src/deployment-tooling
 	./src/devtools
 	./src/envconfig
 	./src/governance-service

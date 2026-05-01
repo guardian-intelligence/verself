@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "identity",
+    srcs = ["identity.go"],
+    importpath = "github.com/verself/deployment-tooling/internal/identity",
+    visibility = ["//src/deployment-tooling:__subpackages__"],
+    deps = [
+        "@io_opentelemetry_go_otel//baggage",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":identity",
+    visibility = ["//src/deployment-tooling:__subpackages__"],
+)

@@ -97,14 +97,14 @@ fi
 (cd "${REPO_ROOT}" && bazelisk build --config=remote-writer \
     //src/cue-renderer:prod_nomad_jobs \
     //src/cue-renderer/cmd/artifact-publish:artifact-publish \
-    //src/cue-renderer/cmd/nomad-deploy:nomad-deploy)
+    //src/deployment-tooling/cmd/verself-deploy:verself-deploy)
 
 NOMAD_JOBS_DIR=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer:prod_nomad_jobs 2>/dev/null | tail -1)
 ARTIFACT_PUBLISH=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer/cmd/artifact-publish:artifact-publish 2>/dev/null | tail -1)
-NOMAD_DEPLOY=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/cue-renderer/cmd/nomad-deploy:nomad-deploy 2>/dev/null | tail -1)
+VERSELF_DEPLOY=$(cd "${REPO_ROOT}" && bazelisk cquery --output=files //src/deployment-tooling/cmd/verself-deploy:verself-deploy 2>/dev/null | tail -1)
 NOMAD_JOBS_DIR="${REPO_ROOT}/${NOMAD_JOBS_DIR}"
 ARTIFACT_PUBLISH="${REPO_ROOT}/${ARTIFACT_PUBLISH}"
-NOMAD_DEPLOY="${REPO_ROOT}/${NOMAD_DEPLOY}"
+VERSELF_DEPLOY="${REPO_ROOT}/${VERSELF_DEPLOY}"
 
 publish_manifest="${NOMAD_JOBS_DIR}/publish.json"
 submit_manifest="${NOMAD_JOBS_DIR}/submit.tsv"
@@ -175,5 +175,5 @@ while IFS=$'\t' read -r job_id spec_file; do
     [[ -n "${job_id}" ]] || continue
     spec="${NOMAD_JOBS_DIR}/${spec_file}"
     echo "[nomad-deploy-all] submit ${job_id}"
-    "${NOMAD_DEPLOY}" --spec="${spec}" --nomad-addr="http://127.0.0.1:${local_nomad_port}"
+    "${VERSELF_DEPLOY}" nomad submit --spec="${spec}" --nomad-addr="http://127.0.0.1:${local_nomad_port}"
 done <"${submit_manifest}"

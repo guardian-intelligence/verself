@@ -91,19 +91,28 @@ def _run_nomad_deploy(ctx, site, env):
     The script reads .cache/render/<site>/jobs/index.json, builds the Bazel
     tarball targets listed there, expects immutable artifacts to exist at the
     private Garage artifact origin, opens an SSH tunnel to Nomad's loopback API,
-    and runs nomad-deploy locally for each component. Skipped when the renderer
-    produced no nomad jobs (script exits 0).
+    and runs verself-deploy locally for each component. Skipped when the
+    renderer produced no nomad jobs (script exits 0).
 
-    Ansible installs substrate binaries and service helper tools only.
+    The shell-out is wrapped in scripts/with-otel-agent.sh so spans emitted
+    by verself-deploy (verself_deploy.nomad.{decide,plan,register,
+    deployment_monitor}) reach the controller-side OTLP buffer for the
+    duration of the submit phase. Phase 3 inverts this: verself-deploy
+    will own the OTLP path directly and the agent's role shrinks to
+    Ansible's Python callback only.
     """
-    args_list = ["--site=" + site]
+    nomad_env = dict(env)
+    nomad_env["VERSELF_ANSIBLE_INVENTORY"] = ws_path(ctx, ".cache/render/" + site + "/inventory")
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
-        args_list,
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/with-otel-agent.sh"),
+        [
+            ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
+            "--site=" + site,
+        ],
         cwd = ws_path(ctx),
-        env = env,
-        label = "nomad-deploy-all " + " ".join(args_list),
+        env = nomad_env,
+        label = "with-otel-agent nomad-deploy-all --site=" + site,
     )
 
 def _run_divergence_canary(ctx, site, env):
