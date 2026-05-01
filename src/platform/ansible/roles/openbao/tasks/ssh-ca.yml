@@ -128,7 +128,29 @@
   changed_when: openbao_ssh_ca_mount.status == 204
   no_log: true
 
-- name: Generate OpenBao SSH CA signing keypair (idempotent)
+# Probe before generating: OpenBao's /config/ca POST with
+# generate_signing_key=true *always* generates a new key pair, even when
+# one already exists, returning 200 either way. The previous "idempotent"
+# task therefore re-rolled the CA on every deploy and silently
+# invalidated every cert in flight. The probe-then-generate pattern
+# below makes regeneration require an explicit human action: delete the
+# CA via DELETE /config/ca first, then redeploy.
+- name: Probe OpenBao SSH CA for an existing signing keypair
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ topology_ssh_ca.mount }}/config/ca"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    # 200 with data.public_key when a key exists; 400 (keys not
+    # configured) when freshly mounted.
+    status_code: [200, 400, 404]
+    return_content: true
+  register: openbao_ssh_ca_probe
+  changed_when: false
+  no_log: true
+
+- name: Generate OpenBao SSH CA signing keypair (only when missing)
   ansible.builtin.uri:
     url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ topology_ssh_ca.mount }}/config/ca"
     method: POST
@@ -139,28 +161,27 @@
       generate_signing_key: true
       key_type: ed25519
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
-    # 200 on first generation; 400 thereafter ("keys are already
-    # configured"). Either is acceptable — the engine is idempotent.
-    status_code: [200, 400]
-  register: openbao_ssh_ca_generate
-  changed_when: openbao_ssh_ca_generate.status == 200
-  no_log: true
-
-- name: Read OpenBao SSH CA public key
-  ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ topology_ssh_ca.mount }}/config/ca"
-    method: GET
-    headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
-  register: openbao_ssh_ca_pubkey_response
+  register: openbao_ssh_ca_generate
+  when: >-
+    openbao_ssh_ca_probe.status != 200
+    or (openbao_ssh_ca_probe.json.data.public_key | default('', true) | length) == 0
+  changed_when: true
   no_log: true
+
+- name: Capture OpenBao SSH CA public key from probe or fresh generation
+  ansible.builtin.set_fact:
+    openbao_ssh_ca_public_key: >-
+      {{
+        openbao_ssh_ca_generate.json.data.public_key
+        if (openbao_ssh_ca_generate.changed | default(false))
+        else openbao_ssh_ca_probe.json.data.public_key
+      }}
 
 - name: Persist OpenBao SSH CA public key for the ssh_ca role to consume
   ansible.builtin.copy:
-    content: "{{ openbao_ssh_ca_pubkey_response.json.data.public_key }}\n"
+    content: "{{ openbao_ssh_ca_public_key }}\n"
     dest: "{{ openbao_credstore_dir }}/ssh-ca.pub"
     owner: root
     group: openbao
