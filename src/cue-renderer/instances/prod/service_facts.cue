@@ -645,16 +645,17 @@ topology: components: {
 					uid:                  config.ansible_vars.object_storage_service_uid
 					home:                 "/var/lib/object-storage-service"
 					requires_spiffe_sock: true
-					after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "secrets-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
-					wants: ["postgresql.service", "clickhouse-server.service", "secrets-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
+					after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
+					wants: ["postgresql.service", "clickhouse-server.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
 					supplementary_groups: ["{{ spire_workload_group }}"]
 					environment: {
 						OBJECT_STORAGE_ROLE:             "s3"
-						OBJECT_STORAGE_SECRETS_URL:      "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 						OBJECT_STORAGE_GARAGE_S3_URLS:   "http://127.0.0.1:3900,http://127.0.0.1:3910,http://127.0.0.1:3920"
 						OBJECT_STORAGE_GARAGE_REGION:    "garage"
 						VERSELF_CRED_CREDENTIAL_KEK:     "/etc/credstore/object-storage-service/credential-kek"
 						VERSELF_CRED_CLICKHOUSE_CA_CERT: "/etc/credstore/object-storage-service/clickhouse-ca-cert"
+						VERSELF_CRED_GARAGE_PROXY_ACCESS_KEY_ID:     "/etc/credstore/object-storage-service/garage-proxy-access-key-id"
+						VERSELF_CRED_GARAGE_PROXY_SECRET_ACCESS_KEY: "/etc/credstore/object-storage-service/garage-proxy-secret-access-key"
 						VERSELF_CRED_S3_TLS_CERT:        "/etc/credstore/object-storage-service/s3-tls-cert"
 						VERSELF_CRED_S3_TLS_KEY:         "/etc/credstore/object-storage-service/s3-tls-key"
 					}
@@ -711,7 +712,7 @@ topology: components: {
 				{
 					name:   "object_storage_garage_proxy"
 					class:  "storage_provider"
-					reason: "Creates Garage proxy credentials and syncs the runtime proxy secret through secrets-service."
+					reason: "Creates Garage proxy credentials for object-storage-service S3 traffic."
 				},
 			]
 		}

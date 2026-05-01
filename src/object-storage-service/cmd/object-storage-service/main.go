@@ -27,7 +27,6 @@ import (
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	"github.com/verself/object-storage-service/migrations"
 	verselfotel "github.com/verself/otel"
-	secretsclient "github.com/verself/secrets-service/client"
 )
 
 const serviceVersion = "1.0.0"
@@ -221,7 +220,8 @@ func runS3(
 	chAddress := l.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := l.String("VERSELF_CLICKHOUSE_USER", "object_storage_service")
 	garageS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_S3_URLS"))
-	secretsURL := l.RequireURL("OBJECT_STORAGE_SECRETS_URL")
+	proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
+	proxySecretAccessKey := l.RequireCredential("garage-proxy-secret-access-key")
 	s3TLSCertPath := l.RequireCredentialPath("s3-tls-cert")
 	s3TLSKeyPath := l.RequireCredentialPath("s3-tls-key")
 	chCACertPath := l.RequireCredentialPath("clickhouse-ca-cert")
@@ -230,18 +230,7 @@ func runS3(
 		return err
 	}
 
-	runtimeSecretsClient, err := newRuntimeSecretsClient(spiffeSource, secretsURL)
-	if err != nil {
-		return err
-	}
-	runtimeSecrets, err := fetchObjectStorageRuntimeSecrets(ctx, runtimeSecretsClient,
-		secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-		secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-	)
-	if err != nil {
-		return err
-	}
-	cfg.ProxyAccessKeyID = runtimeSecrets[secretsclient.ObjectStorageGarageProxyAccessKeyIDName]
+	cfg.ProxyAccessKeyID = proxyAccessKeyID
 
 	chConn, err := newClickHouseConn(ctx, spiffeSource, chAddress, chUser, chCACertPath)
 	if err != nil {
@@ -271,8 +260,8 @@ func runS3(
 		svc,
 		garageS3URLs,
 		garageS3HTTPClient,
-		runtimeSecrets[secretsclient.ObjectStorageGarageProxyAccessKeyIDName],
-		runtimeSecrets[secretsclient.ObjectStorageGarageProxySecretAccessKeyName],
+		proxyAccessKeyID,
+		proxySecretAccessKey,
 		cfg.ProxyRegion,
 		logger,
 	)
@@ -381,18 +370,6 @@ func parseRuntimeRole(raw string) (runtimeRole, error) {
 	}
 }
 
-func newRuntimeSecretsClient(spiffeSource *workloadapi.X509Source, secretsURL string) (*secretsclient.ClientWithResponses, error) {
-	httpClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
-	if err != nil {
-		return nil, fmt.Errorf("object-storage secrets runtime mtls: %w", err)
-	}
-	client, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(httpClient))
-	if err != nil {
-		return nil, fmt.Errorf("object-storage secrets runtime client: %w", err)
-	}
-	return client, nil
-}
-
 func newPostgres(ctx context.Context, pgDSN string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
@@ -431,34 +408,6 @@ func newClickHouseConn(ctx context.Context, spiffeSource *workloadapi.X509Source
 		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	return chConn, nil
-}
-
-func fetchObjectStorageRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
-	if client == nil {
-		return nil, fmt.Errorf("object-storage runtime secret client is required")
-	}
-	if len(secretNames) == 0 {
-		return map[string]string{}, nil
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	values := make(map[string]string, len(secretNames))
-	for _, secretName := range secretNames {
-		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
-		if err != nil {
-			return nil, fmt.Errorf("resolve object-storage runtime secret %s: %w", secretName, err)
-		}
-		if resp.JSON200 == nil {
-			return nil, fmt.Errorf("resolve object-storage runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
-		}
-		values[secretName] = resp.JSON200.Value
-	}
-	for _, name := range secretNames {
-		if strings.TrimSpace(values[name]) == "" {
-			return nil, fmt.Errorf("object-storage runtime secret %s is missing", name)
-		}
-	}
-	return values, nil
 }
 
 func splitEnvList(raw string) []string {
