@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "bep",
+    srcs = ["bep.go"],
+    importpath = "github.com/verself/deployment-tooling/internal/bep",
+    visibility = ["//src/deployment-tooling:__subpackages__"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":bep",
+    visibility = ["//src/deployment-tooling:__subpackages__"],
+)
