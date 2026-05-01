@@ -22,7 +22,7 @@ import (
 const (
 	defaultNomadAddr = "http://127.0.0.1:4646"
 	defaultTimeout   = 2 * time.Minute
-	pollInterval     = 2 * time.Second
+	pollInterval     = 1 * time.Second
 	// failFastDeadAllocs aborts the await-healthy loop once at least
 	// this many distinct allocs for the deployment have entered a
 	// terminal failed state. The default rolling-restart contract
