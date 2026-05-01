@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tooling/internal/bazelbuild"
+	"github.com/verself/deployment-tooling/internal/caddyupstreams"
 	"github.com/verself/deployment-tooling/internal/garage"
 	"github.com/verself/deployment-tooling/internal/nomadclient"
 	"github.com/verself/deployment-tooling/internal/render"
@@ -191,6 +192,14 @@ func submitAll(ctx context.Context, rt *runtime.Runtime, jobsDir string, entries
 		if err := submitOneEntry(ctx, rt.Tracer, client, jobsDir, entry); err != nil {
 			return fmt.Errorf("%s: %w", entry.JobID, err)
 		}
+	}
+	// Once every alloc reports healthy, the Nomad service catalog
+	// holds the live <jobid>-<endpoint> → 127.0.0.1:port map. Caddy
+	// reads those addresses via /etc/caddy/upstreams.env (env-file
+	// substituted at parse time). Reconcile rewrites the file and
+	// restarts Caddy so its proxy upstreams reflect the new alloc.
+	if err := caddyupstreams.Reconcile(ctx, client, rt.SSH); err != nil {
+		return fmt.Errorf("reconcile caddy upstreams: %w", err)
 	}
 	return nil
 }

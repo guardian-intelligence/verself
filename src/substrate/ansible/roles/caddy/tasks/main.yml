@@ -280,6 +280,34 @@
   no_log: true
   notify: restart caddy
 
+# /etc/caddy/upstreams.env carries one VERSELF_UPSTREAM_<COMP>_<EP> per
+# Nomad-supervised Caddy upstream. The deploy controller rewrites it
+# whenever a Nomad alloc moves; Caddy expands `{$VERSELF_UPSTREAM_*}`
+# in the Caddyfile from this env at parse time. The placeholder file
+# lets Caddy parse-and-start on a node that hasn't seen its first
+# Nomad deploy yet — every upstream resolves to 127.0.0.1:1, which
+# returns 502 until the controller writes real allocations.
+- name: Initialise Caddy upstreams env file (placeholders)
+  ansible.builtin.copy:
+    content: |
+      VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_COMPANY_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_GOVERNANCE_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_IDENTITY_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_MAILBOX_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_NOTIFICATIONS_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_PROFILE_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_PROJECTS_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_SECRETS_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP=127.0.0.1:1
+      VERSELF_UPSTREAM_VERSELF_WEB_HTTP=127.0.0.1:1
+    dest: /etc/caddy/upstreams.env
+    owner: root
+    group: caddy
+    mode: "0640"
+    force: false  # never overwrite the controller-written file
+
 - name: Deploy Caddy systemd unit
   ansible.builtin.copy:
     content: |
@@ -298,6 +326,7 @@
       Environment=XDG_CONFIG_HOME=/etc/caddy
       Environment=XDG_DATA_HOME=/var/lib/caddy
       Environment=XDG_CACHE_HOME=/var/cache/caddy
+      EnvironmentFile=/etc/caddy/upstreams.env
       ExecStart={{ verself_bin }}/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
       ExecReload={{ verself_bin }}/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
       Restart=on-failure
