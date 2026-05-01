@@ -10,7 +10,7 @@
 #   5. Writes and encrypts ansible/group_vars/all/secrets.sops.yml
 #
 # Usage:
-#   cd ansible && ansible-playbook playbooks/setup-sops.yml
+#   aspect dev sops-init
 
 - name: Bootstrap SOPS encryption
   hosts: localhost
@@ -18,7 +18,7 @@
   gather_facts: false
 
   vars:
-    repo_root: "{{ playbook_dir }}/../.."
+    repo_root: "{{ playbook_dir }}/../../../.."
     secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
     age_key_file: >-
       {{ lookup('env', 'SOPS_AGE_KEY_FILE')
@@ -82,7 +82,7 @@
       ansible.builtin.copy:
         content: |
           # sops configuration for verself secrets.
-          # The age public key is written by: ansible-playbook playbooks/setup-sops.yml
+          # The age public key is written by: aspect dev sops-init
           #
           # Encrypted files (*.sops.yml) are safe to commit.
           # The age private key (~/.config/sops/age/keys.txt) is NOT.
@@ -177,5 +177,5 @@
             Age key:      {{ age_key_file }}
 
             Next steps:
-              Edit secrets:  sops ansible/group_vars/all/secrets.sops.yml
+              Edit secrets:  sops src/substrate/ansible/group_vars/all/secrets.sops.yml
               Deploy:        aspect deploy --site=prod

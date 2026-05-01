@@ -113,6 +113,6 @@ SQL
 # not in scope when this script runs (recording happens before/after the
 # agent's lifetime). The row carries the same dimensions.
 
-cd "${repo_root}/src/platform"
+cd "${repo_root}/src/substrate"
 INVENTORY="ansible/inventory/${site}.ini" timeout 5s ./scripts/clickhouse.sh \
   --database verself --query "${query}" >/dev/null

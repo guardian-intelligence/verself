@@ -13,18 +13,16 @@ which open the SSH tunnel themselves. There are intentionally no per-service
 shortcuts; `aspect db pg query --db=billing --query=...` covers them.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "require_arg", "ws_path")
-
-_PLATFORM = "src/platform"
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "require_arg", "ws_path")
 
 def _pg_list_impl(ctx):
     if inventory_check(ctx) != 0:
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/pg.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/pg.sh"),
         ["--list"],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "pg.sh --list",
     )
 
@@ -35,9 +33,9 @@ def _pg_shell_impl(ctx):
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/pg.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/pg.sh"),
         [ctx.args.db],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "pg.sh " + ctx.args.db,
     )
 
@@ -50,9 +48,9 @@ def _pg_query_impl(ctx):
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/pg.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/pg.sh"),
         [ctx.args.db, "--query", ctx.args.query],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "pg.sh " + ctx.args.db + " --query",
     )
 
@@ -67,9 +65,9 @@ def _ch_query_impl(ctx):
     cli_args = cli_args + ["--query", ctx.args.query]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/clickhouse.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/clickhouse.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "clickhouse.sh --query",
     )
 
@@ -79,9 +77,9 @@ def _ch_schemas_impl(ctx):
     q = "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('verself', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/clickhouse.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/clickhouse.sh"),
         ["--query", q],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "clickhouse.sh schemas",
     )
 
@@ -90,9 +88,9 @@ def _tb_shell_impl(ctx):
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/tigerbeetle.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/tigerbeetle.sh"),
         [],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "tigerbeetle.sh",
     )
 
@@ -103,9 +101,9 @@ def _tb_command_impl(ctx):
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/tigerbeetle.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/tigerbeetle.sh"),
         ["--command", ctx.args.command],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "tigerbeetle.sh --command",
     )
 

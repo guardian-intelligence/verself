@@ -34,7 +34,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SITE = os.environ.get("VERSELF_SITE", "prod")
 ENDPOINTS_YAML = REPO_ROOT / f".cache/render/{SITE}/inventory/group_vars/all/generated/endpoints.yml"
-INVENTORY = REPO_ROOT / f"src/platform/ansible/inventory/{SITE}.ini"
+INVENTORY = REPO_ROOT / f"src/substrate/ansible/inventory/{SITE}.ini"
 
 # Ports in these ranges are "ours" — an undeclared listener here is drift.
 # Ports outside these ranges (e.g. 22 sshd, 53 systemd-resolved) are noise
@@ -459,8 +459,7 @@ def main(argv: list[str]) -> int:
         die(f"{ENDPOINTS_YAML} not found", code=2)
     if not INVENTORY.is_file():
         die(
-            f"{INVENTORY} not found. Run: cd src/platform/ansible && "
-            "ansible-playbook playbooks/provision.yml",
+            f"{INVENTORY} not found. Run: aspect provision apply",
             code=2,
         )
 

@@ -5,14 +5,14 @@ verification_context_init() {
 
   VERIFICATION_SCRIPT_DIR="$(cd "$(dirname "${caller_path}")" && pwd)"
   VERIFICATION_REPO_ROOT="$(cd "${VERIFICATION_SCRIPT_DIR}/../../.." && pwd)"
-  VERIFICATION_PLATFORM_ROOT="${VERIFICATION_REPO_ROOT}/src/platform"
+  VERIFICATION_SUBSTRATE_ROOT="${VERIFICATION_REPO_ROOT}/src/substrate"
   VERIFICATION_SMOKE_ARTIFACT_ROOT="${VERIFICATION_SMOKE_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/smoke-artifacts}"
   VERIFICATION_DEPLOY_ARTIFACT_ROOT="${VERIFICATION_DEPLOY_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/deploy}"
 
   # The cache is the per-site rendered deploy surface — generated group_vars
   # plus a staged hosts.ini. Source the helper so canaries see the same
   # inventory + generated vars layout that `aspect deploy` consumes.
-  # shellcheck source=src/platform/scripts/lib/site-cache.sh
+  # shellcheck source=src/substrate/scripts/lib/site-cache.sh
   source "${VERIFICATION_SCRIPT_DIR}/lib/site-cache.sh"
   site_cache_init
 
@@ -20,7 +20,7 @@ verification_context_init() {
   VERIFICATION_CACHE_DIR="${VERSELF_RENDER_CACHE_DIR}"
   VERIFICATION_INVENTORY_DIR="${VERSELF_ANSIBLE_INVENTORY}"
   VERIFICATION_INVENTORY="${VERIFICATION_INVENTORY_DIR}/hosts.ini"
-  VERIFICATION_VARS_FILE="${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/main.yml"
+  VERIFICATION_VARS_FILE="${VERIFICATION_SUBSTRATE_ROOT}/ansible/group_vars/all/main.yml"
   VERIFICATION_GENERATED_VARS_FILE="${VERIFICATION_INVENTORY_DIR}/group_vars/all/generated/ops.yml"
   VERIFICATION_DOMAIN="$(
     awk '
@@ -129,7 +129,7 @@ verification_collect_window_evidence() {
   mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database default \
       --param_window_start="${window_start}" \
@@ -150,7 +150,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/otel_logs.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database default \
       --param_window_start="${window_start}" \
@@ -174,7 +174,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/otel_traces.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database verself \
       --param_window_start="${window_start}" \
@@ -202,7 +202,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/billing_events.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database verself \
       --param_window_start="${window_start}" \
@@ -239,7 +239,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/job_events.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database verself \
       --param_window_start="${window_start}" \
@@ -268,7 +268,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/job_logs.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database verself \
       --param_window_start="${window_start}" \
@@ -298,7 +298,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/metering.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/clickhouse.sh \
       --database verself \
       --param_window_start="${window_start}" \
@@ -325,7 +325,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/clickhouse/vm_lease_evidence.tsv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/pg.sh "${billing_db}" --query "
       COPY (
         SELECT
@@ -348,7 +348,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/postgres/billing_cycles.csv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/pg.sh "${billing_db}" --query "
       COPY (
         SELECT
@@ -374,7 +374,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/postgres/billing_finalizations.csv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/pg.sh "${billing_db}" --query "
       COPY (
         SELECT
@@ -399,7 +399,7 @@ verification_collect_window_evidence() {
   ) >"${output_dir}/postgres/billing_documents.csv"
 
   (
-    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    cd "${VERIFICATION_SUBSTRATE_ROOT}" || return
     ./scripts/pg.sh "${billing_db}" --query "
       COPY (
         SELECT

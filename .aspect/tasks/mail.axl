@@ -6,6 +6,7 @@ not preserved; use `aspect mail send --to=ceo` / `--to=agents`.
 
 load(
     ".aspect/lib/helpers.axl",
+    "SUBSTRATE_DIR",
     "checked_spawn",
     "inventory_check",
     "require_arg",
@@ -13,7 +14,6 @@ load(
     "ws_path",
 )
 
-_PLATFORM = "src/platform"
 _MS = "src/mailbox-service"
 _SITE = "prod"
 
@@ -72,17 +72,17 @@ def _send_impl(ctx):
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/mail-send.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/mail-send.sh"),
         ["-t", ctx.args.to, "-s", ctx.args.subject, "-b", ctx.args.body],
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "mail-send.sh",
     )
 
 def _passwords_impl(ctx):
     if inventory_check(ctx, _SITE) != 0:
         return 1
-    main_yml = ws_path(ctx, _PLATFORM, "ansible/group_vars/all/main.yml")
-    secrets = ws_path(ctx, _PLATFORM, "ansible/group_vars/all/secrets.sops.yml")
+    main_yml = ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/main.yml")
+    secrets = ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/secrets.sops.yml")
     domain_r = (ctx.std.process.command("python3")
                 .args([
                     "-c",

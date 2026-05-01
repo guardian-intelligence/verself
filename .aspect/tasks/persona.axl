@@ -5,9 +5,8 @@ There are intentionally no per-persona shortcut tasks; pass the persona name
 as the positional argument (`aspect persona assume platform-admin`).
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
 
-_PLATFORM = "src/platform"
 _VALID_PERSONAS = ["platform-admin", "acme-admin", "acme-member"]
 
 def _assume_impl(ctx):
@@ -28,9 +27,9 @@ def _assume_impl(ctx):
         cli_args.append("--print")
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/assume-persona.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/assume-persona.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "assume-persona.sh " + name,
     )
 
@@ -53,9 +52,9 @@ def _user_state_impl(ctx):
     ]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/set-user-state.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/set-user-state.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "set-user-state.sh",
     )
 

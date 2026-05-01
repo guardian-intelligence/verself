@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Generate Ansible inventory from OpenTofu outputs.
-# Usage: ./scripts/generate-inventory.sh [terraform_dir]
+# Generate the substrate Ansible inventory from OpenTofu outputs.
 set -euo pipefail
 
-TF_DIR="${1:-terraform}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROVISION_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${PROVISION_ROOT}/../.." && pwd)"
+TF_DIR="${1:-${PROVISION_ROOT}/terraform}"
 SITE="${VERSELF_SITE:-prod}"
-INVENTORY="ansible/inventory/${SITE}.ini"
+INVENTORY="${REPO_ROOT}/src/substrate/ansible/inventory/${SITE}.ini"
 
 # Read outputs as JSON
 worker_ips=$(cd "$TF_DIR" && tofu output -json worker_ips 2>/dev/null | jq -r '.[]' 2>/dev/null) || true

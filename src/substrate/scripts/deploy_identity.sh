@@ -14,7 +14,7 @@
 # rest is derived from them.
 #
 # Usage:
-#   source "${VERSELF_PLATFORM}/scripts/deploy_identity.sh"
+#   source "${VERSELF_SUBSTRATE}/scripts/deploy_identity.sh"
 #   ansible-playbook ...
 
 set -eu

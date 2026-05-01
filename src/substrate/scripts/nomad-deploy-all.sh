@@ -6,7 +6,7 @@ usage() {
     cat >&2 <<'EOF'
 usage: nomad-deploy-all.sh --site=<site> [--host=<ssh-host>] [--publish-only]
 
-  --site=<site>     Site inventory under src/platform/ansible/inventory/.
+  --site=<site>     Site inventory under src/substrate/ansible/inventory/.
   --host=<alias>    SSH host alias. Defaults to the first inventory entry
                     in the [infra] group for the site.
   --publish-only    Publish Garage artifacts and exit before Nomad submit.
@@ -28,7 +28,7 @@ for arg in "$@"; do
 done
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-INVENTORY="${REPO_ROOT}/src/platform/ansible/inventory/${SITE}.ini"
+INVENTORY="${REPO_ROOT}/src/substrate/ansible/inventory/${SITE}.ini"
 SSH_TUNNEL_OPTS=(
     -o BatchMode=yes
     -o ExitOnForwardFailure=yes

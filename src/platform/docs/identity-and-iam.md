@@ -286,7 +286,7 @@ This rule is enforced at the edge by a Content-Security-Policy header with
 `connect-src 'self'` applied to every customer-facing frontend domain
 (`verself_domain`, `stalwart_domain`). The policy lives
 in the `frontend_security_headers` snippet in
-`src/platform/ansible/roles/caddy/templates/Caddyfile.j2`. Because `connect-src`
+`src/substrate/ansible/roles/caddy/templates/Caddyfile.j2`. Because `connect-src`
 is restricted to the frontend's own origin, the browser cannot issue `fetch`,
 `XHR`, `WebSocket`, or `EventSource` requests to `billing.<domain>`,
 `auth.<domain>`, or any other Go service origin — every API round trip must
@@ -585,7 +585,7 @@ Local code anchors:
   checks, idempotency and rate-limit hooks.
 - `src/auth-middleware/workload`: SPIFFE Workload API source, mTLS peer
   authorization, and workload identity trace spans.
-- `src/platform/ansible/playbooks/tasks/upsert_role_assignment.yml`: Zitadel
+- `src/substrate/ansible/playbooks/tasks/upsert_role_assignment.yml`: Zitadel
   Authorization service create/update calls for project role assignments.
 
 Zitadel documents the Management Console at `/ui/console`, including its role as

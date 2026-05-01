@@ -1,0 +1,321 @@
+"""aspect substrate <action> — host/substrate convergence entry points.
+
+Substrate owns machine convergence: host packages, trust roots, stateful
+daemons, operator daemons, and per-component prerequisites. Nomad owns product
+application rollout.
+"""
+
+load(
+    ".aspect/lib/helpers.axl",
+    "DEFAULT_SITE",
+    "SUBSTRATE_DIR",
+    "checked_spawn",
+    "derive_deploy_env",
+    "git_head",
+    "render_site",
+    "site_cache_inventory",
+    "ws_path",
+)
+
+def _merge_env(base, *overrides):
+    out = {}
+    if base != None:
+        for k, v in base.items():
+            out[k] = v
+    for override in overrides:
+        if override == None:
+            continue
+        for k, v in override.items():
+            out[k] = v
+    return out
+
+def _run_ansible(ctx, site, env, playbook, *extra_args):
+    args_list = [playbook] + list(extra_args)
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/ansible-with-otel.sh"),
+        args_list,
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
+        env = _merge_env(
+            env,
+            {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
+        ),
+        label = "ansible-with-otel " + " ".join(args_list),
+    )
+
+def _compute_substrate_digest(ctx, site):
+    target = "//src/substrate:" + site + "_substrate_digest"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    query = (ctx.std.process.command("bazelisk")
+         .args(["cquery", "--output=files", target])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if query.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: substrate digest cquery failed:\n" + query.stderr)
+        return ""
+    out_path = query.stdout.strip()
+    if "\n" in out_path:
+        out_path = out_path.split("\n")[-1]
+    if out_path == "":
+        ctx.std.io.stderr.write("ERROR: substrate digest cquery returned no output\n")
+        return ""
+    digest_file = out_path
+    if not digest_file.startswith("/"):
+        digest_file = ws_path(ctx, out_path)
+    read = (ctx.std.process.command("cat")
+         .args([digest_file])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if read.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: reading substrate digest failed:\n" + read.stderr)
+        return ""
+    digest = read.stdout.strip()
+    if len(digest) != 64:
+        ctx.std.io.stderr.write("ERROR: substrate digest target produced invalid digest: " + digest + "\n")
+        return ""
+    return digest
+
+def _substrate_status(ctx, site, digest):
+    inventory = ws_path(ctx, site_cache_inventory(site))
+    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/substrate-status.sh"))
+         .args(["--site=" + site, "--digest=" + digest, "--inventory=" + inventory])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.stdout != "":
+        ctx.std.io.stderr.write(r.stdout)
+    if r.stderr != "":
+        ctx.std.io.stderr.write(r.stderr)
+    return r.status.code
+
+def _record_substrate_event(ctx, site, digest, event_kind, env, error_message = ""):
+    args_list = [
+        "--site=" + site,
+        "--digest=" + digest,
+        "--mode=always",
+        "--event-kind=" + event_kind,
+        "--inventory=" + ws_path(ctx, site_cache_inventory(site)),
+    ]
+    if error_message != "":
+        args_list.append("--error-message=" + error_message)
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/record-substrate-event.sh"),
+        args_list,
+        env = env,
+        label = "record-substrate-event " + event_kind,
+    )
+
+def _converge_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    digest = _compute_substrate_digest(ctx, site)
+    if digest == "":
+        return 1
+    sha = git_head(ctx)
+    if sha == "":
+        ctx.std.io.stderr.write("ERROR: could not resolve git HEAD\n")
+        return 1
+    env = derive_deploy_env(ctx, site = site, sha = sha, scope = "substrate")
+    if env == None:
+        return 1
+    _ = _record_substrate_event(ctx, site, digest, "started", env)
+    rc = _run_ansible(ctx, site, env, "playbooks/box.yml")
+    if rc != 0:
+        _ = _record_substrate_event(
+            ctx,
+            site,
+            digest,
+            "failed",
+            env,
+            error_message = "box playbook exited " + str(rc),
+        )
+        return rc
+    record_rc = _record_substrate_event(ctx, site, digest, "succeeded", env)
+    if record_rc != 0:
+        ctx.std.io.stderr.write("ERROR: substrate convergence succeeded but evidence recording failed\n")
+        return record_rc
+    return 0
+
+def _verify_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    digest = _compute_substrate_digest(ctx, site)
+    if digest == "":
+        return 1
+    return _substrate_status(ctx, site, digest)
+
+def _security_patch_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    return _run_ansible(ctx, site, {}, "playbooks/security-patch.yml")
+
+def _guest_rootfs_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    return _run_ansible(ctx, site, {}, "playbooks/guest-rootfs.yml")
+
+def _nomad_apps(ctx, site):
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
+        ["--site=" + site],
+        cwd = ws_path(ctx),
+        label = "nomad-deploy-all --site=" + site,
+    )
+
+def _edit_secrets_impl(ctx):
+    return checked_spawn(
+        ctx,
+        "sops",
+        [ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/secrets.sops.yml")],
+        label = "sops edit substrate secrets",
+    )
+
+def _wipe_server_impl(ctx):
+    if not ctx.args.confirm:
+        ctx.std.io.stderr.write("ERROR: --confirm is required to wipe-server\n")
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/wipe-server.sh"),
+        [],
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
+        label = "wipe-server.sh",
+    )
+
+def _reset_identity_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    rc = _run_ansible(ctx, site, {}, "playbooks/identity-reset.yml")
+    if rc != 0:
+        return rc
+    return _nomad_apps(ctx, site)
+
+def _reset_billing_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    rc = _run_ansible(ctx, site, {}, "playbooks/billing-reset.yml")
+    if rc != 0:
+        return rc
+    return _nomad_apps(ctx, site)
+
+def _reset_verification_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+    rc = _run_ansible(ctx, site, {}, "playbooks/verification-reset.yml")
+    if rc != 0:
+        return rc
+    rc = _run_ansible(
+        ctx,
+        site,
+        {},
+        "playbooks/box.yml",
+        "-e", "temporal_force_schema_reset=true",
+        "-e", "clickhouse_force_schema_reset=true",
+    )
+    if rc != 0:
+        return rc
+    return _nomad_apps(ctx, site)
+
+converge = task(
+    implementation = _converge_impl,
+    name = "converge",
+    group = ["substrate"],
+    summary = "Render, converge host/substrate state, and record substrate digest evidence.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+verify = task(
+    implementation = _verify_impl,
+    name = "verify",
+    group = ["substrate"],
+    summary = "Verify ClickHouse evidence for the current substrate digest.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+security_patch = task(
+    implementation = _security_patch_impl,
+    name = "security-patch",
+    group = ["substrate"],
+    summary = "Apply OS security updates through the substrate runner.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+guest_rootfs = task(
+    implementation = _guest_rootfs_impl,
+    name = "guest-rootfs",
+    group = ["substrate"],
+    summary = "Build the Firecracker substrate rootfs and stage guest images.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+edit_secrets = task(
+    implementation = _edit_secrets_impl,
+    name = "edit-secrets",
+    group = ["substrate"],
+    summary = "Open encrypted substrate secrets in $EDITOR via sops.",
+)
+
+wipe_server = task(
+    implementation = _wipe_server_impl,
+    name = "wipe-server",
+    group = ["substrate"],
+    summary = "Wipe all verself state from the provisioned server (requires --confirm).",
+    args = {
+        "confirm": args.boolean(default = False, description = "Required gate; pass --confirm to proceed."),
+    },
+)
+
+reset_identity = task(
+    implementation = _reset_identity_impl,
+    name = "identity",
+    group = ["substrate", "reset"],
+    summary = "Wipe identity-service PostgreSQL state and restart dependents.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+reset_billing = task(
+    implementation = _reset_billing_impl,
+    name = "billing",
+    group = ["substrate", "reset"],
+    summary = "Wipe billing state and restart billing callers.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+reset_verification = task(
+    implementation = _reset_verification_impl,
+    name = "verification",
+    group = ["substrate", "reset"],
+    summary = "Wipe verification state and redeploy with schema reset.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)

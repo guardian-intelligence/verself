@@ -5,9 +5,7 @@ ClickHouse traces, metrics, and logs. Flags map 1:1 to the script's --what,
 --signal, --service, etc.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
-
-_PLATFORM = "src/platform"
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
 
 # Each entry maps an AXL arg name (snake_case) to the script's flag (kebab).
 # Emit only flags whose value is non-empty.
@@ -44,9 +42,9 @@ def _impl(ctx):
         cli_args.append("--errors")
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/observe.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/observe.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "observe.sh",
     )
 

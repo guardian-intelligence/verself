@@ -17,9 +17,7 @@ The trusted suffix set lives in
 loudly. Pair with `aspect render --site=<site>` when in doubt.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
-
-_PLATFORM = "src/platform"
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
 
 def _impl(ctx):
     if inventory_check(ctx) != 0:
@@ -33,9 +31,9 @@ def _impl(ctx):
         cli_args = cli_args + ["--format", ctx.args.format]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/detect-intrusions.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/detect-intrusions.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "detect-intrusions.sh",
     )
 

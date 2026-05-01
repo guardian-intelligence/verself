@@ -29,15 +29,37 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   - `verself-web` — the unified product app on the `verself_domain` apex. Owns the authenticated browser console (sandbox, billing, identity, profile, notifications, mail, source, future product workflows behind TanStack Start server functions), the public docs at `/docs` and `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog).
 - `packages/` — shared UI, brand marks, generated OpenAPI clients, Valibot validators.
 
+## Provision (`src/provision/`)
+
+- `terraform/` — OpenTofu bare-metal provisioning for Latitude.sh.
+- `ansible/` — local controller playbooks that apply/destroy the OpenTofu
+  state and write substrate inventory.
+- `scripts/` — provisioning helpers such as inventory generation.
+
+Provision owns physical machine allocation and inventory production. It does
+not converge host packages or deploy services.
+
+## Substrate (`src/substrate/`)
+
+- `ansible/` — current private runner for host, daemon, and per-component
+  prerequisite convergence.
+- `migrations/clickhouse/` — substrate-owned ClickHouse schema.
+- `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
+  persona, billing, mail, database access, observability, and substrate
+  evidence.
+- `controller-agent/` — controller-side OTLP buffer used while running
+  substrate convergence.
+
+Per-deploy generated files materialise under `.cache/render/<site>/` when
+`aspect render --site=<site>` runs. The deploy path consumes rendered
+inventory, generated group_vars projections, host firewall files, and rendered
+Nomad jobs from that cache.
+
 ## Platform (`src/platform/`)
 
-- `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
-- Per-deploy generated files (host firewall fragments,
-  group_vars projections) materialise under `.cache/render/<site>/` when
-  `aspect render --site=<site>` runs; roles copy from that cache rather
-  than re-rendering topology through Jinja.
-- `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
-- `scripts/` — founder/agent shell wrappers invoked by AXL tasks (deploy, persona, billing, mail, db, etc.).
+`src/platform/` contains platform policy and architecture documents that have
+not moved to service-local homes yet. Host convergence, OpenTofu provisioning,
+and deploy wrappers live in `src/substrate/`, `src/provision/`, and `.aspect/`.
 
 The Bazel-owned third-party server-tool package definitions, including
 `//src/cue-renderer/binaries:server_tools.tar.zst`, live under

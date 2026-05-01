@@ -11,7 +11,7 @@
 #   VERSELF_ANSIBLE_HOSTS_INI   — absolute path to <cache>/inventory/hosts.ini
 #
 # The render itself is delegated to `aspect render` so the bash callers,
-# `aspect deploy`, and `aspect platform <task>` all materialise the cache
+# `aspect deploy` and `aspect substrate <task>` materialise the cache
 # the same way. Set VERSELF_SKIP_RENDER=1 to reuse a stale cache (debug
 # only — secrets and hand-written group_vars may be missing if the
 # previous render predates a SOPS or playbook edit).

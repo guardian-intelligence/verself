@@ -2,7 +2,7 @@
 # Destroy all bare metal infrastructure and remove generated inventory.
 #
 # Usage:
-#   cd ansible && ansible-playbook playbooks/deprovision.yml
+#   aspect provision destroy --confirm
 
 - name: Destroy bare metal infrastructure
   hosts: localhost
@@ -10,14 +10,14 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
-    sops_secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
-    deprovision_inventory_file: "{{ playbook_dir }}/../inventory/{{ verself_site }}.ini"
+    sops_secrets_file: "{{ playbook_dir }}/../../../substrate/ansible/group_vars/all/secrets.sops.yml"
+    deprovision_inventory_file: "{{ playbook_dir }}/../../../substrate/ansible/inventory/{{ verself_site }}.ini"
   tasks:
     - name: Require verself_site to be set
       ansible.builtin.assert:
         that: verself_site | default('', true) | length > 0
         fail_msg: >-
-          verself_site is required. Run: aspect platform deprovision (which passes -e verself_site=<site>).
+          verself_site is required. Run: aspect provision destroy --confirm (which passes -e verself_site=<site>).
 
     - name: Extract Latitude.sh auth token from SOPS
       ansible.builtin.command:

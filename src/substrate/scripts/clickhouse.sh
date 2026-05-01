@@ -13,7 +13,7 @@ if [[ -n "${SSH_OPTS:-}" ]]; then
 fi
 
 if [[ ! -f "$inventory" ]]; then
-  echo "ERROR: $inventory not found. Run 'cd ansible && ansible-playbook playbooks/provision.yml' first." >&2
+  echo "ERROR: $inventory not found. Run 'aspect provision apply' first." >&2
   exit 1
 fi
 

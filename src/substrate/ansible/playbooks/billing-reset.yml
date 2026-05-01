@@ -7,5 +7,5 @@
   vars:
     wipe_pg_db_name: billing
 
-- name: Re-apply platform substrate after billing reset
+- name: Re-apply substrate after billing reset
   import_playbook: box.yml

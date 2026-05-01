@@ -91,7 +91,7 @@ SVID TTL and fail-closed startup semantics from
 - Consumer lag per subject pattern.
 
 Grafana receives one dashboard under
-`src/platform/ansible/roles/grafana/dashboards/nats.json`.
+`src/substrate/ansible/roles/grafana/dashboards/nats.json`.
 
 ## Live verification
 

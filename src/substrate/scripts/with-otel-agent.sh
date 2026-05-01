@@ -39,7 +39,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if ! command -v otelcol-contrib >/dev/null 2>&1; then
-  echo "ERROR: otelcol-contrib not on PATH. Run: aspect platform setup-dev" >&2
+  echo "ERROR: otelcol-contrib not on PATH. Run: aspect dev install" >&2
   exit 1
 fi
 
@@ -189,7 +189,7 @@ export VERSELF_OTLP_ENDPOINT="127.0.0.1:14317"
 # is refreshed to point at the local agent. Re-sourcing inside this
 # script is the standard pattern when the parent (aspect deploy) already
 # exported the identity env.
-# shellcheck source=src/platform/scripts/deploy_identity.sh
+# shellcheck source=src/substrate/scripts/deploy_identity.sh
 source "${SCRIPT_DIR}/deploy_identity.sh"
 
 # Run the wrapped command as a child so the EXIT trap (which drains the

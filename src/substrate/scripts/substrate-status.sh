@@ -27,9 +27,9 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
-platform_root="${repo_root}/src/platform"
+substrate_root="${repo_root}/src/substrate"
 if [[ -z "${inventory}" ]]; then
-  inventory="${platform_root}/ansible/inventory/${site}.ini"
+  inventory="${substrate_root}/ansible/inventory/${site}.ini"
 fi
 if [[ -d "${inventory}" ]]; then
   inventory="${inventory}/hosts.ini"
@@ -111,7 +111,7 @@ SQL
 
 set +e
 result="$(
-  cd "${platform_root}" &&
+  cd "${substrate_root}" &&
     INVENTORY="${inventory}" timeout 5s ./scripts/clickhouse.sh --database verself --query "${query}"
 )"
 rc=$?

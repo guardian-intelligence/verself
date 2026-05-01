@@ -46,7 +46,7 @@
         msg: >-
           Guest images not staged on {{ inventory_hostname }}. The firecracker role
           requires vmlinux and substrate.ext4 at /var/lib/verself/guest-images/.
-          Run: aspect platform guest-rootfs
+          Run: aspect substrate guest-rootfs
       when: not preflight_guest_kernel.stat.exists or not preflight_substrate.stat.exists
 
 - name: Configure common host profile

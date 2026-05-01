@@ -80,7 +80,7 @@ func cmdOnboard(args []string) error {
 	}
 
 	// 1. Local keypairs. ssh-keygen + wg are operator-side dev tools
-	//    laid down by `aspect platform setup-dev`. Skipped when wg-ops
+	//    laid down by `aspect dev install`. Skipped when wg-ops
 	//    is externally managed (no per-user wg keypair to mint).
 	if err := ensureSSHKeypair(sshKeyPath, *device); err != nil {
 		return err
@@ -433,7 +433,7 @@ func ensureVaultLogin(domain string, anchors fetchedAnchors, force bool) (string
 		// types the code. No localhost:8250 callback, no SSH tunnel
 		// for headless controllers, no xdg-open dependency. Requires
 		// the Zitadel OIDC app to carry OIDC_GRANT_TYPE_DEVICE_CODE
-		// (configured in src/platform/ansible/roles/openbao/tasks/
+		// (configured in src/substrate/ansible/roles/openbao/tasks/
 		// ssh-ca.yml).
 		"callbackmode=device",
 		// skip_browser=true is harmless under callbackmode=device but

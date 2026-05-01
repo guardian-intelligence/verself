@@ -15,7 +15,7 @@ with `--output-dir=.cache/render/<site>/`, producing:
 - `inventory/group_vars/all/generated/*.yml` — Ansible group_vars
   projections (catalog, ops, postgres, spire, endpoints, routes, …).
 - `inventory/group_vars/all/main.yml`, `secrets.sops.yml`, `spire.yml`,
-  `inventory/hosts.ini` — staged from the authored `src/platform/ansible/`
+  `inventory/hosts.ini` — staged from the authored `src/substrate/ansible/`
   tree by the render task so Ansible's host_group_vars + community.sops
   plugins find both the generated and authored vars from one
   `inventory_dir`.
