@@ -29,14 +29,6 @@ func cmdOnboard(args []string) error {
 	if !validDeviceName(*device) {
 		return fmt.Errorf("invalid --device=%q: must match ^[a-z][a-z0-9-]*$", *device)
 	}
-	if *wgAddress == "" {
-		return errors.New(
-			"--wg-address is required. Pick an unused IPv4 in the wg-ops /24 (operators: 10.66.66.2..99; workload-pool slots: 10.66.66.100..163). " +
-				"Existing operator addresses live in src/cue-renderer/instances/prod/operators.cue.")
-	}
-	if err := validateOperatorWGAddress(*wgAddress); err != nil {
-		return err
-	}
 
 	cfg, err := operatorConfigDir()
 	if err != nil {
@@ -56,17 +48,46 @@ func cmdOnboard(args []string) error {
 	wgKeyPath := filepath.Join(wgDir, *device)
 	wgPubPath := wgKeyPath + ".pub"
 
+	// Migration adoption: a controller running this binary for the
+	// first time may already have a working legacy SSH key + a
+	// system-managed wg-ops interface (the pre-cutover ssh-cert.sh
+	// world). Adopt rather than regenerate, otherwise the new wg
+	// pubkey would not match the one already registered in CUE and
+	// the cert-signing call (which goes over wg-ops) would never
+	// reach OpenBao.
+	adopted, err := adoptLegacySSHKey(sshKeyPath)
+	if err != nil {
+		return fmt.Errorf("adopt legacy ssh key: %w", err)
+	}
+	if adopted {
+		fmt.Fprintf(os.Stderr, "adopted legacy SSH keypair from ~/.ssh/id_verself*; new canonical path: %s\n", sshKeyPath)
+	}
+	existingWGAddress, externallyManagedWG := detectExistingWGOps()
+	if *wgAddress == "" {
+		if externallyManagedWG {
+			*wgAddress = existingWGAddress
+			fmt.Fprintf(os.Stderr, "adopted existing wg-ops address %s (system-managed interface; not regenerating wg keypair)\n", existingWGAddress)
+		} else {
+			return errors.New(
+				"--wg-address is required for fresh onboarding. Pick an unused IPv4 in the wg-ops /24 " +
+					"(operators: 10.66.66.2..99; workload-pool slots: 10.66.66.100..163). " +
+					"Existing operator addresses live in src/cue-renderer/instances/prod/operators.cue.")
+		}
+	}
+	if err := validateOperatorWGAddress(*wgAddress); err != nil {
+		return err
+	}
+
 	// 1. Local keypairs. ssh-keygen + wg are operator-side dev tools
-	//    laid down by `aspect platform setup-dev`.
+	//    laid down by `aspect platform setup-dev`. Skipped when the
+	//    adoption step above already populated the canonical paths.
 	if err := ensureSSHKeypair(sshKeyPath, *device); err != nil {
 		return err
 	}
-	if err := ensureWGKeypair(wgKeyPath, wgPubPath); err != nil {
-		return err
-	}
-	wgPub, err := os.ReadFile(wgPubPath)
-	if err != nil {
-		return err
+	if !externallyManagedWG {
+		if err := ensureWGKeypair(wgKeyPath, wgPubPath); err != nil {
+			return err
+		}
 	}
 	sshPub, err := os.ReadFile(sshPubPath)
 	if err != nil {
@@ -81,25 +102,34 @@ func cmdOnboard(args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "wg pubkey for %s: %s\n", *device, strings.TrimSpace(string(wgPub)))
 	fmt.Fprintf(os.Stderr, "ssh pubkey for %s: %s\n", *device, strings.TrimSpace(string(sshPub)))
 	fmt.Fprintf(os.Stderr, "wg-ops endpoint: %s:%d (server pubkey %s)\n",
 		anchors.Wireguard.EndpointHost, anchors.Wireguard.EndpointPort, anchors.Wireguard.ServerPubkey)
 
-	// 3. Print the CUE diff for the trusted operator to PR. Don't
-	//    attempt to authenticate to Forgejo from a clean device — the
-	//    PR-author surface lives on an already-onboarded device.
-	emitCUEDiff(*device, strings.TrimSpace(string(wgPub)), *wgAddress)
-
-	// 4. Local wg-ops bring-up. The wg-quick service is best-effort
-	//    here: if the device's pubkey isn't yet in CUE, the handshake
-	//    won't complete and we error out on step 6 (OIDC over wg-ops).
-	wgConfPath, err := writeWGConfig(wgKeyPath, *wgAddress, anchors)
-	if err != nil {
-		return err
+	// 3. Print the CUE diff for the trusted operator to PR. Skipped
+	//    when adopting an existing wg-ops interface — its pubkey is
+	//    already registered in CUE by definition (we'd be unable to
+	//    handshake otherwise).
+	if !externallyManagedWG {
+		wgPub, err := os.ReadFile(wgPubPath)
+		if err != nil {
+			return err
+		}
+		emitCUEDiff(*device, strings.TrimSpace(string(wgPub)), *wgAddress)
 	}
-	if err := wgQuickUp(wgConfPath); err != nil {
-		return err
+
+	// 4. Local wg-ops bring-up. Skipped when the system already runs
+	//    a wg-ops interface (typically wg-quick@wg-ops); spinning up
+	//    a parallel `verself` interface would either collide on the
+	//    same address or accept traffic on an unregistered pubkey.
+	if !externallyManagedWG {
+		wgConfPath, err := writeWGConfig(wgKeyPath, *wgAddress, anchors)
+		if err != nil {
+			return err
+		}
+		if err := wgQuickUp(wgConfPath); err != nil {
+			return err
+		}
 	}
 
 	// 5. Generated SSH config drop-in. Maps the inventory's host alias
@@ -107,6 +137,9 @@ func cmdOnboard(args []string) error {
 	//    work without per-device hand-edits to ~/.ssh/config.
 	if err := writeSSHConfigDropIn(*hostAlias, anchors.Wireguard.HostAddress, sshKeyPath, sshCertPath); err != nil {
 		return err
+	}
+	if err := stripLegacyMatchExec(); err != nil {
+		return fmt.Errorf("strip legacy Match exec from ~/.ssh/config: %w", err)
 	}
 
 	// 6. OIDC. The login persists a periodic Vault token at
@@ -137,6 +170,9 @@ func cmdOnboard(args []string) error {
 	}
 	if err := os.WriteFile(sshCertPath, []byte(signed), 0o600); err != nil {
 		return err
+	}
+	if err := linkLegacyCertPath(sshCertPath); err != nil {
+		return fmt.Errorf("symlink legacy cert path: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "\nonboard complete. Cert written to %s.\n", sshCertPath)
@@ -343,7 +379,7 @@ func writeSSHConfigDropIn(alias, hostAddress, keyPath, certPath string) error {
 	// becomes pinned-on-first-fetch is a documented future hardening.
 	dropIn := fmt.Sprintf(`# Managed by aspect-operator; safe to overwrite. Source of truth:
 # src/cue-renderer/instances/prod/{config,operators}.cue.
-Host %s
+Host %s %s
     HostName %s
     User ubuntu
     IdentityFile %s
@@ -352,7 +388,7 @@ Host %s
     StrictHostKeyChecking accept-new
     ControlMaster auto
     ControlPersist 1h
-`, alias, hostAddress, keyPath, certPath)
+`, alias, hostAddress, hostAddress, keyPath, certPath)
 	if err := os.WriteFile(filepath.Join(cfgDir, "verself.conf"), []byte(dropIn), 0o600); err != nil {
 		return err
 	}
