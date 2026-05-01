@@ -55,10 +55,12 @@ type Options struct {
 	Site  string
 	Layer string
 
-	// AgentEndpoint is the OTLP endpoint to point the verself_otel
-	// callback at (typically the local otelcol-contrib's
-	// 127.0.0.1:14317). Empty leaves the child env untouched.
-	AgentEndpoint string
+	// OTLPEndpoint, when non-empty, sets OTEL_EXPORTER_OTLP_ENDPOINT
+	// on the child process so any OTel SDK it loads (or scripts it
+	// invokes) ships through the parent's SSH-forwarded tunnel
+	// instead of the SDK default 127.0.0.1:4317. Pass through the
+	// listen address from runtime.Runtime.OTLPEndpoint().
+	OTLPEndpoint string
 
 	// AdditionalEnv is appended to the child process environment.
 	// Identity (VERSELF_DEPLOY_RUN_KEY etc.) and OTel correlation
@@ -249,9 +251,9 @@ func (r *recorder) observe(ev TaskEvent) {
 		r.failedCount++
 	}
 
-	// Per-task span — distinct from the verself_otel callback's span
-	// (different service.name). The two views co-exist; a JOIN on
-	// (deploy_run_key, host, task) lines them up.
+	// Per-task span emitted by the Go-side parser. Sole producer of
+	// `verself_deploy.ansible.task` — the playbook itself no longer
+	// loads an OTel callback.
 	_, span := r.tracer.Start(r.ctx, "verself_deploy.ansible.task",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithTimestamp(ev.Time),
@@ -312,14 +314,14 @@ func resetTimer(t *time.Timer, d time.Duration) {
 }
 
 // buildChildEnv composes the env for ansible-playbook. The parent's
-// env is the base; AgentEndpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT
-// (so the verself_otel callback ships spans to our local agent), and
-// AdditionalEnv layers on top.
+// env is the base; OTLPEndpoint pins OTEL_EXPORTER_OTLP_ENDPOINT to
+// the SSH-forwarded tunnel for any subprocess that itself initialises
+// an OTel SDK; AdditionalEnv layers on top.
 func buildChildEnv(opts Options) []string {
 	env := os.Environ()
-	if opts.AgentEndpoint != "" {
-		env = append(env, "OTEL_EXPORTER_OTLP_ENDPOINT=http://"+opts.AgentEndpoint)
-		env = append(env, "VERSELF_OTLP_ENDPOINT="+opts.AgentEndpoint)
+	if opts.OTLPEndpoint != "" {
+		env = append(env, "OTEL_EXPORTER_OTLP_ENDPOINT=http://"+opts.OTLPEndpoint)
+		env = append(env, "VERSELF_OTLP_ENDPOINT="+opts.OTLPEndpoint)
 	}
 	if opts.Layer != "" {
 		env = append(env, "VERSELF_LAYER="+opts.Layer)
@@ -341,9 +343,8 @@ func uint64Of(n int64) uint64 {
 }
 
 // WriteChangedFile persists the changed-task count atomically (tmp +
-// rename). Mirrors ansible-with-otel.sh's
-// VERSELF_SUBSTRATE_CHANGED_TASKS_FILE contract so run-layer.sh can
-// read the count from the same place.
+// rename). The path is the AXL-side --changed-file flag; downstream
+// callers read the integer to decide whether the layer was a no-op.
 func WriteChangedFile(path string, count int) error {
 	if path == "" {
 		return nil

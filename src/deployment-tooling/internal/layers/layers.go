@@ -76,9 +76,9 @@ type Options struct {
 	// it false so converged layers short-circuit.
 	Force bool
 
-	// AgentEndpoint is the OTLP endpoint to point ansible-playbook
-	// at. Threaded through ansible.Options.AgentEndpoint.
-	AgentEndpoint string
+	// OTLPEndpoint is the SSH-forwarded OTLP endpoint to point
+	// ansible-playbook at. Threaded through ansible.Options.OTLPEndpoint.
+	OTLPEndpoint string
 
 	// ChWriter is the typed ClickHouse writer (verself db); both the
 	// ansible task-event recorder and the ledger writer share it.
@@ -236,13 +236,13 @@ func runOne(ctx context.Context, tracer trace.Tracer, opts Options, layer Layer,
 
 	start := time.Now()
 	runRes, runErr := ansible.Run(ctx, opts.ChWriter, ansible.Options{
-		Playbook:      layer.Playbook,
-		Inventory:     opts.Inventory,
-		AnsibleDir:    opts.AnsibleDir,
-		ExtraArgs:     opts.ExtraAnsibleArgs,
-		Site:          opts.Site,
-		Layer:         layer.Name,
-		AgentEndpoint: opts.AgentEndpoint,
+		Playbook:     layer.Playbook,
+		Inventory:    opts.Inventory,
+		AnsibleDir:   opts.AnsibleDir,
+		ExtraArgs:    opts.ExtraAnsibleArgs,
+		Site:         opts.Site,
+		Layer:        layer.Name,
+		OTLPEndpoint: opts.OTLPEndpoint,
 	})
 	durationMs := uint32(time.Since(start).Milliseconds())
 

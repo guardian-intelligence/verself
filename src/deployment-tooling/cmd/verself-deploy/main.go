@@ -10,10 +10,10 @@
 //	verself-deploy ansible run      --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
 //
 // Every subcommand routes through internal/runtime.Init, which owns
-// the start ordering: SSH dial → OTLP forward channel →
-// otelcol-contrib supervisor → OTel SDK init. Shutdown reverses
-// that order so spans drain through the agent's persistent queue
-// before the SSH tunnel closes.
+// the start ordering: SSH dial → OTLP forward channel → OTel SDK
+// init. Shutdown reverses that order so the SDK's BatchSpanProcessor
+// flushes through the SSH-forwarded OTLP channel to the bare-metal
+// otelcol before the tunnel closes.
 package main
 
 import (
@@ -40,8 +40,8 @@ func main() {
 		os.Exit(runAnsible(os.Args[2:]))
 	case "substrate":
 		os.Exit(runSubstrate(os.Args[2:]))
-	case "with-agent":
-		os.Exit(runWithAgent(os.Args[2:]))
+	case "with-otel":
+		os.Exit(runWithOTel(os.Args[2:]))
 	case "-h", "--help", "help":
 		usage()
 		os.Exit(0)
@@ -62,7 +62,7 @@ usage:
   verself-deploy ansible run          --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
   verself-deploy substrate converge   --site=<site> [--force]
   verself-deploy substrate verify     --site=<site>
-  verself-deploy with-agent           --site=<site> -- <cmd> [args...]
+  verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+
 		"`run` is the AXL deploy entry point: identity, ledger, layered\nsubstrate, external reconcilers, Nomad fan-out, and the post-deploy\ndivergence canary all happen inside this single process. Spans land\nin default.otel_traces under service.name=verself-deploy.\n")

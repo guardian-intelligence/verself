@@ -2,12 +2,12 @@
 // single (run-key, deploy-id, site, sha, …) tuple is captured at
 // process start, projected onto W3C baggage so every span emitted in
 // the run carries it, and fanned out as env vars when a child
-// process (ansible-playbook, otelcol-contrib) needs to inherit the
-// same correlation.
+// process (ansible-playbook, reconciler scripts) needs to inherit
+// the same correlation.
 //
-// Phase 3 reads the snapshot from the parent's environment (set by
-// scripts/deploy_identity.sh on the AXL side). Phase 4 adds a Go
-// generator that retires the bash script entirely.
+// Generate produces a fresh snapshot for the verself-deploy process;
+// FromEnv re-reads one previously installed by a parent invocation
+// so nested verself-deploy children share the parent's run key.
 package identity
 
 import (

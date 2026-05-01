@@ -12,19 +12,18 @@ if [[ ! -f "${inventory}" ]]; then
   exit 1
 fi
 
-# Re-exec under the verself-deploy controller-side OTLP agent. The
-# observe CLI emits spans for each query it issues; the agent's
-# file_storage queue decouples drain from process exit so observe-side
-# latency never races SSH tunnel teardown.
-if [[ -z "${VERSELF_OTEL_AGENT_INNER:-}" ]]; then
-  export VERSELF_OTEL_AGENT_INNER=1
+# Re-exec inside a verself-deploy SSH-forwarded OTLP channel so the
+# observe CLI's per-query spans hit the bare-metal otelcol on the same
+# tunnel deploy spans use.
+if [[ -z "${VERSELF_OTEL_INNER:-}" ]]; then
+  export VERSELF_OTEL_INNER=1
   export VERSELF_DEPLOY_KIND="${VERSELF_DEPLOY_KIND:-observe}"
   bin="${repo_root}/bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
   if [[ ! -x "${bin}" ]]; then
     echo "[observe] building //src/deployment-tooling/cmd/verself-deploy" >&2
     (cd "${repo_root}" && bazelisk build --config=remote-writer //src/deployment-tooling/cmd/verself-deploy:verself-deploy)
   fi
-  exec "${bin}" with-agent --site="${VERSELF_SITE:-prod}" --repo-root="${repo_root}" -- "${self_path}" "$@"
+  exec "${bin}" with-otel --site="${VERSELF_SITE:-prod}" --repo-root="${repo_root}" -- "${self_path}" "$@"
 fi
 
 export VERSELF_OBSERVE_RUN_ID="${VERSELF_OBSERVE_RUN_ID:-${VERSELF_DEPLOY_RUN_KEY:-}}"

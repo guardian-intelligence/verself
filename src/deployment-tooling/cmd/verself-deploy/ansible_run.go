@@ -82,13 +82,13 @@ func runAnsibleRun(args []string) int {
 	defer rt.Close()
 
 	res, err := ansible.Run(rt.Ctx, rt.ClickHouse, ansible.Options{
-		Playbook:      *playbook,
-		Inventory:     resolveInventoryPath(*inventory),
-		AnsibleDir:    ad,
-		Site:          *site,
-		Layer:         *layer,
-		ExtraArgs:     extraArgs,
-		AgentEndpoint: rt.AgentEndpoint(),
+		Playbook:     *playbook,
+		Inventory:    resolveInventoryPath(*inventory),
+		AnsibleDir:   ad,
+		Site:         *site,
+		Layer:        *layer,
+		ExtraArgs:    extraArgs,
+		OTLPEndpoint: rt.OTLPEndpoint(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy ansible run: %v\n", err)

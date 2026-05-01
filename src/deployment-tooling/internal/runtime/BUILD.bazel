@@ -9,7 +9,6 @@ go_library(
         "//src/deployment-tooling/internal/chwriter",
         "//src/deployment-tooling/internal/identity",
         "//src/deployment-tooling/internal/inventory",
-        "//src/deployment-tooling/internal/otelagent",
         "//src/deployment-tooling/internal/sshtun",
         "//src/otel",
         "@io_opentelemetry_go_otel//:otel",

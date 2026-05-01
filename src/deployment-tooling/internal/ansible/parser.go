@@ -36,10 +36,9 @@ const (
 // result line (so on multi-host tasks only the first host's duration
 // is the "true" task duration — subsequent hosts will read zero).
 //
-// The verself_otel callback emits the canonical per-task span with
-// proper timing in default.otel_traces; this row is the queryable
-// projection. Operators wanting precise timing should JOIN against
-// the callback span.
+// run.go's recorder turns each TaskEvent into both a
+// verself_deploy.ansible.task span (precise timing via the SDK) and
+// a verself.ansible_task_events row (the queryable projection).
 type TaskEvent struct {
 	Time       time.Time
 	Play       string

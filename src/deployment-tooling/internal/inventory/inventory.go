@@ -1,9 +1,8 @@
 // Package inventory parses Ansible-style INI inventory files just
 // far enough to resolve the SSH `[infra]` host and ansible_user that
-// the controller uses for deploys. Mirrors the awk/python snippets
-// inlined in the bash predecessors (nomad-deploy-all.sh,
-// with-otel-agent.sh) without taking a dependency on a full ansible
-// inventory parser.
+// the controller uses for deploys. Avoids a dependency on a full
+// ansible inventory parser; the resolved (host, user) is the only
+// signal verself-deploy needs.
 package inventory
 
 import (
