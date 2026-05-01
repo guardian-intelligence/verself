@@ -179,7 +179,14 @@ topology: {
 			target:    "/etc/nftables.d/openbao.nft"
 			table:     "verself_openbao"
 			component: "openbao"
-			input: [{kind: "drop_non_loopback", endpoints: [{component: "openbao", endpoint: "api"}, {component: "openbao", endpoint: "cluster"}]}]
+			input: [
+				// Operator laptops on wg-ops use OpenBao's OIDC auth method
+				// to mint short-lived SSH certs (`bao login -method=oidc`).
+				// Open 8200 for that path; the cluster port stays
+				// loopback-only because Raft has a single node.
+				{kind: "accept_iifname_endpoints", iifname: "wg-ops", endpoints: [{component: "openbao", endpoint: "api"}]},
+				{kind: "drop_non_loopback", endpoints: [{component: "openbao", endpoint: "api"}, {component: "openbao", endpoint: "cluster"}]},
+			]
 			output: {
 				user: topology.components.openbao.runtime.user
 				rules: [

@@ -283,11 +283,7 @@ type NftablesEndpointRef struct {
 
 type NftablesSkuid any /* CUE disjunction: (int|string) */
 
-type NftablesInputRule struct {
-	Kind string `json:"kind"`
-
-	Endpoints []NftablesEndpointRef `json:"endpoints"`
-}
+type NftablesInputRule map[string]any
 
 type NftablesOutputRule map[string]any
 
@@ -411,6 +407,75 @@ type SpireConfig struct {
 	BundleEndpointBindAddress Host `json:"bundle_endpoint_bind_address"`
 }
 
+// SSH CA: short-lived user-certificate issuance via OpenBao's ssh secrets
+// engine, fronted by a Zitadel-OIDC auth method. The on-host sshd is
+// configured with TrustedUserCAKeys + AuthorizedKeysFile=none so the
+// only way to authenticate is to present a cert this CA signed.
+//
+// Each principal corresponds to one OpenBao SSH role plus one entry in
+// /etc/ssh/principals/<default_user>. The schema enforces:
+//   - source_address_cidrs is mandatory (no certs valid from "anywhere").
+//   - max_ttl_seconds is bounded at 24h (a leaked cert can't outlive a day).
+//   - automation principals must declare a non-empty force_command, since
+//     the issuing identity is a workload, not a human, and an
+//     unrestricted shell on a workload-issued cert defeats the point.
+type SSHRoleKind string
+
+type SSHPrincipal any /* TODO: IncompleteKind: _|_ */
+
+type SSHOIDCConfig struct {
+	// Zitadel discovery URL — the CA's OIDC auth method validates tokens
+	// against this issuer's JWKS.
+	DiscoveryURL string `json:"discovery_url"`
+
+	// Zitadel project that owns the SSH-CA OIDC application registration.
+	// The zitadel_oauth_app role creates this if missing.
+	ProjectName string `json:"project_name"`
+
+	// OpenBao OIDC auth method allows redirect URIs matching these.
+	// `bao login -method=oidc` binds to one of these ports as the local
+	// callback target; multiple ports tolerate "another bao login is
+	// already holding 8250" without operator intervention.
+	AllowedRedirectURIs []string `json:"allowed_redirect_uris"`
+
+	// Zitadel project role required for operator-cert issuance. The
+	// OIDC method's role binds bound_claims["urn:zitadel:iam:org:project:roles"]
+	// to this name; missing the role means no Vault token, means no cert.
+	OperatorProjectRole string `json:"operator_project_role"`
+}
+
+type SSHCAConfig struct {
+	// Display name used in the SSH cert authority field and OpenBao mount
+	// description. Cosmetic; doesn't affect the trust chain.
+	CAName string `json:"ca_name"`
+
+	// OpenBao mount path for the SSH secrets engine. All issuance API
+	// calls are scoped under /v1/<mount>/sign/<role>.
+	Mount string `json:"mount"`
+
+	// Default OS user the certs authorize on the host. Today this is
+	// always "ubuntu" because the bare-metal box has no per-human Unix
+	// accounts, only the role-based sudoer.
+	DefaultUser string `json:"default_user"`
+
+	// Path on the host where the CA's public key is materialised. Pointed
+	// at by sshd_config TrustedUserCAKeys.
+	CAPubkeyPath string `json:"ca_pubkey_path"`
+
+	// Path on the host where the per-user principals file is written. The
+	// %u in sshd_config AuthorizedPrincipalsFile expands to default_user.
+	PrincipalsFile string `json:"principals_file"`
+
+	Oidc SSHOIDCConfig `json:"oidc"`
+
+	// At least one principal must be declared; otherwise no cert can be
+	// issued and the host is locked out by construction. CUE has no
+	// "non-empty struct" shorthand the way it has for lists, so the
+	// instance-level test in load_ssh_ca_test.go asserts an empty
+	// principals map fails evaluation.
+	Principals map[string]SSHPrincipal `json:"principals"`
+}
+
 type InstanceConfig struct {
 	// Typed config consumed by Go renderers. Each typed section has a
 	// dedicated projection in internal/render/<name>/ and may declare its
@@ -425,6 +490,8 @@ type InstanceConfig struct {
 	Firecracker FirecrackerConfig `json:"firecracker"`
 
 	Spire SpireConfig `json:"spire"`
+
+	SshCA SSHCAConfig `json:"ssh_ca"`
 
 	// ansible_vars is the explicit Ansible-vars surface. Every key here
 	// becomes a top-level group_vars/all entry; the ops renderer projects

@@ -115,6 +115,52 @@ config: s.#InstanceConfig & {
 		bundle_endpoint_bind_address: "127.0.0.1"
 	}
 
+	ssh_ca: {
+		ca_name:         "verself-ssh-ca"
+		mount:           "ssh-ca"
+		default_user:    "ubuntu"
+		ca_pubkey_path:  "/etc/ssh/verself-ssh-ca.pub"
+		principals_file: "/etc/ssh/principals/ubuntu"
+
+		oidc: {
+			discovery_url: "https://auth.\(config.ansible_vars.verself_domain)"
+			project_name:  "verself-ssh-ca"
+			// Three callback ports so a stuck listener on 8250 doesn't
+			// require operator intervention; bao tries them in order.
+			allowed_redirect_uris: [
+				"http://localhost:8250/oidc/callback",
+				"http://localhost:8251/oidc/callback",
+				"http://localhost:8252/oidc/callback",
+			]
+			operator_project_role: "platform-operator"
+		}
+
+		principals: {
+			operator: {
+				name:                 "operator"
+				role:                 "operator"
+				max_ttl_seconds:      900 // 15 minutes
+				source_address_cidrs: ["10.66.66.0/24"]
+				permit_pty:           true
+			}
+			breakglass: {
+				name:                 "breakglass"
+				role:                 "breakglass"
+				max_ttl_seconds:      86400 // 24 hours
+				source_address_cidrs: ["10.66.66.0/24", "0.0.0.0/0"]
+				permit_pty:           true
+			}
+			canary: {
+				name:                 "canary"
+				role:                 "automation"
+				max_ttl_seconds:      60
+				source_address_cidrs: ["127.0.0.1/32", "10.66.66.0/24"]
+				force_command:        "/bin/true"
+				permit_pty:           false
+			}
+		}
+	}
+
 	ansible_vars: {
 		verself_version:     "0.1.0"
 		verself_bin:         "/opt/verself/profile/bin"
@@ -133,6 +179,13 @@ config: s.#InstanceConfig & {
 		// Wireguard projects as a single nested var because the Ansible
 		// role iterates over the structured tunnels/peers.
 		topology_wireguard: config.wireguard
+
+		// SSH CA projects through to the openbao + ssh_ca Ansible roles.
+		// Both consume the principal catalog directly: openbao to mint one
+		// OpenBao SSH role per principal, ssh_ca to render the on-host
+		// principals file and the sshd_config drop-in. Single source of
+		// truth, schema-validated.
+		topology_ssh_ca: config.ssh_ca
 
 		// Firecracker image-seeding inputs consumed by the firecracker
 		// role's vm-orchestrator-seed oneshot unit.

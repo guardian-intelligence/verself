@@ -1,0 +1,51 @@
+---
+# Per-principal OpenBao SSH role configuration. Loop variable `item` is
+# a dict2items entry: `item.key` is the principal name, `item.value`
+# is the SSHPrincipal CUE projection.
+
+- name: "Compute default_extensions for SSH principal {{ item.key }}"
+  ansible.builtin.set_fact:
+    # Operators and breakglass principals get permit-pty (interactive
+    # shell). Automation principals get force-command. The schema
+    # guarantees role==automation has a non-empty force_command, so the
+    # else branch is always populated.
+    openbao_ssh_ca_principal_default_extensions: >-
+      {{
+        {'permit-pty': ''}
+        if item.value.role in ['operator', 'breakglass']
+        else {'force-command': item.value.force_command}
+      }}
+
+- name: "Configure OpenBao SSH signing role for {{ item.key }}"
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ topology_ssh_ca.mount }}/roles/{{ item.key }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      key_type: ca
+      default_user: "{{ topology_ssh_ca.default_user }}"
+      allowed_users: "{{ topology_ssh_ca.default_user }}"
+      allow_user_certificates: true
+      # source-address is stamped into the cert; sshd verifies on every
+      # connection regardless of cert holder requests.
+      default_critical_options:
+        source-address: "{{ item.value.source_address_cidrs | join(',') }}"
+      allowed_critical_options: source-address
+      default_extensions: "{{ openbao_ssh_ca_principal_default_extensions }}"
+      allowed_extensions: permit-pty,force-command,no-pty
+      ttl: "{{ item.value.max_ttl_seconds }}s"
+      max_ttl: "{{ item.value.max_ttl_seconds }}s"
+      allow_host_certificates: false
+      # Cert IDs encode the role and a Vault-side unique token id. The
+      # ID is what sshd logs into journald → otel_logs → host_auth_events,
+      # and it cross-references OpenBao's own audit log to trace which
+      # OIDC subject minted the cert. {% raw %} keeps Vault's template
+      # placeholders intact through Ansible's Jinja rendering.
+      key_id_format: "{% raw %}verself-{{role_name}}-{{token_unique_id}}{% endraw %}"
+      valid_principals: "{{ item.key }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  changed_when: true
+  no_log: true

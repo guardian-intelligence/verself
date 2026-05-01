@@ -247,18 +247,50 @@
     path: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_cert_check
 
-- name: Generate OpenBao loopback TLS certificate
+- name: Read OpenBao TLS cert SAN block
   ansible.builtin.command:
+    cmd: openssl x509 -in {{ openbao_tls_dir }}/cert.pem -noout -ext subjectAltName
+  register: openbao_cert_san_raw
+  changed_when: false
+  failed_when: false
+  when: openbao_cert_check.stat.exists
+
+- name: Detect OpenBao TLS SAN drift
+  ansible.builtin.set_fact:
+    openbao_cert_san_drift: >-
+      {{
+        not openbao_cert_check.stat.exists
+        or (openbao_cert_san_raw.stdout | default(''))
+        is not search('IP Address:' ~ topology_wireguard.tunnels.ops.address)
+      }}
+
+- name: Remove OpenBao TLS cert with stale SANs to force regeneration
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ openbao_tls_dir }}/cert.pem"
+    - "{{ openbao_tls_dir }}/key.pem"
+  when:
+    - openbao_cert_check.stat.exists
+    - openbao_cert_san_drift | bool
+
+- name: Generate OpenBao TLS certificate
+  ansible.builtin.command:
+    # SAN includes the wg-ops bare-metal IP so operator laptops on
+    # wg-ops can validate the cert when calling the OIDC SSH-CA flow.
+    # Loopback substrate clients still verify against the same cert.
     cmd: >-
       openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1
       -days 3650 -nodes
       -keyout {{ openbao_tls_dir }}/key.pem
       -out {{ openbao_tls_dir }}/cert.pem
       -subj "/CN=127.0.0.1"
-      -addext "subjectAltName=IP:127.0.0.1,DNS:localhost"
+      -addext "subjectAltName=IP:127.0.0.1,IP:{{ topology_wireguard.tunnels.ops.address }},DNS:localhost"
     creates: "{{ openbao_tls_dir }}/cert.pem"
-  when: not openbao_cert_check.stat.exists
+  when: not openbao_cert_check.stat.exists or (openbao_cert_san_drift | bool)
   changed_when: true
+  notify: restart openbao
 
 - name: Set OpenBao TLS certificate ownership
   ansible.builtin.file:
@@ -616,3 +648,6 @@
     owner: openbao
     group: openbao
     mode: "0600"
+
+- name: Set up OpenBao SSH CA (signing engine + OIDC auth + per-principal roles)
+  ansible.builtin.include_tasks: ssh-ca.yml
