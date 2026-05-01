@@ -7,55 +7,29 @@ application rollout.
 The convergence loop is layered (L1 OS, L2 userspace, L3 daemons,
 L4a per-component + API reconcile). `aspect substrate converge` forces every
 layer regardless of hash; `aspect deploy` hash-gates layer-by-layer. Both
-share run_layered_substrate in helpers.axl.
+route through `verself-deploy` so identity, ledger writes, and the streaming
+Ansible parser are exercised on every path.
 """
 
 load(
     ".aspect/lib/helpers.axl",
     "DEFAULT_SITE",
     "SUBSTRATE_DIR",
+    "build_verself_deploy",
     "checked_spawn",
-    "compute_layer_digest",
-    "derive_deploy_env",
-    "git_head",
     "render_site",
-    "run_layered_substrate",
     "site_cache_inventory",
     "ws_path",
 )
 
-# Layer order matches helpers.SUBSTRATE_LAYERS; substrate verify reads the
-# same sequence to produce a per-layer convergence report.
-_LAYER_NAMES = ["l1_os", "l2_userspace", "l3_binaries", "l4a_components"]
-
-_VERSELF_DEPLOY_TARGET = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
-_VERSELF_DEPLOY_BIN_PATH = "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
-
-def _build_verself_deploy(ctx):
-    """Build the verself-deploy binary and return its absolute path,
-    or empty string on failure. Cached after the first build via the
-    bazel disk cache, so per-task invocations are sub-second."""
-    rc = checked_spawn(
-        ctx, "bazelisk",
-        ["build", "--config=remote-writer", _VERSELF_DEPLOY_TARGET],
-        cwd = ws_path(ctx),
-        label = "bazelisk build " + _VERSELF_DEPLOY_TARGET,
-    )
-    if rc != 0:
-        return ""
-    return ws_path(ctx, _VERSELF_DEPLOY_BIN_PATH)
-
 def _run_ansible(ctx, site, env, playbook, *extra_args):
     """Run a single ad-hoc playbook (security-patch, guest-rootfs, reset/wipe).
 
-    Layered convergence goes through run_layered_substrate; this entry point
-    exists only for one-shot maintenance playbooks that don't have a layer
-    home and won't ever benefit from hash-gating. Routes through
-    verself-deploy ansible run so the OTel agent supervisor and
-    Ansible streaming parser are exercised on the maintenance path
-    too — same observability contract as a layered converge.
+    Layered convergence goes through `verself-deploy substrate converge`;
+    this entry point exists only for one-shot maintenance playbooks that
+    don't have a layer home and won't ever benefit from hash-gating.
     """
-    bin = _build_verself_deploy(ctx)
+    bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
     inventory_dir = ws_path(ctx, site_cache_inventory(site))
@@ -82,15 +56,20 @@ def _converge_impl(ctx):
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    sha = git_head(ctx)
-    if sha == "":
-        ctx.std.io.stderr.write("ERROR: could not resolve git HEAD\n")
+    bin = build_verself_deploy(ctx)
+    if bin == "":
         return 1
-    env = derive_deploy_env(ctx, site = site, sha = sha, scope = "substrate")
-    if env == None:
-        return 1
-    layered = run_layered_substrate(ctx, site = site, env = env, force = True)
-    return layered["rc"]
+    return checked_spawn(
+        ctx, bin,
+        [
+            "substrate", "converge",
+            "--site=" + site,
+            "--force",
+            "--repo-root=" + ws_path(ctx),
+        ],
+        cwd = ws_path(ctx),
+        label = "verself-deploy substrate converge --site=" + site,
+    )
 
 def _verify_impl(ctx):
     """Print the per-layer last-applied vs current digest comparison.
@@ -103,30 +82,19 @@ def _verify_impl(ctx):
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    mismatched = []
-    for layer in _LAYER_NAMES:
-        digest = compute_layer_digest(ctx, site, layer)
-        if digest == "":
-            return 1
-        last = _read_last_applied_for_verify(ctx, site, layer)
-        if last == digest:
-            ctx.std.io.stderr.write("[" + layer + "] fresh (" + digest[:12] + "…)\n")
-        else:
-            short_last = last[:12] + "…" if last != "" else "<none>"
-            ctx.std.io.stderr.write("[" + layer + "] STALE current=" + digest[:12] + "… last_applied=" + short_last + "\n")
-            mismatched.append(layer)
-    if len(mismatched) > 0:
-        return 10
-    return 0
-
-def _read_last_applied_for_verify(ctx, site, layer):
-    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/layer-last-applied.sh"))
-         .args(["--site=" + site, "--layer=" + layer])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if r.status.code != 0:
-        return ""
-    return r.stdout.strip()
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    return checked_spawn(
+        ctx, bin,
+        [
+            "substrate", "verify",
+            "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
+        ],
+        cwd = ws_path(ctx),
+        label = "verself-deploy substrate verify --site=" + site,
+    )
 
 def _security_patch_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
@@ -143,7 +111,7 @@ def _guest_rootfs_impl(ctx):
     return _run_ansible(ctx, site, None, "playbooks/guest-rootfs.yml")
 
 def _nomad_apps(ctx, site):
-    bin = _build_verself_deploy(ctx)
+    bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
     return checked_spawn(
@@ -189,22 +157,24 @@ def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_layer_args):
     rc = _run_ansible(ctx, site, None, wipe_playbook)
     if rc != 0:
         return rc
-    sha = git_head(ctx)
-    if sha == "":
-        ctx.std.io.stderr.write("ERROR: could not resolve git HEAD\n")
+    bin = build_verself_deploy(ctx)
+    if bin == "":
         return 1
-    env = derive_deploy_env(ctx, site = site, sha = sha, scope = "substrate-reset")
-    if env == None:
-        return 1
-    layered = run_layered_substrate(
-        ctx,
-        site = site,
-        env = env,
-        force = True,
-        extra_ansible_args = list(extra_layer_args),
+    converge_args = [
+        "substrate", "converge",
+        "--site=" + site,
+        "--force",
+        "--repo-root=" + ws_path(ctx),
+    ]
+    for a in extra_layer_args:
+        converge_args.append("--ansible-arg=" + a)
+    rc = checked_spawn(
+        ctx, bin, converge_args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy substrate converge (reset)",
     )
-    if layered["rc"] != 0:
-        return layered["rc"]
+    if rc != 0:
+        return rc
     return _nomad_apps(ctx, site)
 
 def _reset_identity_impl(ctx):

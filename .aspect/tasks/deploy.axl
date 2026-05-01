@@ -1,159 +1,35 @@
-"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--substrate=auto|always|skip]
+"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--substrate=auto|always]
 
-The single deploy verb. The body:
+The single deploy verb. Resolves --sha (falling back to a temporary
+worktree when non-HEAD), refreshes the operator's SSH cert, renders
+.cache/render/<site>/, and shells out to `verself-deploy run`. The
+binary owns identity derivation, deploy_events writes, layered
+substrate convergence, external reconcilers, Nomad fan-out, and the
+post-deploy divergence canary — all inside one process sharing one
+SSH session and one OTel agent supervisor.
 
-  1. Resolves --sha. If non-HEAD, a temporary git worktree is added and the
-     deploy is re-run inside it (where HEAD == resolved sha) — keeping the
-     render/tunnel/playbook flow identical regardless of revision.
-  2. Sources scripts/deploy_identity.sh once via derive_deploy_env. The
-     resulting VERSELF_DEPLOY_RUN_KEY / TRACEPARENT / OTEL_RESOURCE_ATTRIBUTES
-     are threaded as env={...} into every subprocess this task spawns, so
-     record-deploy-event.sh, run-layer.sh, and the canary share a single
-     deploy identity instead of each re-deriving its own.
-  3. Renders .cache/render/<site>/ via render_site.
-  4. Records a `started` row in verself.deploy_events.
-  5. Walks the four substrate layers (L1 OS, L2 userspace, L3 daemons, L4a
-     per-component + API reconcile). For each:
-       - Builds the per-layer Bazel digest target (cached after first build).
-       - run-layer.sh reads last_applied_hash from verself.deploy_layer_runs,
-         compares to the freshly built input_hash, and either short-circuits
-         (writes a 'skipped' row, exits 0) or invokes ansible-with-otel.sh
-         against the layer's playbook (writes 'succeeded' or 'failed').
-     --substrate=skip refuses to run when any layer's hash differs from its
-     last-applied; --substrate=always forces every layer to run regardless.
-  6. Runs scripts/nomad-deploy-all.sh to publish task artifacts and submit
-     every Nomad job spec.
-  7. Runs the divergence canary: if any layer reported skipped=true but a
-     task with host.status='changed' fired during the converge, the deploy
-     fails loudly. The canary depends on the verself_otel callback splitting
-     'changed' out of the upstream callback's hardcoded 'ok'.
-  8. Records `succeeded` or `failed` in verself.deploy_events with
-     duration_ms and the list of layers that actually ran in
-     affected_components.
-
-Reset playbooks (identity, billing, verification) live under `aspect substrate
-reset ...` because aspect's CLI treats a name as either a task or a group,
-never both — so `aspect deploy` cannot also host `aspect deploy reset`.
-
-Correlation: rows in verself.deploy_events / verself.deploy_layer_runs and
-the ansible.* span family in default.otel_traces join on
+Correlation: rows in verself.deploy_events / verself.deploy_layer_runs
+and the ansible.* / verself_deploy.* span families in
+default.otel_traces all join on
 ResourceAttributes['verself.deploy_run_key'].
 """
 
 load(
     ".aspect/lib/helpers.axl",
-    "SUBSTRATE_DIR",
+    "build_verself_deploy",
     "checked_spawn",
-    "derive_deploy_env",
     "git_head",
-    "note_bazel_diff_stub",
-    "record_deploy_event",
     "render_site",
     "resolve_sha",
-    "run_layered_substrate",
     "ws_path",
 )
 
-def _now_ms(ctx):
-    r = (ctx.std.process.command("date")
-         .args(["+%s%3N"])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if r.status.code != 0:
-        return 0
-    out = r.stdout.strip()
-    if out == "":
-        return 0
-    # AXL ints come from str → int via int(); guard against malformed output.
-    return int(out)
-
-def _run_external_reconcilers(ctx, site, env):
-    """Run the Go reconcilers that replaced their Ansible roles.
-
-    Each writes a row to verself.reconciler_runs with a started/succeeded/
-    failed event-kind and the seen/diffed/applied counters. They are fast
-    idempotent diff/apply loops, so they have no input-hash gate — the cost
-    of running them on every converge is dominated by a single list call
-    against the upstream API (sub-second).
-    """
-    return checked_spawn(
-        ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/reconcile-cloudflare-dns.sh"),
-        ["--site=" + site],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        env = env,
-        label = "reconcile-cloudflare-dns --site=" + site,
-    )
-
-def _run_nomad_deploy(ctx, site, env):
-    """Publish Nomad task artifacts and submit every rendered job spec.
-
-    verself-deploy is a typed Go binary that:
-      * runs `bazelisk build --build_event_json_file=…` for the per-site
-        nomad-jobs target and resolves outputs through BEP (no cquery
-        multi-config bug);
-      * opens one SSH session, multiplexes artifact + nomad + OTLP
-        local-port forwards over it, and reads publisher.env /
-        ca-bundle.pem through `sudo cat` over the same session;
-      * supervises an in-process otelcol-contrib agent that buffers
-        spans through a file_storage queue (so the upstream tunnel
-        can blip without losing data) — superseding the prior
-        scripts/with-otel-agent.sh wrapper;
-      * publishes every Garage artifact and submits every Nomad job
-        through the official `hashicorp/nomad/api` client (ParseHCL
-        bypassed: specs are already JSON; Plan + EnforceRegister with
-        CAS on JobModifyIndex; Deployments.Info blocking-query monitor).
-    """
-    target = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
-    rc = checked_spawn(
-        ctx, "bazelisk",
-        ["build", "--config=remote-writer", target],
-        cwd = ws_path(ctx),
-        env = env,
-        label = "bazelisk build " + target,
-    )
-    if rc != 0:
-        return rc
-    bin = ws_path(ctx, "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy")
-
-    return checked_spawn(
-        ctx,
-        bin,
-        [
-            "nomad", "deploy-all",
-            "--site=" + site,
-            "--repo-root=" + ws_path(ctx),
-        ],
-        cwd = ws_path(ctx),
-        env = env,
-        label = "verself-deploy nomad deploy-all --site=" + site,
-    )
-
-def _run_divergence_canary(ctx, site, env):
-    """After a converge, ask ClickHouse: did any task run changed in a layer
-    that we skipped on hash match?  If yes, the host has drifted from the
-    declared inputs — fail the deploy with the divergence list rather than
-    silently advance the recorded last_applied_hash.
-    """
-    return checked_spawn(
-        ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/divergence-canary.sh"),
-        ["--site=" + site],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        env = env,
-        label = "divergence-canary --site=" + site,
-    )
-
 def _refresh_operator_cert(ctx):
-    """Pre-flight: renew the cached periodic Vault token + re-sign the
-    operator's SSH cert so the Ansible/Nomad legs of the deploy don't
-    fail in the middle on a stale cert.
-
-    Failure here aborts the deploy with a clear recovery hint. Skipped
-    silently when the binary cannot be built locally (which happens
-    inside the temp worktree on a partial checkout) — the inner deploy
-    invocation will run pre-flight again from the worktree root.
-    """
+    """Pre-flight: re-mint the operator's SSH cert so the deploy's
+    SSH session doesn't fail mid-flight on an expired certificate.
+    Skipped silently when the binary cannot be built (which happens
+    inside a temp worktree on a partial checkout — the inner deploy
+    runs pre-flight again from the worktree root)."""
     target = "//src/cue-renderer/cmd/aspect-operator:aspect-operator"
     rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
     if rc != 0:
@@ -165,149 +41,30 @@ def _refresh_operator_cert(ctx):
 def _deploy_one(ctx, site, sha, scope, substrate_mode):
     if _refresh_operator_cert(ctx) != 0:
         return 1
-
-    env = derive_deploy_env(ctx, site = site, sha = sha, scope = scope)
-    if env == None:
-        return 1
-
-    if substrate_mode not in ["auto", "always", "skip"]:
-        ctx.std.io.stderr.write("ERROR: --substrate must be auto, always, or skip\n")
-        return 1
-
-    if scope == "affected":
-        # Stub: per-component fan-out (Phase 3) lifts this from a stderr
-        # breadcrumb to a real diff against the last succeeded SHA.
-        note_bazel_diff_stub(
-            ctx,
-            base_sha = sha,
-            head_sha = sha,
-            affected_count = 0,
-        )
-
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-
-    started_ms = _now_ms(ctx)
-
-    # The started row is best-effort observability. On a first bootstrap it
-    # may fail before the clickhouse role has created the table; the
-    # succeeded/failed row is the gating record.
-    record_deploy_event(
-        ctx,
-        env = env,
-        site = site,
-        sha = sha,
-        scope = scope,
-        components = [],
-        event_kind = "started",
-    )
-
-    if substrate_mode == "skip":
-        # Refuse to advance Nomad on top of an unverified substrate.
-        ctx.std.io.stderr.write(
-            "ERROR: --substrate=skip is unsupported; layer digests gate convergence per layer.\n",
-        )
+    bin = build_verself_deploy(ctx)
+    if bin == "":
         return 1
-
-    layered = run_layered_substrate(
-        ctx,
-        site = site,
-        env = env,
-        force = (substrate_mode == "always"),
+    return checked_spawn(
+        ctx, bin,
+        [
+            "run",
+            "--site=" + site,
+            "--sha=" + sha,
+            "--scope=" + scope,
+            "--substrate=" + substrate_mode,
+            "--repo-root=" + ws_path(ctx),
+        ],
+        cwd = ws_path(ctx),
+        label = "verself-deploy run --site=" + site,
     )
-    if layered["rc"] != 0:
-        elapsed_ms = max(0, _now_ms(ctx) - started_ms)
-        record_deploy_event(
-            ctx,
-            env = env,
-            site = site,
-            sha = sha,
-            scope = scope,
-            components = layered["layers_ran"],
-            event_kind = "failed",
-            duration_ms = elapsed_ms,
-            error_message = "layer " + layered["failed_layer"] + " exited " + str(layered["rc"]),
-        )
-        return layered["rc"]
-
-    # External-API reconcilers extracted from Ansible. They diff/apply against
-    # the rendered topology, so they sit between the layered substrate (which
-    # produced the rendered inputs they read) and Nomad (which assumes DNS,
-    # OIDC apps, etc., already exist).
-    rc = _run_external_reconcilers(ctx, site, env)
-    if rc != 0:
-        elapsed_ms = max(0, _now_ms(ctx) - started_ms)
-        record_deploy_event(
-            ctx,
-            env = env,
-            site = site,
-            sha = sha,
-            scope = scope,
-            components = layered["layers_ran"],
-            event_kind = "failed",
-            duration_ms = elapsed_ms,
-            error_message = "external reconcilers exited " + str(rc),
-        )
-        return rc
-
-    # Nomad supervises application components. The substrate layers stop at
-    # host/substrate state; Bazel resolves the deploy specs and artifact
-    # checksums, then nomad-deploy submits each spec and waits for health.
-    rc = _run_nomad_deploy(ctx, site, env)
-    if rc != 0:
-        elapsed_ms = max(0, _now_ms(ctx) - started_ms)
-        record_deploy_event(
-            ctx,
-            env = env,
-            site = site,
-            sha = sha,
-            scope = scope,
-            components = layered["layers_ran"],
-            event_kind = "failed",
-            duration_ms = elapsed_ms,
-            error_message = "nomad-deploy-all exited " + str(rc),
-        )
-        return rc
-
-    # Sanity: if the host drifted from the declared inputs (a task ran changed
-    # inside a layer we just skipped on hash match), fail the deploy. The
-    # canary writes its evidence to ClickHouse before exiting non-zero so the
-    # diagnosis isn't lost when this aspect run tears down.
-    canary_rc = _run_divergence_canary(ctx, site, env)
-    if canary_rc != 0:
-        elapsed_ms = max(0, _now_ms(ctx) - started_ms)
-        record_deploy_event(
-            ctx,
-            env = env,
-            site = site,
-            sha = sha,
-            scope = scope,
-            components = layered["layers_ran"],
-            event_kind = "failed",
-            duration_ms = elapsed_ms,
-            error_message = "divergence-canary exited " + str(canary_rc),
-        )
-        return canary_rc
-
-    elapsed_ms = max(0, _now_ms(ctx) - started_ms)
-    record_deploy_event(
-        ctx,
-        env = env,
-        site = site,
-        sha = sha,
-        scope = scope,
-        components = layered["layers_ran"],
-        event_kind = "succeeded",
-        duration_ms = elapsed_ms,
-    )
-    return 0
 
 def _deploy_in_worktree(ctx, site, sha, scope, substrate_mode):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
     and clean up. Inside the worktree HEAD == sha, so the inner invocation
-    falls through to the in-tree path with no further branching.
-    """
+    falls through to the in-tree path with no further branching."""
     wt = "/tmp/verself-deploy-" + sha[:12]
     _ = checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
     rc = checked_spawn(
@@ -335,6 +92,9 @@ def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
     scope = ctx.args.scope or "all"
     substrate_mode = ctx.args.substrate or "auto"
+    if substrate_mode not in ["auto", "always"]:
+        ctx.std.io.stderr.write("ERROR: --substrate must be auto or always (skip is gated per-layer inside verself-deploy run)\n")
+        return 1
     sha = resolve_sha(ctx, ctx.args.sha or "")
     if sha == "":
         return 1
@@ -346,11 +106,11 @@ def _deploy_impl(ctx):
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Render the deploy cache, hash-gate substrate layers, run Nomad apps, fail on divergence.",
+    summary = "Render the deploy cache, refresh operator cert, then run verself-deploy run end-to-end.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site (selects instances/<site>/ and inventory/<site>.ini)."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
-        "scope": args.string(default = "all", description = "all | affected. The affected machinery is a Phase 3 follow-up — same behavior as `all` for now."),
+        "scope": args.string(default = "all", description = "all | affected. The affected machinery is a future follow-up; same behavior as `all` for now."),
         "substrate": args.string(default = "auto", description = "auto | always. auto skips layers whose hash matches last-applied; always re-runs every layer regardless."),
     },
 )

@@ -1,9 +1,9 @@
 // bazel-profile-to-otel parses a `bazelisk build --profile=<path>` JSON
 // profile and emits one OTel span per kept event. The spans share the
 // calling shell's OTLP endpoint + OTEL_RESOURCE_ATTRIBUTES (set by
-// deploy_identity.sh), so each event is automatically tagged with
-// verself.deploy_run_key and joins the surrounding ansible.task span on
-// a single deploy timeline.
+// `verself-deploy run` via internal/identity.Generate), so each event
+// is automatically tagged with verself.deploy_run_key and joins the
+// surrounding ansible.task span on a single deploy timeline.
 //
 // Scope: this tool is the *analysis-phase timing* projection of a
 // Bazel build — Starlark calls, skyframe evaluation, repository

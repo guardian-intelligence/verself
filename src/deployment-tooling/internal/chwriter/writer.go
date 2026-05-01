@@ -210,6 +210,40 @@ func (w *Writer) InsertRows(ctx context.Context, table string, rows []Row) error
 	return nil
 }
 
+// QueryString runs a SELECT (or any read query) against the
+// configured database and returns the raw stdout. The caller is
+// responsible for choosing a stable FORMAT (TSVRaw, TSV, JSON).
+// Errors carry the remote stderr in the wrapped message.
+func (w *Writer) QueryString(ctx context.Context, query string) (string, error) {
+	ctx, span := w.tracer.Start(ctx, "verself_deploy.clickhouse.query",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("db.system", "clickhouse"),
+			attribute.String("db.name", w.database),
+			attribute.Int("db.statement.bytes", len(query)),
+		),
+	)
+	defer span.End()
+
+	if w.ssh == nil {
+		err := errors.New("chwriter: nil ssh executor")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
+	}
+
+	cmd := remoteCommand(w.database, query)
+	out, err := w.ssh.Exec(ctx, cmd)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", fmt.Errorf("chwriter: query: %w", err)
+	}
+	span.SetAttributes(attribute.Int("db.bytes_received", len(out)))
+	span.SetStatus(codes.Ok, "")
+	return string(out), nil
+}
+
 // remoteCommand mirrors scripts/clickhouse.sh's "sudo -u
 // clickhouse_operator clickhouse-client --config-file ... --user ...
 // --database ... --query=..." invocation. The query is single-quoted

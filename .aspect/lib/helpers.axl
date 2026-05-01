@@ -19,40 +19,8 @@ SUBSTRATE_DIR = "src/substrate"
 PROVISION_DIR = "src/provision"
 DEFAULT_SITE = "prod"
 
-# Identity vars derived once by deploy_identity.sh and threaded through
-# every subprocess spawned by `aspect deploy`. The list is closed: anything
-# else the script exports is local to its own subshell. record-deploy-event.sh
-# only needs VERSELF_DEPLOY_RUN_KEY + VERSELF_AUTHOR; ansible-with-otel.sh
-# uses the full set so the OpenTelemetry callback resource attributes match
-# what an in-band re-source of deploy_identity.sh would produce.
-_DEPLOY_IDENTITY_KEYS = [
-    "VERSELF_DEPLOY_ID",
-    "VERSELF_DEPLOY_RUN_KEY",
-    "VERSELF_COMMIT_SHA",
-    "VERSELF_BRANCH",
-    "VERSELF_COMMIT_MESSAGE",
-    "VERSELF_AUTHOR",
-    "VERSELF_DIRTY",
-    "VERSELF_DEPLOY_KIND",
-    "VERSELF_SITE",
-    "VERSELF_DEPLOY_SHA",
-    "VERSELF_DEPLOY_SCOPE",
-    "TRACEPARENT",
-    "OTEL_EXPORTER_OTLP_ENDPOINT",
-    "OTEL_SERVICE_NAME",
-    "OTEL_RESOURCE_ATTRIBUTES",
-]
-
-# Layer convergence order. Each entry is (layer_name, playbook_path,
-# bazel_digest_target). Order matters: L1 sets up host primitives every later
-# layer depends on; L2 creates users L3 daemons claim; L3 starts daemons L4a
-# reconciles against. The hash-gate decision for each layer is independent.
-SUBSTRATE_LAYERS = [
-    ("l1_os",          "playbooks/l1_os.yml",          "//src/substrate:{site}_l1_os_digest"),
-    ("l2_userspace",   "playbooks/l2_userspace.yml",   "//src/substrate:{site}_l2_userspace_digest"),
-    ("l3_binaries",    "playbooks/l3_binaries.yml",    "//src/substrate:{site}_l3_binaries_digest"),
-    ("l4a_components", "playbooks/l4a_components.yml", "//src/substrate:{site}_l4a_components_digest"),
-]
+VERSELF_DEPLOY_TARGET = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
+VERSELF_DEPLOY_BIN = "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -90,9 +58,8 @@ def inventory_check(ctx, site = DEFAULT_SITE):
 
 def render_site(ctx, site = DEFAULT_SITE):
     """Materialise .cache/render/<site>/ — generated group_vars, rendered
-    Nomad jobs and host files, staged inventory. The deploy flow consumes this cache
-    via -i .cache/render/<site>/inventory/, so callers must run this before
-    invoking ansible-with-otel.sh.
+    Nomad jobs and host files, staged inventory. The deploy flow consumes
+    this cache; callers must run this before invoking verself-deploy.
     """
     if inventory_check(ctx, site) != 0:
         return 1
@@ -205,211 +172,20 @@ def resolve_sha(ctx, raw):
         return ""
     return r.stdout.strip()
 
-def derive_deploy_env(ctx, *, site, sha, scope):
-    """Source deploy_identity.sh once and return its exported environment.
-
-    The deploy task threads this dict via env={...} into every subprocess it
-    spawns (record-deploy-event.sh, ansible-with-otel.sh) so all of them
-    share the same VERSELF_DEPLOY_RUN_KEY / TRACEPARENT instead of each
-    re-deriving identity in its own subshell. deploy_identity.sh is naturally
-    idempotent — re-sourcing inside scripts/with-otel-agent.sh preserves the
-    keys and only refreshes OTEL_EXPORTER_OTLP_ENDPOINT to point at the
-    controller-side agent's fixed receiver port.
-
-    Returns a {key: value} dict on success, None on failure.
+def build_verself_deploy(ctx):
+    """Build the verself-deploy binary and return its absolute path,
+    or empty string on failure. Cached after the first build via the
+    bazel disk cache, so per-task invocations are sub-second.
     """
-    script = ws_path(ctx, SUBSTRATE_DIR, "scripts/deploy_identity.sh")
-    # Print key=value\0 for each requested key. NUL is the only byte that
-    # cannot appear inside an env value (POSIX exec(3) constraint), so it's
-    # safe to split the output on it without escaping multiline values like
-    # OTEL_RESOURCE_ATTRIBUTES.
-    printf_args = " ".join([
-        '"' + k + '=${' + k + ':-}"'
-        for k in _DEPLOY_IDENTITY_KEYS
-    ])
-    cmd = (
-        "set -eu; " +
-        "export VERSELF_SITE='" + site + "'; " +
-        "export VERSELF_DEPLOY_SHA='" + sha + "'; " +
-        "export VERSELF_DEPLOY_SCOPE='" + scope + "'; " +
-        ". '" + script + "'; " +
-        "printf '%s\\0' " + printf_args
-    )
-    r = (ctx.std.process.command("bash")
-         .args(["-c", cmd])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if r.status.code != 0:
-        ctx.std.io.stderr.write(
-            "ERROR: deploy_identity.sh failed (rc=" + str(r.status.code) + "):\n" + r.stderr,
-        )
-        return None
-    out = {}
-    for entry in r.stdout.split("\x00"):
-        if "=" not in entry:
-            continue
-        parts = entry.split("=", 1)
-        if len(parts) == 2 and parts[0] != "":
-            out[parts[0]] = parts[1]
-    return out
-
-def record_deploy_event(ctx, *, env, site, sha, scope, components, event_kind, duration_ms = 0, error_message = ""):
-    """Append a row to verself.deploy_events via the controller-side writer.
-
-    `env` MUST be the dict returned by derive_deploy_env so the writer sees
-    the same VERSELF_DEPLOY_RUN_KEY / VERSELF_AUTHOR as every other span the
-    deploy emits. record-deploy-event.sh fails loud if the run-key is unset,
-    so a missing env propagation surfaces here rather than silently dropping
-    the row.
-
-    Failures here do not abort the deploy: the ledger is observability, not
-    gating. The caller may surface the WARN line but should not branch on rc.
-    """
-    args_list = [
-        "--site=" + site,
-        "--sha=" + sha,
-        "--scope=" + scope,
-        "--components=" + ",".join(components),
-        "--event-kind=" + event_kind,
-        "--duration-ms=" + str(duration_ms),
-    ]
-    if error_message != "":
-        args_list.append("--error-message=" + error_message)
     rc = checked_spawn(
-        ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/record-deploy-event.sh"),
-        args_list,
-        env = env,
-        label = "record-deploy-event " + event_kind,
+        ctx, "bazelisk",
+        ["build", "--config=remote-writer", VERSELF_DEPLOY_TARGET],
+        cwd = ws_path(ctx),
+        label = "bazelisk build " + VERSELF_DEPLOY_TARGET,
     )
     if rc != 0:
-        ctx.std.io.stderr.write(
-            "WARN: record-deploy-event.sh exited " + str(rc) + " (event_kind=" + event_kind + ")\n",
-        )
-    return rc
-
-def note_bazel_diff_stub(ctx, *, base_sha, head_sha, affected_count):
-    """Stderr breadcrumb for the --scope=affected stub.
-
-    Phase A.5 will replace this with a real `aspect.bazel_diff` span emitted
-    inside the playbook (where the OTLP tunnel is alive). Until then the
-    deploy contract carries the slot; this helper exists so the stub call
-    site reads naturally and the rename to a real span emitter is one line.
-    """
-    ctx.std.io.stderr.write(
-        "[aspect.bazel_diff stub] base=" + base_sha + " head=" + head_sha +
-        " affected_count=" + str(affected_count) + "\n",
-    )
-    return 0
-
-def compute_layer_digest(ctx, site, layer):
-    """Build the per-layer Bazel digest target and return its 64-char hex.
-
-    Returns "" on any failure with a stderr message. The first call in a
-    converge pays the renderer/sha256 cost; subsequent calls hit Bazel's
-    action cache.
-    """
-    target = "//src/substrate:" + site + "_" + layer + "_digest"
-    rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
-    if rc != 0:
         return ""
-    query = (ctx.std.process.command("bazelisk")
-         .args(["cquery", "--output=files", target])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if query.status.code != 0:
-        ctx.std.io.stderr.write("ERROR: layer digest cquery failed for " + target + ":\n" + query.stderr)
-        return ""
-    out_path = query.stdout.strip()
-    if "\n" in out_path:
-        out_path = out_path.split("\n")[-1]
-    if out_path == "":
-        ctx.std.io.stderr.write("ERROR: layer digest cquery returned no output for " + target + "\n")
-        return ""
-    if not out_path.startswith("/"):
-        out_path = ws_path(ctx, out_path)
-    read = (ctx.std.process.command("cat")
-         .args([out_path])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if read.status.code != 0:
-        ctx.std.io.stderr.write("ERROR: reading layer digest failed for " + target + ":\n" + read.stderr)
-        return ""
-    digest = read.stdout.strip()
-    if len(digest) != 64:
-        ctx.std.io.stderr.write("ERROR: layer digest target " + target + " produced invalid digest: " + digest + "\n")
-        return ""
-    return digest
-
-def run_layered_substrate(ctx, *, site, env, force = False, extra_ansible_args = None):
-    """Walk the substrate layers in order, hash-gating each.
-
-    For each layer (L1 OS, L2 userspace, L3 daemons, L4a components):
-      1. Compute the layer's input_hash via Bazel.
-      2. Hand off to scripts/run-layer.sh, which reads last_applied_hash from
-         verself.deploy_layer_runs, decides skip vs run, invokes
-         ansible-with-otel.sh against the layer's playbook, and emits the
-         post-run row to verself.deploy_layer_runs.
-
-    Returns:
-      A struct-like dict with:
-        rc: 0 on full success, otherwise the first failing layer's exit code.
-        layers_ran: list of layer names whose playbook was invoked.
-        layers_skipped: list of layer names whose hash matched.
-    """
-    inventory = ws_path(ctx, site_cache_inventory(site))
-    extras = list(extra_ansible_args) if extra_ansible_args != None else []
-    layers_ran = []
-    layers_skipped = []
-
-    for entry in SUBSTRATE_LAYERS:
-        layer_name = entry[0]
-        playbook = entry[1]
-        digest = compute_layer_digest(ctx, site, layer_name)
-        if digest == "":
-            return {"rc": 1, "layers_ran": layers_ran, "layers_skipped": layers_skipped, "failed_layer": layer_name}
-
-        last_before = _read_layer_last_applied(ctx, site, layer_name)
-        will_skip = (not force) and last_before != "" and last_before == digest
-
-        args_list = [
-            "--site=" + site,
-            "--layer=" + layer_name,
-            "--input-hash=" + digest,
-            "--playbook=" + playbook,
-            "--inventory=" + inventory,
-        ]
-        if force:
-            args_list.append("--force")
-        for arg in extras:
-            args_list.append("--ansible-arg=" + arg)
-
-        rc = checked_spawn(
-            ctx,
-            ws_path(ctx, SUBSTRATE_DIR, "scripts/run-layer.sh"),
-            args_list,
-            cwd = ws_path(ctx, SUBSTRATE_DIR),
-            env = env,
-            label = "run-layer " + layer_name,
-        )
-        if rc != 0:
-            return {"rc": rc, "layers_ran": layers_ran, "layers_skipped": layers_skipped, "failed_layer": layer_name}
-
-        if will_skip:
-            layers_skipped.append(layer_name)
-        else:
-            layers_ran.append(layer_name)
-
-    return {"rc": 0, "layers_ran": layers_ran, "layers_skipped": layers_skipped, "failed_layer": ""}
-
-def _read_layer_last_applied(ctx, site, layer):
-    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/layer-last-applied.sh"))
-         .args(["--site=" + site, "--layer=" + layer])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if r.status.code != 0:
-        return ""
-    return r.stdout.strip()
+    return ws_path(ctx, VERSELF_DEPLOY_BIN)
 
 def cue_pin(ctx, key):
     """Read a single development-tier version pin out of versions.cue.

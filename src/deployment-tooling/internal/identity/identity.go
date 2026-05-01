@@ -106,9 +106,10 @@ func (s Snapshot) Baggage() baggage.Baggage {
 }
 
 // Env returns "KEY=VALUE" entries suitable for exec.Cmd.Env. Only
-// populated fields are emitted — callers needing the full closed set
-// should append the parent's os.Environ() too. Order is the
-// declaration order of Fields for stable test output.
+// the Fields subset (the closed verself.* projection) is emitted —
+// callers needing the full closed set should append the parent's
+// os.Environ() too. Order is the declaration order of Fields for
+// stable test output.
 func (s Snapshot) Env() []string {
 	out := make([]string, 0, len(s.values))
 	for _, f := range Fields {
@@ -117,6 +118,41 @@ func (s Snapshot) Env() []string {
 		}
 	}
 	return out
+}
+
+// AllEnv is Env plus every other key the snapshot carries (TRACEPARENT,
+// OTEL_*, derived git metadata). Use when threading identity into a
+// child process that must inherit OTel correlation. Order is stable
+// (Fields first, then sorted remainder) so test snapshots are
+// reproducible.
+func (s Snapshot) AllEnv() []string {
+	out := make([]string, 0, len(s.values))
+	seen := make(map[string]bool, len(Fields))
+	for _, f := range Fields {
+		if v := s.values[f.Env]; v != "" {
+			out = append(out, f.Env+"="+v)
+			seen[f.Env] = true
+		}
+	}
+	rest := make([]string, 0, len(s.values))
+	for k := range s.values {
+		if seen[k] {
+			continue
+		}
+		if v := s.values[k]; v != "" {
+			rest = append(rest, k+"="+v)
+		}
+	}
+	// stdlib sort would pull a third package import for a tiny set;
+	// insertion sort is enough for the ~10 entries we have here.
+	for i := 1; i < len(rest); i++ {
+		j := i
+		for j > 0 && rest[j-1] > rest[j] {
+			rest[j-1], rest[j] = rest[j], rest[j-1]
+			j--
+		}
+	}
+	return append(out, rest...)
 }
 
 // Inject is the legacy entry point: read env, push onto baggage,
