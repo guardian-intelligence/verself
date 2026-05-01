@@ -7,10 +7,11 @@
 #      Owns 22 binaries plus /usr/local/{go,zig} symlinks.
 #   2. systemPackages — apt-managed entries with explicit risk
 #      acknowledgements; the only intentionally unpinned channel.
-#   3. lockfileUvTools (lockfile_uv tier) — per-project pyproject.toml + uv.lock
-#      under src/platform/uv-tools/, materialised via `uv sync --frozen`.
+#   3. uvTools (uv_tool tier) — `uv tool install` per pinned PyPI
+#      package; uv handles per-tool venv isolation, entrypoints land
+#      under /usr/local/bin via UV_TOOL_BIN_DIR.
 #
-# Order matters: the tarball must land before lockfile_uv (needs /usr/local/bin/uv).
+# Order matters: the tarball must land before uv_tools (needs /usr/local/bin/uv).
 
 - name: Install pinned_http_file dev tools via Bazel-managed archive
   ansible.builtin.include_tasks: dev_tools_archive.yml
@@ -18,8 +19,8 @@
 - name: Install system packages
   ansible.builtin.include_tasks: system_packages.yml
 
-- name: Install lockfile_uv dev tools
-  ansible.builtin.include_tasks: lockfile_uv.yml
+- name: Install uv-managed dev tools
+  ansible.builtin.include_tasks: uv_tools.yml
 
 - name: Install required Ansible collections
   ansible.builtin.command:

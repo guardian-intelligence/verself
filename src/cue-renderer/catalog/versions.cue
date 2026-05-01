@@ -11,7 +11,7 @@ package catalog
 #DevToolTier:
 	"pinned_http_file" |
 	"source_built_go" |
-	"lockfile_uv" |
+	"uv_tool" |
 	"bootstrap_pivot"
 
 // #SystemPackage describes an apt-managed system package. The risk
@@ -178,50 +178,34 @@ sourceBuiltGoTools: {
 	}
 }
 
-// lockfileUvTools: per-project uv project layouts. Each project lives
-// at `src/platform/uv-tools/<name>/` with a committed pyproject.toml +
-// uv.lock pair. The dev_tools role runs `uv sync --frozen --project
-// <project_dir>` for each entry, then symlinks every entrypoint into
-// /usr/local/bin/. Per-tool version_check spans (filtered on
-// tier=lockfile_uv) confirm the symlinked entrypoint reports the
-// CUE-pinned version after sync.
+// uvTools: each entry installs one isolated Python tool via
+// `uv tool install --force <package>==<version>`. uv handles the venv
+// per tool; entrypoints land under /usr/local/bin/ via the role's
+// UV_TOOL_BIN_DIR override. Versions are pinned at the entrypoint
+// level (pnpm-catalog parity); transitive deps are uv's resolver
+// problem, not ours, on the basis that dev tools tolerate a small
+// amount of transitive drift between installs.
 //
-// Adding a new Python tool:
-//   1. mkdir src/platform/uv-tools/<name> && cd it
-//   2. uv init && uv add <pkg>==<version>; commit pyproject.toml+uv.lock
-//   3. add a row here with project_dir + entrypoints
-//   4. add tier=lockfile_uv devTool entries for any entrypoints that
-//      should appear in the version_check gate
-lockfileUvTools: {
+// `with` is a list of additional `pkg==version` strings installed
+// into the same isolated env. ansible-lint shares ansible-core's env
+// because its plugin discovery has to import ansible-core modules.
+//
+// Adding a new Python tool: bump the version in versions.development,
+// add a row here, and (if it should appear in the version_check gate)
+// a tier=uv_tool entry under devTools.
+uvTools: {
 	"ansible-core": {
-		project_dir: "src/platform/uv-tools/ansible-core"
-		version:     versions.development.ansibleCore
-		// Every entrypoint that should land at /usr/local/bin/. Includes
-		// ansible-lint and the playbook/galaxy/etc. subcommands; OTel
-		// runtime imports are libraries, not entrypoints, so they don't
-		// appear here.
-		entrypoints: [
-			"ansible",
-			"ansible-config",
-			"ansible-console",
-			"ansible-doc",
-			"ansible-galaxy",
-			"ansible-inventory",
-			"ansible-lint",
-			"ansible-playbook",
-			"ansible-pull",
-			"ansible-vault",
-		]
+		package: "ansible-core"
+		version: versions.development.ansibleCore
+		with: ["ansible-lint==\(versions.development.ansibleLint)"]
 	}
 	"pre-commit": {
-		project_dir: "src/platform/uv-tools/pre-commit"
-		version:     versions.development.preCommit
-		entrypoints: ["pre-commit"]
+		package: "pre-commit"
+		version: versions.development.preCommit
 	}
 	guarddog: {
-		project_dir: "src/platform/uv-tools/guarddog"
-		version:     versions.development.guarddog
-		entrypoints: ["guarddog"]
+		package: "guarddog"
+		version: versions.development.guarddog
 	}
 }
 
@@ -461,21 +445,18 @@ devTools: {
 		version_cmd:  "tofu version -json"
 	}
 	ansible: {
-		tier:        #DevToolTier & "lockfile_uv"
+		tier:        #DevToolTier & "uv_tool"
 		version:     versions.development.ansibleCore
-		project:     "ansible-core"
 		version_cmd: "ansible --version"
 	}
 	"ansible-lint": {
-		tier:        #DevToolTier & "lockfile_uv"
+		tier:        #DevToolTier & "uv_tool"
 		version:     versions.development.ansibleLint
-		project:     "ansible-core"
 		version_cmd: "ansible-lint --version"
 	}
 	"pre-commit": {
-		tier:        #DevToolTier & "lockfile_uv"
+		tier:        #DevToolTier & "uv_tool"
 		version:     versions.development.preCommit
-		project:     "pre-commit"
 		version_cmd: "pre-commit --version"
 	}
 	protoc: {
@@ -660,9 +641,8 @@ devTools: {
 		version_cmd: "protoc-gen-go-grpc --version"
 	}
 	guarddog: {
-		tier:        #DevToolTier & "lockfile_uv"
+		tier:        #DevToolTier & "uv_tool"
 		version:     versions.development.guarddog
-		project:     "guarddog"
 		version_cmd: "guarddog --version"
 	}
 	"osv-scanner": {

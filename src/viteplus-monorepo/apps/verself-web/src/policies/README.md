@@ -1,8 +1,8 @@
 # policies/
 
 Machine-readable source of truth for every customer-facing policy commitment
-Verself makes. One file per domain, consumed by the rendered `/policy/*`
-pages in `src/viteplus-monorepo/apps/verself-web`.
+Verself makes. One file per domain, consumed directly by the rendered
+`/policy/*` pages.
 
 Files here are public by intent: they encode commitments we make and surfaces
 we are accountable to. A PR that touches any file here should also update
@@ -17,8 +17,4 @@ we are accountable to. A PR that touches any file here should also update
 | `versions.yml` | Append-only changelog. Each entry records effective date, affected policies, one-line summary. |
 
 Validation runs on the frontend parse: Valibot schemas in
-`src/viteplus-monorepo/apps/verself-web/src/lib/policy-catalog.ts` reject malformed
-edits at build time. A second per-app copy is carried at
-`src/viteplus-monorepo/apps/verself-web/src/__generated/policies/`; refresh it via
-`cd src/viteplus-monorepo/apps/verself-web && pnpm generate` whenever the
-canonical files change.
+`../lib/policy-catalog.ts` reject malformed edits at build time.

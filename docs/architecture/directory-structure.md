@@ -52,11 +52,10 @@ Per-deploy generated files materialise under `.cache/render/<site>/` when
 inventory, generated group_vars projections, host firewall files, and rendered
 Nomad jobs from that cache.
 
-## Platform (`src/platform/`)
+## Service- and substrate-local docs
 
-`src/platform/` contains platform policy and architecture documents that have
-not moved to service-local homes yet. Host convergence, OpenTofu provisioning,
-and deploy wrappers live in `src/substrate/`, `src/provision/`, and `.aspect/`.
+Host convergence, OpenTofu provisioning, and deploy wrappers live in
+`src/substrate/`, `src/provision/`, and `.aspect/`.
 
 The Bazel-owned third-party server-tool package definitions, including
 `//src/cue-renderer/binaries:server_tools.tar.zst`, live under

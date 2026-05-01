@@ -1,8 +1,8 @@
 // Package catalog projects the dev/server tool catalog into Ansible
 // group_vars. dev_tools.tar.zst owns every pinned_http_file and
 // source_built_go tool; systemPackages owns apt-managed entries;
-// lockfileUvTools owns Python tools delivered via committed uv.lock
-// files. `bootstrap_pivot` tools are skipped — bazelisk lives in
+// uvTools owns Python tools installed via `uv tool install`.
+// `bootstrap_pivot` tools are skipped — bazelisk lives in
 // scripts/bootstrap and resolves bazel itself.
 package catalog
 
@@ -25,7 +25,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		"topology_substrate_tools":      loaded.Catalog.SubstrateTools,
 		"topology_dev_tools":            loaded.Catalog.DevTools,
 		"topology_dev_tools_archive":    loaded.Catalog.DevToolsArchive,
-		"topology_lockfile_uv_projects": loaded.Catalog.LockfileUvTools,
+		"topology_uv_tools":             loaded.Catalog.UvTools,
 		"topology_system_packages":      loaded.Catalog.SystemPackages,
 		"topology_guest_versions":       loaded.Catalog.GuestVersions,
 	})

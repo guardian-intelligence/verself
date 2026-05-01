@@ -63,7 +63,7 @@ type Catalog struct {
 	DevToolsArchive     map[string]any
 	DevToolPackaging    map[string]any
 	SourceBuiltGoTools  map[string]any
-	LockfileUvTools     map[string]any
+	UvTools             map[string]any
 	SystemPackages      map[string]any
 	GuestVersions       map[string]any
 
@@ -204,7 +204,7 @@ func decodeCatalog(root cue.Value, out *Catalog) error {
 		{path: "devToolsArchive", dst: &out.DevToolsArchive},
 		{path: "devToolPackaging", dst: &out.DevToolPackaging},
 		{path: "sourceBuiltGoTools", dst: &out.SourceBuiltGoTools},
-		{path: "lockfileUvTools", dst: &out.LockfileUvTools},
+		{path: "uvTools", dst: &out.UvTools},
 		{path: "systemPackages", dst: &out.SystemPackages},
 		{path: "guestVersions", dst: &out.GuestVersions},
 	} {

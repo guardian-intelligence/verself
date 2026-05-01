@@ -77,7 +77,7 @@ function Summary() {
       <SectionHeading id="summary">Summary</SectionHeading>
       <SummaryPanel>
         <SummaryItem term="Source of truth">
-          is <code>src/platform/policies/versions.yml</code>; this page is rendered from it.
+          is <code>src/viteplus-monorepo/apps/verself-web/src/policies/versions.yml</code>; this page is rendered from it.
         </SummaryItem>
         <SummaryItem term="Commit-addressable">
           — every entry corresponds to a git commit; diff the YAML file in the monorepo to see
