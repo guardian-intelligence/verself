@@ -104,21 +104,6 @@ def parse_duration_ns(value: object) -> int:
     return int(float(num_part) * multiplier)
 
 
-def primary_port_label(group: dict) -> str:
-    networks = group.get("Networks") or []
-    if not networks:
-        return ""
-    reserved = networks[0].get("ReservedPorts") or []
-    primary = ""
-    for entry in reserved:
-        label = entry.get("Label") or ""
-        if label == "public_http":
-            return "public_http"
-        if not primary and label:
-            primary = label
-    return primary
-
-
 def normalize_check(check: object, task_name: str) -> dict:
     if not isinstance(check, dict):
         raise ValueError(f"override tasks[{task_name}].checks: each check must be a JSON object")
@@ -157,9 +142,11 @@ def apply_override(spec: dict, override: dict) -> None:
     """Splice per-component health checks and rollout policy onto the renderer's base spec.
 
     spec.Job.TaskGroups[*].Update is replaced with a normalized update
-    block. Tasks named in override["tasks"] receive a Services entry
-    carrying the listed checks; tasks not named keep their renderer
-    default (no Services).
+    block. The renderer pre-registers one Nomad service per port label
+    (Provider=nomad, AddressMode=auto) so any consumer can resolve the
+    alloc address via `nomadService` template lookups; this routine
+    attaches the override's health checks to the existing service entry
+    whose PortLabel matches each check.
     """
     if not isinstance(override, dict):
         raise ValueError("override file must contain a JSON object at the top level")
@@ -180,7 +167,6 @@ def apply_override(spec: dict, override: dict) -> None:
         if not isinstance(group, dict):
             raise ValueError("apply_override: TaskGroup is not an object")
         group["Update"] = update_block
-        primary = primary_port_label(group)
         for task in group.get("Tasks") or []:
             if not isinstance(task, dict):
                 continue
@@ -199,17 +185,25 @@ def apply_override(spec: dict, override: dict) -> None:
             checks = [normalize_check(c, task_name) for c in checks_raw]
             if not checks:
                 continue
-            if not primary:
+            services = task.get("Services") or []
+            if not isinstance(services, list) or not services:
                 raise ValueError(
-                    f"override tasks[{task_name}]: task group {group.get('Name')!r} has no reserved port "
-                    "to bind a Service to; declare an endpoint in CUE topology first"
+                    f"override tasks[{task_name}]: task has no Services to attach checks to; "
+                    "ensure the component declares at least one endpoint in CUE topology"
                 )
-            task["Services"] = [{
-                "Name":      task_name,
-                "PortLabel": primary,
-                "Provider":  "nomad",
-                "Checks":    checks,
-            }]
+            services_by_port = {s.get("PortLabel"): s for s in services if isinstance(s, dict)}
+            for check in checks:
+                port_label = check.get("PortLabel")
+                service = services_by_port.get(port_label)
+                if service is None:
+                    raise ValueError(
+                        f"override tasks[{task_name}]: check PortLabel={port_label!r} has no matching "
+                        f"Service entry; available: {sorted(p for p in services_by_port if p)}"
+                    )
+                existing = service.setdefault("Checks", [])
+                if not isinstance(existing, list):
+                    raise ValueError(f"override tasks[{task_name}]: existing Checks for {port_label!r} is not a list")
+                existing.append(check)
 
     extras = sorted(set(tasks_override) - seen_tasks)
     if extras:
