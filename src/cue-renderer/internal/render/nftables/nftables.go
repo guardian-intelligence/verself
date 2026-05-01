@@ -128,14 +128,14 @@ func writeHostInputRule(b *strings.Builder, components map[string]schema.Compone
 		if err != nil {
 			return err
 		}
-		ports, err := portsFromRule(components, rule, path)
+		spec, err := portsFromRule(components, rule, path)
 		if err != nil {
 			return err
 		}
-		if len(ports) == 0 {
+		if len(spec.static) == 0 && !spec.includeDynamic {
 			return fmt.Errorf("%s: no endpoints resolved to ports", path)
 		}
-		fmt.Fprintf(b, "        iifname %q ip saddr %s ip daddr %s %s dport %s accept\n", iifname, saddr, daddr, protocol, portSet(ports))
+		fmt.Fprintf(b, "        iifname %q ip saddr %s ip daddr %s %s dport %s accept\n", iifname, saddr, daddr, protocol, formatPortSpec(spec))
 	case "accept_protocol_family":
 		family, err := projection.String(rule, path, "family")
 		if err != nil {
@@ -154,14 +154,14 @@ func writeHostInputRule(b *strings.Builder, components map[string]schema.Compone
 		if err != nil {
 			return err
 		}
-		ports, err := portsFromRule(components, rule, path)
+		spec, err := portsFromRule(components, rule, path)
 		if err != nil {
 			return err
 		}
-		if len(ports) == 0 {
+		if len(spec.static) == 0 && !spec.includeDynamic {
 			return nil
 		}
-		fmt.Fprintf(b, "        %s dport %s accept\n", protocol, portSet(ports))
+		fmt.Fprintf(b, "        %s dport %s accept\n", protocol, formatPortSpec(spec))
 	case "accept_rate_limited_port":
 		protocol, err := projection.String(rule, path, "protocol")
 		if err != nil {
@@ -191,21 +191,23 @@ func writeHostInputRule(b *strings.Builder, components map[string]schema.Compone
 }
 
 // portsFromRule resolves the rule's `ports` literal list and `endpoints`
-// component/endpoint refs into a sorted, deduplicated []int. Ports and
-// endpoints are both optional; an "accept_port_set" rule may carry either
-// or both, mirroring how config.nftables.public_tcp_ports merges with
-// component endpoints in CUE.
-func portsFromRule(components map[string]schema.Component, rule schema.NftablesHostInputRule, path string) ([]int, error) {
+// component/endpoint refs into a port-spec the writer renders into
+// nft syntax. Ports and endpoints are both optional; an
+// "accept_port_set" rule may carry either or both. Refs to Nomad-
+// supervised components fold into the dynamic-port range component
+// of the spec rather than a CUE-pinned literal.
+func portsFromRule(components map[string]schema.Component, rule schema.NftablesHostInputRule, path string) (endpointPortSpec, error) {
+	var spec endpointPortSpec
 	seen := map[int]bool{}
 	if raw, ok := rule["ports"]; ok && raw != nil {
 		list, ok := raw.([]any)
 		if !ok {
-			return nil, fmt.Errorf("%s.ports: expected list, got %T", path, raw)
+			return endpointPortSpec{}, fmt.Errorf("%s.ports: expected list, got %T", path, raw)
 		}
 		for i, item := range list {
 			p, err := asInt(item)
 			if err != nil {
-				return nil, fmt.Errorf("%s.ports[%d]: %w", path, i, err)
+				return endpointPortSpec{}, fmt.Errorf("%s.ports[%d]: %w", path, i, err)
 			}
 			seen[p] = true
 		}
@@ -213,22 +215,22 @@ func portsFromRule(components map[string]schema.Component, rule schema.NftablesH
 	if _, ok := rule["endpoints"]; ok {
 		refs, err := endpointRefs(rule, path)
 		if err != nil {
-			return nil, err
+			return endpointPortSpec{}, err
 		}
-		ports, err := endpointPorts(components, refs)
+		epSpec, err := endpointPorts(components, refs)
 		if err != nil {
-			return nil, err
+			return endpointPortSpec{}, err
 		}
-		for _, p := range ports {
+		for _, p := range epSpec.static {
 			seen[p] = true
 		}
+		spec.includeDynamic = spec.includeDynamic || epSpec.includeDynamic
 	}
-	out := make([]int, 0, len(seen))
 	for p := range seen {
-		out = append(out, p)
+		spec.static = append(spec.static, p)
 	}
-	sort.Ints(out)
-	return out, nil
+	sort.Ints(spec.static)
+	return spec, nil
 }
 
 func asInt(value any) (int, error) {
@@ -367,13 +369,24 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
+// portSet renders a sorted list of literal ports as an nft port-set
+// expression. Single-element lists collapse to a bare port; longer
+// lists (or any spec carrying the dynamic-port range) become a
+// brace-delimited set.
 func portSet(ports []int) string {
-	if len(ports) == 1 {
-		return fmt.Sprintf("%d", ports[0])
-	}
-	parts := make([]string, 0, len(ports))
-	for _, port := range ports {
+	return formatPortSpec(endpointPortSpec{static: ports})
+}
+
+func formatPortSpec(spec endpointPortSpec) string {
+	parts := make([]string, 0, len(spec.static)+1)
+	for _, port := range spec.static {
 		parts = append(parts, fmt.Sprintf("%d", port))
+	}
+	if spec.includeDynamic {
+		parts = append(parts, fmt.Sprintf("%d-%d", nomadDynamicPortLow, nomadDynamicPortHigh))
+	}
+	if len(parts) == 1 {
+		return parts[0]
 	}
 	return "{ " + strings.Join(parts, ", ") + " }"
 }
