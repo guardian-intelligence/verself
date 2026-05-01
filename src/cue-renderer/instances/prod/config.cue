@@ -56,8 +56,14 @@ config: s.#InstanceConfig & {
 		// Caddy owns the public HTTP/TLS sockets; direct public component
 		// endpoints such as SMTP are added from topology by the renderer.
 		public_tcp_ports: [80, 443]
+		// Public :22 is closed. SSH is reachable only via wg-ops; the
+		// sshd ListenAddress is bound to 10.66.66.1, and the wg-ops
+		// trusted-iifname rule in the host-firewall chain accepts that
+		// traffic. Operators authenticate with OpenBao-issued
+		// certificates only — see ssh_ca above. The rate/burst values
+		// are kept as historical record but unused while public=false.
 		ssh: {
-			public: true
+			public: false
 			rate:   "3/minute"
 			burst:  5
 		}

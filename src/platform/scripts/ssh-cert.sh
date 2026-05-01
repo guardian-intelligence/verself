@@ -56,13 +56,26 @@ bootstrap_bao_binary() {
     chmod +x "$BAO"
 }
 
-refresh_bao_cacert() {
-    # Always refresh: OpenBao's cert can be regenerated when the SAN
-    # list changes. Caching with no invalidation strands operators with
-    # a stale cert after a SAN rotation. The SSH leg here is fast and
-    # already authenticated (static keys pre-cutover, cert auth post).
+refresh_bao_cacert_via_ssh() {
     mkdir -p "$(dirname "$BAO_CACERT")"
     ssh -q -o BatchMode=yes "${SSH_USER}@${HOST_WG_IP}" 'sudo cat /etc/openbao/tls/cert.pem' >"$BAO_CACERT"
+}
+
+ensure_bao_cacert() {
+    # Try the cached cert first. The cert rotates rarely (only on SAN
+    # changes), so a recent cache is usually correct. The SSH-based
+    # refresh is the fallback — and it depends on having a working
+    # auth path to the host, which post-cutover is the cert this very
+    # script is about to sign. Falling back to refresh on every run
+    # would deadlock when the cached cert is fine but the operator's
+    # cert just expired.
+    if [[ -f "$BAO_CACERT" ]] && \
+       curl -fsS --max-time 5 --cacert "$BAO_CACERT" \
+            "${BAO_ADDR}/v1/sys/health" >/dev/null 2>&1; then
+        return
+    fi
+    echo "ssh-cert: refreshing OpenBao CA cert from ${SSH_USER}@${HOST_WG_IP}" >&2
+    refresh_bao_cacert_via_ssh
 }
 
 ensure_keypair() {
@@ -75,7 +88,7 @@ ensure_keypair() {
 }
 
 bootstrap_bao_binary
-refresh_bao_cacert
+ensure_bao_cacert
 ensure_keypair
 
 export BAO_ADDR
