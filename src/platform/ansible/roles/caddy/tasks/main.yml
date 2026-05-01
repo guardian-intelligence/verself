@@ -36,7 +36,6 @@
   loop:
     - /var/lib/caddy
     - /var/cache/caddy
-    - "{{ nomad_artifacts_dir }}"
 
 - name: Create Caddy log directory
   ansible.builtin.file:
@@ -46,6 +45,23 @@
     group: adm
     mode: "2750"
 
+# Public-by-design discovery surface for the verself.sh apex.
+# `/var/www/verself/well-known/` holds files that any operator-onboarding
+# device fetches over public TLS before it has any other trust anchor:
+#   - verself-ssh-ca.pub   (dropped by the ssh_ca role)
+#   - verself-openbao-ca.pem  (dropped by the openbao role)
+#   - verself-wireguard.json  (dropped by the wireguard role)
+# The directory itself is world-readable, owned by root so a renegade
+# service can't replace its contents. Caddy serves the contents from
+# under https://verself.sh/.well-known/verself-*.
+- name: Create well-known publication directory
+  ansible.builtin.file:
+    path: /var/www/verself/well-known
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Create Caddy access log with otelcol-readable permissions
   ansible.builtin.file:
     path: /var/log/caddy/access.log
@@ -53,6 +69,167 @@
     owner: caddy
     group: adm
     mode: "0640"
+
+- name: Create Verself PKI directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/verself/pki, group: root, mode: "0755" }
+    - { path: /etc/verself/pki/private, group: caddy, mode: "0750" }
+
+- name: Map private Nomad artifact origin to loopback
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^.*\\s{{ topology_artifacts.nomad.origin.hostname | regex_escape }}$"
+    line: "127.0.0.1 {{ topology_artifacts.nomad.origin.hostname }}"
+    state: present
+
+- name: Deploy Nomad artifact origin server certificate extensions
+  ansible.builtin.copy:
+    dest: /etc/verself/pki/nomad-artifacts-server.ext
+    owner: root
+    group: caddy
+    mode: "0640"
+    content: |
+      basicConstraints=CA:FALSE
+      keyUsage=digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=DNS:{{ topology_artifacts.nomad.origin.hostname }},IP:127.0.0.1
+
+- name: Generate Nomad artifact local CA private key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -out
+      - /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+      - "4096"
+    creates: /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+
+- name: Generate Nomad artifact local CA certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -nodes
+      - -key
+      - /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+      - -sha256
+      - -days
+      - "3650"
+      - -out
+      - "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+      - -subj
+      - /CN=Verself Nomad artifact local CA
+    creates: "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+
+- name: Inspect Nomad artifact server certificate SAN
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - /etc/verself/pki/nomad-artifacts-server.pem
+      - -noout
+      - -ext
+      - subjectAltName
+  register: caddy_nomad_artifacts_cert_san
+  changed_when: false
+  failed_when: false
+
+- name: Remove stale Nomad artifact server certificate
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/verself/pki/nomad-artifacts-server.pem
+    - /etc/verself/pki/nomad-artifacts-server.csr
+    - /etc/verself/pki/private/nomad-artifacts-server-key.pem
+  when: >-
+    caddy_nomad_artifacts_cert_san.rc != 0
+    or ('DNS:' ~ topology_artifacts.nomad.origin.hostname) not in caddy_nomad_artifacts_cert_san.stdout
+
+- name: Generate Nomad artifact origin server private key and CSR
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -keyout
+      - /etc/verself/pki/private/nomad-artifacts-server-key.pem
+      - -out
+      - /etc/verself/pki/nomad-artifacts-server.csr
+      - -subj
+      - "/CN={{ topology_artifacts.nomad.origin.hostname }}"
+    creates: /etc/verself/pki/private/nomad-artifacts-server-key.pem
+
+- name: Sign Nomad artifact origin server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -in
+      - /etc/verself/pki/nomad-artifacts-server.csr
+      - -CA
+      - "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+      - -CAkey
+      - /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+      - -CAcreateserial
+      - -out
+      - /etc/verself/pki/nomad-artifacts-server.pem
+      - -days
+      - "3650"
+      - -sha256
+      - -extfile
+      - /etc/verself/pki/nomad-artifacts-server.ext
+    creates: /etc/verself/pki/nomad-artifacts-server.pem
+
+- name: Converge Nomad artifact TLS material ownership
+  ansible.builtin.file:
+    path: "/etc/verself/pki/{{ item.name }}"
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: nomad-artifacts-ca.pem, group: root, mode: "0644" }
+    - { name: private/nomad-artifacts-ca-key.pem, group: root, mode: "0600" }
+    - { name: nomad-artifacts-server.pem, group: caddy, mode: "0640" }
+    - { name: private/nomad-artifacts-server-key.pem, group: caddy, mode: "0640" }
+    - { name: nomad-artifacts-server.csr, group: caddy, mode: "0640" }
+    - { name: nomad-artifacts-server.ext, group: caddy, mode: "0640" }
+
+- name: Check Nomad artifact local CA serial file
+  ansible.builtin.stat:
+    path: /etc/verself/pki/nomad-artifacts-ca.srl
+  register: caddy_nomad_artifacts_ca_serial
+
+- name: Set Nomad artifact local CA serial ownership
+  ansible.builtin.file:
+    path: /etc/verself/pki/nomad-artifacts-ca.srl
+    owner: root
+    group: root
+    mode: "0600"
+  when: caddy_nomad_artifacts_ca_serial.stat.exists
+
+- name: Install Nomad artifact local CA into system trust
+  ansible.builtin.copy:
+    src: "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+    dest: /usr/local/share/ca-certificates/verself-nomad-artifacts.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: update ca certificates
 
 - name: Read Electric API secret for shape proxy auth
   ansible.builtin.slurp:
@@ -99,6 +276,7 @@
     owner: root
     group: caddy
     mode: "0640"
+    validate: "{{ verself_bin }}/caddy validate --config %s --adapter caddyfile"
   no_log: true
   notify: restart caddy
 

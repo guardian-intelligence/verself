@@ -97,6 +97,21 @@
     - role: postgresql
     - role: zitadel
     - role: openbao
+    # Re-converge wg-ops AFTER openbao has populated /etc/credstore/
+    # workload-pool/slots.json with this deploy's full set of slot
+    # pubkeys. The wireguard role above runs before openbao (because
+    # openbao binds to the wg-ops address) and so misses any new slot
+    # entries on first deploy and on slot_count bumps. This second
+    # invocation only re-templates the config + restart-on-change; it
+    # never regenerates host priv keys.
+    - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            ['ops']
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
     # ssh_ca depends on openbao having materialised the CA pubkey at
     # {{ openbao_credstore_dir }}/ssh-ca.pub. Must run after openbao.
     - role: ssh_ca

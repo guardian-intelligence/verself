@@ -1,0 +1,283 @@
+---
+# Workload pool reconcile: a fixed set of WireGuard slots reserved for
+# ephemeral workloads (Devin / Cursor / CI VMs).
+#
+# What this file does, in order:
+#   1. Mount KV v2 at kv-workload-pool/ on first run; idempotent.
+#   2. Generate one wg keypair per slot index (0..slot_count-1) into
+#      kv-workload-pool/data/slots/<n>/{wg-private-key,wg-public-key,wg-address}
+#      on first deploy. Existing slot keys are read back and never
+#      regenerated; bumping slot_count just adds new slots.
+#   3. Write a credstore JSON file (/etc/credstore/workload-pool/slots.json)
+#      with {index, wg_public_key, wg_address} per slot — the wireguard
+#      role consumes this at template render time to add the slots as
+#      wg-ops peers without putting runtime state into CUE.
+#   4. Mint an ACL policy `ssh-ca-workload` (sign workload SSH cert + read
+#      slot priv keys + read workload AppRole role-id by ID).
+#   5. Enable the AppRole auth method at auth/approle and create role
+#      `workload-enrollment`: 15-min single-use secret-id → 24h Vault
+#      token bound to the workload SSH role.
+#
+# What downstream consumers look for:
+#   - aspect operator enroll-workload reads
+#       kv-workload-pool/data/slots/<n>/wg-private-key
+#     after winning a slot lease (kv-workload-pool/data/leases/<n>),
+#     and mints the AppRole secret-id via auth/approle/role/
+#     workload-enrollment/secret-id.
+#   - The bootstrap binary inside the VM logs in via
+#       auth/approle/login (role_id + secret_id from env), then signs
+#     the SSH cert via ssh-ca/sign/workload with key_id stamped to
+#     verself-workload-slot-<n>.
+
+- name: List OpenBao auth and secret mounts for workload-pool reconcile
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+    return_content: true
+  register: openbao_workload_pool_mounts_response
+  changed_when: false
+  no_log: true
+
+- name: Mount workload-pool KV v2
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts/{{ openbao_workload_pool_kv_mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      type: kv
+      options:
+        version: "2"
+      description: Verself workload-pool slot wg keypairs
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  when: (openbao_workload_pool_kv_mount ~ '/') not in (openbao_workload_pool_mounts_response.json.data.keys() | list)
+  changed_when: true
+  no_log: true
+
+- name: Probe workload-pool slot keypairs in KV
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ openbao_workload_pool_kv_mount }}/data/slots/{{ item }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: [200, 404]
+    return_content: true
+  register: openbao_workload_pool_slot_probes
+  changed_when: false
+  no_log: true
+  loop: "{{ range(0, topology_workload_pool.slot_count) | list }}"
+  loop_control:
+    label: "slot {{ item }}"
+
+# Keypair generation is host-local: the wireguard role owns `wg`
+# binaries and is the one place that must understand how to derive a
+# pubkey from a privkey. The openbao role only writes the result into
+# KV. This avoids a hard dependency from openbao on having `wg` in
+# verself_bin already present at this stage.
+- name: Generate missing workload-pool slot wg priv keys
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    {{ verself_bin }}/wg genkey
+  args:
+    executable: /bin/bash
+  register: openbao_workload_pool_slot_genkey
+  changed_when: openbao_workload_pool_slot_genkey.rc == 0
+  loop: "{{ range(0, topology_workload_pool.slot_count) | list }}"
+  loop_control:
+    label: "slot {{ item }}"
+  when: (openbao_workload_pool_slot_probes.results[item].status | default(404)) != 200
+  no_log: true
+
+- name: Derive missing workload-pool slot wg public keys
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s' "${VERSELF_SLOT_PRIV_KEY}" | {{ verself_bin }}/wg pubkey
+  args:
+    executable: /bin/bash
+  environment:
+    # Avoid serialising the key through the argv of `wg pubkey`; pipe
+    # via env to keep it out of the process table (and therefore out of
+    # accidental ps captures during the deploy).
+    VERSELF_SLOT_PRIV_KEY: "{{ (openbao_workload_pool_slot_genkey.results[item].stdout | default('')) | trim }}"
+  register: openbao_workload_pool_slot_pubkey
+  changed_when: false
+  loop: "{{ range(0, topology_workload_pool.slot_count) | list }}"
+  loop_control:
+    label: "slot {{ item }}"
+  when: (openbao_workload_pool_slot_probes.results[item].status | default(404)) != 200
+  no_log: true
+
+- name: Write missing workload-pool slot keypairs to KV
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ openbao_workload_pool_kv_mount }}/data/slots/{{ item }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      data:
+        wg_private_key: "{{ (openbao_workload_pool_slot_genkey.results[item].stdout | default('')) | trim }}"
+        wg_public_key: "{{ (openbao_workload_pool_slot_pubkey.results[item].stdout | default('')) | trim }}"
+        # Slot N → slot_address_base with the last octet incremented by
+        # N. Mirrors the Go renderer's view of the same mapping; drift
+        # would surface as a wg AllowedIPs mismatch on first slot
+        # connect.
+        wg_address: >-
+          {{
+            (topology_workload_pool.slot_address_base.split('.')[0:3] | join('.'))
+            ~ '.' ~
+            ((topology_workload_pool.slot_address_base.split('.')[3] | int) + item)
+          }}
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+  loop: "{{ range(0, topology_workload_pool.slot_count) | list }}"
+  loop_control:
+    label: "slot {{ item }}"
+  when: (openbao_workload_pool_slot_probes.results[item].status | default(404)) != 200
+  changed_when: true
+  no_log: true
+
+- name: Re-read workload-pool slot keypairs after generation
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ openbao_workload_pool_kv_mount }}/data/slots/{{ item }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+    return_content: true
+  register: openbao_workload_pool_slot_reads
+  changed_when: false
+  no_log: true
+  loop: "{{ range(0, topology_workload_pool.slot_count) | list }}"
+  loop_control:
+    label: "slot {{ item }}"
+
+- name: Ensure workload-pool credstore directory exists
+  ansible.builtin.file:
+    path: "{{ openbao_workload_pool_credstore_dir }}"
+    state: directory
+    owner: root
+    group: openbao
+    mode: "0750"
+
+- name: Persist workload-pool slot pubkeys + addresses for the wireguard role
+  ansible.builtin.copy:
+    dest: "{{ openbao_workload_pool_credstore_dir }}/slots.json"
+    owner: root
+    group: openbao
+    mode: "0640"
+    content: >-
+      {{
+        {
+          'slot_count': topology_workload_pool.slot_count,
+          'slots': [
+            {
+              'index': i,
+              'wg_public_key': openbao_workload_pool_slot_reads.results[i].json.data.data.wg_public_key,
+              'wg_address': openbao_workload_pool_slot_reads.results[i].json.data.data.wg_address,
+            }
+            for i in range(0, topology_workload_pool.slot_count)
+          ],
+        } | to_nice_json
+      }}
+  no_log: true
+
+- name: Write Vault policy ssh-ca-workload (workload AppRole token policy)
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/ssh-ca-workload"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      # Single-line HCL: sidesteps Jinja's literal-\n behaviour inside
+      # single-quoted strings (same convention as ssh-ca.yml).
+      policy: >-
+        path "{{ topology_ssh_ca.mount }}/sign/workload" { capabilities = ["update"] }
+        path "{{ openbao_workload_pool_kv_mount }}/data/slots/+" { capabilities = ["read"] }
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: [200, 204]
+  changed_when: true
+  no_log: true
+
+- name: Enable OpenBao AppRole auth mount
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth/approle"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      type: approle
+      description: Verself workload-pool bootstrap-secret minting
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  register: openbao_workload_pool_approle_enable
+  changed_when: openbao_workload_pool_approle_enable.status == 204
+  failed_when:
+    - openbao_workload_pool_approle_enable.status != 204
+    - openbao_workload_pool_approle_enable.status != 400
+  no_log: true
+
+- name: Configure AppRole role workload-enrollment
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/approle/role/workload-enrollment"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      bind_secret_id: true
+      # Single-use, short-TTL bootstrap secret-id. Operator runs
+      # `aspect operator enroll-workload` to mint one fresh per VM.
+      secret_id_num_uses: 1
+      secret_id_ttl: "{{ topology_workload_pool.enroll_secret_id_ttl_seconds }}s"
+      # 24h cap on the resulting Vault token; the SSH cert TTL inherits
+      # this limit because the workload SSH role's max_ttl_seconds is
+      # also 24h.
+      token_ttl: "{{ topology_workload_pool.workload_token_ttl_seconds }}s"
+      token_max_ttl: "{{ topology_workload_pool.workload_token_ttl_seconds }}s"
+      token_num_uses: 0
+      token_policies:
+        - ssh-ca-workload
+      # The bootstrap binary's source IP is whatever NAT egress the VM
+      # uses, then the wg-ops 10.66.66.x slot address. We bound auth
+      # tokens to the wg-ops network only — a stolen secret-id can't
+      # mint outside the mesh.
+      token_bound_cidrs:
+        - 0.0.0.0/0
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  changed_when: true
+  no_log: true
+
+- name: Read AppRole workload-enrollment role_id
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/approle/role/workload-enrollment/role-id"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+    return_content: true
+  register: openbao_workload_pool_role_id
+  changed_when: false
+  no_log: true
+
+- name: Persist workload-enrollment role_id for aspect operator enroll-workload
+  ansible.builtin.copy:
+    dest: "{{ openbao_workload_pool_credstore_dir }}/workload-enrollment-role-id"
+    owner: root
+    group: openbao
+    mode: "0640"
+    content: "{{ openbao_workload_pool_role_id.json.data.role_id }}\n"
+  no_log: true
