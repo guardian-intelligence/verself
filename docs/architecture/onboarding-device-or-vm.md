@@ -90,16 +90,21 @@ as `token_max_ttl` (30d) has not elapsed. After 30d the operator
 re-runs `aspect operator onboard --refresh-oidc`, which re-OIDCs and
 reuses the existing keys/cert path.
 
-OIDC uses the **device-code flow** (RFC 8628). `bao login` is invoked
-with `callbackmode=device`: it prints a verification URL and a short
-`user_code`, the operator opens the URL in any browser on any device
-and types the code, Zitadel marks the device as authorized, and
-`bao` polls the token endpoint until it succeeds. No localhost
-callback, no SSH port-forward for headless controllers, no
-`xdg-open` dependency. The Zitadel OIDC app carries
-`OIDC_GRANT_TYPE_DEVICE_CODE` to enable this; authorization-code is
-listed alongside only because Zitadel requires a code grant to
-accompany refresh-token issuance, but the binary never exercises it.
+OIDC uses the **authorization-code flow** with a `localhost:8250`
+redirect URI. `bao login` is invoked with `skip_browser=true` so the
+auth URL is always printed to stderr — no `xdg-open` dependency.
+On a graphical operator device, paste the URL into the local
+browser; on a headless controller, open a second SSH session with
+`ssh -L 8250:localhost:8250 ubuntu@<host>` first and paste into the
+laptop browser. The redirect lands on the laptop's `localhost:8250`,
+tunnels back to the controller's bao process, and login completes.
+
+The Zitadel OIDC app carries `OIDC_GRANT_TYPE_DEVICE_CODE` alongside
+the authorization-code grant in anticipation of a future switch to
+device-code flow (RFC 8628), which would eliminate the localhost
+callback. OpenBao 2.5.2's OIDC plugin currently returns "no state
+returned in device callback mode" under `callbackmode=device`;
+re-enable the device flow when an upstream fix lands.
 
 Hard-fail conditions (loud, no silent fallbacks):
 
