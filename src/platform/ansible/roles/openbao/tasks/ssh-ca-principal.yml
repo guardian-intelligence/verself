@@ -53,11 +53,18 @@
       ttl: "{{ item.value.max_ttl_seconds }}s"
       max_ttl: "{{ item.value.max_ttl_seconds }}s"
       allow_host_certificates: false
-      # Cert IDs encode the role and a Vault-side unique token id. The
-      # ID is what sshd logs into journald → otel_logs → host_auth_events,
-      # and it cross-references OpenBao's own audit log to trace which
-      # OIDC subject minted the cert. {% raw %} keeps Vault's template
-      # placeholders intact through Ansible's Jinja rendering.
+      # Allow the client (aspect-operator + verself-workload-bootstrap)
+      # to stamp the cert's KeyID with the device or workload-pool slot
+      # name; that is what makes verself.host_auth_events.cert_id
+      # directly attributable. Format is verself-<principal>-<suffix>
+      # where suffix is the operator device name (e.g. shovon-mbp) or
+      # `slot-<index>` for a workload-pool slot. detect-recent-intrusions
+      # rejects any cert outside that shape.
+      allow_user_key_ids: true
+      # key_id_format is the fallback when the client does not pass
+      # key_id (e.g. legacy bao CLI invocations during bootstrap). The
+      # {% raw %} guard keeps Vault's template placeholders intact
+      # through Ansible's Jinja rendering.
       key_id_format: "{% raw %}verself-{{role_name}}-{{token_unique_id}}{% endraw %}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
