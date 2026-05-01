@@ -67,8 +67,10 @@
   ansible.builtin.apt:
     name:
       - git
+      - ca-certificates
       - curl
       - jq
+      - openssl
       - python3
       - sqlite3
       - unzip

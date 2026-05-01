@@ -48,6 +48,42 @@ def parse_artifacts(values: list[str]) -> dict[str, Path]:
     return out
 
 
+def artifact_delivery(index: dict) -> dict[str, object]:
+    delivery = index.get("artifact_delivery")
+    if not isinstance(delivery, dict):
+        raise ValueError("jobs/index.json must include artifact_delivery")
+    if delivery.get("public") is not False:
+        raise ValueError("artifact_delivery.public must be false")
+
+    source_prefix = delivery.get("getter_source_prefix")
+    if not isinstance(source_prefix, str) or not source_prefix.startswith("s3::https://"):
+        raise ValueError("artifact_delivery.getter_source_prefix must start with s3::https://")
+
+    key_prefix = delivery.get("key_prefix")
+    if not isinstance(key_prefix, str) or not key_prefix.strip("/"):
+        raise ValueError("artifact_delivery.key_prefix is required")
+
+    bucket = delivery.get("bucket")
+    if not isinstance(bucket, str) or not bucket:
+        raise ValueError("artifact_delivery.bucket is required")
+
+    checksum_algorithm = delivery.get("checksum_algorithm")
+    if checksum_algorithm != "sha256":
+        raise ValueError(f"artifact_delivery.checksum_algorithm={checksum_algorithm!r}: only sha256 is supported")
+
+    getter_options = delivery.get("getter_options", {})
+    if not isinstance(getter_options, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in getter_options.items()):
+        raise ValueError("artifact_delivery.getter_options must be a string map")
+
+    return {
+        "bucket": bucket,
+        "key_prefix": key_prefix.strip("/"),
+        "source_prefix": source_prefix.rstrip("/"),
+        "checksum_algorithm": checksum_algorithm,
+        "getter_options": dict(getter_options),
+    }
+
+
 def resolve_artifacts(spec: dict, artifact_bindings: dict[str, dict[str, str]]) -> set[str]:
     job = spec.get("Job")
     if not isinstance(job, dict):
@@ -64,7 +100,9 @@ def resolve_artifacts(spec: dict, artifact_bindings: dict[str, dict[str, str]]) 
                 if binding is None:
                     raise ValueError(f"artifact {output!r} referenced by spec but not provided to Bazel rule")
                 stanza["GetterSource"] = binding["url"]
-                stanza["GetterOptions"] = {"checksum": "sha256:" + binding["sha256"]}
+                getter_options = dict(binding["getter_options"])
+                getter_options["checksum"] = binding["checksum"]
+                stanza["GetterOptions"] = getter_options
                 seen.add(output)
     return seen
 
@@ -78,6 +116,44 @@ def stamp_meta(spec: dict, artifact_digest: str) -> None:
     meta.pop("spec_sha256", None)
     job["Meta"] = meta
     meta["spec_sha256"] = canonical_digest(spec)
+
+
+def ordered_components(components: list[dict]) -> list[dict]:
+    by_job_id: dict[str, dict] = {}
+    for component in components:
+        job_id = component.get("job_id")
+        if not isinstance(job_id, str) or not job_id:
+            raise ValueError(f"component index row missing job_id: {component!r}")
+        if job_id in by_job_id:
+            raise ValueError(f"duplicate Nomad job_id in index: {job_id}")
+        by_job_id[job_id] = component
+
+    temporary: set[str] = set()
+    permanent: set[str] = set()
+    out: list[dict] = []
+
+    def visit(job_id: str, stack: list[str]) -> None:
+        if job_id in permanent:
+            return
+        if job_id in temporary:
+            cycle = " -> ".join(stack + [job_id])
+            raise ValueError(f"Nomad job dependency cycle: {cycle}")
+        temporary.add(job_id)
+        component = by_job_id[job_id]
+        depends_on = component.get("depends_on", [])
+        if not isinstance(depends_on, list) or not all(isinstance(dep, str) for dep in depends_on):
+            raise ValueError(f"{job_id}.depends_on must be a string list")
+        for dependency in sorted(depends_on):
+            if dependency not in by_job_id:
+                raise ValueError(f"{job_id}.depends_on references unknown Nomad job {dependency!r}")
+            visit(dependency, stack + [job_id])
+        temporary.remove(job_id)
+        permanent.add(job_id)
+        out.append(component)
+
+    for job_id in sorted(by_job_id):
+        visit(job_id, [])
+    return out
 
 
 def main() -> int:
@@ -106,32 +182,49 @@ def main() -> int:
 
         index_path = render_dir / "jobs" / "index.json"
         if not index_path.exists():
-            (out_dir / "publish.tsv").write_text("", encoding="utf-8")
+            (out_dir / "publish.json").write_text('{"artifacts":[]}\n', encoding="utf-8")
             (out_dir / "submit.tsv").write_text("", encoding="utf-8")
             return 0
         index = json.loads(index_path.read_text(encoding="utf-8"))
-        artifact_base_url = index.get("artifact_base_url", "").rstrip("/")
-        artifact_store_path = index.get("artifact_store_path", "").rstrip("/")
-        if not artifact_base_url or not artifact_store_path:
-            raise ValueError("jobs/index.json must include artifact_base_url and artifact_store_path")
+        components = index.get("components", [])
+        if not isinstance(components, list):
+            raise ValueError("jobs/index.json components must be a list")
+        ordered = ordered_components(components)
+        delivery = artifact_delivery(index)
 
         artifact_bindings = {}
-        publish_rows = []
-        for component in index.get("components", []):
+        publish_artifacts_by_key = {}
+        for component in components:
             for artifact in component.get("artifacts", []):
                 output = artifact.get("output", "")
                 path = artifacts_by_output.get(output)
                 if path is None:
                     raise ValueError(f"jobs/index.json references artifact {output!r}, but Bazel rule did not provide it")
                 digest = sha256_file(path)
-                url = f"{artifact_base_url}/sha256/{digest}/{output}.tar"
-                remote_path = f"{artifact_store_path}/sha256/{digest}/{output}.tar"
-                artifact_bindings[output] = {"path": str(path), "sha256": digest, "url": url, "remote_path": remote_path}
-                publish_rows.append((output, str(path), remote_path, digest))
+                key = f"{delivery['key_prefix']}/{digest}/{output}.tar"
+                url = f"{delivery['source_prefix']}/{key}"
+                checksum = f"{delivery['checksum_algorithm']}:{digest}"
+                artifact_bindings[output] = {
+                    "path": str(path),
+                    "sha256": digest,
+                    "url": url,
+                    "key": key,
+                    "bucket": delivery["bucket"],
+                    "checksum": checksum,
+                    "getter_options": delivery["getter_options"],
+                }
+                publish_artifacts_by_key[(delivery["bucket"], key)] = {
+                    "output": output,
+                    "local_path": str(path),
+                    "sha256": digest,
+                    "bucket": delivery["bucket"],
+                    "key": key,
+                    "getter_source": url,
+                }
 
         referenced = set()
         submit_rows = []
-        for component in index.get("components", []):
+        for component in ordered:
             job_id = component["job_id"]
             spec_path = render_dir / "jobs" / f"{job_id}.nomad.json"
             spec = json.loads(spec_path.read_text(encoding="utf-8"))
@@ -156,13 +249,16 @@ def main() -> int:
         if extras:
             raise ValueError(f"artifacts were provided but not referenced by rendered jobs: {', '.join(extras)}")
 
-        publish_rows = sorted(set(publish_rows))
-        (out_dir / "publish.tsv").write_text(
-            "".join("\t".join(row) + "\n" for row in publish_rows),
+        publish_manifest = {
+            "artifact_delivery": index["artifact_delivery"],
+            "artifacts": sorted(publish_artifacts_by_key.values(), key=lambda row: (row["bucket"], row["key"], row["output"])),
+        }
+        (out_dir / "publish.json").write_text(
+            json.dumps(publish_manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         (out_dir / "submit.tsv").write_text(
-            "".join("\t".join(row) + "\n" for row in sorted(submit_rows)),
+            "".join("\t".join(row) + "\n" for row in submit_rows),
             encoding="utf-8",
         )
     return 0

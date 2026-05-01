@@ -121,4 +121,3 @@ http_file(
     sha256 = "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
     url = "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.149.0/otelcol-contrib_0.149.0_linux_amd64.tar.gz",
 )
-

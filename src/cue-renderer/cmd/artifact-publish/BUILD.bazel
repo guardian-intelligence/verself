@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "artifact-publish_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/cue-renderer/cmd/artifact-publish",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_aws_aws_sdk_go_v2//aws",
+        "@com_github_aws_aws_sdk_go_v2//aws/signer/v4:signer",
+    ],
+)
+
+go_binary(
+    name = "artifact-publish",
+    embed = [":artifact-publish_lib"],
+    visibility = ["//visibility:public"],
+)

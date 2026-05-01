@@ -10,6 +10,7 @@ go_library(
         "//src/cue-renderer/internal/render",
         "//src/cue-renderer/internal/render/projection",
         "//src/cue-renderer/internal/render/serviceenv",
+        "@org_cuelang_go//cue",
     ],
 )
 
