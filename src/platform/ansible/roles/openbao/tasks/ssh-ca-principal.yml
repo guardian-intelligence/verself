@@ -25,8 +25,14 @@
     body_format: json
     body:
       key_type: ca
-      default_user: "{{ topology_ssh_ca.default_user }}"
-      allowed_users: "{{ topology_ssh_ca.default_user }}"
+      # OpenBao's `default_user`/`allowed_users` are the *cert principals*,
+      # not the OS user. Each principal here is its own SSH role; the
+      # AuthorizedPrincipalsFile on the host maps these names back to the
+      # `ubuntu` OS account. allowed_users restricted to this principal
+      # only — the role can never sign a cert valid for a different
+      # principal.
+      default_user: "{{ item.key }}"
+      allowed_users: "{{ item.key }}"
       allow_user_certificates: true
       # source-address is stamped into the cert; sshd verifies on every
       # connection regardless of cert holder requests.
@@ -44,7 +50,6 @@
       # OIDC subject minted the cert. {% raw %} keeps Vault's template
       # placeholders intact through Ansible's Jinja rendering.
       key_id_format: "{% raw %}verself-{{role_name}}-{{token_unique_id}}{% endraw %}"
-      valid_principals: "{{ item.key }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   changed_when: true
