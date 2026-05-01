@@ -7,6 +7,24 @@
       cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
   when: cloudflare_api_token | default('', true) | length == 0
 
+# DNS records publish the bare-metal node's *public* IP, not its
+# ansible_host (which the operator may set to the wg-ops IP for SSH).
+# The two were previously coupled, so changing inventory ansible_host
+# silently overwrote production DNS with a private address. Require
+# cloudflare_dns_public_ip explicitly.
+- name: Validate Cloudflare DNS target IP is configured
+  ansible.builtin.assert:
+    that:
+      - cloudflare_dns_public_ip is defined
+      - cloudflare_dns_public_ip | length > 0
+      - cloudflare_dns_public_ip is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+      - not (cloudflare_dns_public_ip is match('^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[01])\.|^127\.'))
+    fail_msg: >-
+      cloudflare_dns_public_ip is missing or points at an RFC 1918 / loopback
+      address. Set it to the bare-metal node's public IPv4 in inventory or
+      group_vars before deploying. Mirroring ansible_host is the bug that
+      previously published 10.66.66.1 to the public zone.
+
 - name: Create or update topology DNS records
   community.general.cloudflare_dns:
     zone: "{{ verself_domain if item.zone == 'product' else company_domain }}"
@@ -17,7 +35,7 @@
         else item.record ~ '.' ~ (verself_domain if item.zone == 'product' else company_domain)
       }}
     type: "{{ cloudflare_dns_record_type }}"
-    value: "{{ ansible_host }}"
+    value: "{{ cloudflare_dns_public_ip }}"
     ttl: "{{ cloudflare_dns_ttl }}"
     proxied: "{{ cloudflare_proxied | default(false) }}"
     solo: true
