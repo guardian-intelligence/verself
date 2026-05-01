@@ -152,13 +152,26 @@ config: s.#InstanceConfig & {
 			operator: {
 				name: "operator"
 				role: "operator"
-				// 1h matches a normal interactive work block; longer than
-				// 15min so a deploy or a debug session doesn't re-auth
-				// through Zitadel mid-flight, shorter than the breakglass
-				// window so a leaked cert can't outlive a shift. The
-				// Vault token TTL matches, so one OIDC login covers up to
-				// 1h of cert re-signing.
-				max_ttl_seconds: 3600
+				// 24h is the schema ceiling and matches the natural
+				// dev-loop cadence: a single OIDC login covers a day
+				// of work, including weekends and the gaps between
+				// deploys. Originally set to 1h to bound a leaked
+				// cert's lifetime to less than a shift, but in
+				// practice deploys do not happen every hour and
+				// `aspect deploy` pre-flight refresh therefore
+				// failed to keep certs fresh between sessions.
+				// Mitigations against leakage:
+				// - source_address_cidrs caps a stolen cert to
+				//   wg-ops mesh (.2..99) — the attacker also needs
+				//   the wg priv key and the slot's wg address.
+				// - KeyID stamping (verself-operator-<device>)
+				//   makes detect-recent-intrusions surface any
+				//   misuse from `verself.host_auth_events`.
+				// - Revocation is "delete the device entry from
+				//   operators.cue and redeploy" — the next sshd
+				//   reconfigure removes the principal from the
+				//   per-user principals file.
+				max_ttl_seconds: 86400
 				source_address_cidrs: ["10.66.66.0/24"]
 				permit_pty:             true
 				permit_port_forwarding: true
