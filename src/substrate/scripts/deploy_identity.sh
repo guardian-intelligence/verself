@@ -105,6 +105,14 @@ export VERSELF_SITE="${VERSELF_SITE:-}"
 export VERSELF_DEPLOY_SHA="${VERSELF_DEPLOY_SHA:-${VERSELF_COMMIT_SHA}}"
 export VERSELF_DEPLOY_SCOPE="${VERSELF_DEPLOY_SCOPE:-all}"
 
+# VERSELF_LAYER is set by scripts/run-layer.sh just before invoking
+# ansible-with-otel.sh so the resulting ansible.* spans carry
+# ResourceAttributes['verself.layer']=<l1_os|l2_userspace|l3_binaries|l4a_components>.
+# When run-layer.sh isn't on the call stack (e.g. a one-shot security-patch
+# play), the variable is empty and the attribute is dropped from the
+# resource set by the OTEL_RESOURCE_ATTRIBUTES builder below.
+export VERSELF_LAYER="${VERSELF_LAYER:-}"
+
 # OTLP endpoint: scripts/with-otel-agent.sh sets VERSELF_OTLP_ENDPOINT to
 # the controller-side agent's fixed receiver port. The fallback exists so
 # this script remains sourceable in contexts that only need the
@@ -130,6 +138,7 @@ parts = [
     ("verself.site", os.environ.get("VERSELF_SITE", "")),
     ("verself.deploy_sha", os.environ.get("VERSELF_DEPLOY_SHA", "")),
     ("verself.deploy_scope", os.environ.get("VERSELF_DEPLOY_SCOPE", "")),
+    ("verself.layer", os.environ.get("VERSELF_LAYER", "")),
 ]
 print(",".join(f"{k}={up.quote(v, safe='')}" for k, v in parts if v))
 PY
