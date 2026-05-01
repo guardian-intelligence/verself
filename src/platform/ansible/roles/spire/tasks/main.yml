@@ -10,6 +10,10 @@
       topology. Use a different threat model before changing its bind address
       or issuer URL.
 
+- name: Resolve SPIRE binary directory
+  ansible.builtin.set_fact:
+    spire_bin_dir: "{{ verself_bin | default('/opt/verself/profile/bin') }}"
+
 - name: Create spire system group
   ansible.builtin.group:
     name: spire
@@ -195,12 +199,12 @@
 
 - name: Validate SPIRE server config
   ansible.builtin.command:
-    cmd: "{{ verself_bin }}/spire-server validate -config /etc/spire/server/server.conf"
+    cmd: "{{ spire_bin_dir }}/spire-server validate -config /etc/spire/server/server.conf"
   changed_when: false
 
 - name: Validate SPIRE agent config
   ansible.builtin.command:
-    cmd: "{{ verself_bin }}/spire-agent validate -config /etc/spire/agent/agent.conf"
+    cmd: "{{ spire_bin_dir }}/spire-agent validate -config /etc/spire/agent/agent.conf"
   changed_when: false
 
 - name: Deploy spire-server systemd unit
@@ -217,7 +221,7 @@
       Group=spire
       RuntimeDirectory=spire-server/private
       RuntimeDirectoryMode=0750
-      ExecStart={{ verself_bin }}/spire-server run -config /etc/spire/server/server.conf
+      ExecStart={{ spire_bin_dir }}/spire-server run -config /etc/spire/server/server.conf
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=
@@ -310,7 +314,7 @@
       RuntimeDirectory=spire-agent/private spire-agent/sockets
       RuntimeDirectoryMode=0750
       ExecStartPre=/bin/sh -c {{ spire_agent_join_token_exec | quote }}
-      ExecStart={{ verself_bin }}/spire-agent run -config /etc/spire/agent/agent.conf -joinTokenFile /run/spire-agent/private/join-token
+      ExecStart={{ spire_bin_dir }}/spire-agent run -config /etc/spire/agent/agent.conf -joinTokenFile /run/spire-agent/private/join-token
       ExecStartPost=/bin/sh -c 'sleep 2; rm -f /run/spire-agent/private/join-token'
       Restart=on-failure
       RestartSec=5
@@ -340,7 +344,7 @@
   vars:
     spire_agent_join_token_exec: >-
       umask 077;
-      {{ verself_bin }}/spire-server token generate
+      {{ spire_bin_dir }}/spire-server token generate
       -socketPath {{ spire_server_socket_path }}
       -spiffeID {{ spire_agent_id }}
       -ttl 600

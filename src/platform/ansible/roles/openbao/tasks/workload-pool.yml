@@ -169,6 +169,26 @@
     group: openbao
     mode: "0750"
 
+- name: Reset workload-pool slot projection
+  ansible.builtin.set_fact:
+    openbao_workload_pool_slots: []
+
+- name: Build workload-pool slot projection for the wireguard role
+  ansible.builtin.set_fact:
+    openbao_workload_pool_slots: >-
+      {{
+        openbao_workload_pool_slots
+        + [{
+          'index': item,
+          'wg_public_key': openbao_workload_pool_slot_reads.results[item].json.data.data.wg_public_key,
+          'wg_address': openbao_workload_pool_slot_reads.results[item].json.data.data.wg_address,
+        }]
+      }}
+  loop: "{{ range(0, topology_workload_pool.slot_count) | list }}"
+  loop_control:
+    label: "slot {{ item }}"
+  no_log: true
+
 - name: Persist workload-pool slot pubkeys + addresses for the wireguard role
   ansible.builtin.copy:
     dest: "{{ openbao_workload_pool_credstore_dir }}/slots.json"
@@ -179,14 +199,7 @@
       {{
         {
           'slot_count': topology_workload_pool.slot_count,
-          'slots': [
-            {
-              'index': i,
-              'wg_public_key': openbao_workload_pool_slot_reads.results[i].json.data.data.wg_public_key,
-              'wg_address': openbao_workload_pool_slot_reads.results[i].json.data.data.wg_address,
-            }
-            for i in range(0, topology_workload_pool.slot_count)
-          ],
+          'slots': openbao_workload_pool_slots | default([]),
         } | to_nice_json
       }}
   no_log: true
