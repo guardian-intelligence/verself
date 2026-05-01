@@ -1,39 +1,29 @@
 // Command verself-deploy is the typed orchestrator for verself
 // deploys. It owns Bazel-driven artifact discovery (via BEP),
-// SSH-tunneled Garage publish, and Nomad submit/monitor.
+// SSH-tunneled Garage publish, Nomad submit/monitor, and
+// ansible-playbook supervision.
 //
 // Subcommand surface mirrors `aspect <group> <action>`:
 //
-//	verself-deploy nomad submit     --spec=<path> --nomad-addr=<url>
+//	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
 //	verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
+//	verself-deploy ansible run      --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
 //
-// Each subcommand initialises OpenTelemetry once via the shared
-// verselfotel package, projects the deploy identity onto outgoing
-// W3C baggage so every span carries `verself.deploy_run_key` etc.,
-// and extracts a parent trace from the TRACEPARENT env (set by the
-// AXL deploy task) so this binary's spans are children of the
-// deploy's root span rather than orphans.
+// Every subcommand routes through internal/runtime.Init, which owns
+// the start ordering: SSH dial → OTLP forward channel →
+// otelcol-contrib supervisor → OTel SDK init. Shutdown reverses
+// that order so spans drain through the agent's persistent queue
+// before the SSH tunnel closes.
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-
-	verselfotel "github.com/verself/otel"
-
-	"github.com/verself/deployment-tooling/internal/identity"
 )
 
 const (
 	serviceName    = "verself-deploy"
-	serviceVersion = "0.2.0"
+	serviceVersion = "0.3.0"
 )
 
 func main() {
@@ -44,6 +34,10 @@ func main() {
 	switch os.Args[1] {
 	case "nomad":
 		os.Exit(runNomad(os.Args[2:]))
+	case "ansible":
+		os.Exit(runAnsible(os.Args[2:]))
+	case "with-agent":
+		os.Exit(runWithAgent(os.Args[2:]))
 	case "-h", "--help", "help":
 		usage()
 		os.Exit(0)
@@ -58,9 +52,15 @@ func usage() {
 	fmt.Fprint(os.Stderr, `verself-deploy — typed orchestrator for verself deploys
 
 usage:
-  verself-deploy nomad submit     --spec=<path> --nomad-addr=<url> [--timeout=5m]
+  verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
   verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
+  verself-deploy ansible run      --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
+  verself-deploy with-agent       --site=<site> -- <cmd> [args...]
 
+Every subcommand initialises an in-process OTel SDK pointed at a
+controller-side otelcol-contrib agent the binary supervises for the
+duration of the run. Spans land in default.otel_traces under
+service.name=verself-deploy.
 `)
 }
 
@@ -78,30 +78,4 @@ func runNomad(args []string) int {
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad: unknown subcommand: %s\n", args[0])
 		return 2
 	}
-}
-
-// initContext sets up the per-process OTel + identity scaffolding.
-// All subcommands route through here so the contract — service name,
-// identity baggage, parent trace extraction — is in one place.
-func initContext() (context.Context, func(), context.CancelFunc, error) {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	shutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
-		ServiceName:    serviceName,
-		ServiceVersion: serviceVersion,
-	})
-	if err != nil {
-		stop()
-		return nil, nil, nil, fmt.Errorf("otel init: %w", err)
-	}
-	flushOnExit := func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = shutdown(flushCtx)
-	}
-	ctx = identity.Inject(ctx)
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{
-		"traceparent": os.Getenv("TRACEPARENT"),
-		"tracestate":  os.Getenv("TRACESTATE"),
-	})
-	return ctx, flushOnExit, stop, nil
 }

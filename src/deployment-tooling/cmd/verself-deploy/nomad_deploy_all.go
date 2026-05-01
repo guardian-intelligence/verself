@@ -6,21 +6,22 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tooling/internal/bazelbuild"
 	"github.com/verself/deployment-tooling/internal/garage"
-	"github.com/verself/deployment-tooling/internal/inventory"
 	"github.com/verself/deployment-tooling/internal/nomadclient"
 	"github.com/verself/deployment-tooling/internal/render"
+	"github.com/verself/deployment-tooling/internal/runtime"
 	"github.com/verself/deployment-tooling/internal/sshtun"
 )
 
@@ -49,16 +50,22 @@ func runNomadDeployAll(args []string) int {
 		*repoRoot = cwd
 	}
 
-	ctx, flushOnExit, stop, err := initContext()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy: %v\n", err)
-		return 1
-	}
-	defer flushOnExit()
+	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	tracer := otel.Tracer(serviceName)
-	ctx, span := tracer.Start(ctx, "verself_deploy.nomad.deploy_all",
+	rt, err := runtime.Init(parentCtx, runtime.Options{
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Site:           *site,
+		RepoRoot:       *repoRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-all: %v\n", err)
+		return 1
+	}
+	defer rt.Close()
+
+	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.nomad.deploy_all",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("verself.site", *site),
@@ -68,7 +75,7 @@ func runNomadDeployAll(args []string) int {
 	)
 	defer span.End()
 
-	if err := deployAll(ctx, span, *site, *repoRoot, *publishOnly); err != nil {
+	if err := deployAll(ctx, rt, span, *site, *repoRoot, *publishOnly); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-all: %v\n", err)
@@ -78,7 +85,7 @@ func runNomadDeployAll(args []string) int {
 	return 0
 }
 
-func deployAll(ctx context.Context, span trace.Span, site, repoRoot string, publishOnly bool) error {
+func deployAll(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot string, publishOnly bool) error {
 	jobsTarget := fmt.Sprintf("//src/cue-renderer:%s_nomad_jobs", site)
 	// The renderer's nomad-jobs target depends transitively on every
 	// per-component artifact tarball; building it materialises every
@@ -119,23 +126,8 @@ func deployAll(ctx context.Context, span trace.Span, site, repoRoot string, publ
 		return nil
 	}
 
-	infra, err := resolveInfraHost(repoRoot, site)
-	if err != nil {
-		return err
-	}
-	span.SetAttributes(
-		attribute.String("ssh.host", infra.Host),
-		attribute.String("ssh.user", infra.User),
-	)
-
-	sshClient, err := sshtun.Dial(ctx, infra.Host, infra.User)
-	if err != nil {
-		return err
-	}
-	defer sshClient.Close()
-
 	if len(manifest.Artifacts) > 0 {
-		if err := publishArtifacts(ctx, sshClient, manifest, repoRoot); err != nil {
+		if err := publishArtifacts(ctx, rt.SSH, manifest, repoRoot); err != nil {
 			return err
 		}
 	}
@@ -145,15 +137,7 @@ func deployAll(ctx context.Context, span trace.Span, site, repoRoot string, publ
 	if len(submitEntries) == 0 {
 		return nil
 	}
-	return submitAll(ctx, sshClient, nomadJobsDir, submitEntries)
-}
-
-func resolveInfraHost(repoRoot, site string) (*inventory.Host, error) {
-	cachePath := filepath.Join(repoRoot, ".cache/render", site, "inventory", "hosts.ini")
-	if _, err := os.Stat(cachePath); err == nil {
-		return inventory.LoadInfra(cachePath)
-	}
-	return inventory.LoadInfra(filepath.Join(repoRoot, "src/substrate/ansible/inventory", site+".ini"))
+	return submitAll(ctx, rt, nomadJobsDir, submitEntries)
 }
 
 func publishArtifacts(ctx context.Context, sshClient *sshtun.Client, manifest *render.Manifest, repoRoot string) error {
@@ -192,8 +176,8 @@ func publishArtifacts(ctx context.Context, sshClient *sshtun.Client, manifest *r
 	return pub.PublishAll(ctx, manifest, repoRoot)
 }
 
-func submitAll(ctx context.Context, sshClient *sshtun.Client, jobsDir string, entries []render.SubmitEntry) error {
-	forward, err := sshClient.Forward(ctx, "nomad", defaultNomadRemotePort)
+func submitAll(ctx context.Context, rt *runtime.Runtime, jobsDir string, entries []render.SubmitEntry) error {
+	forward, err := rt.SSH.Forward(ctx, "nomad", defaultNomadRemotePort)
 	if err != nil {
 		return err
 	}
@@ -203,9 +187,8 @@ func submitAll(ctx context.Context, sshClient *sshtun.Client, jobsDir string, en
 		return err
 	}
 
-	tracer := otel.Tracer(serviceName)
 	for _, entry := range entries {
-		if err := submitOneEntry(ctx, tracer, client, jobsDir, entry); err != nil {
+		if err := submitOneEntry(ctx, rt.Tracer, client, jobsDir, entry); err != nil {
 			return fmt.Errorf("%s: %w", entry.JobID, err)
 		}
 	}

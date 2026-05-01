@@ -28,28 +28,53 @@ load(
 # same sequence to produce a per-layer convergence report.
 _LAYER_NAMES = ["l1_os", "l2_userspace", "l3_binaries", "l4a_components"]
 
+_VERSELF_DEPLOY_TARGET = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
+_VERSELF_DEPLOY_BIN_PATH = "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
+
+def _build_verself_deploy(ctx):
+    """Build the verself-deploy binary and return its absolute path,
+    or empty string on failure. Cached after the first build via the
+    bazel disk cache, so per-task invocations are sub-second."""
+    rc = checked_spawn(
+        ctx, "bazelisk",
+        ["build", "--config=remote-writer", _VERSELF_DEPLOY_TARGET],
+        cwd = ws_path(ctx),
+        label = "bazelisk build " + _VERSELF_DEPLOY_TARGET,
+    )
+    if rc != 0:
+        return ""
+    return ws_path(ctx, _VERSELF_DEPLOY_BIN_PATH)
+
 def _run_ansible(ctx, site, env, playbook, *extra_args):
     """Run a single ad-hoc playbook (security-patch, guest-rootfs, reset/wipe).
 
     Layered convergence goes through run_layered_substrate; this entry point
     exists only for one-shot maintenance playbooks that don't have a layer
-    home and won't ever benefit from hash-gating.
+    home and won't ever benefit from hash-gating. Routes through
+    verself-deploy ansible run so the OTel agent supervisor and
+    Ansible streaming parser are exercised on the maintenance path
+    too — same observability contract as a layered converge.
     """
-    args_list = [playbook] + list(extra_args)
-    extra_env = {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))}
-    merged_env = {}
-    if env != None:
-        for k, v in env.items():
-            merged_env[k] = v
-    for k, v in extra_env.items():
-        merged_env[k] = v
+    bin = _build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    inventory_dir = ws_path(ctx, site_cache_inventory(site))
+    args_list = [
+        "ansible", "run",
+        "--site=" + site,
+        "--playbook=" + playbook,
+        "--inventory=" + inventory_dir,
+        "--repo-root=" + ws_path(ctx),
+    ]
+    for a in extra_args:
+        args_list.append("--ansible-arg=" + a)
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/ansible-with-otel.sh"),
+        bin,
         args_list,
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        env = merged_env,
-        label = "ansible-with-otel " + " ".join(args_list),
+        cwd = ws_path(ctx),
+        env = env,
+        label = "verself-deploy ansible run " + playbook,
     )
 
 def _converge_impl(ctx):
@@ -118,12 +143,19 @@ def _guest_rootfs_impl(ctx):
     return _run_ansible(ctx, site, None, "playbooks/guest-rootfs.yml")
 
 def _nomad_apps(ctx, site):
+    bin = _build_verself_deploy(ctx)
+    if bin == "":
+        return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
-        ["--site=" + site],
+        bin,
+        [
+            "nomad", "deploy-all",
+            "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
+        ],
         cwd = ws_path(ctx),
-        label = "nomad-deploy-all --site=" + site,
+        label = "verself-deploy nomad deploy-all --site=" + site,
     )
 
 def _edit_secrets_impl(ctx):
