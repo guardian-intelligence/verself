@@ -1,0 +1,38 @@
+"""aspect ssh — SSH cert issuance against the OpenBao SSH CA.
+
+  aspect ssh cert [--role=<name>]
+
+The CA's auth path is OpenBao's OIDC method bound to Zitadel. The
+`bao login -method=oidc` flow opens a browser, redirects through
+Zitadel, and returns a Vault token whose policy is exactly
+`<mount>/sign/<role>`. The script signs the operator's local public key
+and writes the cert next to the key.
+
+Source of truth: src/cue-renderer/instances/prod/config.cue:ssh_ca.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
+
+_PLATFORM = "src/platform"
+
+def _cert_impl(ctx):
+    cli_args = []
+    if ctx.args.role:
+        cli_args = cli_args + ["--role", ctx.args.role]
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/ssh-cert.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "ssh-cert.sh",
+    )
+
+cert = task(
+    implementation = _cert_impl,
+    name = "cert",
+    group = ["ssh"],
+    summary = "Issue a short-lived SSH cert via OpenBao's OIDC-bound SSH CA.",
+    args = {
+        "role": args.string(default = "operator", description = "OpenBao SSH role to sign against (default: operator)."),
+    },
+)

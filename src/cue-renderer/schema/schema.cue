@@ -219,6 +219,15 @@ package schema
 #NftablesInputRule: {
 	kind: "drop_non_loopback"
 	endpoints: [...#NftablesEndpointRef]
+} | {
+	// accept_iifname_endpoints opens specific endpoint ports for traffic
+	// arriving on a named ingress interface. The complementary
+	// drop_non_loopback rule that follows it then drops everything else.
+	// Used to expose a substrate API to wg-ops peers without putting it
+	// on the public NIC.
+	kind:    "accept_iifname_endpoints"
+	iifname: string & !=""
+	endpoints: [...#NftablesEndpointRef]
 }
 
 #NftablesOutputRule: {
@@ -372,6 +381,103 @@ package schema
 	bundle_endpoint_bind_address: #Host           @go(BundleEndpointBindAddress)
 }
 
+// SSH CA: short-lived user-certificate issuance via OpenBao's ssh secrets
+// engine, fronted by a Zitadel-OIDC auth method. The on-host sshd is
+// configured with TrustedUserCAKeys + AuthorizedKeysFile=none so the
+// only way to authenticate is to present a cert this CA signed.
+//
+// Each principal corresponds to one OpenBao SSH role plus one entry in
+// /etc/ssh/principals/<default_user>. The schema enforces:
+//   - source_address_cidrs is mandatory (no certs valid from "anywhere").
+//   - max_ttl_seconds is bounded at 24h (a leaked cert can't outlive a day).
+//   - automation principals must declare a non-empty force_command, since
+//     the issuing identity is a workload, not a human, and an
+//     unrestricted shell on a workload-issued cert defeats the point.
+#SSHRoleKind: "operator" | "automation" | "breakglass"
+
+#SSHPrincipal: {
+	name: string & !="" @go(Name)
+	role: #SSHRoleKind  @go(Role)
+
+	// Maximum cert lifetime in seconds. The CA refuses to sign for longer.
+	// Hard ceiling 24h; operator certs are typically 15min, automation 60s.
+	max_ttl_seconds: int & >0 & <=86400 @go(MaxTTLSeconds)
+
+	// CIDRs the cert may be presented from. The CA stamps the source
+	// constraint into the cert; sshd verifies on every connection.
+	// The shape `[string, ...string]` requires at least one element so a
+	// naked principal (no CIDRs) fails CUE evaluation at instance time.
+	source_address_cidrs: [string & !="", ...string & !=""] @go(SourceAddressCIDRs)
+
+	// force_command, when non-empty, replaces any user-requested command
+	// with this one. permit_pty=false denies TTY allocation. Together
+	// these constrain what an automation principal can do once
+	// authenticated.
+	force_command: string | *"" @go(ForceCommand)
+	permit_pty:    bool | *true @go(PermitPty)
+
+	// Automation principals MUST declare a force_command. Empty
+	// force_command on automation fails CUE evaluation.
+	if role == "automation" {
+		force_command: !=""
+	}
+}
+
+#SSHOIDCConfig: {
+	// Zitadel discovery URL — the CA's OIDC auth method validates tokens
+	// against this issuer's JWKS.
+	discovery_url: string & =~"^https://" @go(DiscoveryURL)
+
+	// Zitadel project that owns the SSH-CA OIDC application registration.
+	// The zitadel_oauth_app role creates this if missing.
+	project_name: string & !="" @go(ProjectName)
+
+	// OpenBao OIDC auth method allows redirect URIs matching these.
+	// `bao login -method=oidc` binds to one of these ports as the local
+	// callback target; multiple ports tolerate "another bao login is
+	// already holding 8250" without operator intervention.
+	allowed_redirect_uris: [...string & =~"^http://localhost:[0-9]+/oidc/callback$"] @go(AllowedRedirectURIs)
+
+	// Zitadel project role required for operator-cert issuance. The
+	// OIDC method's role binds bound_claims["urn:zitadel:iam:org:project:roles"]
+	// to this name; missing the role means no Vault token, means no cert.
+	operator_project_role: string & !="" @go(OperatorProjectRole)
+}
+
+#SSHCAConfig: {
+	// Display name used in the SSH cert authority field and OpenBao mount
+	// description. Cosmetic; doesn't affect the trust chain.
+	ca_name: string & !="" @go(CAName)
+
+	// OpenBao mount path for the SSH secrets engine. All issuance API
+	// calls are scoped under /v1/<mount>/sign/<role>.
+	mount: string & =~"^[a-z][a-z0-9_-]*$" @go(Mount)
+
+	// Default OS user the certs authorize on the host. Today this is
+	// always "ubuntu" because the bare-metal box has no per-human Unix
+	// accounts, only the role-based sudoer.
+	default_user: string & !="" @go(DefaultUser)
+
+	// Path on the host where the CA's public key is materialised. Pointed
+	// at by sshd_config TrustedUserCAKeys.
+	ca_pubkey_path: string & =~"^/" @go(CAPubkeyPath)
+
+	// Path on the host where the per-user principals file is written. The
+	// %u in sshd_config AuthorizedPrincipalsFile expands to default_user.
+	principals_file: string & =~"^/" @go(PrincipalsFile)
+
+	oidc: #SSHOIDCConfig
+
+	// At least one principal must be declared; otherwise no cert can be
+	// issued and the host is locked out by construction. CUE has no
+	// "non-empty struct" shorthand the way it has for lists, so the
+	// instance-level test in load_ssh_ca_test.go asserts an empty
+	// principals map fails evaluation.
+	principals: {
+		[string]: #SSHPrincipal
+	}
+}
+
 #InstanceConfig: {
 	// Typed config consumed by Go renderers. Each typed section has a
 	// dedicated projection in internal/render/<name>/ and may declare its
@@ -382,6 +488,7 @@ package schema
 	nftables:    #NftablesConfig
 	firecracker: #FirecrackerConfig
 	spire:       #SpireConfig
+	ssh_ca:      #SSHCAConfig @go(SshCA)
 
 	// ansible_vars is the explicit Ansible-vars surface. Every key here
 	// becomes a top-level group_vars/all entry; the ops renderer projects

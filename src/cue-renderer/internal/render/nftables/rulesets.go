@@ -86,6 +86,20 @@ func writeInputRules(b *strings.Builder, components map[string]schema.Component,
 				return err
 			}
 			fmt.Fprintf(b, "        tcp dport %s iifname != \"lo\" drop\n", portSet(ports))
+		case "accept_iifname_endpoints":
+			iifname, err := projection.String(rule, path, "iifname")
+			if err != nil {
+				return err
+			}
+			refs, err := endpointRefs(rule, path)
+			if err != nil {
+				return err
+			}
+			ports, err := endpointPorts(components, refs)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(b, "        iifname %q tcp dport %s accept\n", iifname, portSet(ports))
 		default:
 			return fmt.Errorf("%s.kind: unsupported %q", path, kind)
 		}

@@ -499,7 +499,18 @@ topology: s.#Topology & {
 			runtime: {systemd: "openbao", user: "openbao", group: "openbao"}
 			artifact: {kind: "static_binary", output: "bao", role: "openbao"}
 			endpoints: {
-				api: {protocol: "https", port: 8200, exposure: "loopback"}
+				// OpenBao serves both 127.0.0.1 (substrate workloads) and the
+				// wg-ops IP (operator laptops requesting SSH certs through
+				// `bao login -method=oidc`). nftables keeps 8200 off the
+				// public interface; the wg-ops trusted-iifname rule lets WG
+				// peers in.
+				api: {
+					protocol:               "https"
+					listen_host:            "0.0.0.0"
+					wildcard_listen_reason: "OpenBao serves substrate workloads on 127.0.0.1 and operator cert-issuance flows on the wg-ops IP; nftables keeps 8200 off the public interface."
+					port:                   8200
+					exposure:               "wireguard"
+				}
 				cluster: {protocol: "tcp", port: 8201, exposure: "loopback"}
 			}
 			interfaces: api: {kind: "resource_protocol", endpoint: "api", auth: "spiffe_mtls"}

@@ -1,0 +1,11 @@
+# Managed by Ansible — ssh_ca role.
+# sshd drop-in for OpenBao-issued SSH certificates.
+# Source of truth: src/cue-renderer/instances/prod/config.cue:ssh_ca
+
+# CA pubkey: any cert signed by this key is admissible. The CA private
+# key lives in OpenBao's SSH secrets engine; sshd never sees it.
+TrustedUserCAKeys {{ topology_ssh_ca.ca_pubkey_path }}
+
+# Per-user principals allowlist. The cert's `valid_principals` set must
+# intersect this file or sshd rejects the connection.
+AuthorizedPrincipalsFile {{ topology_ssh_ca.principals_file }}

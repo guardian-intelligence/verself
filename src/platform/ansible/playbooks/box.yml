@@ -97,6 +97,9 @@
     - role: postgresql
     - role: zitadel
     - role: openbao
+    # ssh_ca depends on openbao having materialised the CA pubkey at
+    # {{ openbao_credstore_dir }}/ssh-ca.pub. Must run after openbao.
+    - role: ssh_ca
     - role: nats
     - role: temporal
     - role: stalwart

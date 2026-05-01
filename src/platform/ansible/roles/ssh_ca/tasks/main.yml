@@ -1,0 +1,71 @@
+---
+# Substrate-side SSH CA configuration.
+#
+# Materialises the OpenBao-issued CA public key into /etc/ssh/, writes
+# the per-user principals file, and renders the sshd_config drop-in that
+# turns on certificate authentication. Runs after the openbao role in
+# box.yml so the credstore CA pubkey is guaranteed present.
+#
+# This commit is *additive*: cert auth is enabled alongside
+# AuthorizedKeysFile, so an operator can verify the cert path before the
+# next commit flips authorized_keys to none.
+
+- name: Read OpenBao SSH CA public key from credstore
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/ssh-ca.pub"
+  register: ssh_ca_pubkey_raw
+
+- name: Ensure principals directory exists
+  ansible.builtin.file:
+    path: "{{ topology_ssh_ca.principals_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Materialise the SSH CA public key on the host
+  ansible.builtin.copy:
+    content: "{{ ssh_ca_pubkey_raw.content | b64decode }}"
+    dest: "{{ topology_ssh_ca.ca_pubkey_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sshd
+
+- name: Render the per-user principals file
+  ansible.builtin.copy:
+    # One principal name per line. AuthorizedPrincipalsFile %u expands
+    # to the OS user sshd accepts; only certs whose `valid_principals`
+    # set intersects this file are admitted.
+    content: |
+      # Managed by Ansible — ssh_ca role.
+      # Principals authorised to log in as {{ topology_ssh_ca.default_user }}.
+      # Source: src/cue-renderer/instances/prod/config.cue:ssh_ca.principals
+      {% for name, principal in (topology_ssh_ca.principals | dictsort) %}
+      {{ principal.name }}
+      {% endfor %}
+    dest: "{{ topology_ssh_ca.principals_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sshd
+
+- name: Render the sshd_config drop-in for cert authentication
+  ansible.builtin.template:
+    src: 60-ssh-ca.conf.j2
+    dest: /etc/ssh/sshd_config.d/60-ssh-ca.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sshd
+
+# Validate the FULL sshd_config tree (main file + drop-ins) before the
+# handler reload fires. `sshd -T` exits non-zero on any parse error;
+# `sshd -t` does the same plus checks for required values. We use -t
+# because it catches missing values where sshd would otherwise start
+# with surprising defaults. Runs unconditionally so a stale broken
+# drop-in from a prior run still surfaces.
+- name: Validate the merged sshd_config tree
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -t
+  changed_when: false

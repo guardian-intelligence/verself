@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  role_name: ssh_ca
+  description: >-
+    Materialises the OpenBao-issued SSH CA pubkey, principals file, and
+    sshd drop-in. Runs after the openbao role.
+  author: verself
+  license: BSD
+  min_ansible_version: "2.16"
+dependencies: []

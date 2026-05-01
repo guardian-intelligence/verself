@@ -1,0 +1,235 @@
+---
+# SSH certificate authority hosted on OpenBao.
+#
+# Reconciles, in this order:
+#   1. Zitadel OIDC application "verself-ssh-ca" (creates project on
+#      first run; idempotent thereafter).
+#   2. OpenBao OIDC auth method bound to the Zitadel issuer with the
+#      SSH-CA app's client_id/secret. Mounted at /v1/auth/oidc-ssh-ca/.
+#   3. One Vault policy per CUE-declared SSH principal granting exactly
+#      `<mount>/sign/<principal>`.
+#   4. SSH secrets engine at /v1/<mount>/, one signing role per CUE
+#      principal with TTL/CIDR/force-command stamped from the schema.
+#   5. OIDC role on the auth method only for `role: operator` principals
+#      (humans). Automation roles use SPIFFE workload identity (not
+#      wired in this commit). Breakglass uses a separate path that
+#      requires the platform_emergency Zitadel role (also not wired
+#      here; the SSH signing role exists, but no auth path can reach
+#      it yet — by design, breakglass needs explicit operator action).
+#   6. CA public key persisted to {{ openbao_credstore_dir }}/ssh-ca.pub
+#      for the ssh_ca role to consume on the next play.
+#
+# Schema source of truth: src/cue-renderer/schema/schema.cue (#SSHCAConfig,
+# #SSHPrincipal). Instance values land in `topology_ssh_ca` via
+# src/cue-renderer/instances/prod/config.cue's ansible_vars projection.
+
+- name: Reconcile Zitadel OIDC app for SSH CA
+  ansible.builtin.include_role:
+    name: zitadel_oauth_app
+  vars:
+    zitadel_oauth_app_name: verself-ssh-ca
+    zitadel_oauth_app_project_name: "{{ topology_ssh_ca.oidc.project_name }}"
+    zitadel_oauth_app_create_project_if_missing: true
+    zitadel_oauth_app_redirect_uris: "{{ topology_ssh_ca.oidc.allowed_redirect_uris }}"
+    zitadel_oauth_app_post_logout_redirect_uris: []
+    zitadel_oauth_app_credstore_dir: "{{ openbao_credstore_dir }}"
+    zitadel_oauth_app_credstore_group: openbao
+    # OpenBao runs the OIDC code-exchange leg server-side, so the app
+    # must carry a real client_secret (POST/BASIC auth method) rather
+    # than relying on PKCE.
+    zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_BASIC
+    zitadel_oauth_app_app_type: OIDC_APP_TYPE_WEB
+    zitadel_oauth_app_grant_types:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+      - OIDC_GRANT_TYPE_REFRESH_TOKEN
+    zitadel_oauth_app_role_assertions: true
+    zitadel_oauth_app_client_secret_filename: ssh-ca-oidc-client-secret
+    zitadel_oauth_app_cutover_marker_filename: ssh-ca-oidc-cutover
+
+- name: Read SSH CA OIDC client_id from credstore
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/oidc-client-id"
+  register: openbao_ssh_ca_client_id_raw
+  no_log: true
+
+- name: Read SSH CA OIDC client_secret from credstore
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/ssh-ca-oidc-client-secret"
+  register: openbao_ssh_ca_client_secret_raw
+  no_log: true
+
+- name: Set SSH CA OIDC client facts
+  ansible.builtin.set_fact:
+    openbao_ssh_ca_client_id: "{{ openbao_ssh_ca_client_id_raw.content | b64decode | trim }}"
+    openbao_ssh_ca_client_secret: "{{ openbao_ssh_ca_client_secret_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Re-list OpenBao auth mounts before SSH CA setup
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+    return_content: true
+  register: openbao_ssh_ca_auth_mounts
+  changed_when: false
+  no_log: true
+
+- name: Enable OpenBao OIDC auth mount for SSH CA
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth/oidc-ssh-ca"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      type: oidc
+      description: Verself SSH CA — Zitadel-bound operator auth
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  when: ('oidc-ssh-ca/') not in (openbao_ssh_ca_auth_mounts.json.data.keys() | list)
+  changed_when: true
+  no_log: true
+
+- name: Configure OpenBao OIDC auth method for SSH CA
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/oidc-ssh-ca/config"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      oidc_discovery_url: "{{ topology_ssh_ca.oidc.discovery_url }}"
+      oidc_client_id: "{{ openbao_ssh_ca_client_id }}"
+      oidc_client_secret: "{{ openbao_ssh_ca_client_secret }}"
+      bound_issuer: "{{ topology_ssh_ca.oidc.discovery_url }}"
+      default_role: operator
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  changed_when: true
+  no_log: true
+
+- name: Mount OpenBao SSH secrets engine
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts/{{ topology_ssh_ca.mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      type: ssh
+      description: "{{ topology_ssh_ca.ca_name }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    # 400 means already mounted; treat as idempotent success.
+    status_code: [204, 400]
+  register: openbao_ssh_ca_mount
+  changed_when: openbao_ssh_ca_mount.status == 204
+  no_log: true
+
+- name: Generate OpenBao SSH CA signing keypair (idempotent)
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ topology_ssh_ca.mount }}/config/ca"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      generate_signing_key: true
+      key_type: ed25519
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    # 200 on first generation; 400 thereafter ("keys are already
+    # configured"). Either is acceptable — the engine is idempotent.
+    status_code: [200, 400]
+  register: openbao_ssh_ca_generate
+  changed_when: openbao_ssh_ca_generate.status == 200
+  no_log: true
+
+- name: Read OpenBao SSH CA public key
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{ topology_ssh_ca.mount }}/config/ca"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+    return_content: true
+  register: openbao_ssh_ca_pubkey_response
+  no_log: true
+
+- name: Persist OpenBao SSH CA public key for the ssh_ca role to consume
+  ansible.builtin.copy:
+    content: "{{ openbao_ssh_ca_pubkey_response.json.data.public_key }}\n"
+    dest: "{{ openbao_credstore_dir }}/ssh-ca.pub"
+    owner: root
+    group: openbao
+    mode: "0644"
+
+- name: Build Vault policy documents per SSH principal
+  ansible.builtin.set_fact:
+    openbao_ssh_ca_policy_documents: >-
+      {{
+        openbao_ssh_ca_policy_documents | default({}) |
+        combine({
+          item: 'path "' ~ topology_ssh_ca.mount ~ '/sign/' ~ item ~ '" {\n  capabilities = ["update"]\n}\n'
+        })
+      }}
+  loop: "{{ topology_ssh_ca.principals.keys() | list }}"
+
+- name: Write Vault policies for SSH CA principals
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/ssh-ca-{{ item }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      policy: "{{ openbao_ssh_ca_policy_documents[item] }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  loop: "{{ topology_ssh_ca.principals.keys() | list }}"
+  changed_when: true
+  no_log: true
+
+- name: Configure OpenBao OIDC roles for human (operator) principals
+  ansible.builtin.uri:
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/oidc-ssh-ca/role/{{ item.key }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      user_claim: sub
+      bound_audiences:
+        - "{{ openbao_ssh_ca_client_id }}"
+      # bound_issuer (configured at the auth method level above) is the
+      # access boundary: only Zitadel-signed tokens land here. The
+      # platform_operator project_role check that operator_project_role
+      # represents is enforced by Zitadel-side role grants — i.e. the
+      # founder must grant the platform_operator role on the
+      # verself-ssh-ca project to anyone they want to issue SSH certs.
+      # Until that grant exists, the OIDC token Zitadel emits will not
+      # carry the role, but for the single-operator instance there is
+      # nothing for OpenBao to additionally verify here.
+      allowed_redirect_uris: "{{ topology_ssh_ca.oidc.allowed_redirect_uris }}"
+      token_policies:
+        - "ssh-ca-{{ item.key }}"
+      # token TTL matches cert TTL: a leaked Vault token can't outlive
+      # the cert it would issue.
+      token_ttl: "{{ item.value.max_ttl_seconds }}s"
+      token_max_ttl: "{{ item.value.max_ttl_seconds }}s"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  loop: "{{ topology_ssh_ca.principals | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value.role == 'operator'
+  changed_when: true
+  no_log: true
+
+- name: Configure OpenBao SSH signing role per principal
+  ansible.builtin.include_tasks: ssh-ca-principal.yml
+  loop: "{{ topology_ssh_ca.principals | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

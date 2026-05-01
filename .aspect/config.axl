@@ -73,6 +73,7 @@ load(
     mail_passwords = "passwords",
 )
 load(".aspect/tasks/observe.axl", "observe")
+load(".aspect/tasks/ssh.axl", ssh_cert = "cert")
 
 def config(ctx):
     # Top-level tasks.
@@ -124,6 +125,9 @@ def config(ctx):
     ctx.tasks.add(billing_documents)
     ctx.tasks.add(billing_finalizations)
     ctx.tasks.add(billing_events)
+
+    # aspect ssh ...
+    ctx.tasks.add(ssh_cert)
 
     # aspect mail ...
     ctx.tasks.add(mail_list)
