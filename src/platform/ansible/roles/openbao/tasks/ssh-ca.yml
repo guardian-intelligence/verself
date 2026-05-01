@@ -40,6 +40,15 @@
     zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_BASIC
     zitadel_oauth_app_app_type: OIDC_APP_TYPE_WEB
     zitadel_oauth_app_grant_types:
+      # OpenBao drives this app exclusively in OIDC device-code mode
+      # (callbackmode=device): the auth URL bao prints carries a
+      # user_code that the operator types into Zitadel's device page,
+      # so there is no localhost:8250 callback to forward and no
+      # browser auto-open dependency. Authorization-code remains
+      # listed only because Zitadel requires *some* code grant to
+      # accompany refresh-token issuance for OIDC apps; the binary
+      # never exercises it.
+      - OIDC_GRANT_TYPE_DEVICE_CODE
       - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
       - OIDC_GRANT_TYPE_REFRESH_TOKEN
     zitadel_oauth_app_role_assertions: true

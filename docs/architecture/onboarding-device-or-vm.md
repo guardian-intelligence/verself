@@ -90,23 +90,16 @@ as `token_max_ttl` (30d) has not elapsed. After 30d the operator
 re-runs `aspect operator onboard --refresh-oidc`, which re-OIDCs and
 reuses the existing keys/cert path.
 
-OIDC uses the authorization-code flow with a `localhost:8250` redirect
-URI. `bao login` is invoked with `skip_browser=true` so the auth URL
-is always printed to the terminal — no `xdg-open` / `open` dependency.
-On a graphical operator device, paste the URL into the local browser
-and the listener at `localhost:8250` receives the callback.
-
-On a headless controller (no `$DISPLAY`), open a second SSH session
-from a machine with a browser, port-forwarding 8250 first:
-
-    ssh -L 8250:localhost:8250 ubuntu@<controller>
-
-Then paste the URL into that machine's browser. The redirect lands
-on `localhost:8250` of the laptop, tunnels back to the controller,
-and `bao` completes the login. The binary detects headless mode and
-prints these instructions before invoking `bao`. A future migration
-to `callbackmode=device` (Zitadel device-code grant) eliminates the
-port-forward step.
+OIDC uses the **device-code flow** (RFC 8628). `bao login` is invoked
+with `callbackmode=device`: it prints a verification URL and a short
+`user_code`, the operator opens the URL in any browser on any device
+and types the code, Zitadel marks the device as authorized, and
+`bao` polls the token endpoint until it succeeds. No localhost
+callback, no SSH port-forward for headless controllers, no
+`xdg-open` dependency. The Zitadel OIDC app carries
+`OIDC_GRANT_TYPE_DEVICE_CODE` to enable this; authorization-code is
+listed alongside only because Zitadel requires a code grant to
+accompany refresh-token issuance, but the binary never exercises it.
 
 Hard-fail conditions (loud, no silent fallbacks):
 
