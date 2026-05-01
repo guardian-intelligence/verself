@@ -309,7 +309,7 @@
 - name: Publish OpenBao TLS server cert under /.well-known
   ansible.builtin.copy:
     src: "{{ openbao_tls_dir }}/cert.pem"
-    dest: /var/www/verself/well-known/verself-openbao-ca.pem
+    dest: /var/www/verself/.well-known/verself-openbao-ca.pem
     remote_src: true
     owner: root
     group: root

@@ -46,7 +46,7 @@
     mode: "2750"
 
 # Public-by-design discovery surface for the verself.sh apex.
-# `/var/www/verself/well-known/` holds files that any operator-onboarding
+# `/var/www/verself/.well-known/` holds files that any operator-onboarding
 # device fetches over public TLS before it has any other trust anchor:
 #   - verself-ssh-ca.pub   (dropped by the ssh_ca role)
 #   - verself-openbao-ca.pem  (dropped by the openbao role)
@@ -56,7 +56,7 @@
 # under https://verself.sh/.well-known/verself-*.
 - name: Create well-known publication directory
   ansible.builtin.file:
-    path: /var/www/verself/well-known
+    path: /var/www/verself/.well-known
     state: directory
     owner: root
     group: root
