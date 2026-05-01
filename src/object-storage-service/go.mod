@@ -18,7 +18,6 @@ require (
 	github.com/verself/governance-service v0.0.0
 	github.com/verself/httpserver v0.0.0
 	github.com/verself/otel v0.0.0
-	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0

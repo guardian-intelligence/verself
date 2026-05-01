@@ -173,20 +173,6 @@ func run() error {
 				secretsclient.MailboxResendAPIKeyName,
 				secretsclient.MailboxStalwartAdminPasswordName,
 			}},
-			{Service: workloadauth.ServiceObjectStorage, SecretNames: []string{
-				secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-				secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-			}},
-			{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
-				secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-				secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-			}},
-		},
-		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
-			{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
-				secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-				secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-			}},
 		},
 	})
 	if err != nil {

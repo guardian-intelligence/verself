@@ -72,7 +72,6 @@ SERVER_TOOL_DEPS = [
 
 HOST_GO_TOOLS = [
     ("//src/cue-renderer/cmd/nomad-deploy:nomad-deploy", "nomad-deploy"),
-    ("//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync", "object-storage-secret-sync"),
     ("//src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
     ("//src/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
     ("//src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),

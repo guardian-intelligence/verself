@@ -573,15 +573,6 @@ topology: s.#Topology & {
 			// rendered job spec, and waits for the deployment result.
 			tools: deploy: {kind: "go_binary", package: "./src/cue-renderer/cmd/nomad-deploy", output: "nomad-deploy", role: "nomad", bazel_label: "//src/cue-renderer/cmd/nomad-deploy:nomad-deploy"}
 		}
-		nomad_artifacts: {
-			kind: "resource"
-			host: "127.0.0.1"
-			runtime: {systemd: "caddy", user: "caddy", group: "caddy"}
-			artifact: {kind: "static_binary", output: "caddy", role: "caddy"}
-			// Nomad reserves 4646-4648 for HTTP, RPC, and Serf.
-			endpoints: http: {protocol: "http", port: 14647, exposure: "loopback"}
-			interfaces: http: {kind: "resource_protocol", endpoint: "http", auth: "none"}
-		}
 		stalwart: {
 			kind: "protocol_backend"
 			host: "127.0.0.1"
@@ -625,7 +616,6 @@ topology: s.#Topology & {
 				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: []}
 				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: []}
 			}
-			tools: secret_sync: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-secret-sync", output: "object-storage-secret-sync", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync"}
 			processes: admin: {
 				unit:  "object-storage-admin"
 				user:  "object_storage_admin"

@@ -75,16 +75,3 @@
     mode: "0640"
   when: not object_storage_service_proxy_credential_files.results[1].stat.exists
   no_log: true
-
-- name: Sync object-storage-service runtime proxy secrets through secrets-service
-  become: true
-  become_user: object_storage_admin
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/object-storage-secret-sync"
-  environment:
-    SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
-    OBJECT_STORAGE_SECRET_SYNC_SECRETS_URL: "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
-  changed_when: false
-  no_log: true

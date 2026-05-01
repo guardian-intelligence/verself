@@ -14,7 +14,6 @@ go_library(
         "//src/object-storage-service/internal/objectstorage",
         "//src/object-storage-service/migrations",
         "//src/otel",
-        "//src/secrets-service/client",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
