@@ -137,5 +137,7 @@ SQL
 )
 
 cd "${substrate_root}"
+# clickhouse-client may keep reading inherited stdin after INSERT VALUES under
+# Aspect's inherited stdio; closing stdin makes the committed insert exit.
 INVENTORY="${inventory}" timeout 5s ./scripts/clickhouse.sh \
-  --database verself --query "${query}" >/dev/null
+  --database verself --query "${query}" </dev/null >/dev/null
