@@ -262,12 +262,14 @@
       token_num_uses: 0
       token_policies:
         - ssh-ca-workload
-      # The bootstrap binary's source IP is whatever NAT egress the VM
-      # uses, then the wg-ops 10.66.66.x slot address. We bound auth
-      # tokens to the wg-ops network only — a stolen secret-id can't
-      # mint outside the mesh.
+      # Bind tokens to the wg-ops mesh only. The OpenBao API listener
+      # is itself bound to wg-ops + loopback today, so this is
+      # defense-in-depth against a future expansion that opens the API
+      # to a controller-side caller. A stolen secret-id redeemed from
+      # outside 10.66.66.0/24 yields a token OpenBao will refuse on
+      # every subsequent call.
       token_bound_cidrs:
-        - 0.0.0.0/0
+        - 10.66.66.0/24
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   changed_when: true
