@@ -44,7 +44,6 @@ topology: components: {
 					restrict_suid_sgid:  false
 					restrict_namespaces: true
 				}
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 			bootstrap: [{
 				name:   "billing_stripe_webhook"
@@ -139,10 +138,6 @@ topology: components: {
 						VERSELF_CRED_FORGEJO_BOOTSTRAP_SECRET: "/etc/credstore/sandbox-rental/forgejo-bootstrap-secret"
 					}
 					hardening: {protect_system: "full"}
-					readiness: [
-						{kind: "tcp", endpoint: "public_http"},
-						{kind: "tcp", endpoint: "internal_https"},
-					]
 				},
 				{
 					name:                 "sandbox-rental-recurring-worker"
@@ -239,10 +234,6 @@ topology: components: {
 					VERSELF_CRED_OIDC_CLIENT_ID:             "/etc/credstore/identity-service/oidc-client-id"
 					VERSELF_CRED_OIDC_CLIENT_SECRET:         "/etc/credstore/identity-service/oidc-client-secret"
 				}
-				readiness: [
-					{kind: "http", endpoint: "public_http", path: "/readyz"},
-					{kind: "tcp", endpoint: "internal_https"},
-				]
 			}]
 			bootstrap: [
 				{
@@ -299,7 +290,6 @@ topology: components: {
 					VERSELF_CRED_CLICKHOUSE_CA_CERT: "/etc/credstore/governance-service/clickhouse-ca-cert"
 				}
 				hardening: read_write_paths: ["/var/lib/governance-service"]
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
 	}
@@ -342,7 +332,6 @@ topology: components: {
 					SECRETS_BILLING_URL:               "https://{{ topology_endpoints.billing.endpoints.internal_https.address }}"
 					VERSELF_CRED_OPENBAO_CA_CERT:      "/etc/credstore/secrets-service/openbao-ca-cert"
 				}
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 			bootstrap: [
 				{
@@ -354,8 +343,8 @@ topology: components: {
 		}
 	}
 	profile_service: {
-		// Nomad-supervised. The unit block below remains the cross-supervisor
-		// source of truth for env vars, dependency wiring, and readiness probes.
+		// Nomad-supervised. The unit block below carries the cross-supervisor
+		// source of truth for env vars and dependency wiring.
 		deployment: supervisor: "nomad"
 		workload: {
 			order: 30
@@ -379,7 +368,6 @@ topology: components: {
 					PROFILE_IDENTITY_INTERNAL_URL: "https://{{ topology_endpoints.identity_service.endpoints.internal_https.address }}"
 					PROFILE_GOVERNANCE_AUDIT_URL:  "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
 				}
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
 	}
@@ -422,7 +410,6 @@ topology: components: {
 					GOVERNANCE_SERVICE_BASE_URL:               "http://{{ topology_endpoints.governance_service.endpoints.public_http.address }}"
 				}
 				hardening: read_write_paths: ["/var/lib/verself-web"]
-				readiness: [{kind: "http", endpoint: "http", path: "/"}]
 			}]
 		}
 	}
@@ -453,7 +440,6 @@ topology: components: {
 					VERSELF_SUPERVISOR:          "nomad"
 				}
 				hardening: read_write_paths: ["/var/lib/company"]
-				readiness: [{kind: "http", endpoint: "http", path: "/"}]
 			}]
 		}
 	}
@@ -488,7 +474,6 @@ topology: components: {
 					NOTIFICATIONS_NATS_URL:          "tls://{{ topology_endpoints.nats.endpoints.client.address }}"
 					VERSELF_CRED_CLICKHOUSE_CA_CERT: "/etc/credstore/notifications-service/clickhouse-ca-cert"
 				}
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
 	}
@@ -508,7 +493,6 @@ topology: components: {
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "zitadel.service", "spire-agent.service"]
 				wants: ["postgresql.service", "zitadel.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
 	}
@@ -543,7 +527,6 @@ topology: components: {
 					VERSELF_CRED_FORGEJO_TOKEN:   "/etc/credstore/source-code-hosting-service/forgejo-token"
 					VERSELF_CRED_WEBHOOK_SECRET:  "/etc/credstore/source-code-hosting-service/webhook-secret"
 				}
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
 	}
@@ -603,7 +586,6 @@ topology: components: {
 					restrict_suid_sgid:  false
 					restrict_namespaces: true
 				}
-				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
 	}
@@ -668,7 +650,6 @@ topology: components: {
 						restrict_suid_sgid:  false
 						restrict_namespaces: true
 					}
-					readiness: [{kind: "http", endpoint: "public_http", path: "/healthz", scheme: "https", ca_path: "/etc/verself/local-cas/object-storage-s3-ca.pem"}]
 				},
 				{
 					name:                 "object-storage-admin"
@@ -700,7 +681,6 @@ topology: components: {
 						restrict_suid_sgid:  false
 						restrict_namespaces: true
 					}
-					readiness: [{kind: "tcp", endpoint: "admin_http"}]
 				},
 			]
 			bootstrap: [

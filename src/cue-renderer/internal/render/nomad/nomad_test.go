@@ -98,15 +98,15 @@ func TestRender_ProfileServiceShape(t *testing.T) {
 	}
 	group := groups[0].(map[string]any)
 
-	update, ok := group["Update"].(map[string]any)
-	if !ok {
-		t.Fatal("TaskGroups[0].Update: missing")
+	// TaskGroup.Update is a per-service runtime contract. The renderer
+	// reserves the key as a placeholder; src/cue-renderer/nomad/resolve_jobs.py
+	// fills it in from each component's nomad-overrides.json before
+	// stamping spec_sha256. Confirm the key is declared and unfilled.
+	if _, present := group["Update"]; !present {
+		t.Error("TaskGroups[0].Update: key not declared; the resolver expects to overwrite an existing field")
 	}
-	if v, _ := update["MaxParallel"].(float64); int(v) != 1 {
-		t.Errorf("Update.MaxParallel: got %v, want 1", update["MaxParallel"])
-	}
-	if v, _ := update["AutoRevert"].(bool); !v {
-		t.Errorf("Update.AutoRevert: got %v, want true", update["AutoRevert"])
+	if v := group["Update"]; v != nil {
+		t.Errorf("TaskGroups[0].Update: renderer should leave this nil for the resolver to fill, got %v", v)
 	}
 
 	networks, _ := group["Networks"].([]any)
