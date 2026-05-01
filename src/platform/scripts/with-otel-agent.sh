@@ -60,10 +60,40 @@ if [[ ! -f "${hosts_ini}" ]]; then
   echo "ERROR: hosts.ini not found at ${hosts_ini}." >&2
   exit 1
 fi
-remote_host="$(grep -m1 'ansible_host=' "${hosts_ini}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
-remote_user="$(grep -m1 'ansible_user=' "${hosts_ini}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
+remote_host="$(
+  INVENTORY_PATH="${hosts_ini}" python3 <<'PY'
+import os
+
+path = os.environ["INVENTORY_PATH"]
+first_host = ""
+infra_host = ""
+section = ""
+with open(path, encoding="utf-8") as f:
+    for raw in f:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+            continue
+        first = line.split()[0]
+        if section.endswith(":vars") or "=" in first:
+            continue
+        host = first
+        for field in line.split()[1:]:
+            if field.startswith("ansible_host="):
+                host = field.split("=", 1)[1]
+                break
+        if not first_host:
+            first_host = host
+        if section == "infra" and not infra_host:
+            infra_host = host
+print(infra_host or first_host)
+PY
+)"
+remote_user="$(grep -m1 'ansible_user=' "${hosts_ini}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/' || true)"
 if [[ -z "${remote_host}" || -z "${remote_user}" ]]; then
-  echo "ERROR: could not resolve ansible_host/ansible_user from ${hosts_ini}." >&2
+  echo "ERROR: could not resolve inventory host/ansible_user from ${hosts_ini}." >&2
   exit 1
 fi
 
@@ -105,8 +135,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A stale ControlMaster can authenticate command sessions while rejecting
+# direct-tcpip channels; OTLP forwarding must use a fresh SSH connection.
 ssh -N \
+  -o BatchMode=yes \
   -o ExitOnForwardFailure=yes \
+  -o ControlMaster=no \
+  -o ControlPath=none \
   -o ServerAliveInterval=15 \
   -o ServerAliveCountMax=3 \
   -o StrictHostKeyChecking=no \
