@@ -117,20 +117,32 @@ func TestRender_ProfileServiceShape(t *testing.T) {
 	if mode, _ := net["Mode"].(string); mode != "host" {
 		t.Errorf("Networks[0].Mode: got %q, want %q", mode, "host")
 	}
-	reserved, _ := net["ReservedPorts"].([]any)
-	wantPorts := map[string]int{"public_http": 4258, "internal_https": 4259}
-	if len(reserved) != len(wantPorts) {
-		t.Fatalf("ReservedPorts: got %d, want %d", len(reserved), len(wantPorts))
+	if _, ok := net["ReservedPorts"]; ok {
+		t.Errorf("Networks[0].ReservedPorts: should be absent, app components allocate dynamically")
 	}
-	for _, raw := range reserved {
+	dynamic, _ := net["DynamicPorts"].([]any)
+	wantLabels := map[string]bool{"public_http": false, "internal_https": false}
+	if len(dynamic) != len(wantLabels) {
+		t.Fatalf("DynamicPorts: got %d, want %d", len(dynamic), len(wantLabels))
+	}
+	for _, raw := range dynamic {
 		p := raw.(map[string]any)
 		label, _ := p["Label"].(string)
-		value, _ := p["Value"].(float64)
-		if hn, _ := p["HostNetwork"].(string); hn != "loopback" {
-			t.Errorf("ReservedPort %q HostNetwork: got %q, want %q", label, hn, "loopback")
+		if _, ok := wantLabels[label]; !ok {
+			t.Errorf("unexpected DynamicPort label %q", label)
+			continue
 		}
-		if want, ok := wantPorts[label]; !ok || want != int(value) {
-			t.Errorf("ReservedPort %q value: got %v, want %d", label, value, want)
+		wantLabels[label] = true
+		if _, ok := p["Value"]; ok {
+			t.Errorf("DynamicPort %q: must not pin a Value (Nomad allocates from the dynamic range)", label)
+		}
+		if hn, _ := p["HostNetwork"].(string); hn != "loopback" {
+			t.Errorf("DynamicPort %q HostNetwork: got %q, want loopback", label, hn)
+		}
+	}
+	for label, seen := range wantLabels {
+		if !seen {
+			t.Errorf("DynamicPort %q: missing", label)
 		}
 	}
 
@@ -217,18 +229,18 @@ func TestRender_SandboxRentalMultiUnitShape(t *testing.T) {
 	assertTaskMemory(t, primary, 512)
 	assertTaskMemory(t, worker, 512)
 
-	primaryPorts := reservedPortMap(t, primary)
-	wantPorts := map[string]int{"internal_https": 4263, "public_http": 4243}
-	if len(primaryPorts) != len(wantPorts) {
-		t.Fatalf("primary ReservedPorts: got %v, want %v", primaryPorts, wantPorts)
+	primaryPorts := dynamicPortLabels(t, primary)
+	wantLabels := map[string]bool{"internal_https": true, "public_http": true}
+	if len(primaryPorts) != len(wantLabels) {
+		t.Fatalf("primary DynamicPorts: got %v, want %v", primaryPorts, wantLabels)
 	}
-	for label, want := range wantPorts {
-		if got := primaryPorts[label]; got != want {
-			t.Errorf("primary ReservedPorts[%s]: got %d, want %d", label, got, want)
+	for label := range wantLabels {
+		if !primaryPorts[label] {
+			t.Errorf("primary DynamicPorts: missing %q", label)
 		}
 	}
-	if ports := reservedPortMap(t, worker); len(ports) != 0 {
-		t.Fatalf("worker ReservedPorts: got %v, want empty", ports)
+	if ports := dynamicPortLabels(t, worker); len(ports) != 0 {
+		t.Fatalf("worker DynamicPorts: got %v, want empty", ports)
 	}
 
 	primaryEnv := taskEnv(t, primary)
@@ -245,11 +257,43 @@ func TestRender_SandboxRentalMultiUnitShape(t *testing.T) {
 	if _, ok := primaryEnv["CREDENTIALS_DIRECTORY"]; ok {
 		t.Error("primary Env unexpectedly sets CREDENTIALS_DIRECTORY")
 	}
-	if got, _ := primaryEnv["VERSELF_LISTEN_ADDR"].(string); got != "127.0.0.1:4243" {
+	// Self-listen addresses become NOMAD_PORT runtime expressions so
+	// the binary binds whichever port Nomad allocated.
+	if got, _ := primaryEnv["VERSELF_LISTEN_ADDR"].(string); got != "127.0.0.1:${NOMAD_PORT_public_http}" {
 		t.Errorf("primary VERSELF_LISTEN_ADDR: got %q", got)
 	}
-	if got, _ := primaryEnv["VERSELF_INTERNAL_LISTEN_ADDR"].(string); got != "127.0.0.1:4263" {
+	if got, _ := primaryEnv["VERSELF_INTERNAL_LISTEN_ADDR"].(string); got != "127.0.0.1:${NOMAD_PORT_internal_https}" {
 		t.Errorf("primary VERSELF_INTERNAL_LISTEN_ADDR: got %q", got)
+	}
+	// Cross-Nomad upstream URLs leave Env entirely; they live in the
+	// Templates stanza so Nomad's template engine resolves them via
+	// nomadService at runtime.
+	for _, key := range []string{"SANDBOX_BILLING_URL", "SANDBOX_GOVERNANCE_AUDIT_URL", "SANDBOX_SECRETS_URL", "SANDBOX_SOURCE_INTERNAL_URL"} {
+		if _, ok := primaryEnv[key]; ok {
+			t.Errorf("primary Env still carries %s; should be in Templates", key)
+		}
+	}
+	primaryTemplates := taskTemplates(t, primary)
+	if len(primaryTemplates) != 1 {
+		t.Fatalf("primary Templates: got %d, want 1 consolidated upstreams stanza", len(primaryTemplates))
+	}
+	tmpl := primaryTemplates[0]
+	if got, _ := tmpl["DestPath"].(string); got != "secrets/upstreams.env" {
+		t.Errorf("primary Template.DestPath: got %q", got)
+	}
+	if env, _ := tmpl["Envvars"].(bool); !env {
+		t.Error("primary Template.Envvars: got false, want true")
+	}
+	body, _ := tmpl["EmbeddedTmpl"].(string)
+	for _, want := range []string{
+		`SANDBOX_BILLING_URL=https://{{ range nomadService "billing-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_GOVERNANCE_AUDIT_URL=https://{{ range nomadService "governance-service-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_SECRETS_URL=https://{{ range nomadService "secrets-service-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_SOURCE_INTERNAL_URL=https://{{ range nomadService "source-code-hosting-service-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("primary upstreams template missing %q", want)
+		}
 	}
 
 	workerEnv := taskEnv(t, worker)
@@ -262,6 +306,56 @@ func TestRender_SandboxRentalMultiUnitShape(t *testing.T) {
 	if _, ok := workerEnv["VERSELF_CLICKHOUSE_ADDRESS"]; ok {
 		t.Error("worker Env unexpectedly has VERSELF_CLICKHOUSE_ADDRESS")
 	}
+}
+
+// TestRender_NomadServiceRegistration locks the contract that lets
+// `nomadService` template lookups (and the post-deploy Caddy upstream
+// reconciler) resolve any app endpoint by `<jobid>-<endpoint>` name.
+func TestRender_NomadServiceRegistration(t *testing.T) {
+	files := renderProd(t)
+	spec, ok := files["jobs/billing.nomad.json"]
+	if !ok {
+		t.Fatalf("billing spec missing")
+	}
+	job := spec["Job"].(map[string]any)
+	groups, _ := job["TaskGroups"].([]any)
+	group := groups[0].(map[string]any)
+	task := serviceTask(t, group)
+	rawServices, _ := task["Services"].([]any)
+	if len(rawServices) == 0 {
+		t.Fatal("billing Services: empty (Caddy + cross-service mTLS expect Nomad service registration)")
+	}
+	byName := map[string]map[string]any{}
+	for _, raw := range rawServices {
+		svc := raw.(map[string]any)
+		name, _ := svc["Name"].(string)
+		byName[name] = svc
+	}
+	for _, want := range []string{"billing-public_http", "billing-internal_https"} {
+		svc := byName[want]
+		if svc == nil {
+			t.Errorf("Services missing %q; got %v", want, keysAnyMap(byName))
+			continue
+		}
+		if got, _ := svc["Provider"].(string); got != "nomad" {
+			t.Errorf("Service %q Provider: got %q, want nomad", want, got)
+		}
+		if got, _ := svc["AddressMode"].(string); got != "auto" {
+			t.Errorf("Service %q AddressMode: got %q, want auto", want, got)
+		}
+		expectedLabel := strings.TrimPrefix(want, "billing-")
+		if got, _ := svc["PortLabel"].(string); got != expectedLabel {
+			t.Errorf("Service %q PortLabel: got %q, want %q", want, got, expectedLabel)
+		}
+	}
+}
+
+func keysAnyMap(m map[string]map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func TestRender_AllApplicationWorkloadsOptedIntoNomad(t *testing.T) {
@@ -536,26 +630,42 @@ func assertTaskMemory(t testing.TB, group map[string]any, want int) {
 	}
 }
 
-func reservedPortMap(t testing.TB, group map[string]any) map[string]int {
+func dynamicPortLabels(t testing.TB, group map[string]any) map[string]bool {
 	t.Helper()
 	networks, _ := group["Networks"].([]any)
 	if len(networks) == 0 {
-		return map[string]int{}
+		return map[string]bool{}
 	}
 	if len(networks) != 1 {
 		t.Fatalf("%s Networks: got %d, want <=1", group["Name"], len(networks))
 	}
 	network := networks[0].(map[string]any)
-	rawPorts, _ := network["ReservedPorts"].([]any)
-	out := map[string]int{}
+	if _, ok := network["ReservedPorts"]; ok {
+		t.Errorf("%s Networks[0].ReservedPorts: should be absent", group["Name"])
+	}
+	rawPorts, _ := network["DynamicPorts"].([]any)
+	out := map[string]bool{}
 	for _, raw := range rawPorts {
 		port := raw.(map[string]any)
 		label, _ := port["Label"].(string)
-		value, _ := port["Value"].(float64)
-		if hostNetwork, _ := port["HostNetwork"].(string); hostNetwork != "loopback" {
-			t.Errorf("%s ReservedPort[%s] HostNetwork: got %q, want loopback", group["Name"], label, hostNetwork)
+		if _, ok := port["Value"]; ok {
+			t.Errorf("%s DynamicPort[%s]: must not pin Value", group["Name"], label)
 		}
-		out[label] = int(value)
+		if hostNetwork, _ := port["HostNetwork"].(string); hostNetwork != "loopback" {
+			t.Errorf("%s DynamicPort[%s] HostNetwork: got %q, want loopback", group["Name"], label, hostNetwork)
+		}
+		out[label] = true
+	}
+	return out
+}
+
+func taskTemplates(t testing.TB, group map[string]any) []map[string]any {
+	t.Helper()
+	task := serviceTask(t, group)
+	raw, _ := task["Templates"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		out = append(out, item.(map[string]any))
 	}
 	return out
 }

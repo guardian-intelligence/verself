@@ -498,13 +498,18 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		return nil, err
 	}
 
-	envOut := make(map[string]string, len(env))
+	scoped := resolver.withSelf(component.Name)
+	resolvedEnv := make(map[string]string, len(env))
 	for _, key := range serviceenv.SortedKeys(env) {
-		resolved, err := resolver.resolve(env[key])
+		resolved, err := scoped.resolve(env[key])
 		if err != nil {
 			return nil, fmt.Errorf("%s.env.%s: %w", component.Name, key, err)
 		}
-		envOut[key] = resolved
+		resolvedEnv[key] = resolved
+	}
+	envOut, templates, err := upstreamTemplates(resolvedEnv)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", component.Name, err)
 	}
 
 	count := int64(1)
@@ -521,17 +526,18 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	}
 
 	endpoints, _ := component.Value["endpoints"].(map[string]any)
-	reservedPorts, _, err := reservedPorts(component, endpoints, unit)
+	dynamicPorts, _, err := dynamicPorts(component, endpoints, unit)
 	if err != nil {
 		return nil, err
 	}
+	services := taskServices(jobID(component.Name), dynamicPorts)
 
-	// Services and TaskGroup.Update are not the renderer's concern: they
-	// are spliced onto the spec by src/cue-renderer/nomad/resolve_jobs.py
-	// from each component's nomad-overrides.json before spec_sha256 is
-	// stamped. The renderer reserves the keys so the resolver always
-	// updates an existing field rather than introducing one — this keeps
-	// the canonical-JSON shape stable across topology-only changes.
+	// TaskGroup.Update is a runtime contract spliced onto the spec by
+	// src/cue-renderer/nomad/resolve_jobs.py from each component's
+	// nomad-overrides.json before spec_sha256 is stamped. The renderer
+	// reserves the key so the resolver always updates an existing
+	// field rather than introducing one — this keeps the canonical-JSON
+	// shape stable across topology-only changes.
 	task := map[string]any{
 		"Name":   unitName,
 		"Driver": "raw_exec",
@@ -544,7 +550,8 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		"Resources":   resources,
 		"KillSignal":  killSignal,
 		"KillTimeout": killTimeout,
-		"Services":    nil,
+		"Services":    services,
+		"Templates":   templates,
 		"RestartPolicy": map[string]any{
 			"Attempts": 3,
 			"Interval": int64(5 * time.Minute / time.Nanosecond),
@@ -595,15 +602,14 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		// resolver overwrites an existing key rather than introducing one.
 		"Update": nil,
 	}
-	if len(reservedPorts) > 0 {
+	if len(dynamicPorts) > 0 {
 		group["Networks"] = []map[string]any{
 			// host_network "loopback" is registered in nomad.hcl client
-			// config and pins ReservedPorts to 127.0.0.1. The native
-			// registry's auto address-mode then advertises 127.0.0.1
-			// for HTTP/TCP checks — services keep their loopback bind
-			// and defense-in-depth is preserved (the per-component
-			// nftables ruleset is the second layer, not the first).
-			{"Mode": "host", "ReservedPorts": reservedPortsWithHostNetwork(reservedPorts, "loopback")},
+			// config and pins DynamicPorts to 127.0.0.1. The Nomad
+			// service catalog's auto address-mode advertises 127.0.0.1
+			// for `nomadService` template lookups; per-component
+			// nftables rules remain the second layer of defence.
+			{"Mode": "host", "DynamicPorts": dynamicPortsWithHostNetwork(dynamicPorts, "loopback")},
 		}
 	}
 	return group, nil
@@ -668,19 +674,6 @@ func artifactStanza(output string) map[string]any {
 		"GetterSource": "verself-artifact://" + output,
 		"RelativeDest": "local",
 	}
-}
-
-func reservedPortsWithHostNetwork(reserved []map[string]any, hostNetwork string) []map[string]any {
-	out := make([]map[string]any, 0, len(reserved))
-	for _, p := range reserved {
-		copy := map[string]any{}
-		for k, v := range p {
-			copy[k] = v
-		}
-		copy["HostNetwork"] = hostNetwork
-		out = append(out, copy)
-	}
-	return out
 }
 
 // checkUnitCompatibility refuses to render a Nomad TaskGroup for a unit
@@ -822,31 +815,137 @@ func resourceStanza(deployment map[string]any) (map[string]any, error) {
 	return map[string]any{"CPU": cpu, "MemoryMB": memory}, nil
 }
 
-func reservedPorts(component projection.NamedMap, endpoints map[string]any, unit map[string]any) ([]map[string]any, string, error) {
-	if len(endpoints) == 0 {
-		return nil, "", nil
-	}
+// dynamicPorts returns the DynamicPorts list for the unit's TaskGroup
+// network stanza plus the primary endpoint label used for service
+// registration. Each entry is `{Label: <ep>}` with no Value: Nomad
+// allocates from its dynamic-port range and binds to host_network
+// "loopback" (127.0.0.1) per the nomad.hcl client config.
+//
+// `_ map[string]any` keeps the caller-side signature stable; the
+// renderer no longer consults endpoint.port for app components.
+func dynamicPorts(component projection.NamedMap, _ map[string]any, unit map[string]any) ([]map[string]any, string, error) {
 	ownedEndpoints, err := serviceenv.EndpointsForUnit(component, unit)
 	if err != nil {
 		return nil, "", err
 	}
-	reserved := make([]map[string]any, 0, len(ownedEndpoints))
+	if len(ownedEndpoints) == 0 {
+		return nil, "", nil
+	}
+	dynamic := make([]map[string]any, 0, len(ownedEndpoints))
 	primary := ""
 	for _, name := range ownedEndpoints {
-		endpoint, ok := endpoints[name].(map[string]any)
-		if !ok {
-			continue
-		}
-		port, err := projection.Int(endpoint, "topology.components."+component.Name+".endpoints."+name, "port")
-		if err != nil {
-			return nil, "", err
-		}
-		reserved = append(reserved, map[string]any{"Label": name, "Value": port})
+		dynamic = append(dynamic, map[string]any{"Label": name})
 		if primary == "" || name == "public_http" {
 			primary = name
 		}
 	}
-	return reserved, primary, nil
+	return dynamic, primary, nil
+}
+
+func dynamicPortsWithHostNetwork(dynamic []map[string]any, hostNetwork string) []map[string]any {
+	out := make([]map[string]any, 0, len(dynamic))
+	for _, p := range dynamic {
+		copy := map[string]any{}
+		for k, v := range p {
+			copy[k] = v
+		}
+		copy["HostNetwork"] = hostNetwork
+		out = append(out, copy)
+	}
+	return out
+}
+
+// taskServices emits one Nomad service registration per port label so
+// `nomadService` template lookups resolve from any other Nomad job.
+// AddressMode "auto" picks the host_network address (127.0.0.1) on
+// the loopback host_network this renderer pins via dynamicPorts.
+func taskServices(jobID string, ports []map[string]any) []map[string]any {
+	if len(ports) == 0 {
+		return nil
+	}
+	services := make([]map[string]any, 0, len(ports))
+	for _, p := range ports {
+		label, _ := p["Label"].(string)
+		services = append(services, map[string]any{
+			"Name":        jobID + "-" + label,
+			"PortLabel":   label,
+			"Provider":    "nomad",
+			"AddressMode": "auto",
+		})
+	}
+	return services
+}
+
+// upstreamTemplates extracts cross-Nomad-component env references
+// from the resolved env map into a Nomad `template` stanza. Each
+// referenced env value contains one or more `__VERSELF_NSRV__*`
+// sentinels left by the resolver; this routine rewrites them into
+// `{{ range nomadService "..." }}{{ .Address }}:{{ .Port }}{{ end }}`
+// fragments and writes one consolidated `secrets/upstreams.env`
+// template that Nomad materialises into the task's runtime env.
+//
+// Returns the leftover env map (cross-Nomad refs removed) and a
+// single-element template list (or nil if no refs were present).
+func upstreamTemplates(env map[string]string) (map[string]string, []map[string]any, error) {
+	if len(env) == 0 {
+		return env, nil, nil
+	}
+	leftover := make(map[string]string, len(env))
+	templated := map[string]string{}
+	for key, value := range env {
+		if !strings.Contains(value, nomadServicePrefix) {
+			leftover[key] = value
+			continue
+		}
+		expanded, err := expandNomadServiceMarkers(value)
+		if err != nil {
+			return nil, nil, fmt.Errorf("env %s: %w", key, err)
+		}
+		templated[key] = expanded
+	}
+	if len(templated) == 0 {
+		return leftover, nil, nil
+	}
+	keys := make([]string, 0, len(templated))
+	for key := range templated {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var body strings.Builder
+	for _, key := range keys {
+		body.WriteString(key)
+		body.WriteByte('=')
+		body.WriteString(templated[key])
+		body.WriteByte('\n')
+	}
+	tmpl := []map[string]any{{
+		"EmbeddedTmpl": body.String(),
+		"DestPath":     "secrets/upstreams.env",
+		"Envvars":      true,
+		"ChangeMode":   "restart",
+	}}
+	return leftover, tmpl, nil
+}
+
+func expandNomadServiceMarkers(value string) (string, error) {
+	expanded := nomadServiceMarkerRE.ReplaceAllStringFunc(value, func(match string) string {
+		m := nomadServiceMarkerRE.FindStringSubmatch(match)
+		if len(m) != 3 {
+			return match
+		}
+		serviceName, kind := m[1], m[2]
+		switch kind {
+		case "addr":
+			return `{{ range nomadService "` + serviceName + `" }}{{ .Address }}:{{ .Port }}{{ end }}`
+		case "port":
+			return `{{ range nomadService "` + serviceName + `" }}{{ .Port }}{{ end }}`
+		}
+		return match
+	})
+	if strings.Contains(expanded, nomadServicePrefix) {
+		return "", fmt.Errorf("unexpanded nomad-service sentinel in %q", value)
+	}
+	return expanded, nil
 }
 
 func optionalInt64(m map[string]any, key string, fallback int64) (int64, error) {
@@ -884,29 +983,74 @@ func optionalDuration(m map[string]any, key string, fallback time.Duration) (tim
 }
 
 // resolver substitutes Jinja-style `{{ key }}` references in
-// serviceenv-derived strings to literal values at render time so the spec the
-// bare-metal node submits is fully formed.
+// serviceenv-derived strings.
 //
-// Three known-static buckets land here:
-//   - string-valued ansible_vars and `spire_agent_socket_path` from
-//     loaded.Config.
-//   - `topology_endpoints.<comp>.endpoints.<ep>.{address,port}` and
-//     `topology_endpoints.<comp>.host` from the topology projection.
+// Substrate-component endpoints (postgres, nats, temporal, ...) keep
+// their CUE-pinned ports and resolve to a literal `127.0.0.1:NNNN`
+// at render time.
+//
+// Nomad-supervised components have dynamic ports allocated by the
+// scheduler and registered in Nomad's service catalog. Their
+// references resolve in two ways:
+//
+//   - Self-references (the env's own component): substitute to
+//     `${NOMAD_PORT_<ep>}` (or `127.0.0.1:${NOMAD_PORT_<ep>}` for
+//     `.address`). Nomad's runtime expands `${NOMAD_PORT_*}` against
+//     the alloc's port assignment when the task starts.
+//
+//   - Cross-component references: substitute to a sentinel that
+//     buildTaskGroup later moves out of the Env map and into a
+//     `Templates` stanza. Nomad's template engine resolves the
+//     `nomadService` directive at runtime against the catalog and
+//     materialises the result as task env, restarting the task on
+//     change.
 type resolver struct {
 	spireAgentSocketPath string
 	ansibleVars          map[string]string
-	endpointAddrs        map[string]string // "topology_endpoints.<c>.endpoints.<e>.address"
-	endpointPorts        map[string]string
+	endpointAddrs        map[string]string // substrate addresses, literal
+	endpointPorts        map[string]string // substrate ports, literal
 	componentHosts       map[string]string // "topology_endpoints.<c>.host"
+	nomadEndpoints       map[string]nomadEndpointRef
+	selfComponent        string // jobID of the component currently being rendered
 }
 
+type nomadEndpointRef struct {
+	component string // CUE component name
+	endpoint  string // endpoint label
+	isPort    bool   // true for `.port`, false for `.address`
+}
+
+// nomadServicePrefix marks an env value that referenced another
+// Nomad-supervised component. buildTaskGroup detects the prefix,
+// rewrites the value into a `nomadService` template, and moves the
+// entry from Env into a Templates stanza.
+const nomadServicePrefix = "__VERSELF_NSRV__"
+
+// nomadServiceMarker forms one sentinel for the named cross-Nomad
+// reference. The kind is "addr" or "port".
+func nomadServiceMarker(component, endpoint, kind string) string {
+	return nomadServicePrefix + jobID(component) + "-" + endpoint + "__" + kind + "__"
+}
+
+// nomadServiceMarkerRE captures the (jobID-endpoint, kind) pair from
+// any sentinel embedded in a resolved env value.
+var nomadServiceMarkerRE = regexp.MustCompile(`__VERSELF_NSRV__([a-z0-9_-]+?)__(addr|port)__`)
+
 func newResolver(loaded load.Loaded) (*resolver, error) {
+	nomadSet := map[string]bool{}
+	for compName, comp := range loaded.Topology.Components {
+		supervisor, _ := comp.Deployment["supervisor"].(string)
+		if supervisor == "nomad" {
+			nomadSet[compName] = true
+		}
+	}
 	r := &resolver{
 		spireAgentSocketPath: loaded.Config.Spire.AgentSocketPath,
 		ansibleVars:          map[string]string{},
 		endpointAddrs:        map[string]string{},
 		endpointPorts:        map[string]string{},
 		componentHosts:       map[string]string{},
+		nomadEndpoints:       map[string]nomadEndpointRef{},
 	}
 	for key, raw := range loaded.Config.AnsibleVars {
 		if value, ok := raw.(string); ok {
@@ -920,13 +1064,27 @@ func newResolver(loaded load.Loaded) (*resolver, error) {
 		}
 		r.componentHosts["topology_endpoints."+compName+".host"] = string(host)
 		for epName, ep := range comp.Endpoints {
-			r.endpointAddrs["topology_endpoints."+compName+".endpoints."+epName+".address"] =
-				fmt.Sprintf("%s:%d", string(host), ep.Port)
-			r.endpointPorts["topology_endpoints."+compName+".endpoints."+epName+".port"] =
-				fmt.Sprintf("%d", ep.Port)
+			addrKey := "topology_endpoints." + compName + ".endpoints." + epName + ".address"
+			portKey := "topology_endpoints." + compName + ".endpoints." + epName + ".port"
+			if nomadSet[compName] {
+				r.nomadEndpoints[addrKey] = nomadEndpointRef{component: compName, endpoint: epName, isPort: false}
+				r.nomadEndpoints[portKey] = nomadEndpointRef{component: compName, endpoint: epName, isPort: true}
+				continue
+			}
+			r.endpointAddrs[addrKey] = fmt.Sprintf("%s:%d", string(host), ep.Port)
+			r.endpointPorts[portKey] = fmt.Sprintf("%d", ep.Port)
 		}
 	}
 	return r, nil
+}
+
+// withSelf returns a resolver scoped to a single component being
+// rendered. Self-references resolve to `${NOMAD_PORT_*}` runtime
+// expressions; cross-Nomad references resolve to template sentinels.
+func (r *resolver) withSelf(componentName string) *resolver {
+	clone := *r
+	clone.selfComponent = jobID(componentName)
+	return &clone
 }
 
 func (r *resolver) resolve(in string) (string, error) {
@@ -961,6 +1119,18 @@ func (r *resolver) resolveWithStack(in string, stack map[string]bool) (string, e
 				return match
 			}
 			return resolved
+		}
+		if endp, ok := r.nomadEndpoints[key]; ok {
+			if r.selfComponent != "" && jobID(endp.component) == r.selfComponent {
+				if endp.isPort {
+					return "${NOMAD_PORT_" + endp.endpoint + "}"
+				}
+				return "127.0.0.1:${NOMAD_PORT_" + endp.endpoint + "}"
+			}
+			if endp.isPort {
+				return nomadServiceMarker(endp.component, endp.endpoint, "port")
+			}
+			return nomadServiceMarker(endp.component, endp.endpoint, "addr")
 		}
 		if v, ok := r.endpointAddrs[key]; ok {
 			return v
