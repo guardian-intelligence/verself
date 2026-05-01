@@ -203,6 +203,59 @@ func (c *Client) findDeploymentID(ctx context.Context, jobID string, jobModifyIn
 	return dep.ID
 }
 
+// ServiceAddress is the resolved network endpoint for one entry in
+// Nomad's service catalog.
+type ServiceAddress struct {
+	Name    string
+	Address string
+	Port    int
+}
+
+// ListServiceAddresses returns the live address of every Nomad-native
+// service registration. It walks Nomad's catalog (one List call,
+// one Get per service name) and returns the first registration of
+// each service. On a single-node deployment that's the only one.
+//
+// Caller-side filtering is expected: registrations come from any
+// component that opted into Nomad service registration, including
+// services the caller doesn't care about.
+func (c *Client) ListServiceAddresses(ctx context.Context) ([]ServiceAddress, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.list_services",
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+	defer span.End()
+
+	stubs, _, err := c.api.Services().List((&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("nomad services list: %w", err)
+	}
+	var out []ServiceAddress
+	for _, ns := range stubs {
+		for _, svc := range ns.Services {
+			regs, _, err := c.api.Services().Get(svc.ServiceName, (&api.QueryOptions{}).WithContext(ctx))
+			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return nil, fmt.Errorf("nomad services get %s: %w", svc.ServiceName, err)
+			}
+			if len(regs) == 0 {
+				continue
+			}
+			reg := regs[0]
+			out = append(out, ServiceAddress{
+				Name:    reg.ServiceName,
+				Address: reg.Address,
+				Port:    reg.Port,
+			})
+		}
+	}
+	span.SetAttributes(attribute.Int("nomad.services.count", len(out)))
+	span.SetStatus(codes.Ok, "")
+	return out, nil
+}
+
 // isNotFound matches Nomad's "Unexpected response code: 404" wrapping.
 // The Go client surfaces 404s as a plain error rather than a typed
 // sentinel, so we look at the substring; the upstream cli does the
