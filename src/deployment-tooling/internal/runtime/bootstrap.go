@@ -1,14 +1,14 @@
 // Package runtime is the per-subcommand bootstrap that every
 // verself-deploy entry point routes through. It owns the controlled
-// startup ordering — SSH dial, OTLP forward channel, otelcol-contrib
-// supervisor, OTel SDK init — and the reverse-order shutdown that
-// drains spans before tearing the channel down.
+// startup ordering — SSH dial, OTLP forward channel, OTel SDK init —
+// and the reverse-order shutdown that flushes spans before tearing
+// the channel down.
 //
 // Boundary: this package wires existing internal packages together;
-// it does not re-implement them. SSH lives in sshtun, the agent in
-// otelagent, the OTel SDK in github.com/verself/otel, ClickHouse
-// writes in chwriter. The runtime is the one place that knows the
-// correct order to start and stop them.
+// it does not re-implement them. SSH lives in sshtun, the OTel SDK
+// in github.com/verself/otel, ClickHouse writes in chwriter. The
+// runtime is the one place that knows the correct order to start
+// and stop them.
 package runtime
 
 import (
@@ -29,14 +29,22 @@ import (
 	"github.com/verself/deployment-tooling/internal/chwriter"
 	"github.com/verself/deployment-tooling/internal/identity"
 	"github.com/verself/deployment-tooling/internal/inventory"
-	"github.com/verself/deployment-tooling/internal/otelagent"
 	"github.com/verself/deployment-tooling/internal/sshtun"
 )
 
-// agentForwardRemotePort matches the bare-metal otelcol's OTLP gRPC
-// receiver. The substrate role binds it; the ssh forward proxies to
-// the same port on the remote loopback.
-const agentForwardRemotePort = 4317
+// otlpForwardRemotePort is the bare-metal otelcol's OTLP gRPC
+// receiver. The substrate role binds it; the SSH local-port forward
+// proxies to the same port on the remote loopback so the SDK's
+// otlptracegrpc exporter dials a 127.0.0.1:<picked-port> address that
+// tunnels straight to the receiver.
+const otlpForwardRemotePort = 4317
+
+// otelShutdownBudget bounds the SDK's BatchSpanProcessor flush at
+// process exit. The export hop is loopback (an SSH local forward over
+// an established control session), so a healthy flush completes in
+// <1s; the slack here is for upstream backpressure on the bare-metal
+// otelcol, not network latency.
+const otelShutdownBudget = 30 * time.Second
 
 // Options configure a Bootstrap call. ServiceName is the only
 // required field; the rest carry sensible defaults.
@@ -45,7 +53,7 @@ type Options struct {
 	ServiceVersion string
 
 	// Site selects per-site state (inventory file when InfraHost is
-	// unset, agent queue dir, baggage attributes). Defaults to "prod".
+	// unset and baggage attributes). Defaults to "prod".
 	Site string
 
 	// RepoRoot is the absolute path to the verself-sh checkout. Used
@@ -58,13 +66,13 @@ type Options struct {
 	InfraHost string
 	InfraUser string
 
-	// SkipAgent suppresses otelcol-contrib startup. The OTel SDK
-	// still initializes (against whatever OTEL_EXPORTER_OTLP_ENDPOINT
-	// the env carries) so spans can flow through a parent's agent.
-	// Used by subcommands that run inside a parent verself-deploy
-	// process tree (e.g. `ledger record-event` invoked by AXL while
-	// the AXL-level run is itself agentless).
-	SkipAgent bool
+	// SkipOTLPForward suppresses the SSH-forwarded OTLP channel and
+	// leaves OTEL_EXPORTER_OTLP_ENDPOINT untouched, so the SDK uses
+	// whatever a parent verself-deploy process exported. Used by
+	// child invocations spawned inside an existing run (e.g. a
+	// reconciler exec'd by `verself-deploy run`) — they inherit the
+	// parent's tunnel rather than opening a competing one.
+	SkipOTLPForward bool
 }
 
 // Runtime is the resolved bootstrap surface. Callers consume Tracer,
@@ -79,18 +87,16 @@ type Runtime struct {
 	Site       string
 	RepoRoot   string
 
-	agent       *otelagent.Agent
-	otlpForward *sshtun.Forward
+	otlpForward  *sshtun.Forward
 	otelShutdown func(context.Context) error
 
-	bootstrapSpan trace.Span
+	bootstrapSpan  trace.Span
 	bootstrapStart time.Time
 }
 
-// Init brings up SSH, the OTLP forward, the otelcol supervisor, and
-// the OTel SDK in that order. The returned Runtime owns shutdown via
-// Close — defer that on the caller and the reverse ordering happens
-// automatically.
+// Init brings up SSH, the OTLP forward, and the OTel SDK in that
+// order. The returned Runtime owns shutdown via Close — defer that
+// on the caller and the reverse ordering happens automatically.
 func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	if opts.ServiceName == "" {
 		return nil, fmt.Errorf("runtime: ServiceName is required")
@@ -135,30 +141,19 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	rt.SSH = sshClient
 
-	if !opts.SkipAgent {
-		forward, err := sshClient.Forward(ctx, "otlp", agentForwardRemotePort)
+	if !opts.SkipOTLPForward {
+		forward, err := sshClient.Forward(ctx, "otlp", otlpForwardRemotePort)
 		if err != nil {
 			_ = sshClient.Close()
 			return nil, fmt.Errorf("runtime: open OTLP forward: %w", err)
 		}
 		rt.otlpForward = forward
 
-		agent, err := otelagent.Start(ctx, otelagent.Config{
-			ForwardEndpoint: forward.ListenAddr,
-			Site:            site,
-		})
-		if err != nil {
-			_ = sshClient.Close()
-			return nil, fmt.Errorf("runtime: start agent: %w", err)
-		}
-		rt.agent = agent
-
-		// Point both the parent's SDK and any spawned children
-		// (ansible-playbook with the verself_otel callback) at the
-		// local agent. The OTel SDK reads OTEL_EXPORTER_OTLP_ENDPOINT
-		// once at Init; setting it before verselfotel.Init ensures
-		// the export pipeline is bound to the agent.
-		_ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+agent.Endpoint())
+		// Bind the parent's SDK and any child processes (reconciler
+		// scripts, ansible-playbook) to the SSH-forwarded loopback
+		// address. The OTel SDK reads OTEL_EXPORTER_OTLP_ENDPOINT once
+		// at Init, so this must be set before verselfotel.Init.
+		_ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+forward.ListenAddr)
 	}
 
 	otelShutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
@@ -166,9 +161,6 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		ServiceVersion: opts.ServiceVersion,
 	})
 	if err != nil {
-		if rt.agent != nil {
-			_ = rt.agent.Shutdown(context.Background())
-		}
 		_ = sshClient.Close()
 		return nil, fmt.Errorf("runtime: otel init: %w", err)
 	}
@@ -200,17 +192,17 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 			attribute.String("verself.site", site),
 			attribute.String("ssh.host", host),
 			attribute.String("ssh.user", user),
-			attribute.Bool("verself.skip_agent", opts.SkipAgent),
+			attribute.Bool("verself.skip_otlp_forward", opts.SkipOTLPForward),
 		),
 	)
 	rt.Ctx = ctx
 	return rt, nil
 }
 
-// Close drains the OTel SDK (so pending spans hit the agent's
-// in-memory batch), tears the agent down (so the queue flushes
-// upstream), and closes SSH. Idempotent on multiple calls; a defer
-// rt.Close() at the call site is the canonical pattern.
+// Close ends the bootstrap span, drains the OTel SDK over the
+// SSH-forwarded OTLP channel, and closes SSH. Idempotent on multiple
+// calls; a defer rt.Close() at the call site is the canonical
+// pattern.
 func (rt *Runtime) Close() {
 	if rt == nil {
 		return
@@ -227,14 +219,10 @@ func (rt *Runtime) Close() {
 		rt.bootstrapSpan = nil
 	}
 	if rt.otelShutdown != nil {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		flushCtx, cancel := context.WithTimeout(context.Background(), otelShutdownBudget)
 		_ = rt.otelShutdown(flushCtx)
 		cancel()
 		rt.otelShutdown = nil
-	}
-	if rt.agent != nil {
-		_ = rt.agent.Shutdown(context.Background())
-		rt.agent = nil
 	}
 	if rt.SSH != nil {
 		_ = rt.SSH.Close()
@@ -242,25 +230,16 @@ func (rt *Runtime) Close() {
 	}
 }
 
-// AgentEndpoint is the OTLP endpoint the agent is listening on, or
-// the empty string when SkipAgent was set. Surfaced so subprocess
-// invocations (ansible-playbook) can be told where to ship their
-// spans without re-deriving the constant.
-func (rt *Runtime) AgentEndpoint() string {
-	if rt.agent == nil {
+// OTLPEndpoint is the host:port the SSH-forwarded OTLP channel binds
+// on the controller's loopback, or the empty string when
+// SkipOTLPForward was set. Surfaced so subprocess invocations
+// (reconciler scripts, ansible-playbook) can be told where to ship
+// their spans.
+func (rt *Runtime) OTLPEndpoint() string {
+	if rt.otlpForward == nil {
 		return ""
 	}
-	return rt.agent.Endpoint()
-}
-
-// AgentLogPath surfaces the agent's stdout/stderr capture file so a
-// startup failure can be referenced in error messages. Empty when no
-// agent was started.
-func (rt *Runtime) AgentLogPath() string {
-	if rt.agent == nil {
-		return ""
-	}
-	return rt.agent.LogPath()
+	return rt.otlpForward.ListenAddr
 }
 
 // resolveInfraHost prefers .cache/render/<site>/inventory/hosts.ini

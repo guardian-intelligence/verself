@@ -35,17 +35,13 @@ through a typed ClickHouse writer. `verself-deploy substrate
 converge|verify` exposes the same primitives as standalone verbs.
 
 `verself-deploy ansible run` wraps Ansible with the in-process OTel
-SDK and a controller-side OTLP buffer agent supervised for the
-duration of the run. Configuration is embedded at
-`src/deployment-tooling/internal/otelagent/otelcol.yaml`. Deploy and
-substrate commands route Ansible through this binary so failures
-still produce ClickHouse evidence.
-
-`ansible/callback_plugins/verself_otel.py` is a thin subclass of
-`community.general.opentelemetry`; the upstream callback hardcodes
-`host.status='ok'` regardless of `result['changed']`, so we override
-`v2_runner_on_ok` to emit `host.status='changed'` for tasks that mutated state.
-The divergence canary depends on this distinction.
+SDK; spans go through `internal/runtime`'s SSH-forwarded OTLP channel
+to the bare-metal otelcol on `:4317`. The Go-side streaming parser in
+`internal/ansible` reads ansible-playbook stdout, emits per-task
+spans, and writes `verself.ansible_task_events` rows directly. The
+divergence canary's `changed_count` derives from the parser's PLAY
+RECAP totals via `verself.deploy_layer_runs`, not from the playbook's
+own OTel callback.
 
 ## ClickHouse
 

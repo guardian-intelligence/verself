@@ -47,9 +47,6 @@ not converge host packages or deploy services.
 - `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
   persona, billing, mail, database access, observability, and substrate
   evidence.
-- `controller-agent/` — controller-side OTLP buffer used while running
-  substrate convergence.
-
 Per-deploy generated files materialise under `.cache/render/<site>/` when
 `aspect render --site=<site>` runs. The deploy path consumes rendered
 inventory, generated group_vars projections, host firewall files, and rendered

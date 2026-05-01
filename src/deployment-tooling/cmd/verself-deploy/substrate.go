@@ -109,7 +109,7 @@ func runSubstrateConverge(args []string) int {
 		AnsibleDir:       ansibleDir,
 		Inventory:        inventoryDir,
 		Force:            *force,
-		AgentEndpoint:    rt.AgentEndpoint(),
+		OTLPEndpoint:     rt.OTLPEndpoint(),
 		ChWriter:         rt.ClickHouse,
 		Ledger:           ledger.New(rt.ClickHouse),
 		ExtraAnsibleArgs: extraArgs,

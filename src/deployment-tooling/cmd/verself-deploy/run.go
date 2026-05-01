@@ -159,14 +159,14 @@ func runDeployBody(
 
 	// 1. Layered substrate convergence.
 	layerRes := layers.RunAll(ctx, layers.Options{
-		Site:          site,
-		RepoRoot:      repoRoot,
-		AnsibleDir:    ansibleDir,
-		Inventory:     inventoryDir,
-		Force:         substrateMode == "always",
-		AgentEndpoint: rt.AgentEndpoint(),
-		ChWriter:      rt.ClickHouse,
-		Ledger:        led,
+		Site:         site,
+		RepoRoot:     repoRoot,
+		AnsibleDir:   ansibleDir,
+		Inventory:    inventoryDir,
+		Force:        substrateMode == "always",
+		OTLPEndpoint: rt.OTLPEndpoint(),
+		ChWriter:     rt.ClickHouse,
+		Ledger:       led,
 	})
 	if layerRes.Err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: layered substrate failed at %s: %v\n", layerRes.FailedLayer, layerRes.Err)
@@ -306,8 +306,8 @@ func runOneReconciler(ctx context.Context, rt *runtime.Runtime, repoRoot, site, 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
-		"OTEL_EXPORTER_OTLP_ENDPOINT=http://"+rt.AgentEndpoint(),
-		"VERSELF_OTLP_ENDPOINT="+rt.AgentEndpoint(),
+		"OTEL_EXPORTER_OTLP_ENDPOINT=http://"+rt.OTLPEndpoint(),
+		"VERSELF_OTLP_ENDPOINT="+rt.OTLPEndpoint(),
 	)
 	cmd.Dir = filepath.Join(repoRoot, "src", "substrate")
 	if err := cmd.Run(); err != nil {

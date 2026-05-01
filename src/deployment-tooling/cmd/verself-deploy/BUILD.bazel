@@ -9,7 +9,7 @@ go_library(
         "nomad_submit.go",
         "run.go",
         "substrate.go",
-        "with_agent.go",
+        "with_otel.go",
     ],
     importpath = "github.com/verself/deployment-tooling/cmd/verself-deploy",
     visibility = ["//visibility:private"],
