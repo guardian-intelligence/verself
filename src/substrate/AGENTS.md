@@ -31,9 +31,12 @@ compare to input_hash, skip-or-run, write the resulting row to
 `verself.deploy_layer_runs`. `scripts/divergence-canary.sh` is the post-deploy
 sanity check that gates Nomad rollout on a clean ledger.
 
-`scripts/ansible-with-otel.sh` wraps Ansible with the controller-side OTLP
-buffer in `controller-agent/otelcol.yaml`. Deploy and substrate commands must
-use that wrapper so failures still produce ClickHouse evidence.
+`verself-deploy ansible run` wraps Ansible with the in-process OTel
+SDK and a controller-side OTLP buffer agent supervised for the
+duration of the run. Configuration is embedded at
+`src/deployment-tooling/internal/otelagent/otelcol.yaml`. Deploy and
+substrate commands route Ansible through this binary so failures
+still produce ClickHouse evidence.
 
 `ansible/callback_plugins/verself_otel.py` is a thin subclass of
 `community.general.opentelemetry`; the upstream callback hardcodes

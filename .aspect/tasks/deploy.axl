@@ -92,19 +92,17 @@ def _run_nomad_deploy(ctx, site, env):
       * runs `bazelisk build --build_event_json_file=…` for the per-site
         nomad-jobs target and resolves outputs through BEP (no cquery
         multi-config bug);
-      * opens one SSH session, multiplexes artifact + nomad local-port
-        forwards over it, and reads publisher.env / ca-bundle.pem
-        through `sudo cat` over the same session;
+      * opens one SSH session, multiplexes artifact + nomad + OTLP
+        local-port forwards over it, and reads publisher.env /
+        ca-bundle.pem through `sudo cat` over the same session;
+      * supervises an in-process otelcol-contrib agent that buffers
+        spans through a file_storage queue (so the upstream tunnel
+        can blip without losing data) — superseding the prior
+        scripts/with-otel-agent.sh wrapper;
       * publishes every Garage artifact and submits every Nomad job
         through the official `hashicorp/nomad/api` client (ParseHCL
         bypassed: specs are already JSON; Plan + EnforceRegister with
         CAS on JobModifyIndex; Deployments.Info blocking-query monitor).
-
-    The shell-out is wrapped in scripts/with-otel-agent.sh so spans
-    emitted by verself-deploy reach the controller-side OTLP buffer
-    for the duration of the deploy. Phase 3 inverts this: verself-deploy
-    will own the OTLP path directly and the agent's role shrinks to
-    Ansible's Python callback only.
     """
     target = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
     rc = checked_spawn(
@@ -118,20 +116,17 @@ def _run_nomad_deploy(ctx, site, env):
         return rc
     bin = ws_path(ctx, "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy")
 
-    nomad_env = dict(env)
-    nomad_env["VERSELF_ANSIBLE_INVENTORY"] = ws_path(ctx, ".cache/render/" + site + "/inventory")
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/with-otel-agent.sh"),
+        bin,
         [
-            bin,
             "nomad", "deploy-all",
             "--site=" + site,
             "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
-        env = nomad_env,
-        label = "with-otel-agent verself-deploy nomad deploy-all --site=" + site,
+        env = env,
+        label = "verself-deploy nomad deploy-all --site=" + site,
     )
 
 def _run_divergence_canary(ctx, site, env):

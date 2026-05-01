@@ -1,7 +1,7 @@
 ---
 # Rolling OS security updates across the fleet.
 # Usage: aspect substrate security-patch
-# (renders the per-site cache and invokes ansible-with-otel.sh).
+# (renders the per-site cache and invokes verself-deploy ansible run).
 
 - name: Apply security patches
   hosts: all

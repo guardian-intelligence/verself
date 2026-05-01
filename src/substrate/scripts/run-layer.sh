@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Run one layer of the substrate converge with hash-gating.
 #
-# Replaces the monolithic ansible-playbook playbooks/box.yml call with a
-# per-layer primitive: read the layer's last-applied input_hash from
-# verself.deploy_layer_runs, compare to the supplied input_hash, and either
-# short-circuit (skipped) or invoke ansible-with-otel.sh against the layer's
-# playbook (succeeded/failed). Either way emit one row to
-# verself.deploy_layer_runs so the divergence canary and the next deploy's
-# hash-gate decision have a queryable record.
+# For each layer (L1 OS, L2 userspace, L3 daemons, L4a components):
+#   1. Read the layer's last-applied input_hash from
+#      verself.deploy_layer_runs (via layer-last-applied.sh).
+#   2. If hash matches and not --force: emit a 'skipped' row, exit 0.
+#   3. Otherwise: invoke `verself-deploy ansible run`, which wraps
+#      ansible-playbook with an in-process otelcol-contrib supervisor
+#      and a streaming Ansible-output parser that emits per-task spans
+#      and rows to verself.ansible_task_events.
+#   4. Emit 'succeeded' or 'failed' to verself.deploy_layer_runs.
 #
 # Usage:
 #   run-layer.sh \
@@ -59,6 +61,7 @@ if [[ ! "${input_hash}" =~ ^[0-9a-f]{64}$ ]]; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/../../.." && pwd)"
 
 # 1. Read the most recent succeeded/skipped input_hash for this layer.
 #    Empty when no prior run; layer-last-applied exits 20 on ClickHouse error.
@@ -88,18 +91,36 @@ if [[ "${force}" == "0" && -n "${last_applied}" && "${last_applied}" == "${input
   exit 0
 fi
 
-# 3. Run-path: invoke ansible-with-otel.sh and time it. The wrapper writes the
-#    parsed PLAY RECAP changed-task count to VERSELF_SUBSTRATE_CHANGED_TASKS_FILE
-#    on success (and on a parseable PLAY RECAP failure).
+# 3. Run-path: invoke verself-deploy ansible run (Phase 3 supersedes
+#    scripts/ansible-with-otel.sh + scripts/with-otel-agent.sh). The
+#    binary owns its own otelcol-contrib supervisor, so no shell-side
+#    agent wrapper is needed.
+verself_deploy_bin="${repo_root}/bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
+if [[ ! -x "${verself_deploy_bin}" ]]; then
+  echo "[run-layer] building //src/deployment-tooling/cmd/verself-deploy" >&2
+  (cd "${repo_root}" && bazelisk build --config=remote-writer //src/deployment-tooling/cmd/verself-deploy:verself-deploy)
+fi
+
 changed_tasks_file="$(mktemp -t "verself-${layer}-changed.XXXXXX")"
 trap 'rm -f "${changed_tasks_file}"' EXIT
 
+deploy_args=(
+  ansible run
+  --site="${site}"
+  --layer="${layer}"
+  --playbook="${playbook}"
+  --inventory="${inventory}"
+  --changed-file="${changed_tasks_file}"
+  --repo-root="${repo_root}"
+)
+for a in "${ansible_args[@]:-}"; do
+  [[ -n "${a}" ]] || continue
+  deploy_args+=(--ansible-arg="${a}")
+done
+
 start_ns="$(date +%s%N)"
 set +e
-VERSELF_ANSIBLE_INVENTORY="${inventory}" \
-  VERSELF_SUBSTRATE_CHANGED_TASKS_FILE="${changed_tasks_file}" \
-  VERSELF_LAYER="${layer}" \
-  "${script_dir}/ansible-with-otel.sh" "${playbook}" "${ansible_args[@]}"
+"${verself_deploy_bin}" "${deploy_args[@]}"
 ansible_rc=$?
 set -e
 end_ns="$(date +%s%N)"
@@ -124,7 +145,7 @@ if [[ "${ansible_rc}" -ne 0 ]]; then
     --skipped="0" \
     --duration-ms="${duration_ms}" \
     --changed-count="${changed_count}" \
-    --error-message="ansible-playbook ${playbook} exited ${ansible_rc}"
+    --error-message="verself-deploy ansible run ${playbook} exited ${ansible_rc}"
   exit "${ansible_rc}"
 fi
 

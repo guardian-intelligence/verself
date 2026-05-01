@@ -6,43 +6,63 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tooling/internal/nomadclient"
+	"github.com/verself/deployment-tooling/internal/runtime"
 )
 
 func runNomadSubmit(args []string) int {
 	fs := flag.NewFlagSet("nomad submit", flag.ContinueOnError)
 	specPath := fs.String("spec", "", "path to a rendered Nomad job spec (.nomad.json)")
-	nomadAddr := fs.String("nomad-addr", "", "Nomad agent HTTP address (e.g. http://127.0.0.1:4646)")
+	nomadAddr := fs.String("nomad-addr", "", "Nomad agent HTTP address; if empty, the binary opens an SSH-forwarded tunnel to the controller")
+	site := fs.String("site", "prod", "site label (selects inventory and agent queue dir)")
+	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	deployTimeout := fs.Duration("timeout", 5*time.Minute, "deployment-monitor wall-clock timeout")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *specPath == "" || *nomadAddr == "" {
-		fmt.Fprintln(os.Stderr, "verself-deploy nomad submit: --spec and --nomad-addr are required")
+	if *specPath == "" {
+		fmt.Fprintln(os.Stderr, "verself-deploy nomad submit: --spec is required")
 		fs.Usage()
 		return 2
 	}
 
-	ctx, flushOnExit, stop, err := initContext()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy: %v\n", err)
-		return 1
-	}
-	defer flushOnExit()
+	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	tracer := otel.Tracer(serviceName)
-	ctx, span := tracer.Start(ctx, "verself_deploy.nomad.submit",
+	rt, err := runtime.Init(parentCtx, runtime.Options{
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Site:           *site,
+		RepoRoot:       *repoRoot,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy nomad submit: %v\n", err)
+		return 1
+	}
+	defer rt.Close()
+
+	addr := *nomadAddr
+	if addr == "" {
+		fwd, err := rt.SSH.Forward(rt.Ctx, "nomad", defaultNomadRemotePort)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy nomad submit: open nomad forward: %v\n", err)
+			return 1
+		}
+		addr = "http://" + fwd.ListenAddr
+	}
+
+	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.nomad.submit",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("nomad.addr", *nomadAddr),
+			attribute.String("nomad.addr", addr),
 			attribute.String("verself.spec_path", *specPath),
 		),
 	)
@@ -51,7 +71,7 @@ func runNomadSubmit(args []string) int {
 	monitorCtx, cancelMonitor := context.WithTimeout(ctx, *deployTimeout)
 	defer cancelMonitor()
 
-	client, err := nomadclient.New(*nomadAddr)
+	client, err := nomadclient.New(addr)
 	if err != nil {
 		recordFailure(span, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad submit: %v\n", err)
