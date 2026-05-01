@@ -252,6 +252,65 @@ type WireGuardConfig struct {
 	HostGroups map[string][]string `json:"host_groups"`
 }
 
+// Operator is a human (or human-equivalent automation) with one or more
+// trusted devices. Each device's WireGuard pubkey is projected into the
+// wg-ops peer list; each device receives short-lived SSH certs from the
+// OpenBao SSH CA via OIDC. The device name flows into every cert's KeyID
+// (`verself-<principal>-<device>`) so verself.host_auth_events can attribute
+// any accepted SSH event to a specific device.
+type OperatorDevice struct {
+	// Device name used in the cert KeyID, the wg AllowedIPs comment, and
+	// the operator-side ~/.ssh/config.d/verself.conf alias. Lowercase
+	// kebab — the regex matches what sshd prints into journald and what
+	// the detect-recent-intrusions query parses out of cert_id.
+	Name string `json:"name"`
+
+	WGPublicKey string `json:"wg_pubkey"`
+
+	WGAddress string `json:"wg_address"`
+}
+
+type Operator struct {
+	// Zitadel user_id (sub) of this operator. Optional today: a single
+	// platform-org operator authenticates via OIDC with project-role
+	// gating; per-user binding becomes mandatory when a second operator
+	// joins.
+	ZitadelUserID string `json:"zitadel_user_id"`
+
+	Devices map[string]OperatorDevice `json:"devices"`
+}
+
+// Workload pool: pre-allocated WireGuard slots reserved for ephemeral
+// workloads (Devin / Cursor / CI VMs). Slot priv/pub keys are generated
+// once by the openbao role on first deploy and persisted in OpenBao KV
+// at kv/workload-pool/slots/<index>/{wg-private-key,wg-public-key};
+// claiming a slot is a metadata write, not a kernel reconfigure. Slot
+// pubkeys flow into the wg-ops kernel config via a credstore file the
+// wireguard role reads at template-render time. The pool size caps
+// concurrent workloads — bump `slot_count` and redeploy to grow.
+type WorkloadPool struct {
+	// Number of reserved slots. Slot indices run 0..slot_count-1.
+	SlotCount int64 `json:"slot_count"`
+
+	// First WireGuard address handed to slot index 0; subsequent slots
+	// claim consecutive addresses (index N → base + N). Must not collide
+	// with operator-device addresses or the wg-ops gateway address.
+	SlotAddressBase string `json:"slot_address_base"`
+
+	// AppRole secret-id TTL minted by `aspect operator enroll-workload`.
+	// 15 minutes covers a normal VM bring-up; the AppRole token (24h)
+	// is what gates the workload's actual cert lifetime.
+	EnrollSecretIDTTLSeconds int64 `json:"enroll_secret_id_ttl_seconds"`
+
+	// Workload Vault token TTL — caps the SSH cert lifetime issued by
+	// the bootstrap binary (24h).
+	WorkloadTokenTTLSeconds int64 `json:"workload_token_ttl_seconds"`
+}
+
+type WorkloadsConfig struct {
+	Pool WorkloadPool `json:"pool"`
+}
+
 type PostgresConfig struct {
 	MaxConnections int64 `json:"max_connections"`
 
@@ -273,6 +332,80 @@ type NftablesConfig struct {
 	PublicTCPPorts []any/* CUE closed list */ `json:"public_tcp_ports"`
 
 	Ssh NftablesSSHConfig `json:"ssh"`
+}
+
+type NomadArtifactDelivery struct {
+	Kind string `json:"kind"`
+
+	Storage struct {
+		Provider string `json:"provider"`
+
+		Bucket string `json:"bucket"`
+
+		KeyPrefix string `json:"key_prefix"`
+
+		Region string `json:"region"`
+	} `json:"storage"`
+
+	Origin struct {
+		Scheme string `json:"scheme"`
+
+		Hostname ServiceHost `json:"hostname"`
+
+		Port Port `json:"port"`
+
+		Placement string `json:"placement"`
+
+		Resolution string `json:"resolution"`
+
+		ListenHost Host `json:"listen_host"`
+
+		PublicDNS bool `json:"public_dns"`
+
+		PublicIngress bool `json:"public_ingress"`
+
+		TLS struct {
+			ServerName ServiceHost `json:"server_name"`
+
+			CABundlePath string `json:"ca_bundle_path"`
+		} `json:"tls"`
+	} `json:"origin"`
+
+	NomadGetter struct {
+		Protocol string `json:"protocol"`
+
+		SourcePrefix string `json:"source_prefix"`
+
+		ChecksumAlgorithm string `json:"checksum_algorithm"`
+
+		Options map[string]string `json:"options"`
+
+		Credentials struct {
+			Source string `json:"source"`
+
+			EnvironmentFile string `json:"environment_file"`
+
+			AccessKeyIDEnv string `json:"access_key_id_env"`
+
+			SecretAccessKeyEnv string `json:"secret_access_key_env"`
+		} `json:"credentials"`
+	} `json:"nomad_getter"`
+
+	Publisher struct {
+		Credentials struct {
+			Source string `json:"source"`
+
+			EnvironmentFile string `json:"environment_file"`
+
+			AccessKeyIDEnv string `json:"access_key_id_env"`
+
+			SecretAccessKeyEnv string `json:"secret_access_key_env"`
+		} `json:"credentials"`
+	} `json:"publisher"`
+}
+
+type ArtifactConfig struct {
+	Nomad NomadArtifactDelivery `json:"nomad"`
 }
 
 type NftablesEndpointRef struct {
@@ -417,8 +550,10 @@ type SpireConfig struct {
 //   - source_address_cidrs is mandatory (no certs valid from "anywhere").
 //   - max_ttl_seconds is bounded at 24h (a leaked cert can't outlive a day).
 //   - automation principals must declare a non-empty force_command, since
-//     the issuing identity is a workload, not a human, and an
-//     unrestricted shell on a workload-issued cert defeats the point.
+//     a non-human issuer with an unrestricted shell defeats the point.
+//   - workload principals (the bootstrap-token Devin/Cursor path) skip the
+//     force_command requirement: they need a normal interactive shell,
+//     bound by the AppRole-issued 24h Vault token TTL and wg-ops CIDR.
 type SSHRoleKind string
 
 type SSHPrincipal any /* TODO: IncompleteKind: _|_ */
@@ -476,6 +611,20 @@ type SSHCAConfig struct {
 	Principals map[string]SSHPrincipal `json:"principals"`
 }
 
+type BareMetalConfig struct {
+	// Public IPv4 address of the bare-metal node. Owned here (not in the
+	// Ansible inventory) so the cloudflare_dns role and any future
+	// public-DNS consumer read a typed CUE value rather than a string
+	// shadow of `ansible_host`. Validated as v4 dotted-quad and refused
+	// when it lands inside RFC 1918 / loopback ranges.
+	PublicIPv4 string `json:"public_ipv4"`
+
+	// Internal alias used by ansible inventory and by the operator-side
+	// generated ~/.ssh/config drop-in. SSH connects to this alias and the
+	// drop-in maps it to the wg-ops address.
+	HostAlias string `json:"host_alias"`
+}
+
 type InstanceConfig struct {
 	// Typed config consumed by Go renderers. Each typed section has a
 	// dedicated projection in internal/render/<name>/ and may declare its
@@ -492,6 +641,21 @@ type InstanceConfig struct {
 	Spire SpireConfig `json:"spire"`
 
 	SshCA SSHCAConfig `json:"ssh_ca"`
+
+	BareMetal BareMetalConfig `json:"bare_metal"`
+
+	Artifacts ArtifactConfig `json:"artifacts"`
+
+	// operators declares the trusted set of human operators and their
+	// devices. Devices project into wg-ops peers and into the
+	// known-cert-id allowlist that detect-recent-intrusions consults.
+	Operators map[string]Operator `json:"operators"`
+
+	// workloads.pool reserves WireGuard slots for ephemeral workloads
+	// (Devin/Cursor/CI VMs). Slot priv keys live in OpenBao KV and are
+	// generated on first deploy; slot pubkeys are read back and merged
+	// into the wg-ops peer list at substrate convergence time.
+	Workloads WorkloadsConfig `json:"workloads"`
 
 	// ansible_vars is the explicit Ansible-vars surface. Every key here
 	// becomes a top-level group_vars/all entry; the ops renderer projects

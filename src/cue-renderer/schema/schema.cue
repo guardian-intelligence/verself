@@ -190,6 +190,61 @@ package schema
 	} @go(HostGroups)
 }
 
+// Operator is a human (or human-equivalent automation) with one or more
+// trusted devices. Each device's WireGuard pubkey is projected into the
+// wg-ops peer list; each device receives short-lived SSH certs from the
+// OpenBao SSH CA via OIDC. The device name flows into every cert's KeyID
+// (`verself-<principal>-<device>`) so verself.host_auth_events can attribute
+// any accepted SSH event to a specific device.
+#OperatorDevice: {
+	// Device name used in the cert KeyID, the wg AllowedIPs comment, and
+	// the operator-side ~/.ssh/config.d/verself.conf alias. Lowercase
+	// kebab — the regex matches what sshd prints into journald and what
+	// the detect-recent-intrusions query parses out of cert_id.
+	name:       string & =~"^[a-z][a-z0-9-]*$" & !="" @go(Name)
+	wg_pubkey:  string & =~"^[A-Za-z0-9+/]{43}=$"     @go(WGPublicKey)
+	wg_address: string & =~"^[0-9.]+$"                @go(WGAddress)
+}
+
+#Operator: {
+	// Zitadel user_id (sub) of this operator. Optional today: a single
+	// platform-org operator authenticates via OIDC with project-role
+	// gating; per-user binding becomes mandatory when a second operator
+	// joins.
+	zitadel_user_id: string | *"" @go(ZitadelUserID)
+	devices: {
+		[string]: #OperatorDevice
+	}
+}
+
+// Workload pool: pre-allocated WireGuard slots reserved for ephemeral
+// workloads (Devin / Cursor / CI VMs). Slot priv/pub keys are generated
+// once by the openbao role on first deploy and persisted in OpenBao KV
+// at kv/workload-pool/slots/<index>/{wg-private-key,wg-public-key};
+// claiming a slot is a metadata write, not a kernel reconfigure. Slot
+// pubkeys flow into the wg-ops kernel config via a credstore file the
+// wireguard role reads at template-render time. The pool size caps
+// concurrent workloads — bump `slot_count` and redeploy to grow.
+#WorkloadPool: {
+	// Number of reserved slots. Slot indices run 0..slot_count-1.
+	slot_count: int & >0 & <=64 @go(SlotCount)
+	// First WireGuard address handed to slot index 0; subsequent slots
+	// claim consecutive addresses (index N → base + N). Must not collide
+	// with operator-device addresses or the wg-ops gateway address.
+	slot_address_base: string & =~"^[0-9.]+$" @go(SlotAddressBase)
+	// AppRole secret-id TTL minted by `aspect operator enroll-workload`.
+	// 15 minutes covers a normal VM bring-up; the AppRole token (24h)
+	// is what gates the workload's actual cert lifetime.
+	enroll_secret_id_ttl_seconds: int & >0 & <=3600 | *900 @go(EnrollSecretIDTTLSeconds)
+	// Workload Vault token TTL — caps the SSH cert lifetime issued by
+	// the bootstrap binary (24h).
+	workload_token_ttl_seconds: int & >0 & <=86400 | *86400 @go(WorkloadTokenTTLSeconds)
+}
+
+#WorkloadsConfig: {
+	pool: #WorkloadPool
+}
+
 #PostgresConfig: {
 	max_connections:                int & >0  @go(MaxConnections)
 	superuser_reserved_connections: int & >=0 @go(SuperuserReservedConnections)
@@ -207,6 +262,58 @@ package schema
 	// by the host_firewall.cue comprehension, not by the renderer.
 	public_tcp_ports: [...#Port] | *[80, 443] @go(PublicTCPPorts)
 	ssh: #NftablesSSHConfig
+}
+
+#NomadArtifactDelivery: {
+	kind: "garage_s3_private_origin"
+
+	storage: {
+		provider:   "garage"
+		bucket:     string & !=""
+		key_prefix: string & =~"^[A-Za-z0-9][A-Za-z0-9._/-]*$" @go(KeyPrefix)
+		region:     string & !=""
+	}
+
+	origin: {
+		scheme:         "https"
+		hostname:       #ServiceHost
+		port:           #Port
+		placement:      "node_local"
+		resolution:     "per_node_hosts_file" | "private_dns"
+		listen_host:    #Host @go(ListenHost)
+		public_dns:     false @go(PublicDNS)
+		public_ingress: false @go(PublicIngress)
+		tls: {
+			server_name:    #ServiceHost    @go(ServerName)
+			ca_bundle_path: string & =~"^/" @go(CABundlePath)
+		} @go(TLS)
+	}
+
+	nomad_getter: {
+		protocol:           "s3"
+		source_prefix:      string & =~"^s3::https://" @go(SourcePrefix)
+		checksum_algorithm: "sha256"                   @go(ChecksumAlgorithm)
+		options: {[string]: string}
+		credentials: {
+			source:                "host_environment"
+			environment_file:      string & =~"^/" @go(EnvironmentFile)
+			access_key_id_env:     string & !=""   @go(AccessKeyIDEnv)
+			secret_access_key_env: string & !=""   @go(SecretAccessKeyEnv)
+		}
+	} @go(NomadGetter)
+
+	publisher: {
+		credentials: {
+			source:                "controller_environment"
+			environment_file:      string & =~"^/" @go(EnvironmentFile)
+			access_key_id_env:     string & !=""   @go(AccessKeyIDEnv)
+			secret_access_key_env: string & !=""   @go(SecretAccessKeyEnv)
+		}
+	}
+}
+
+#ArtifactConfig: {
+	nomad: #NomadArtifactDelivery
 }
 
 #NftablesEndpointRef: {
@@ -391,9 +498,11 @@ package schema
 //   - source_address_cidrs is mandatory (no certs valid from "anywhere").
 //   - max_ttl_seconds is bounded at 24h (a leaked cert can't outlive a day).
 //   - automation principals must declare a non-empty force_command, since
-//     the issuing identity is a workload, not a human, and an
-//     unrestricted shell on a workload-issued cert defeats the point.
-#SSHRoleKind: "operator" | "automation" | "breakglass"
+//     a non-human issuer with an unrestricted shell defeats the point.
+//   - workload principals (the bootstrap-token Devin/Cursor path) skip the
+//     force_command requirement: they need a normal interactive shell,
+//     bound by the AppRole-issued 24h Vault token TTL and wg-ops CIDR.
+#SSHRoleKind: "operator" | "automation" | "workload" | "breakglass"
 
 #SSHPrincipal: {
 	name: string & !="" @go(Name)
@@ -413,8 +522,9 @@ package schema
 	// with this one. permit_pty=false denies TTY allocation. Together
 	// these constrain what an automation principal can do once
 	// authenticated.
-	force_command: string | *"" @go(ForceCommand)
-	permit_pty:    bool | *true @go(PermitPty)
+	force_command:          string | *""  @go(ForceCommand)
+	permit_pty:             bool | *true  @go(PermitPty)
+	permit_port_forwarding: bool | *false @go(PermitPortForwarding)
 
 	// Automation principals MUST declare a force_command. Empty
 	// force_command on automation fails CUE evaluation.
@@ -478,6 +588,19 @@ package schema
 	}
 }
 
+#BareMetalConfig: {
+	// Public IPv4 address of the bare-metal node. Owned here (not in the
+	// Ansible inventory) so the cloudflare_dns role and any future
+	// public-DNS consumer read a typed CUE value rather than a string
+	// shadow of `ansible_host`. Validated as v4 dotted-quad and refused
+	// when it lands inside RFC 1918 / loopback ranges.
+	public_ipv4: string & =~"^([0-9]+\\.){3}[0-9]+$" @go(PublicIPv4)
+	// Internal alias used by ansible inventory and by the operator-side
+	// generated ~/.ssh/config drop-in. SSH connects to this alias and the
+	// drop-in maps it to the wg-ops address.
+	host_alias: string & =~"^[a-z][a-z0-9-]*$" @go(HostAlias)
+}
+
 #InstanceConfig: {
 	// Typed config consumed by Go renderers. Each typed section has a
 	// dedicated projection in internal/render/<name>/ and may declare its
@@ -489,6 +612,21 @@ package schema
 	firecracker: #FirecrackerConfig
 	spire:       #SpireConfig
 	ssh_ca:      #SSHCAConfig @go(SshCA)
+	bare_metal:  #BareMetalConfig @go(BareMetal)
+	artifacts:   #ArtifactConfig
+
+	// operators declares the trusted set of human operators and their
+	// devices. Devices project into wg-ops peers and into the
+	// known-cert-id allowlist that detect-recent-intrusions consults.
+	operators: {
+		[string]: #Operator
+	}
+
+	// workloads.pool reserves WireGuard slots for ephemeral workloads
+	// (Devin/Cursor/CI VMs). Slot priv keys live in OpenBao KV and are
+	// generated on first deploy; slot pubkeys are read back and merged
+	// into the wg-ops peer list at substrate convergence time.
+	workloads: #WorkloadsConfig
 
 	// ansible_vars is the explicit Ansible-vars surface. Every key here
 	// becomes a top-level group_vars/all entry; the ops renderer projects

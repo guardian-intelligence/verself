@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 exports_files([
     "config.cue",
+    "operators.cue",
     "service_facts.cue",
     "firewall.cue",
     "host_firewall.cue",

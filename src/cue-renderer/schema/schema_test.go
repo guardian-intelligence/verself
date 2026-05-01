@@ -212,6 +212,20 @@ func TestSSHPrincipal_AcceptsWellFormed(t *testing.T) {
 				source_address_cidrs: ["0.0.0.0/0"]
 			}`,
 		},
+		{
+			// Workload role: AppRole-issued, 24h cap, interactive shell
+			// without a force_command. The schema must NOT require
+			// force_command for `workload` (only `automation`), so a bare
+			// principal block validates.
+			name: "workload_24h_no_force_command",
+			instance: `{
+				name: "workload"
+				role: "workload"
+				max_ttl_seconds: 86400
+				source_address_cidrs: ["10.66.66.0/24"]
+				permit_pty: true
+			}`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -224,6 +238,140 @@ func TestSSHPrincipal_AcceptsWellFormed(t *testing.T) {
 			merged := def.Unify(val)
 			if err := merged.Validate(cue.Concrete(true)); err != nil {
 				t.Fatalf("expected well-formed principal to validate, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestOperatorDevice_RejectsMalformed asserts the operator-device schema
+// rejects every shape the renderer cannot project safely:
+//
+//   - empty / shell-illegal device name (cert KeyID would be ambiguous)
+//   - non-base64 wg pubkey (44 chars ending in `=`)
+//   - non-IPv4 wg address
+//
+// These are the bare-minimum gates: a deeper "address must lie inside the
+// wg-ops CIDR" check belongs in an instance-level test once we have more
+// than a single peer to validate against.
+func TestOperatorDevice_RejectsMalformed(t *testing.T) {
+	schemaVal, ctx := loadSchema(t)
+	def := schemaVal.LookupPath(cue.ParsePath("#OperatorDevice"))
+	if !def.Exists() {
+		t.Fatal("#OperatorDevice not found in schema package")
+	}
+
+	cases := []struct {
+		name     string
+		instance string
+		wantErr  string
+	}{
+		{
+			name: "empty_name",
+			instance: `{
+				name: ""
+				wg_pubkey: "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
+				wg_address: "10.66.66.2"
+			}`,
+			wantErr: "name",
+		},
+		{
+			name: "name_with_uppercase",
+			instance: `{
+				name: "Shovon-Mbp"
+				wg_pubkey: "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
+				wg_address: "10.66.66.2"
+			}`,
+			wantErr: "name",
+		},
+		{
+			name: "wg_pubkey_too_short",
+			instance: `{
+				name: "shovon-mbp"
+				wg_pubkey: "AoVgh4="
+				wg_address: "10.66.66.2"
+			}`,
+			wantErr: "wg_pubkey",
+		},
+		{
+			name: "wg_address_not_ipv4",
+			instance: `{
+				name: "shovon-mbp"
+				wg_pubkey: "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
+				wg_address: "fe80::1"
+			}`,
+			wantErr: "wg_address",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			val := ctx.CompileString(tc.instance)
+			if err := val.Err(); err != nil {
+				t.Fatalf("compile instance: %v", err)
+			}
+			merged := def.Unify(val)
+			err := merged.Validate(cue.Concrete(true))
+			if err == nil {
+				t.Fatalf("expected error mentioning %q, got nil; merged value:\n%v",
+					tc.wantErr, merged)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error to mention %q, got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestWorkloadPool_BoundsSlotCount asserts the pool schema refuses
+// slot_count values outside (0, 64]. The cap is a hint that the pool is
+// shared substrate state — bumping past 64 slots should land via a
+// schema change, not as a one-line config edit.
+func TestWorkloadPool_BoundsSlotCount(t *testing.T) {
+	schemaVal, ctx := loadSchema(t)
+	def := schemaVal.LookupPath(cue.ParsePath("#WorkloadPool"))
+	if !def.Exists() {
+		t.Fatal("#WorkloadPool not found in schema package")
+	}
+
+	cases := []struct {
+		name     string
+		instance string
+		wantErr  string
+	}{
+		{
+			name: "zero_slot_count",
+			instance: `{
+				slot_count: 0
+				slot_address_base: "10.66.66.100"
+			}`,
+			wantErr: "slot_count",
+		},
+		{
+			name: "slot_count_above_64",
+			instance: `{
+				slot_count: 128
+				slot_address_base: "10.66.66.100"
+			}`,
+			wantErr: "slot_count",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			val := ctx.CompileString(tc.instance)
+			if err := val.Err(); err != nil {
+				t.Fatalf("compile instance: %v", err)
+			}
+			merged := def.Unify(val)
+			err := merged.Validate(cue.Concrete(true))
+			if err == nil {
+				t.Fatalf("expected error mentioning %q, got nil; merged value:\n%v",
+					tc.wantErr, merged)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error to mention %q, got: %v", tc.wantErr, err)
 			}
 		})
 	}

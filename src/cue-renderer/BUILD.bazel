@@ -10,6 +10,7 @@ TOPOLOGY_SRCS = [
     "cue.mod/module.cue",
     "//src/cue-renderer/catalog:versions.cue",
     "//src/cue-renderer/instances/prod:config.cue",
+    "//src/cue-renderer/instances/prod:operators.cue",
     "//src/cue-renderer/instances/prod:service_facts.cue",
     "//src/cue-renderer/instances/prod:firewall.cue",
     "//src/cue-renderer/instances/prod:host_firewall.cue",
@@ -21,7 +22,10 @@ TOPOLOGY_SRCS = [
 filegroup(
     name = "topology_srcs",
     srcs = TOPOLOGY_SRCS,
-    visibility = ["//src/cue-renderer:__subpackages__"],
+    visibility = [
+        "//src/cue-renderer:__subpackages__",
+        "//src/substrate:__pkg__",
+    ],
 )
 
 # Bazel-input renderers — only artefacts that participate in the build
