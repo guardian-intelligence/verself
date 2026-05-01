@@ -8,7 +8,6 @@ TAR_SINGLE_BINARIES = [
     ("shellcheck", "@dev_tool_shellcheck//file", "J", "shellcheck-v0.11.0/shellcheck", "usr/local/bin/shellcheck"),
     ("stripe", "@dev_tool_stripe//file", "z", "stripe", "usr/local/bin/stripe"),
     ("clickhouse", "@dev_tool_clickhouse//file", "z", "clickhouse-common-static-26.3.2.3/usr/bin/clickhouse", "usr/local/bin/clickhouse"),
-    ("otelcol_contrib", "@dev_tool_otelcol_contrib//file", "z", "otelcol-contrib", "usr/local/bin/otelcol-contrib"),
 ]
 
 ZIP_SINGLE_BINARIES = [
@@ -64,7 +63,6 @@ DEV_TOOL_DEPS = [
     ":dev_tools_go_sqlc",
     ":dev_tools_jq",
     ":dev_tools_osv_scanner",
-    ":dev_tools_otelcol_contrib",
     ":dev_tools_protoc_bin",
     ":dev_tools_protoc_include",
     ":dev_tools_shellcheck",

@@ -71,19 +71,8 @@ versions: {
 		buildifier:                                "8.5.1"
 		zig:                                       "0.15.2"
 		opentofu:                                  "1.11.5"
-		ansibleCore:                               "2.20.3"
-		ansibleLint:                               "26.4.0"
-		ansibleOpentelemetrySdk:                   "1.41.0"
-		ansibleOpentelemetryExporterOtlpProtoGrpc: "1.41.0"
-		ansibleOpentelemetryExporterOtlpProtoHttp: "1.41.0"
-		// otelcol-contrib runs on the controller as a single-process OTLP buffer.
-		// `aspect deploy` and controller-originated telemetry commands point their OTLP
-		// exporters at it instead of an SSH-tunneled :4317 on the bare-metal
-		// node; the controller agent persists spans to a file_storage queue and
-		// forwards via its own SSH tunnel, decoupling the upstream tunnel's
-		// lifetime from the playbook/canary process. Same version + artifact as
-		// the server-side build (`versions.production.otelcolContrib`).
-		otelcolContrib:   "0.149.0"
+		ansibleCore: "2.20.3"
+		ansibleLint: "26.4.0"
 		preCommit:        "4.5.1"
 		protoc:           "34.0"
 		cue:              "0.16.1"
@@ -138,7 +127,7 @@ substrateToolsArchive: {
 // on the controller when any version moves.
 devToolsArchive: {
 	bazel_label: "//src/cue-renderer/binaries:dev_tools.tar.zst"
-	version:     "age-\(versions.development.age)_agent-browser-\(versions.development.agentBrowser)_buf-\(versions.development.buf)_buildifier-\(versions.development.buildifier)_clickhouse-\(versions.development.clickhouse)_cue-\(versions.development.cue)_go-\(versions.development.go)_jq-\(versions.development.jq)_osv-scanner-\(versions.development.osvScanner)_otelcol-contrib-\(versions.development.otelcolContrib)_protoc-\(versions.development.protoc)_shellcheck-\(versions.development.shellcheck)_sops-\(versions.development.sops)_stripe-\(versions.development.stripe)_tofu-\(versions.development.opentofu)_uv-\(versions.development.uv)_zig-\(versions.development.zig)"
+	version:     "age-\(versions.development.age)_agent-browser-\(versions.development.agentBrowser)_buf-\(versions.development.buf)_buildifier-\(versions.development.buildifier)_clickhouse-\(versions.development.clickhouse)_cue-\(versions.development.cue)_go-\(versions.development.go)_jq-\(versions.development.jq)_osv-scanner-\(versions.development.osvScanner)_protoc-\(versions.development.protoc)_shellcheck-\(versions.development.shellcheck)_sops-\(versions.development.sops)_stripe-\(versions.development.stripe)_tofu-\(versions.development.opentofu)_uv-\(versions.development.uv)_zig-\(versions.development.zig)"
 }
 
 // sourceBuiltGoTools: Go binaries built from vendored source via
@@ -703,15 +692,6 @@ devTools: {
 		install_path: "/usr/local/bin/agent-browser"
 		version_cmd:  "agent-browser --version"
 	}
-	"otelcol-contrib": {
-		tier:         #DevToolTier & "pinned_http_file"
-		version:      versions.development.otelcolContrib
-		strategy:     "tarball"
-		url:          "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v\(version)/otelcol-contrib_\(version)_linux_amd64.tar.gz"
-		sha256:       "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47"
-		install_path: "/usr/local/bin/otelcol-contrib"
-		version_cmd:  "otelcol-contrib --version"
-	}
 }
 
 // devToolDownloads mirrors serverToolDownloads: each entry projects to one
@@ -816,12 +796,6 @@ devToolDownloads: {
 		sha256:               devTools["agent-browser"].sha256
 		url:                  devTools["agent-browser"].url
 	}
-	otelcol_contrib: {
-		name:                 "dev_tool_otelcol_contrib"
-		downloaded_file_path: "otelcol-contrib_\(versions.development.otelcolContrib)_linux_amd64.tar.gz"
-		sha256:               devTools["otelcol-contrib"].sha256
-		url:                  devTools["otelcol-contrib"].url
-	}
 }
 
 // devToolPackaging is the shape `dev_tools.tar.zst` lays down on /. Mirrors
@@ -834,7 +808,6 @@ devToolPackaging: {
 		{name: "shellcheck", repo: "dev_tool_shellcheck", tar_flag: "J", binary: "shellcheck-v\(versions.development.shellcheck)/shellcheck", dest: "usr/local/bin/shellcheck"},
 		{name: "stripe", repo: "dev_tool_stripe", tar_flag: "z", binary: "stripe", dest: "usr/local/bin/stripe"},
 		{name: "clickhouse", repo: "dev_tool_clickhouse", tar_flag: "z", binary: "clickhouse-common-static-\(versions.development.clickhouse)/usr/bin/clickhouse", dest: "usr/local/bin/clickhouse"},
-		{name: "otelcol_contrib", repo: "dev_tool_otelcol_contrib", tar_flag: "z", binary: "otelcol-contrib", dest: "usr/local/bin/otelcol-contrib"},
 	]
 
 	// One binary extracted from a zip.
