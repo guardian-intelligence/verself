@@ -97,6 +97,15 @@
 # without first SSHing into the host. The endpoint hostname / port are
 # the only fields a fresh device needs alongside its own pre-registered
 # pubkey + locally-generated priv key.
+- name: Create wg-ops discovery directory
+  ansible.builtin.file:
+    path: /var/www/verself/well-known
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: wireguard_tunnel.interface == 'wg-ops'
+
 - name: Publish wg-ops discovery JSON under /.well-known
   ansible.builtin.copy:
     dest: /var/www/verself/well-known/verself-wireguard.json
