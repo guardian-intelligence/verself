@@ -46,6 +46,6 @@ detect_intrusions = task(
     args = {
         "site": args.string(default = "prod", description = "Site whose rendered ops.yml supplies the trusted suffix list."),
         "hours": args.string(default = "24", description = "Lookback window."),
-        "format": args.string(default = "table", description = "ClickHouse output format (table|json|markdown|csv)."),
+        "format": args.string(default = "", description = "ClickHouse format (PrettyCompactMonoBlock | JSON | TSVRaw | ...)."),
     },
 )
