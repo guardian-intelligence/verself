@@ -29,7 +29,11 @@ platform_root="$(cd "${script_dir}/.." && pwd)"
 repo_root="$(cd "${platform_root}/../.." && pwd)"
 site="${VERSELF_SITE:-prod}"
 hours=24
-format=table
+# ClickHouse format names match clickhouse-client's --format flag.
+# PrettyCompactMonoBlock is the default ergonomic table view; pass
+# --format=JSON for machine-readable output, or --format=TSVRaw for
+# pipeable text.
+format=PrettyCompactMonoBlock
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -87,7 +91,12 @@ WHERE event_date >= today() - 1
   AND (
        auth_method != 'publickey-cert'
     OR NOT match(cert_id, '^verself-(operator|workload|breakglass)-[a-z0-9-]+\$')
-    OR splitByChar('-', cert_id)[3] NOT IN (${suffixes_csv})
+    -- splitByRegexp is overkill; the principal segment is always one
+    -- of three known values, so a fixed-length prefix strip (length
+    -- of 'verself-operator-' / 'verself-workload-' / 'verself-breakglass-')
+    -- is the simplest reliable suffix extractor that supports
+    -- multi-dash device names (e.g. 'shovon-mbp').
+    OR replaceRegexpOne(cert_id, '^verself-(operator|workload|breakglass)-', '') NOT IN (${suffixes_csv})
   )
 ORDER BY recorded_at DESC
 FORMAT ${format}

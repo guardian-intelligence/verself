@@ -113,7 +113,16 @@ AS SELECT
     extract(Body, 'ssh2: (\\w+) SHA256:')                                   AS key_type,
     extract(Body, 'ssh2: \\w+ SHA256:(\\S+)')                               AS key_fingerprint,
     extract(Body, '\\(serial (\\d+)\\)')                                    AS cert_serial,
-    extract(Body, 'ID "([^"]+)"')                                           AS cert_id,
+    -- sshd 9.x writes the cert KeyID without quotes (`ID verself-operator-shovon-mbp`)
+    -- when the ID has no whitespace; OpenBao's key_id_format produces only
+    -- whitespace-free tokens. Older sshd builds emit quotes (`ID "..."`),
+    -- so the extractor accepts either. coalesce() does not collapse the
+    -- empty-string `extract` returns on no match — we have to multiIf.
+    multiIf(
+        match(Body, ' ID "[^"]+"'), extract(Body, ' ID "([^"]+)"'),
+        match(Body, ' ID [^ ]+'),   extract(Body, ' ID ([^ ]+)'),
+        ''
+    )                                                                      AS cert_id,
     extract(Body, ' CA \\w+ SHA256:(\\S+)')                                 AS ca_fingerprint,
     Body                                                                    AS body
 FROM default.otel_logs
