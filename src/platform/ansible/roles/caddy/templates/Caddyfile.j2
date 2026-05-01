@@ -45,6 +45,7 @@
 
 https://{{ topology_artifacts.nomad.origin.hostname }}:{{ topology_artifacts.nomad.origin.port }} {
 	bind {{ topology_artifacts.nomad.origin.listen_host }}
+	import access_log
 	tls /etc/verself/pki/nomad-artifacts-server.pem /etc/verself/pki/private/nomad-artifacts-server-key.pem
 	reverse_proxy{% for garage_node in topology_clusters.garage.nodes %} http://{{ topology_clusters.garage.host }}:{{ garage_node.s3_port }}{% endfor %}{{ "\n" }}
 }
@@ -500,10 +501,11 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		root * /var/www/verself
 		header Cache-Control "public, max-age=300"
 		header X-Content-Type-Options nosniff
-		file_server {
-			browse off
-			hide .*
-		}
+		# `hide .*` is omitted on purpose: the served directory IS
+		# `/var/www/verself/.well-known/`. file_server's hide patterns
+		# are matched against the file's full on-disk path, so hiding
+		# `.*` would suppress every file under the directory.
+		file_server browse=false
 	}
 
 	handle /v1/shape {
