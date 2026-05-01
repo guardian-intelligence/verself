@@ -85,6 +85,7 @@ func run() error {
 	}
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
+	logger.InfoContext(ctx, "billing-service deploy timing probe", "service_version", serviceVersion)
 
 	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
