@@ -51,18 +51,10 @@ func cmdRefresh(args []string) error {
 	sshPubPath := sshKeyPath + ".pub"
 	sshCertPath := sshKeyPath + "-cert.pub"
 
-	// Adopt the legacy ~/.ssh/id_verself keypair when the canonical
-	// path is empty. Refresh runs non-interactively from `aspect
-	// deploy` pre-flight, so a fresh controller that still has the
-	// pre-cutover layout migrates itself on the first deploy after
-	// the cutover instead of demanding a manual onboard run.
-	if _, err := adoptLegacySSHKey(sshKeyPath); err != nil {
-		return fmt.Errorf("adopt legacy ssh key: %w", err)
-	}
 	if _, err := os.Stat(sshPubPath); err != nil {
 		fmt.Fprintf(os.Stderr,
-			"aspect-operator: device %q has no usable SSH key (canonical %s missing, no legacy ~/.ssh/id_verself either); skipping refresh\n",
-			dev, sshPubPath)
+			"aspect-operator: device %q is not onboarded on this machine (%s missing); skipping refresh. Run `aspect operator onboard --device=%s` to onboard.\n",
+			dev, sshPubPath, dev)
 		return nil
 	}
 
@@ -107,9 +99,6 @@ func cmdRefresh(args []string) error {
 	}
 	if err := os.WriteFile(sshCertPath, []byte(signed), 0o600); err != nil {
 		return err
-	}
-	if err := linkLegacyCertPath(sshCertPath); err != nil {
-		return fmt.Errorf("symlink legacy cert path: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "aspect-operator: refreshed token + cert for device %s\n", dev)
 	return nil

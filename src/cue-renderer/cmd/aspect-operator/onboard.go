@@ -48,25 +48,18 @@ func cmdOnboard(args []string) error {
 	wgKeyPath := filepath.Join(wgDir, *device)
 	wgPubPath := wgKeyPath + ".pub"
 
-	// Migration adoption: a controller running this binary for the
-	// first time may already have a working legacy SSH key + a
-	// system-managed wg-ops interface (the pre-cutover ssh-cert.sh
-	// world). Adopt rather than regenerate, otherwise the new wg
-	// pubkey would not match the one already registered in CUE and
-	// the cert-signing call (which goes over wg-ops) would never
-	// reach OpenBao.
-	adopted, err := adoptLegacySSHKey(sshKeyPath)
-	if err != nil {
-		return fmt.Errorf("adopt legacy ssh key: %w", err)
-	}
-	if adopted {
-		fmt.Fprintf(os.Stderr, "adopted legacy SSH keypair from ~/.ssh/id_verself*; new canonical path: %s\n", sshKeyPath)
-	}
+	// `--wg-address` is mandatory for a fresh onboard, but we also
+	// support the case where wg-ops is brought up out-of-band (the
+	// controller this binary was first deployed on, for instance,
+	// runs wg-quick@wg-ops as a system unit). In that case we
+	// auto-adopt the address and skip the per-user `verself`
+	// interface — adding a second interface bound to the same
+	// address would just collide.
 	existingWGAddress, externallyManagedWG := detectExistingWGOps()
 	if *wgAddress == "" {
 		if externallyManagedWG {
 			*wgAddress = existingWGAddress
-			fmt.Fprintf(os.Stderr, "adopted existing wg-ops address %s (system-managed interface; not regenerating wg keypair)\n", existingWGAddress)
+			fmt.Fprintf(os.Stderr, "wg-ops already up at %s (system-managed); skipping per-user interface\n", existingWGAddress)
 		} else {
 			return errors.New(
 				"--wg-address is required for fresh onboarding. Pick an unused IPv4 in the wg-ops /24 " +
@@ -79,8 +72,8 @@ func cmdOnboard(args []string) error {
 	}
 
 	// 1. Local keypairs. ssh-keygen + wg are operator-side dev tools
-	//    laid down by `aspect platform setup-dev`. Skipped when the
-	//    adoption step above already populated the canonical paths.
+	//    laid down by `aspect platform setup-dev`. Skipped when wg-ops
+	//    is externally managed (no per-user wg keypair to mint).
 	if err := ensureSSHKeypair(sshKeyPath, *device); err != nil {
 		return err
 	}
@@ -138,9 +131,6 @@ func cmdOnboard(args []string) error {
 	if err := writeSSHConfigDropIn(*hostAlias, anchors.Wireguard.HostAddress, sshKeyPath, sshCertPath); err != nil {
 		return err
 	}
-	if err := stripLegacyMatchExec(); err != nil {
-		return fmt.Errorf("strip legacy Match exec from ~/.ssh/config: %w", err)
-	}
 
 	// 6. OIDC. The login persists a periodic Vault token at
 	//    ~/.vault-token; subsequent refreshes renew it in place.
@@ -170,9 +160,6 @@ func cmdOnboard(args []string) error {
 	}
 	if err := os.WriteFile(sshCertPath, []byte(signed), 0o600); err != nil {
 		return err
-	}
-	if err := linkLegacyCertPath(sshCertPath); err != nil {
-		return fmt.Errorf("symlink legacy cert path: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "\nonboard complete. Cert written to %s.\n", sshCertPath)
@@ -458,4 +445,26 @@ func vaultTokenPath() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".vault-token")
+}
+
+// detectExistingWGOps returns the operator's wg-ops IPv4 when the
+// system already has a wg-ops interface up — typically wg-quick@wg-ops
+// configured outside this binary's scope. The binary skips its own
+// per-user `verself` tunnel in that case; adding a second interface
+// bound to the same address would only collide. Uses `ip` rather
+// than `wg show` because the latter requires CAP_NET_ADMIN.
+func detectExistingWGOps() (string, bool) {
+	out, err := exec.Command("ip", "-4", "-o", "addr", "show", "wg-ops").Output()
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		for i, f := range fields {
+			if f == "inet" && i+1 < len(fields) {
+				return strings.SplitN(fields[i+1], "/", 2)[0], true
+			}
+		}
+	}
+	return "", false
 }
