@@ -4,9 +4,9 @@ The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD), refreshes the operator's SSH cert, renders
 .cache/render/<site>/, and shells out to `verself-deploy run`. The
 binary owns identity derivation, deploy_events writes, layered
-substrate convergence, external reconcilers, Nomad fan-out, and the
-post-deploy divergence canary — all inside one process sharing one
-SSH session and one OTel agent supervisor.
+substrate convergence, external reconcilers, and Nomad fan-out — all
+inside one process sharing one SSH session and one SSH-forwarded
+OTLP channel to the bare-metal otelcol.
 
 Correlation: rows in verself.deploy_events / verself.deploy_layer_runs
 and the ansible.* / verself_deploy.* span families in

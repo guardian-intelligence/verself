@@ -39,8 +39,8 @@ func runSubstrate(args []string) int {
 }
 
 // runSubstrateConverge walks the layered substrate plan once, with
-// or without hash-gating. It does NOT emit deploy_events rows or run
-// the divergence canary — that's `verself-deploy run`'s job.
+// or without hash-gating. It does NOT emit deploy_events rows —
+// that's `verself-deploy run`'s job.
 func runSubstrateConverge(args []string) int {
 	fs := flag.NewFlagSet("substrate converge", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")

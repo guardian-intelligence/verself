@@ -17,7 +17,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tooling/internal/canary"
 	"github.com/verself/deployment-tooling/internal/identity"
 	"github.com/verself/deployment-tooling/internal/layers"
 	"github.com/verself/deployment-tooling/internal/ledger"
@@ -27,8 +26,7 @@ import (
 // runRun is the `verself-deploy run` entry point — the in-process
 // orchestrator that supersedes the per-step shell-outs the AXL
 // deploy task previously sequenced. It owns identity, ledger writes,
-// layered substrate, external reconcilers, Nomad submits, and the
-// post-deploy divergence canary.
+// layered substrate, external reconcilers, and Nomad submits.
 //
 // AXL-side responsibilities preserved (because they sit outside the
 // SSH/agent surface this binary owns):
@@ -67,7 +65,7 @@ func runRun(args []string) int {
 	// Identity is derived once at process start. Generate is
 	// idempotent on a pre-populated VERSELF_DEPLOY_RUN_KEY /
 	// VERSELF_DEPLOY_ID, so a parent that has its own correlation
-	// (e.g. an ultrareview or canary harness) keeps it intact.
+	// (e.g. an ultrareview harness) keeps it intact.
 	snap, err := identity.Generate(identity.GenerateOptions{
 		Site:  *site,
 		Sha:   *sha,
@@ -174,6 +172,16 @@ func runDeployBody(
 			"layer "+layerRes.FailedLayer+" failed: "+layerRes.Err.Error())
 		return 1
 	}
+	// Tripwire: every layer in Plan must produce exactly one ledger row,
+	// either ran or skipped. A mismatch means RunAll's accounting drifted
+	// from the plan it walked — a programming bug we want to fail loudly
+	// rather than silently under-report layers in deploy_layer_runs.
+	if total := len(layerRes.LayersRan) + len(layerRes.LayersSkipped); total != len(layers.Plan) {
+		msg := fmt.Sprintf("layer convergence: wrote %d rows, expected %d", total, len(layers.Plan))
+		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, layerRes.LayersRan, msg)
+		return 1
+	}
 
 	// 2. External reconcilers (Cloudflare DNS today; future add-ons
 	// land here). Each is a subprocess that emits its own ledger
@@ -194,28 +202,7 @@ func runDeployBody(
 		return 1
 	}
 
-	// 4. Post-deploy divergence canary. Asserts the layer ledger is
-	// consistent and no task ran 'changed' inside a layer the deploy
-	// chose to skip.
-	report, err := canary.CheckDivergence(ctx, rt.ClickHouse, site, snap.RunKey())
-	if err != nil {
-		var de *canary.DivergenceError
-		if errors.As(err, &de) {
-			fmt.Fprintf(os.Stderr, "DIVERGENCE: deploy_run_key=%s site=%s\n", report.RunKey, report.Site)
-			for _, a := range report.Anomalies {
-				fmt.Fprintf(os.Stderr, "  - %s\n", a)
-			}
-		} else {
-			fmt.Fprintf(os.Stderr, "verself-deploy run: divergence canary errored: %v\n", err)
-		}
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, layerRes.LayersRan,
-			"divergence-canary: "+err.Error())
-		return 1
-	}
-	fmt.Fprintf(os.Stderr, "[divergence-canary] deploy_run_key=%s site=%s ledger=clean (%d layers)\n",
-		report.RunKey, report.Site, report.RowCount)
-
-	// 5. Succeeded.
+	// 4. Succeeded.
 	durationMs := uint32(time.Since(startedAt).Milliseconds())
 	successEvent := ledger.DeployEvent{
 		RunKey:             snap.RunKey(),

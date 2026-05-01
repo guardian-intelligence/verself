@@ -29,7 +29,6 @@ input_hash matches the last_applied_hash recorded in
 `verself-deploy run` (under `src/deployment-tooling/`) is the
 deploy-flow process: it derives identity, walks the four layers
 hash-gating each, runs the external reconcilers, fans out to Nomad,
-runs the post-deploy divergence canary that asserts a clean ledger,
 and writes both `verself.deploy_events` and `verself.deploy_layer_runs`
 through a typed ClickHouse writer. `verself-deploy substrate
 converge|verify` exposes the same primitives as standalone verbs.
@@ -39,9 +38,8 @@ SDK; spans go through `internal/runtime`'s SSH-forwarded OTLP channel
 to the bare-metal otelcol on `:4317`. The Go-side streaming parser in
 `internal/ansible` reads ansible-playbook stdout, emits per-task
 spans, and writes `verself.ansible_task_events` rows directly. The
-divergence canary's `changed_count` derives from the parser's PLAY
-RECAP totals via `verself.deploy_layer_runs`, not from the playbook's
-own OTel callback.
+PLAY RECAP `changed` total flows into `verself.deploy_layer_runs.changed_count`
+via the same parser, not via an in-playbook OTel callback.
 
 ## ClickHouse
 
@@ -52,6 +50,6 @@ qualified `default.*` tables remain valid for OTel exporter tables.
 | table                         | written by                          | read by |
 |-------------------------------|-------------------------------------|---------|
 | `verself.deploy_events`       | `verself-deploy run` (internal/ledger) | observability dashboards |
-| `verself.deploy_layer_runs`   | `verself-deploy run` / `substrate converge` (internal/ledger) | `verself-deploy substrate verify`, the divergence canary |
+| `verself.deploy_layer_runs`   | `verself-deploy run` / `substrate converge` (internal/ledger) | `verself-deploy substrate verify` |
 | `verself.ansible_task_events` | `verself-deploy ansible run` (internal/ansible streaming parser) | live deploy views, drift triage |
 | `verself.substrate_convergence_events` | (no new writers; legacy)   | historical audit only |
