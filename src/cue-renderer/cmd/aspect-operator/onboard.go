@@ -15,7 +15,7 @@ import (
 // refreshes the cert and exits.
 func cmdOnboard(args []string) error {
 	fs := flagSet("onboard")
-	device := fs.String("device", "", "Device name (lowercase kebab; matches the cert KeyID suffix)")
+	device := fs.String("device", "", "Device name (lowercase kebab; matches the cert KeyID suffix). Inferred from ~/.config/verself/ssh/ when exactly one device is onboarded; required on first run.")
 	wgAddress := fs.String("wg-address", "", "WireGuard address inside the wg-ops /24 (e.g. 10.66.66.5). Must be unused. Operator addresses occupy .2..99; .100..163 are reserved for the workload pool.")
 	domain := fs.String("domain", "verself.sh", "Public domain that serves /.well-known/verself-*")
 	hostAlias := fs.String("host-alias", "fm-dev-w0", "ssh_config alias to map to the wg-ops listener")
@@ -23,16 +23,24 @@ func cmdOnboard(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *device == "" {
-		return errors.New("--device is required")
-	}
-	if !validDeviceName(*device) {
-		return fmt.Errorf("invalid --device=%q: must match ^[a-z][a-z0-9-]*$", *device)
-	}
 
 	cfg, err := operatorConfigDir()
 	if err != nil {
 		return err
+	}
+	if *device == "" {
+		inferred, err := inferDeviceName(cfg)
+		if errors.Is(err, errNoOnboardedDevice) {
+			return errors.New("--device is required for first-time onboarding (no devices present under ~/.config/verself/ssh/)")
+		}
+		if err != nil {
+			return err
+		}
+		*device = inferred
+		fmt.Fprintf(os.Stderr, "auto-detected --device=%s from ~/.config/verself/ssh/\n", inferred)
+	}
+	if !validDeviceName(*device) {
+		return fmt.Errorf("invalid --device=%q: must match ^[a-z][a-z0-9-]*$", *device)
 	}
 	sshDir := filepath.Join(cfg, "ssh")
 	wgDir := filepath.Join(cfg, "wg")
