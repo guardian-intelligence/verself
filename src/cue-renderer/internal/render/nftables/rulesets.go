@@ -81,11 +81,11 @@ func writeInputRules(b *strings.Builder, components map[string]schema.Component,
 			if err != nil {
 				return err
 			}
-			ports, err := endpointPorts(components, refs)
+			spec, err := endpointPorts(components, refs)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(b, "        tcp dport %s iifname != \"lo\" drop\n", portSet(ports))
+			fmt.Fprintf(b, "        tcp dport %s iifname != \"lo\" drop\n", formatPortSpec(spec))
 		case "accept_iifname_endpoints":
 			iifname, err := projection.String(rule, path, "iifname")
 			if err != nil {
@@ -95,11 +95,11 @@ func writeInputRules(b *strings.Builder, components map[string]schema.Component,
 			if err != nil {
 				return err
 			}
-			ports, err := endpointPorts(components, refs)
+			spec, err := endpointPorts(components, refs)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(b, "        iifname %q tcp dport %s accept\n", iifname, portSet(ports))
+			fmt.Fprintf(b, "        iifname %q tcp dport %s accept\n", iifname, formatPortSpec(spec))
 		default:
 			return fmt.Errorf("%s.kind: unsupported %q", path, kind)
 		}
@@ -149,11 +149,11 @@ func writeOutputRule(b *strings.Builder, components map[string]schema.Component,
 		if err != nil {
 			return err
 		}
-		ports, err := endpointPorts(components, refs)
+		spec, err := endpointPorts(components, refs)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(b, "        oifname \"lo\" tcp dport %s", portSet(ports))
+		fmt.Fprintf(b, "        oifname \"lo\" tcp dport %s", formatPortSpec(spec))
 		if skuid, ok := rule["skuid"]; ok {
 			fmt.Fprintf(b, " meta skuid %s", formatSkuid(skuid))
 		}
@@ -163,11 +163,11 @@ func writeOutputRule(b *strings.Builder, components map[string]schema.Component,
 		if err != nil {
 			return err
 		}
-		ports, err := endpointPorts(components, refs)
+		spec, err := endpointPorts(components, refs)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(b, "        oifname \"lo\" tcp dport %s drop\n", portSet(ports))
+		fmt.Fprintf(b, "        oifname \"lo\" tcp dport %s drop\n", formatPortSpec(spec))
 	case "accept_port":
 		protocol, err := projection.String(rule, path, "protocol")
 		if err != nil {
@@ -205,20 +205,51 @@ func writeOutputRule(b *strings.Builder, components map[string]schema.Component,
 	return nil
 }
 
-func endpointPorts(components map[string]schema.Component, refs []endpointRef) ([]int, error) {
-	ports := make([]int, 0, len(refs))
+// endpointPortSpec resolves a list of component/endpoint refs into the
+// port set that the firewall should match. References to a Nomad-
+// supervised component contribute the Nomad dynamic-port range
+// (20000–32000) — the actual bind port is allocated at deploy time
+// and the CUE-declared endpoint.port is stale for those components.
+// References to substrate-supervised components keep their
+// CUE-pinned port verbatim.
+type endpointPortSpec struct {
+	static          []int
+	includeDynamic  bool
+}
+
+const (
+	nomadDynamicPortLow  = 20000
+	nomadDynamicPortHigh = 32000
+)
+
+func endpointPorts(components map[string]schema.Component, refs []endpointRef) (endpointPortSpec, error) {
+	var spec endpointPortSpec
 	for _, ref := range refs {
 		component, ok := components[ref.Component]
 		if !ok {
-			return nil, fmt.Errorf("topology.components.%s: missing", ref.Component)
+			return endpointPortSpec{}, fmt.Errorf("topology.components.%s: missing", ref.Component)
 		}
 		endpoint, ok := component.Endpoints[ref.Endpoint]
 		if !ok {
-			return nil, fmt.Errorf("topology.components.%s.endpoints.%s: missing", ref.Component, ref.Endpoint)
+			return endpointPortSpec{}, fmt.Errorf("topology.components.%s.endpoints.%s: missing", ref.Component, ref.Endpoint)
 		}
-		ports = append(ports, int(endpoint.Port))
+		if isNomadSupervised(component) {
+			// Nomad allocates from the dynamic-port range; the
+			// CUE endpoint.port is stale for these refs.
+			spec.includeDynamic = true
+			continue
+		}
+		spec.static = append(spec.static, int(endpoint.Port))
 	}
-	return ports, nil
+	return spec, nil
+}
+
+func isNomadSupervised(c schema.Component) bool {
+	if c.Deployment == nil {
+		return false
+	}
+	supervisor, _ := c.Deployment["supervisor"].(string)
+	return supervisor == "nomad"
 }
 
 func endpointRefs(rule map[string]any, path string) ([]endpointRef, error) {
