@@ -274,7 +274,7 @@ Completion requires live ClickHouse evidence, not only unit tests:
 
 ```bash
 aspect deploy --site=prod
-src/platform/scripts/ansible-with-otel.sh playbooks/seed-system.yml
+src/substrate/scripts/ansible-with-otel.sh playbooks/seed-system.yml
 aspect observe --what=service --service=secrets-service
 aspect observe --what=service --service=source-code-hosting-service
 ```

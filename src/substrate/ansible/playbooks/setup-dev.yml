@@ -1,6 +1,6 @@
 ---
 # Install dev tools from generated topology catalog vars.
-# Usage: aspect platform setup-dev
+# Usage: aspect dev install
 # (renders catalog.yml via cue-renderer and passes -e @<path>; the playbook
 # itself takes no inventory and no vars_files because it runs pre-provision
 # on a fresh controller).
@@ -16,7 +16,7 @@
       ansible.builtin.assert:
         that: topology_versions is defined
         fail_msg: >-
-          topology_versions is not set. Run: aspect platform setup-dev
+          topology_versions is not set. Run: aspect dev install
           (which renders catalog.yml and passes it via -e @<path>).
   roles:
     - role: dev_tools

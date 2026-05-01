@@ -18,19 +18,21 @@ load(
     bazel_update = "update",
 )
 load(
-    ".aspect/tasks/platform.axl",
-    platform_setup_dev = "setup_dev",
-    platform_setup_sops = "setup_sops",
-    platform_provision = "provision",
-    platform_deprovision = "deprovision",
-    platform_security_patch = "security_patch",
-    platform_guest_rootfs = "guest_rootfs",
-    platform_edit_secrets = "edit_secrets",
-    platform_wipe_server = "wipe_server",
-    platform_hooks_install = "hooks_install",
-    platform_reset_identity = "reset_identity",
-    platform_reset_billing = "reset_billing",
-    platform_reset_verification = "reset_verification",
+    ".aspect/tasks/provision.axl",
+    provision_apply = "apply",
+    provision_destroy = "destroy",
+)
+load(
+    ".aspect/tasks/substrate.axl",
+    substrate_converge = "converge",
+    substrate_edit_secrets = "edit_secrets",
+    substrate_verify = "verify",
+    substrate_security_patch = "security_patch",
+    substrate_guest_rootfs = "guest_rootfs",
+    substrate_wipe_server = "wipe_server",
+    substrate_reset_identity = "reset_identity",
+    substrate_reset_billing = "reset_billing",
+    substrate_reset_verification = "reset_verification",
 )
 load(".aspect/tasks/deploy.axl", "deploy")
 load(".aspect/tasks/artifacts.axl", artifacts_publish = "publish")
@@ -48,6 +50,9 @@ load(
 load(".aspect/tasks/check.axl", "check")
 load(
     ".aspect/tasks/dev.axl",
+    dev_install = "install",
+    dev_sops_init = "sops_init",
+    dev_hooks_install = "hooks_install",
     dev_verself_web = "verself_web",
 )
 load(
@@ -95,21 +100,20 @@ def config(ctx):
     ctx.tasks.add(bazel_tidy)
     ctx.tasks.add(bazel_update)
 
-    # aspect platform ...
-    ctx.tasks.add(platform_setup_dev)
-    ctx.tasks.add(platform_setup_sops)
-    ctx.tasks.add(platform_provision)
-    ctx.tasks.add(platform_deprovision)
-    ctx.tasks.add(platform_security_patch)
-    ctx.tasks.add(platform_guest_rootfs)
-    ctx.tasks.add(platform_edit_secrets)
-    ctx.tasks.add(platform_wipe_server)
-    ctx.tasks.add(platform_hooks_install)
+    # aspect provision ...
+    ctx.tasks.add(provision_apply)
+    ctx.tasks.add(provision_destroy)
 
-    # aspect platform reset ...
-    ctx.tasks.add(platform_reset_identity)
-    ctx.tasks.add(platform_reset_billing)
-    ctx.tasks.add(platform_reset_verification)
+    # aspect substrate ...
+    ctx.tasks.add(substrate_converge)
+    ctx.tasks.add(substrate_edit_secrets)
+    ctx.tasks.add(substrate_verify)
+    ctx.tasks.add(substrate_security_patch)
+    ctx.tasks.add(substrate_guest_rootfs)
+    ctx.tasks.add(substrate_wipe_server)
+    ctx.tasks.add(substrate_reset_identity)
+    ctx.tasks.add(substrate_reset_billing)
+    ctx.tasks.add(substrate_reset_verification)
 
     # aspect db pg|ch|tb ...
     ctx.tasks.add(db_pg_list)
@@ -121,6 +125,9 @@ def config(ctx):
     ctx.tasks.add(db_tb_command)
 
     # aspect dev ...
+    ctx.tasks.add(dev_install)
+    ctx.tasks.add(dev_sops_init)
+    ctx.tasks.add(dev_hooks_install)
     ctx.tasks.add(dev_verself_web)
 
     # aspect persona ...

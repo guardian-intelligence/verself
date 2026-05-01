@@ -6,9 +6,8 @@ preserved — use `aspect db pg shell --db=billing` / `aspect db pg query
 --db=billing --query=...` instead.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "require_one_of", "ws_path")
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "require_one_of", "ws_path")
 
-_PLATFORM = "src/platform"
 _DEFAULT_PRODUCT_ID = "sandbox"
 
 def _clock_impl(ctx):
@@ -33,9 +32,9 @@ def _clock_impl(ctx):
         cli_args = cli_args + ["--reason", ctx.args.reason]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/billing-clock.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/billing-clock.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "billing-clock.sh",
     )
 
@@ -60,9 +59,9 @@ def _inspect(ctx, kind):
         cli_args = cli_args + ["--format", ctx.args.format]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/billing-inspect.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/billing-inspect.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "billing-inspect.sh --kind " + kind,
     )
 

@@ -373,7 +373,7 @@
   run_once: true
   ansible.builtin.shell:
     cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
-    chdir: "{{ playbook_dir }}/../../migrations"
+    chdir: "{{ playbook_dir }}/../../migrations/clickhouse"
     executable: /bin/bash
   register: clickhouse_migrations_local_hash
   changed_when: false
@@ -422,7 +422,7 @@
 
     - name: Upload migrations
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../migrations/"
+        src: "{{ playbook_dir }}/../../migrations/clickhouse/"
         dest: /opt/verself/migrations/
         mode: "0644"
 
@@ -490,7 +490,7 @@
         --queries-file /opt/verself/migrations/{{ item }}
       loop: >-
         {{
-          query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/[0-9][0-9][0-9]_*.up.sql')
+          query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/clickhouse/[0-9][0-9][0-9]_*.up.sql')
           | map('basename')
           | sort
         }}

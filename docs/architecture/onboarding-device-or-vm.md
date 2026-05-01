@@ -220,7 +220,7 @@ the same query as an alert with a 5-minute evaluation window.
 - Lifecycle audit table (`verself.operator_lifecycle_events`), status
   MV, governance audit events. The cert-id-stamped `host_auth_events`
   is the single observability surface until that proves insufficient.
-- CUE-projected `RevokedKeys` and `aspect platform rotate-ssh-ca`
+- CUE-projected `RevokedKeys` and a future `aspect substrate rotate-ssh-ca`
   playbook. Rotation policy: delete the CA in OpenBao, redeploy, every
   device re-onboards. Acceptable while pre-release.
 - SPIRE node-attestation path for headless workloads. The AppRole

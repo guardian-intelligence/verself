@@ -440,7 +440,7 @@ export class SandboxHarness {
 
   async pushVerificationRepoRevision(revision: string): Promise<VerificationRepoMeta> {
     const scriptPath = fileURLToPath(
-      new URL("../../../../platform/scripts/ensure-verification-repo.sh", import.meta.url),
+      new URL("../../../../substrate/scripts/ensure-verification-repo.sh", import.meta.url),
     );
     const { stdout } = await execFile(scriptPath, [], {
       env: {
@@ -469,7 +469,7 @@ export class SandboxHarness {
     state?: string;
   }): Promise<BillingFixtureState> {
     const scriptPath = fileURLToPath(
-      new URL("../../../../platform/scripts/set-user-state.sh", import.meta.url),
+      new URL("../../../../substrate/scripts/set-user-state.sh", import.meta.url),
     );
     const args = ["--email", env.testEmail, "--product-id", productID, "--state", state];
     if (orgID !== undefined) {
@@ -506,7 +506,7 @@ export class SandboxHarness {
     set?: string;
   }): Promise<BillingClockState> {
     const scriptPath = fileURLToPath(
-      new URL("../../../../platform/scripts/billing-clock.sh", import.meta.url),
+      new URL("../../../../substrate/scripts/billing-clock.sh", import.meta.url),
     );
     const args = ["--org-id", String(orgID), "--product-id", productID, "--reason", reason];
     if (set) {

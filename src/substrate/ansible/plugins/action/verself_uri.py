@@ -45,7 +45,7 @@ description:
 requirements:
   - ansible-core
   - VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY in the environment
-    (set by src/platform/scripts/deploy_identity.sh).
+    (set by src/substrate/scripts/deploy_identity.sh).
 """
 
 

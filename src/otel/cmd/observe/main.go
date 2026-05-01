@@ -38,7 +38,7 @@ const (
 )
 
 type config struct {
-	platformRoot string
+	substrateRoot string
 	what         string
 	signal       string
 	service      string
@@ -187,7 +187,7 @@ func parseConfig(args []string) (config, error) {
 	var format string
 	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	flags.StringVar(&cfg.platformRoot, "platform-root", "", "path to src/platform")
+	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/substrate")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "query family to run")
 	flags.StringVar(&cfg.signal, "signal", strings.TrimSpace(os.Getenv("SIGNAL")), "signal catalog: metrics, traces, logs, http, deploys")
 	flags.StringVar(&cfg.service, "service", strings.TrimSpace(os.Getenv("SERVICE")), "service name")
@@ -235,12 +235,12 @@ func parseConfig(args []string) (config, error) {
 	}
 	cfg.format = outputFormat(normalize(format))
 
-	if cfg.platformRoot == "" {
+	if cfg.substrateRoot == "" {
 		wd, err := os.Getwd()
 		if err != nil {
 			return cfg, fmt.Errorf("resolve working directory: %w", err)
 		}
-		cfg.platformRoot = filepath.Join(wd, "src", "platform")
+		cfg.substrateRoot = filepath.Join(wd, "src", "substrate")
 	}
 	if cfg.minutes == 0 {
 		return cfg, errors.New("--minutes must be greater than zero")
@@ -273,8 +273,8 @@ func parseConfig(args []string) (config, error) {
 	if len(cfg.search) > 128 {
 		return cfg, errors.New("--search must be at most 128 characters")
 	}
-	if _, err := os.Stat(filepath.Join(cfg.platformRoot, "scripts", "clickhouse.sh")); err != nil {
-		return cfg, fmt.Errorf("platform root must contain scripts/clickhouse.sh: %w", err)
+	if _, err := os.Stat(filepath.Join(cfg.substrateRoot, "scripts", "clickhouse.sh")); err != nil {
+		return cfg, fmt.Errorf("substrate root must contain scripts/clickhouse.sh: %w", err)
 	}
 	return cfg, nil
 }
@@ -316,8 +316,8 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 	}
 	args = append(args, "--query", sql)
 
-	cmd := exec.CommandContext(ctx, filepath.Join(cfg.platformRoot, "scripts", "clickhouse.sh"), args...)
-	cmd.Dir = cfg.platformRoot
+	cmd := exec.CommandContext(ctx, filepath.Join(cfg.substrateRoot, "scripts", "clickhouse.sh"), args...)
+	cmd.Dir = cfg.substrateRoot
 
 	logger.InfoContext(ctx, "observe query started",
 		"query_id", q.id,

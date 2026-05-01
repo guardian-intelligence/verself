@@ -6,8 +6,28 @@ filegroup(
         "//src/cue-renderer:topology_srcs",
         "//src/cue-renderer/binaries:server_tools_archive",
         "//src/cue-renderer/binaries:substrate_go_tools",
-        "//src/platform:current_substrate_sources",
+        ":substrate_sources",
     ],
+)
+
+filegroup(
+    name = "substrate_sources",
+    srcs = glob(
+        [
+            "ansible/**",
+            "controller-agent/**",
+            "migrations/**",
+            "scripts/**",
+        ],
+        exclude = [
+            "ansible/.ansible/**",
+            "ansible/.cache/**",
+            "ansible/**/__pycache__/**",
+            "ansible/inventory/*.ini",
+            "scripts/.venv/**",
+            "scripts/**/__pycache__/**",
+        ],
+    ),
 )
 
 genrule(

@@ -3,12 +3,12 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 self_path="${script_dir}/$(basename "${BASH_SOURCE[0]}")"
-platform_root="$(cd "${script_dir}/.." && pwd)"
-repo_root="$(cd "${platform_root}/../.." && pwd)"
-inventory="${INVENTORY:-${platform_root}/ansible/inventory/${VERSELF_SITE:-prod}.ini}"
+substrate_root="$(cd "${script_dir}/.." && pwd)"
+repo_root="$(cd "${substrate_root}/../.." && pwd)"
+inventory="${INVENTORY:-${substrate_root}/ansible/inventory/${VERSELF_SITE:-prod}.ini}"
 
 if [[ ! -f "${inventory}" ]]; then
-  echo "ERROR: ${inventory} not found. Run 'aspect platform provision' first." >&2
+  echo "ERROR: ${inventory} not found. Run 'aspect provision apply' first." >&2
   exit 1
 fi
 
@@ -26,4 +26,4 @@ fi
 export VERSELF_OBSERVE_RUN_ID="${VERSELF_OBSERVE_RUN_ID:-${VERSELF_DEPLOY_RUN_KEY}}"
 
 cd "${repo_root}/src/otel"
-exec go run ./cmd/observe --platform-root "${platform_root}" "$@"
+exec go run ./cmd/observe --substrate-root "${substrate_root}" "$@"

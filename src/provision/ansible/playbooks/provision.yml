@@ -2,7 +2,7 @@
 # Provision bare metal infrastructure via OpenTofu and generate Ansible inventory.
 #
 # Usage:
-#   cd ansible && ansible-playbook playbooks/provision.yml
+#   aspect provision apply
 
 - name: Provision bare metal infrastructure
   hosts: localhost
@@ -10,7 +10,7 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
-    sops_secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+    sops_secrets_file: "{{ playbook_dir }}/../../../substrate/ansible/group_vars/all/secrets.sops.yml"
     inventory_script: "{{ playbook_dir }}/../../scripts/generate-inventory.sh"
   tasks:
     - name: Verify terraform.tfvars.json exists

@@ -74,7 +74,7 @@ reads only from `secrets-service` via SPIFFE-authenticated startup code.
 Then redeploy:
 
 ```bash
-cd src/platform/ansible
+cd src/substrate/ansible
 aspect deploy --site=prod
 ```
 
@@ -88,7 +88,7 @@ credential set, or a complete legacy credstore set to migrate.
 Start the Verself side of the install flow as a sandbox org admin:
 
 ```bash
-source <(src/platform/scripts/assume-persona.sh platform-admin --print)
+source <(src/substrate/scripts/assume-persona.sh platform-admin --print)
 
 curl -sS -X POST "https://sandbox.api.<domain>/api/v1/github/installations/connect" \
   -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \

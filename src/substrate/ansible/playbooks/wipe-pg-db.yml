@@ -4,7 +4,7 @@
 # Nomad deploy.
 #
 # Usage:
-#   src/platform/scripts/ansible-with-otel.sh playbooks/wipe-pg-db.yml -e wipe_pg_db_name=sandbox_rental
+#   src/substrate/scripts/ansible-with-otel.sh playbooks/wipe-pg-db.yml -e wipe_pg_db_name=sandbox_rental
 #
 # Supported DBs:
 # - billing: billing ledger reset, including TigerBeetle

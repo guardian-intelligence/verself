@@ -15,7 +15,8 @@ Conventions:
     non-zero exit code. They never silently coerce errors to no-ops.
 """
 
-PLATFORM_DIR = "src/platform"
+SUBSTRATE_DIR = "src/substrate"
+PROVISION_DIR = "src/provision"
 DEFAULT_SITE = "prod"
 
 # Identity vars derived once by deploy_identity.sh and threaded through
@@ -52,7 +53,7 @@ def ws_path(ctx, *parts):
 
 def site_inventory_source(site):
     """Repo-relative path to the per-site authored inventory file."""
-    return "src/platform/ansible/inventory/" + site + ".ini"
+    return SUBSTRATE_DIR + "/ansible/inventory/" + site + ".ini"
 
 def site_cache_inventory(site):
     """Cache-relative inventory directory for a site (suitable for ansible -i)."""
@@ -71,7 +72,7 @@ def inventory_check(ctx, site = DEFAULT_SITE):
          .spawn().wait())
     if r.code != 0:
         ctx.std.io.stderr.write(
-            "ERROR: " + site_inventory_source(site) + " not found. Run: aspect platform provision\n",
+            "ERROR: " + site_inventory_source(site) + " not found. Run: aspect provision apply\n",
         )
         return 1
     return 0
@@ -120,7 +121,7 @@ def render_site(ctx, site = DEFAULT_SITE):
         ctx, "bash", [
             "-c",
             "set -eu; " +
-            "src='" + ws_path(ctx, "src/platform/ansible/group_vars") + "'; " +
+            "src='" + ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars") + "'; " +
             "dst='" + cache_abs + "/inventory/group_vars'; " +
             "mkdir -p \"${dst}\"; " +
             "cp -R \"${src}/.\" \"${dst}/\";",
@@ -206,7 +207,7 @@ def derive_deploy_env(ctx, *, site, sha, scope):
 
     Returns a {key: value} dict on success, None on failure.
     """
-    script = ws_path(ctx, "src/platform/scripts/deploy_identity.sh")
+    script = ws_path(ctx, SUBSTRATE_DIR, "scripts/deploy_identity.sh")
     # Print key=value\0 for each requested key. NUL is the only byte that
     # cannot appear inside an env value (POSIX exec(3) constraint), so it's
     # safe to split the output on it without escaping multiline values like
@@ -265,7 +266,7 @@ def record_deploy_event(ctx, *, env, site, sha, scope, components, event_kind, d
         args_list.append("--error-message=" + error_message)
     rc = checked_spawn(
         ctx,
-        ws_path(ctx, "src/platform/scripts/record-deploy-event.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/record-deploy-event.sh"),
         args_list,
         env = env,
         label = "record-deploy-event " + event_kind,

@@ -26,7 +26,7 @@ Tech Stack:
 
 Invariant patterns:
 
-* CUE owns desired platform shape and non-secret deployment configuration in `src/cue-renderer/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `src/platform/ansible/group_vars/all/generated/` are projections, not authority.
+* CUE owns desired platform shape and non-secret deployment configuration in `src/cue-renderer/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `.cache/render/<site>/inventory/group_vars/all/generated/` are projections, not authority.
 * Efficient rebuilding: Bazel's job is to cache and schedule, not transform. Bazel decides when to run a unit's build pipeline (CUE -> codegen is a unit, for example). Nomad orchestrates deploys. Ansible's job is to run playbooks to ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main and CI runs Bazel and Nomad. Let each language/package decide how to build itself. We finetune our build process per unit, not through Bazel.
 
 * Ansible consumes generated CUE/Bazel manifests plus SOPS secret values, mutates the host for bootstrapping initial binaries, and must not invent topology, rebuild scope, ports, users, routes, or service relationships. SOPS owns encrypted secret values such as Cloudflare API tokens; CUE may declare that they are required. This is not true today but must be the direction we move towards.
@@ -41,7 +41,8 @@ Boundary components that sit outside the usual service shape:
 
 - `src/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/platform/ansible/`, `src/platform/terraform/` — deploys and bare-metal provisioning (OpenTofu → Latitude.sh).
+- `src/substrate/` — host/substrate convergence: Ansible runner, substrate scripts, controller OTLP agent, and ClickHouse schema.
+- `src/provision/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
 
 Top-level landmarks:
 
@@ -146,7 +147,7 @@ The contained instructions in this block are guidelines that apply to writing ma
 </writing_guidelines>
 
 <tool_use_contract>
-- Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`.
+- Dev tools are system-installed via `aspect dev install`.
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
 - Use `aspect bazel tidy` to run `go mod tidy` and other language-specific formatters across the code base.

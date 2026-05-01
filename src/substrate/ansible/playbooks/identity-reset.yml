@@ -7,5 +7,5 @@
   vars:
     wipe_pg_db_name: identity_service
 
-- name: Re-apply platform substrate after identity reset
+- name: Re-apply substrate after identity reset
   import_playbook: box.yml

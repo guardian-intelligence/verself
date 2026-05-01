@@ -208,7 +208,7 @@ Drawbacks:
   `src/temporal-platform/cmd/verself-temporal-server/main.go`,
   `src/temporal-platform/internal/tlsprovider/tlsprovider.go`,
   `src/temporal-platform/internal/spiffeauth/spiffeauth.go`,
-  `src/platform/ansible/roles/temporal/*`.
+  `src/substrate/ansible/roles/temporal/*`.
 - Temporal self-hosted security and mTLS configuration:
   <https://docs.temporal.io/self-hosted-guide/security>.
 - Temporal platform documentation: <https://docs.temporal.io/>.

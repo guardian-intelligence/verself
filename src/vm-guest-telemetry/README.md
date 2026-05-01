@@ -35,7 +35,7 @@ This runs:
 
 ## Guest Artifact
 
-The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation builds `//src/platform/guest:guest_artifacts_bundle`, installs the bundled binary at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
+The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation builds `//src/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle`, installs the bundled binary at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
 
 ## Cross-Language Conformance
 

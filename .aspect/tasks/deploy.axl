@@ -30,7 +30,7 @@ The single deploy verb. The body:
      deploy set, publish task artifacts, submit jobs, and wait for health.
   9. Records `succeeded` or `failed` in verself.deploy_events.
 
-Reset playbooks (identity, billing, verification) live under `aspect platform
+Reset playbooks (identity, billing, verification) live under `aspect substrate
 reset ...` because aspect's CLI treats a name as either a task or a group,
 never both — so `aspect deploy` cannot also host `aspect deploy reset`.
 
@@ -40,6 +40,7 @@ default.otel_traces join on ResourceAttributes['verself.deploy_run_key'].
 
 load(
     ".aspect/lib/helpers.axl",
+    "SUBSTRATE_DIR",
     "checked_spawn",
     "derive_deploy_env",
     "git_head",
@@ -50,8 +51,6 @@ load(
     "site_cache_inventory",
     "ws_path",
 )
-
-_PLATFORM = "src/platform"
 
 def _merge_env(base, *overrides):
     """Return a new dict combining `base` and the overrides (later wins)."""
@@ -70,9 +69,9 @@ def _run_ansible(ctx, site, env):
     args_list = ["playbooks/box.yml"]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/ansible-with-otel.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/ansible-with-otel.sh"),
         args_list,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         env = _merge_env(
             env,
             {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
@@ -116,7 +115,7 @@ def _compute_substrate_digest(ctx, site):
 
 def _substrate_status(ctx, site, digest, env):
     inventory = ws_path(ctx, site_cache_inventory(site))
-    r = (ctx.std.process.command(ws_path(ctx, _PLATFORM, "scripts/substrate-status.sh"))
+    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/substrate-status.sh"))
          .args(["--site=" + site, "--digest=" + digest, "--inventory=" + inventory])
          .stdout("piped").stderr("piped"))
     for k, v in env.items():
@@ -140,7 +139,7 @@ def _record_substrate_event(ctx, site, digest, mode, event_kind, env, error_mess
         args_list.append("--error-message=" + error_message)
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/record-substrate-event.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/record-substrate-event.sh"),
         args_list,
         env = env,
         label = "record-substrate-event " + event_kind,
@@ -203,7 +202,7 @@ def _run_nomad_deploy(ctx, site, env):
     args_list = ["--site=" + site]
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/nomad-deploy-all.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
         args_list,
         cwd = ws_path(ctx),
         env = env,

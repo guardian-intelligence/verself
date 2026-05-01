@@ -25,8 +25,8 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-platform_root="$(cd "${script_dir}/.." && pwd)"
-repo_root="$(cd "${platform_root}/../.." && pwd)"
+substrate_root="$(cd "${script_dir}/.." && pwd)"
+repo_root="$(cd "${substrate_root}/../.." && pwd)"
 site="${VERSELF_SITE:-prod}"
 hours=24
 # ClickHouse format names match clickhouse-client's --format flag.

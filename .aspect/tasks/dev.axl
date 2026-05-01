@@ -1,12 +1,47 @@
-"""aspect dev verself-web — local frontend loop.
+"""aspect dev <action> — controller development helpers.
 
-The task shells out to run-verself-web-local-dev.sh so env discovery and tunnel
-setup remain in one place.
+The local frontend task shells out to run-verself-web-local-dev.sh so env
+discovery and tunnel setup remain in one place.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
 
-_PLATFORM = "src/platform"
+def _ansible_local(ctx, playbook, *extra_args):
+    args_list = [playbook] + list(extra_args)
+    return checked_spawn(
+        ctx,
+        "ansible-playbook",
+        args_list,
+        cwd = ws_path(ctx, SUBSTRATE_DIR, "ansible"),
+        label = "ansible-playbook " + " ".join(args_list),
+    )
+
+def _install_impl(ctx):
+    cache_dir = ws_path(ctx, ".cache/setup-dev")
+    catalog = cache_dir + "/catalog.yml"
+    rc = checked_spawn(
+        ctx,
+        "bash",
+        [
+            "-c",
+            "set -eu; mkdir -p '" + cache_dir + "'; " +
+            "bazelisk run -- //src/cue-renderer/cmd/cue-renderer render catalog > '" + catalog + "'",
+        ],
+        label = "render catalog -> " + catalog,
+    )
+    if rc != 0:
+        return rc
+    return _ansible_local(ctx, "playbooks/setup-dev.yml", "-e", "@" + catalog)
+
+def _sops_init_impl(ctx):
+    return _ansible_local(ctx, "playbooks/setup-sops.yml")
+
+def _hooks_install_impl(ctx):
+    (ctx.std.process.command("git")
+        .args(["config", "--unset-all", "core.hooksPath"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait())
+    return checked_spawn(ctx, "pre-commit", ["install"], label = "pre-commit install")
 
 def _verself_web_impl(ctx):
     if inventory_check(ctx) != 0:
@@ -16,11 +51,32 @@ def _verself_web_impl(ctx):
         cli_args.append("--print-env")
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/run-verself-web-local-dev.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/run-verself-web-local-dev.sh"),
         cli_args,
-        cwd = ws_path(ctx, _PLATFORM),
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
         label = "run-verself-web-local-dev.sh",
     )
+
+install = task(
+    implementation = _install_impl,
+    name = "install",
+    group = ["dev"],
+    summary = "Install pinned controller development tools.",
+)
+
+sops_init = task(
+    implementation = _sops_init_impl,
+    name = "sops-init",
+    group = ["dev"],
+    summary = "Bootstrap SOPS + Age encryption.",
+)
+
+hooks_install = task(
+    implementation = _hooks_install_impl,
+    name = "hooks-install",
+    group = ["dev"],
+    summary = "Install repo git hooks via pre-commit.",
+)
 
 verself_web = task(
     implementation = _verself_web_impl,

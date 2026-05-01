@@ -6,9 +6,7 @@ publisher before submitting jobs; this task exists for operator rehearsal and
 for verifying Garage artifact substrate independently.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "checked_spawn", "render_site", "ws_path")
-
-_PLATFORM = "src/platform"
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "checked_spawn", "render_site", "ws_path")
 
 def _publish_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
@@ -17,7 +15,7 @@ def _publish_impl(ctx):
         return rc
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/nomad-deploy-all.sh"),
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/nomad-deploy-all.sh"),
         ["--site=" + site, "--publish-only"],
         cwd = ws_path(ctx),
         label = "nomad-deploy-all --publish-only --site=" + site,
