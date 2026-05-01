@@ -189,7 +189,7 @@
 
 - name: Write Vault policies for SSH CA principals
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/ssh-ca-{{ item }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/ssh-ca-{{ item.key }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -197,11 +197,24 @@
     body:
       # HCL accepts single-line policies; avoiding embedded newlines
       # sidesteps Jinja's literal-\n behaviour inside single-quoted
-      # strings. The policy grants exactly the per-principal sign path.
-      policy: "path \"{{ topology_ssh_ca.mount }}/sign/{{ item }}\" { capabilities = [\"update\"] }"
+      # strings. The base policy grants exactly the per-principal sign
+      # path; the operator role additionally gets workload-pool
+      # scoped capabilities for `aspect operator enroll-workload`.
+      policy: >-
+        {{
+          'path "' ~ topology_ssh_ca.mount ~ '/sign/' ~ item.key ~ '" { capabilities = ["update"] }'
+        }}{{
+          ' path "auth/approle/role/workload-enrollment/secret-id" { capabilities = ["update"] }'
+          ~ ' path "auth/approle/role/workload-enrollment/role-id" { capabilities = ["read"] }'
+          ~ ' path "kv-workload-pool/data/slots/+" { capabilities = ["read"] }'
+          ~ ' path "kv-workload-pool/data/leases/+" { capabilities = ["create","read","update"] }'
+          if item.value.role == 'operator' else ''
+        }}
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: [200, 204]
-  loop: "{{ topology_ssh_ca.principals.keys() | list }}"
+  loop: "{{ topology_ssh_ca.principals | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
   changed_when: true
   no_log: true
 
