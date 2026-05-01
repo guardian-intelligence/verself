@@ -1,0 +1,33 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "converge_sources",
+    srcs = [
+        "//src/cue-renderer:topology_srcs",
+        "//src/cue-renderer/binaries:server_tools_archive",
+        "//src/cue-renderer/binaries:substrate_go_tools",
+        "//src/platform:current_substrate_sources",
+    ],
+)
+
+genrule(
+    name = "prod_substrate_digest",
+    srcs = [":converge_sources"],
+    outs = ["prod.substrate.sha256"],
+    cmd = """
+set -eu
+render_dir="$(@D)/prod-substrate-render"
+rm -rf "$$render_dir"
+mkdir -p "$$render_dir"
+$(location //src/cue-renderer/cmd/cue-renderer) generate --instance=prod --output-dir="$$render_dir" >/dev/null
+{
+  for f in $(SRCS); do
+    if [ -f "$$f" ]; then
+      sha256sum "$$f"
+    fi
+  done
+  find "$$render_dir" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+} | LC_ALL=C sort | sha256sum | cut -d' ' -f1 > "$@"
+""",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+)
