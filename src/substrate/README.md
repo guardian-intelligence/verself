@@ -11,7 +11,11 @@ Substrate owns host and daemon convergence inputs:
 `aspect deploy --site=<site>` renders CUE, computes
 `//src/substrate:<site>_substrate_digest`, and runs substrate convergence only
 when the digest lacks successful ClickHouse evidence for every inventory node,
-unless `--substrate=always` or `--substrate=skip` says otherwise.
+unless `--substrate=always` or `--substrate=skip` says otherwise. The digest
+hashes this package, Bazel-built substrate tool bundles, and rendered substrate
+projections under `inventory/` and `share/rendered/`. CUE files are Bazel action
+inputs, but raw CUE and rendered Nomad jobs are not digest material; a Nomad-only
+CUE change should rebuild the digest target and produce the same digest.
 
 Use explicit substrate commands when touching this package:
 

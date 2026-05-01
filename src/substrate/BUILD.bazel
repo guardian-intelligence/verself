@@ -41,12 +41,23 @@ rm -rf "$$render_dir"
 mkdir -p "$$render_dir"
 $(location //src/cue-renderer/cmd/cue-renderer) generate --instance=prod --output-dir="$$render_dir" >/dev/null
 {
+  # Topology CUE files remain action inputs so Bazel re-runs this rule, but
+  # raw CUE and rendered Nomad jobs are not digest material. Otherwise a
+  # Nomad-only CUE edit would force host convergence.
   for f in $(SRCS); do
-    if [ -f "$$f" ]; then
-      sha256sum "$$f"
-    fi
+    case "$$f" in
+      src/substrate/*|bazel-out/*)
+        if [ -f "$$f" ]; then
+          sha256sum "$$f"
+        fi
+        ;;
+    esac
   done
-  find "$$render_dir" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+  for root in "$$render_dir/inventory" "$$render_dir/share/rendered"; do
+    if [ -d "$$root" ]; then
+      find "$$root" -type f -print0
+    fi
+  done | LC_ALL=C sort -z | xargs -0 sha256sum
 } | LC_ALL=C sort | sha256sum | cut -d' ' -f1 > "$@"
 """,
     tools = ["//src/cue-renderer/cmd/cue-renderer"],
