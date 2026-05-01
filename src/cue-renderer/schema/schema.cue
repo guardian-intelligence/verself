@@ -890,7 +890,7 @@ package schema
 	count:      int & >0 | *1
 	update: {
 		max_parallel:      int & >0 | *1          @go(MaxParallel)
-		min_healthy_time:  string & !="" | *"30s" @go(MinHealthyTime)
+		min_healthy_time:  string & !="" | *"3s"  @go(MinHealthyTime)
 		healthy_deadline:  string & !="" | *"5m"  @go(HealthyDeadline)
 		progress_deadline: string & !="" | *"10m" @go(ProgressDeadline)
 		auto_revert:       bool | *true           @go(AutoRevert)

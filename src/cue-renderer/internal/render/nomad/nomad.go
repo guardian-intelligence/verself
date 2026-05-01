@@ -800,7 +800,7 @@ func updateStanza(deployment map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	minHealthy, err := optionalDuration(update, "min_healthy_time", 30*time.Second)
+	minHealthy, err := optionalDuration(update, "min_healthy_time", 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -895,7 +895,7 @@ func buildServices(componentName, unitName string, unit map[string]any, primaryP
 		check := map[string]any{
 			"Name":      unitName + "-" + kind + "-" + endpoint,
 			"PortLabel": endpoint,
-			"Interval":  int64(10 * time.Second / time.Nanosecond),
+			"Interval":  int64(1 * time.Second / time.Nanosecond),
 			"Timeout":   int64(3 * time.Second / time.Nanosecond),
 		}
 		switch kind {
