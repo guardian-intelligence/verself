@@ -10,3 +10,7 @@
   listen: update ca certificates
   ansible.builtin.command:
     cmd: update-ca-certificates
+  register: caddy_update_ca_certificates
+  changed_when: >-
+    '0 added, 0 removed' not in
+    (caddy_update_ca_certificates.stdout ~ caddy_update_ca_certificates.stderr)
