@@ -65,7 +65,7 @@ usage:
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+
-		"`run` is the AXL deploy entry point: identity, ledger, layered\nsubstrate, external reconcilers, Nomad fan-out, and the post-deploy\ndivergence canary all happen inside this single process. Spans land\nin default.otel_traces under service.name=verself-deploy.\n")
+		"`run` is the AXL deploy entry point: identity, ledger, layered\nsubstrate, external reconcilers, and Nomad fan-out all happen inside\nthis single process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
 }
 
 func runNomad(args []string) int {

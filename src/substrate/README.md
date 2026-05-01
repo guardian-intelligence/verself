@@ -11,9 +11,8 @@ Substrate owns host and daemon convergence inputs:
   for ssh-tunneled DB shells, `wipe-server.sh` for fleet teardown,
   `reconcile-cloudflare-dns.sh` for the Cloudflare DNS reconciler.
   The deploy critical path — identity, ledger writes, layered
-  convergence, the post-deploy divergence canary, OTel agent
-  supervision, and the Ansible streaming parser — lives in
-  `src/deployment-tooling/`. `aspect deploy` shells out to
+  convergence, OTLP transport, and the Ansible streaming parser —
+  lives in `src/deployment-tooling/`. `aspect deploy` shells out to
   `verself-deploy run`, which owns the entire flow inside one
   process sharing one SSH session.
 
@@ -24,10 +23,9 @@ each layer `verself-deploy run` builds the per-layer Bazel digest target
 circuits (writes a `skipped` row, never invokes Ansible) or runs the layer's
 playbook through `verself-deploy ansible run` (writes a `succeeded` /
 `failed` row). `--substrate=always` forces every layer to run regardless of
-hash. After a successful converge the post-deploy divergence canary asserts
-that all four layer rows exist for the run, none recorded `failed`, and no
-task ran `changed` inside a layer the deploy chose to skip; the deploy
-fails loudly if the ledger is inconsistent.
+hash. The deploy succeeds when all four layers + reconcilers + Nomad fan-out
+return cleanly and the typed ClickHouse writer acks the `succeeded`
+`deploy_events` row.
 
 Use explicit substrate commands when touching this package:
 

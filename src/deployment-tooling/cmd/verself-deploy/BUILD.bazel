@@ -16,7 +16,6 @@ go_library(
     deps = [
         "//src/deployment-tooling/internal/ansible",
         "//src/deployment-tooling/internal/bazelbuild",
-        "//src/deployment-tooling/internal/canary",
         "//src/deployment-tooling/internal/garage",
         "//src/deployment-tooling/internal/identity",
         "//src/deployment-tooling/internal/layers",

@@ -12,8 +12,8 @@
 //      'succeeded' or 'failed' to the ledger and propagate errors.
 //
 // The plan is the closed substrate.SUBSTRATE_LAYERS set; any layer
-// added there must also land here so the canary's expected-row count
-// stays in lockstep.
+// added there must also land here so substrate verify and ledger
+// queries stay in lockstep.
 package layers
 
 import (
