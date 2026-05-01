@@ -32,10 +32,14 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "run":
+		os.Exit(runRun(os.Args[2:]))
 	case "nomad":
 		os.Exit(runNomad(os.Args[2:]))
 	case "ansible":
 		os.Exit(runAnsible(os.Args[2:]))
+	case "substrate":
+		os.Exit(runSubstrate(os.Args[2:]))
 	case "with-agent":
 		os.Exit(runWithAgent(os.Args[2:]))
 	case "-h", "--help", "help":
@@ -52,16 +56,16 @@ func usage() {
 	fmt.Fprint(os.Stderr, `verself-deploy — typed orchestrator for verself deploys
 
 usage:
-  verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
-  verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
-  verself-deploy ansible run      --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
-  verself-deploy with-agent       --site=<site> -- <cmd> [args...]
+  verself-deploy run                  --site=<site> [--sha=<rev>] [--scope=all|affected] [--substrate=auto|always]
+  verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
+  verself-deploy nomad deploy-all     --site=<site> [--repo-root=<path>]
+  verself-deploy ansible run          --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
+  verself-deploy substrate converge   --site=<site> [--force]
+  verself-deploy substrate verify     --site=<site>
+  verself-deploy with-agent           --site=<site> -- <cmd> [args...]
 
-Every subcommand initialises an in-process OTel SDK pointed at a
-controller-side otelcol-contrib agent the binary supervises for the
-duration of the run. Spans land in default.otel_traces under
-service.name=verself-deploy.
-`)
+`+
+		"`run` is the AXL deploy entry point: identity, ledger, layered\nsubstrate, external reconcilers, Nomad fan-out, and the post-deploy\ndivergence canary all happen inside this single process. Spans land\nin default.otel_traces under service.name=verself-deploy.\n")
 }
 
 func runNomad(args []string) int {

@@ -26,10 +26,13 @@ input_hash matches the last_applied_hash recorded in
 | `l3_binaries`    | `playbooks/l3_binaries.yml`       | `//src/substrate:prod_l3_binaries_digest`         | Substrate daemons (postgres, clickhouse, openbao, zitadel, spire, …) and their foundational config |
 | `l4a_components` | `playbooks/l4a_components.yml`    | `//src/substrate:prod_l4a_components_digest`      | External-API reconciliation (cloudflare_dns, openbao_tenancy, zitadel apps, …) and per-component PG/CH/credstore bindings |
 
-`scripts/run-layer.sh` is the per-layer primitive: read last_applied_hash,
-compare to input_hash, skip-or-run, write the resulting row to
-`verself.deploy_layer_runs`. `scripts/divergence-canary.sh` is the post-deploy
-sanity check that gates Nomad rollout on a clean ledger.
+`verself-deploy run` (under `src/deployment-tooling/`) is the
+deploy-flow process: it derives identity, walks the four layers
+hash-gating each, runs the external reconcilers, fans out to Nomad,
+runs the post-deploy divergence canary that asserts a clean ledger,
+and writes both `verself.deploy_events` and `verself.deploy_layer_runs`
+through a typed ClickHouse writer. `verself-deploy substrate
+converge|verify` exposes the same primitives as standalone verbs.
 
 `verself-deploy ansible run` wraps Ansible with the in-process OTel
 SDK and a controller-side OTLP buffer agent supervised for the
@@ -52,6 +55,7 @@ qualified `default.*` tables remain valid for OTel exporter tables.
 
 | table                         | written by                          | read by |
 |-------------------------------|-------------------------------------|---------|
-| `verself.deploy_events`       | `scripts/record-deploy-event.sh`    | observability dashboards |
-| `verself.deploy_layer_runs`   | `scripts/record-layer-run.sh`       | `scripts/layer-last-applied.sh`, `scripts/divergence-canary.sh`, `aspect substrate verify` |
+| `verself.deploy_events`       | `verself-deploy run` (internal/ledger) | observability dashboards |
+| `verself.deploy_layer_runs`   | `verself-deploy run` / `substrate converge` (internal/ledger) | `verself-deploy substrate verify`, the divergence canary |
+| `verself.ansible_task_events` | `verself-deploy ansible run` (internal/ansible streaming parser) | live deploy views, drift triage |
 | `verself.substrate_convergence_events` | (no new writers; legacy)   | historical audit only |
