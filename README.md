@@ -128,8 +128,8 @@ Let's Encrypt for domains).
 Public `:22` is closed. `sshd` binds to the wg-ops mesh and accepts only
 short-lived certs signed by the OpenBao SSH CA — no static `authorized_keys`.
 
-- **Onboard a device:** `aspect operator onboard --device=<name> --wg-address=<unused 10.66.66.X>`. Generates ed25519 + WireGuard keypairs locally, pulls trust anchors from `https://<domain>/.well-known/verself-*`, prints a CUE diff for the trusted operator to PR, OIDCs to Zitadel via device-code flow, and writes `~/.ssh/config.d/verself.conf`. Cert valid 1h, periodic Vault token valid 14d (renewing) up to 30d (re-OIDC).
-- **Day-to-day:** `aspect deploy` pre-flight calls `aspect operator refresh` silently every run — token renewed, cert re-signed, no prompt. Browser pops once per ~30d at the `token_explicit_max_ttl` boundary.
+- **Onboard a device:** `aspect operator onboard --device=<name> --wg-address=<unused 10.66.66.X>`. Generates ed25519 + WireGuard keypairs locally, pulls trust anchors from `https://<domain>/.well-known/verself-*`, prints a CUE diff for the trusted operator to PR, OIDCs to Zitadel, and writes `~/.ssh/config.d/verself.conf`. Cert valid 24h, periodic Vault token valid 14d (renewing) up to 30d (re-OIDC).
+- **Day-to-day:** `aspect deploy` pre-flight calls `aspect operator refresh` silently every run — token renewed, cert re-signed, no prompt. Browser pops once per ~30d at the `token_explicit_max_ttl` boundary. Between deploys the 24h cert covers normal interactive work; if you go more than a day without deploying, run `aspect operator refresh` manually to mint a fresh cert from the still-valid Vault token.
 - **Workload VMs (Devin, Cursor, CI):** `aspect operator enroll-workload` claims a wg-ops slot, mints a single-use 15-min AppRole secret-id, and prints an env block to inject. The VM runs `verself-workload-bootstrap` once at boot to trade the secret for a 24h SSH cert. No human OIDC.
 - **Audit:** `aspect detect-intrusions` flags any accepted SSH event whose `cert_id` is outside the rendered trust set — every cert is stamped `verself-<principal>-<device-or-slot>` for direct attribution from `verself.host_auth_events`.
 

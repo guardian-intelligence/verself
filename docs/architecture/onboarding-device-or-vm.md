@@ -167,7 +167,7 @@ OpenBao KV" with no host-side reconvergence required.
 
 | Principal    | Source        | Cert max TTL | Vault token TTL          | Refresh                                        |
 | ------------ | ------------- | ------------ | ------------------------ | ---------------------------------------------- |
-| `operator`   | OIDC (human)  | 1h           | 14d periodic, 30d max    | `aspect operator refresh` (auto on `aspect deploy`) |
+| `operator`   | OIDC (human)  | 24h          | 14d periodic, 30d max    | `aspect operator refresh` (auto on `aspect deploy`; manually between deploys) |
 | `workload`   | AppRole       | 24h          | 24h, no renewal          | reissue via fresh AppRole secret-id            |
 | `breakglass` | OIDC (human)  | 24h          | 24h                      | manual; deliberately friction-heavy            |
 
