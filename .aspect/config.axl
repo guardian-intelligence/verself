@@ -33,6 +33,7 @@ load(
     platform_reset_verification = "reset_verification",
 )
 load(".aspect/tasks/deploy.axl", "deploy")
+load(".aspect/tasks/artifacts.axl", artifacts_publish = "publish")
 load(".aspect/tasks/render.axl", "render")
 load(
     ".aspect/tasks/db.axl",
@@ -73,11 +74,18 @@ load(
     mail_passwords = "passwords",
 )
 load(".aspect/tasks/observe.axl", "observe")
-load(".aspect/tasks/ssh.axl", ssh_cert = "cert")
+load(".aspect/tasks/detect_intrusions.axl", "detect_intrusions")
+load(
+    ".aspect/tasks/operator.axl",
+    operator_onboard = "onboard",
+    operator_refresh = "refresh",
+    operator_enroll_workload = "enroll_workload",
+)
 
 def config(ctx):
     # Top-level tasks.
     ctx.tasks.add(deploy)
+    ctx.tasks.add(artifacts_publish)
     ctx.tasks.add(render)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
@@ -126,8 +134,13 @@ def config(ctx):
     ctx.tasks.add(billing_finalizations)
     ctx.tasks.add(billing_events)
 
-    # aspect ssh ...
-    ctx.tasks.add(ssh_cert)
+    # aspect operator ...
+    ctx.tasks.add(operator_onboard)
+    ctx.tasks.add(operator_refresh)
+    ctx.tasks.add(operator_enroll_workload)
+
+    # aspect detect-intrusions
+    ctx.tasks.add(detect_intrusions)
 
     # aspect mail ...
     ctx.tasks.add(mail_list)
