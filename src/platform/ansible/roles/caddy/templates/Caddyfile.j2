@@ -488,7 +488,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 	import access_log
 
 	# Public discovery surface for operator-device + workload-VM
-	# onboarding. Files under /var/www/verself/well-known/ are dropped
+	# onboarding. Files under /var/www/verself/.well-known/ are dropped
 	# by the ssh_ca, openbao, and wireguard roles. Cache-Control gives
 	# operator devices a 5-min reuse window without preventing CA
 	# rotation from propagating quickly.

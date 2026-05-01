@@ -38,7 +38,7 @@
 - name: Publish SSH CA public key under /.well-known
   ansible.builtin.copy:
     content: "{{ ssh_ca_pubkey_raw.content | b64decode }}"
-    dest: /var/www/verself/well-known/verself-ssh-ca.pub
+    dest: /var/www/verself/.well-known/verself-ssh-ca.pub
     owner: root
     group: root
     mode: "0644"
