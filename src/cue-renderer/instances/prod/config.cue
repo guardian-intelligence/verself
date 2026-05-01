@@ -33,10 +33,17 @@ config: s.#InstanceConfig & {
 				network:        "10.66.66.0/24"
 				address:        "10.66.66.1"
 				address_prefix: 24
+				// Operator-device peers are derived from `operators`
+				// (instances/prod/operators.cue) — never authored directly
+				// here. Workload-pool slot peers are NOT in this list; the
+				// openbao role generates slot pubkeys at deploy time and
+				// the wireguard role appends them via a credstore file
+				// (/etc/credstore/workload-pool/slots.json).
 				peers: [
-					{
-						public_key:  "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
-						allowed_ips: "10.66.66.2/32"
+					for op_name, op in config.operators
+					for dev_name, dev in op.devices {
+						public_key:  dev.wg_pubkey
+						allowed_ips: "\(dev.wg_address)/32"
 					},
 				]
 			}
@@ -151,26 +158,44 @@ config: s.#InstanceConfig & {
 				// window so a leaked cert can't outlive a shift. The
 				// Vault token TTL matches, so one OIDC login covers up to
 				// 1h of cert re-signing.
-				max_ttl_seconds:      3600
+				max_ttl_seconds: 3600
 				source_address_cidrs: ["10.66.66.0/24"]
-				permit_pty:           true
+				permit_pty:             true
+				permit_port_forwarding: true
 			}
 			breakglass: {
-				name:                 "breakglass"
-				role:                 "breakglass"
-				max_ttl_seconds:      86400 // 24 hours
+				name:            "breakglass"
+				role:            "breakglass"
+				max_ttl_seconds: 86400 // 24 hours
 				source_address_cidrs: ["10.66.66.0/24", "0.0.0.0/0"]
-				permit_pty:           true
+				permit_pty:             true
+				permit_port_forwarding: false
 			}
-			canary: {
-				name:                 "canary"
-				role:                 "automation"
-				max_ttl_seconds:      60
-				source_address_cidrs: ["127.0.0.1/32", "10.66.66.0/24"]
-				force_command:        "/bin/true"
-				permit_pty:           false
+			workload: {
+				name: "workload"
+				role: "workload"
+				// 24h matches the AppRole-issued Vault token max TTL. The
+				// bootstrap binary signs once at startup and lives for the
+				// remainder of the workload's session; extending past 24h
+				// requires the operator to mint a new bootstrap secret-id.
+				max_ttl_seconds: 86400
+				source_address_cidrs: ["10.66.66.0/24"]
+				permit_pty:             true
+				permit_port_forwarding: false
 			}
 		}
+	}
+
+	bare_metal: {
+		// Public IPv4 of the bare-metal node. Single source of truth for
+		// the cloudflare_dns role's A records; previously shadowed by
+		// inventory's cloudflare_dns_public_ip variable, which silently
+		// drifted from `ansible_host` during the wg-ops cutover and
+		// published 10.66.66.1 as every public *.verself.sh A record.
+		public_ipv4: "64.34.84.75"
+		// Inventory ansible_host alias, mapped to the wg-ops listener
+		// address by the operator-side ~/.ssh/config drop-in.
+		host_alias: "fm-dev-w0"
 	}
 
 	let nomadArtifactHost = "artifacts.internal.\(config.ansible_vars.verself_domain)"
@@ -247,6 +272,20 @@ config: s.#InstanceConfig & {
 		// principals file and the sshd_config drop-in. Single source of
 		// truth, schema-validated.
 		topology_ssh_ca: config.ssh_ca
+
+		// Operators + workload pool. The openbao role consumes
+		// topology_workload_pool to generate per-slot wg keypairs and an
+		// AppRole for bootstrap-secret minting. The caddy and wireguard
+		// roles consume the projected device set via the renderer's
+		// generated artefacts (well-known JSON, slot credstore JSON).
+		topology_operators:     config.operators
+		topology_workload_pool: config.workloads.pool
+
+		// Bare-metal facts. cloudflare_dns reads bare_metal_public_ipv4
+		// for the public DNS A records; previously this was duplicated as
+		// an inventory variable, which drifted during the wg-ops cutover.
+		bare_metal_public_ipv4: config.bare_metal.public_ipv4
+		bare_metal_host_alias:  config.bare_metal.host_alias
 
 		// Firecracker image-seeding inputs consumed by the firecracker
 		// role's vm-orchestrator-seed oneshot unit.
