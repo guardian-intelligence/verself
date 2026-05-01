@@ -67,6 +67,24 @@ def _now_ms(ctx):
     # AXL ints come from str → int via int(); guard against malformed output.
     return int(out)
 
+def _run_external_reconcilers(ctx, site, env):
+    """Run the Go reconcilers that replaced their Ansible roles.
+
+    Each writes a row to verself.reconciler_runs with a started/succeeded/
+    failed event-kind and the seen/diffed/applied counters. They are fast
+    idempotent diff/apply loops, so they have no input-hash gate — the cost
+    of running them on every converge is dominated by a single list call
+    against the upstream API (sub-second).
+    """
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, SUBSTRATE_DIR, "scripts/reconcile-cloudflare-dns.sh"),
+        ["--site=" + site],
+        cwd = ws_path(ctx, SUBSTRATE_DIR),
+        env = env,
+        label = "reconcile-cloudflare-dns --site=" + site,
+    )
+
 def _run_nomad_deploy(ctx, site, env):
     """Publish Nomad task artifacts and submit every rendered job spec.
 
@@ -189,6 +207,26 @@ def _deploy_one(ctx, site, sha, scope, substrate_mode):
             error_message = "layer " + layered["failed_layer"] + " exited " + str(layered["rc"]),
         )
         return layered["rc"]
+
+    # External-API reconcilers extracted from Ansible. They diff/apply against
+    # the rendered topology, so they sit between the layered substrate (which
+    # produced the rendered inputs they read) and Nomad (which assumes DNS,
+    # OIDC apps, etc., already exist).
+    rc = _run_external_reconcilers(ctx, site, env)
+    if rc != 0:
+        elapsed_ms = max(0, _now_ms(ctx) - started_ms)
+        record_deploy_event(
+            ctx,
+            env = env,
+            site = site,
+            sha = sha,
+            scope = scope,
+            components = layered["layers_ran"],
+            event_kind = "failed",
+            duration_ms = elapsed_ms,
+            error_message = "external reconcilers exited " + str(rc),
+        )
+        return rc
 
     # Nomad supervises application components. The substrate layers stop at
     # host/substrate state; Bazel resolves the deploy specs and artifact

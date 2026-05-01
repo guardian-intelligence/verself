@@ -95,7 +95,6 @@ _L4A_COMPONENTS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
     "src/substrate/ansible/tasks/component_substrate.yml",
     "src/substrate/ansible/tasks/component/*",
     "src/substrate/ansible/tasks/bootstrap/*",
-    "src/substrate/ansible/roles/cloudflare_dns/*",
     "src/substrate/ansible/roles/resend/*",
     "src/substrate/ansible/roles/spire_registrations/*",
     "src/substrate/ansible/roles/openbao_tenancy/*",
