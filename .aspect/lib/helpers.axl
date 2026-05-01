@@ -43,6 +43,17 @@ _DEPLOY_IDENTITY_KEYS = [
     "OTEL_RESOURCE_ATTRIBUTES",
 ]
 
+# Layer convergence order. Each entry is (layer_name, playbook_path,
+# bazel_digest_target). Order matters: L1 sets up host primitives every later
+# layer depends on; L2 creates users L3 daemons claim; L3 starts daemons L4a
+# reconciles against. The hash-gate decision for each layer is independent.
+SUBSTRATE_LAYERS = [
+    ("l1_os",          "playbooks/l1_os.yml",          "//src/substrate:{site}_l1_os_digest"),
+    ("l2_userspace",   "playbooks/l2_userspace.yml",   "//src/substrate:{site}_l2_userspace_digest"),
+    ("l3_binaries",    "playbooks/l3_binaries.yml",    "//src/substrate:{site}_l3_binaries_digest"),
+    ("l4a_components", "playbooks/l4a_components.yml", "//src/substrate:{site}_l4a_components_digest"),
+]
+
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
     root = ctx.std.env.root_dir()
@@ -290,6 +301,115 @@ def note_bazel_diff_stub(ctx, *, base_sha, head_sha, affected_count):
         " affected_count=" + str(affected_count) + "\n",
     )
     return 0
+
+def compute_layer_digest(ctx, site, layer):
+    """Build the per-layer Bazel digest target and return its 64-char hex.
+
+    Returns "" on any failure with a stderr message. The first call in a
+    converge pays the renderer/sha256 cost; subsequent calls hit Bazel's
+    action cache.
+    """
+    target = "//src/substrate:" + site + "_" + layer + "_digest"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    query = (ctx.std.process.command("bazelisk")
+         .args(["cquery", "--output=files", target])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if query.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: layer digest cquery failed for " + target + ":\n" + query.stderr)
+        return ""
+    out_path = query.stdout.strip()
+    if "\n" in out_path:
+        out_path = out_path.split("\n")[-1]
+    if out_path == "":
+        ctx.std.io.stderr.write("ERROR: layer digest cquery returned no output for " + target + "\n")
+        return ""
+    if not out_path.startswith("/"):
+        out_path = ws_path(ctx, out_path)
+    read = (ctx.std.process.command("cat")
+         .args([out_path])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if read.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: reading layer digest failed for " + target + ":\n" + read.stderr)
+        return ""
+    digest = read.stdout.strip()
+    if len(digest) != 64:
+        ctx.std.io.stderr.write("ERROR: layer digest target " + target + " produced invalid digest: " + digest + "\n")
+        return ""
+    return digest
+
+def run_layered_substrate(ctx, *, site, env, force = False, extra_ansible_args = None):
+    """Walk the substrate layers in order, hash-gating each.
+
+    For each layer (L1 OS, L2 userspace, L3 daemons, L4a components):
+      1. Compute the layer's input_hash via Bazel.
+      2. Hand off to scripts/run-layer.sh, which reads last_applied_hash from
+         verself.deploy_layer_runs, decides skip vs run, invokes
+         ansible-with-otel.sh against the layer's playbook, and emits the
+         post-run row to verself.deploy_layer_runs.
+
+    Returns:
+      A struct-like dict with:
+        rc: 0 on full success, otherwise the first failing layer's exit code.
+        layers_ran: list of layer names whose playbook was invoked.
+        layers_skipped: list of layer names whose hash matched.
+    """
+    inventory = ws_path(ctx, site_cache_inventory(site))
+    extras = list(extra_ansible_args) if extra_ansible_args != None else []
+    layers_ran = []
+    layers_skipped = []
+
+    for entry in SUBSTRATE_LAYERS:
+        layer_name = entry[0]
+        playbook = entry[1]
+        digest = compute_layer_digest(ctx, site, layer_name)
+        if digest == "":
+            return {"rc": 1, "layers_ran": layers_ran, "layers_skipped": layers_skipped, "failed_layer": layer_name}
+
+        last_before = _read_layer_last_applied(ctx, site, layer_name)
+        will_skip = (not force) and last_before != "" and last_before == digest
+
+        args_list = [
+            "--site=" + site,
+            "--layer=" + layer_name,
+            "--input-hash=" + digest,
+            "--playbook=" + playbook,
+            "--inventory=" + inventory,
+        ]
+        if force:
+            args_list.append("--force")
+        for arg in extras:
+            args_list.append("--ansible-arg=" + arg)
+
+        rc = checked_spawn(
+            ctx,
+            ws_path(ctx, SUBSTRATE_DIR, "scripts/run-layer.sh"),
+            args_list,
+            cwd = ws_path(ctx, SUBSTRATE_DIR),
+            env = env,
+            label = "run-layer " + layer_name,
+        )
+        if rc != 0:
+            return {"rc": rc, "layers_ran": layers_ran, "layers_skipped": layers_skipped, "failed_layer": layer_name}
+
+        if will_skip:
+            layers_skipped.append(layer_name)
+        else:
+            layers_ran.append(layer_name)
+
+    return {"rc": 0, "layers_ran": layers_ran, "layers_skipped": layers_skipped, "failed_layer": ""}
+
+def _read_layer_last_applied(ctx, site, layer):
+    r = (ctx.std.process.command(ws_path(ctx, SUBSTRATE_DIR, "scripts/layer-last-applied.sh"))
+         .args(["--site=" + site, "--layer=" + layer])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        return ""
+    return r.stdout.strip()
 
 def cue_pin(ctx, key):
     """Read a single development-tier version pin out of versions.cue.

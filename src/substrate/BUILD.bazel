@@ -1,3 +1,5 @@
+load(":digests.bzl", "layer_digest_genrule")
+
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -30,35 +32,118 @@ filegroup(
     ),
 )
 
+# Path patterns scoping each layer's Ansible source subset. The L1 hash only
+# changes when host/OS-shaped roles, the L1 playbook, or the shared Ansible
+# config change. Same for the rest. Shared paths (group_vars, ansible.cfg,
+# callback_plugins, plugins) are included in every layer's digest because any
+# of them can change task behavior at runtime.
+#
+# Bash `case` glob: `*` matches any character including `/`, so a pattern
+# like `src/substrate/ansible/roles/base/*` matches every file at any depth
+# under that directory. The patterns are unquoted in the rendered cmd so
+# bash treats them as globs.
+_SHARED_ANSIBLE_PATTERNS = [
+    "src/substrate/ansible/ansible.cfg",
+    "src/substrate/ansible/callback_plugins/*",
+    "src/substrate/ansible/plugins/*",
+    "src/substrate/ansible/group_vars/*",
+]
+
+_L1_OS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
+    "src/substrate/ansible/playbooks/l1_os.yml",
+    "src/substrate/ansible/playbooks/tasks/controller-preflight.yml",
+    "src/substrate/ansible/roles/base/*",
+    "src/substrate/ansible/roles/zfs/*",
+    "src/substrate/ansible/roles/nftables/*",
+    "src/substrate/ansible/roles/wireguard/*",
+    "src/substrate/ansible/roles/substrate_profile/*",
+    "src/substrate/ansible/roles/containerd/*",
+    "src/substrate/ansible/roles/firecracker/*",
+]
+
+_L2_USERSPACE_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
+    "src/substrate/ansible/playbooks/l2_userspace.yml",
+    "src/substrate/ansible/tasks/userspace_batch.yml",
+]
+
+_L3_BINARIES_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
+    "src/substrate/ansible/playbooks/l3_binaries.yml",
+    "src/substrate/ansible/roles/spire/*",
+    "src/substrate/ansible/roles/garage/*",
+    "src/substrate/ansible/roles/bazel_remote/*",
+    "src/substrate/ansible/roles/nomad/*",
+    "src/substrate/ansible/roles/clickhouse/*",
+    "src/substrate/ansible/roles/tigerbeetle/*",
+    "src/substrate/ansible/roles/postgresql/*",
+    "src/substrate/ansible/roles/zitadel/*",
+    "src/substrate/ansible/roles/openbao/*",
+    "src/substrate/ansible/roles/wireguard/*",
+    "src/substrate/ansible/roles/ssh_ca/*",
+    "src/substrate/ansible/roles/nats/*",
+    "src/substrate/ansible/roles/temporal/*",
+    "src/substrate/ansible/roles/stalwart/*",
+    "src/substrate/ansible/roles/electric/*",
+    "src/substrate/ansible/roles/otelcol/*",
+    "src/substrate/ansible/roles/grafana/*",
+    "src/substrate/ansible/roles/verdaccio/*",
+    "src/substrate/ansible/roles/caddy/*",
+    "src/substrate/ansible/roles/forgejo/*",
+]
+
+_L4A_COMPONENTS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
+    "src/substrate/ansible/playbooks/l4a_components.yml",
+    "src/substrate/ansible/tasks/component_substrate.yml",
+    "src/substrate/ansible/tasks/component/*",
+    "src/substrate/ansible/tasks/bootstrap/*",
+    "src/substrate/ansible/roles/cloudflare_dns/*",
+    "src/substrate/ansible/roles/resend/*",
+    "src/substrate/ansible/roles/spire_registrations/*",
+    "src/substrate/ansible/roles/openbao_tenancy/*",
+    "src/substrate/ansible/roles/zitadel_oauth_app/*",
+    "src/substrate/ansible/roles/zitadel_project_roles/*",
+]
+
+# Render the substrate inputs once. Bazel's action cache makes this a no-op
+# for subsequent layer digests within the same converge_sources state.
+# Layer digests consume only this listing — they never re-render.
 genrule(
-    name = "prod_substrate_digest",
-    srcs = [":converge_sources"],
-    outs = ["prod.substrate.sha256"],
+    name = "prod_rendered_substrate",
+    srcs = ["//src/cue-renderer:topology_srcs"],
+    outs = ["prod-rendered-substrate-listing.txt"],
     cmd = """
 set -eu
-render_dir="$(@D)/prod-substrate-render"
+render_dir="$(@D)/prod-rendered-substrate"
 rm -rf "$$render_dir"
 mkdir -p "$$render_dir"
 $(location //src/cue-renderer/cmd/cue-renderer) generate --instance=prod --output-dir="$$render_dir" >/dev/null
-{
-  # Topology CUE files remain action inputs so Bazel re-runs this rule, but
-  # raw CUE and rendered Nomad jobs are not digest material. Otherwise a
-  # Nomad-only CUE edit would force host convergence.
-  for f in $(SRCS); do
-    case "$$f" in
-      src/substrate/*|bazel-out/*)
-        if [ -f "$$f" ]; then
-          sha256sum "$$f"
-        fi
-        ;;
-    esac
-  done
-  for root in "$$render_dir/inventory" "$$render_dir/share/rendered"; do
-    if [ -d "$$root" ]; then
-      find "$$root" -type f -print0
-    fi
-  done | LC_ALL=C sort -z | xargs -0 sha256sum
-} | LC_ALL=C sort | sha256sum | cut -d' ' -f1 > "$@"
+# Deterministic listing of every rendered substrate file with its content
+# hash. Downstream layer digests mix this in; if the rendered tree changes,
+# every layer's digest changes.
+( cd "$$render_dir" && find inventory share/rendered -type f -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 sha256sum ) > "$@"
 """,
     tools = ["//src/cue-renderer/cmd/cue-renderer"],
+)
+
+layer_digest_genrule(
+    name = "prod_l1_os_digest",
+    output = "prod.l1_os.sha256",
+    patterns = _L1_OS_ANSIBLE_PATTERNS,
+)
+
+layer_digest_genrule(
+    name = "prod_l2_userspace_digest",
+    output = "prod.l2_userspace.sha256",
+    patterns = _L2_USERSPACE_ANSIBLE_PATTERNS,
+)
+
+layer_digest_genrule(
+    name = "prod_l3_binaries_digest",
+    output = "prod.l3_binaries.sha256",
+    patterns = _L3_BINARIES_ANSIBLE_PATTERNS,
+)
+
+layer_digest_genrule(
+    name = "prod_l4a_components_digest",
+    output = "prod.l4a_components.sha256",
+    patterns = _L4A_COMPONENTS_ANSIBLE_PATTERNS,
 )

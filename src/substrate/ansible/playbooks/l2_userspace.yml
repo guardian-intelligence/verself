@@ -1,0 +1,14 @@
+---
+# L2 — Userspace: system users + groups for every Nomad-supervised component.
+#
+# Hash input: src/substrate/ansible/{playbooks/l2_userspace.yml,tasks/userspace_batch.yml}
+# plus rendered substrate inputs (topology_components drives the unit list).
+# Skipped by aspect deploy when the input hash matches the previous succeeded run.
+
+- name: "L2: Userspace (system users + groups)"
+  hosts: infra
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Materialise system users and groups for every component
+      ansible.builtin.import_tasks: ../tasks/userspace_batch.yml
