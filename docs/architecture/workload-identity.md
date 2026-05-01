@@ -392,8 +392,7 @@ Smoke-test queries assert:
 
 - Current system context: [system-context.md](../system-context.md).
 - Service plane split: [service-architecture.md](service-architecture.md).
-- Secrets product and resource split:
-  [secrets-service.md](../../src/platform/docs/secrets-service.md).
+- Secrets service code: [`src/secrets-service/`](../../src/secrets-service/).
 - Audit actor fields:
   [audit-data-contract.md](../../src/governance-service/docs/audit-data-contract.md).
 - Listener and port inventory:

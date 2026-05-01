@@ -1,17 +1,15 @@
 // Policy catalog — parses the machine-readable policy source at module load
 // and exposes typed constants every /policy/* page renders against. Raw YAML
-// files live in src/__generated/policies/, refreshed from the canonical
-// src/platform/policies/ tree by the `generate` package script. Keeping both
-// sides schema-gated on parse means a malformed edit breaks the build, not
-// just the runtime page.
+// files live in ../policies/. Schema-gated on parse so a malformed edit
+// breaks the build, not just the runtime page.
 import * as v from "valibot";
 import { parse as parseYaml } from "yaml";
 
-import retentionYaml from "../__generated/policies/retention.yml?raw";
-import subprocessorsYaml from "../__generated/policies/subprocessors.yml?raw";
-import ropaYaml from "../__generated/policies/ropa.yml?raw";
-import contactsYaml from "../__generated/policies/contacts.yml?raw";
-import versionsYaml from "../__generated/policies/versions.yml?raw";
+import retentionYaml from "../policies/retention.yml?raw";
+import subprocessorsYaml from "../policies/subprocessors.yml?raw";
+import ropaYaml from "../policies/ropa.yml?raw";
+import contactsYaml from "../policies/contacts.yml?raw";
+import versionsYaml from "../policies/versions.yml?raw";
 
 // ─── retention ──────────────────────────────────────────────────────────────
 

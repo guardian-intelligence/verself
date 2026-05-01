@@ -6,7 +6,7 @@ repos:
       # ansible-lint processes. Sequentially the full lint is ~18s; in
       # parallel it's ~6s on a multi-core box. `set -e` makes the hook
       # fail fast if either lane errors. Pre-commit passes filenames
-      # relative to the repo root; we strip the src/platform/ansible/
+      # relative to the repo root; we strip the src/substrate/ansible/
       # prefix after cd-ing so ansible-lint resolves them against its
       # config dir. The trailing `--` becomes $0 so "$@" is exactly the
       # filename list pre-commit appended.
@@ -15,7 +15,7 @@ repos:
         entry: |
           bash -lc '
             set -e
-            cd src/platform/ansible
+            cd src/substrate/ansible
             # Pin fact caching to memory and disable gather_facts for the
             # duration of the hook. The syntax-check lane would otherwise write
             # to .cache/facts/ via ansible.cfg's jsonfile cache plugin, which
@@ -24,7 +24,7 @@ repos:
             export ANSIBLE_CACHE_PLUGIN=memory
             export ANSIBLE_GATHERING=explicit
             files=()
-            for f in "$@"; do files+=("${f#src/platform/ansible/}"); done
+            for f in "$@"; do files+=("${f#src/substrate/ansible/}"); done
             [ ${#files[@]} -eq 0 ] && exit 0
             ansible-lint --tags command-shell,core,deprecations,formatting,idempotency,idiom,metadata,security,unpredictability,yaml,custom "${files[@]}" &
             rules_pid=$!
@@ -34,5 +34,5 @@ repos:
             wait $syntax_pid
           ' --
         language: system
-        files: ^src/platform/ansible/
+        files: ^src/substrate/ansible/
         pass_filenames: true

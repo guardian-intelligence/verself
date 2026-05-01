@@ -1,0 +1,35 @@
+---
+# Install uv-managed Python dev tools. Each entry in topology_uv_tools
+# pins one PyPI package + version; uv handles isolation per tool. With
+# UV_TOOL_BIN_DIR set to /usr/local/bin, the entrypoints land where
+# the rest of the dev tools live, no extra symlink step.
+#
+# `--force` makes the install idempotent on repeat runs and ensures
+# uv reinstalls when the catalog version moves. `with` is uv's
+# native flag for installing extra packages into the same isolated
+# env (used so ansible-lint sees ansible-core's modules).
+#
+# `uv` itself comes from dev_tools.tar.zst. This task must run AFTER
+# dev_tools_archive.yml so /usr/local/bin/uv exists.
+
+- name: Install uv tools (verself catalog)
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['/usr/local/bin/uv', 'tool', 'install', '--force',
+         (item.value.package ~ '==' ~ item.value.version)]
+        + (item.value['with'] | default([]) | map('regex_replace', '^', '--with=') | list)
+      }}
+  loop: "{{ topology_uv_tools | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  environment:
+    UV_TOOL_BIN_DIR: /usr/local/bin
+  register: dev_tools_uv_install_results
+  # uv tool install --force prints "Installed N executables" when bytes
+  # changed and "Reinstalled N packages" / "Resolved N packages" on
+  # otherwise-clean runs; the changed_when filter narrows the
+  # green-on-clean signal to actual writes.
+  changed_when: >-
+    'Installed' in (dev_tools_uv_install_results.stdout | default(''))
+    or 'Installed' in (dev_tools_uv_install_results.stderr | default(''))

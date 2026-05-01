@@ -246,4 +246,4 @@ The data-rights e2e path should:
 - Governance audit retention and immutable records:
   [`src/governance-service/docs/audit-data-contract.md`](../../src/governance-service/docs/audit-data-contract.md).
 - Published retention commitments:
-  [`src/platform/policies/retention.yml`](../../src/platform/policies/retention.yml).
+  [`src/viteplus-monorepo/apps/verself-web/src/policies/retention.yml`](../../src/viteplus-monorepo/apps/verself-web/src/policies/retention.yml).
