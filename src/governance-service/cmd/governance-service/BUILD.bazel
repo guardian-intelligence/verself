@@ -32,3 +32,5 @@ nomad_binary_artifact(
     binary = ":governance-service",
     output = "governance-service",
 )
+
+exports_files(["nomad-overrides.json"])

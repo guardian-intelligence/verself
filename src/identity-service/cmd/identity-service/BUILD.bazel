@@ -33,3 +33,5 @@ nomad_binary_artifact(
     binary = ":identity-service",
     output = "identity-service",
 )
+
+exports_files(["nomad-overrides.json"])

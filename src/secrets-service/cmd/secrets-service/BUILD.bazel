@@ -31,3 +31,5 @@ nomad_binary_artifact(
     binary = ":secrets-service",
     output = "secrets-service",
 )
+
+exports_files(["nomad-overrides.json"])

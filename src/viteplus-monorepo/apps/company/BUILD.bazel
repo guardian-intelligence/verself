@@ -19,3 +19,5 @@ viteplus_node_app_artifact(
     name = "node_app_nomad_artifact",
     output = "company",
 )
+
+exports_files(["nomad-overrides.json"])
