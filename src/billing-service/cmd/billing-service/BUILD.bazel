@@ -38,3 +38,5 @@ nomad_binary_artifact(
     binary = ":billing-service",
     output = "billing-service",
 )
+
+exports_files(["nomad-overrides.json"])

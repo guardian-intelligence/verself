@@ -32,3 +32,5 @@ nomad_binary_artifact(
     binary = ":profile-service",
     output = "profile-service",
 )
+
+exports_files(["nomad-overrides.json"])

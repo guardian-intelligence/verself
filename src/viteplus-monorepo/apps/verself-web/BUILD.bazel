@@ -23,6 +23,8 @@ viteplus_node_app_artifact(
     output = "verself-web",
 )
 
+exports_files(["nomad-overrides.json"])
+
 # Customer-facing OpenAPI client SDKs for every service the verself-web app
 # talks to. Outputs are written to bazel-out, then projected onto disk under
 # src/__generated/<sdk>/ via write_source_files. Run

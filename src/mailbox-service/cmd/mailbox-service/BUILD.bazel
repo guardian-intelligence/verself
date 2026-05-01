@@ -39,3 +39,5 @@ nomad_binary_artifact(
     binary = ":mailbox-service",
     output = "mailbox-service",
 )
+
+exports_files(["nomad-overrides.json"])

@@ -52,3 +52,5 @@ go_test(
     srcs = ["main_test.go"],
     embed = [":sandbox-rental-service_lib"],
 )
+
+exports_files(["nomad-overrides.json"])
