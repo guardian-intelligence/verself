@@ -88,10 +88,11 @@ func cmdOnboard(args []string) error {
 	// 4. Local wg-ops bring-up. The wg-quick service is best-effort
 	//    here: if the device's pubkey isn't yet in CUE, the handshake
 	//    won't complete and we error out on step 6 (OIDC over wg-ops).
-	if err := writeWGConfig(wgKeyPath, wgAddress, anchors); err != nil {
+	wgConfPath, err := writeWGConfig(wgKeyPath, wgAddress, anchors)
+	if err != nil {
 		return err
 	}
-	if err := wgQuickUp("verself"); err != nil {
+	if err := wgQuickUp(wgConfPath); err != nil {
 		return err
 	}
 
@@ -248,12 +249,12 @@ func emitCUEDiff(device, wgPubkey, wgAddress string) {
 	fmt.Println()
 }
 
-func writeWGConfig(privPath, address string, anchors fetchedAnchors) error {
+func writeWGConfig(privPath, address string, anchors fetchedAnchors) (string, error) {
 	confDir := filepath.Dir(privPath)
 	confPath := filepath.Join(confDir, "verself.conf")
 	priv, err := os.ReadFile(privPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	conf := fmt.Sprintf(`[Interface]
 PrivateKey = %s
@@ -272,30 +273,32 @@ PersistentKeepalive = 25
 		anchors.Wireguard.EndpointPort,
 		anchors.Wireguard.Network,
 	)
-	return os.WriteFile(confPath, []byte(conf), 0o600)
+	if err := os.WriteFile(confPath, []byte(conf), 0o600); err != nil {
+		return "", err
+	}
+	return confPath, nil
 }
 
-// wgQuickUp brings the named wg interface up via wg-quick. The macOS
-// invocation is identical to Linux's; the operator is responsible for
-// installing wireguard-tools (Linux: apt; macOS: brew install
-// wireguard-tools).
-func wgQuickUp(name string) error {
+// wgQuickUp brings up the wg interface described by the config at
+// confPath. wg-quick derives the interface name from the file's
+// basename (e.g. ~/.config/verself/wg/verself.conf → interface
+// "verself"). The macOS invocation is identical to Linux's; the
+// operator is responsible for installing wireguard-tools (Linux: apt;
+// macOS: brew install wireguard-tools).
+func wgQuickUp(confPath string) error {
 	bin, err := exec.LookPath("wg-quick")
 	if err != nil {
 		return fmt.Errorf("wg-quick not found in PATH; install wireguard-tools (Linux: apt; macOS: brew install wireguard-tools)")
 	}
+	args := []string{bin}
+	if needsSudo() {
+		args = append([]string{"sudo"}, args...)
+	}
 	// Bring the tunnel down before bringing it up: wg-quick refuses to
 	// touch an interface it didn't create, and a stale config file
 	// from an aborted prior run will land us there.
-	if needsSudo() {
-		_ = exec.Command("sudo", bin, "down", name).Run()
-		cmd := exec.Command("sudo", bin, "up", name)
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-	_ = exec.Command(bin, "down", name).Run()
-	cmd := exec.Command(bin, "up", name)
+	_ = exec.Command(args[0], append(args[1:], "down", confPath)...).Run()
+	cmd := exec.Command(args[0], append(args[1:], "up", confPath)...)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
