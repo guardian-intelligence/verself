@@ -257,6 +257,10 @@ systemPackages: {
 		risk_acknowledgement:   "debootstrap is the bootstrap utility for guest rootfs builds; we accept upstream Ubuntu's archive integrity because the binary's only output is a chroot tree we then sha-pin downstream."
 		version_cmd:            "debootstrap --version"
 	}
+	"xdg-utils": {
+		risk_acknowledgement: "xdg-utils ships xdg-open, the cross-DE default-app launcher invoked by browser-opening CLI tools (bao login -method=oidc, playwright, the ssh-cert OIDC dance). We accept upstream Ubuntu's archive integrity for a thin shell-script package whose only role on operator devices is to dispatch URLs to whichever browser is registered. aspect-operator passes skip_browser=true so missing xdg-open is not fatal; this entry just keeps the operator-side experience sane on graphical devices."
+		version_cmd:          "xdg-open --version"
+	}
 }
 
 serverToolDownloads: {
