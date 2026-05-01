@@ -1,8 +1,8 @@
 """aspect operator — operator-device + workload-VM onboarding.
 
-  aspect operator onboard --device=<name>
+  aspect operator onboard --device=<name> --wg-address=<ipv4>
   aspect operator refresh [--device=<name>]
-  aspect operator enroll-workload [--slot=N] [--device=<tag>] [--hours=N]
+  aspect operator enroll-workload [--slot=N] [--device=<tag>]
 
 The implementation lives in src/cue-renderer/cmd/aspect-operator. End-to-end
 flow: docs/architecture/onboarding-device-or-vm.md.
@@ -25,6 +25,8 @@ def _onboard_impl(ctx):
     cli_args = ["onboard"]
     if ctx.args.device:
         cli_args = cli_args + ["--device", ctx.args.device]
+    if ctx.args.wg_address:
+        cli_args = cli_args + ["--wg-address", ctx.args.wg_address]
     if ctx.args.domain:
         cli_args = cli_args + ["--domain", ctx.args.domain]
     if ctx.args.host_alias:
@@ -55,8 +57,6 @@ def _enroll_workload_impl(ctx):
         cli_args = cli_args + ["--device", ctx.args.device]
     if ctx.args.domain:
         cli_args = cli_args + ["--domain", ctx.args.domain]
-    if ctx.args.hours:
-        cli_args = cli_args + ["--hours", ctx.args.hours]
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator enroll-workload")
 
 onboard = task(
@@ -66,6 +66,7 @@ onboard = task(
     summary = "Interactive: keygen + trust-anchor fetch + OIDC + first SSH cert.",
     args = {
         "device": args.string(default = "", description = "Device name (lowercase kebab; matches the cert KeyID suffix)."),
+        "wg_address": args.string(default = "", description = "Unused IPv4 in 10.66.66.0/24 (operators: .2..99). See operators.cue for taken addresses."),
         "domain": args.string(default = "verself.sh", description = "Public domain that serves /.well-known/verself-*."),
         "host_alias": args.string(default = "fm-dev-w0", description = "ssh_config alias the drop-in writes."),
         "refresh_oidc": args.boolean(default = False, description = "Force a fresh OIDC login even if a Vault token is cached."),
@@ -92,6 +93,5 @@ enroll_workload = task(
         "slot": args.string(default = "", description = "Slot index to claim (default: scan for the first free slot)."),
         "device": args.string(default = "", description = "Workload tag stamped into the cert KeyID."),
         "domain": args.string(default = "verself.sh", description = "Public domain that serves /.well-known/verself-*."),
-        "hours": args.string(default = "", description = "Lease duration in hours (server-capped at 24h)."),
     },
 )

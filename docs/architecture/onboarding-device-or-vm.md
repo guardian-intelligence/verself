@@ -49,7 +49,7 @@ trusted operator opens the PR.
 ```
 new device                                   trusted operator
 ──────────                                   ────────────────
-aspect operator onboard --device=<name>
+aspect operator onboard --device=<name> --wg-address=<ipv4>
   ├─ generate ed25519 SSH keypair
   │  at ~/.config/verself/ssh/<name>{,.pub}
   ├─ generate WireGuard keypair
@@ -69,6 +69,20 @@ aspect operator onboard --device=<name>
   │     key_id=verself-operator-<name>
   └─ ssh fm-dev-w0 'true'  (validates the full path)
 ```
+
+`--wg-address` is the device's slot inside `10.66.66.0/24`. Pick an
+unused IPv4 in `.2..99` (operators) — `.100..163` is reserved for the
+workload pool, `.1` is the wg-ops gateway. The binary refuses anything
+outside `.2..99`; collision with an existing operator is detected at
+PR review (the binary cannot enumerate `operators.cue` without already
+being on the mesh).
+
+Host-key trust on first contact uses OpenSSH's `accept-new` mode: the
+generated `~/.ssh/config.d/verself.conf` records the host's pubkey on
+the first successful connection and rejects drift thereafter.
+Publishing the host's SSH host pubkey under
+`/.well-known/verself-ssh-host.pub` so the binary can pin it without
+TOFU is a documented future hardening.
 
 The Vault token returned by OIDC is **periodic**: `aspect operator refresh`
 (invoked by `aspect deploy` pre-flight) renews it indefinitely so long
@@ -177,17 +191,18 @@ the same query as an alert with a 5-minute evaluation window.
 
 ## Operator commands
 
-- `aspect operator onboard --device=<name>` — interactive onboarding
-  on the new device. Idempotent: re-running on an already-onboarded
-  device refreshes the cert and exits.
+- `aspect operator onboard --device=<name> --wg-address=<ipv4>` —
+  interactive onboarding on the new device. Idempotent: re-running on
+  an already-onboarded device refreshes the cert and exits.
 - `aspect operator refresh` — non-interactive Vault token renew + cert
   re-sign. Invoked by `aspect deploy` pre-flight. Fails loudly with the
   required recovery command if the token is past `token_max_ttl`.
 - `aspect operator enroll-workload [--slot=<n>]` — operator-side. Claims
   a free slot, mints a single-use 15-min AppRole secret-id, prints the
-  env block. Slot selection is automatic unless `--slot` pins it.
-- `aspect observe detect-recent-intrusions` — runs the
-  unknown-cert-id query for the last 24h.
+  env block. Slot selection is automatic unless `--slot` pins it. Lease
+  and token TTLs are both 24h by construction.
+- `aspect detect-intrusions` — runs the unknown-cert-id query for the
+  configured lookback window.
 
 ## Out of scope (deferred)
 
@@ -200,6 +215,7 @@ the same query as an alert with a 5-minute evaluation window.
 - SPIRE node-attestation path for headless workloads. The AppRole
   bootstrap-secret model covers Devin/Cursor without requiring an
   attestor that ephemeral VMs can satisfy.
-- Generated SSH-config drop-in for the ansible inventory's
-  `ansible_host` → wg-ops mapping is part of the same change set as
-  reverting the `cloudflare_dns_public_ip` split (1903118e).
+- Pinning the host's SSH host pubkey via `/.well-known/verself-ssh-host.pub`.
+  Today the generated SSH config drop-in uses
+  `StrictHostKeyChecking=accept-new` (TOFU on first contact); pinning
+  via the discovery surface eliminates the TOFU window.

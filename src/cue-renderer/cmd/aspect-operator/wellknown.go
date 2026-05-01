@@ -88,11 +88,12 @@ func fetchAndPin(client *http.Client, anchor trustAnchor) ([]byte, error) {
 }
 
 // fetchTrustAnchors downloads ssh-ca.pub, openbao-ca.pem, and
-// wireguard.json under the apex /.well-known/ path, verifies them
-// against pinned hashes, and returns the parsed wireguard discovery
-// payload alongside the local cache paths the rest of the binary needs.
+// wireguard.json under the apex /.well-known/ path and verifies them
+// against pinned hashes. The ssh-ca.pub download is a TOFU integrity
+// check (drift would surface as a pin mismatch on the next call); the
+// signed cert is verified by sshd against /etc/ssh/verself-ssh-ca.pub
+// on the host, so the operator binary does not need the path itself.
 type fetchedAnchors struct {
-	SSHCAPath     string
 	OpenBaoCAPath string
 	Wireguard     wireguardWellKnown
 	WireguardRaw  []byte
@@ -126,7 +127,6 @@ func fetchTrustAnchors(domain, configDir string) (fetchedAnchors, error) {
 	}
 
 	return fetchedAnchors{
-		SSHCAPath:     defs[0].CachePath,
 		OpenBaoCAPath: defs[1].CachePath,
 		Wireguard:     wg,
 		WireguardRaw:  bodies[2],

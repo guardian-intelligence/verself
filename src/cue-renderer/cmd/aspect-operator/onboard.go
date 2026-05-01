@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +16,7 @@ import (
 func cmdOnboard(args []string) error {
 	fs := flagSet("onboard")
 	device := fs.String("device", "", "Device name (lowercase kebab; matches the cert KeyID suffix)")
+	wgAddress := fs.String("wg-address", "", "WireGuard address inside the wg-ops /24 (e.g. 10.66.66.5). Must be unused. Operator addresses occupy .2..99; .100..163 are reserved for the workload pool.")
 	domain := fs.String("domain", "verself.sh", "Public domain that serves /.well-known/verself-*")
 	hostAlias := fs.String("host-alias", "fm-dev-w0", "ssh_config alias to map to the wg-ops listener")
 	refreshOIDC := fs.Bool("refresh-oidc", false, "Force a fresh OIDC login even if a Vault token is cached")
@@ -26,6 +28,14 @@ func cmdOnboard(args []string) error {
 	}
 	if !validDeviceName(*device) {
 		return fmt.Errorf("invalid --device=%q: must match ^[a-z][a-z0-9-]*$", *device)
+	}
+	if *wgAddress == "" {
+		return errors.New(
+			"--wg-address is required. Pick an unused IPv4 in the wg-ops /24 (operators: 10.66.66.2..99; workload-pool slots: 10.66.66.100..163). " +
+				"Existing operator addresses live in src/cue-renderer/instances/prod/operators.cue.")
+	}
+	if err := validateOperatorWGAddress(*wgAddress); err != nil {
+		return err
 	}
 
 	cfg, err := operatorConfigDir()
@@ -79,16 +89,12 @@ func cmdOnboard(args []string) error {
 	// 3. Print the CUE diff for the trusted operator to PR. Don't
 	//    attempt to authenticate to Forgejo from a clean device — the
 	//    PR-author surface lives on an already-onboarded device.
-	wgAddress, err := chooseWGAddress(*device, anchors)
-	if err != nil {
-		return err
-	}
-	emitCUEDiff(*device, strings.TrimSpace(string(wgPub)), wgAddress)
+	emitCUEDiff(*device, strings.TrimSpace(string(wgPub)), *wgAddress)
 
 	// 4. Local wg-ops bring-up. The wg-quick service is best-effort
 	//    here: if the device's pubkey isn't yet in CUE, the handshake
 	//    won't complete and we error out on step 6 (OIDC over wg-ops).
-	wgConfPath, err := writeWGConfig(wgKeyPath, wgAddress, anchors)
+	wgConfPath, err := writeWGConfig(wgKeyPath, *wgAddress, anchors)
 	if err != nil {
 		return err
 	}
@@ -99,7 +105,7 @@ func cmdOnboard(args []string) error {
 	// 5. Generated SSH config drop-in. Maps the inventory's host alias
 	//    onto the wg-ops listener so `aspect deploy` and `ssh fm-dev-w0`
 	//    work without per-device hand-edits to ~/.ssh/config.
-	if err := writeSSHConfigDropIn(*hostAlias, anchors.Wireguard.HostAddress, sshKeyPath, sshCertPath, anchors.SSHCAPath); err != nil {
+	if err := writeSSHConfigDropIn(*hostAlias, anchors.Wireguard.HostAddress, sshKeyPath, sshCertPath); err != nil {
 		return err
 	}
 
@@ -217,22 +223,35 @@ func hostnameOrUnknown() string {
 	return h
 }
 
-// chooseWGAddress derives a candidate wg-ops address for a fresh
-// device by scanning the host_address octet upward from .2 until it
-// finds one not in the published peer list. Operator-allocated
-// addresses live in the lower half of the wg-ops /24; workload-pool
-// slots live in the .100..107 range so the two ranges don't collide.
-func chooseWGAddress(device string, anchors fetchedAnchors) (string, error) {
-	host := anchors.Wireguard.HostAddress
-	parts := strings.Split(host, ".")
+// validateOperatorWGAddress refuses obvious mistakes: malformed IPv4,
+// the wg-ops gateway (.1), the workload-pool range (.100..163), or
+// anything outside the 10.66.66.0/24 mesh. Collision with an existing
+// operator device is detected at PR-review time — the binary cannot
+// enumerate operators.cue from a fresh device.
+func validateOperatorWGAddress(addr string) error {
+	parts := strings.Split(addr, ".")
 	if len(parts) != 4 {
-		return "", fmt.Errorf("unexpected host_address shape %q", host)
+		return fmt.Errorf("invalid --wg-address=%q: must be IPv4 dotted-quad", addr)
 	}
-	// Operator addresses occupy 10.66.66.2 .. 10.66.66.99. The PR
-	// reviewer is the final authority on which one a new device gets;
-	// this just suggests one that doesn't collide with operator-pool
-	// slot space.
-	return fmt.Sprintf("%s.%s.%s.%d", parts[0], parts[1], parts[2], 2), nil
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 || n > 255 {
+			return fmt.Errorf("invalid --wg-address=%q: octet %q is not 0..255", addr, p)
+		}
+	}
+	if !strings.HasPrefix(addr, "10.66.66.") {
+		return fmt.Errorf("invalid --wg-address=%q: must lie in the wg-ops mesh 10.66.66.0/24", addr)
+	}
+	last, _ := strconv.Atoi(parts[3])
+	switch {
+	case last < 2:
+		return fmt.Errorf("invalid --wg-address=%q: .%d is reserved (.0 network, .1 wg-ops gateway)", addr, last)
+	case last >= 100 && last <= 163:
+		return fmt.Errorf("invalid --wg-address=%q: .%d falls in the workload-pool range (.100..163). Operator devices use .2..99", addr, last)
+	case last > 254:
+		return fmt.Errorf("invalid --wg-address=%q: .%d is the broadcast address", addr, last)
+	}
+	return nil
 }
 
 // emitCUEDiff prints the operator-device CUE entry the PR reviewer
@@ -306,7 +325,7 @@ func wgQuickUp(confPath string) error {
 
 func needsSudo() bool { return os.Geteuid() != 0 }
 
-func writeSSHConfigDropIn(alias, hostAddress, keyPath, certPath, caPath string) error {
+func writeSSHConfigDropIn(alias, hostAddress, keyPath, certPath string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -315,6 +334,13 @@ func writeSSHConfigDropIn(alias, hostAddress, keyPath, certPath, caPath string) 
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		return err
 	}
+	// Host-key trust is TOFU on first contact (StrictHostKeyChecking
+	// accept-new) and strict thereafter — matches OpenSSH defaults
+	// rather than overriding UserKnownHostsFile, which prior versions
+	// of this drop-in incorrectly pointed at the user-cert CA pubkey
+	// (a different file shape that SSH refuses to parse as known_hosts).
+	// Publishing the host's SSH host key under /.well-known/ so this
+	// becomes pinned-on-first-fetch is a documented future hardening.
 	dropIn := fmt.Sprintf(`# Managed by aspect-operator; safe to overwrite. Source of truth:
 # src/cue-renderer/instances/prod/{config,operators}.cue.
 Host %s
@@ -323,11 +349,10 @@ Host %s
     IdentityFile %s
     CertificateFile %s
     IdentitiesOnly yes
-    UserKnownHostsFile %s
-    StrictHostKeyChecking yes
+    StrictHostKeyChecking accept-new
     ControlMaster auto
     ControlPersist 1h
-`, alias, hostAddress, keyPath, certPath, caPath)
+`, alias, hostAddress, keyPath, certPath)
 	if err := os.WriteFile(filepath.Join(cfgDir, "verself.conf"), []byte(dropIn), 0o600); err != nil {
 		return err
 	}

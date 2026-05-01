@@ -13,12 +13,18 @@ import (
 // env block that the operator pastes into the new VM's environment;
 // the workload's verself-workload-bootstrap binary trades the env vars
 // for a 24h Vault token and signs an SSH cert.
+//
+// Lease and token TTLs are both fixed at the workload AppRole's
+// token_max_ttl (24h server-side). Decoupling them was a footgun: an
+// operator-supplied --hours below 24 would free the slot in OpenBao KV
+// before the workload's cert expired, letting a subsequent enrollment
+// claim the still-in-use slot's wg priv key. The lease and the token
+// share the same 24h window by construction.
 func cmdEnrollWorkload(args []string) error {
 	fs := flagSet("enroll-workload")
 	slot := fs.Int("slot", -1, "Slot index to claim (default: scan for the first free slot)")
 	device := fs.String("device", "", "Workload tag stamped into the cert KeyID (default: random)")
 	domain := fs.String("domain", "verself.sh", "Public domain that serves /.well-known/verself-*")
-	hours := fs.Int("hours", 24, "Lease duration in hours; capped server-side at the workload AppRole token_max_ttl")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -50,7 +56,7 @@ func cmdEnrollWorkload(args []string) error {
 	//    kv-workload-pool/data/leases/<n> with shape
 	//    {claimed_by, claimed_at, expires_at_unix}; an absent key or
 	//    expired lease counts as free.
-	chosen, err := claimSlot(bao, *slot, *hours)
+	chosen, err := claimSlot(bao, *slot)
 	if err != nil {
 		return err
 	}
@@ -145,8 +151,10 @@ export VERSELF_WG_ADDRESS=%q
 // claimSlot finds a free workload-pool slot and writes a lease. When
 // requested is >=0 it claims that exact slot (failing if a non-expired
 // lease already exists). Otherwise it scans 0..slot_count-1 and picks
-// the first free one.
-func claimSlot(bao *baoClient, requested, hours int) (int, error) {
+// the first free one. Lease window is hard-coded to 24h to match the
+// workload AppRole's token_max_ttl — see the cmdEnrollWorkload doc.
+func claimSlot(bao *baoClient, requested int) (int, error) {
+	const leaseWindowSeconds = 86400
 	type slotsJSON struct {
 		Data struct {
 			Data struct {
@@ -159,7 +167,7 @@ func claimSlot(bao *baoClient, requested, hours int) (int, error) {
 		} `json:"data"`
 	}
 	now := time.Now().Unix()
-	expires := now + int64(hours*3600)
+	expires := now + leaseWindowSeconds
 	whoami := os.Getenv("USER")
 	if whoami == "" {
 		whoami = "unknown"
