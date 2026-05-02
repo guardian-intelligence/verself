@@ -42,8 +42,8 @@ Boundary components that sit outside the usual service shape:
 
 - `src/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/substrate/` — host/substrate convergence: Ansible runner, substrate scripts, controller OTLP agent, and ClickHouse schema.
-- `src/provision/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
+- `src/host-configuration/` — host and daemon convergence: Ansible runner, host scripts, controller OTLP agent, and ClickHouse schema.
+- `src/provisioning-tools/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
 
 Top-level landmarks:
 
@@ -101,7 +101,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
-- **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/substrate/ansible/group_vars/all/generated/` plus service-owned Nomad metadata.
+- **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/host-configuration/ansible/group_vars/all/generated/` plus service-owned Nomad metadata.
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 

@@ -31,14 +31,14 @@ apply = task(
     implementation = _apply_impl,
     name = "apply",
     group = ["provision"],
-    summary = "Provision bare metal through OpenTofu and write substrate inventory.",
+    summary = "Provision bare metal through OpenTofu and write host inventory.",
 )
 
 destroy = task(
     implementation = _destroy_impl,
     name = "destroy",
     group = ["provision"],
-    summary = "Destroy OpenTofu-managed bare metal and remove substrate inventory.",
+    summary = "Destroy OpenTofu-managed bare metal and remove host inventory.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "confirm": args.boolean(default = False, description = "Required gate; pass --confirm to proceed."),

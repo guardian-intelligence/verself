@@ -1,7 +1,7 @@
 # deployment-tools
 
 The typed Go orchestrator for verself deploys. Subsumes the bash + python
-plumbing under `src/substrate/scripts/` for the orchestration layer
+plumbing under `src/host-configuration/scripts/` for the orchestration layer
 (Nomad submit/monitor, Bazel artifact resolution, Ansible run wrapping,
 ledger writes). Substrate-side scripts that wrap third-party CLIs
 (`pg.sh`, `clickhouse.sh`, `tigerbeetle.sh`) stay in shell — they have no

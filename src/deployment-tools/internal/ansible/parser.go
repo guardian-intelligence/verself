@@ -2,7 +2,7 @@
 // projects its stdout onto a stream of typed task events.
 //
 // The verself_otel Ansible callback (Python, in
-// src/substrate/ansible/callback_plugins/verself_otel.py) already
+// src/host-configuration/ansible/callback_plugins/verself_otel.py) already
 // emits a span per task. This package's parser is a complementary
 // data path: it produces queryable rows in verself.ansible_task_events
 // and a verself_deploy.ansible.task span family attributed to

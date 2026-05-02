@@ -1,0 +1,25 @@
+# Authored substrate rendered file.
+# Source: src/host-configuration/ansible/rendered
+# nftables ruleset notifications_service.
+table inet verself_notifications_service
+delete table inet verself_notifications_service
+
+table inet verself_notifications_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != notifications_service accept
+        oifname "lo" tcp dport { 5432, 9440, 4222, 8085, 4317 } accept
+        oifname "lo" tcp dport 443 accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

@@ -31,36 +31,35 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   - `verself-web` — the unified product app on the `verself_domain` apex. Owns the authenticated browser console (sandbox, billing, identity, profile, notifications, mail, source, future product workflows behind TanStack Start server functions), the public docs at `/docs` and `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog).
 - `packages/` — shared UI, brand marks, generated OpenAPI clients, Valibot validators.
 
-## Provision (`src/provision/`)
+## Provisioning Tools (`src/provisioning-tools/`)
 
 - `terraform/` — OpenTofu bare-metal provisioning for Latitude.sh.
 - `ansible/` — local controller playbooks that apply/destroy the OpenTofu
-  state and write substrate inventory.
+  state and write host inventory.
 - `scripts/` — provisioning helpers such as inventory generation.
 
-Provision owns physical machine allocation and inventory production. It does
-not converge host packages or deploy services.
+Provisioning tools own physical machine allocation and inventory production.
+They do not converge host packages or deploy services.
 
-## Substrate (`src/substrate/`)
+## Host Configuration (`src/host-configuration/`)
 
 - `ansible/` — current private runner for host, daemon, and per-component
   prerequisite convergence.
-- `migrations/clickhouse/` — substrate-owned ClickHouse schema.
+- `migrations/clickhouse/` — host convergence ClickHouse schema.
 - `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
-  persona, billing, mail, database access, observability, and substrate
-  evidence.
-Topology vars are authored under `src/substrate/ansible/group_vars/all/generated/`.
-Host firewall files are source-owned under `src/substrate/ansible/rendered/`.
+  persona, billing, mail, database access, observability, and host evidence.
+Topology vars are authored under `src/host-configuration/ansible/group_vars/all/generated/`.
+Host firewall files are source-owned under `src/host-configuration/ansible/rendered/`.
 Nomad base jobs live under `src/deployment-tools/nomad/sites/<site>/jobs/`
 and are resolved by Bazel with the service-owned artifact and rollout inputs.
 
-## Service- and substrate-local docs
+## Service- and host-local docs
 
 Host convergence, OpenTofu provisioning, and deploy wrappers live in
-`src/substrate/`, `src/provision/`, and `.aspect/`.
+`src/host-configuration/`, `src/provisioning-tools/`, and `.aspect/`.
 
 Bazel-owned package definitions live with their owners:
-`src/substrate/binaries/` for server and substrate host tools,
+`src/host-configuration/binaries/` for server and host configuration tools,
 `src/dev-tools/binaries/` for controller dev tools, and
 `src/vm-orchestrator/guest-images/` for guest-image inputs.
 

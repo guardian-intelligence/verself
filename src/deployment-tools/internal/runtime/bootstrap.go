@@ -244,5 +244,5 @@ func (rt *Runtime) OTLPEndpoint() string {
 
 // resolveInfraHost reads the authored per-site substrate inventory.
 func resolveInfraHost(repoRoot, site string) (*inventory.Host, error) {
-	return inventory.LoadInfra(filepath.Join(repoRoot, "src", "substrate", "ansible", "inventory", site+".ini"))
+	return inventory.LoadInfra(filepath.Join(repoRoot, "src", "host-configuration", "ansible", "inventory", site+".ini"))
 }

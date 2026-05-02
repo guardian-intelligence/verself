@@ -17,9 +17,9 @@ Features:
 bazelisk mod tidy
 
 # 2. Tell OpenTofu where to provision (one time per environment).
-cp src/provision/terraform/terraform.tfvars.example.json \
-   src/provision/terraform/terraform.tfvars.json
-$EDITOR src/provision/terraform/terraform.tfvars.json   # set project_id
+cp src/provisioning-tools/terraform/terraform.tfvars.example.json \
+   src/provisioning-tools/terraform/terraform.tfvars.json
+$EDITOR src/provisioning-tools/terraform/terraform.tfvars.json   # set project_id
 
 # 3. Provision bare metal + render inventory.
 aspect dev sops-init
@@ -64,7 +64,7 @@ cycle, entitlement, grant, clock override, and billing event rows use the same
 ID rules as billing-service. It is an operator/test fixture, not a customer API.
 
 ```bash
-DOMAIN="$(awk -F'"' '/^verself_domain:/{print $2}' src/substrate/ansible/group_vars/all/main.yml)"
+DOMAIN="$(awk -F'"' '/^verself_domain:/{print $2}' src/host-configuration/ansible/group_vars/all/main.yml)"
 aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=free
 aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=pro --balance-cents=10000
 aspect persona user-state --email=ceo@example.com --org-id=123 --plan-id=sandbox-pro \

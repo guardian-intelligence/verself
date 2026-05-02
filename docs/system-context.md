@@ -4,7 +4,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/substrate/ansible/group_vars/all/generated/` and service-owned Nomad metadata under each deployable package. Host firewall files are source-owned under `src/substrate/ansible/rendered/`. Bazel-input artefacts are authored in their owner packages: `src/substrate/binaries/`, `src/dev-tools/binaries/`, and `src/vm-orchestrator/guest-images/`. Run `python3 src/substrate/scripts/services-doctor.py` to cross-check topology endpoints against live listeners on the box (supports `--format=json|nftables`).
+High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/host-configuration/ansible/group_vars/all/generated/` and service-owned Nomad metadata under each deployable package. Host firewall files are source-owned under `src/host-configuration/ansible/rendered/`. Bazel-input artefacts are authored in their owner packages: `src/host-configuration/binaries/`, `src/dev-tools/binaries/`, and `src/vm-orchestrator/guest-images/`. Run `python3 src/host-configuration/scripts/services-doctor.py` to cross-check topology endpoints against live listeners on the box (supports `--format=json|nftables`).
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 

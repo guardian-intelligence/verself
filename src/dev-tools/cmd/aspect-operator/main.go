@@ -22,7 +22,7 @@
 //	    into a Devin / Cursor / CI VM.
 //
 // Source of truth for principals, slot count, and well-known paths:
-// src/substrate/ansible/group_vars/all/generated/ops.yml.
+// src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 package main
 
 import (

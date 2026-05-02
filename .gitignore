@@ -4,17 +4,17 @@
 verself.toml
 
 # Terraform
-src/provision/terraform/.terraform/
-src/provision/terraform/.terraform.lock.hcl
-src/provision/terraform/terraform.tfstate
-src/provision/terraform/terraform.tfstate.backup
-src/provision/terraform/*.tfvars.json
+src/provisioning-tools/terraform/.terraform/
+src/provisioning-tools/terraform/.terraform.lock.hcl
+src/provisioning-tools/terraform/terraform.tfstate
+src/provisioning-tools/terraform/terraform.tfstate.backup
+src/provisioning-tools/terraform/*.tfvars.json
 
 # Ansible
-src/substrate/ansible/*.retry
-src/substrate/ansible/.cache/
-src/substrate/ansible/inventory/*.ini
-!src/substrate/ansible/inventory/*.example
+src/host-configuration/ansible/*.retry
+src/host-configuration/ansible/.cache/
+src/host-configuration/ansible/inventory/*.ini
+!src/host-configuration/ansible/inventory/*.example
 
 # Legacy renderer cache.
 .cache/

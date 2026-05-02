@@ -15,8 +15,8 @@ Conventions:
     non-zero exit code. They never silently coerce errors to no-ops.
 """
 
-SUBSTRATE_DIR = "src/substrate"
-PROVISION_DIR = "src/provision"
+SUBSTRATE_DIR = "src/host-configuration"
+PROVISION_DIR = "src/provisioning-tools"
 DEFAULT_SITE = "prod"
 
 VERSELF_DEPLOY_TARGET = "//src/deployment-tools/cmd/verself-deploy:verself-deploy"

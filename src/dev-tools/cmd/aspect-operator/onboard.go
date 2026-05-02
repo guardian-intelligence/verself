@@ -72,7 +72,7 @@ func cmdOnboard(args []string) error {
 			return errors.New(
 				"--wg-address is required for fresh onboarding; pick an unused IPv4 in the wg-ops /24 " +
 					"(operators: 10.66.66.2..99; workload-pool slots: 10.66.66.100..163); " +
-					"existing operator addresses live in src/substrate/ansible/group_vars/all/generated/ops.yml")
+					"existing operator addresses live in src/host-configuration/ansible/group_vars/all/generated/ops.yml")
 		}
 	}
 	if err := validateOperatorWGAddress(*wgAddress); err != nil {
@@ -290,7 +290,7 @@ func validateOperatorWGAddress(addr string) error {
 // `xclip -selection clipboard`.
 func emitTopologyEntry(device, wgPubkey, wgAddress string) {
 	fmt.Println("# Add the following entry under topology_operators.<operator>.devices in")
-	fmt.Println("# src/substrate/ansible/group_vars/all/generated/ops.yml, then open a PR.")
+	fmt.Println("# src/host-configuration/ansible/group_vars/all/generated/ops.yml, then open a PR.")
 	fmt.Printf("%s:\n", device)
 	fmt.Printf("  name: %q\n", device)
 	fmt.Printf("  wg_pubkey: %q\n", wgPubkey)
@@ -379,7 +379,7 @@ func writeSSHConfigDropIn(alias, hostAddress, keyPath, certPath string) error {
 	// Publishing the host's SSH host key under /.well-known/ so this
 	// becomes pinned-on-first-fetch is a documented future hardening.
 	dropIn := fmt.Sprintf(`# Managed by aspect-operator; safe to overwrite. Source of truth:
-# src/substrate/ansible/group_vars/all/generated/ops.yml.
+# src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 Host %s %s
     HostName %s
     User ubuntu

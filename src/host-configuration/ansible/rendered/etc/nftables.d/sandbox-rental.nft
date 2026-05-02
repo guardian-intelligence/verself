@@ -1,0 +1,32 @@
+# Authored substrate rendered file.
+# Source: src/host-configuration/ansible/rendered
+# nftables ruleset sandbox_rental.
+table inet verself_sandbox_rental
+delete table inet verself_sandbox_rental
+
+table inet verself_sandbox_rental {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != sandbox_rental accept
+        oifname "lo" tcp dport { 5432, 9440, 8200, 8085, 3000, 7233, 4317, 20000-32000 } accept
+        oifname "lo" tcp dport 443 accept
+        oifname "lo" tcp dport 53 accept
+        oifname "lo" udp dport 53 accept
+        ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 240.0.0.0/4 } drop
+        ip6 daddr { ::/128, ::1/128, ::ffff:0:0/96, 64:ff9b::/96, 100::/64, 2001::/23, 2001:db8::/32, fc00::/7, fe80::/10, ff00::/8 } drop
+        tcp dport 53 accept
+        udp dport 53 accept
+        tcp dport 443 accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

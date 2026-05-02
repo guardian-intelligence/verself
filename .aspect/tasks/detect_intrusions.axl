@@ -12,7 +12,7 @@ What this catches (the Blacksmith-CI-runner class of incident):
      known_cert_id_suffixes set authored in ops.yml.
 
 The trusted suffix set lives in
-src/substrate/ansible/group_vars/all/generated/ops.yml under
+src/host-configuration/ansible/group_vars/all/generated/ops.yml under
 `known_cert_id_suffixes`.
 """
 
