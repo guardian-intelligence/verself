@@ -84,6 +84,7 @@ load(".aspect/tasks/observe.axl", "observe")
 load(".aspect/tasks/detect_intrusions.axl", "detect_intrusions")
 load(
     ".aspect/tasks/operator.axl",
+    operator_edge = "edge",
     operator_onboard = "onboard",
     operator_refresh = "refresh",
     operator_enroll_workload = "enroll_workload",
@@ -149,6 +150,7 @@ def config(ctx):
     ctx.tasks.add(operator_onboard)
     ctx.tasks.add(operator_refresh)
     ctx.tasks.add(operator_enroll_workload)
+    ctx.tasks.add(operator_edge)
 
     # aspect detect-intrusions
     ctx.tasks.add(detect_intrusions)

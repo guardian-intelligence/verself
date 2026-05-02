@@ -1,0 +1,9 @@
+# Public Origins
+
+Public origins are declared in `src/host-configuration/ansible/group_vars/all/generated/routes.yml`. `public_haproxy` routes are rendered into HAProxy host/path dispatch rules by the host-configuration role.
+
+The product apex (`<domain>`) serves the authenticated console, docs, and policy from the TanStack Start app. Public service APIs use service subdomains under `<service>.api.<domain>`, including `billing.api.<domain>`, `sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code uses same-origin server functions for product workflows; server functions attach service credentials when calling public service APIs.
+
+HAProxy reaches Nomad-supervised public origins through `/etc/haproxy/maps/upstreams.map`. The map is reconciled from Nomad native service registrations after deploy health checks complete. The map key is mechanical: a Nomad service named `<jobid>-<endpoint>` maps to `VERSELF_UPSTREAM_<JOBID>_<ENDPOINT>` after uppercasing and replacing dashes with underscores. Topology routes use the same component/endpoint key shape through the target interface, so HAProxy route definitions do not depend on committed static application ports.
+
+`aspect operator edge --action=check` validates the public edge contract from the authored route topology, endpoint topology, authored Nomad jobs, and HAProxy template. `aspect operator edge --action=manifest --format=json` emits the derived review data: route backends, Nomad upstream keys, and HAProxy GUID-bearing objects.

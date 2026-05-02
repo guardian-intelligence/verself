@@ -1,10 +1,10 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|ansible|voice|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: scripts → ansible → voice → conversions → vet → lint → test.
+fast-failure order: scripts → edge → ansible → voice → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "checked_spawn", "render_site", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "build_aspect_operator", "checked_spawn", "render_site", "ws_path")
 
 _GO_DIRS = [
     "src/vm-orchestrator",
@@ -88,6 +88,18 @@ def _scripts(ctx):
     cmd = "shellcheck -x -P . " + " ".join(files)
     return checked_spawn(ctx, "bash", ["-c", cmd], label = "shellcheck substrate/provision scripts")
 
+def _edge(ctx):
+    bin = build_aspect_operator(ctx)
+    if bin == "":
+        return 1
+    return checked_spawn(
+        ctx,
+        bin,
+        ["edge", "check", "--repo-root", ws_path(ctx), "--site", DEFAULT_SITE],
+        cwd = ws_path(ctx),
+        label = "aspect-operator edge check",
+    )
+
 def _ansible_lint(ctx):
     # The services-registry-contract custom rule reads the rendered
     # endpoints.yml out of $VERSELF_RENDER_CACHE_DIR, so the cache must
@@ -128,12 +140,13 @@ _CHECKERS = {
     "go-lint": _go_lint,
     "conversions": _conversions,
     "scripts": _scripts,
+    "edge": _edge,
     "ansible": _ansible_lint,
     "voice": _voice,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["scripts", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["scripts", "edge", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -151,7 +164,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|scripts|ansible|voice|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|all).",
     args = {
         "kind": args.string(
             default = "all",
