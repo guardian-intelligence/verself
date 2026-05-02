@@ -1,5 +1,5 @@
 # sops configuration for verself secrets.
-# The age public key is written by: ansible-playbook playbooks/setup-sops.yml
+# The age public key is written by: aspect dev sops-init
 #
 # Encrypted files (*.sops.yml) are safe to commit.
 # The age private key (~/.config/sops/age/keys.txt) is NOT.
