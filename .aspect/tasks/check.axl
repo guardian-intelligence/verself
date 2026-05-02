@@ -96,12 +96,18 @@ def _ansible_lint(ctx):
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    uv_project = ws_path(ctx, "src/platform/uv-tools/ansible-core")
-    ansible_lint = uv_project + "/.venv/bin/ansible-lint"
     return checked_spawn(
         ctx,
-        "bash",
-        ["-c", "uv sync --frozen --project '" + uv_project + "' >/dev/null && '" + ansible_lint + "' playbooks roles"],
+        "uvx",
+        [
+            "--from",
+            "ansible-lint==26.4.0",
+            "--with",
+            "ansible-core==2.20.3",
+            "ansible-lint",
+            "playbooks",
+            "roles",
+        ],
         cwd = ws_path(ctx, SUBSTRATE_DIR, "ansible"),
         env = {"VERSELF_RENDER_CACHE_DIR": ws_path(ctx, ".cache/render/" + site)},
         label = "ansible-lint",
