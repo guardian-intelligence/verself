@@ -1,0 +1,9 @@
+---
+- name: Read OpenBao root token for runtime-secret convergence
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/root-token"
+  register: openbao_root_token_raw
+  no_log: true
+
+- name: Converge OpenBao platform runtime-secret state
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../roles/openbao/tasks/runtime-secrets.yml"

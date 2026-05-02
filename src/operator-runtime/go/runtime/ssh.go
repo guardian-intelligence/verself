@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
@@ -24,44 +25,40 @@ const sshDialTimeout = 5 * time.Second
 var remoteStagingPrefixRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type SSHOptions struct {
-	ConfigDir string
-	Device    string
-	User      string
-	Host      string
+	User string
+	Host string
 }
 
 type SSHClient struct {
-	host    string
-	user    string
-	client  *ssh.Client
-	closers []io.Closer
-	mu      sync.Mutex
+	host       string
+	user       string
+	authMethod string
+	client     *ssh.Client
+	closers    []io.Closer
+	mu         sync.Mutex
 }
 
 func DialSSH(ctx context.Context, opts SSHOptions) (*SSHClient, error) {
-	if opts.ConfigDir == "" {
-		return nil, errors.New("operator ssh: ConfigDir is required")
-	}
-	if opts.Device == "" {
-		return nil, errors.New("operator ssh: Device is required")
-	}
 	if opts.User == "" {
 		return nil, errors.New("operator ssh: User is required")
 	}
 	if opts.Host == "" {
 		return nil, errors.New("operator ssh: Host is required")
 	}
-	signer, err := loadOperatorSigner(opts.ConfigDir, opts.Device)
+	authMethods, authClosers, authMethod, err := operatorSSHAuthMethods()
 	if err != nil {
 		return nil, err
 	}
 	hostKeyCallback, err := acceptNewKnownHostsCallback()
 	if err != nil {
+		for _, closer := range authClosers {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 	config := &ssh.ClientConfig{
 		User:              opts.User,
-		Auth:              []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Auth:              authMethods,
 		HostKeyCallback:   hostKeyCallback,
 		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519},
 		Timeout:           sshDialTimeout,
@@ -70,17 +67,25 @@ func DialSSH(ctx context.Context, opts SSHOptions) (*SSHClient, error) {
 	dialer := net.Dialer{Timeout: sshDialTimeout}
 	tcpConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
+		for _, closer := range authClosers {
+			_ = closer.Close()
+		}
 		return nil, fmt.Errorf("ssh tcp dial %s: %w", addr, err)
 	}
 	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, config)
 	if err != nil {
 		_ = tcpConn.Close()
+		for _, closer := range authClosers {
+			_ = closer.Close()
+		}
 		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
 	}
 	return &SSHClient{
-		host:   opts.Host,
-		user:   opts.User,
-		client: ssh.NewClient(conn, chans, reqs),
+		host:       opts.Host,
+		user:       opts.User,
+		authMethod: authMethod,
+		client:     ssh.NewClient(conn, chans, reqs),
+		closers:    authClosers,
 	}, nil
 }
 
@@ -406,41 +411,47 @@ func ShellWord(s string) (string, error) {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'", nil
 }
 
-func loadOperatorSigner(cfgDir, device string) (ssh.Signer, error) {
-	keyPath := filepath.Join(cfgDir, "ssh", device)
-	certPath := keyPath + "-cert.pub"
+func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
+	var (
+		methods []ssh.AuthMethod
+		closers []io.Closer
+		labels  []string
+	)
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		conn, err := net.Dial("unix", sock)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
+		}
+		methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
+		closers = append(closers, conn)
+		labels = append(labels, "ssh-agent")
+	}
 
-	keyBytes, err := os.ReadFile(keyPath)
+	home, err := os.UserHomeDir()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("operator SSH key %s is missing; run `aspect operator onboard --device=%s`", keyPath, device)
+		return nil, nil, "", fmt.Errorf("home dir: %w", err)
+	}
+	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		path := filepath.Join(home, ".ssh", name)
+		keyBytes, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, nil, "", fmt.Errorf("read SSH identity %s: %w", path, err)
 		}
-		return nil, err
-	}
-	keySigner, err := ssh.ParsePrivateKey(keyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("parse operator SSH key %s: %w", keyPath, err)
-	}
-	certBytes, err := os.ReadFile(certPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("operator SSH cert %s is missing; run `aspect operator refresh --device=%s`", certPath, device)
+		signer, err := ssh.ParsePrivateKey(keyBytes)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("parse SSH identity %s: %w", path, err)
 		}
-		return nil, err
+		methods = append(methods, ssh.PublicKeys(signer))
+		labels = append(labels, name)
+		break
 	}
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
-	if err != nil {
-		return nil, fmt.Errorf("parse operator SSH cert %s: %w", certPath, err)
+	if len(methods) == 0 {
+		return nil, nil, "", errors.New("operator ssh: SSH_AUTH_SOCK is unset and no default private key exists in ~/.ssh")
 	}
-	cert, ok := pub.(*ssh.Certificate)
-	if !ok {
-		return nil, fmt.Errorf("operator SSH cert %s did not contain an OpenSSH certificate", certPath)
-	}
-	certSigner, err := ssh.NewCertSigner(cert, keySigner)
-	if err != nil {
-		return nil, fmt.Errorf("pair operator SSH cert with private key: %w", err)
-	}
-	return certSigner, nil
+	return methods, closers, strings.Join(labels, "+"), nil
 }
 
 func acceptNewKnownHostsCallback() (ssh.HostKeyCallback, error) {

@@ -47,9 +47,8 @@ var affectedScopeSkippedAnsibleTags = []string{
 // deploy evidence writes, substrate convergence through the canonical
 // Ansible site playbook, and Nomad submits.
 //
-// AXL-side responsibilities preserved (because they sit outside the
-// SSH/agent surface this binary owns):
-//   - aspect-operator refresh (re-mints the operator's SSH cert)
+// AXL-side responsibilities preserved because they sit outside the deploy
+// binary's SSH, evidence, and Nomad orchestration surface.
 func runRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")

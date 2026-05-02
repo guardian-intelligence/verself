@@ -1,57 +1,12 @@
-"""aspect operator — operator-device + workload-VM onboarding.
+"""aspect operator — operator-side platform helpers.
 
-  aspect operator onboard --device=<name> --wg-address=<ipv4>
-  aspect operator refresh [--device=<name>]
-  aspect operator enroll-workload [--slot=N] [--device=<tag>]
   aspect operator edge --action=check|manifest [--format=text|json|yaml]
   aspect operator platform --action=check|seed [--format=text|json]
 
-The implementation lives in src/dev-tools/cmd/aspect-operator. End-to-end
-flow: docs/architecture/onboarding-device-or-vm.md.
+The implementation lives in src/dev-tools/cmd/aspect-operator.
 """
 
 load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")
-
-def _onboard_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
-    cli_args = ["onboard"]
-    if ctx.args.device:
-        cli_args = cli_args + ["--device", ctx.args.device]
-    if ctx.args.wg_address:
-        cli_args = cli_args + ["--wg-address", ctx.args.wg_address]
-    if ctx.args.domain:
-        cli_args = cli_args + ["--domain", ctx.args.domain]
-    if ctx.args.host_alias:
-        cli_args = cli_args + ["--host-alias", ctx.args.host_alias]
-    if ctx.args.refresh_oidc:
-        cli_args.append("--refresh-oidc")
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator onboard")
-
-def _refresh_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
-    cli_args = ["refresh"]
-    if ctx.args.device:
-        cli_args = cli_args + ["--device", ctx.args.device]
-    if ctx.args.domain:
-        cli_args = cli_args + ["--domain", ctx.args.domain]
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator refresh")
-
-def _enroll_workload_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
-    cli_args = ["enroll-workload"]
-    if ctx.args.slot != "":
-        cli_args = cli_args + ["--slot", ctx.args.slot]
-    if ctx.args.device:
-        cli_args = cli_args + ["--device", ctx.args.device]
-    if ctx.args.domain:
-        cli_args = cli_args + ["--domain", ctx.args.domain]
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator enroll-workload")
 
 def _edge_impl(ctx):
     bin = build_aspect_operator(ctx)
@@ -97,43 +52,6 @@ def _platform_impl(ctx):
         fmt,
     ]
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator platform " + action)
-
-onboard = task(
-    implementation = _onboard_impl,
-    name = "onboard",
-    group = ["operator"],
-    summary = "Interactive: keygen + trust-anchor fetch + OIDC + first SSH cert.",
-    args = {
-        "device": args.string(default = "", description = "Device name (lowercase kebab; matches the cert KeyID suffix)."),
-        "wg_address": args.string(default = "", description = "Unused IPv4 in 10.66.66.0/24 (operators: .2..99). See operators.cue for taken addresses."),
-        "domain": args.string(default = "verself.sh", description = "Public domain that serves /.well-known/verself-*."),
-        "host_alias": args.string(default = "fm-dev-w0", description = "ssh_config alias the drop-in writes."),
-        "refresh_oidc": args.boolean(default = False, description = "Force a fresh OIDC login even if a Vault token is cached."),
-    },
-)
-
-refresh = task(
-    implementation = _refresh_impl,
-    name = "refresh",
-    group = ["operator"],
-    summary = "Renew the Vault token and re-sign the SSH cert (non-interactive).",
-    args = {
-        "device": args.string(default = "", description = "Operator device whose cert to re-sign."),
-        "domain": args.string(default = "verself.sh", description = "Public domain that serves /.well-known/verself-*."),
-    },
-)
-
-enroll_workload = task(
-    implementation = _enroll_workload_impl,
-    name = "enroll-workload",
-    group = ["operator"],
-    summary = "Claim a workload-pool slot + mint a single-use AppRole secret-id; emit env block to stdout.",
-    args = {
-        "slot": args.string(default = "", description = "Slot index to claim (default: scan for the first free slot)."),
-        "device": args.string(default = "", description = "Workload tag stamped into the cert KeyID."),
-        "domain": args.string(default = "verself.sh", description = "Public domain that serves /.well-known/verself-*."),
-    },
-)
 
 edge = task(
     implementation = _edge_impl,

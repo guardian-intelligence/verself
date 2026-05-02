@@ -1,8 +1,7 @@
 """aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
-worktree when non-HEAD), refreshes the operator's SSH cert, shells out to
-`verself-deploy run`, and
+worktree when non-HEAD), shells out to `verself-deploy run`, and
 converges the dogfooded platform org/repo after Nomad services are up.
 The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and Nomad fan-out inside one process sharing one SSH session
@@ -26,18 +25,6 @@ load(
     "resolve_sha",
     "ws_path",
 )
-
-def _refresh_operator_cert(ctx):
-    """Pre-flight: re-mint the operator's SSH cert so the deploy's
-    SSH session doesn't fail mid-flight on an expired certificate.
-    Skipped silently when the binary cannot be built (which happens
-    inside a temp worktree on a partial checkout — the inner deploy
-    runs pre-flight again from the worktree root)."""
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        ctx.std.io.stderr.write("WARN: skipping operator-cert refresh; aspect-operator build failed\n")
-        return 0
-    return checked_spawn(ctx, bin, ["refresh"], label = "aspect-operator refresh")
 
 def _edge_preflight(ctx, site):
     bin = build_aspect_operator(ctx)
@@ -65,8 +52,6 @@ def _platform_seed(ctx, site):
 
 def _deploy_one(ctx, site, sha, scope):
     if _edge_preflight(ctx, site) != 0:
-        return 1
-    if _refresh_operator_cert(ctx) != 0:
         return 1
     bin = build_verself_deploy(ctx)
     if bin == "":
@@ -128,7 +113,7 @@ def _deploy_impl(ctx):
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Refresh operator cert, then run verself-deploy end-to-end from authored inputs.",
+    summary = "Run verself-deploy end-to-end from authored inputs.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),

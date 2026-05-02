@@ -18,18 +18,18 @@ type Recorder struct {
 }
 
 type CommandRun struct {
-	Timestamp    time.Time `ch:"event_at"`
-	RunID        string    `ch:"run_id"`
-	Site         string    `ch:"site"`
-	Command      string    `ch:"command"`
-	ActorDevice  string    `ch:"actor_device"`
-	TargetHost   string    `ch:"target_host"`
-	TargetUser   string    `ch:"target_user"`
-	Status       string    `ch:"status"`
-	DurationMS   uint32    `ch:"duration_ms"`
-	ErrorKind    string    `ch:"error_kind"`
-	ErrorMessage string    `ch:"error_message"`
-	TraceID      string    `ch:"trace_id"`
+	Timestamp     time.Time `ch:"event_at"`
+	RunID         string    `ch:"run_id"`
+	Site          string    `ch:"site"`
+	Command       string    `ch:"command"`
+	SSHAuthMethod string    `ch:"ssh_auth_method"`
+	TargetHost    string    `ch:"target_host"`
+	TargetUser    string    `ch:"target_user"`
+	Status        string    `ch:"status"`
+	DurationMS    uint32    `ch:"duration_ms"`
+	ErrorKind     string    `ch:"error_kind"`
+	ErrorMessage  string    `ch:"error_message"`
+	TraceID       string    `ch:"trace_id"`
 }
 
 func (r Recorder) RecordCommandRun(ctx context.Context, rt *opruntime.Runtime, started time.Time, command string, runErr error) error {
@@ -58,18 +58,18 @@ func (r Recorder) RecordCommandRun(ctx context.Context, rt *opruntime.Runtime, s
 		duration = 0
 	}
 	row := CommandRun{
-		Timestamp:    time.Now().UTC(),
-		RunID:        uuid.NewString(),
-		Site:         rt.Site,
-		Command:      command,
-		ActorDevice:  rt.Device,
-		TargetHost:   rt.Target.Host,
-		TargetUser:   rt.Target.User,
-		Status:       status,
-		DurationMS:   uint32(duration.Milliseconds()),
-		ErrorKind:    errorKind,
-		ErrorMessage: errorMessage,
-		TraceID:      rt.TraceID(),
+		Timestamp:     time.Now().UTC(),
+		RunID:         uuid.NewString(),
+		Site:          rt.Site,
+		Command:       command,
+		SSHAuthMethod: rt.SSHAuthMethod,
+		TargetHost:    rt.Target.Host,
+		TargetUser:    rt.Target.User,
+		Status:        status,
+		DurationMS:    uint32(duration.Milliseconds()),
+		ErrorKind:     errorKind,
+		ErrorMessage:  errorMessage,
+		TraceID:       rt.TraceID(),
 	}
 	batch, err := r.ClickHouse.Conn.PrepareBatch(ctx, "INSERT INTO "+operatorCommandRunsTable)
 	if err != nil {

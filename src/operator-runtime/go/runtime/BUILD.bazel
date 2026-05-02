@@ -19,6 +19,7 @@ go_library(
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_x_crypto//ssh",
+        "@org_golang_x_crypto//ssh/agent",
         "@org_golang_x_crypto//ssh/knownhosts",
     ],
 )

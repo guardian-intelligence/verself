@@ -9,10 +9,9 @@
 //   - `BatchMode=yes ExitOnForwardFailure=yes ControlMaster=no
 //     ControlPath=none` flag-shake against persistent multiplexing
 //
-// Auth follows the operator's existing SSH agent contract; the agent
-// socket discovered via SSH_AUTH_SOCK signs the handshake. We do not
-// shell out to the system ssh, so any prompts from a missing/locked
-// agent surface as Go errors rather than hanging on tty input.
+// Auth follows the configured operator SSH access plane. We do not shell out
+// to the system ssh, so missing or locked key material surfaces as Go errors
+// rather than hanging on tty input.
 package sshtun
 
 import (
@@ -91,7 +90,7 @@ func Dial(ctx context.Context, host, user string) (*Client, error) {
 	dialer := net.Dialer{Timeout: cfg.Timeout}
 	tcpConn, err := dialer.DialContext(ctx, "tcp", host+":22")
 	if err != nil {
-		_ = agentConn.Close()
+		closeAgentConn(agentConn)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("ssh tcp dial: %w", err)
@@ -99,7 +98,7 @@ func Dial(ctx context.Context, host, user string) (*Client, error) {
 	cc, chans, reqs, err := ssh.NewClientConn(tcpConn, host+":22", cfg)
 	if err != nil {
 		_ = tcpConn.Close()
-		_ = agentConn.Close()
+		closeAgentConn(agentConn)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("ssh handshake: %w", err)
@@ -113,6 +112,12 @@ func Dial(ctx context.Context, host, user string) (*Client, error) {
 		agentConn: agentConn,
 	}
 	return c, nil
+}
+
+func closeAgentConn(conn net.Conn) {
+	if conn != nil {
+		_ = conn.Close()
+	}
 }
 
 // Forward is one role-tagged local-port forward. ListenAddr is the
@@ -278,37 +283,71 @@ func (c *Client) Close() error {
 	return errAll
 }
 
-// buildAuthMethods assembles the SSH client's auth methods.
-//
-// First preference: the operator's signed certificate at
-// ~/.config/verself/ssh/<name>(-cert.pub) — the bare-metal node's
-// sshd is configured to accept TrustedUserCAKeys signatures only,
-// so a raw agent key with no matching cert is rejected on the
-// public-key auth method.
-//
-// Second preference: the SSH agent (SSH_AUTH_SOCK), used by callers
-// in environments without the verself cert layout (e.g. ad-hoc
-// developer boxes pointing at a self-hosted dev cluster).
-//
-// Returns the auth methods, the agent's connection (caller closes it
-// on shutdown — may be nil if cert auth alone was used), and a
-// short label for the resulting span attribute.
+// buildAuthMethods assembles every operator public-key source available to
+// this process. Pomerium native SSH binds ordinary SSH keys to the OIDC user;
+// the historical cert layout stays readable during the live host cutover.
 func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
+	var (
+		methods []ssh.AuthMethod
+		labels  []string
+		conn    net.Conn
+	)
 	if signer, err := loadVerselfCertSigner(); err == nil {
-		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil, "verself-cert", nil
+		methods = append(methods, ssh.PublicKeys(signer))
+		labels = append(labels, "verself-cert")
 	} else if !errors.Is(err, errNoVerselfCert) {
 		return nil, nil, "", err
 	}
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		agentConn, err := net.Dial("unix", sock)
+		if err != nil {
+			if conn != nil {
+				_ = conn.Close()
+			}
+			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
+		}
+		conn = agentConn
+		methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(agentConn).Signers))
+		labels = append(labels, "ssh-agent")
+	}
+	if signer, label, err := loadDefaultKeySigner(); err == nil {
+		methods = append(methods, ssh.PublicKeys(signer))
+		labels = append(labels, label)
+	} else if !errors.Is(err, errNoDefaultKey) {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return nil, nil, "", err
+	}
+	if len(methods) == 0 {
+		return nil, nil, "", errors.New("sshtun: SSH_AUTH_SOCK is unset, no default private key exists in ~/.ssh, and no verself SSH cert was found")
+	}
+	return methods, conn, strings.Join(labels, "+"), nil
+}
 
-	sock := os.Getenv("SSH_AUTH_SOCK")
-	if sock == "" {
-		return nil, nil, "", errors.New("sshtun: no verself SSH cert found and SSH_AUTH_SOCK is unset")
-	}
-	conn, err := net.Dial("unix", sock)
+var errNoDefaultKey = errors.New("no default ssh key found")
+
+func loadDefaultKeySigner() (ssh.Signer, string, error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
+		return nil, "", fmt.Errorf("home dir: %w", err)
 	}
-	return []ssh.AuthMethod{ssh.PublicKeysCallback(agent.NewClient(conn).Signers)}, conn, "ssh-agent", nil
+	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		path := filepath.Join(home, ".ssh", name)
+		keyBytes, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, "", fmt.Errorf("read identity %s: %w", path, err)
+		}
+		signer, err := ssh.ParsePrivateKey(keyBytes)
+		if err != nil {
+			return nil, "", fmt.Errorf("parse identity %s: %w", path, err)
+		}
+		return signer, name, nil
+	}
+	return nil, "", errNoDefaultKey
 }
 
 // errNoVerselfCert distinguishes "no operator cert provisioned"
@@ -316,11 +355,10 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 // but it's malformed" (which is fatal).
 var errNoVerselfCert = errors.New("no verself ssh cert found")
 
-// loadVerselfCertSigner walks ~/.config/verself/ssh/ for a
-// (private-key, certificate) pair laid down by `aspect operator
-// onboard` and returns a cert-bearing ssh.Signer. The pair lives at
-// <name> (private key, no extension) + <name>-cert.pub (signed
-// certificate); the public key file <name>.pub is not used.
+// loadVerselfCertSigner walks ~/.config/verself/ssh/ for a pre-cutover
+// (private-key, certificate) pair and returns a cert-bearing ssh.Signer.
+// The pair lives at <name> (private key, no extension) + <name>-cert.pub
+// (signed certificate); the public key file <name>.pub is not used.
 func loadVerselfCertSigner() (ssh.Signer, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -65,7 +65,6 @@ func cmdPersonaUserState(args []string) error {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	email := fs.String("email", "", "User email")
 	org := fs.String("org", "", "Org slug")
 	orgID := fs.String("org-id", "", "Numeric org ID")
@@ -121,7 +120,6 @@ func cmdPersonaAssume(args []string) error {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	outputPath := fs.String("output", "", "Output env file path")
 	printEnv := fs.Bool("print", false, "Print env vars to stdout")
 	if err := fs.Parse(args); err != nil {

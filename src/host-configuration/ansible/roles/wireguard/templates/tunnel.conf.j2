@@ -15,10 +15,3 @@ PersistentKeepalive = {{ peer.persistent_keepalive }}
 {% endif %}
 
 {% endfor %}
-{% for slot in tunnel_workload_slots | default([]) %}
-# workload-pool slot {{ slot.index }} (priv key in OpenBao KV at kv/workload-pool/slots/{{ slot.index }}/wg-private-key)
-[Peer]
-PublicKey = {{ slot.wg_public_key }}
-AllowedIPs = {{ slot.wg_address }}/32
-
-{% endfor %}

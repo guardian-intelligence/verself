@@ -1,4 +1,0 @@
----
-# All ssh_ca runtime values come from `topology_ssh_ca`. Keeping this file
-# empty is intentional: the role never substitutes a default for a
-# missing topology value because that would mask an upstream topology bug.

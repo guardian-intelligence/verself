@@ -77,15 +77,3 @@ argument_specs:
       verself_bin:
         type: path
         required: true
-      openbao_ssh_ca_oidc_token_period:
-        type: str
-        default: "1209600s"
-      openbao_ssh_ca_oidc_token_explicit_max_ttl:
-        type: str
-        default: "2592000s"
-      openbao_workload_pool_credstore_dir:
-        type: path
-        default: /etc/credstore/workload-pool
-      openbao_workload_pool_kv_mount:
-        type: str
-        default: kv-workload-pool

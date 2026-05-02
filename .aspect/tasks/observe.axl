@@ -47,8 +47,6 @@ def _impl(ctx):
         cli_args.append("--errors")
     if ctx.args.site:
         cli_args = cli_args + ["--site", ctx.args.site]
-    if ctx.args.device:
-        cli_args = cli_args + ["--device", ctx.args.device]
     return checked_spawn(
         ctx,
         bin,
@@ -82,6 +80,5 @@ observe = task(
         "limit": args.string(default = "", description = "Row limit."),
         "errors": args.boolean(default = False, description = "Filter to error rows only."),
         "site": args.string(default = "prod", description = "Deployment site."),
-        "device": args.string(default = "", description = "Operator device name."),
     },
 )

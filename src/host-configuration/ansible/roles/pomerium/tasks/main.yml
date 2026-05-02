@@ -35,10 +35,15 @@
   ansible.builtin.assert:
     that:
       - (pomerium_operator_allowed_domains | length) + (pomerium_operator_allowed_emails | length) > 0
+      - (topology_routes | selectattr('kind', 'equalto', 'operator_origin') | rejectattr('to.component', 'equalto', 'pomerium') | list | length) > 0
+      - pomerium_ssh_address | length > 0
+      - pomerium_ssh_route_name | length > 0
+      - pomerium_ssh_upstream | length > 0
+      - pomerium_ssh_allowed_user | length > 0
     fail_msg: >-
       Pomerium operator access needs at least one allowed email domain or
-      explicit email. Configure pomerium_operator_allowed_domains or
-      pomerium_operator_allowed_emails before exposing operator routes.
+      explicit email, at least one topology operator_origin upstream, and an
+      SSH route definition.
 
 - name: Check Pomerium shared secret
   ansible.builtin.stat:
@@ -136,6 +141,63 @@
     path: "{{ pomerium_signing_key_raw_path }}"
     state: absent
   when: not pomerium_signing_key_stat.stat.exists
+
+- name: Check Pomerium SSH user CA key
+  ansible.builtin.stat:
+    path: "{{ pomerium_ssh_user_ca_key_path }}"
+  register: pomerium_ssh_user_ca_key_stat
+
+- name: Generate Pomerium SSH user CA keypair
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -N
+      - ""
+      - -t
+      - ed25519
+      - -f
+      - "{{ pomerium_ssh_user_ca_key_path }}"
+      - -C
+      - verself-pomerium-user-ca
+    creates: "{{ pomerium_ssh_user_ca_key_path }}"
+  when: not pomerium_ssh_user_ca_key_stat.stat.exists
+  no_log: true
+
+- name: Check Pomerium SSH host key
+  ansible.builtin.stat:
+    path: "{{ pomerium_ssh_host_key_path }}"
+  register: pomerium_ssh_host_key_stat
+
+- name: Generate Pomerium SSH host keypair
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -N
+      - ""
+      - -t
+      - ed25519
+      - -f
+      - "{{ pomerium_ssh_host_key_path }}"
+      - -C
+      - "access.{{ verself_domain }}"
+    creates: "{{ pomerium_ssh_host_key_path }}"
+  when: not pomerium_ssh_host_key_stat.stat.exists
+  no_log: true
+
+- name: Set Pomerium SSH key ownership
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ pomerium_ssh_user_ca_key_path }}", group: pomerium, mode: "0640" }
+    - { path: "{{ pomerium_ssh_user_ca_pubkey_path }}", group: root, mode: "0644" }
+    - { path: "{{ pomerium_ssh_host_key_path }}", group: pomerium, mode: "0640" }
+    - { path: "{{ pomerium_ssh_host_key_path }}.pub", group: root, mode: "0644" }
+  loop_control:
+    label: "{{ item.path }}"
+  no_log: true
 
 - name: Ensure Pomerium PostgreSQL password exists
   ansible.builtin.copy:

@@ -66,6 +66,7 @@ defaults
   timeout connect 1s
   timeout client 30s
   timeout server 30s
+  timeout tunnel 4h
   timeout http-request 5s
   timeout http-keep-alive 10s
   log-format "client_ip=%ci client_port=%cp method=%HM host=%[var(txn.host)] path=%HP status=%ST bytes=%B duration_ms=%Ta frontend=%ft backend=%b server=%s"
@@ -96,10 +97,6 @@ frontend fe_https
   acl method_post method POST
   acl stripe_webhook path -i /webhooks/stripe
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
-
-  http-request return status 200 content-type text/plain file /var/www/verself/.well-known/verself-ssh-ca.pub hdr Cache-Control "public, max-age=300" hdr X-Content-Type-Options nosniff if host_verself method_get { path -i /.well-known/verself-ssh-ca.pub }
-  http-request return status 200 content-type application/pem-certificate-chain file /var/www/verself/.well-known/verself-openbao-ca.pem hdr Cache-Control "public, max-age=300" hdr X-Content-Type-Options nosniff if host_verself method_get { path -i /.well-known/verself-openbao-ca.pem }
-  http-request return status 200 content-type application/json file /var/www/verself/.well-known/verself-wireguard.json hdr Cache-Control "public, max-age=300" hdr X-Content-Type-Options nosniff if host_verself method_get { path -i /.well-known/verself-wireguard.json }
 
   http-request return status 403 if host_billing stripe_webhook method_post !stripe_source
   http-request return status 405 if host_billing stripe_webhook !method_post

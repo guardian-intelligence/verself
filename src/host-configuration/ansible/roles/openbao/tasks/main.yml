@@ -116,9 +116,8 @@
 
 - name: Generate OpenBao TLS certificate
   ansible.builtin.command:
-    # SAN includes the wg-ops bare-metal IP so operator laptops on
-    # wg-ops can validate the cert when calling the OIDC SSH-CA flow.
-    # Loopback substrate clients still verify against the same cert.
+    # Keep the wg-ops SAN stable until the next deliberate OpenBao TLS
+    # rotation; substrate clients use the loopback SAN.
     cmd: >-
       openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1
       -days 3650 -nodes
@@ -140,19 +139,6 @@
   loop:
     - { name: cert.pem, mode: "0640" }
     - { name: key.pem, mode: "0640" }
-
-# Publish the OpenBao TLS server cert on the public discovery surface.
-# It is the only trust anchor a clean operator device has for verifying
-# OpenBao's API responses during the OIDC SSH-CA flow. Public exposure
-# is safe: the cert is the public half of the TLS keypair.
-- name: Publish OpenBao TLS server cert under /.well-known
-  ansible.builtin.copy:
-    src: "{{ openbao_tls_dir }}/cert.pem"
-    dest: /var/www/verself/.well-known/verself-openbao-ca.pem
-    remote_src: true
-    owner: root
-    group: root
-    mode: "0644"
 
 - name: Deploy OpenBao private hosts file
   ansible.builtin.copy:
@@ -461,9 +447,6 @@
   changed_when: true
   no_log: true
 
-- name: Converge OpenBao platform runtime-secret roles
-  ansible.builtin.include_tasks: runtime-secrets.yml
-
 - name: Configure OpenBao audited request headers
   ansible.builtin.uri:
     url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
@@ -503,6 +486,3 @@
     owner: openbao
     group: openbao
     mode: "0600"
-
-- name: Set up OpenBao SSH CA (signing engine + OIDC auth + per-principal roles)
-  ansible.builtin.include_tasks: ssh-ca.yml
