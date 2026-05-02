@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -340,24 +339,4 @@ func uint64Of(n int64) uint64 {
 		return 0
 	}
 	return uint64(n)
-}
-
-// WriteChangedFile persists the changed-task count atomically (tmp +
-// rename). The path is the AXL-side --changed-file flag; downstream
-// callers read the integer to decide whether the layer was a no-op.
-func WriteChangedFile(path string, count int) error {
-	if path == "" {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("ansible: mkdir for changed-file: %w", err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strconv.Itoa(count)+"\n"), 0o644); err != nil {
-		return fmt.Errorf("ansible: write changed-file: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("ansible: rename changed-file: %w", err)
-	}
-	return nil
 }

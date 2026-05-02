@@ -1,19 +1,18 @@
 // Package layers walks the substrate convergence layers in order,
-// hash-gating each. Replaces helpers.run_layered_substrate +
-// scripts/run-layer.sh + scripts/layer-last-applied.sh.
+// hash-gating each.
 //
 // For each layer:
-//   1. Build the per-layer Bazel digest target and read its output as
-//      a 64-char sha256 hex string.
-//   2. Read last_applied_hash from verself.deploy_layer_runs (via
-//      ledger.LastAppliedHash).
-//   3. If hash matches and not Force: emit a 'skipped' row, return.
-//   4. Else: invoke ansible.Run with the layer's playbook; emit
-//      'succeeded' or 'failed' to the ledger and propagate errors.
+//  1. Build the per-layer Bazel digest target and read its output as
+//     a 64-char sha256 hex string.
+//  2. Read last_applied_hash from verself.deploy_layer_runs (via
+//     ledger.LastAppliedHash).
+//  3. If hash matches and not Force: emit a 'skipped' row, return.
+//  4. Else: invoke ansible.Run with the layer's playbook; emit
+//     'succeeded' or 'failed' to the ledger and propagate errors.
 //
-// The plan is the closed substrate.SUBSTRATE_LAYERS set; any layer
-// added there must also land here so substrate verify and ledger
-// queries stay in lockstep.
+// The plan is the closed substrate convergence set; any layer added
+// there must also land here so substrate verify and ledger queries
+// stay in lockstep.
 package layers
 
 import (
@@ -58,7 +57,7 @@ type Layer struct {
 }
 
 // DigestTarget is the Bazel target whose output file holds the
-// layer's input_hash. The format mirrors helpers.SUBSTRATE_LAYERS.
+// layer's input_hash.
 func (l Layer) DigestTarget(site string) string {
 	return fmt.Sprintf("//src/substrate:%s_%s_digest", site, l.Name)
 }
@@ -141,9 +140,7 @@ func LayerDigests(ctx context.Context, repoRoot, site string) (map[string]string
 // RunAll walks Plan in order, hash-gating each layer.
 //
 // Failure semantics: the first layer to error stops the walk and
-// returns; subsequent layers are not attempted. This matches the
-// run_layered_substrate behaviour the AXL caller previously got
-// from looping `run-layer.sh` until a non-zero exit.
+// returns; subsequent layers are not attempted.
 func RunAll(ctx context.Context, opts Options) Result {
 	tracer := otel.Tracer(tracerName)
 	ctx, span := tracer.Start(ctx, "verself_deploy.layers.run_all",
@@ -204,7 +201,7 @@ func runOne(ctx context.Context, tracer trace.Tracer, opts Options, layer Layer,
 		// Mirror the bash behaviour: ledger read errors degrade to
 		// "no prior evidence; force the run" so a transient ClickHouse
 		// outage doesn't gate the deploy on stale hashes.
-		span.AddEvent("layer-last-applied query failed; forcing run", trace.WithAttributes(
+		span.AddEvent("last applied layer hash query failed; forcing run", trace.WithAttributes(
 			attribute.String("error", err.Error()),
 		))
 		lastApplied = ""

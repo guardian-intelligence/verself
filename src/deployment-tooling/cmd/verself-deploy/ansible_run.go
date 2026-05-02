@@ -38,7 +38,6 @@ func runAnsibleRun(args []string) int {
 	inventory := fs.String("inventory", "", "absolute inventory path or directory")
 	ansibleDir := fs.String("ansible-dir", "", "working dir for ansible-playbook (defaults to <repo>/src/substrate/ansible)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	changedFile := fs.String("changed-file", "", "write the PLAY RECAP changed total here (compat with run-layer.sh)")
 	var extraArgs stringSliceFlag
 	fs.Var(&extraArgs, "ansible-arg", "extra arg passed through to ansible-playbook (repeatable)")
 	if err := fs.Parse(args); err != nil {
@@ -95,11 +94,6 @@ func runAnsibleRun(args []string) int {
 		return 1
 	}
 
-	if err := ansible.WriteChangedFile(*changedFile, res.ChangedCount); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy ansible run: %v\n", err)
-		// Don't override the playbook's exit code — the legacy bash
-		// pipeline only consumed the file in the success path.
-	}
 	return res.ExitCode
 }
 
