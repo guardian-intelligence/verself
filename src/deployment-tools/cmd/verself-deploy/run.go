@@ -26,6 +26,22 @@ const (
 	substratePhase        = "substrate_site"
 )
 
+type hostConfigurationScopePlan struct {
+	extraArgs   []string
+	skippedTags []string
+}
+
+var affectedScopeSkippedAnsibleTags = []string{
+	"preflight",
+	"foundation",
+	"worker",
+	"infra",
+	"userspace",
+	"daemons",
+	"components",
+	"external-dns",
+}
+
 // runRun is the `verself-deploy run` entry point. It owns identity,
 // deploy evidence writes, substrate convergence through the canonical
 // Ansible site playbook, and Nomad submits.
@@ -37,7 +53,7 @@ func runRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")
 	sha := fs.String("sha", "", "git SHA being deployed (empty = HEAD)")
-	scope := fs.String("scope", "all", "all | affected (affected is a stub for now)")
+	scope := fs.String("scope", "all", "all | affected (affected skips host-only Ansible concerns)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -51,6 +67,12 @@ func runRun(args []string) int {
 			return 1
 		}
 		rr = cwd
+	}
+
+	hostConfigurationPlan, err := hostConfigurationScopePlanFor(*scope)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: %v\n", err)
+		return 2
 	}
 
 	// Identity is derived once at process start. Generate is
@@ -88,9 +110,13 @@ func runRun(args []string) int {
 		trace.WithAttributes(
 			attribute.String("verself.site", *site),
 			attribute.String("verself.deploy_scope", *scope),
+			attribute.String("verself.host_configuration_scope", *scope),
 		),
 	)
 	defer span.End()
+	if len(hostConfigurationPlan.skippedTags) > 0 {
+		span.SetAttributes(attribute.StringSlice("ansible.skip_tags", hostConfigurationPlan.skippedTags))
+	}
 
 	resolvedSha := snap.Get("VERSELF_DEPLOY_SHA")
 	if resolvedSha == "" {
@@ -115,7 +141,7 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, *scope, rr, span, startedAt, snap)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, *scope, rr, span, startedAt, snap, hostConfigurationPlan)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -133,10 +159,14 @@ func runDeployBody(
 	span trace.Span,
 	startedAt time.Time,
 	snap identity.Snapshot,
+	hostConfigurationPlan hostConfigurationScopePlan,
 ) int {
 	// 1. Host configuration convergence. Ansible owns ordering via play order
 	// and role order inside the canonical site playbook.
-	hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
+	if len(hostConfigurationPlan.skippedTags) > 0 {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: scope=%s skips Ansible tags: %s\n", scope, strings.Join(hostConfigurationPlan.skippedTags, ","))
+	}
+	hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, hostConfigurationPlan.extraArgs)
 	if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
@@ -177,6 +207,21 @@ func runDeployBody(
 		return 1
 	}
 	return 0
+}
+
+func hostConfigurationScopePlanFor(scope string) (hostConfigurationScopePlan, error) {
+	switch scope {
+	case "", "all":
+		return hostConfigurationScopePlan{}, nil
+	case "affected":
+		skippedTags := append([]string{}, affectedScopeSkippedAnsibleTags...)
+		return hostConfigurationScopePlan{
+			extraArgs:   []string{"--skip-tags", strings.Join(skippedTags, ",")},
+			skippedTags: skippedTags,
+		}, nil
+	default:
+		return hostConfigurationScopePlan{}, fmt.Errorf("unsupported scope %q; expected all or affected", scope)
+	}
 }
 
 func runSubstrateSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {
