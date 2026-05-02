@@ -56,9 +56,19 @@ routes:
   - from: "ssh://{{ pomerium_ssh_route_name }}"
     to: "ssh://{{ pomerium_ssh_upstream }}"
     policy:
+{% for domain in pomerium_operator_allowed_domains %}
       - allow:
           and:
-            - or:
-{{ operator_subjects(14) }}
+            - domain:
+                is: {{ domain | to_json }}
             - ssh_username:
                 is: {{ pomerium_ssh_allowed_user | to_json }}
+{% endfor %}
+{% for email in pomerium_operator_allowed_emails %}
+      - allow:
+          and:
+            - email:
+                is: {{ email | to_json }}
+            - ssh_username:
+                is: {{ pomerium_ssh_allowed_user | to_json }}
+{% endfor %}

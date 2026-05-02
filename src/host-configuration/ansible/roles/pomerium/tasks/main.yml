@@ -187,14 +187,14 @@
 - name: Set Pomerium SSH key ownership
   ansible.builtin.file:
     path: "{{ item.path }}"
-    owner: root
+    owner: "{{ item.owner }}"
     group: "{{ item.group }}"
     mode: "{{ item.mode }}"
   loop:
-    - { path: "{{ pomerium_ssh_user_ca_key_path }}", group: pomerium, mode: "0640" }
-    - { path: "{{ pomerium_ssh_user_ca_pubkey_path }}", group: root, mode: "0644" }
-    - { path: "{{ pomerium_ssh_host_key_path }}", group: pomerium, mode: "0640" }
-    - { path: "{{ pomerium_ssh_host_key_path }}.pub", group: root, mode: "0644" }
+    - { path: "{{ pomerium_ssh_user_ca_key_path }}", owner: pomerium, group: pomerium, mode: "0600" }
+    - { path: "{{ pomerium_ssh_user_ca_pubkey_path }}", owner: root, group: root, mode: "0644" }
+    - { path: "{{ pomerium_ssh_host_key_path }}", owner: pomerium, group: pomerium, mode: "0600" }
+    - { path: "{{ pomerium_ssh_host_key_path }}.pub", owner: root, group: root, mode: "0644" }
   loop_control:
     label: "{{ item.path }}"
   no_log: true
