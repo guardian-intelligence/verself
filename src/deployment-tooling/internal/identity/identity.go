@@ -11,7 +11,6 @@
 package identity
 
 import (
-	"context"
 	"os"
 
 	"go.opentelemetry.io/otel/baggage"
@@ -153,16 +152,4 @@ func (s Snapshot) AllEnv() []string {
 		}
 	}
 	return append(out, rest...)
-}
-
-// Inject is the legacy entry point: read env, push onto baggage,
-// return the new context. Equivalent to FromEnv().Baggage() applied
-// via baggage.ContextWithBaggage. Kept for callers that just want
-// the context without the snapshot.
-func Inject(ctx context.Context) context.Context {
-	bag := FromEnv().Baggage()
-	if bag.Len() == 0 {
-		return ctx
-	}
-	return baggage.ContextWithBaggage(ctx, bag)
 }
