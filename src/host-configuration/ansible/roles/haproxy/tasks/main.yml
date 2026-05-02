@@ -301,6 +301,7 @@
       'tmp="$(/usr/bin/mktemp /var/lib/haproxy/haproxy-validate.XXXXXX.cfg)";
       trap "rm -f \"$tmp\"" EXIT;
       /usr/bin/install -o haproxy -g haproxy -m 0640 "$1" "$tmp";
+      cd /;
       /usr/bin/sudo -u haproxy /usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$tmp"'
       -- %s
   notify: restart haproxy
