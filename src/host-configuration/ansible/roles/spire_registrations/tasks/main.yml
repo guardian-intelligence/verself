@@ -4,187 +4,31 @@
     path: "{{ spire_server_socket_path }}"
     timeout: 30
 
-- name: Ensure SPIRE identity primary groups exist
-  ansible.builtin.group:
-    name: "{{ item }}"
-    system: true
-    state: present
-  loop: "{{ topology_spire.identities | map(attribute='group') | unique | list }}"
-
-- name: Ensure SPIRE identity runtime users exist
-  ansible.builtin.user:
-    name: "{{ item.user }}"
-    uid: "{{ item.uid_policy.value if item.uid_policy.kind == 'fixed' else omit }}"
-    group: "{{ item.group }}"
-    groups:
-      - "{{ spire_workload_group }}"
-    append: true
-    system: true
-    shell: /usr/sbin/nologin
-    create_home: false
-    state: present
-  loop: "{{ topology_spire.identities }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Resolve SPIRE identity runtime UIDs
-  ansible.builtin.command:
-    argv:
-      - id
-      - -u
-      - "{{ item.user }}"
-  register: spire_registrations_uids
+- name: Probe SPIRE registration convergence once
+  ansible.builtin.script: >-
+    {{ role_path }}/files/spire_registration_convergence.py
+    --spire-server {{ verself_bin }}/spire-server
+    --socket-path {{ spire_server_socket_path }}
+    --parent-id {{ spire_agent_id }}
+    --workload-group {{ spire_workload_group }}
+  environment:
+    SPIRE_REGISTRATIONS_DESIRED: "{{ topology_spire.identities | to_json }}"
+  register: spire_registrations_convergence_raw
   changed_when: false
-  loop: "{{ topology_spire.identities }}"
-  loop_control:
-    label: "{{ item.key }}"
 
-- name: Read SPIRE workload registrations
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/spire-server"
-      - entry
-      - show
-      - -socketPath
-      - "{{ spire_server_socket_path }}"
-      - -entryID
-      - "{{ item.entry_id }}"
-      - -output
-      - json
-  register: spire_registrations_entries
-  failed_when: false
-  changed_when: false
-  loop: "{{ topology_spire.identities }}"
-  loop_control:
-    label: "{{ item.entry_id }}"
-
-- name: Normalize SPIRE workload registration reads
+- name: Set SPIRE registration convergence plan
   ansible.builtin.set_fact:
-    spire_registrations_existing: >-
-      {{
-        (spire_registrations_existing | default([]))
-        + [spire_registrations_existing_entry]
-      }}
-  vars:
-    spire_registrations_read: "{{ spire_registrations_entries.results[ansible_loop.index0] }}"
-    spire_registrations_payload: >-
-      {{
-        spire_registrations_read.stdout | from_json
-        if spire_registrations_read.rc == 0
-        else {"entries": []}
-      }}
-    spire_registrations_existing_entry: >-
-      {{
-        spire_registrations_payload.entries[0]
-        if (spire_registrations_payload.entries | length) > 0
-        else {}
-      }}
+    spire_registrations_convergence: "{{ spire_registrations_convergence_raw.stdout | from_json }}"
   changed_when: false
-  loop: "{{ topology_spire.identities }}"
-  loop_control:
-    label: "{{ item.entry_id }}"
-    extended: true
 
-- name: Create missing SPIRE workload registrations
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/spire-server"
-      - entry
-      - create
-      - -socketPath
-      - "{{ spire_server_socket_path }}"
-      - -entryID
-      - "{{ item.entry_id }}"
-      - -parentID
-      - "{{ spire_agent_id }}"
-      - -spiffeID
-      - "{{ item.spiffe_id }}"
-      - -selector
-      - "{{ item.selector }}:{{ spire_registrations_uids.results[ansible_loop.index0].stdout | trim }}"
-      - -x509SVIDTTL
-      - "{{ item.x509_svid_ttl_seconds | string }}"
-  register: spire_registrations_create_results
-  when: spire_registrations_existing[ansible_loop.index0] == {}
-  changed_when: true
-  loop: "{{ topology_spire.identities }}"
-  loop_control:
-    label: "{{ item.entry_id }}"
-    extended: true
+- name: Skip SPIRE registration reconciliation when already converged
+  ansible.builtin.debug:
+    msg: >-
+      SPIRE registrations already converged for {{
+      spire_registrations_convergence.desired_count }} managed identities; skipping
+      group, user, per-entry read, create, update, and restart tasks.
+  when: spire_registrations_convergence.converged | bool
 
-- name: Update SPIRE workload registration drift
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/spire-server"
-      - entry
-      - update
-      - -socketPath
-      - "{{ spire_server_socket_path }}"
-      - -entryID
-      - "{{ item.entry_id }}"
-      - -parentID
-      - "{{ spire_agent_id }}"
-      - -spiffeID
-      - "{{ item.spiffe_id }}"
-      - -selector
-      - "{{ item.selector }}:{{ spire_registrations_uids.results[ansible_loop.index0].stdout | trim }}"
-      - -x509SVIDTTL
-      - "{{ item.x509_svid_ttl_seconds | string }}"
-  register: spire_registrations_update_results
-  vars:
-    spire_registrations_entry: "{{ spire_registrations_existing[ansible_loop.index0] }}"
-    spire_registrations_selector_type: "{{ item.selector.split(':', 1)[0] }}"
-    spire_registrations_selector_value: >-
-      {{ item.selector.split(':', 1)[1] }}:{{ spire_registrations_uids.results[ansible_loop.index0].stdout | trim }}
-  when:
-    - spire_registrations_entry != {}
-    - >-
-      "spiffe://" ~ spire_registrations_entry.spiffe_id.trust_domain ~ spire_registrations_entry.spiffe_id.path != item.spiffe_id
-      or "spiffe://" ~ spire_registrations_entry.parent_id.trust_domain ~ spire_registrations_entry.parent_id.path != spire_agent_id
-      or (spire_registrations_entry.x509_svid_ttl | int) != (item.x509_svid_ttl_seconds | int)
-      or (
-        spire_registrations_entry.selectors
-        | selectattr('type', 'equalto', spire_registrations_selector_type)
-        | selectattr('value', 'equalto', spire_registrations_selector_value)
-        | list
-        | length
-      ) == 0
-  changed_when: true
-  loop: "{{ topology_spire.identities }}"
-  loop_control:
-    label: "{{ item.entry_id }}"
-    extended: true
-
-- name: Collect units affected by SPIRE registration changes
-  ansible.builtin.set_fact:
-    spire_registrations_changed_units: >-
-      {{
-        (
-          (spire_registrations_create_results.results | default([]))
-          + (spire_registrations_update_results.results | default([]))
-        )
-        | selectattr('changed', 'defined')
-        | selectattr('changed')
-        | map(attribute='item.restart_units')
-        | flatten
-        | unique
-        | list
-      }}
-
-- name: Inspect units affected by SPIRE registration changes
-  ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ item }}.service"
-  register: spire_registrations_changed_unit_files
-  loop: "{{ spire_registrations_changed_units }}"
-  when: spire_registrations_changed_units | length > 0
-
-- name: Restart units affected by SPIRE registration changes
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: "{{ item.item }}"
-    state: restarted
-  loop: "{{ spire_registrations_changed_unit_files.results | default([]) }}"
-  loop_control:
-    label: "{{ item.item }}"
-  when:
-    - item.stat is defined
-    - item.stat.exists
+- name: Reconcile SPIRE runtime users and workload registrations
+  ansible.builtin.include_tasks: reconcile.yml
+  when: not (spire_registrations_convergence.converged | bool)
