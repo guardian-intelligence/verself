@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/verself/deployment-tools/internal/ansible"
+	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
 
@@ -65,6 +66,16 @@ func runAnsibleRun(args []string) int {
 		ad = filepath.Join(rr, "src", "host-configuration", "ansible")
 	}
 
+	snap, err := identity.Generate(identity.GenerateOptions{
+		Site:  *site,
+		Scope: "ansible",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy ansible run: derive identity: %v\n", err)
+		return 1
+	}
+	snap.ApplyEnv()
+
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -80,12 +91,13 @@ func runAnsibleRun(args []string) int {
 	}
 	defer rt.Close()
 
-	res, err := ansible.Run(rt.Ctx, rt.ClickHouse, ansible.Options{
+	res, err := ansible.Run(rt.Ctx, rt.DeployDB, ansible.Options{
 		Playbook:     *playbook,
 		Inventory:    resolveInventoryPath(*inventory),
 		AnsibleDir:   ad,
 		Site:         *site,
 		Phase:        *phase,
+		RunKey:       rt.Identity.RunKey(),
 		ExtraArgs:    extraArgs,
 		OTLPEndpoint: rt.OTLPEndpoint(),
 	})

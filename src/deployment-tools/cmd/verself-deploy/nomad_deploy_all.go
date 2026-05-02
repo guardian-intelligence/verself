@@ -59,6 +59,7 @@ func runNomadDeployAll(args []string) int {
 		ServiceVersion: serviceVersion,
 		Site:           *site,
 		RepoRoot:       *repoRoot,
+		SkipClickHouse: true,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-all: %v\n", err)

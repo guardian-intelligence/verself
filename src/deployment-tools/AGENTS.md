@@ -3,7 +3,7 @@
 The typed Go orchestrator for verself deploys. Subsumes the bash + python
 plumbing under `src/host-configuration/scripts/` for the orchestration layer
 (Nomad submit/monitor, Bazel artifact resolution, Ansible run wrapping,
-ledger writes). Substrate-side scripts that wrap third-party CLIs
+deploy evidence writes). Substrate-side scripts that wrap third-party CLIs
 (`pg.sh`, `clickhouse.sh`, `tigerbeetle.sh`) stay in shell — they have no
 correctness invariants for this binary to encode.
 
@@ -25,7 +25,7 @@ correctness invariants for this binary to encode.
 
 This module owns deploy orchestration: BEP-driven artifact resolution,
 Nomad submit/monitor, streaming Ansible event capture, identity propagation,
-and ClickHouse deploy ledger rows.
+and ClickHouse deploy evidence rows.
 
 ## Conventions
 

@@ -6,8 +6,8 @@
 //
 // Boundary: this package wires existing internal packages together;
 // it does not re-implement them. SSH lives in sshtun, the OTel SDK
-// in github.com/verself/observability/otel, ClickHouse writes in chwriter. The
-// runtime is the one place that knows the correct order to start
+// in github.com/verself/observability/otel, ClickHouse writes in deploydb.
+// The runtime is the one place that knows the correct order to start
 // and stop them.
 package runtime
 
@@ -21,12 +21,13 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	verselfotel "github.com/verself/observability/otel"
 
-	"github.com/verself/deployment-tools/internal/chwriter"
+	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/inventory"
 	"github.com/verself/deployment-tools/internal/sshtun"
@@ -38,6 +39,12 @@ import (
 // otlptracegrpc exporter dials a 127.0.0.1:<picked-port> address that
 // tunnels straight to the receiver.
 const otlpForwardRemotePort = 4317
+
+const (
+	clickHouseDatabase           = "verself"
+	clickHouseOperatorUser       = "clickhouse_operator"
+	clickHouseOperatorConfigPath = "/etc/clickhouse-client/operator.xml"
+)
 
 // otelShutdownBudget bounds the SDK's BatchSpanProcessor flush at
 // process exit. The export hop is loopback (an SSH local forward over
@@ -73,19 +80,24 @@ type Options struct {
 	// reconciler exec'd by `verself-deploy run`) — they inherit the
 	// parent's tunnel rather than opening a competing one.
 	SkipOTLPForward bool
+
+	// SkipClickHouse suppresses deploydb bootstrap for subcommands
+	// that only need SSH/OTel/Nomad wiring and do not persist deploy
+	// evidence rows.
+	SkipClickHouse bool
 }
 
 // Runtime is the resolved bootstrap surface. Callers consume Tracer,
 // SSH (for forwards/exec), and ClickHouse (for typed inserts); the
 // rest is internal bookkeeping.
 type Runtime struct {
-	Ctx        context.Context
-	Tracer     trace.Tracer
-	Identity   identity.Snapshot
-	SSH        *sshtun.Client
-	ClickHouse *chwriter.Writer
-	Site       string
-	RepoRoot   string
+	Ctx      context.Context
+	Tracer   trace.Tracer
+	Identity identity.Snapshot
+	SSH      *sshtun.Client
+	DeployDB *deploydb.Client
+	Site     string
+	RepoRoot string
 
 	otlpForward  *sshtun.Forward
 	otelShutdown func(context.Context) error
@@ -180,7 +192,6 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	})
 
 	rt.Tracer = otel.Tracer(opts.ServiceName)
-	rt.ClickHouse = chwriter.New(sshClient, "verself")
 
 	// Emit a single retroactive bootstrap span so the timing of the
 	// pre-SDK setup remains queryable. WithStartTime stretches the
@@ -193,8 +204,28 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 			attribute.String("ssh.host", host),
 			attribute.String("ssh.user", user),
 			attribute.Bool("verself.skip_otlp_forward", opts.SkipOTLPForward),
+			attribute.Bool("verself.skip_clickhouse", opts.SkipClickHouse),
 		),
 	)
+
+	if !opts.SkipClickHouse {
+		db, err := deploydb.OpenOperator(ctx, sshClient, deploydb.Config{
+			Database:           clickHouseDatabase,
+			Username:           clickHouseOperatorUser,
+			OperatorConfigPath: clickHouseOperatorConfigPath,
+		})
+		if err != nil {
+			rt.bootstrapSpan.RecordError(err)
+			rt.bootstrapSpan.SetStatus(codes.Error, err.Error())
+			rt.bootstrapSpan.End()
+			flushCtx, cancel := context.WithTimeout(context.Background(), otelShutdownBudget)
+			_ = otelShutdown(flushCtx)
+			cancel()
+			_ = sshClient.Close()
+			return nil, fmt.Errorf("runtime: clickhouse open: %w", err)
+		}
+		rt.DeployDB = db
+	}
 	rt.Ctx = ctx
 	return rt, nil
 }
@@ -206,6 +237,10 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 func (rt *Runtime) Close() {
 	if rt == nil {
 		return
+	}
+	if rt.DeployDB != nil {
+		_ = rt.DeployDB.Close()
+		rt.DeployDB = nil
 	}
 	// Stamp bootstrap-end now so the span's duration covers the
 	// full subcommand body — the bootstrap span is conceptually the
