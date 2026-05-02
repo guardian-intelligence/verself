@@ -8,6 +8,8 @@
 //	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
 //	verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
 //	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
+//	verself-deploy artifacts admit-url --artifact=<name> --upstream-url=<url> --digest=sha256:<hex>
+//	verself-deploy artifacts verify-install --artifact=<name> --oci-repository=<repo> --oci-manifest-digest=sha256:<hex>
 //	verself-deploy supply-chain check --repo-root=<path>
 //	verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
 //
@@ -41,6 +43,8 @@ func main() {
 		os.Exit(runNomad(os.Args[2:]))
 	case "ansible":
 		os.Exit(runAnsible(os.Args[2:]))
+	case "artifacts":
+		os.Exit(runArtifacts(os.Args[2:]))
 	case "host-configuration":
 		os.Exit(runHostConfiguration(os.Args[2:]))
 	case "supply-chain":
@@ -65,6 +69,9 @@ usage:
   verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
   verself-deploy nomad deploy-all     --site=<site> [--repo-root=<path>]
   verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
+  verself-deploy artifacts admit-url  --artifact=<name> --upstream-url=<url> --digest=sha256:<hex>
+  verself-deploy artifacts verify-install --artifact=<name> --oci-repository=<repo> --oci-manifest-digest=sha256:<hex>
+  verself-deploy artifacts assert-evidence --run-key=<deploy-run-key> [--site=<site>]
   verself-deploy host-configuration converge --site=<site>
   verself-deploy host-configuration verify   --site=<site>
   verself-deploy supply-chain check   [--repo-root=<path>] [--policy=<path>]
