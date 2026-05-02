@@ -12,6 +12,7 @@ use (
 	./src/notifications-service
 	./src/object-storage-service
 	./src/observability/go
+	./src/operator-runtime/go
 	./src/profile-service
 	./src/projects-service
 	./src/sandbox-rental-service

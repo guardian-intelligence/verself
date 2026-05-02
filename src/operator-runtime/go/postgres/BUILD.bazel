@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "postgres",
+    srcs = ["postgres.go"],
+    importpath = "github.com/verself/operator-runtime/postgres",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/operator-runtime/go/runtime",
+        "@com_github_jackc_pgx_v5//:pgx",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":postgres",
+    visibility = ["//visibility:public"],
+)
