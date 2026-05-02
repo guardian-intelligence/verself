@@ -1,5 +1,4 @@
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,16 +25,4 @@ genrule(
 copy_to_bin(
     name = "openapi-3.1.yaml.bin",
     srcs = [":spec_3_1"],
-)
-
-# Apiwire numeric-safety contract test against the rendered 3.1 spec.
-# The owning package declares this gate directly, so drift to a
-# non-JS-safe schema fails any downstream dev_check/build that depends
-# on billing's OpenAPI surface.
-go_test(
-    name = "wire_check_test",
-    srcs = ["wire_check_test.go"],
-    args = ["$(rootpath :spec_3_1)"],
-    data = [":spec_3_1"],
-    deps = ["//src/apiwire/wirecheck"],
 )

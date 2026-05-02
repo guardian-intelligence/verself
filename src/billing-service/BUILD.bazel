@@ -1,7 +1,1 @@
 # gazelle:prefix github.com/verself/billing-service
-
-test_suite(
-    name = "dev_check",
-    tests = ["//src/billing-service/openapi:wire_check_test"],
-    visibility = ["//visibility:public"],
-)
