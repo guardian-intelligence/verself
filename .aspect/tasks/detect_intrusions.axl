@@ -16,10 +16,20 @@ src/host-configuration/ansible/group_vars/all/generated/ops.yml under
 `known_cert_id_suffixes`.
 """
 
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+
+def _aspect_operator_bin(ctx):
+    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    return ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _impl(ctx):
     if inventory_check(ctx) != 0:
+        return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     cli_args = []
     if ctx.args.site:
@@ -30,10 +40,10 @@ def _impl(ctx):
         cli_args = cli_args + ["--format", ctx.args.format]
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/detect-intrusions.sh"),
-        cli_args,
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "detect-intrusions.sh",
+        bin,
+        ["detect-intrusions", "--repo-root", ws_path(ctx)] + cli_args,
+        cwd = ws_path(ctx),
+        label = "aspect-operator detect-intrusions",
     )
 
 detect_intrusions = task(

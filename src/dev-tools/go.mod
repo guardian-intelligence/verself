@@ -38,6 +38,7 @@ require (
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1
 	github.com/verself/operator-runtime v0.0.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -338,7 +339,6 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 	modernc.org/libc v1.66.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

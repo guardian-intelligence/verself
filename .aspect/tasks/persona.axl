@@ -5,9 +5,16 @@ There are intentionally no per-persona shortcut tasks; pass the persona name
 as the positional argument (`aspect persona assume platform-admin`).
 """
 
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
 
 _VALID_PERSONAS = ["platform-admin", "acme-admin", "acme-member"]
+
+def _aspect_operator_bin(ctx):
+    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    return ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _assume_impl(ctx):
     if inventory_check(ctx) != 0:
@@ -20,21 +27,28 @@ def _assume_impl(ctx):
             "ERROR: persona must be one of " + ", ".join(_VALID_PERSONAS) + "\n",
         )
         return 1
-    cli_args = [name]
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
+        return 1
+    cli_args = []
     if ctx.args.output:
         cli_args = cli_args + ["--output", ctx.args.output]
     if ctx.args.print:
         cli_args.append("--print")
+    cli_args.append(name)
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/assume-persona.sh"),
-        cli_args,
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "assume-persona.sh " + name,
+        bin,
+        ["persona", "assume", "--repo-root", ws_path(ctx)] + cli_args,
+        cwd = ws_path(ctx),
+        label = "aspect-operator persona assume " + name,
     )
 
 def _user_state_impl(ctx):
     if inventory_check(ctx) != 0:
+        return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     cli_args = [
         "--email", ctx.args.email,
@@ -52,10 +66,10 @@ def _user_state_impl(ctx):
     ]
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/set-user-state.sh"),
-        cli_args,
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "set-user-state.sh",
+        bin,
+        ["persona", "user-state", "--repo-root", ws_path(ctx)] + cli_args,
+        cwd = ws_path(ctx),
+        label = "aspect-operator persona user-state",
     )
 
 assume = task(

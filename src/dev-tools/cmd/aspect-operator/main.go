@@ -24,6 +24,21 @@
 //	aspect-operator db pg|ch|tb ...
 //	    Operator-side database access over the operator SSH cert.
 //
+//	aspect-operator detect-intrusions
+//	    Query accepted SSH auth events outside the authored trust set.
+//
+//	aspect-operator billing seed|clock|state|documents|finalizations|events
+//	    Operator billing fixture and inspection tooling.
+//
+//	aspect-operator persona assume|user-state
+//	    Operator persona credential and fixture tooling.
+//
+//	aspect-operator mail send|passwords
+//	    Operator mail helpers.
+//
+//	aspect-operator dev verself-web
+//	    Operator local-development tunnel helpers.
+//
 // Source of truth for principals, slot count, and well-known paths:
 // src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 package main
@@ -66,6 +81,16 @@ func run(args []string) error {
 		return cmdEnrollWorkload(rest)
 	case "db":
 		return cmdDB(rest)
+	case "detect-intrusions":
+		return cmdDetectIntrusions(rest)
+	case "billing":
+		return cmdBilling(rest)
+	case "persona":
+		return cmdPersona(rest)
+	case "mail":
+		return cmdMail(rest)
+	case "dev":
+		return cmdDev(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -83,6 +108,11 @@ Subcommands:
   refresh           Non-interactive: renew Vault token + re-sign SSH cert
   enroll-workload   Operator-side: claim slot + mint AppRole secret-id
   db                Operator database access
+  detect-intrusions Scan accepted SSH auth events outside authored trust
+  billing           Billing fixture and inspection tooling
+  persona           Persona credential and fixture tooling
+  mail              Mail operator helpers
+  dev               Local development helpers
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)

@@ -1,11 +1,6 @@
-"""aspect observe — telemetry discovery / query surface.
+"""aspect observe — telemetry discovery / query surface."""
 
-Wraps scripts/observe.sh, which is the WHAT-driven discoverability layer for
-ClickHouse traces, metrics, and logs. Flags map 1:1 to the script's --what,
---signal, --service, etc.
-"""
-
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
 
 # Each entry maps an AXL arg name (snake_case) to the script's flag (kebab).
 # Emit only flags whose value is non-empty.
@@ -30,8 +25,18 @@ _FLAG_MAP = [
     ("limit", "--limit"),
 ]
 
+def _observe_bin(ctx):
+    target = "//src/observability/go/cmd/observe:observe"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    return ws_path(ctx, "bazel-bin/src/observability/go/cmd/observe/observe_/observe")
+
 def _impl(ctx):
     if inventory_check(ctx) != 0:
+        return 1
+    bin = _observe_bin(ctx)
+    if bin == "":
         return 1
     cli_args = []
     for arg_name, flag in _FLAG_MAP:
@@ -40,12 +45,16 @@ def _impl(ctx):
             cli_args = cli_args + [flag, v]
     if ctx.args.errors:
         cli_args.append("--errors")
+    if ctx.args.site:
+        cli_args = cli_args + ["--site", ctx.args.site]
+    if ctx.args.device:
+        cli_args = cli_args + ["--device", ctx.args.device]
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/observe.sh"),
-        cli_args,
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "observe.sh",
+        bin,
+        ["--repo-root", ws_path(ctx)] + cli_args,
+        cwd = ws_path(ctx),
+        label = "observe",
     )
 
 observe = task(
@@ -63,7 +72,7 @@ observe = task(
         "prefix": args.string(default = "", description = "Name prefix filter."),
         "search": args.string(default = "", description = "Free-text search."),
         "group_by": args.string(default = "", description = "GROUP BY column(s)."),
-        "mode": args.string(default = "", description = "observe.sh --mode value."),
+        "mode": args.string(default = "", description = "Metric mode value."),
         "trace_id": args.string(default = "", description = "Filter by trace ID."),
         "run_key": args.string(default = "", description = "Filter by deploy_run_key."),
         "host": args.string(default = "", description = "Host filter."),
@@ -72,5 +81,7 @@ observe = task(
         "minutes": args.string(default = "", description = "Time window in minutes."),
         "limit": args.string(default = "", description = "Row limit."),
         "errors": args.boolean(default = False, description = "Filter to error rows only."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "device": args.string(default = "", description = "Operator device name."),
     },
 )

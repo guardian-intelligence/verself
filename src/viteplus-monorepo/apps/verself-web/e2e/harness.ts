@@ -18,6 +18,7 @@ import {
 } from "./verification-run";
 
 const execFile = promisify(execFileCallback);
+const repoRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
 
 export const shortTimeoutMS = 5_000;
 // Polling cadence for harness-owned waits. The bare-metal box responds in
@@ -460,9 +461,6 @@ export class SandboxHarness {
     productID?: string;
     state?: string;
   }): Promise<BillingFixtureState> {
-    const scriptPath = fileURLToPath(
-      new URL("../../../../substrate/scripts/set-user-state.sh", import.meta.url),
-    );
     const args = ["--email", env.testEmail, "--product-id", productID, "--state", state];
     if (orgID !== undefined) {
       args.push("--org-id", String(orgID));
@@ -478,7 +476,11 @@ export class SandboxHarness {
     if (businessNow) {
       args.push("--business-now", businessNow);
     }
-    const { stdout } = await execFile(scriptPath, args, { env: process.env });
+    const { stdout } = await execFile("aspect", ["persona", "user-state", ...args], {
+      cwd: repoRoot,
+      env: process.env,
+      maxBuffer: 16 * 1024 * 1024,
+    });
     return JSON.parse(stdout) as BillingFixtureState;
   }
 
@@ -497,9 +499,6 @@ export class SandboxHarness {
     reason?: string;
     set?: string;
   }): Promise<BillingClockState> {
-    const scriptPath = fileURLToPath(
-      new URL("../../../../substrate/scripts/billing-clock.sh", import.meta.url),
-    );
     const args = ["--org-id", String(orgID), "--product-id", productID, "--reason", reason];
     if (set) {
       args.push("--set", set);
@@ -508,7 +507,11 @@ export class SandboxHarness {
     } else if (clear) {
       args.push("--clear");
     }
-    const { stdout } = await execFile(scriptPath, args, { env: process.env });
+    const { stdout } = await execFile("aspect", ["billing", "clock", ...args], {
+      cwd: repoRoot,
+      env: process.env,
+      maxBuffer: 16 * 1024 * 1024,
+    });
     return JSON.parse(stdout) as BillingClockState;
   }
 

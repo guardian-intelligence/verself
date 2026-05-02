@@ -9,15 +9,19 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const sshDialTimeout = 5 * time.Second
+
+var remoteStagingPrefixRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type SSHOptions struct {
 	ConfigDir string
@@ -184,10 +188,17 @@ type Forward struct {
 }
 
 func (c *SSHClient) Forward(parent context.Context, role, remoteAddr string) (*Forward, error) {
+	return c.ForwardLocal(parent, role, "127.0.0.1:0", remoteAddr)
+}
+
+func (c *SSHClient) ForwardLocal(parent context.Context, role, localAddr, remoteAddr string) (*Forward, error) {
 	if c == nil {
 		return nil, errors.New("operator ssh: client is nil")
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if localAddr == "" {
+		localAddr = "127.0.0.1:0"
+	}
+	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen for local forward: %w", err)
 	}
@@ -285,6 +296,105 @@ func ReadRemoteFile(ctx context.Context, sshClient *SSHClient, path string) ([]b
 		return nil, err
 	}
 	return sshClient.Exec(ctx, "sudo /bin/cat -- "+pathWord)
+}
+
+func (c *SSHClient) UploadExecutable(ctx context.Context, localPath, prefix string) (string, error) {
+	if c == nil {
+		return "", errors.New("operator ssh: client is nil")
+	}
+	if localPath == "" {
+		return "", errors.New("upload executable: local path is required")
+	}
+	remotePath, err := RemoteStagingPath(prefix)
+	if err != nil {
+		return "", err
+	}
+	local, err := os.Open(localPath)
+	if err != nil {
+		return "", fmt.Errorf("open executable %s: %w", localPath, err)
+	}
+	defer func() { _ = local.Close() }()
+	if _, err := c.Exec(ctx, "sudo /usr/bin/install -d -m 0755 /opt/verself/staging"); err != nil {
+		return "", fmt.Errorf("prepare remote staging directory: %w", err)
+	}
+	remoteWord, err := ShellWord(remotePath)
+	if err != nil {
+		return "", err
+	}
+	if err := c.Run(ctx, "sudo /usr/bin/tee "+remoteWord+" >/dev/null", local, io.Discard, os.Stderr); err != nil {
+		return "", fmt.Errorf("upload executable to %s: %w", remotePath, err)
+	}
+	if _, err := c.Exec(ctx, "sudo /bin/chmod 0755 "+remoteWord); err != nil {
+		_ = c.RemoveRemotePath(ctx, remotePath)
+		return "", fmt.Errorf("chmod executable %s: %w", remotePath, err)
+	}
+	return remotePath, nil
+}
+
+func RemoteStagingPath(prefix string) (string, error) {
+	if prefix == "" {
+		return "", errors.New("remote staging prefix is required")
+	}
+	if !remoteStagingPrefixRE.MatchString(prefix) {
+		return "", fmt.Errorf("remote staging prefix %q must match ^[A-Za-z0-9_.-]+$", prefix)
+	}
+	return "/opt/verself/staging/" + prefix + "." + uuid.NewString(), nil
+}
+
+func (c *SSHClient) RemoveRemotePath(ctx context.Context, path string) error {
+	if c == nil {
+		return nil
+	}
+	if path == "" {
+		return nil
+	}
+	pathWord, err := ShellWord(path)
+	if err != nil {
+		return err
+	}
+	_, err = c.Exec(ctx, "sudo /bin/rm -f -- "+pathWord)
+	return err
+}
+
+func (c *SSHClient) RunArgv(ctx context.Context, runAsUser string, argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	command, err := RemoteCommand(runAsUser, argv)
+	if err != nil {
+		return err
+	}
+	return c.Run(ctx, command, stdin, stdout, stderr)
+}
+
+func (c *SSHClient) RunArgvPTY(ctx context.Context, runAsUser string, argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	command, err := RemoteCommand(runAsUser, argv)
+	if err != nil {
+		return err
+	}
+	return c.RunPTY(ctx, command, stdin, stdout, stderr)
+}
+
+func RemoteCommand(runAsUser string, argv []string) (string, error) {
+	if len(argv) == 0 {
+		return "", errors.New("remote command argv is empty")
+	}
+	parts := make([]string, 0, len(argv)+4)
+	if runAsUser != "" {
+		if !remoteStagingPrefixRE.MatchString(runAsUser) {
+			return "", fmt.Errorf("remote run-as user %q must match ^[A-Za-z0-9_.-]+$", runAsUser)
+		}
+		userWord, err := ShellWord(runAsUser)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, "sudo", "-u", userWord, "--")
+	}
+	for _, arg := range argv {
+		word, err := ShellWord(arg)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, word)
+	}
+	return strings.Join(parts, " "), nil
 }
 
 func ShellWord(s string) (string, error) {

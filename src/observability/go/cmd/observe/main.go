@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,15 +8,18 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	verselfotel "github.com/verself/observability/otel"
+	ch "github.com/ClickHouse/clickhouse-go/v2"
+	opch "github.com/verself/operator-runtime/clickhouse"
+	"github.com/verself/operator-runtime/evidence"
+	opruntime "github.com/verself/operator-runtime/runtime"
 	"github.com/verself/service-runtime/envconfig"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -38,7 +40,10 @@ const (
 )
 
 type config struct {
+	repoRoot      string
 	substrateRoot string
+	site          string
+	device        string
 	what          string
 	signal        string
 	service       string
@@ -104,25 +109,43 @@ func main() {
 		return
 	}
 
-	shutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
-		ServiceName:    serviceName,
-		ServiceVersion: "0.2.0",
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "initialize otel: %v\n", err)
+	if err := runObserve(ctx, cfg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		if err := shutdown(shutdownCtx); err != nil {
-			fmt.Fprintf(os.Stderr, "flush otel: %v\n", err)
-		}
-	}()
+}
 
+func runObserve(ctx context.Context, cfg config) error {
 	runID := observeRunID()
-	tracer := otel.Tracer(serviceName)
-	ctx, span := tracer.Start(ctx, "observe",
+	started := time.Now()
+	command := "observe." + cfg.what
+	return opruntime.Run(ctx, opruntime.Options{
+		ServiceName:    serviceName,
+		ServiceVersion: "0.3.0",
+		Command:        command,
+		RepoRoot:       cfg.repoRoot,
+		Site:           cfg.site,
+		Device:         cfg.device,
+		NeedSSH:        true,
+		NeedOTel:       true,
+	}, func(rt *opruntime.Runtime) error {
+		chClient, err := opch.OpenOperator(rt.Ctx, rt, opch.Config{Database: "default"})
+		if err != nil {
+			return err
+		}
+		defer func() { _ = chClient.Close() }()
+		runErr := runObserveQueries(rt, chClient, cfg, runID)
+		recordErr := evidence.Recorder{ClickHouse: chClient}.RecordCommandRun(rt.Ctx, rt, started, command, runErr)
+		if runErr != nil {
+			return errors.Join(runErr, recordErr)
+		}
+		return recordErr
+	})
+}
+
+func runObserveQueries(rt *opruntime.Runtime, chClient *opch.Client, cfg config, runID string) error {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, span := rt.Tracer.Start(rt.Ctx, "observe",
 		trace.WithAttributes(
 			attribute.String("observe.run_id", runID),
 			attribute.String("observe.what", cfg.what),
@@ -132,13 +155,11 @@ func main() {
 		),
 	)
 	defer span.End()
-
 	queries, err := buildQueries(cfg)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return err
 	}
 
 	var jsonResults []jsonQueryResult
@@ -149,11 +170,11 @@ func main() {
 		if cfg.format != formatJSON {
 			fmt.Printf("=== %s ===\n\n", q.title)
 		}
-		result, err := runQuery(ctx, logger, cfg, runID, q)
+		result, err := runQuery(ctx, logger, chClient, cfg, runID, q)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			os.Exit(1)
+			return err
 		}
 		if result != nil {
 			jsonResults = append(jsonResults, *result)
@@ -166,7 +187,7 @@ func main() {
 			if err := encoder.Encode(jsonResults[0]); err != nil {
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
-				os.Exit(1)
+				return err
 			}
 		} else {
 			if err := encoder.Encode(struct {
@@ -174,12 +195,13 @@ func main() {
 			}{Queries: jsonResults}); err != nil {
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
-				os.Exit(1)
+				return err
 			}
 		}
 	}
 
 	span.SetStatus(codes.Ok, "")
+	return nil
 }
 
 func parseConfig(args []string) (config, error) {
@@ -187,7 +209,10 @@ func parseConfig(args []string) (config, error) {
 	var format string
 	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
+	flags.StringVar(&cfg.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/host-configuration")
+	flags.StringVar(&cfg.site, "site", strings.TrimSpace(os.Getenv("VERSELF_SITE")), "deployment site")
+	flags.StringVar(&cfg.device, "device", "", "operator device name")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "query family to run")
 	flags.StringVar(&cfg.signal, "signal", strings.TrimSpace(os.Getenv("SIGNAL")), "signal catalog: metrics, traces, logs, http, deploys")
 	flags.StringVar(&cfg.service, "service", strings.TrimSpace(os.Getenv("SERVICE")), "service name")
@@ -227,6 +252,7 @@ func parseConfig(args []string) (config, error) {
 	cfg.traceID = strings.TrimSpace(cfg.traceID)
 	cfg.runKey = strings.TrimSpace(cfg.runKey)
 	cfg.host = strings.TrimSpace(cfg.host)
+	cfg.site = strings.TrimSpace(cfg.site)
 	if cfg.mode == "" {
 		cfg.mode = "latest"
 	}
@@ -235,12 +261,18 @@ func parseConfig(args []string) (config, error) {
 	}
 	cfg.format = outputFormat(normalize(format))
 
-	if cfg.substrateRoot == "" {
+	if cfg.repoRoot == "" {
 		wd, err := os.Getwd()
 		if err != nil {
 			return cfg, fmt.Errorf("resolve working directory: %w", err)
 		}
-		cfg.substrateRoot = filepath.Join(wd, "src", "host-configuration")
+		cfg.repoRoot = wd
+	}
+	if cfg.substrateRoot == "" {
+		cfg.substrateRoot = filepath.Join(cfg.repoRoot, "src", "host-configuration")
+	}
+	if cfg.site == "" {
+		cfg.site = opruntime.DefaultSite
 	}
 	if cfg.minutes == 0 {
 		return cfg, errors.New("--minutes must be greater than zero")
@@ -273,9 +305,6 @@ func parseConfig(args []string) (config, error) {
 	if len(cfg.search) > 128 {
 		return cfg, errors.New("--search must be at most 128 characters")
 	}
-	if _, err := os.Stat(filepath.Join(cfg.substrateRoot, "scripts", "clickhouse.sh")); err != nil {
-		return cfg, fmt.Errorf("substrate root must contain scripts/clickhouse.sh: %w", err)
-	}
 	return cfg, nil
 }
 
@@ -292,8 +321,8 @@ func validateToken(label, value string) error {
 	return nil
 }
 
-func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string, q query) (*jsonQueryResult, error) {
-	sql := withFormat(q.sql, cfg.format)
+func runQuery(ctx context.Context, logger *slog.Logger, chClient *opch.Client, cfg config, runID string, q query) (*jsonQueryResult, error) {
+	sql := strings.TrimSpace(q.sql)
 	clickhouseQueryID := queryID(runID, q)
 	ctx, span := otel.Tracer(serviceName).Start(ctx, "clickhouse.query",
 		trace.WithAttributes(
@@ -310,45 +339,29 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 	)
 	defer span.End()
 
-	args := []string{"--database", q.database, "--query_id", clickhouseQueryID}
-	for key, value := range q.params {
-		args = append(args, "--param_"+key+"="+value)
-	}
-	args = append(args, "--query", sql)
-
-	cmd := exec.CommandContext(ctx, filepath.Join(cfg.substrateRoot, "scripts", "clickhouse.sh"), args...)
-	cmd.Dir = cfg.substrateRoot
-
 	logger.InfoContext(ctx, "observe query started",
 		"query_id", q.id,
 		"surface", cfg.what,
 		"database", q.database,
 	)
 
-	stderr := &bytes.Buffer{}
-	cmd.Stderr = stderr
-	output, err := cmd.Output()
-	// Surface ClickHouse stderr (progress notices, warnings, errors) whether
-	// the command succeeded or not — buffering it was only needed to keep
-	// stdout clean for row counting, not to swallow diagnostics.
-	if stderr.Len() > 0 {
-		_, _ = os.Stderr.Write(stderr.Bytes())
-	}
+	queryCtx := ch.Context(ctx, ch.WithQueryID(clickhouseQueryID))
+	table, err := chClient.QueryTableParams(queryCtx, sql, q.params)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("%s: %w", q.title, err)
 	}
+	rows := len(table.Rows)
 
 	if cfg.format == formatJSON {
-		result, err := buildJSONQueryResult(q, sql, clickhouseQueryID, output)
+		result, err := buildJSONQueryResult(q, sql, clickhouseQueryID, table)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
 		span.SetStatus(codes.Ok, "")
-		rows := len(result.Rows)
 		span.SetAttributes(
 			attribute.Bool("observe.has_rows", rows > 0),
 			attribute.Int("observe.rows", rows),
@@ -362,55 +375,31 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 		return &result, nil
 	}
 
-	hasRows, exactCount, exactKnown := evaluateRows(output, cfg.format)
-	if !hasRows {
+	if rows == 0 {
 		printEmptyHint(cfg, q)
 	} else {
-		_, _ = os.Stdout.Write(output)
+		if cfg.format == formatMarkdown {
+			printMarkdownTable(os.Stdout, table)
+		} else if err := opruntime.PrintTable(os.Stdout, table); err != nil {
+			return nil, err
+		}
 	}
 	printNext(q.next, cfg.format)
 
-	span.SetAttributes(attribute.Bool("observe.has_rows", hasRows))
+	span.SetAttributes(
+		attribute.Bool("observe.has_rows", rows > 0),
+		attribute.Int("observe.rows", rows),
+	)
 	logAttrs := []any{
 		"query_id", q.id,
 		"surface", cfg.what,
 		"database", q.database,
-		"has_rows", hasRows,
-	}
-	if exactKnown {
-		span.SetAttributes(attribute.Int("observe.rows", exactCount))
-		logAttrs = append(logAttrs, "rows", exactCount)
+		"has_rows", rows > 0,
+		"rows", rows,
 	}
 	span.SetStatus(codes.Ok, "")
 	logger.InfoContext(ctx, "observe query completed", logAttrs...)
 	return nil, nil
-}
-
-// evaluateRows reports whether the rendered output contains any data rows,
-// and — when it can — the exact count. PrettyCompact (the default table
-// format) draws a Unicode frame we don't parse, so for that format the exact
-// count is not known; the caller uses hasRows for branching and omits the
-// observe.rows span attribute rather than reporting a misleading sentinel.
-func evaluateRows(output []byte, format outputFormat) (hasRows bool, exactCount int, exactKnown bool) {
-	switch format {
-	case formatMarkdown:
-		lines := 0
-		for _, line := range bytes.Split(output, []byte("\n")) {
-			if len(bytes.TrimSpace(line)) > 0 {
-				lines++
-			}
-		}
-		// Markdown always emits a header row and a separator; data starts at line 3.
-		if lines <= 2 {
-			return false, 0, true
-		}
-		return true, lines - 2, true
-	default:
-		if len(bytes.TrimSpace(output)) == 0 {
-			return false, 0, true
-		}
-		return true, 0, false
-	}
 }
 
 func printEmptyHint(cfg config, q query) {
@@ -449,6 +438,37 @@ func printEmptyHint(cfg config, q query) {
 	}
 }
 
+func printMarkdownTable(w *os.File, table opruntime.Table) {
+	fmt.Fprint(w, "|")
+	for _, header := range table.Headers {
+		fmt.Fprintf(w, " %s |", markdownCell(header))
+	}
+	fmt.Fprintln(w)
+	fmt.Fprint(w, "|")
+	for range table.Headers {
+		fmt.Fprint(w, " --- |")
+	}
+	fmt.Fprintln(w)
+	for _, row := range table.Rows {
+		fmt.Fprint(w, "|")
+		for i := range table.Headers {
+			value := ""
+			if i < len(row) {
+				value = row[i]
+			}
+			fmt.Fprintf(w, " %s |", markdownCell(value))
+		}
+		fmt.Fprintln(w)
+	}
+}
+
+func markdownCell(value string) string {
+	value = strings.ReplaceAll(value, "|", "\\|")
+	value = strings.ReplaceAll(value, "\r\n", "<br>")
+	value = strings.ReplaceAll(value, "\n", "<br>")
+	return value
+}
+
 // nextWindowSuggestion returns a wider lookback in minutes, or 0 if the caller
 // is already looking at a month-plus window and widening further is unlikely to help.
 func nextWindowSuggestion(current uint) uint {
@@ -464,17 +484,22 @@ func nextWindowSuggestion(current uint) uint {
 	}
 }
 
-func buildJSONQueryResult(q query, sql, clickhouseQueryID string, raw []byte) (jsonQueryResult, error) {
+func buildJSONQueryResult(q query, sql, clickhouseQueryID string, table opruntime.Table) (jsonQueryResult, error) {
 	rows := []json.RawMessage{}
-	for _, line := range bytes.Split(raw, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
+	for _, row := range table.Rows {
+		obj := make(map[string]string, len(table.Headers))
+		for i, header := range table.Headers {
+			if i < len(row) {
+				obj[header] = row[i]
+			} else {
+				obj[header] = ""
+			}
 		}
-		if !json.Valid(line) {
-			return jsonQueryResult{}, fmt.Errorf("%s: ClickHouse returned non-JSON output: %s", q.title, string(line))
+		encoded, err := json.Marshal(obj)
+		if err != nil {
+			return jsonQueryResult{}, fmt.Errorf("%s: encode JSON row: %w", q.title, err)
 		}
-		rows = append(rows, json.RawMessage(append([]byte(nil), line...)))
+		rows = append(rows, json.RawMessage(encoded))
 	}
 	result := jsonQueryResult{Rows: rows, Next: q.next}
 	result.Query.ID = q.id
@@ -486,18 +511,6 @@ func buildJSONQueryResult(q query, sql, clickhouseQueryID string, raw []byte) (j
 	result.Query.QueryID = clickhouseQueryID
 	result.Query.SQLSHA256 = queryHash(sql)
 	return result, nil
-}
-
-func withFormat(sql string, format outputFormat) string {
-	sql = strings.TrimSpace(sql)
-	switch format {
-	case formatJSON:
-		return sql + "\nFORMAT JSONEachRow"
-	case formatMarkdown:
-		return sql + "\nFORMAT Markdown"
-	default:
-		return sql + "\nFORMAT PrettyCompact"
-	}
 }
 
 func printNext(next []string, format outputFormat) {
