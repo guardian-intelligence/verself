@@ -17,6 +17,7 @@ TAR_SINGLE_BINARIES = [
     ("tdbg", "@server_tool_temporal//file", "z", "tdbg", "tdbg"),
     ("stalwart", "@server_tool_stalwart//file", "z", "stalwart", "stalwart"),
     ("stalwart_cli", "@server_tool_stalwart_cli//file", "z", "stalwart-cli", "stalwart-cli"),
+    ("pomerium", "@server_tool_pomerium//file", "z", "pomerium", "pomerium"),
     ("containerd", "@server_tool_containerd//file", "z", "bin/containerd", "containerd"),
     ("caddy", "@server_tool_caddy//file", "z", "caddy", "caddy"),
 ]
@@ -56,6 +57,7 @@ SERVER_TOOL_DEPS = [
     ":nomad",
     ":openbao",
     ":otelcol_contrib",
+    ":pomerium",
     ":spiffe_helper",
     ":spire_agent",
     ":spire_server",

@@ -247,7 +247,7 @@ topology_guest_versions:
     version: 24.04.4
 topology_server_tools:
   bazel_label: //src/host-configuration/binaries:server_tools.tar.zst
-  version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_bazel-remote-2.6.1_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_nodejs-22.22.2_stalwart-0.15.5_stalwart-cli-0.15.5_caddy-2.11.2_nomad-1.11.3
+  version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_pomerium-0.32.6_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_bazel-remote-2.6.1_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_nodejs-22.22.2_stalwart-0.15.5_stalwart-cli-0.15.5_caddy-2.11.2_nomad-1.11.3
 topology_substrate_tools:
   bazel_label: //src/host-configuration/binaries:substrate_go_tools
   version: 0.1.0
@@ -336,6 +336,7 @@ topology_versions:
     otelcolContrib: 0.149.0
     platform: 0.1.0
     pnpm: 10.33.0
+    pomerium: 0.32.6
     postgresql: "16"
     spiffeHelper: 0.11.0
     spire: 1.14.5
