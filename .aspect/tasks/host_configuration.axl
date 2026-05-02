@@ -94,7 +94,20 @@ def _security_patch_impl(ctx):
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
-    return _run_ansible(ctx, site, None, "playbooks/security-patch.yml")
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    return checked_spawn(
+        ctx,
+        bin,
+        [
+            "host-configuration", "security-patch",
+            "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
+        ],
+        cwd = ws_path(ctx),
+        label = "verself-deploy host-configuration security-patch --site=" + site,
+    )
 
 def _guest_rootfs_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE

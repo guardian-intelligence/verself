@@ -90,8 +90,24 @@ func runRun(args []string) int {
 	}
 	snap.ApplyEnv()
 
+	resolvedSha := snap.Get("VERSELF_DEPLOY_SHA")
+	if resolvedSha == "" {
+		// Fallback to the commit sha so the deploy_events schema's
+		// FixedString(40) requirement is satisfied even on a
+		// detached-HEAD harness invocation.
+		resolvedSha = snap.Get("VERSELF_COMMIT_SHA")
+	}
+
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	securityPatchRes := runSecurityPatchPreflight(parentCtx, *site, rr, snap.RunKey())
+	if !securityPatchOK(securityPatchRes) {
+		msg := securityPatchFailureMessage(securityPatchRes)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: security patch preflight failed: %s\n", msg)
+		recordSecurityPatchFailureBestEffort(parentCtx, *site, rr, resolvedSha, *scope, snap, securityPatchRes)
+		return 1
+	}
 
 	rt, err := runtime.Init(parentCtx, runtime.Options{
 		ServiceName:    serviceName,
@@ -117,14 +133,19 @@ func runRun(args []string) int {
 	if len(hostConfigurationPlan.skippedTags) > 0 {
 		span.SetAttributes(attribute.StringSlice("ansible.skip_tags", hostConfigurationPlan.skippedTags))
 	}
-
-	resolvedSha := snap.Get("VERSELF_DEPLOY_SHA")
-	if resolvedSha == "" {
-		// Fallback to the commit sha so the deploy_events schema's
-		// FixedString(40) requirement is satisfied even on a
-		// detached-HEAD harness invocation.
-		resolvedSha = snap.Get("VERSELF_COMMIT_SHA")
+	span.SetAttributes(
+		attribute.Int("security_patch.task_count", securityPatchRes.Result.TaskCount),
+		attribute.Int("security_patch.changed_total", securityPatchRes.Result.ChangedCount),
+		attribute.Int("security_patch.failed_count", securityPatchRes.Result.FailedCount),
+		attribute.Int64("security_patch.duration_ms", securityPatchRes.EndedAt.Sub(securityPatchRes.StartedAt).Milliseconds()),
+	)
+	if err := runSecurityPostPreflight(ctx, rt, *site, securityPatchRes); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		fmt.Fprintf(os.Stderr, "verself-deploy run: security post-preflight failed: %v\n", err)
+		return 1
 	}
+
 	startedAt := time.Now()
 	startedEvent := deploydb.DeployEvent{
 		RunKey: snap.RunKey(),
@@ -170,7 +191,7 @@ func runDeployBody(
 	if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"host-configuration"}, msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, "host-configuration"}, msg)
 		return 1
 	}
 	span.SetAttributes(
@@ -183,7 +204,7 @@ func runDeployBody(
 	// `verself-deploy nomad deploy-all`, no subprocess.
 	if err := deployAll(ctx, rt, span, site, repoRoot, false); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-all failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"nomad"},
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, "host-configuration", "nomad"},
 			"nomad deploy-all: "+err.Error())
 		return 1
 	}
@@ -196,7 +217,7 @@ func runDeployBody(
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
-		AffectedComponents: []string{"host-configuration", "nomad"},
+		AffectedComponents: []string{securityPatchComponent, "host-configuration", "nomad"},
 		Kind:               deploydb.EventSucceeded,
 		DurationMs:         durationMs,
 	}

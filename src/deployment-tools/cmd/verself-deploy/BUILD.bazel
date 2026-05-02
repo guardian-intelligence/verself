@@ -11,6 +11,7 @@ go_library(
         "paths.go",
         "run.go",
         "safeconv.go",
+        "security_patch.go",
         "with_otel.go",
     ],
     importpath = "github.com/verself/deployment-tools/cmd/verself-deploy",
