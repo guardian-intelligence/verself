@@ -9,7 +9,7 @@ Canonical layout in `docs/architecture/directory-structure.md`. Read that file d
 Polyglot monorepo structured as a modular monolith.
 Layers:
 
-1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
+1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, HAProxy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
 2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
@@ -21,7 +21,7 @@ Tech Stack:
 * TigerBeetle for OTLP. Currently using for financial truth and treating as a ledger -- we model debits/credits for 
 * Zitadel for human identity & OIDC/SAML with third parties. We support multi-tenancy in that all users belong to an org (users belonging to multiple orgs not yet supported)
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
-* Caddy for ingress using nftables config with Jinja2 templates
+* HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders `haproxy.cfg` and the per-service nftables drop-ins from Jinja2 templates
 * SPIRE for our SPIFFE implementation, everything speaks x509-SVIDs to eachother except for services that don't support SPIFFE, then we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs *within* a service. NATS JetStream for messaging/fan-out batch jobs between services.
 
