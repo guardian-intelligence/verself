@@ -13,12 +13,6 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":httpserver",
-    visibility = ["//visibility:public"],
-)
-
 go_test(
     name = "httpserver_test",
     srcs = ["httpserver_test.go"],
@@ -26,4 +20,10 @@ go_test(
         ":httpserver",
         "@org_golang_x_net//http2",
     ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":httpserver",
+    visibility = ["//visibility:public"],
 )

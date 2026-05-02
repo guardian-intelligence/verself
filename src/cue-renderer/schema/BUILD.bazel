@@ -11,12 +11,6 @@ go_library(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":schema",
-    visibility = ["//visibility:public"],
-)
-
 # Schema constraints are the only barrier between a sloppy PR and a
 # silently-naked SSH principal landing in topology. Run the test on
 # every change to schema.cue.
@@ -29,4 +23,10 @@ go_test(
         "@org_cuelang_go//cue/cuecontext",
         "@org_cuelang_go//cue/load",
     ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":schema",
+    visibility = ["//visibility:public"],
 )
