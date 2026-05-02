@@ -34,9 +34,10 @@ const ShutdownTimeout = 5 * time.Second
 // configuration remain the caller's responsibility.
 //
 // The handler is wrapped with h2c.NewHandler so the public plane accepts
-// HTTP/2 over cleartext from Caddy as well as HTTP/1.1. The wrap is inert on
-// the TLS internal plane: net/http intercepts ALPN h2 via TLSNextProto before
-// the handler runs, so h2c.NewHandler only ever sees cleartext traffic.
+// HTTP/2 over cleartext from HAProxy (whose Nomad-backed dynamic backends
+// run with `proto h2`) as well as HTTP/1.1. The wrap is inert on the TLS
+// internal plane: net/http intercepts ALPN h2 via TLSNextProto before the
+// handler runs, so h2c.NewHandler only ever sees cleartext traffic.
 func New(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,

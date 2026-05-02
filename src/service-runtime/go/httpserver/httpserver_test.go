@@ -103,8 +103,8 @@ func TestRunPairRequiresAtLeastOneServer(t *testing.T) {
 }
 
 // TestNewServesH2CPriorKnowledge exercises the cleartext HTTP/2 path that
-// Caddy uses to reach service backends. h2c.NewHandler runs only on the
-// public plane (no TLS); a regression here would manifest as Caddy speaking
+// HAProxy uses to reach service backends. h2c.NewHandler runs only on the
+// public plane (no TLS); a regression here would manifest as HAProxy speaking
 // h2c to a backend that only knows HTTP/1.1, taking the public API down.
 func TestNewServesH2CPriorKnowledge(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

@@ -128,7 +128,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Post(service, "/settle", h.settleWindow, op("settle-window", "Settle billing window", http.StatusNotFound))
 	huma.Post(service, "/void", h.voidWindow, op("void-window", "Void billing window", http.StatusNotFound))
 
-	// Caddy exposes only this path publicly; Huma keeps the OpenAPI surface focused on internal callers.
+	// HAProxy exposes only this path publicly; Huma keeps the OpenAPI surface focused on internal callers.
 	api.Adapter().Handle(&huma.Operation{OperationID: "stripe-webhook", Method: http.MethodPost, Path: "/webhooks/stripe", Hidden: true}, h.stripeWebhook)
 }
 
