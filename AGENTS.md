@@ -1,14 +1,15 @@
 <repo_overview>
 Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
 
-`aspect` contains lots of helpful commands under .aspect/. Use regular `bazelisk` for basic build/test.
+* `aspect` contains lots of helpful commands under .aspect/.
+* Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output)
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
 Polyglot monorepo structured as a modular monolith.
 Layers:
 
-1. Substrate layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything below.
+1. Substrate layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
 2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
