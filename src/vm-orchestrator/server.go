@@ -238,6 +238,10 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 	if specErr != nil {
 		return nil, status.Error(codes.InvalidArgument, specErr.Error())
 	}
+	leaseTTL, ttlErr := durationFromSeconds(spec.TTLSeconds, "ttl_seconds")
+	if ttlErr != nil {
+		return nil, status.Error(codes.InvalidArgument, ttlErr.Error())
+	}
 	leaseID := newHostID()
 	actor := &vmActor{
 		leaseID: leaseID,
@@ -246,7 +250,7 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 		mailbox: make(chan vmCommand, 16),
 		done:    make(chan struct{}),
 		state:   LeaseStateAcquiring,
-		expires: time.Now().UTC().Add(time.Duration(spec.TTLSeconds) * time.Second),
+		expires: time.Now().UTC().Add(leaseTTL),
 	}
 	s.rememberActor(actor)
 	go actor.run()
@@ -305,11 +309,15 @@ func (s *APIServer) RenewLease(ctx context.Context, req *vmrpc.RenewLeaseRequest
 	if extend == 0 {
 		return nil, status.Error(codes.InvalidArgument, "extend_seconds is required")
 	}
+	extendDuration, extendErr := durationFromSeconds(extend, "extend_seconds")
+	if extendErr != nil {
+		return nil, status.Error(codes.InvalidArgument, extendErr.Error())
+	}
 	snapshot, err := s.state.getLease(ctx, leaseID)
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	expiresAt := snapshot.ExpiresAt.Add(time.Duration(extend) * time.Second)
+	expiresAt := snapshot.ExpiresAt.Add(extendDuration)
 	if max := time.Now().UTC().Add(24 * time.Hour); expiresAt.After(max) {
 		expiresAt = max
 	}
@@ -515,7 +523,11 @@ func (s *APIServer) GetExec(ctx context.Context, req *vmrpc.GetExecRequest) (*vm
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	return &vmrpc.GetExecResponse{Exec: execSnapshotToProto(snap, req.GetIncludeOutput())}, nil
+	execRecord, convertErr := execSnapshotToProto(snap, req.GetIncludeOutput())
+	if convertErr != nil {
+		return nil, status.Error(codes.Internal, convertErr.Error())
+	}
+	return &vmrpc.GetExecResponse{Exec: execRecord}, nil
 }
 
 func (s *APIServer) WaitExec(ctx context.Context, req *vmrpc.WaitExecRequest) (*vmrpc.WaitExecResponse, error) {
@@ -531,7 +543,11 @@ func (s *APIServer) WaitExec(ctx context.Context, req *vmrpc.WaitExecRequest) (*
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
 		if snap.State.Terminal() {
-			return &vmrpc.WaitExecResponse{Exec: execSnapshotToProto(snap, req.GetIncludeOutput())}, nil
+			execRecord, convertErr := execSnapshotToProto(snap, req.GetIncludeOutput())
+			if convertErr != nil {
+				return nil, status.Error(codes.Internal, convertErr.Error())
+			}
+			return &vmrpc.WaitExecResponse{Exec: execRecord}, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -644,10 +660,14 @@ func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) 
 		FilesystemLabel:             strings.TrimSpace(req.GetFilesystemLabel()),
 		AllowDestroyingActiveClones: req.GetAllowDestroyingActiveClones(),
 	}
+	seedSizeBytes, sizeErr := int64FromUint64(spec.SizeBytes, "seed size_bytes")
+	if sizeErr != nil {
+		return nil, status.Error(codes.InvalidArgument, sizeErr.Error())
+	}
 	span.SetAttributes(
 		attribute.String("image.ref", imageRef),
 		attribute.String("seed.strategy", string(strategy)),
-		attribute.Int64("seed.size_bytes", int64(spec.SizeBytes)),
+		attribute.Int64("seed.size_bytes", seedSizeBytes),
 	)
 	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
 	result, seedErr := volumes.Seed(ctx, image, spec)
@@ -656,11 +676,19 @@ func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) 
 		span.SetStatus(otelcodes.Error, seedErr.Error())
 		return nil, status.Error(codes.Internal, seedErr.Error())
 	}
+	seededBytes, seededErr := int64FromUint64(result.SeededBytes, "seed seeded_bytes")
+	if seededErr != nil {
+		return nil, status.Error(codes.Internal, seededErr.Error())
+	}
+	dependentsTorn, dependentsErr := uint32FromInt(result.DependentsTorn, "seed dependents_torn")
+	if dependentsErr != nil {
+		return nil, status.Error(codes.Internal, dependentsErr.Error())
+	}
 	span.SetAttributes(
 		attribute.String("seed.outcome", string(result.Outcome)),
 		attribute.String("seed.source_digest", result.SourceDigest),
 		attribute.Int("seed.dependents_torn", result.DependentsTorn),
-		attribute.Int64("seed.seeded_bytes", int64(result.SeededBytes)),
+		attribute.Int64("seed.seeded_bytes", seededBytes),
 	)
 	return &vmrpc.SeedImageResponse{
 		ImageRef:       imageRef,
@@ -669,7 +697,7 @@ func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) 
 		Snapshot:       result.Snapshot.String(),
 		SourceDigest:   result.SourceDigest,
 		SeededBytes:    result.SeededBytes,
-		DependentsTorn: uint32(result.DependentsTorn),
+		DependentsTorn: dependentsTorn,
 		SeededAtUnixNs: uint64(result.SeededAt.UnixNano()),
 	}, nil
 }
@@ -701,8 +729,14 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	total := uint32(totalGuestSlots(s.cfg.GuestPoolCIDR))
-	leasesHeld := uint32(held)
+	total, totalErr := uint32FromInt(totalGuestSlots(s.cfg.GuestPoolCIDR), "guest slot total")
+	if totalErr != nil {
+		return nil, status.Error(codes.Internal, totalErr.Error())
+	}
+	leasesHeld, heldErr := uint32FromInt(held, "leases held")
+	if heldErr != nil {
+		return nil, status.Error(codes.Internal, heldErr.Error())
+	}
 	available := uint32(0)
 	if total > leasesHeld {
 		available = total - leasesHeld
@@ -787,7 +821,11 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	}
 	a.spec = spec
 	acquiredAt := time.Now().UTC()
-	a.expires = acquiredAt.Add(time.Duration(spec.TTLSeconds) * time.Second)
+	leaseTTL, ttlErr := durationFromSeconds(spec.TTLSeconds, "ttl_seconds")
+	if ttlErr != nil {
+		return acquireReply{err: ttlErr}
+	}
+	a.expires = acquiredAt.Add(leaseTTL)
 	if err := a.server.state.createLease(ctx, leaseSnapshot{
 		LeaseID:    a.leaseID,
 		State:      LeaseStateAcquiring,

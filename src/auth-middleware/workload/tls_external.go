@@ -26,7 +26,7 @@ func TLSConfigWithX509SourceAndCABundle(ctx context.Context, source *workloadapi
 	if caBundlePath == "" {
 		return nil, errors.New("ca bundle path is required")
 	}
-	ctx, span := tracer.Start(ctx, "auth.spiffe.external_tls.init")
+	_, span := tracer.Start(ctx, "auth.spiffe.external_tls.init")
 	defer span.End()
 	span.SetAttributes(attribute.String("tls.ca_bundle_path", caBundlePath))
 

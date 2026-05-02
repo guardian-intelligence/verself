@@ -232,7 +232,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		}
 		_, commitSpan := tracer.Start(ctx, "billing.authorization.commit_pg")
 		defer commitSpan.End()
-		commitSpan.SetAttributes(attribute.String("billing.window_id", windowID), attribute.String("billing.org_id", orgIDText(req.OrgID)), attribute.String("billing.product_id", req.ProductID), attribute.String("billing.reservation_shape", shape), attribute.Int64("billing.reserved_quantity", int64(quantity)), attribute.String("billing.charge_units", strconv.FormatUint(chargeUnits, 10)))
+		commitSpan.SetAttributes(attribute.String("billing.window_id", windowID), attribute.String("billing.org_id", orgIDText(req.OrgID)), attribute.String("billing.product_id", req.ProductID), attribute.String("billing.reservation_shape", shape), attribute.Int64("billing.reserved_quantity", checkedInt64FromUint64(uint64(quantity), "reserved quantity")), attribute.String("billing.charge_units", strconv.FormatUint(chargeUnits, 10)))
 		if err := q.InsertBillingWindow(ctx, store.InsertBillingWindowParams{
 			WindowID:            windowID,
 			CycleID:             cycle.CycleID,
@@ -248,8 +248,8 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 			BillingJobID:        billingJobID,
 			WindowSeq:           int64(req.WindowSeq),
 			ReservationShape:    shape,
-			ReservedQuantity:    int64(quantity),
-			ReservedChargeUnits: int64(chargeUnits),
+			ReservedQuantity:    checkedInt64FromUint64(uint64(quantity), "reserved quantity"),
+			ReservedChargeUnits: checkedInt64FromUint64(chargeUnits, "reserved charge units"),
 			PricingPhase:        pricingPhaseIncluded,
 			Allocation:          allocationJSON,
 			RateContext:         rateJSON,
@@ -500,8 +500,8 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 			ActualQuantity:      int64(actualQuantity),
 			BillableQuantity:    int64(billable),
 			WriteoffQuantity:    int64(writeoff),
-			BilledChargeUnits:   int64(billedUnits),
-			WriteoffChargeUnits: int64(writeoffUnits),
+			BilledChargeUnits:   checkedInt64FromUint64(billedUnits, "billed charge units"),
+			WriteoffChargeUnits: checkedInt64FromUint64(writeoffUnits, "writeoff charge units"),
 			WriteoffReason:      writeoffReason(writeoff, window),
 			UsageSummary:        usageJSON,
 			FundingLegs:         fundingJSON,
@@ -556,7 +556,7 @@ func (c *Client) ProjectPendingMeteringWindows(ctx context.Context, limit int) (
 	if limit <= 0 {
 		limit = 100
 	}
-	windowIDs, err := c.queries.ListPendingMeteringWindowIDs(ctx, store.ListPendingMeteringWindowIDsParams{LimitCount: int32(limit)})
+	windowIDs, err := c.queries.ListPendingMeteringWindowIDs(ctx, store.ListPendingMeteringWindowIDsParams{LimitCount: checkedInt32FromInt(limit, "pending metering window limit")})
 	if err != nil {
 		return 0, fmt.Errorf("query pending metering windows: %w", err)
 	}
@@ -719,8 +719,8 @@ func (c *Client) settleWindowLedgerPayloadTx(ctx context.Context, tx pgx.Tx, win
 			WindowID:             windowID,
 			LegSeq:               leg.LegSeq,
 			SettlementTransferID: settlementRaw,
-			AmountPosted:         int64(postedAmount),
-			AmountVoided:         int64(voidedAmount),
+			AmountPosted:         checkedInt64FromUint64(postedAmount, "posted amount"),
+			AmountVoided:         checkedInt64FromUint64(voidedAmount, "voided amount"),
 		}); err != nil {
 			return ledger.CommandPayload{}, nil, fmt.Errorf("store settlement amounts for window leg %d: %w", leg.LegSeq, err)
 		}
@@ -759,7 +759,7 @@ func (c *Client) insertWindowLedgerLegsTx(ctx context.Context, tx pgx.Tx, window
 			ScopeBucketID:     leg.ScopeBucketID,
 			ScopeSkuID:        leg.ScopeSKUID,
 			PlanID:            leg.PlanID,
-			AmountReserved:    int64(leg.Amount),
+			AmountReserved:    checkedInt64FromUint64(leg.Amount, "leg amount reserved"),
 		}); err != nil {
 			return fmt.Errorf("insert window ledger leg %s[%d]: %w", windowID, i, err)
 		}
@@ -866,16 +866,16 @@ func (c *Client) loadWindow(ctx context.Context, windowID string) (persistedWind
 		SourceType:          row.SourceType,
 		SourceRef:           row.SourceRef,
 		SourceFingerprint:   row.SourceFingerprint,
-		WindowSeq:           uint32(row.WindowSeq),
+		WindowSeq:           checkedUint32FromInt64(row.WindowSeq, "window seq"),
 		State:               row.State,
 		ReservationShape:    row.ReservationShape,
-		ReservedQuantity:    uint32(row.ReservedQuantity),
-		ActualQuantity:      uint32(row.ActualQuantity),
-		BillableQuantity:    uint32(row.BillableQuantity),
-		WriteoffQuantity:    uint32(row.WriteoffQuantity),
-		ReservedChargeUnits: uint64(row.ReservedChargeUnits),
-		BilledChargeUnits:   uint64(row.BilledChargeUnits),
-		WriteoffChargeUnits: uint64(row.WriteoffChargeUnits),
+		ReservedQuantity:    checkedUint32FromInt64(row.ReservedQuantity, "reserved quantity"),
+		ActualQuantity:      checkedUint32FromInt64(row.ActualQuantity, "actual quantity"),
+		BillableQuantity:    checkedUint32FromInt64(row.BillableQuantity, "billable quantity"),
+		WriteoffQuantity:    checkedUint32FromInt64(row.WriteoffQuantity, "writeoff quantity"),
+		ReservedChargeUnits: checkedUint64FromInt64(row.ReservedChargeUnits, "reserved charge units"),
+		BilledChargeUnits:   checkedUint64FromInt64(row.BilledChargeUnits, "billed charge units"),
+		WriteoffChargeUnits: checkedUint64FromInt64(row.WriteoffChargeUnits, "writeoff charge units"),
 		PricingPhase:        row.PricingPhase,
 		WindowStart:         row.WindowStart.Time.UTC(),
 		ActivatedAt:         timePtr(row.ActivatedAt),
@@ -967,7 +967,7 @@ func (c *Client) loadPricingContextTx(ctx context.Context, tx pgx.Tx, orgID OrgI
 		return pricingContext{}, fmt.Errorf("load sku rates: %w", err)
 	}
 	for _, sku := range rows {
-		out.SKURates[sku.SkuID] = uint64(sku.UnitRate)
+		out.SKURates[sku.SkuID] = checkedUint64FromInt64(sku.UnitRate, "sku unit rate")
 		out.SKUBuckets[sku.SkuID] = sku.BucketID
 		out.SKUBucketOrders[sku.SkuID] = int(sku.SortOrder)
 		out.SKUDisplayNames[sku.SkuID] = sku.SkuDisplayName
@@ -1039,8 +1039,8 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 			ScopeProductID:      row.ScopeProductID,
 			ScopeBucketID:       row.ScopeBucketID,
 			ScopeSKUID:          row.ScopeSkuID,
-			OriginalAmount:      uint64(row.Amount),
-			Amount:              uint64(row.Amount),
+			OriginalAmount:      checkedUint64FromInt64(row.Amount, "grant original amount"),
+			Amount:              checkedUint64FromInt64(row.Amount, "grant amount"),
 			Source:              row.Source,
 			SourceReferenceID:   row.SourceReferenceID,
 			EntitlementPeriodID: row.EntitlementPeriodID,
@@ -1085,7 +1085,7 @@ func (c *Client) grantAuthorizedUsageTx(ctx context.Context, tx pgx.Tx, orgID Or
 	out := map[string]uint64{}
 	for _, row := range rows {
 		if row.Amount > 0 && row.GrantID.Valid {
-			out[row.GrantID.String] = uint64(row.Amount)
+			out[row.GrantID.String] = checkedUint64FromInt64(row.Amount, "authorized grant amount")
 		}
 	}
 	return out, nil

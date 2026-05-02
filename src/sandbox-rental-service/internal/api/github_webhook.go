@@ -292,7 +292,7 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 			writeCheckoutError(w, err)
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Verself-Checkout-Cache-Hit", strconv.FormatBool(bundle.CacheHit))

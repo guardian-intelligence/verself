@@ -144,7 +144,7 @@ func (s *Service) PutSecret(ctx context.Context, principal Principal, req PutSec
 		attribute.String("verself.org_id", principal.OrgID),
 		attribute.String("verself.secret_kind", record.Kind),
 		attribute.String("verself.secret_id", record.SecretID),
-		attribute.Int64("verself.secret_version", int64(record.CurrentVersion)),
+		attribute.Int64("verself.secret_version", int64FromUint64(record.CurrentVersion, "secret version")),
 	)
 	return record, nil
 }
@@ -163,7 +163,7 @@ func (s *Service) ReadSecret(ctx context.Context, principal Principal, kind, nam
 		attribute.String("verself.org_id", principal.OrgID),
 		attribute.String("verself.secret_kind", value.Record.Kind),
 		attribute.String("verself.secret_id", value.Record.SecretID),
-		attribute.Int64("verself.secret_version", int64(value.Record.CurrentVersion)),
+		attribute.Int64("verself.secret_version", int64FromUint64(value.Record.CurrentVersion, "secret version")),
 	)
 	return value, nil
 }
@@ -234,7 +234,7 @@ func (s *Service) RotateTransitKey(ctx context.Context, principal Principal, nam
 	if err != nil {
 		return TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(key.CurrentVersion)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64FromUint64(key.CurrentVersion, "key version")))
 	return key, nil
 }
 
@@ -248,7 +248,7 @@ func (s *Service) TransitEncrypt(ctx context.Context, principal Principal, name 
 	if err != nil {
 		return TransitCiphertext{}, err
 	}
-	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(ciphertext.Version)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64FromUint64(ciphertext.Version, "key version")))
 	return ciphertext, nil
 }
 
@@ -262,7 +262,7 @@ func (s *Service) TransitDecrypt(ctx context.Context, principal Principal, name,
 	if err != nil {
 		return nil, TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(version)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64FromUint64(version, "key version")))
 	return plaintext, key, nil
 }
 
@@ -276,7 +276,7 @@ func (s *Service) TransitSign(ctx context.Context, principal Principal, name str
 	if err != nil {
 		return "", TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(version)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64FromUint64(version, "key version")))
 	return signature, key, nil
 }
 

@@ -14,10 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -96,7 +96,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 	slog.SetDefault(logger)
 
 	spiffeSource, err := workloadauth.Source(ctx, cfg.SPIFFEEndpoint)

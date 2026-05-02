@@ -26,7 +26,7 @@ input_hash matches the last_applied_hash recorded in
 | `l3_binaries`    | `playbooks/l3_binaries.yml`       | `//src/substrate:prod_l3_binaries_digest`         | Substrate daemons (postgres, clickhouse, openbao, zitadel, spire, …) and their foundational config |
 | `l4a_components` | `playbooks/l4a_components.yml`    | `//src/substrate:prod_l4a_components_digest`      | External-API reconciliation (cloudflare_dns, openbao_tenancy, zitadel apps, …) and per-component PG/CH/credstore bindings |
 
-`verself-deploy run` (under `src/deployment-tooling/`) is the
+`verself-deploy run` (under `src/deployment-tools/`) is the
 deploy-flow process: it derives identity, walks the four layers
 hash-gating each, runs the external reconcilers, fans out to Nomad,
 and writes both `verself.deploy_events` and `verself.deploy_layer_runs`

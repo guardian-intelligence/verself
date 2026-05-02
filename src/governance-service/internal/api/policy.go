@@ -386,7 +386,7 @@ func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operat
 		RequestID:             info.RequestID,
 		RouteTemplate:         op.Path,
 		HTTPMethod:            op.Method,
-		HTTPStatus:            uint16(statusForOutcome(outcome, err, op.DefaultStatus)),
+		HTTPStatus:            uint16FromInt(statusForOutcome(outcome, err, op.DefaultStatus), "audit http status"),
 	}
 	if err != nil {
 		record.ErrorCode = problemCode(err)

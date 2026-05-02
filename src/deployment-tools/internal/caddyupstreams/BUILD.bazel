@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "caddyupstreams",
+    srcs = ["caddyupstreams.go"],
+    importpath = "github.com/verself/deployment-tools/internal/caddyupstreams",
+    visibility = ["//src/deployment-tools:__subpackages__"],
+    deps = [
+        "//src/deployment-tools/internal/nomadclient",
+        "//src/deployment-tools/internal/sshtun",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "caddyupstreams_test",
+    srcs = ["caddyupstreams_test.go"],
+    embed = [":caddyupstreams"],
+    deps = [
+        "//src/deployment-tools/internal/nomadclient",
+    ],
+)

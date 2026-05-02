@@ -26,11 +26,11 @@ func listenVsockListener() (*vsockListener, error) {
 		CID:  unix.VMADDR_CID_ANY,
 		Port: vmproto.GuestPort,
 	}); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, fmt.Errorf("bind vsock: %w", err)
 	}
 	if err := unix.Listen(fd, 1); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, fmt.Errorf("listen vsock: %w", err)
 	}
 	return &vsockListener{fd: fd}, nil
@@ -41,7 +41,11 @@ func (l *vsockListener) Accept() (io.ReadWriteCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("accept vsock: %w", err)
 	}
-	return &vsockConn{file: os.NewFile(uintptr(fd), "vsock-conn")}, nil
+	fileFD, fdErr := uintptrFromFD(fd, "accepted vsock fd")
+	if fdErr != nil {
+		return nil, fdErr
+	}
+	return &vsockConn{file: os.NewFile(fileFD, "vsock-conn")}, nil
 }
 
 func (l *vsockListener) Close() error {

@@ -19,11 +19,11 @@ type Client struct {
 	client vmrpc.VMServiceClient
 }
 
-func NewClient(ctx context.Context, socketPath string) (*Client, error) {
+func NewClient(_ context.Context, socketPath string) (*Client, error) {
 	if socketPath == "" {
 		socketPath = DefaultSocketPath
 	}
-	conn, err := grpc.DialContext(ctx, "vm-orchestrator",
+	conn, err := grpc.NewClient("passthrough:///vm-orchestrator",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)

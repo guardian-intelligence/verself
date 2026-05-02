@@ -7,8 +7,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
@@ -18,23 +18,23 @@ type mailEmailPathInput struct {
 
 type mailMoveInput struct {
 	EmailID string `path:"email_id"`
-	Body    apiwire.MailboxMoveRequest
+	Body    dto.MailboxMoveRequest
 }
 
 type mailMutationOutput struct {
-	Body apiwire.MailboxMutation
+	Body dto.MailboxMutation
 }
 
 type mailBodyOutput struct {
-	Body apiwire.MailboxBody
+	Body dto.MailboxBody
 }
 
 type mailAccountOutput struct {
-	Body apiwire.MailboxAccount
+	Body dto.MailboxAccount
 }
 
 type mailSyncStatusOutput struct {
-	Body apiwire.MailboxServiceStatusResponse
+	Body dto.MailboxServiceStatusResponse
 }
 
 func registerMailRoutes(api huma.API, svc provider) {
@@ -112,7 +112,7 @@ func markRead(svc provider, seen bool) func(context.Context, *mailEmailPathInput
 			return nil, toHumaError("set read state", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
+		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -127,7 +127,7 @@ func flagEmail(svc provider, flagged bool) func(context.Context, *mailEmailPathI
 			return nil, toHumaError("set flag state", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
+		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -142,7 +142,7 @@ func moveEmail(svc provider) func(context.Context, *mailMoveInput) (*mailMutatio
 			return nil, toHumaError("move email", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
+		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -157,7 +157,7 @@ func trashEmail(svc provider) func(context.Context, *mailEmailPathInput) (*mailM
 			return nil, toHumaError("trash email", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
+		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -173,7 +173,7 @@ func fetchBody(svc provider) func(context.Context, *mailEmailPathInput) (*mailBo
 			return nil, toHumaError("fetch email body", err)
 		}
 		out := &mailBodyOutput{}
-		out.Body = apiwire.MailboxBody{
+		out.Body = dto.MailboxBody{
 			AccountID: body.AccountID,
 			EmailID:   body.EmailID,
 			TextBody:  body.TextBody,
@@ -199,7 +199,7 @@ func accountInfo(svc provider) func(context.Context, *mailboxServiceEmptyInput) 
 			return nil, toHumaError("list mailboxes", err)
 		}
 		out := &mailAccountOutput{}
-		out.Body = apiwire.MailboxAccount{
+		out.Body = dto.MailboxAccount{
 			AccountID:        account.AccountID,
 			EmailAddress:     account.EmailAddress,
 			DisplayName:      account.DisplayName,

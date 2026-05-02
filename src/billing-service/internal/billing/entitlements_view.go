@@ -303,10 +303,3 @@ func entitlementSourceLabel(source, planDisplay string) string {
 		return source
 	}
 }
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}

@@ -149,7 +149,7 @@ func prepareGarageRequestBody(req *http.Request) (string, func(), error) {
 func spoolGarageRequestBody(req *http.Request) (string, func(), error) {
 	hasher := sha256.New()
 	originalBody := req.Body
-	defer originalBody.Close()
+	defer func() { _ = originalBody.Close() }()
 
 	if req.ContentLength >= 0 && req.ContentLength <= garageBodyMemoryThreshold {
 		var buf bytes.Buffer

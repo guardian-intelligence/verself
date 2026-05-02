@@ -53,7 +53,7 @@ func (c *Client) reconcileOperatorLedgerAccounts(ctx context.Context) error {
 }
 
 func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (int, error) {
-	rows, err := c.queries.ListPostedGrantSnapshotsForReconcile(ctx, store.ListPostedGrantSnapshotsForReconcileParams{Limit: int32(limit)})
+	rows, err := c.queries.ListPostedGrantSnapshotsForReconcile(ctx, store.ListPostedGrantSnapshotsForReconcileParams{Limit: checkedInt32FromInt(limit, "reconcile grant ledger limit")})
 	if err != nil {
 		return 0, fmt.Errorf("query grants for ledger reconcile: %w", err)
 	}
@@ -76,7 +76,7 @@ func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (i
 			GrantID:   row.GrantID,
 			OrgText:   row.OrgID,
 			ProductID: row.ProductID,
-			Amount:    uint64(row.Amount),
+			Amount:    checkedUint64FromInt64(row.Amount, "grant snapshot amount"),
 			AccountID: id,
 		}
 		grants = append(grants, grant)
@@ -139,7 +139,7 @@ func (c *Client) settledGrantUsage(ctx context.Context, grantIDs []string) (map[
 	}
 	for _, row := range rows {
 		if row.GrantID.Valid && row.AmountPosted > 0 {
-			out[row.GrantID.String] = uint64(row.AmountPosted)
+			out[row.GrantID.String] = checkedUint64FromInt64(row.AmountPosted, "posted grant amount")
 		}
 	}
 	return out, nil

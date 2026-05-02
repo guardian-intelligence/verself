@@ -267,11 +267,12 @@ func (c *Codec) WriteEnvelope(env Envelope) error {
 	if len(data) > MaxFrameSize {
 		return fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, len(data), MaxFrameSize)
 	}
-	if len(data) > int(^uint32(0)) {
-		return fmt.Errorf("frame too large: %d", len(data))
+	frameSize, sizeErr := uint32FromInt(len(data), "frame size")
+	if sizeErr != nil {
+		return sizeErr
 	}
 	var header [4]byte
-	binary.BigEndian.PutUint32(header[:], uint32(len(data)))
+	binary.BigEndian.PutUint32(header[:], frameSize)
 	if _, err := c.writer.Write(header[:]); err != nil {
 		return fmt.Errorf("write frame header: %w", err)
 	}

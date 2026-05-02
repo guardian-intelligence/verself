@@ -155,7 +155,7 @@ func (s Store) createRepository(ctx context.Context, principal Principal, req Cr
 func (s Store) ListRepositories(ctx context.Context, orgID uint64, projectID uuid.UUID) ([]Repository, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.repo.list")
 	defer span.End()
-	span.SetAttributes(attribute.Int64("verself.org_id", int64(orgID)))
+	span.SetAttributes(attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")))
 
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
@@ -194,7 +194,7 @@ func (s Store) ListRepositories(ctx context.Context, orgID uint64, projectID uui
 func (s Store) GetRepository(ctx context.Context, orgID uint64, repoID uuid.UUID) (Repository, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.repo.get")
 	defer span.End()
-	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int64("verself.org_id", int64(orgID)))
+	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")))
 
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
@@ -210,7 +210,7 @@ func (s Store) GetRepository(ctx context.Context, orgID uint64, repoID uuid.UUID
 func (s Store) GetRepositoryByProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (Repository, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.repo.get_by_project")
 	defer span.End()
-	span.SetAttributes(attribute.String("verself.project_id", projectID.String()), attribute.Int64("verself.org_id", int64(orgID)))
+	span.SetAttributes(attribute.String("verself.project_id", projectID.String()), attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")))
 	if orgID == 0 || projectID == uuid.Nil {
 		return Repository{}, ErrInvalid
 	}
@@ -252,7 +252,7 @@ func (s Store) FindRepositoryByBackend(ctx context.Context, backend, backendOwne
 	if err != nil {
 		return Repository{}, err
 	}
-	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Int64("verself.org_id", int64(repo.OrgID)))
+	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Int64("verself.org_id", int64FromUint64(repo.OrgID, "org id")))
 	return repo, nil
 }
 
@@ -309,7 +309,7 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, cre
 	if err := tx.Commit(ctx); err != nil {
 		return GitCredential{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	span.SetAttributes(attribute.String("source.git_credential_id", credential.CredentialID.String()), attribute.Int64("verself.org_id", int64(principal.OrgID)))
+	span.SetAttributes(attribute.String("source.git_credential_id", credential.CredentialID.String()), attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")))
 	return credential, nil
 }
 
@@ -351,7 +351,7 @@ func (s Store) MarkGitCredentialUsed(ctx context.Context, credentialID uuid.UUID
 	if err := tx.Commit(ctx); err != nil {
 		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	span.SetAttributes(attribute.String("source.git_credential_id", principal.CredentialID.String()), attribute.Int64("verself.org_id", int64(principal.OrgID)))
+	span.SetAttributes(attribute.String("source.git_credential_id", principal.CredentialID.String()), attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")))
 	return principal, nil
 }
 
@@ -618,7 +618,7 @@ func (s Store) GetWorkflowRunByIdempotencyKey(ctx context.Context, orgID uint64,
 func (s Store) GetWorkflowRun(ctx context.Context, orgID uint64, workflowRunID uuid.UUID) (WorkflowRun, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.workflow_run.get")
 	defer span.End()
-	span.SetAttributes(attribute.String("source.workflow_run_id", workflowRunID.String()), attribute.Int64("verself.org_id", int64(orgID)))
+	span.SetAttributes(attribute.String("source.workflow_run_id", workflowRunID.String()), attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")))
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return WorkflowRun{}, err
@@ -633,7 +633,7 @@ func (s Store) GetWorkflowRun(ctx context.Context, orgID uint64, workflowRunID u
 func (s Store) ListWorkflowRuns(ctx context.Context, orgID uint64, repoID uuid.UUID) ([]WorkflowRun, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.workflow_run.list")
 	defer span.End()
-	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int64("verself.org_id", int64(orgID)))
+	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")))
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return nil, err
@@ -1094,7 +1094,7 @@ func pgOrgID(orgID uint64) (int64, error) {
 	if orgID == 0 || orgID > maxPostgresBigint {
 		return 0, ErrInvalid
 	}
-	return int64(orgID), nil
+	return int64(orgID), nil // #nosec G115 -- orgID is checked against maxPostgresBigint above.
 }
 
 func nullableOrgID(orgID uint64) (pgtype.Int8, error) {
@@ -1112,7 +1112,7 @@ func domainOrgID(orgID int64) (uint64, error) {
 	if orgID <= 0 {
 		return 0, fmt.Errorf("%w: invalid org_id %d", ErrStoreUnavailable, orgID)
 	}
-	return uint64(orgID), nil
+	return uint64(orgID), nil // #nosec G115 -- orgID is checked as positive above.
 }
 
 func timestamptz(value time.Time) pgtype.Timestamptz {

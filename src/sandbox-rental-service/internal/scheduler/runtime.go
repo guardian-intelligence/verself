@@ -17,7 +17,6 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
 	"github.com/riverqueue/rivercontrib/otelriver"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -37,8 +36,6 @@ const (
 
 	DefaultExecutionMaxWorkers = 4
 )
-
-var tracer = otel.Tracer("sandbox-rental-service/scheduler")
 
 type Config struct {
 	Logger              *slog.Logger

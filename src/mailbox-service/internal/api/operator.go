@@ -7,7 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/jmap"
 	"github.com/verself/mailbox-service/internal/mailstore"
 )
@@ -28,19 +28,19 @@ type operatorEmailListInput struct {
 }
 
 type operatorAccountsOutput struct {
-	Body apiwire.MailboxOperatorAccounts
+	Body dto.MailboxOperatorAccounts
 }
 
 type operatorMailboxesOutput struct {
-	Body apiwire.MailboxOperatorMailboxes
+	Body dto.MailboxOperatorMailboxes
 }
 
 type operatorEmailsOutput struct {
-	Body apiwire.MailboxOperatorEmails
+	Body dto.MailboxOperatorEmails
 }
 
 type operatorEmailOutput struct {
-	Body apiwire.MailboxOperatorEmailDetail `json:"body"`
+	Body dto.MailboxOperatorEmailDetail `json:"body"`
 }
 
 func registerOperatorRoutes(api huma.API, svc provider) {
@@ -80,7 +80,7 @@ func operatorListAccounts(svc provider) func(context.Context, *mailboxServiceEmp
 			return nil, toHumaError("list accounts", err)
 		}
 		out := &operatorAccountsOutput{}
-		out.Body.Accounts = make([]apiwire.MailboxOperatorAccount, 0, len(accounts))
+		out.Body.Accounts = make([]dto.MailboxOperatorAccount, 0, len(accounts))
 		for _, account := range accounts {
 			out.Body.Accounts = append(out.Body.Accounts, toOperatorAccount(account))
 		}
@@ -95,7 +95,7 @@ func operatorListMailboxes(svc provider) func(context.Context, *operatorAccountP
 			return nil, toHumaError("list mailboxes", err)
 		}
 		out := &operatorMailboxesOutput{}
-		out.Body.Mailboxes = make([]apiwire.MailboxOperatorMailbox, 0, len(mailboxes))
+		out.Body.Mailboxes = make([]dto.MailboxOperatorMailbox, 0, len(mailboxes))
 		for _, mailbox := range mailboxes {
 			out.Body.Mailboxes = append(out.Body.Mailboxes, toOperatorMailbox(mailbox))
 		}
@@ -114,7 +114,7 @@ func operatorListEmails(svc provider) func(context.Context, *operatorEmailListIn
 			return nil, toHumaError("list emails", err)
 		}
 		out := &operatorEmailsOutput{}
-		out.Body.Emails = make([]apiwire.MailboxOperatorEmail, 0, len(emails))
+		out.Body.Emails = make([]dto.MailboxOperatorEmail, 0, len(emails))
 		for _, email := range emails {
 			out.Body.Emails = append(out.Body.Emails, toOperatorEmail(email))
 		}
@@ -138,8 +138,8 @@ func operatorGetEmail(svc provider) func(context.Context, *operatorEmailPathInpu
 	}
 }
 
-func toOperatorAccount(account mailstore.Account) apiwire.MailboxOperatorAccount {
-	return apiwire.MailboxOperatorAccount{
+func toOperatorAccount(account mailstore.Account) dto.MailboxOperatorAccount {
+	return dto.MailboxOperatorAccount{
 		AccountID:     account.AccountID,
 		JMAPAccountID: account.JMAPAccountID,
 		EmailAddress:  account.EmailAddress,
@@ -149,8 +149,8 @@ func toOperatorAccount(account mailstore.Account) apiwire.MailboxOperatorAccount
 	}
 }
 
-func toOperatorMailbox(mailbox mailstore.Mailbox) apiwire.MailboxOperatorMailbox {
-	return apiwire.MailboxOperatorMailbox{
+func toOperatorMailbox(mailbox mailstore.Mailbox) dto.MailboxOperatorMailbox {
+	return dto.MailboxOperatorMailbox{
 		AccountID:     mailbox.AccountID,
 		ID:            mailbox.ID,
 		Name:          mailbox.Name,
@@ -165,8 +165,8 @@ func toOperatorMailbox(mailbox mailstore.Mailbox) apiwire.MailboxOperatorMailbox
 	}
 }
 
-func toOperatorEmail(email mailstore.Email) apiwire.MailboxOperatorEmail {
-	return apiwire.MailboxOperatorEmail{
+func toOperatorEmail(email mailstore.Email) dto.MailboxOperatorEmail {
+	return dto.MailboxOperatorEmail{
 		AccountID:     email.AccountID,
 		EmailID:       email.ID,
 		ThreadID:      email.ThreadID,
@@ -191,8 +191,8 @@ func toOperatorEmail(email mailstore.Email) apiwire.MailboxOperatorEmail {
 	}
 }
 
-func toOperatorEmailDetail(email mailstore.Email, body mailstore.EmailBody) apiwire.MailboxOperatorEmailDetail {
-	return apiwire.MailboxOperatorEmailDetail{
+func toOperatorEmailDetail(email mailstore.Email, body mailstore.EmailBody) dto.MailboxOperatorEmailDetail {
+	return dto.MailboxOperatorEmailDetail{
 		AccountID:     email.AccountID,
 		EmailID:       email.ID,
 		ThreadID:      email.ThreadID,
@@ -220,13 +220,13 @@ func toOperatorEmailDetail(email mailstore.Email, body mailstore.EmailBody) apiw
 	}
 }
 
-func toOperatorAddresses(addresses []jmap.Address) []apiwire.MailboxOperatorAddress {
+func toOperatorAddresses(addresses []jmap.Address) []dto.MailboxOperatorAddress {
 	if len(addresses) == 0 {
 		return nil
 	}
-	out := make([]apiwire.MailboxOperatorAddress, 0, len(addresses))
+	out := make([]dto.MailboxOperatorAddress, 0, len(addresses))
 	for _, address := range addresses {
-		out = append(out, apiwire.MailboxOperatorAddress{Name: address.Name, Email: address.Email})
+		out = append(out, dto.MailboxOperatorAddress{Name: address.Name, Email: address.Email})
 	}
 	return out
 }

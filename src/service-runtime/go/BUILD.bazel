@@ -1,0 +1,2 @@
+# Empty package marker for the github.com/verself/service-runtime Go module.
+# Go package targets live under envconfig/ and httpserver/.

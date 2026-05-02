@@ -3,7 +3,7 @@
 # delivery channel can run. Today that is Bazelisk, the Aspect CLI, and
 # Vite+ (which owns vp/vite/rolldown/vitest invocation for the JS workspace).
 #
-# The devtools catalog owns the version-of-record for controller tools. The
+# The dev-tools catalog owns the version-of-record for controller tools. The
 # constants here are hand-mirrored because this script bootstraps Bazelisk
 # before Bazel-owned catalog checks can run.
 #

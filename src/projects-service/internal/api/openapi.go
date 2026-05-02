@@ -7,7 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/projects-service/internal/projects"
 )
 
@@ -29,7 +29,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	api := humago.New(mux, config)
 	applyPublicSecurityScheme(api)
 	RegisterRoutes(api, cfg.Service)
-	apiwire.ApplyOpenAPIWireDefaults(api)
+	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

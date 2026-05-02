@@ -104,8 +104,8 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bodyCounter := &countingReadCloser{ReadCloser: r.Body}
 	r.Body = bodyCounter
 	defer func() {
-		event.BytesIn = uint64(bodyCounter.N)
-		event.LatencyMS = uint32(time.Since(startedAt).Milliseconds())
+		event.BytesIn = uint64FromNonNegativeInt64(bodyCounter.N, "s3 request bytes in")
+		event.LatencyMS = latencyMillis(time.Since(startedAt), "s3 request latency")
 		h.recordAccessEvent(traceContext(ctx), event)
 	}()
 
@@ -175,8 +175,8 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		span.SetStatus(codes.Error, err.Error())
 		return
 	}
-	defer resp.Body.Close()
-	event.UpstreamStatus = uint16(resp.StatusCode)
+	defer func() { _ = resp.Body.Close() }()
+	event.UpstreamStatus = uint16FromStatus(resp.StatusCode, "upstream status")
 
 	copyHeaders(w.Header(), resp.Header)
 	if operation.NeedsXMLRewrite && (aliasUsed || operation.RequestedBucket != targetBucket.BucketName) {
@@ -206,7 +206,7 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(rewritten)
 			event.BytesOut = uint64(len(rewritten))
 		}
-		event.Status = uint16(resp.StatusCode)
+		event.Status = uint16FromStatus(resp.StatusCode, "response status")
 		span.SetAttributes(
 			attribute.String("verself.org_id", event.OrgID),
 			attribute.String("verself.bucket_id", event.BucketID),
@@ -225,8 +225,8 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			span.SetStatus(codes.Error, err.Error())
 		}
 	}
-	event.Status = uint16(resp.StatusCode)
-	event.BytesOut = uint64(writer.N)
+	event.Status = uint16FromStatus(resp.StatusCode, "response status")
+	event.BytesOut = uint64FromNonNegativeInt64(writer.N, "s3 response bytes out")
 	span.SetAttributes(
 		attribute.String("verself.org_id", event.OrgID),
 		attribute.String("verself.bucket_id", event.BucketID),
@@ -330,7 +330,7 @@ func (h *S3Handler) selectGarageURL(ctx context.Context) (*url.URL, error) {
 			continue
 		}
 		_ = conn.Close()
-		h.endpointIndex.Store(uint32((index + 1) % len(h.GarageURLs)))
+		h.endpointIndex.Store(uint32FromIndex((index+1)%len(h.GarageURLs), "garage endpoint index"))
 		selected := *endpoint
 		return &selected, nil
 	}

@@ -54,7 +54,7 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	input.Name = firstNonEmpty(input.Name, project.DisplayName, project.Slug)
 	repoName := s.forgejoRepoName(principal.OrgID, input.ProjectID)
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(principal.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
 		attribute.String("verself.project_id", input.ProjectID.String()),
 		attribute.String("source.forgejo_repo", repoName),
 	)
@@ -140,7 +140,7 @@ func (s *Service) AuthenticateGitCredential(ctx context.Context, username string
 	}
 	span.SetAttributes(
 		attribute.String("source.git_credential_id", principal.CredentialID.String()),
-		attribute.Int64("verself.org_id", int64(principal.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
 	)
 	return principal, nil
 }
@@ -471,7 +471,7 @@ func (s *Service) ResolveGitPath(ctx context.Context, orgSlug, projectSlug strin
 	}
 	redirect := org.Slug != orgSlug || project.Slug != projectSlug
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(org.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(org.OrgID, "org id")),
 		attribute.String("verself.project_id", project.ProjectID.String()),
 		attribute.String("source.git.org_slug", orgSlug),
 		attribute.String("source.git.project_slug", projectSlug),

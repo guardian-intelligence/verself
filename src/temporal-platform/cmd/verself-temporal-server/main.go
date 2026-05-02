@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/verself/envconfig"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
+	"github.com/verself/service-runtime/envconfig"
 	"go.temporal.io/server/common/authorization"
 	"go.temporal.io/server/common/config"
 	"go.temporal.io/server/temporal"

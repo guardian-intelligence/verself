@@ -12,7 +12,7 @@ import (
 	"time"
 
 	workloadauth "github.com/verself/auth-middleware/workload"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/temporal-platform/internal/namespaceadmin"
 	"github.com/verself/temporal-platform/sdkclient"
 )

@@ -8,8 +8,6 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/verself/auth-middleware v0.0.0
-	github.com/verself/envconfig v0.0.0
-	github.com/verself/otel v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0
 	go.opentelemetry.io/otel v1.43.0
 	go.temporal.io/api v1.62.8
@@ -118,6 +116,8 @@ require (
 	github.com/uber-common/bark v1.3.0 // indirect
 	github.com/uber-go/tally/v4 v4.1.17 // indirect
 	github.com/urfave/cli v1.22.16 // indirect
+	github.com/verself/observability v0.0.0
+	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.39.0 // indirect
@@ -163,8 +163,8 @@ require (
 
 replace github.com/verself/auth-middleware => ../auth-middleware
 
-replace github.com/verself/envconfig => ../envconfig
-
-replace github.com/verself/otel => ../otel
-
 replace go.temporal.io/api => go.temporal.io/api v1.62.2
+
+replace github.com/verself/service-runtime => ../service-runtime/go
+
+replace github.com/verself/observability => ../observability/go

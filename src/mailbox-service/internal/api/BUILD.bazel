@@ -12,7 +12,7 @@ go_library(
     importpath = "github.com/verself/mailbox-service/internal/api",
     visibility = ["//src/mailbox-service:__subpackages__"],
     deps = [
-        "//src/apiwire",
+        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/mailbox-service/internal/app",
         "//src/mailbox-service/internal/jmap",

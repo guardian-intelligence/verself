@@ -6,11 +6,12 @@ go_library(
         "admin.go",
         "audit_sink.go",
         "openapi.go",
+        "safeconv.go",
     ],
     importpath = "github.com/verself/object-storage-service/internal/api",
     visibility = ["//src/object-storage-service:__subpackages__"],
     deps = [
-        "//src/apiwire",
+        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware/workload",
         "//src/governance-service/internalclient",
         "//src/object-storage-service/internal/objectstorage",

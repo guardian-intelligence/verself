@@ -63,7 +63,12 @@ func (PeerCredsTransportCredentials) ServerHandshake(rawConn net.Conn) (net.Conn
 	var ucred *unix.Ucred
 	var ucredErr error
 	controlErr := syscallConn.Control(func(fd uintptr) {
-		ucred, ucredErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		socketFD, fdErr := intFromFD(fd, "peer credential socket fd")
+		if fdErr != nil {
+			ucredErr = fdErr
+			return
+		}
+		ucred, ucredErr = unix.GetsockoptUcred(socketFD, unix.SOL_SOCKET, unix.SO_PEERCRED)
 	})
 	if controlErr != nil {
 		return nil, nil, fmt.Errorf("control unix conn for SO_PEERCRED: %w", controlErr)

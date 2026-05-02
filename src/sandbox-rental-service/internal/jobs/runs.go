@@ -143,11 +143,9 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 	}
 
 	runs := make([]ExecutionRecord, 0, limit)
-	attemptIDs := make([]uuid.UUID, 0, limit)
 	for _, row := range rows {
 		record := executionRecordFromListRunRow(row)
 		runs = append(runs, record)
-		attemptIDs = append(attemptIDs, record.LatestAttempt.AttemptID)
 	}
 
 	nextCursor := ""
@@ -155,7 +153,6 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 		last := runs[limit-1]
 		nextCursor = makeRunCursor(last.UpdatedAt, last.ExecutionID)
 		runs = runs[:limit]
-		attemptIDs = attemptIDs[:limit]
 	}
 	runs, err = s.attachRunBillingSummaries(ctx, runs)
 	if err != nil {
@@ -369,10 +366,10 @@ func (s *Service) attachRunBillingSummaries(ctx context.Context, runs []Executio
 	for _, row := range rows {
 		summaries[row.AttemptID] = RunBillingSummary{
 			WindowCount:         int(row.WindowCount),
-			ReservedChargeUnits: uint64(row.ReservedChargeUnits),
-			BilledChargeUnits:   uint64(row.BilledChargeUnits),
-			WriteoffChargeUnits: uint64(row.WriteoffChargeUnits),
-			CostPerUnit:         uint64(row.CostPerUnit),
+			ReservedChargeUnits: uint64FromInt64(row.ReservedChargeUnits, "reserved charge units"),
+			BilledChargeUnits:   uint64FromInt64(row.BilledChargeUnits, "billed charge units"),
+			WriteoffChargeUnits: uint64FromInt64(row.WriteoffChargeUnits, "writeoff charge units"),
+			CostPerUnit:         uint64FromInt64(row.CostPerUnit, "cost per unit"),
 			PricingPhase:        row.PricingPhase,
 		}
 	}

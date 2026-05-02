@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "nats.go",
         "runtime.go",
+        "safeconv.go",
         "service.go",
         "types.go",
     ],

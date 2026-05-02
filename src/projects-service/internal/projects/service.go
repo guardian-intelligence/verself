@@ -102,7 +102,7 @@ func (s *Service) ArchiveEnvironment(ctx context.Context, principal Principal, i
 
 func (s *Service) ResolveProject(ctx context.Context, input ResolveProjectRequest) (project Project, err error) {
 	attrs := []attribute.KeyValue{
-		attribute.Int64("verself.org_id", int64(input.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(input.OrgID, "org id")),
 		attribute.Bool("projects.require_active", input.RequireActive),
 	}
 	if input.ProjectID != uuid.Nil {
@@ -118,7 +118,7 @@ func (s *Service) ResolveProject(ctx context.Context, input ResolveProjectReques
 
 func (s *Service) ResolveEnvironment(ctx context.Context, input ResolveEnvironmentRequest) (env Environment, err error) {
 	attrs := []attribute.KeyValue{
-		attribute.Int64("verself.org_id", int64(input.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(input.OrgID, "org id")),
 		attribute.String("verself.project_id", input.ProjectID.String()),
 		attribute.Bool("projects.require_active", input.RequireActive),
 	}
@@ -134,13 +134,13 @@ func (s *Service) ResolveEnvironment(ctx context.Context, input ResolveEnvironme
 }
 
 func (s *Service) ListEvents(ctx context.Context, orgID uint64, cursor string, limit int) (events []Event, nextCursor string, err error) {
-	ctx, span := serviceTracer.Start(ctx, "projects.event.list", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.Int64("verself.org_id", int64(orgID))))
+	ctx, span := serviceTracer.Start(ctx, "projects.event.list", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id"))))
 	defer finishServiceSpan(span, err)
 	return s.Store.ListEvents(ctx, orgID, cursor, limit)
 }
 
 func startServiceSpan(ctx context.Context, name string, principal Principal, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	all := []attribute.KeyValue{attribute.Int64("verself.org_id", int64(principal.OrgID))}
+	all := []attribute.KeyValue{attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id"))}
 	if principal.Subject != "" {
 		all = append(all, attribute.String("verself.subject_id", principal.Subject))
 	}

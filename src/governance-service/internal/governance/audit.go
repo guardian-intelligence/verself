@@ -297,7 +297,7 @@ func (s *Service) RecordAuditEvent(ctx context.Context, record AuditRecord) (*Au
 		attribute.String("verself.audit_event", event.AuditEvent),
 		attribute.String("verself.actor_type", event.ActorType),
 		attribute.String("verself.risk_level", event.RiskLevel),
-		attribute.Int64("verself.audit_sequence", int64(event.Sequence)),
+		attribute.Int64("verself.audit_sequence", int64FromUint64(event.Sequence, "audit sequence")),
 	)
 	return event, nil
 }
@@ -744,7 +744,7 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 	if err != nil {
 		return AuditListPage{}, fmt.Errorf("%w: list audit events: %v", ErrStore, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	events := make([]AuditEvent, 0, limit)
 	for rows.Next() {
 		var event AuditEvent
@@ -795,7 +795,7 @@ func auditEventSelectSQL() string {
 
 func (s *Service) computeRowHMAC(event *AuditEvent) string {
 	mac := hmac.New(sha256.New, s.HMACKey)
-	fmt.Fprintf(mac, "%s\n%s\n%s\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+	_, _ = fmt.Fprintf(mac, "%s\n%s\n%s\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
 		event.SchemaVersion,
 		event.OrgID,
 		event.EventID.String(),

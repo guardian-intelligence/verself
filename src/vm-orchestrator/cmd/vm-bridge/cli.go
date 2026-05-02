@@ -55,10 +55,10 @@ func runSnapshotCLI(args []string, stdout io.Writer) error {
 	}
 
 	if resp.VersionID != "" {
-		fmt.Fprintf(stdout, "snapshot saved ref=%s version=%s\n", resp.Ref, resp.VersionID)
+		_, _ = fmt.Fprintf(stdout, "snapshot saved ref=%s version=%s\n", resp.Ref, resp.VersionID)
 		return nil
 	}
-	fmt.Fprintf(stdout, "snapshot saved ref=%s\n", resp.Ref)
+	_, _ = fmt.Fprintf(stdout, "snapshot saved ref=%s\n", resp.Ref)
 	return nil
 }
 
@@ -73,7 +73,7 @@ func sendLocalCheckpointRequest(req vmproto.CheckpointRequest) (vmproto.Checkpoi
 	if err != nil {
 		return vmproto.CheckpointResponse{}, fmt.Errorf("connect vm-bridge at %s: %w", socketPath, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := conn.SetDeadline(time.Now().Add(bridgeClientTimeout)); err != nil {
 		return vmproto.CheckpointResponse{}, fmt.Errorf("set vm-bridge deadline: %w", err)
@@ -114,5 +114,5 @@ func usageError() error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: vm-bridge snapshot save <ref>")
+	_, _ = fmt.Fprintln(w, "usage: vm-bridge snapshot save <ref>")
 }

@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "smoke-span_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/observability/cmd/smoke-span",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+    ],
+)
+
+go_binary(
+    name = "smoke-span",
+    embed = [":smoke-span_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -22,7 +22,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
@@ -143,20 +143,6 @@ type githubUserInstallationsResponse struct {
 	} `json:"installations"`
 }
 
-type githubRepository struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	FullName string `json:"full_name"`
-	Owner    struct {
-		Login string `json:"login"`
-	} `json:"owner"`
-}
-
-type githubInstallationRepositoriesResponse struct {
-	TotalCount   int                `json:"total_count"`
-	Repositories []githubRepository `json:"repositories"`
-}
-
 type githubAccessTokenResponse struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -213,7 +199,7 @@ type githubAllocation struct {
 	OrgID              uint64
 	AccountLogin       string
 	RepositoryFullName string
-	Resources          apiwire.VMResources
+	Resources          dto.VMResources
 	ProductID          string
 }
 
@@ -783,7 +769,7 @@ func (r *GitHubRunner) loadQueuedJob(ctx context.Context, githubJobID int64) (gi
 	return job, nil
 }
 
-func (r *GitHubRunner) runnerClassForLabels(ctx context.Context, labels []string) (string, apiwire.VMResources, string, error) {
+func (r *GitHubRunner) runnerClassForLabels(ctx context.Context, labels []string) (string, dto.VMResources, string, error) {
 	for _, label := range labels {
 		label = strings.TrimSpace(label)
 		if label == "" {
@@ -791,14 +777,14 @@ func (r *GitHubRunner) runnerClassForLabels(ctx context.Context, labels []string
 		}
 		resources, productID, ok, err := r.service.runnerClassResources(ctx, label)
 		if err != nil {
-			return "", apiwire.VMResources{}, "", err
+			return "", dto.VMResources{}, "", err
 		}
 		if !ok {
 			continue
 		}
 		return label, resources, productID, nil
 	}
-	return "", apiwire.VMResources{}, "", nil
+	return "", dto.VMResources{}, "", nil
 }
 
 func (r *GitHubRunner) activeAllocationForJob(ctx context.Context, githubJobID int64) (uuid.UUID, error) {
@@ -904,7 +890,7 @@ func (r *GitHubRunner) installationToken(ctx context.Context, installationID int
 		return "", fmt.Errorf("github installation token response missing token")
 	}
 	r.tokenMu.Lock()
-	r.tokens[installationID] = githubInstallationToken{Token: resp.Token, ExpiresAt: resp.ExpiresAt}
+	r.tokens[installationID] = githubInstallationToken(resp)
 	r.tokenMu.Unlock()
 	return resp.Token, nil
 }
@@ -938,7 +924,7 @@ func (r *GitHubRunner) exchangeUserAccessToken(ctx context.Context, code string)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out githubOAuthTokenResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
 		return "", err
@@ -967,78 +953,6 @@ func (r *GitHubRunner) verifyUserInstallationAccess(ctx context.Context, userTok
 		}
 	}
 	return ErrGitHubInstallationInvalid
-}
-
-func (r *GitHubRunner) listInstallationRepositories(ctx context.Context, installationID int64) ([]githubRepository, error) {
-	token, err := r.installationToken(ctx, installationID)
-	if err != nil {
-		return nil, err
-	}
-	const perPage = 100
-	var repositories []githubRepository
-	for page := 1; ; page++ {
-		var resp githubInstallationRepositoriesResponse
-		path := fmt.Sprintf("/installation/repositories?per_page=%d&page=%d", perPage, page)
-		if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
-			return nil, err
-		}
-		repositories = append(repositories, resp.Repositories...)
-		if len(resp.Repositories) < perPage || len(repositories) >= resp.TotalCount {
-			break
-		}
-	}
-	return repositories, nil
-}
-
-func (r *GitHubRunner) syncGitHubRunnerRepositories(ctx context.Context, q *store.Queries, orgID uint64, accountLogin string, repositories []githubRepository, now time.Time) error {
-	repositoryIDs := make([]int64, 0, len(repositories))
-	accountLogin = strings.TrimSpace(accountLogin)
-	for _, repo := range repositories {
-		if repo.ID <= 0 {
-			continue
-		}
-		owner, name := githubRepositoryOwnerAndName(repo)
-		if owner == "" || name == "" {
-			continue
-		}
-		repositoryIDs = append(repositoryIDs, repo.ID)
-		rows, err := q.UpsertGitHubRunnerRepository(ctx, store.UpsertGitHubRunnerRepositoryParams{
-			ProviderRepositoryID: repo.ID,
-			OrgID:                dbOrgID(orgID),
-			ProviderOwner:        owner,
-			ProviderRepo:         name,
-			RepositoryFullName:   owner + "/" + name,
-			UpdatedAt:            pgTime(now),
-		})
-		if err != nil {
-			return err
-		}
-		if rows == 0 {
-			return fmt.Errorf("%w: github repository %s is already imported by another organization", ErrGitHubInstallationInvalid, owner+"/"+name)
-		}
-	}
-	if accountLogin == "" {
-		return nil
-	}
-	return q.DeactivateMissingGitHubRunnerRepositories(ctx, store.DeactivateMissingGitHubRunnerRepositoriesParams{
-		UpdatedAt:             pgTime(now),
-		OrgID:                 dbOrgID(orgID),
-		ProviderOwner:         accountLogin,
-		ProviderRepositoryIds: repositoryIDs,
-	})
-}
-
-func githubRepositoryOwnerAndName(repo githubRepository) (string, string) {
-	owner := strings.TrimSpace(repo.Owner.Login)
-	name := strings.TrimSpace(repo.Name)
-	if owner != "" && name != "" {
-		return owner, name
-	}
-	parts := strings.Split(strings.TrimSpace(repo.FullName), "/")
-	if len(parts) == 2 {
-		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-	}
-	return "", ""
 }
 
 func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64, org, runnerName, runnerClass string) (githubJITConfigResponse, error) {
@@ -1116,7 +1030,7 @@ func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer s
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	for _, status := range expected {
 		if resp.StatusCode == status {
 			if out != nil && resp.Body != nil {
@@ -1229,7 +1143,7 @@ func githubAllocationFromGetRow(row store.GetGitHubAllocationRow) githubAllocati
 		AccountLogin:       row.AccountLogin,
 		RepositoryFullName: row.RepositoryFullName,
 		ProductID:          row.ProductID,
-		Resources:          apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+		Resources:          vmResourcesFromDB(row.Vcpus, row.MemoryMib, row.RootfsGib),
 	}
 	if row.ExecutionID != nil {
 		out.ExecutionID = *row.ExecutionID
@@ -1258,7 +1172,7 @@ func githubAllocationFromCleanupRow(row store.GetGitHubAllocationForCleanupRow) 
 		AccountLogin:       row.AccountLogin,
 		RepositoryFullName: row.RepositoryFullName,
 		ProductID:          row.ProductID,
-		Resources:          apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+		Resources:          vmResourcesFromDB(row.Vcpus, row.MemoryMib, row.RootfsGib),
 	}
 	if row.ExecutionID != nil {
 		out.ExecutionID = *row.ExecutionID

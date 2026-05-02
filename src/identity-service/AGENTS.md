@@ -49,7 +49,7 @@ browser request bodies as evidence of authority. Handlers must still validate
 resource ownership against Zitadel or Verself-owned storage after the
 operation permission check passes.
 
-Use `apiwire` for request/response DTOs shared across services, generated
+Use `dto` for request/response DTOs shared across services, generated
 clients, or frontend wrappers, including the member-capability document and
 catalog payloads returned by this service. Huma route metadata such as
 `x-verself-iam` remains service-local because it describes enforcement

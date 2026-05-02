@@ -10,6 +10,7 @@ go_library(
         "random.go",
         "s3.go",
         "s3_xml.go",
+        "safeconv.go",
         "service.go",
         "sigv4.go",
         "store.go",

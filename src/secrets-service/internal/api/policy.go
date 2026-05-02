@@ -20,9 +20,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
 	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
 )
 
@@ -342,7 +342,7 @@ func identityHasDirectPermission(identity *auth.Identity, required permission) b
 	return false
 }
 
-func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy operationPolicy, identity *auth.Identity, input any) (*apiwire.BillingWindowReservation, error) {
+func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy operationPolicy, identity *auth.Identity, input any) (*dto.BillingWindowReservation, error) {
 	if policy.BillingSKU == "" {
 		return nil, nil
 	}
@@ -384,7 +384,7 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	}
 	switch response.StatusCode() {
 	case http.StatusOK:
-		result, err := decodeBillingResponse[apiwire.BillingReserveWindowResult](response.Body)
+		result, err := decodeBillingResponse[dto.BillingReserveWindowResult](response.Body)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -413,7 +413,7 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	}
 }
 
-func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *apiwire.BillingWindowReservation, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any) error {
+func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *dto.BillingWindowReservation, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any) error {
 	if reservation == nil {
 		return nil
 	}
@@ -452,7 +452,7 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 	}
 	switch response.StatusCode() {
 	case http.StatusOK:
-		result, err := decodeBillingResponse[apiwire.BillingSettleResult](response.Body)
+		result, err := decodeBillingResponse[dto.BillingSettleResult](response.Body)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -468,7 +468,7 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 	}
 }
 
-func voidBillingReservation(ctx context.Context, svc *secrets.Service, reservation *apiwire.BillingWindowReservation) {
+func voidBillingReservation(ctx context.Context, svc *secrets.Service, reservation *dto.BillingWindowReservation) {
 	if reservation == nil || svc == nil || svc.Billing == nil {
 		return
 	}

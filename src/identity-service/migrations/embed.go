@@ -63,6 +63,6 @@ func Up(ctx context.Context, service string) error {
 	if databaseErr != nil {
 		return fmt.Errorf("%s: close migration database: %w", service, databaseErr)
 	}
-	fmt.Fprintf(os.Stdout, "%s migrations ok\n", service)
+	_, _ = fmt.Fprintf(os.Stdout, "%s migrations ok\n", service)
 	return nil
 }

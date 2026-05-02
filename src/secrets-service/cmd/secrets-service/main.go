@@ -15,12 +15,12 @@ import (
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
 	billingclient "github.com/verself/billing-service/client"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
 	secretsapi "github.com/verself/secrets-service/internal/api"
 	"github.com/verself/secrets-service/internal/secrets"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 )
 
 const (

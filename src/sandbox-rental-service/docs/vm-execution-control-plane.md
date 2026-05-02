@@ -17,7 +17,7 @@ Code pointers:
   schedule dispatch lineage.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
-- `../../apiwire/sandbox.go` - shared wire DTOs.
+- `../../dto/sandbox.go` - shared wire DTOs.
 - `../openapi/` - generated OpenAPI contracts.
 
 State model:

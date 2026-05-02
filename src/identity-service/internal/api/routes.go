@@ -8,8 +8,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/identity-service/internal/identity"
 )
 
@@ -221,44 +221,44 @@ func RegisterRoutes(api huma.API, svc *identity.Service) {
 type emptyInput struct{}
 
 type organizationOutput struct {
-	Body apiwire.IdentityOrganization
+	Body dto.IdentityOrganization
 }
 
 type accessibleOrganizationsOutput struct {
-	Body []apiwire.IdentityOrganizationMetadata
+	Body []dto.IdentityOrganizationMetadata
 }
 
 type updateOrganizationInput struct {
-	Body apiwire.IdentityUpdateOrganizationRequest
+	Body dto.IdentityUpdateOrganizationRequest
 }
 
 type membersOutput struct {
-	Body apiwire.IdentityMembers
+	Body dto.IdentityMembers
 }
 
 type inviteMemberInput struct {
-	Body apiwire.IdentityInviteMemberRequest
+	Body dto.IdentityInviteMemberRequest
 }
 
 type inviteMemberOutput struct {
-	Body apiwire.IdentityInviteMemberResponse
+	Body dto.IdentityInviteMemberResponse
 }
 
 type memberRolesPath struct {
 	UserID string `path:"user_id" doc:"Zitadel user ID"`
-	Body   apiwire.IdentityUpdateMemberRolesRequest
+	Body   dto.IdentityUpdateMemberRolesRequest
 }
 
 type memberOutput struct {
-	Body apiwire.IdentityMember
+	Body dto.IdentityMember
 }
 
 type memberCapabilitiesOutput struct {
-	Body apiwire.IdentityMemberCapabilities
+	Body dto.IdentityMemberCapabilities
 }
 
 type putMemberCapabilitiesInput struct {
-	Body apiwire.IdentityPutMemberCapabilitiesRequest
+	Body dto.IdentityPutMemberCapabilitiesRequest
 }
 
 type apiCredentialPath struct {
@@ -266,28 +266,28 @@ type apiCredentialPath struct {
 }
 
 type apiCredentialsOutput struct {
-	Body apiwire.IdentityAPICredentials
+	Body dto.IdentityAPICredentials
 }
 
 type apiCredentialOutput struct {
-	Body apiwire.IdentityAPICredential
+	Body dto.IdentityAPICredential
 }
 
 type createAPICredentialInput struct {
-	Body apiwire.IdentityCreateAPICredentialRequest
+	Body dto.IdentityCreateAPICredentialRequest
 }
 
 type createAPICredentialOutput struct {
-	Body apiwire.IdentityCreateAPICredentialResponse
+	Body dto.IdentityCreateAPICredentialResponse
 }
 
 type rollAPICredentialInput struct {
 	CredentialID string `path:"credential_id" doc:"Verself API credential ID"`
-	Body         apiwire.IdentityRollAPICredentialRequest
+	Body         dto.IdentityRollAPICredentialRequest
 }
 
 type rollAPICredentialOutput struct {
-	Body apiwire.IdentityRollAPICredentialResponse
+	Body dto.IdentityRollAPICredentialResponse
 }
 
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {
@@ -310,7 +310,7 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 	if authIdentity == nil {
 		return identity.Principal{}, unauthorized(ctx)
 	}
-	if _, err := apiwire.ParseUint64(authIdentity.OrgID); err != nil {
+	if _, err := dto.ParseUint64(authIdentity.OrgID); err != nil {
 		return identity.Principal{}, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
 	}
 	return identity.Principal{
@@ -382,7 +382,7 @@ func listMembers(svc *identity.Service) func(context.Context, *emptyInput) (*mem
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &membersOutput{Body: apiwire.IdentityMembers{Members: memberDTOs(members)}}, nil
+		return &membersOutput{Body: dto.IdentityMembers{Members: memberDTOs(members)}}, nil
 	}
 }
 
@@ -401,7 +401,7 @@ func inviteMember(svc *identity.Service) func(context.Context, *inviteMemberInpu
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &inviteMemberOutput{Body: apiwire.IdentityInviteMemberResponse{
+		return &inviteMemberOutput{Body: dto.IdentityInviteMemberResponse{
 			UserID:   result.UserID,
 			Email:    result.Email,
 			RoleKeys: result.RoleKeys,
@@ -472,7 +472,7 @@ func listAPICredentials(svc *identity.Service) func(context.Context, *emptyInput
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &apiCredentialsOutput{Body: apiwire.IdentityAPICredentials{Credentials: apiCredentialDTOs(credentials)}}, nil
+		return &apiCredentialsOutput{Body: dto.IdentityAPICredentials{Credentials: apiCredentialDTOs(credentials)}}, nil
 	}
 }
 
@@ -505,7 +505,7 @@ func createAPICredential(svc *identity.Service) func(context.Context, *createAPI
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &createAPICredentialOutput{Body: apiwire.IdentityCreateAPICredentialResponse{
+		return &createAPICredentialOutput{Body: dto.IdentityCreateAPICredentialResponse{
 			Credential:     apiCredentialDTO(result.Credential),
 			IssuedMaterial: issuedMaterialDTO(result.IssuedMaterial),
 		}}, nil
@@ -524,7 +524,7 @@ func rollAPICredential(svc *identity.Service) func(context.Context, *rollAPICred
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &rollAPICredentialOutput{Body: apiwire.IdentityRollAPICredentialResponse{
+		return &rollAPICredentialOutput{Body: dto.IdentityRollAPICredentialResponse{
 			Credential:     apiCredentialDTO(result.Credential),
 			IssuedMaterial: issuedMaterialDTO(result.IssuedMaterial),
 		}}, nil
@@ -545,8 +545,8 @@ func revokeAPICredential(svc *identity.Service) func(context.Context, *apiCreden
 	}
 }
 
-func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
-	return apiwire.IdentityOrganization{
+func organizationDTO(org identity.Organization) dto.IdentityOrganization {
+	return dto.IdentityOrganization{
 		OrgID:              orgID(org.OrgID),
 		DisplayName:        org.DisplayName,
 		Slug:               org.Slug,
@@ -558,10 +558,10 @@ func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
 	}
 }
 
-func organizationMetadataDTOs(organizations []identity.OrganizationMetadata) []apiwire.IdentityOrganizationMetadata {
-	out := make([]apiwire.IdentityOrganizationMetadata, 0, len(organizations))
+func organizationMetadataDTOs(organizations []identity.OrganizationMetadata) []dto.IdentityOrganizationMetadata {
+	out := make([]dto.IdentityOrganizationMetadata, 0, len(organizations))
 	for _, organization := range organizations {
-		out = append(out, apiwire.IdentityOrganizationMetadata{
+		out = append(out, dto.IdentityOrganizationMetadata{
 			OrgID:       orgID(organization.OrgID),
 			DisplayName: organization.DisplayName,
 			Slug:        organization.Slug,
@@ -570,8 +570,8 @@ func organizationMetadataDTOs(organizations []identity.OrganizationMetadata) []a
 	return out
 }
 
-func organizationProfileDTO(profile identity.OrganizationProfile) apiwire.IdentityOrganizationProfile {
-	return apiwire.IdentityOrganizationProfile{
+func organizationProfileDTO(profile identity.OrganizationProfile) dto.IdentityOrganizationProfile {
+	return dto.IdentityOrganizationProfile{
 		OrgID:          orgID(profile.OrgID),
 		DisplayName:    profile.DisplayName,
 		Slug:           profile.Slug,
@@ -582,16 +582,16 @@ func organizationProfileDTO(profile identity.OrganizationProfile) apiwire.Identi
 	}
 }
 
-func memberDTOs(members []identity.Member) []apiwire.IdentityMember {
-	out := make([]apiwire.IdentityMember, 0, len(members))
+func memberDTOs(members []identity.Member) []dto.IdentityMember {
+	out := make([]dto.IdentityMember, 0, len(members))
 	for _, member := range members {
 		out = append(out, memberDTO(member))
 	}
 	return out
 }
 
-func memberDTO(member identity.Member) apiwire.IdentityMember {
-	return apiwire.IdentityMember{
+func memberDTO(member identity.Member) dto.IdentityMember {
+	return dto.IdentityMember{
 		UserID:      member.UserID,
 		Email:       member.Email,
 		LoginName:   member.LoginName,
@@ -601,8 +601,8 @@ func memberDTO(member identity.Member) apiwire.IdentityMember {
 	}
 }
 
-func memberCapabilitiesDocumentDTO(doc identity.MemberCapabilitiesDocument) apiwire.IdentityMemberCapabilitiesDocument {
-	return apiwire.IdentityMemberCapabilitiesDocument{
+func memberCapabilitiesDocumentDTO(doc identity.MemberCapabilitiesDocument) dto.IdentityMemberCapabilitiesDocument {
+	return dto.IdentityMemberCapabilitiesDocument{
 		OrgID:       orgID(doc.OrgID),
 		Version:     doc.Version,
 		EnabledKeys: append([]string(nil), doc.EnabledKeys...),
@@ -611,11 +611,11 @@ func memberCapabilitiesDocumentDTO(doc identity.MemberCapabilitiesDocument) apiw
 	}
 }
 
-func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) apiwire.IdentityMemberCapabilities {
+func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) dto.IdentityMemberCapabilities {
 	catalog := identity.DefaultCapabilities()
-	dtoCatalog := make([]apiwire.IdentityMemberCapability, 0, len(catalog))
+	dtoCatalog := make([]dto.IdentityMemberCapability, 0, len(catalog))
 	for _, capability := range catalog {
-		dtoCatalog = append(dtoCatalog, apiwire.IdentityMemberCapability{
+		dtoCatalog = append(dtoCatalog, dto.IdentityMemberCapability{
 			Key:            capability.Key,
 			Label:          capability.Label,
 			Description:    capability.Description,
@@ -623,22 +623,22 @@ func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) apiwire.Iden
 			Permissions:    append([]string(nil), capability.Permissions...),
 		})
 	}
-	return apiwire.IdentityMemberCapabilities{
+	return dto.IdentityMemberCapabilities{
 		Document: memberCapabilitiesDocumentDTO(doc),
 		Catalog:  dtoCatalog,
 	}
 }
 
-func apiCredentialDTOs(credentials []identity.APICredential) []apiwire.IdentityAPICredential {
-	out := make([]apiwire.IdentityAPICredential, 0, len(credentials))
+func apiCredentialDTOs(credentials []identity.APICredential) []dto.IdentityAPICredential {
+	out := make([]dto.IdentityAPICredential, 0, len(credentials))
 	for _, credential := range credentials {
 		out = append(out, apiCredentialDTO(credential))
 	}
 	return out
 }
 
-func apiCredentialDTO(credential identity.APICredential) apiwire.IdentityAPICredential {
-	return apiwire.IdentityAPICredential{
+func apiCredentialDTO(credential identity.APICredential) dto.IdentityAPICredential {
+	return dto.IdentityAPICredential{
 		CredentialID:         credential.CredentialID,
 		OrgID:                orgID(credential.OrgID),
 		SubjectID:            credential.SubjectID,
@@ -659,8 +659,8 @@ func apiCredentialDTO(credential identity.APICredential) apiwire.IdentityAPICred
 	}
 }
 
-func issuedMaterialDTO(material identity.APICredentialIssuedMaterial) apiwire.IdentityAPICredentialIssuedMaterial {
-	return apiwire.IdentityAPICredentialIssuedMaterial{
+func issuedMaterialDTO(material identity.APICredentialIssuedMaterial) dto.IdentityAPICredentialIssuedMaterial {
+	return dto.IdentityAPICredentialIssuedMaterial{
 		AuthMethod:   string(material.AuthMethod),
 		ClientID:     material.ClientID,
 		TokenURL:     material.TokenURL,
@@ -687,12 +687,12 @@ func directPermissionsFromAuthIdentity(authIdentity *auth.Identity) []string {
 	return compactStrings(out)
 }
 
-func orgID(value string) apiwire.OrgID {
-	parsed, err := apiwire.ParseUint64(value)
+func orgID(value string) dto.OrgID {
+	parsed, err := dto.ParseUint64(value)
 	if err != nil {
-		return apiwire.Uint64(0)
+		return dto.Uint64(0)
 	}
-	return apiwire.Uint64(parsed)
+	return dto.Uint64(parsed)
 }
 
 func roleAssignmentOrgIDs(ctx context.Context, authIdentity *auth.Identity) ([]string, error) {
@@ -706,7 +706,7 @@ func roleAssignmentOrgIDs(ctx context.Context, authIdentity *auth.Identity) ([]s
 		if orgID == "" {
 			continue
 		}
-		if _, err := apiwire.ParseUint64(orgID); err != nil {
+		if _, err := dto.ParseUint64(orgID); err != nil {
 			return nil, badRequest(ctx, "invalid-role-assignment-org", "role assignment org_id must be an unsigned integer", err)
 		}
 		if _, ok := seen[orgID]; ok {

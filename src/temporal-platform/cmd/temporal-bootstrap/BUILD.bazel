@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/auth-middleware/workload",
-        "//src/otel",
+        "//src/observability/go/otel",
         "//src/temporal-platform/internal/namespaceadmin",
         "//src/temporal-platform/sdkclient",
     ],

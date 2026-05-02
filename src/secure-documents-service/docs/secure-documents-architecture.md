@@ -21,7 +21,7 @@ Reference points in this repo:
 - `src/platform/docs/identity-and-iam.md` for Zitadel-fronted user auth, machine identity, and SCIM org boundaries.
 - `docs/architecture/workload-identity.md` for SPIFFE/SPIRE trust domain, x509-SVID issuance, and how Python services bind a workload-identity-aware HTTP client.
 - `src/governance-service/docs/audit-data-contract.md` for the OCSF-flavored audit-ledger schema this service emits into.
-- `src/apiwire/docs/wire-contracts.md` for the wire-shape conventions and generated-client patterns the public surface must obey.
+- `src/domain-transfer-objects/docs/wire-contracts.md` for the wire-shape conventions and generated-client patterns the public surface must obey.
 - `src/mailbox-service/docs/inbound-mail.md` for the transactional outbound mail surface used to deliver envelope invitations.
 
 External standards consulted directly when implementing:

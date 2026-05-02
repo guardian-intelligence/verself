@@ -48,7 +48,7 @@ func (c RunnerRepositoryClient) RegisterRunnerRepository(ctx context.Context, re
 	}
 	repositoryFullName := strings.TrimSpace(repo.Backend.BackendOwner + "/" + repo.Backend.BackendRepo)
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(repo.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(repo.OrgID, "org id")),
 		attribute.String("source.repo_id", repo.RepoID.String()),
 		attribute.Int64("runner.provider_repository_id", providerRepoID),
 		attribute.String("runner.provider", BackendForgejo),

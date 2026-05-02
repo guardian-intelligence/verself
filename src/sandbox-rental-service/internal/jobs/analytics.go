@@ -161,7 +161,7 @@ func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window Ana
 	if err != nil {
 		return JobsAnalytics{}, fmt.Errorf("query slowest runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var sample RunDurationSample
 		if err := rows.Scan(&sample.ExecutionID, &sample.Status, &sample.RunnerClass, &sample.RepositoryFullName, &sample.WorkflowName, &sample.JobName, &sample.DurationMs, &sample.CompletedAt); err != nil {
@@ -277,7 +277,7 @@ func (s *Service) GetCachesAnalytics(ctx context.Context, orgID uint64, window A
 	if err != nil {
 		return CachesAnalytics{}, fmt.Errorf("query caches analytics by repository: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var bucket AnalyticsBucket
 		if err := rows.Scan(&bucket.Key, &bucket.Count); err != nil {
@@ -319,7 +319,7 @@ func (s *Service) GetRunnerSizingAnalytics(ctx context.Context, orgID uint64, wi
 	if err != nil {
 		return RunnerSizingAnalytics{}, fmt.Errorf("query runner sizing analytics: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var sample RunnerSizingSample
 		var p95Duration float32
@@ -356,7 +356,7 @@ func (s *Service) queryAnalyticsBuckets(ctx context.Context, query string, orgID
 	if err != nil {
 		return nil, fmt.Errorf("query analytics buckets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []AnalyticsBucket{}
 	for rows.Next() {
 		var bucket AnalyticsBucket

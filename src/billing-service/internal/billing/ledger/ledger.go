@@ -16,7 +16,7 @@ import (
 
 const (
 	DefaultLedger uint32 = 1
-	BatchLimit           = 8189
+	BatchLimit    int    = 8189
 )
 
 const (
@@ -353,7 +353,7 @@ func (c *Client) LookupBalances(ctx context.Context, ids []ID) (map[ID]Balance, 
 	if c == nil || c.tb == nil {
 		return nil, ErrUnavailable
 	}
-	ctx, span := tracer.Start(ctx, "billing.ledger.lookup_accounts")
+	_, span := tracer.Start(ctx, "billing.ledger.lookup_accounts")
 	defer span.End()
 	span.SetAttributes(attribute.Int("ledger.account_count", len(ids)))
 	if len(ids) > BatchLimit {
@@ -394,7 +394,7 @@ func (c *Client) LookupAccountIDs(ctx context.Context, ids []ID) (map[ID]struct{
 	if c == nil || c.tb == nil {
 		return nil, ErrUnavailable
 	}
-	ctx, span := tracer.Start(ctx, "billing.ledger.lookup_account_ids")
+	_, span := tracer.Start(ctx, "billing.ledger.lookup_account_ids")
 	defer span.End()
 	span.SetAttributes(attribute.Int("ledger.account_count", len(ids)))
 	if len(ids) > BatchLimit {
@@ -422,7 +422,7 @@ func (c *Client) LookupAccountSnapshots(ctx context.Context, ids []ID) (map[ID]A
 	if c == nil || c.tb == nil {
 		return nil, ErrUnavailable
 	}
-	ctx, span := tracer.Start(ctx, "billing.ledger.lookup_account_snapshots")
+	_, span := tracer.Start(ctx, "billing.ledger.lookup_account_snapshots")
 	defer span.End()
 	span.SetAttributes(attribute.Int("ledger.account_count", len(ids)))
 	if len(ids) > BatchLimit {

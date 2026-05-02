@@ -21,12 +21,12 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
 	objectstorageapi "github.com/verself/object-storage-service/internal/api"
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	"github.com/verself/object-storage-service/migrations"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 )
 
 const serviceVersion = "1.0.0"
@@ -76,7 +76,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 	slog.SetDefault(logger)
 
 	shared := envconfig.New()
@@ -272,7 +272,7 @@ func runS3(
 	if err != nil {
 		return fmt.Errorf("object-storage spiffe bundle source: %w", err)
 	}
-	defer bundleSource.Close()
+	defer func() { _ = bundleSource.Close() }()
 	s3TLSConfig, err := newS3TLSConfig(bundleSource, s3TLSCertPath, s3TLSKeyPath)
 	if err != nil {
 		return fmt.Errorf("object-storage s3 tls: %w", err)

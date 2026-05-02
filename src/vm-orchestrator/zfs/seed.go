@@ -171,11 +171,15 @@ func (vl *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec)
 	if err != nil {
 		return SeedResult{}, err
 	}
+	volsizeBytes, volsizeErr := int64FromUint64(spec.SizeBytes, "seed size_bytes")
+	if volsizeErr != nil {
+		return SeedResult{}, volsizeErr
+	}
 
 	createCtx, endCreate := startSpan(ctx, "vmorchestrator.zfs.seed_staging_create",
 		attribute.String("image.ref", image.SourceRef()),
 		attribute.String("zfs.dataset", stagingDataset),
-		attribute.Int64("zfs.volsize_bytes", int64(spec.SizeBytes)),
+		attribute.Int64("zfs.volsize_bytes", volsizeBytes),
 		attribute.String("zfs.volblocksize", volBlock),
 	)
 	createErr := vl.ops.ZFSCreateVolume(createCtx, stagingDataset, spec.SizeBytes, volBlock)
@@ -394,7 +398,7 @@ func computeSourceDigest(spec SeedSpec) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		h := sha256.New()
 		if _, err := io.Copy(h, f); err != nil {
 			return "", err

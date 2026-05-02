@@ -477,7 +477,7 @@ func (c *Client) prepareUpgradeQuote(ctx context.Context, orgID OrgID, existing 
 	remaining := cycle.EndsAt.Sub(now)
 	period := cycle.EndsAt.Sub(cycle.StartsAt)
 	priceDeltaCents := prorateCents(target.MonthlyAmountCents-current.MonthlyAmountCents, remaining, period)
-	units, err := moneyUnitsFromCents(int64(priceDeltaCents))
+	units, err := moneyUnitsFromCents(checkedInt64FromUint64(priceDeltaCents, "price delta cents"))
 	if err != nil {
 		return contractChangeQuote{}, err
 	}
@@ -511,7 +511,7 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 			ProviderRequestID:     pgTextValue(quote.ProviderRequestID),
 			RequestedAt:           timestamptz(quote.RequestedAt),
 			ProrationBasisCycleID: pgTextValue(quote.CycleID),
-			PriceDeltaUnits:       int64(quote.PriceDeltaUnits),
+			PriceDeltaUnits:       checkedInt64FromUint64(quote.PriceDeltaUnits, "price delta units"),
 			ProrationNumerator:    int64(quote.CycleEnd.Sub(quote.EffectiveAt)),
 			ProrationDenominator:  int64(quote.CycleEnd.Sub(quote.CycleStart)),
 			Payload:               payload,
@@ -542,8 +542,8 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 			PeriodStart:          timestamptz(quote.EffectiveAt),
 			PeriodEnd:            timestamptz(quote.CycleEnd),
 			IssuedAt:             timestamptz(quote.RequestedAt),
-			SubtotalUnits:        int64(quote.PriceDeltaUnits),
-			TotalDueUnits:        int64(quote.PriceDeltaUnits),
+			SubtotalUnits:        checkedInt64FromUint64(quote.PriceDeltaUnits, "price delta subtotal units"),
+			TotalDueUnits:        checkedInt64FromUint64(quote.PriceDeltaUnits, "price delta total due units"),
 			DocumentSnapshotJson: payload,
 			ContentHash:          snapshotHash,
 		}); err != nil {
@@ -941,7 +941,7 @@ func (c *Client) insertContractPhaseTx(ctx context.Context, tx pgx.Tx, orgID Org
 	if err != nil {
 		return err
 	}
-	units, err := moneyUnitsFromCents(int64(plan.MonthlyAmountCents))
+	units, err := moneyUnitsFromCents(checkedInt64FromUint64(plan.MonthlyAmountCents, "plan monthly amount cents"))
 	if err != nil {
 		return err
 	}
@@ -954,7 +954,7 @@ func (c *Client) insertContractPhaseTx(ctx context.Context, tx pgx.Tx, orgID Org
 		State:                state,
 		PaymentState:         paymentState,
 		Currency:             plan.Currency,
-		RecurringAmountUnits: int64(units),
+		RecurringAmountUnits: checkedInt64FromUint64(units, "recurring amount units"),
 		EffectiveStart:       timestamptz(effectiveAt),
 	}); err != nil {
 		return fmt.Errorf("insert contract phase: %w", err)
@@ -976,7 +976,7 @@ func (c *Client) copyPlanEntitlementLinesTx(ctx context.Context, tx pgx.Tx, orgI
 			ScopeProductID:       policy.ScopeProductID,
 			ScopeBucketID:        policy.ScopeBucketID,
 			ScopeSkuID:           policy.ScopeSKUID,
-			AmountUnits:          int64(policy.AmountUnits),
+			AmountUnits:          checkedInt64FromUint64(policy.AmountUnits, "policy amount units"),
 			RecurrenceAnchorKind: cleanNonEmpty(policy.RecurrenceAnchorKind, "billing_cycle"),
 			ProrationMode:        cleanNonEmpty(policy.ProrationMode, "none"),
 			PolicyVersion:        policy.PolicyVersion,
@@ -1013,7 +1013,7 @@ func (c *Client) insertUpgradeDeltaGrantTx(ctx context.Context, tx pgx.Tx, quote
 		ScopeProductID:    policy.ScopeProductID,
 		ScopeBucketID:     policy.ScopeBucketID,
 		ScopeSkuID:        policy.ScopeSKUID,
-		AmountUnits:       int64(delta.Amount),
+		AmountUnits:       checkedInt64FromUint64(delta.Amount, "upgrade delta amount units"),
 		PeriodStart:       timestamptz(quote.EffectiveAt),
 		PeriodEnd:         timestamptz(quote.CycleEnd),
 		PolicyVersion:     policy.PolicyVersion,
@@ -1029,7 +1029,7 @@ func (c *Client) insertUpgradeDeltaGrantTx(ctx context.Context, tx pgx.Tx, quote
 		ScopeProductID:      policy.ScopeProductID,
 		ScopeBucketID:       policy.ScopeBucketID,
 		ScopeSkuID:          policy.ScopeSKUID,
-		Amount:              int64(delta.Amount),
+		Amount:              checkedInt64FromUint64(delta.Amount, "upgrade delta grant amount"),
 		SourceReferenceID:   sourceRef,
 		EntitlementPeriodID: pgTextValue(periodID),
 		PolicyVersion:       policy.PolicyVersion,
@@ -1057,7 +1057,7 @@ func (c *Client) planEntitlementPolicies(ctx context.Context, planID string) ([]
 			ScopeProductID:       row.ScopeProductID,
 			ScopeBucketID:        row.ScopeBucketID,
 			ScopeSKUID:           row.ScopeSkuID,
-			AmountUnits:          uint64(row.AmountUnits),
+			AmountUnits:          checkedUint64FromInt64(row.AmountUnits, "policy amount units"),
 			Cadence:              row.Cadence,
 			RecurrenceAnchorKind: row.AnchorKind,
 			ProrationMode:        row.ProrationMode,
@@ -1086,8 +1086,8 @@ func (c *Client) loadPlan(ctx context.Context, planID string) (PlanRecord, error
 		BillingMode:        row.BillingMode,
 		Tier:               row.Tier,
 		Currency:           row.Currency,
-		MonthlyAmountCents: uint64(row.MonthlyAmountCents),
-		AnnualAmountCents:  uint64(row.AnnualAmountCents),
+		MonthlyAmountCents: checkedUint64FromInt64(row.MonthlyAmountCents, "monthly amount cents"),
+		AnnualAmountCents:  checkedUint64FromInt64(row.AnnualAmountCents, "annual amount cents"),
 		Active:             row.Active,
 		IsDefault:          row.IsDefault,
 	}, nil
@@ -1125,14 +1125,15 @@ func prorateCents(cents uint64, remaining time.Duration, period time.Duration) u
 
 func allocateDocumentNumberTx(ctx context.Context, q *store.Queries, issuedAt time.Time) (string, error) {
 	year := issuedAt.UTC().Year()
-	if err := q.EnsureDocumentNumberAllocator(ctx, store.EnsureDocumentNumberAllocatorParams{DocumentYear: int32(year)}); err != nil {
+	documentYear := checkedInt32FromInt(year, "document year")
+	if err := q.EnsureDocumentNumberAllocator(ctx, store.EnsureDocumentNumberAllocatorParams{DocumentYear: documentYear}); err != nil {
 		return "", fmt.Errorf("ensure document allocator: %w", err)
 	}
-	next, err := q.LockDocumentNumberAllocator(ctx, store.LockDocumentNumberAllocatorParams{DocumentYear: int32(year)})
+	next, err := q.LockDocumentNumberAllocator(ctx, store.LockDocumentNumberAllocatorParams{DocumentYear: documentYear})
 	if err != nil {
 		return "", fmt.Errorf("lock document allocator: %w", err)
 	}
-	if err := q.AdvanceDocumentNumberAllocator(ctx, store.AdvanceDocumentNumberAllocatorParams{DocumentYear: int32(year)}); err != nil {
+	if err := q.AdvanceDocumentNumberAllocator(ctx, store.AdvanceDocumentNumberAllocatorParams{DocumentYear: documentYear}); err != nil {
 		return "", fmt.Errorf("advance document allocator: %w", err)
 	}
 	return fmt.Sprintf("VS-%d-%06d", year, next), nil

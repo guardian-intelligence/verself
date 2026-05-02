@@ -14,14 +14,14 @@ func (s *Service) storeQueries() *store.Queries {
 }
 
 func dbOrgID(orgID uint64) int64 {
-	return int64(orgID)
+	return int64FromUint64(orgID, "org id")
 }
 
 func orgIDFromDB(orgID int64) uint64 {
 	if orgID <= 0 {
 		return 0
 	}
-	return uint64(orgID)
+	return uint64(orgID) // #nosec G115 -- orgID is checked as positive above.
 }
 
 func pgTime(value time.Time) pgtype.Timestamptz {
@@ -54,7 +54,7 @@ func scheduleRecordFromStore(row store.ExecutionSchedule) (ScheduleRecord, error
 		TemporalNamespace:  row.TemporalNamespace,
 		TaskQueue:          row.TaskQueue,
 		State:              row.State,
-		IntervalSeconds:    uint32(row.IntervalSeconds),
+		IntervalSeconds:    uint32FromInt32(row.IntervalSeconds, "schedule interval seconds"),
 		ProjectID:          row.ProjectID,
 		SourceRepositoryID: row.SourceRepositoryID,
 		WorkflowPath:       row.WorkflowPath,

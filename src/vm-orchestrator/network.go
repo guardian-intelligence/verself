@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -110,7 +109,7 @@ func setupNetwork(ctx context.Context, leaseID string, cfg NetworkPoolConfig, op
 	)
 	if err := ops.TapUp(tapUpCtx, lease.TapName); err != nil {
 		endTapUpSpan(err)
-		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
+		_ = cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
 		_ = allocator.Release(context.Background(), leaseID)
 		return nil, nil, fmt.Errorf("network setup link up: %w", err)
 	}
@@ -118,7 +117,7 @@ func setupNetwork(ctx context.Context, leaseID string, cfg NetworkPoolConfig, op
 	completedSteps = 3
 
 	cleanup := func() {
-		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
+		_ = cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
 		_ = allocator.Release(context.Background(), leaseID)
 	}
 	return &networkSetup{Lease: lease}, cleanup, nil
@@ -154,7 +153,7 @@ func (a *Allocator) Acquire(ctx context.Context, leaseID string) (NetworkLease, 
 	if err != nil {
 		return NetworkLease{}, err
 	}
-	defer state.close()
+	defer func() { _ = state.close() }()
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
 		return NetworkLease{}, fmt.Errorf("begin acquire network tx: %w", err)
@@ -222,7 +221,7 @@ func (a *Allocator) Release(ctx context.Context, leaseID string) error {
 	if err != nil {
 		return err
 	}
-	defer state.close()
+	defer func() { _ = state.close() }()
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin release network tx: %w", err)
@@ -257,7 +256,7 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 	if err != nil {
 		return err
 	}
-	defer state.close()
+	defer func() { _ = state.close() }()
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin network recover tx: %w", err)
@@ -326,9 +325,13 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 		if ops == nil {
 			return fmt.Errorf("cleanup stale free tap %s: privileged ops are required", slot.TapName)
 		}
+		generation, generationErr := int64FromUint64(slot.Generation, "network generation")
+		if generationErr != nil {
+			return generationErr
+		}
 		cleanupCtx, endCleanupSpan := startStepSpan(ctx, "vmorchestrator.network.recover_free_tap",
 			attribute.Int("network.slot_index", slot.SlotIndex),
-			attribute.Int64("network.generation", int64(slot.Generation)),
+			attribute.Int64("network.generation", generation),
 			attribute.String("network.tap", slot.TapName),
 		)
 		cleanupErr := cleanupNetworkOpsIfPresent(cleanupCtx, slot.TapName, 3, ops, a.tapExists)
@@ -351,7 +354,7 @@ func (a *Allocator) AttachPID(ctx context.Context, leaseID string, pid int) erro
 	if err != nil {
 		return err
 	}
-	defer state.close()
+	defer func() { _ = state.close() }()
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin attach pid tx: %w", err)
@@ -457,7 +460,7 @@ func listAllocatedNetworkLeasesTx(ctx context.Context, tx *sql.Tx) ([]NetworkLea
 	if err != nil {
 		return nil, fmt.Errorf("query allocated network slots: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []NetworkLease{}
 	for rows.Next() {
 		var lease NetworkLease
@@ -485,7 +488,7 @@ func listFreeNetworkSlotsWithTapTx(ctx context.Context, tx *sql.Tx) ([]freeNetwo
 	if err != nil {
 		return nil, fmt.Errorf("query free network slots: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []freeNetworkSlotTap{}
 	for rows.Next() {
 		var slot freeNetworkSlotTap
@@ -541,8 +544,12 @@ func slotAddrs(pool netip.Prefix, slot int) (netip.Prefix, string, netip.Addr, n
 	if slot >= slotCount {
 		return netip.Prefix{}, "", netip.Addr{}, netip.Addr{}, fmt.Errorf("slot index %d exceeds pool capacity %d", slot, slotCount)
 	}
+	slotValue, slotErr := uint32FromInt(slot, "network slot index")
+	if slotErr != nil {
+		return netip.Prefix{}, "", netip.Addr{}, netip.Addr{}, slotErr
+	}
 	base := ipv4ToUint32(pool.Addr())
-	subnetBase := base + uint32(slot*4)
+	subnetBase := base + slotValue*4
 	hostAddr := uint32ToIPv4(subnetBase + 1)
 	guestAddr := uint32ToIPv4(subnetBase + 2)
 	subnetPrefix := netip.PrefixFrom(uint32ToIPv4(subnetBase), 30)
@@ -550,7 +557,11 @@ func slotAddrs(pool netip.Prefix, slot int) (netip.Prefix, string, netip.Addr, n
 }
 
 func macForSlot(slot int) string {
-	return fmt.Sprintf("06:fc:%02x:%02x:%02x:%02x", byte(slot>>24), byte(slot>>16), byte(slot>>8), byte(slot))
+	slotValue, err := uint32FromInt(slot, "network slot index")
+	if err != nil {
+		panic(fmt.Sprintf("derive MAC for slot: %v", err))
+	}
+	return fmt.Sprintf("06:fc:%02x:%02x:%02x:%02x", (slotValue>>24)&0xff, (slotValue>>16)&0xff, (slotValue>>8)&0xff, slotValue&0xff)
 }
 
 func tapDeviceName(slot int) string {
@@ -623,15 +634,6 @@ func processStartTicks(pid int) (uint64, error) {
 		return 0, fmt.Errorf("parse process start ticks for pid %d: %w", pid, err)
 	}
 	return value, nil
-}
-
-func runCmd(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %s: %w", name, strings.Join(args, " "), strings.TrimSpace(string(out)), err)
-	}
-	return nil
 }
 
 func ipv4ToUint32(addr netip.Addr) uint32 {

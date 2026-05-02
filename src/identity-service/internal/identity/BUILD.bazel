@@ -8,6 +8,7 @@ go_library(
         "command_store.go",
         "errors.go",
         "organization_store.go",
+        "safeconv.go",
         "service.go",
         "store.go",
         "types.go",

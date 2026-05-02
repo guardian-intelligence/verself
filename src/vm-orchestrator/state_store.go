@@ -237,7 +237,7 @@ func (s *hostStateStore) ensureLeasesShape(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("inspect leases schema: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	hasRuntimeProfileColumn := false
 	tableExists := false
 	for rows.Next() {
@@ -276,7 +276,7 @@ func (s *hostStateStore) ensureNetworkSlotShape(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("inspect network_slots schema: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	foundLeaseID := false
 	for rows.Next() {
@@ -463,7 +463,7 @@ func (s *hostStateStore) listLeases(ctx context.Context, includeTerminal bool, l
 	if err != nil {
 		return nil, fmt.Errorf("query leases: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]leaseSnapshot, 0, limit)
 	for rows.Next() {
 		var (
@@ -702,7 +702,7 @@ func (s *hostStateStore) listLeaseEvents(ctx context.Context, leaseID string, fr
 	if err != nil {
 		return nil, fmt.Errorf("query lease events %s: %w", leaseID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]leaseEventRecord, 0, limit)
 	for rows.Next() {
 		var seq uint64
@@ -865,17 +865,6 @@ func unixNanoTime(value int64) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(0, value).UTC()
-}
-
-func sqlPlaceholders(count int) string {
-	if count <= 0 {
-		return ""
-	}
-	parts := make([]string, count)
-	for i := range count {
-		parts[i] = "?"
-	}
-	return strings.Join(parts, ",")
 }
 
 func rollbackTx(tx *sql.Tx) {

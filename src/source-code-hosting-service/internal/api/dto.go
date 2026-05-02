@@ -154,7 +154,7 @@ func repositoryDTO(repo source.Repository, org source.OrganizationReference, pro
 		Backend:       repo.Backend.Backend,
 		Visibility:    repo.Visibility,
 		State:         repo.State,
-		Version:       int32(repo.Version),
+		Version:       int32FromInt64(repo.Version, "repository version"),
 		LastPushedAt:  repo.LastPushedAt,
 		CreatedAt:     repo.CreatedAt,
 		UpdatedAt:     repo.UpdatedAt,

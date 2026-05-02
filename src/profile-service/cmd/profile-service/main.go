@@ -16,13 +16,13 @@ import (
 
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
 	identityinternalclient "github.com/verself/identity-service/internalclient"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	profileapi "github.com/verself/profile-service/internal/api"
 	"github.com/verself/profile-service/internal/profile"
 	"github.com/verself/profile-service/migrations"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 )
 
 const (
@@ -167,7 +167,7 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 	if err != nil {
 		return nil, err
 	}
-	config.MaxConns = int32(maxConns)
+	config.MaxConns = int32FromInt(maxConns, "PROFILE_PG_MAX_CONNS")
 	config.MinConns = 1
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute
@@ -182,6 +182,17 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 		return nil, err
 	}
 	return pool, nil
+}
+
+func int32FromInt(value int, field string) int32 {
+	const (
+		minInt32 = -1 << 31
+		maxInt32 = 1<<31 - 1
+	)
+	if value < minInt32 || value > maxInt32 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {

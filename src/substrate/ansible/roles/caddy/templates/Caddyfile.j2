@@ -33,7 +33,7 @@
 # Caddy speaks h2c (HTTP/2 over cleartext, prior knowledge — no Upgrade dance)
 # to every reverse_proxy that points at one of our Go services. h2c is binary-
 # framed end-to-end so the public hop matches HTTP/2 framing strictness from
-# the client edge through to the service. src/httpserver wraps every public-
+# the client edge through to the service. src/service-runtime/go/httpserver wraps every public-
 # plane handler with h2c.NewHandler; the two must move together. Foreign
 # upstreams (Forgejo, Grafana, Stalwart, Electric, verself-web, company,
 # Zitadel — Zitadel sets its own h2c transport) stay HTTP/1.1.

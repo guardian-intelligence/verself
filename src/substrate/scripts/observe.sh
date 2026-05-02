@@ -18,15 +18,15 @@ fi
 if [[ -z "${VERSELF_OTEL_INNER:-}" ]]; then
   export VERSELF_OTEL_INNER=1
   export VERSELF_DEPLOY_KIND="${VERSELF_DEPLOY_KIND:-observe}"
-  bin="${repo_root}/bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
+  bin="${repo_root}/bazel-bin/src/deployment-tools/cmd/verself-deploy/verself-deploy_/verself-deploy"
   if [[ ! -x "${bin}" ]]; then
-    echo "[observe] building //src/deployment-tooling/cmd/verself-deploy" >&2
-    (cd "${repo_root}" && bazelisk build --config=remote-writer //src/deployment-tooling/cmd/verself-deploy:verself-deploy)
+    echo "[observe] building //src/deployment-tools/cmd/verself-deploy" >&2
+    (cd "${repo_root}" && bazelisk build --config=remote-writer //src/deployment-tools/cmd/verself-deploy:verself-deploy)
   fi
   exec "${bin}" with-otel --site="${VERSELF_SITE:-prod}" --repo-root="${repo_root}" -- "${self_path}" "$@"
 fi
 
 export VERSELF_OBSERVE_RUN_ID="${VERSELF_OBSERVE_RUN_ID:-${VERSELF_DEPLOY_RUN_KEY:-}}"
 
-cd "${repo_root}/src/otel"
+cd "${repo_root}/src/observability/go/otel"
 exec go run ./cmd/observe --substrate-root "${substrate_root}" "$@"

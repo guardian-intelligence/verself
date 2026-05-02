@@ -17,12 +17,12 @@ import (
 
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/envconfig"
 	governanceapi "github.com/verself/governance-service/internal/api"
 	"github.com/verself/governance-service/internal/governance"
 	"github.com/verself/governance-service/migrations"
-	"github.com/verself/httpserver"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 )
 
 func main() {
@@ -54,7 +54,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
@@ -238,7 +238,7 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 	if err != nil {
 		return nil, err
 	}
-	config.MaxConns = int32(maxConns)
+	config.MaxConns = int32FromInt(maxConns, "GOVERNANCE_PG_MAX_CONNS")
 	config.MinConns = 1
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute
@@ -253,6 +253,17 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 		return nil, err
 	}
 	return pool, nil
+}
+
+func int32FromInt(value int, field string) int32 {
+	const (
+		minInt32 = -1 << 31
+		maxInt32 = 1<<31 - 1
+	)
+	if value < minInt32 || value > maxInt32 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
 func maxBody(next http.Handler, limit int64) http.Handler {

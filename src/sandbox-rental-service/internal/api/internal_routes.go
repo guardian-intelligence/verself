@@ -9,8 +9,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -92,7 +92,7 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 			return nil, serviceUnavailable(ctx, "sandbox-service-unavailable", "sandbox job service is unavailable", jobs.ErrRunnerUnavailable)
 		}
 		req := input.Body
-		orgID, err := apiwire.ParseUint64(strings.TrimSpace(req.OrgID))
+		orgID, err := dto.ParseUint64(strings.TrimSpace(req.OrgID))
 		if err != nil || orgID == 0 {
 			return nil, badRequest(ctx, "invalid-org-id", "org_id must be a positive decimal uint64 string", err)
 		}
@@ -112,7 +112,7 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 		}
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
-			attribute.Int64("verself.org_id", int64(orgID)),
+			attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
 			attribute.String("verself.project_id", req.ProjectID.String()),
 			attribute.String("runner.provider", registration.Provider),
 			attribute.Int64("runner.provider_repository_id", providerRepoID),

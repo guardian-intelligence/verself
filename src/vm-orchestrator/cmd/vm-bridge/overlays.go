@@ -26,15 +26,15 @@ const (
 // the ext4 is mounted at mountPath. The contract is documented at
 // src/vm-orchestrator/guest-images/BUILD.bazel:
 //
-//   <mount>/.verself-writable-overlays    newline-separated absolute
-//                                         paths to tmpfs-mount over
-//                                         the read-only base.
-//   <mount>/etc-overlay/<rel>             files copied to /etc/<rel>
-//                                         (refusing to overwrite
-//                                         anything previously
-//                                         overlaid by a sibling image).
-//   <mount>/etc-overlay/passwd            new user entries trigger
-//                                         mkdir + chown of $HOME.
+//	<mount>/.verself-writable-overlays    newline-separated absolute
+//	                                      paths to tmpfs-mount over
+//	                                      the read-only base.
+//	<mount>/etc-overlay/<rel>             files copied to /etc/<rel>
+//	                                      (refusing to overwrite
+//	                                      anything previously
+//	                                      overlaid by a sibling image).
+//	<mount>/etc-overlay/passwd            new user entries trigger
+//	                                      mkdir + chown of $HOME.
 //
 // Any failure short-circuits and propagates up — overlays are
 // load-bearing for runner exec credentials, so a partial application
@@ -138,7 +138,7 @@ func (s *agentSession) materializeHomeDirsFromOverlay(passwdPath string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", passwdPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -191,7 +191,7 @@ func (s *agentSession) applyWritableOverlays(mountPath string) error {
 		}
 		return fmt.Errorf("open %s: %w", manifest, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	cleanMount := filepath.Clean(mountPath)
 	scanner := bufio.NewScanner(f)
@@ -230,7 +230,7 @@ func overlayFileDigest(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open %s: %w", path, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, in); err != nil {
 		return "", fmt.Errorf("digest %s: %w", path, err)
@@ -246,12 +246,12 @@ func overlayCopyFile(src, dest string, perm os.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dest, err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	if _, err := io.Copy(out, in); err != nil {
 		return fmt.Errorf("copy %s -> %s: %w", src, dest, err)
 	}

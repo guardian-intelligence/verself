@@ -96,7 +96,7 @@ func (c *Client) ApplyPendingDueBillingWork(ctx context.Context, limit int) (int
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := c.queries.ListPendingDueBillingWorkTargets(ctx, store.ListPendingDueBillingWorkTargetsParams{LimitCount: int32(limit)})
+	rows, err := c.queries.ListPendingDueBillingWorkTargets(ctx, store.ListPendingDueBillingWorkTargetsParams{LimitCount: checkedInt32FromInt(limit, "pending billing work limit")})
 	if err != nil {
 		return 0, fmt.Errorf("query pending due billing work: %w", err)
 	}

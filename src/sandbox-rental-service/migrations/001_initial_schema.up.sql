@@ -54,7 +54,7 @@ INSERT INTO runner_classes (
     'ubuntu-2404-actions-runner'
 );
 
--- Per-org VM resource ceilings. Defaults mirror apiwire.DefaultBounds.
+-- Per-org VM resource ceilings. Defaults mirror dto.DefaultBounds.
 CREATE TABLE vm_resource_bounds (
     org_id             BIGINT      PRIMARY KEY CHECK (org_id > 0),
     min_vcpus          INT         NOT NULL CHECK (min_vcpus > 0),

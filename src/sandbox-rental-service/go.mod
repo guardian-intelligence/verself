@@ -14,13 +14,10 @@ require (
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/apiwire v0.0.0
 	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/billing-service v0.0.0
-	github.com/verself/envconfig v0.0.0
+	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
-	github.com/verself/httpserver v0.0.0
-	github.com/verself/otel v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	github.com/verself/source-code-hosting-service v0.0.0
 	github.com/verself/temporal-platform v0.0.0
@@ -84,6 +81,8 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/verself/observability v0.0.0
+	github.com/verself/service-runtime v0.0.0
 	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -100,7 +99,7 @@ require (
 	go.temporal.io/sdk/contrib/opentelemetry v0.6.0 // indirect
 	go.uber.org/goleak v1.3.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/oauth2 v0.35.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
@@ -116,15 +115,17 @@ require (
 )
 
 replace (
-	github.com/verself/apiwire => ../apiwire
 	github.com/verself/auth-middleware => ../auth-middleware
 	github.com/verself/billing-service => ../billing-service
-	github.com/verself/envconfig => ../envconfig
 	github.com/verself/governance-service => ../governance-service
-	github.com/verself/httpserver => ../httpserver
-	github.com/verself/otel => ../otel
 	github.com/verself/secrets-service => ../secrets-service
 	github.com/verself/source-code-hosting-service => ../source-code-hosting-service
 	github.com/verself/temporal-platform => ../temporal-platform
 	github.com/verself/vm-orchestrator => ../vm-orchestrator
 )
+
+replace github.com/verself/domain-transfer-objects => ../domain-transfer-objects/go
+
+replace github.com/verself/service-runtime => ../service-runtime/go
+
+replace github.com/verself/observability => ../observability/go

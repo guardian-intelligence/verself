@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -123,5 +122,3 @@ func nullableTime(t *time.Time) any {
 	}
 	return t.UTC()
 }
-
-func pgText(v string) string { return strings.TrimSpace(v) }

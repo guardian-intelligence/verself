@@ -1062,7 +1062,7 @@ func snapshotForSession(session *browserSession) authSnapshot {
 func extractRoles(claims map[string]any) []string {
 	roles := map[string]struct{}{}
 	for key, value := range claims {
-		if key != "urn:zitadel:iam:org:project:roles" && !(strings.HasPrefix(key, "urn:zitadel:iam:org:project:") && strings.HasSuffix(key, ":roles")) {
+		if key != "urn:zitadel:iam:org:project:roles" && (!strings.HasPrefix(key, "urn:zitadel:iam:org:project:") || !strings.HasSuffix(key, ":roles")) {
 			continue
 		}
 		roleMap, ok := value.(map[string]any)

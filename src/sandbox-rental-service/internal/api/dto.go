@@ -4,15 +4,15 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
-func githubInstallationRecord(record jobs.GitHubInstallationRecord) apiwire.SandboxGitHubInstallationRecord {
-	return apiwire.SandboxGitHubInstallationRecord{
+func githubInstallationRecord(record jobs.GitHubInstallationRecord) dto.SandboxGitHubInstallationRecord {
+	return dto.SandboxGitHubInstallationRecord{
 		InstallationID: strconv.FormatInt(record.InstallationID, 10),
-		OrgID:          apiwire.Uint64(record.OrgID),
+		OrgID:          dto.Uint64(record.OrgID),
 		AccountLogin:   record.AccountLogin,
 		AccountType:    record.AccountType,
 		Active:         record.Active,
@@ -21,27 +21,27 @@ func githubInstallationRecord(record jobs.GitHubInstallationRecord) apiwire.Sand
 	}
 }
 
-func githubInstallationConnect(connect jobs.GitHubInstallationConnect) apiwire.SandboxGitHubInstallationConnectResponse {
-	return apiwire.SandboxGitHubInstallationConnectResponse{
+func githubInstallationConnect(connect jobs.GitHubInstallationConnect) dto.SandboxGitHubInstallationConnectResponse {
+	return dto.SandboxGitHubInstallationConnectResponse{
 		State:     connect.State,
 		SetupURL:  connect.SetupURL,
 		ExpiresAt: connect.ExpiresAt,
 	}
 }
 
-func githubInstallationRecords(records []jobs.GitHubInstallationRecord) []apiwire.SandboxGitHubInstallationRecord {
-	out := make([]apiwire.SandboxGitHubInstallationRecord, 0, len(records))
+func githubInstallationRecords(records []jobs.GitHubInstallationRecord) []dto.SandboxGitHubInstallationRecord {
+	out := make([]dto.SandboxGitHubInstallationRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, githubInstallationRecord(record))
 	}
 	return out
 }
 
-func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord {
-	return apiwire.SandboxExecutionRecord{
+func executionRecord(record jobs.ExecutionRecord) dto.SandboxExecutionRecord {
+	return dto.SandboxExecutionRecord{
 		RunID:            record.RunID,
 		ExecutionID:      record.ExecutionID,
-		OrgID:            apiwire.Uint64(record.OrgID),
+		OrgID:            dto.Uint64(record.OrgID),
 		ActorID:          record.ActorID,
 		Kind:             record.Kind,
 		SourceKind:       record.SourceKind,
@@ -67,14 +67,14 @@ func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord
 	}
 }
 
-func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
+func attemptRecord(record jobs.AttemptRecord) dto.SandboxAttemptRecord {
 	var exitCode *int
 	if record.CompletedAt != nil {
 		exitCodeValue := record.ExitCode
 		exitCode = &exitCodeValue
 	}
 
-	return apiwire.SandboxAttemptRecord{
+	return dto.SandboxAttemptRecord{
 		AttemptID:              record.AttemptID,
 		AttemptSeq:             record.AttemptSeq,
 		State:                  record.State,
@@ -102,18 +102,18 @@ func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
 	}
 }
 
-func billingWindow(record jobs.BillingWindow) apiwire.SandboxBillingWindow {
-	return apiwire.SandboxBillingWindow{
+func billingWindow(record jobs.BillingWindow) dto.SandboxBillingWindow {
+	return dto.SandboxBillingWindow{
 		AttemptID:           record.AttemptID,
 		BillingWindowID:     record.BillingWindowID,
 		WindowSeq:           record.WindowSeq,
 		ReservationShape:    record.ReservationShape,
 		ReservedQuantity:    record.ReservedQuantity,
 		ActualQuantity:      record.ActualQuantity,
-		ReservedChargeUnits: apiwire.Uint64(record.ReservedChargeUnits),
-		BilledChargeUnits:   apiwire.Uint64(record.BilledChargeUnits),
-		WriteoffChargeUnits: apiwire.Uint64(record.WriteoffChargeUnits),
-		CostPerUnit:         apiwire.Uint64(record.CostPerUnit),
+		ReservedChargeUnits: dto.Uint64(record.ReservedChargeUnits),
+		BilledChargeUnits:   dto.Uint64(record.BilledChargeUnits),
+		WriteoffChargeUnits: dto.Uint64(record.WriteoffChargeUnits),
+		CostPerUnit:         dto.Uint64(record.CostPerUnit),
 		PricingPhase:        record.PricingPhase,
 		State:               record.State,
 		WindowStart:         record.WindowStart,
@@ -122,36 +122,36 @@ func billingWindow(record jobs.BillingWindow) apiwire.SandboxBillingWindow {
 	}
 }
 
-func billingWindows(records []jobs.BillingWindow) []apiwire.SandboxBillingWindow {
+func billingWindows(records []jobs.BillingWindow) []dto.SandboxBillingWindow {
 	if len(records) == 0 {
 		return nil
 	}
-	out := make([]apiwire.SandboxBillingWindow, 0, len(records))
+	out := make([]dto.SandboxBillingWindow, 0, len(records))
 	for _, record := range records {
 		out = append(out, billingWindow(record))
 	}
 	return out
 }
 
-func runBillingSummary(summary jobs.RunBillingSummary) *apiwire.SandboxRunBillingSummary {
+func runBillingSummary(summary jobs.RunBillingSummary) *dto.SandboxRunBillingSummary {
 	if summary.WindowCount == 0 && summary.ReservedChargeUnits == 0 && summary.BilledChargeUnits == 0 && summary.WriteoffChargeUnits == 0 && summary.CostPerUnit == 0 && summary.PricingPhase == "" {
 		return nil
 	}
-	return &apiwire.SandboxRunBillingSummary{
-		WindowCount:         int32(summary.WindowCount),
-		ReservedChargeUnits: apiwire.Uint64(summary.ReservedChargeUnits),
-		BilledChargeUnits:   apiwire.Uint64(summary.BilledChargeUnits),
-		WriteoffChargeUnits: apiwire.Uint64(summary.WriteoffChargeUnits),
-		CostPerUnit:         apiwire.Uint64(summary.CostPerUnit),
+	return &dto.SandboxRunBillingSummary{
+		WindowCount:         int32FromInt(summary.WindowCount, "billing window count"),
+		ReservedChargeUnits: dto.Uint64(summary.ReservedChargeUnits),
+		BilledChargeUnits:   dto.Uint64(summary.BilledChargeUnits),
+		WriteoffChargeUnits: dto.Uint64(summary.WriteoffChargeUnits),
+		CostPerUnit:         dto.Uint64(summary.CostPerUnit),
 		PricingPhase:        summary.PricingPhase,
 	}
 }
 
-func runnerRunMetadata(metadata jobs.RunnerRunMetadata) *apiwire.SandboxRunnerRunMetadata {
+func runnerRunMetadata(metadata jobs.RunnerRunMetadata) *dto.SandboxRunnerRunMetadata {
 	if metadata.ProviderInstallationID == 0 && metadata.ProviderRunID == 0 && metadata.ProviderJobID == 0 && metadata.RepositoryFullName == "" && metadata.WorkflowName == "" && metadata.JobName == "" && metadata.HeadBranch == "" && metadata.HeadSHA == "" {
 		return nil
 	}
-	return &apiwire.SandboxRunnerRunMetadata{
+	return &dto.SandboxRunnerRunMetadata{
 		ProviderInstallationID: strconv.FormatInt(metadata.ProviderInstallationID, 10),
 		ProviderRunID:          strconv.FormatInt(metadata.ProviderRunID, 10),
 		ProviderJobID:          strconv.FormatInt(metadata.ProviderJobID, 10),
@@ -163,11 +163,11 @@ func runnerRunMetadata(metadata jobs.RunnerRunMetadata) *apiwire.SandboxRunnerRu
 	}
 }
 
-func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata) *apiwire.SandboxScheduleRunMetadata {
+func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata) *dto.SandboxScheduleRunMetadata {
 	if metadata.ScheduleID == uuid.Nil && metadata.DisplayName == "" && metadata.TemporalWorkflowID == "" && metadata.TemporalRunID == "" {
 		return nil
 	}
-	out := apiwire.SandboxScheduleRunMetadata{
+	out := dto.SandboxScheduleRunMetadata{
 		DisplayName:        metadata.DisplayName,
 		TemporalWorkflowID: metadata.TemporalWorkflowID,
 		TemporalRunID:      metadata.TemporalRunID,
@@ -179,14 +179,14 @@ func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata) *apiwire.SandboxSche
 	return &out
 }
 
-func stickyDiskMount(record jobs.StickyDiskMountRecord) apiwire.SandboxExecutionStickyDiskMount {
-	return apiwire.SandboxExecutionStickyDiskMount{
+func stickyDiskMount(record jobs.StickyDiskMountRecord) dto.SandboxExecutionStickyDiskMount {
+	return dto.SandboxExecutionStickyDiskMount{
 		MountID:             record.MountID,
 		MountName:           record.MountName,
 		KeyHash:             record.KeyHash,
 		MountPath:           record.MountPath,
-		BaseGeneration:      apiwire.Uint64(uint64(record.BaseGeneration)),
-		CommittedGeneration: apiwire.Uint64(uint64(record.CommittedGeneration)),
+		BaseGeneration:      dto.Uint64(uint64FromInt64(record.BaseGeneration, "base generation")),
+		CommittedGeneration: dto.Uint64(uint64FromInt64(record.CommittedGeneration, "committed generation")),
 		SaveRequested:       record.SaveRequested,
 		SaveState:           record.SaveState,
 		FailureReason:       record.FailureReason,
@@ -195,23 +195,23 @@ func stickyDiskMount(record jobs.StickyDiskMountRecord) apiwire.SandboxExecution
 	}
 }
 
-func stickyDiskMounts(records []jobs.StickyDiskMountRecord) []apiwire.SandboxExecutionStickyDiskMount {
+func stickyDiskMounts(records []jobs.StickyDiskMountRecord) []dto.SandboxExecutionStickyDiskMount {
 	if len(records) == 0 {
 		return nil
 	}
-	out := make([]apiwire.SandboxExecutionStickyDiskMount, 0, len(records))
+	out := make([]dto.SandboxExecutionStickyDiskMount, 0, len(records))
 	for _, record := range records {
 		out = append(out, stickyDiskMount(record))
 	}
 	return out
 }
 
-func runPage(page jobs.RunPage, filters jobs.RunListFilters) apiwire.SandboxRunsPage {
-	out := apiwire.SandboxRunsPage{
-		Runs:       make([]apiwire.SandboxExecutionRecord, 0, len(page.Runs)),
+func runPage(page jobs.RunPage, filters jobs.RunListFilters) dto.SandboxRunsPage {
+	out := dto.SandboxRunsPage{
+		Runs:       make([]dto.SandboxExecutionRecord, 0, len(page.Runs)),
 		NextCursor: page.NextCursor,
-		Limit:      int32(page.Limit),
-		Filters: apiwire.SandboxRunsFilters{
+		Limit:      int32FromInt(page.Limit, "runs page limit"),
+		Filters: dto.SandboxRunsFilters{
 			SourceKind:  filters.SourceKind,
 			Status:      filters.Status,
 			Repository:  filters.Repository,
@@ -226,8 +226,8 @@ func runPage(page jobs.RunPage, filters jobs.RunListFilters) apiwire.SandboxRuns
 	return out
 }
 
-func runLogSearchResult(record jobs.RunLogSearchResult) apiwire.SandboxRunLogSearchResult {
-	return apiwire.SandboxRunLogSearchResult{
+func runLogSearchResult(record jobs.RunLogSearchResult) dto.SandboxRunLogSearchResult {
+	return dto.SandboxRunLogSearchResult{
 		ExecutionID:        record.ExecutionID,
 		AttemptID:          record.AttemptID,
 		SourceKind:         record.SourceKind,
@@ -245,12 +245,12 @@ func runLogSearchResult(record jobs.RunLogSearchResult) apiwire.SandboxRunLogSea
 	}
 }
 
-func runLogSearchPage(page jobs.RunLogSearchPage, filters jobs.RunLogSearchFilters) apiwire.SandboxRunLogSearchPage {
-	out := apiwire.SandboxRunLogSearchPage{
-		Results:    make([]apiwire.SandboxRunLogSearchResult, 0, len(page.Results)),
+func runLogSearchPage(page jobs.RunLogSearchPage, filters jobs.RunLogSearchFilters) dto.SandboxRunLogSearchPage {
+	out := dto.SandboxRunLogSearchPage{
+		Results:    make([]dto.SandboxRunLogSearchResult, 0, len(page.Results)),
 		NextCursor: page.NextCursor,
-		Limit:      int32(page.Limit),
-		Filters: apiwire.SandboxRunLogSearchFilters{
+		Limit:      int32FromInt(page.Limit, "run log search page limit"),
+		Filters: dto.SandboxRunLogSearchFilters{
 			Query:       filters.Query,
 			RunID:       filters.ExecutionID.String(),
 			AttemptID:   filters.AttemptID.String(),
@@ -273,29 +273,29 @@ func runLogSearchPage(page jobs.RunLogSearchPage, filters jobs.RunLogSearchFilte
 	return out
 }
 
-func analyticsBucket(bucket jobs.AnalyticsBucket) apiwire.SandboxAnalyticsBucket {
-	return apiwire.SandboxAnalyticsBucket{
+func analyticsBucket(bucket jobs.AnalyticsBucket) dto.SandboxAnalyticsBucket {
+	return dto.SandboxAnalyticsBucket{
 		Key:                 bucket.Key,
-		Count:               apiwire.Uint64(bucket.Count),
-		ReservedChargeUnits: apiwire.Uint64(bucket.ReservedChargeUnits),
-		BilledChargeUnits:   apiwire.Uint64(bucket.BilledChargeUnits),
-		WriteoffChargeUnits: apiwire.Uint64(bucket.WriteoffChargeUnits),
+		Count:               dto.Uint64(bucket.Count),
+		ReservedChargeUnits: dto.Uint64(bucket.ReservedChargeUnits),
+		BilledChargeUnits:   dto.Uint64(bucket.BilledChargeUnits),
+		WriteoffChargeUnits: dto.Uint64(bucket.WriteoffChargeUnits),
 	}
 }
 
-func analyticsBuckets(buckets []jobs.AnalyticsBucket) []apiwire.SandboxAnalyticsBucket {
+func analyticsBuckets(buckets []jobs.AnalyticsBucket) []dto.SandboxAnalyticsBucket {
 	if len(buckets) == 0 {
 		return nil
 	}
-	out := make([]apiwire.SandboxAnalyticsBucket, 0, len(buckets))
+	out := make([]dto.SandboxAnalyticsBucket, 0, len(buckets))
 	for _, bucket := range buckets {
 		out = append(out, analyticsBucket(bucket))
 	}
 	return out
 }
 
-func runDurationSample(sample jobs.RunDurationSample) apiwire.SandboxRunDurationSample {
-	return apiwire.SandboxRunDurationSample{
+func runDurationSample(sample jobs.RunDurationSample) dto.SandboxRunDurationSample {
+	return dto.SandboxRunDurationSample{
 		ExecutionID:        sample.ExecutionID,
 		Status:             sample.Status,
 		RunnerClass:        sample.RunnerClass,
@@ -307,19 +307,19 @@ func runDurationSample(sample jobs.RunDurationSample) apiwire.SandboxRunDuration
 	}
 }
 
-func jobsAnalytics(analytics jobs.JobsAnalytics) apiwire.SandboxJobsAnalytics {
-	out := apiwire.SandboxJobsAnalytics{
+func jobsAnalytics(analytics jobs.JobsAnalytics) dto.SandboxJobsAnalytics {
+	out := dto.SandboxJobsAnalytics{
 		WindowStart:   analytics.WindowStart,
 		WindowEnd:     analytics.WindowEnd,
-		TotalRuns:     apiwire.Uint64(analytics.TotalRuns),
-		SucceededRuns: apiwire.Uint64(analytics.SucceededRuns),
-		FailedRuns:    apiwire.Uint64(analytics.FailedRuns),
-		P50DurationMs: apiwire.Uint64(analytics.P50DurationMs),
-		P95DurationMs: apiwire.Uint64(analytics.P95DurationMs),
-		P99DurationMs: apiwire.Uint64(analytics.P99DurationMs),
+		TotalRuns:     dto.Uint64(analytics.TotalRuns),
+		SucceededRuns: dto.Uint64(analytics.SucceededRuns),
+		FailedRuns:    dto.Uint64(analytics.FailedRuns),
+		P50DurationMs: dto.Uint64(analytics.P50DurationMs),
+		P95DurationMs: dto.Uint64(analytics.P95DurationMs),
+		P99DurationMs: dto.Uint64(analytics.P99DurationMs),
 		BySource:      analyticsBuckets(analytics.BySource),
 		ByRunnerClass: analyticsBuckets(analytics.ByRunnerClass),
-		SlowestRuns:   make([]apiwire.SandboxRunDurationSample, 0, len(analytics.SlowestRuns)),
+		SlowestRuns:   make([]dto.SandboxRunDurationSample, 0, len(analytics.SlowestRuns)),
 	}
 	for _, sample := range analytics.SlowestRuns {
 		out.SlowestRuns = append(out.SlowestRuns, runDurationSample(sample))
@@ -327,62 +327,62 @@ func jobsAnalytics(analytics jobs.JobsAnalytics) apiwire.SandboxJobsAnalytics {
 	return out
 }
 
-func costsAnalytics(analytics jobs.CostsAnalytics) apiwire.SandboxCostsAnalytics {
-	return apiwire.SandboxCostsAnalytics{
+func costsAnalytics(analytics jobs.CostsAnalytics) dto.SandboxCostsAnalytics {
+	return dto.SandboxCostsAnalytics{
 		WindowStart:         analytics.WindowStart,
 		WindowEnd:           analytics.WindowEnd,
-		ReservedChargeUnits: apiwire.Uint64(analytics.ReservedChargeUnits),
-		BilledChargeUnits:   apiwire.Uint64(analytics.BilledChargeUnits),
-		WriteoffChargeUnits: apiwire.Uint64(analytics.WriteoffChargeUnits),
+		ReservedChargeUnits: dto.Uint64(analytics.ReservedChargeUnits),
+		BilledChargeUnits:   dto.Uint64(analytics.BilledChargeUnits),
+		WriteoffChargeUnits: dto.Uint64(analytics.WriteoffChargeUnits),
 		BySource:            analyticsBuckets(analytics.BySource),
 		ByRunnerClass:       analyticsBuckets(analytics.ByRunnerClass),
 		ByRepository:        analyticsBuckets(analytics.ByRepository),
 	}
 }
 
-func cachesAnalytics(analytics jobs.CachesAnalytics) apiwire.SandboxCachesAnalytics {
-	return apiwire.SandboxCachesAnalytics{
+func cachesAnalytics(analytics jobs.CachesAnalytics) dto.SandboxCachesAnalytics {
+	return dto.SandboxCachesAnalytics{
 		WindowStart:         analytics.WindowStart,
 		WindowEnd:           analytics.WindowEnd,
-		CheckoutRequests:    apiwire.Uint64(analytics.CheckoutRequests),
-		CheckoutHits:        apiwire.Uint64(analytics.CheckoutHits),
-		CheckoutMisses:      apiwire.Uint64(analytics.CheckoutMisses),
-		StickyRestoreHits:   apiwire.Uint64(analytics.StickyRestoreHits),
-		StickyRestoreMisses: apiwire.Uint64(analytics.StickyRestoreMisses),
-		StickySaveRequests:  apiwire.Uint64(analytics.StickySaveRequests),
-		StickyCommits:       apiwire.Uint64(analytics.StickyCommits),
+		CheckoutRequests:    dto.Uint64(analytics.CheckoutRequests),
+		CheckoutHits:        dto.Uint64(analytics.CheckoutHits),
+		CheckoutMisses:      dto.Uint64(analytics.CheckoutMisses),
+		StickyRestoreHits:   dto.Uint64(analytics.StickyRestoreHits),
+		StickyRestoreMisses: dto.Uint64(analytics.StickyRestoreMisses),
+		StickySaveRequests:  dto.Uint64(analytics.StickySaveRequests),
+		StickyCommits:       dto.Uint64(analytics.StickyCommits),
 		ByRepository:        analyticsBuckets(analytics.ByRepository),
 	}
 }
 
-func runnerSizingAnalytics(analytics jobs.RunnerSizingAnalytics) apiwire.SandboxRunnerSizingAnalytics {
-	out := apiwire.SandboxRunnerSizingAnalytics{
+func runnerSizingAnalytics(analytics jobs.RunnerSizingAnalytics) dto.SandboxRunnerSizingAnalytics {
+	out := dto.SandboxRunnerSizingAnalytics{
 		WindowStart:   analytics.WindowStart,
 		WindowEnd:     analytics.WindowEnd,
-		ByRunnerClass: make([]apiwire.SandboxRunnerSizingSample, 0, len(analytics.ByRunnerClass)),
+		ByRunnerClass: make([]dto.SandboxRunnerSizingSample, 0, len(analytics.ByRunnerClass)),
 	}
 	for _, sample := range analytics.ByRunnerClass {
-		out.ByRunnerClass = append(out.ByRunnerClass, apiwire.SandboxRunnerSizingSample{
+		out.ByRunnerClass = append(out.ByRunnerClass, dto.SandboxRunnerSizingSample{
 			RunnerClass:               sample.RunnerClass,
-			RunCount:                  apiwire.Uint64(sample.RunCount),
-			P95DurationMs:             apiwire.Uint64(sample.P95DurationMs),
-			AvgRootfsProvisionedBytes: apiwire.Uint64(sample.AvgRootfsProvisionedBytes),
-			AvgBootTimeUs:             apiwire.Uint64(sample.AvgBootTimeUs),
-			AvgBlockWriteBytes:        apiwire.Uint64(sample.AvgBlockWriteBytes),
-			AvgNetTxBytes:             apiwire.Uint64(sample.AvgNetTxBytes),
+			RunCount:                  dto.Uint64(sample.RunCount),
+			P95DurationMs:             dto.Uint64(sample.P95DurationMs),
+			AvgRootfsProvisionedBytes: dto.Uint64(sample.AvgRootfsProvisionedBytes),
+			AvgBootTimeUs:             dto.Uint64(sample.AvgBootTimeUs),
+			AvgBlockWriteBytes:        dto.Uint64(sample.AvgBlockWriteBytes),
+			AvgNetTxBytes:             dto.Uint64(sample.AvgNetTxBytes),
 		})
 	}
 	return out
 }
 
-func stickyDiskRecord(record jobs.StickyDiskRecord) apiwire.SandboxStickyDiskRecord {
-	return apiwire.SandboxStickyDiskRecord{
+func stickyDiskRecord(record jobs.StickyDiskRecord) dto.SandboxStickyDiskRecord {
+	return dto.SandboxStickyDiskRecord{
 		InstallationID:     strconv.FormatInt(record.InstallationID, 10),
 		RepositoryID:       strconv.FormatInt(record.RepositoryID, 10),
 		RepositoryFullName: record.RepositoryFullName,
 		KeyHash:            record.KeyHash,
 		Key:                record.Key,
-		CurrentGeneration:  apiwire.Uint64(uint64(record.CurrentGeneration)),
+		CurrentGeneration:  dto.Uint64(uint64FromInt64(record.CurrentGeneration, "current generation")),
 		CurrentSourceRef:   record.CurrentSourceRef,
 		LastUsedAt:         record.LastUsedAt,
 		LastCompletedAt:    record.LastCompletedAt,
@@ -396,12 +396,12 @@ func stickyDiskRecord(record jobs.StickyDiskRecord) apiwire.SandboxStickyDiskRec
 	}
 }
 
-func stickyDisksPage(page jobs.StickyDiskPage, filters jobs.StickyDiskListFilters) apiwire.SandboxStickyDisksPage {
-	out := apiwire.SandboxStickyDisksPage{
-		Disks:      make([]apiwire.SandboxStickyDiskRecord, 0, len(page.Disks)),
+func stickyDisksPage(page jobs.StickyDiskPage, filters jobs.StickyDiskListFilters) dto.SandboxStickyDisksPage {
+	out := dto.SandboxStickyDisksPage{
+		Disks:      make([]dto.SandboxStickyDiskRecord, 0, len(page.Disks)),
 		NextCursor: page.NextCursor,
-		Limit:      int32(page.Limit),
-		Filters: apiwire.SandboxStickyDiskFilters{
+		Limit:      int32FromInt(page.Limit, "sticky disks page limit"),
+		Filters: dto.SandboxStickyDiskFilters{
 			Repository: filters.Repository,
 		},
 	}
@@ -411,8 +411,8 @@ func stickyDisksPage(page jobs.StickyDiskPage, filters jobs.StickyDiskListFilter
 	return out
 }
 
-func stickyDiskResetResult(result jobs.StickyDiskResetResult) apiwire.SandboxStickyDiskResetResult {
-	return apiwire.SandboxStickyDiskResetResult{
+func stickyDiskResetResult(result jobs.StickyDiskResetResult) dto.SandboxStickyDiskResetResult {
+	return dto.SandboxStickyDiskResetResult{
 		InstallationID:   strconv.FormatInt(result.InstallationID, 10),
 		RepositoryID:     strconv.FormatInt(result.RepositoryID, 10),
 		KeyHash:          result.KeyHash,
@@ -421,7 +421,7 @@ func stickyDiskResetResult(result jobs.StickyDiskResetResult) apiwire.SandboxSti
 	}
 }
 
-func executionScheduleCreateRequest(request apiwire.SandboxExecutionScheduleCreateRequest) recurring.CreateRequest {
+func executionScheduleCreateRequest(request dto.SandboxExecutionScheduleCreateRequest) recurring.CreateRequest {
 	return recurring.CreateRequest{
 		DisplayName:        request.DisplayName,
 		IdempotencyKey:     request.IdempotencyKey,
@@ -435,10 +435,10 @@ func executionScheduleCreateRequest(request apiwire.SandboxExecutionScheduleCrea
 	}
 }
 
-func executionScheduleRecord(record recurring.ScheduleRecord) apiwire.SandboxExecutionScheduleRecord {
-	return apiwire.SandboxExecutionScheduleRecord{
+func executionScheduleRecord(record recurring.ScheduleRecord) dto.SandboxExecutionScheduleRecord {
+	return dto.SandboxExecutionScheduleRecord{
 		ScheduleID:         record.ScheduleID,
-		OrgID:              apiwire.Uint64(record.OrgID),
+		OrgID:              dto.Uint64(record.OrgID),
 		ActorID:            record.ActorID,
 		DisplayName:        record.DisplayName,
 		IdempotencyKey:     record.IdempotencyKey,
@@ -458,19 +458,19 @@ func executionScheduleRecord(record recurring.ScheduleRecord) apiwire.SandboxExe
 	}
 }
 
-func executionScheduleDispatches(records []recurring.DispatchRecord) []apiwire.SandboxExecutionScheduleDispatchRecord {
+func executionScheduleDispatches(records []recurring.DispatchRecord) []dto.SandboxExecutionScheduleDispatchRecord {
 	if len(records) == 0 {
 		return nil
 	}
-	out := make([]apiwire.SandboxExecutionScheduleDispatchRecord, 0, len(records))
+	out := make([]dto.SandboxExecutionScheduleDispatchRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, executionScheduleDispatchRecord(record))
 	}
 	return out
 }
 
-func executionScheduleDispatchRecord(record recurring.DispatchRecord) apiwire.SandboxExecutionScheduleDispatchRecord {
-	return apiwire.SandboxExecutionScheduleDispatchRecord{
+func executionScheduleDispatchRecord(record recurring.DispatchRecord) dto.SandboxExecutionScheduleDispatchRecord {
+	return dto.SandboxExecutionScheduleDispatchRecord{
 		DispatchID:          record.DispatchID,
 		ScheduleID:          record.ScheduleID,
 		TemporalWorkflowID:  record.TemporalWorkflowID,

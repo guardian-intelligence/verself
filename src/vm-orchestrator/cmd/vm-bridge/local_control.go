@@ -30,11 +30,11 @@ func (s *agentSession) startLocalControlServer(ctx context.Context) (func(), err
 		return nil, fmt.Errorf("listen %s: %w", bridgeSocketPath, err)
 	}
 	if err := os.Chown(bridgeSocketPath, runnerUID, runnerGID); err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return nil, fmt.Errorf("chown %s: %w", bridgeSocketPath, err)
 	}
 	if err := os.Chmod(bridgeSocketPath, 0o660); err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return nil, fmt.Errorf("chmod %s: %w", bridgeSocketPath, err)
 	}
 
@@ -56,7 +56,7 @@ func (s *agentSession) startLocalControlServer(ctx context.Context) (func(), err
 	}()
 
 	stop := func() {
-		listener.Close()
+		_ = listener.Close()
 		<-done
 		_ = os.Remove(bridgeSocketPath)
 		cleanupEmptySocketDir(bridgeSocketDir)
@@ -65,7 +65,7 @@ func (s *agentSession) startLocalControlServer(ctx context.Context) (func(), err
 }
 
 func (s *agentSession) handleLocalControlConn(parent context.Context, conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := conn.SetDeadline(time.Now().Add(bridgeClientTimeout)); err != nil {
 		return

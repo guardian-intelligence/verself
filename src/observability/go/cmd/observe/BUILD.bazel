@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "observe_lib",
+    srcs = [
+        "main.go",
+        "queries.go",
+        "registry.go",
+    ],
+    importpath = "github.com/verself/observability/cmd/observe",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/service-runtime/go/envconfig",
+        "//src/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_binary(
+    name = "observe",
+    embed = [":observe_lib"],
+    visibility = ["//visibility:public"],
+)

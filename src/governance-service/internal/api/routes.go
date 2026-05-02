@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/governance"
 )
 
@@ -150,7 +150,7 @@ type listAuditEventsInput struct {
 }
 
 type auditEventsOutput struct {
-	Body apiwire.GovernanceAuditEvents
+	Body dto.GovernanceAuditEvents
 }
 
 func listAuditEvents(svc *governance.Service) func(context.Context, governance.Principal, *listAuditEventsInput) (*auditEventsOutput, error) {
@@ -175,11 +175,11 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 		if err != nil {
 			return nil, err
 		}
-		out := apiwire.GovernanceAuditEvents{
-			Events:     make([]apiwire.GovernanceAuditEvent, 0, len(page.Events)),
+		out := dto.GovernanceAuditEvents{
+			Events:     make([]dto.GovernanceAuditEvent, 0, len(page.Events)),
 			NextCursor: page.NextCursor,
-			Limit:      int32(page.Limit),
-			Filters: apiwire.GovernanceAuditFilters{
+			Limit:      int32FromInt(page.Limit, "audit page limit"),
+			Filters: dto.GovernanceAuditFilters{
 				ActorID:           input.ActorID,
 				AuditEvent:        input.AuditEvent,
 				CredentialID:      input.CredentialID,
@@ -202,7 +202,7 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 }
 
 type exportsOutput struct {
-	Body apiwire.GovernanceExportJobs
+	Body dto.GovernanceExportJobs
 }
 
 func listExports(svc *governance.Service) func(context.Context, governance.Principal, *struct{}) (*exportsOutput, error) {
@@ -211,16 +211,16 @@ func listExports(svc *governance.Service) func(context.Context, governance.Princ
 		if err != nil {
 			return nil, err
 		}
-		return &exportsOutput{Body: apiwire.GovernanceExportJobs{Exports: exportJobDTOs(jobs, svc.PublicBaseURL)}}, nil
+		return &exportsOutput{Body: dto.GovernanceExportJobs{Exports: exportJobDTOs(jobs, svc.PublicBaseURL)}}, nil
 	}
 }
 
 type createExportInput struct {
-	Body apiwire.GovernanceCreateExportRequest
+	Body dto.GovernanceCreateExportRequest
 }
 
 type exportOutput struct {
-	Body apiwire.GovernanceExportJob
+	Body dto.GovernanceExportJob
 }
 
 func createExport(svc *governance.Service) func(context.Context, governance.Principal, *createExportInput) (*exportOutput, error) {
@@ -292,8 +292,8 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 	}
 }
 
-func auditEventDTO(event governance.AuditEvent) apiwire.GovernanceAuditEvent {
-	return apiwire.GovernanceAuditEvent{
+func auditEventDTO(event governance.AuditEvent) dto.GovernanceAuditEvent {
+	return dto.GovernanceAuditEvent{
 		EventID:               event.EventID.String(),
 		RecordedAt:            event.RecordedAt.UTC().Format(time.RFC3339Nano),
 		OrgID:                 event.OrgID,
@@ -348,18 +348,18 @@ func auditEventDTO(event governance.AuditEvent) apiwire.GovernanceAuditEvent {
 	}
 }
 
-func exportJobDTOs(jobs []governance.ExportJob, baseURL string) []apiwire.GovernanceExportJob {
-	out := make([]apiwire.GovernanceExportJob, 0, len(jobs))
+func exportJobDTOs(jobs []governance.ExportJob, baseURL string) []dto.GovernanceExportJob {
+	out := make([]dto.GovernanceExportJob, 0, len(jobs))
 	for _, job := range jobs {
 		out = append(out, exportJobDTO(job, baseURL))
 	}
 	return out
 }
 
-func exportJobDTO(job governance.ExportJob, baseURL string) apiwire.GovernanceExportJob {
-	files := make([]apiwire.GovernanceExportFile, 0, len(job.Files))
+func exportJobDTO(job governance.ExportJob, baseURL string) dto.GovernanceExportJob {
+	files := make([]dto.GovernanceExportFile, 0, len(job.Files))
 	for _, file := range job.Files {
-		files = append(files, apiwire.GovernanceExportFile{
+		files = append(files, dto.GovernanceExportFile{
 			Path:        file.Path,
 			ContentType: file.ContentType,
 			Rows:        strconv.FormatInt(file.Rows, 10),
@@ -371,7 +371,7 @@ func exportJobDTO(job governance.ExportJob, baseURL string) apiwire.GovernanceEx
 	if job.State == "completed" {
 		downloadURL = fmt.Sprintf("/api/v1/governance/exports/%s/download", job.ExportID.String())
 	}
-	return apiwire.GovernanceExportJob{
+	return dto.GovernanceExportJob{
 		ExportID:       job.ExportID.String(),
 		OrgID:          job.OrgID,
 		RequestedBy:    job.RequestedBy,

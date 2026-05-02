@@ -7,6 +7,7 @@ go_library(
         "identity_client.go",
         "projects_client.go",
         "runner_repository_client.go",
+        "safeconv.go",
         "secrets_credentials.go",
         "service.go",
         "store.go",

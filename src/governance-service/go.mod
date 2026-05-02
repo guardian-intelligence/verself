@@ -1,6 +1,6 @@
 module github.com/verself/governance-service
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
@@ -10,11 +10,8 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.4.0
-	github.com/verself/apiwire v0.0.0
 	github.com/verself/auth-middleware v0.0.0
-	github.com/verself/envconfig v0.0.0
-	github.com/verself/httpserver v0.0.0
-	github.com/verself/otel v0.0.0
+	github.com/verself/domain-transfer-objects v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -48,6 +45,8 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
+	github.com/verself/observability v0.0.0
+	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
@@ -69,12 +68,10 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/verself/apiwire => ../apiwire
-
 replace github.com/verself/auth-middleware => ../auth-middleware
 
-replace github.com/verself/envconfig => ../envconfig
+replace github.com/verself/domain-transfer-objects => ../domain-transfer-objects/go
 
-replace github.com/verself/httpserver => ../httpserver
+replace github.com/verself/service-runtime => ../service-runtime/go
 
-replace github.com/verself/otel => ../otel
+replace github.com/verself/observability => ../observability/go

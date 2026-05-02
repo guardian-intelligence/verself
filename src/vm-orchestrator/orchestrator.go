@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/vm-orchestrator/vmproto"
 	"github.com/verself/vm-orchestrator/zfs"
 )
@@ -57,7 +57,7 @@ type Config struct {
 	JailerRoot          string
 	JailerUID           int
 	JailerGID           int
-	Bounds              apiwire.VMResourceBounds
+	Bounds              dto.VMResourceBounds
 	HostInterface       string
 	GuestPoolCIDR       string
 	StateDBPath         string
@@ -81,7 +81,7 @@ func DefaultConfig() Config {
 		JailerRoot:          "/srv/jailer",
 		JailerUID:           10000,
 		JailerGID:           10000,
-		Bounds:              apiwire.DefaultBounds,
+		Bounds:              dto.DefaultBounds,
 		GuestPoolCIDR:       defaultGuestPoolCIDR,
 		StateDBPath:         defaultStateDBPath,
 		HostServiceIP:       defaultHostServiceIP,
@@ -140,7 +140,7 @@ const (
 )
 
 type LeaseSpec struct {
-	Resources               apiwire.VMResources
+	Resources               dto.VMResources
 	FromCheckpointRef       string
 	TTLSeconds              uint64
 	TrustClass              string
@@ -235,8 +235,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if base.ImageDataset == "" {
 		base.ImageDataset = "images"
 	}
-	if base.Bounds == (apiwire.VMResourceBounds{}) {
-		base.Bounds = apiwire.DefaultBounds
+	if base.Bounds == (dto.VMResourceBounds{}) {
+		base.Bounds = dto.DefaultBounds
 	}
 	if base.HostServiceIP == "" {
 		base.HostServiceIP = defaultHostServiceIP
@@ -277,8 +277,8 @@ func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 	}
 	spec.Resources = spec.Resources.Normalize()
 	bounds := cfg.Bounds
-	if bounds == (apiwire.VMResourceBounds{}) {
-		bounds = apiwire.DefaultBounds
+	if bounds == (dto.VMResourceBounds{}) {
+		bounds = dto.DefaultBounds
 	}
 	if err := spec.Resources.Validate(bounds); err != nil {
 		return LeaseSpec{}, err
@@ -655,10 +655,10 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	endAPISocketSpan(nil)
 
 	client := newAPIClient(apiSockHost)
-	// Kernel cmdline rendered from the canonical apiwire flag list plus any
-	// lease-specific overrides. See src/apiwire/vmresources.go for why each
+	// Kernel cmdline rendered from the canonical dto flag list plus any
+	// lease-specific overrides. See src/domain-transfer-objects/go/vmresources.go for why each
 	// flag is on the base list (or deliberately off).
-	bootArgs := apiwire.RenderCmdline(apiwire.DefaultKernelCmdlineBase)
+	bootArgs := dto.RenderCmdline(dto.DefaultKernelCmdlineBase)
 	apiSteps := []firecrackerStep{
 		{name: "metrics", fn: func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
 		{name: "boot-source", fn: func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
@@ -681,7 +681,11 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 			return client.putNetworkInterface(stepCtx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
 		}},
 		{name: "vsock", fn: func(stepCtx context.Context) error {
-			cid := uint32(netSetup.Lease.SlotIndex) + 3
+			slotIndex, slotErr := uint32FromInt(netSetup.Lease.SlotIndex, "network slot index")
+			if slotErr != nil {
+				return slotErr
+			}
+			cid := slotIndex + 3
 			return client.putVsock(stepCtx, cid, "/run/vs-control.sock")
 		}},
 		{name: "entropy", fn: func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
@@ -842,7 +846,7 @@ func waitForSocket(ctx context.Context, path string) error {
 	for {
 		conn, dialErr := net.DialTimeout("unix", path, 100*time.Millisecond)
 		if dialErr == nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil
 		}
 		select {

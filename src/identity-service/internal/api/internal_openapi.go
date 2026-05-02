@@ -6,7 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/identity-service/internal/identity"
 )
 
@@ -15,11 +15,11 @@ func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity
 		version = "1.0.0"
 	}
 	config := huma.DefaultConfig("Verself Identity Service Internal API", version)
-	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL}}
+	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecuritySchemes(api)
 	RegisterInternalRoutes(api, svc)
-	apiwire.ApplyOpenAPIWireDefaults(api)
+	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

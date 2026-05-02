@@ -42,7 +42,7 @@ func (c *Client) OpenEventSource(ctx context.Context, types []string, ping time.
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("open eventsource: unexpected status %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return &EventStream{

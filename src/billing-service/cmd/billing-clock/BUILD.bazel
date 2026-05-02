@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//src/billing-service/internal/billing",
         "//src/billing-service/internal/billing/ledger",
-        "//src/envconfig",
+        "//src/service-runtime/go/envconfig",
         "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )

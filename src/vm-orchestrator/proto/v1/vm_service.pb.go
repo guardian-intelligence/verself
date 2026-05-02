@@ -469,7 +469,7 @@ func (x *NetworkAttach) GetMode() NetworkAttachMode {
 }
 
 // VMResources is the customer-requested VM shape. Canonical wire type;
-// see src/apiwire/vmresources.go for the Go-side mirror and validation.
+// see src/domain-transfer-objects/go/vmresources.go for the Go-side mirror and validation.
 type VMResources struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Vcpus         uint32                 `protobuf:"varint,1,opt,name=vcpus,proto3" json:"vcpus,omitempty"`

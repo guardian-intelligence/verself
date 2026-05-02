@@ -445,7 +445,7 @@ func auditOperation(ctx context.Context, op huma.Operation, policy operationPoli
 		IdempotencyKeyHash:    hashTextForAudit(info.IdempotencyKey),
 		RouteTemplate:         op.Path,
 		HTTPMethod:            op.Method,
-		HTTPStatus:            uint16(statusForOutcome(outcome, err, op.DefaultStatus)),
+		HTTPStatus:            uint16FromInt(statusForOutcome(outcome, err, op.DefaultStatus), "audit http status"),
 	}
 	if err != nil {
 		record.ErrorCode = problemCode(err)

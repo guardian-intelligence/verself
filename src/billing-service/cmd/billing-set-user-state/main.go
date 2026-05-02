@@ -19,7 +19,7 @@ import (
 
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/billing-service/internal/billing/ledger"
-	"github.com/verself/envconfig"
+	"github.com/verself/service-runtime/envconfig"
 )
 
 const (

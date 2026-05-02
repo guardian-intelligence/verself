@@ -927,7 +927,7 @@ func (s *BaoStore) do(ctx context.Context, method, path, token string, logicalPa
 	if err != nil {
 		return baoResponse{}, 0, fmt.Errorf("%w: openbao %s %s: %v", ErrStore, method, sanitizedPath(path), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	rawBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	response := baoResponse{RequestID: firstNonEmpty(
 		resp.Header.Get("X-Vault-Request-Id"),

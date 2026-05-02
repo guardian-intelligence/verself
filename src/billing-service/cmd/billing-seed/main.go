@@ -15,7 +15,7 @@ import (
 
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/billing-service/internal/billing/ledger"
-	"github.com/verself/envconfig"
+	"github.com/verself/service-runtime/envconfig"
 )
 
 const (
@@ -280,7 +280,7 @@ func upsertDefaultPlan(ctx context.Context, pg *pgxpool.Pool, cfg config) (bool,
 	now := time.Now().UTC()
 	for _, sku := range seed.SKUs {
 		rateID := "rate:" + cfg.planID + ":" + sku.SKUID
-		if _, err := pg.Exec(ctx, `INSERT INTO plan_sku_rates (rate_id, plan_id, sku_id, unit_rate, active, active_from) VALUES ($1,$2,$3,$4,true,$5) ON CONFLICT (rate_id) DO UPDATE SET unit_rate = EXCLUDED.unit_rate, active = true`, rateID, cfg.planID, sku.SKUID, int64(sku.UnitRate), now); err != nil {
+		if _, err := pg.Exec(ctx, `INSERT INTO plan_sku_rates (rate_id, plan_id, sku_id, unit_rate, active, active_from) VALUES ($1,$2,$3,$4,true,$5) ON CONFLICT (rate_id) DO UPDATE SET unit_rate = EXCLUDED.unit_rate, active = true`, rateID, cfg.planID, sku.SKUID, int64FromUint64(sku.UnitRate, "sku unit rate"), now); err != nil {
 			return false, err
 		}
 	}
@@ -318,7 +318,7 @@ func upsertEntitlementPolicy(ctx context.Context, pg *pgxpool.Pool, policyID, so
 		INSERT INTO entitlement_policies (policy_id, product_id, source, scope_type, scope_product_id, scope_bucket_id, amount_units, cadence, anchor_kind, proration_mode, active_from, policy_version)
 		VALUES ($1,$2,$3,'bucket',$2,$4,$5,'monthly','billing_cycle','prorate_by_time_left',$6,'v1')
 		ON CONFLICT (policy_id) DO UPDATE SET amount_units = EXCLUDED.amount_units, active_from = LEAST(entitlement_policies.active_from, EXCLUDED.active_from), active_until = NULL
-	`, policyID, productID, source, bucketID, int64(amount), time.Now().UTC())
+	`, policyID, productID, source, bucketID, int64FromUint64(amount, "entitlement policy amount"), time.Now().UTC())
 	return err
 }
 
@@ -334,6 +334,14 @@ func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint
 		}
 	}
 	return total, nil
+}
+
+func int64FromUint64(value uint64, field string) int64 {
+	const maxInt64AsUint64 = uint64(1<<63 - 1)
+	if value > maxInt64AsUint64 {
+		panic(fmt.Sprintf("%s exceeds int64 range: %d", field, value))
+	}
+	return int64(value) // #nosec G115 -- value is checked against MaxInt64 above.
 }
 
 func depositSKUScopedGrants(ctx context.Context, client *billing.Client, pg *pgxpool.Pool, cfg config) (int, error) {

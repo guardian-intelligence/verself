@@ -1,12 +1,11 @@
 module github.com/verself/vm-orchestrator
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/verself/apiwire v0.0.0
-	github.com/verself/otel v0.0.0
+	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/vishvananda/netlink v1.3.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -29,6 +28,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/verself/observability v0.0.0
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
@@ -49,6 +49,6 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace github.com/verself/otel => ../otel
+replace github.com/verself/domain-transfer-objects => ../domain-transfer-objects/go
 
-replace github.com/verself/apiwire => ../apiwire
+replace github.com/verself/observability => ../observability/go

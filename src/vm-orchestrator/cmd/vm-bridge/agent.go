@@ -389,8 +389,13 @@ func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmpr
 
 	jobCtx, jobCancel := context.WithCancel(context.Background())
 	if req.MaxWallSeconds > 0 {
+		maxWall, wallErr := durationFromSeconds(req.MaxWallSeconds, "max_wall_seconds")
+		if wallErr != nil {
+			jobCancel()
+			return wallErr
+		}
 		var cancel context.CancelFunc
-		jobCtx, cancel = context.WithTimeout(jobCtx, time.Duration(req.MaxWallSeconds)*time.Second)
+		jobCtx, cancel = context.WithTimeout(jobCtx, maxWall)
 		jobCancel = cancel
 	}
 	s.jobCancel = jobCancel
@@ -656,7 +661,7 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 				return fmt.Errorf("apply overlays for %s: %w", fs.Name, err)
 			}
 		}
-		fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
+		_, _ = fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
 		mounted = append(mounted, fs)
 	}
 	s.filesystems = mounted

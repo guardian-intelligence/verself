@@ -99,9 +99,9 @@ func (c *Client) ensureLedgerAccountTx(ctx context.Context, q *store.Queries, de
 	row := ledgerAccountRegistryRow{
 		AccountKey: stored.AccountKey,
 		AccountID:  accountID,
-		Ledger:     uint32(stored.Ledger),
-		Code:       uint16(stored.Code),
-		Flags:      uint16(stored.Flags),
+		Ledger:     checkedUint32FromInt32(stored.Ledger, "ledger number"),
+		Code:       checkedUint16FromInt32(stored.Code, "ledger account code"),
+		Flags:      checkedUint16FromInt32(stored.Flags, "ledger account flags"),
 	}
 	if row.Ledger != ledger.DefaultLedger || row.Code != def.Code || row.Flags != def.Flags {
 		return ledgerAccountRegistryRow{}, fmt.Errorf("ledger account registry drift for %s: got ledger=%d code=%d flags=%d expected ledger=%d code=%d flags=%d", def.Key, row.Ledger, row.Code, row.Flags, ledger.DefaultLedger, def.Code, def.Flags)
@@ -282,7 +282,7 @@ func (c *Client) DispatchPendingLedgerCommands(ctx context.Context, limit int) (
 	if limit <= 0 {
 		limit = 100
 	}
-	commands, err := c.queries.ListPendingLedgerCommands(ctx, store.ListPendingLedgerCommandsParams{Limit: int32(limit)})
+	commands, err := c.queries.ListPendingLedgerCommands(ctx, store.ListPendingLedgerCommandsParams{Limit: checkedInt32FromInt(limit, "pending ledger commands limit")})
 	if err != nil {
 		return 0, fmt.Errorf("query pending ledger commands: %w", err)
 	}

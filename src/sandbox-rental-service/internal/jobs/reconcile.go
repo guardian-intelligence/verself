@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/store"
 )
 
@@ -43,7 +43,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			return err
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_reserved_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale reserved attempt %s: %w", item.AttemptID, err)
@@ -70,7 +70,7 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-release")
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_launch_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale launching attempt %s: %w", item.AttemptID, err)
@@ -98,7 +98,7 @@ func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
 			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-cleaned-release")
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_cleaned_runner", nil); err != nil {
 			return fmt.Errorf("fail cleaned runner attempt %s: %w", item.AttemptID, err)
