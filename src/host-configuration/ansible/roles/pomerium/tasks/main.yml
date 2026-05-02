@@ -59,7 +59,7 @@
 
 - name: Store Pomerium shared secret
   ansible.builtin.copy:
-    content: "{{ pomerium_shared_secret_generated.stdout }}"
+    content: "{{ pomerium_shared_secret_generated.stdout | trim }}"
     dest: "{{ pomerium_shared_secret_path }}"
     owner: root
     group: pomerium
@@ -86,7 +86,7 @@
 
 - name: Store Pomerium cookie secret
   ansible.builtin.copy:
-    content: "{{ pomerium_cookie_secret_generated.stdout }}"
+    content: "{{ pomerium_cookie_secret_generated.stdout | trim }}"
     dest: "{{ pomerium_cookie_secret_path }}"
     owner: root
     group: pomerium
@@ -123,7 +123,7 @@
 
 - name: Store Pomerium JWT signing key
   ansible.builtin.copy:
-    content: "{{ pomerium_signing_key_raw.content | trim }}"
+    content: "{{ pomerium_signing_key_raw.content | b64decode }}"
     dest: "{{ pomerium_signing_key_path }}"
     owner: root
     group: pomerium
