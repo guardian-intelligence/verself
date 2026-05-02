@@ -1,7 +1,7 @@
 ---
 # Rolling OS security updates across the fleet.
 # Usage: aspect host-configuration security-patch
-# (renders the per-site cache and invokes verself-deploy ansible run).
+# (renders the per-site cache and invokes verself-deploy host-configuration security-patch).
 
 - name: Apply security patches
   hosts: all
@@ -16,6 +16,7 @@
     - name: Upgrade security packages
       ansible.builtin.apt:
         upgrade: safe
+        policy_rc_d: 101
       register: apt_result
 
     - name: Reboot if required

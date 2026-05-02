@@ -24,7 +24,7 @@ type taskEventSink struct {
 	closed bool
 }
 
-func newTaskEventSink(db taskEventWriter, opts Options) (*taskEventSink, error) {
+func newTaskEventSink(db *deploydb.Client, opts Options) (*taskEventSink, error) {
 	if db == nil {
 		return nil, nil
 	}
