@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -17,16 +15,20 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/verself/deployment-tools/internal/ansible"
 	"github.com/verself/deployment-tools/internal/identity"
-	"github.com/verself/deployment-tools/internal/layers"
 	"github.com/verself/deployment-tools/internal/ledger"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
 
-// runRun is the `verself-deploy run` entry point — the in-process
-// orchestrator that supersedes the per-step shell-outs the AXL
-// deploy task previously sequenced. It owns identity, ledger writes,
-// layered substrate, external reconcilers, and Nomad submits.
+const (
+	substrateSitePlaybook = "playbooks/site.yml"
+	substratePhase        = "substrate_site"
+)
+
+// runRun is the `verself-deploy run` entry point. It owns identity,
+// deploy ledger writes, substrate convergence through the canonical
+// Ansible site playbook, and Nomad submits.
 //
 // AXL-side responsibilities preserved (because they sit outside the
 // SSH/agent surface this binary owns):
@@ -36,18 +38,8 @@ func runRun(args []string) int {
 	site := fs.String("site", "prod", "deploy site")
 	sha := fs.String("sha", "", "git SHA being deployed (empty = HEAD)")
 	scope := fs.String("scope", "all", "all | affected (affected is a stub for now)")
-	substrateMode := fs.String("substrate", "auto", "auto | always (skip is rejected — layer hashes gate per-layer)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	switch *substrateMode {
-	case "auto", "always":
-	case "skip":
-		fmt.Fprintln(os.Stderr, "verself-deploy run: --substrate=skip is unsupported; layer digests gate convergence per layer")
-		return 1
-	default:
-		fmt.Fprintf(os.Stderr, "verself-deploy run: --substrate must be auto|always (got %q)\n", *substrateMode)
 		return 2
 	}
 
@@ -96,7 +88,6 @@ func runRun(args []string) int {
 		trace.WithAttributes(
 			attribute.String("verself.site", *site),
 			attribute.String("verself.deploy_scope", *scope),
-			attribute.String("verself.substrate_mode", *substrateMode),
 		),
 	)
 	defer span.End()
@@ -127,7 +118,7 @@ func runRun(args []string) int {
 			trace.WithAttributes(attribute.String("error", err.Error())))
 	}
 
-	exitCode := runDeployBody(ctx, rt, led, *site, resolvedSha, *scope, *substrateMode, rr, span, startedAt, snap)
+	exitCode := runDeployBody(ctx, rt, led, *site, resolvedSha, *scope, rr, span, startedAt, snap)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -141,67 +132,36 @@ func runDeployBody(
 	ctx context.Context,
 	rt *runtime.Runtime,
 	led *ledger.Writer,
-	site, sha, scope, substrateMode, repoRoot string,
+	site, sha, scope, repoRoot string,
 	span trace.Span,
 	startedAt time.Time,
 	snap identity.Snapshot,
 ) int {
-	inventoryPath := authoredInventoryPath(repoRoot, site)
-	if _, err := os.Stat(inventoryPath); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: inventory missing at %s: %v\n", inventoryPath, err)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, nil, "inventory missing")
+	// 1. Substrate convergence. Ansible owns ordering via play order and
+	// role order inside the canonical site playbook.
+	substrateRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
+	if err != nil || substrateRes == nil || substrateRes.ExitCode != 0 {
+		msg := ansibleFailureMessage(substrateSitePlaybook, substrateRes, err)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: substrate failed: %s\n", msg)
+		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, []string{"substrate"}, msg)
 		return 1
 	}
-	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
+	span.SetAttributes(
+		attribute.Int("ansible.task_count", substrateRes.TaskCount),
+		attribute.Int("ansible.changed_total", substrateRes.ChangedCount),
+		attribute.Int("ansible.failed_count", substrateRes.FailedCount),
+	)
 
-	// 1. Layered substrate convergence.
-	layerRes := layers.RunAll(ctx, layers.Options{
-		Site:         site,
-		RepoRoot:     repoRoot,
-		AnsibleDir:   ansibleDir,
-		Inventory:    inventoryPath,
-		Force:        substrateMode == "always",
-		OTLPEndpoint: rt.OTLPEndpoint(),
-		ChWriter:     rt.ClickHouse,
-		Ledger:       led,
-	})
-	if layerRes.Err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: layered substrate failed at %s: %v\n", layerRes.FailedLayer, layerRes.Err)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, layerRes.LayersRan,
-			"layer "+layerRes.FailedLayer+" failed: "+layerRes.Err.Error())
-		return 1
-	}
-	// Tripwire: every layer in Plan must produce exactly one ledger row,
-	// either ran or skipped. A mismatch means RunAll's accounting drifted
-	// from the plan it walked — a programming bug we want to fail loudly
-	// rather than silently under-report layers in deploy_layer_runs.
-	if total := len(layerRes.LayersRan) + len(layerRes.LayersSkipped); total != len(layers.Plan) {
-		msg := fmt.Sprintf("layer convergence: wrote %d rows, expected %d", total, len(layers.Plan))
-		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, layerRes.LayersRan, msg)
-		return 1
-	}
-
-	// 2. External reconcilers (Cloudflare DNS today; future add-ons
-	// land here). Each is a subprocess that emits its own ledger
-	// rows; the run-level span captures them via baggage propagation.
-	if err := runExternalReconcilers(ctx, rt, repoRoot, site); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: external reconcilers failed: %v\n", err)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, layerRes.LayersRan,
-			"external reconcilers: "+err.Error())
-		return 1
-	}
-
-	// 3. Nomad fan-out — same in-process function as standalone
+	// 2. Nomad fan-out — same in-process function as standalone
 	// `verself-deploy nomad deploy-all`, no subprocess.
 	if err := deployAll(ctx, rt, span, site, repoRoot, false); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-all failed: %v\n", err)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, layerRes.LayersRan,
+		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, []string{"substrate"},
 			"nomad deploy-all: "+err.Error())
 		return 1
 	}
 
-	// 4. Succeeded.
+	// 3. Succeeded.
 	durationMs := durationMillis(time.Since(startedAt), "deploy duration")
 	successEvent := ledger.DeployEvent{
 		RunKey:             snap.RunKey(),
@@ -209,7 +169,7 @@ func runDeployBody(
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
-		AffectedComponents: layerRes.LayersRan,
+		AffectedComponents: []string{"substrate", "nomad"},
 		Kind:               ledger.EventSucceeded,
 		DurationMs:         durationMs,
 	}
@@ -217,6 +177,36 @@ func runDeployBody(
 		fmt.Fprintf(os.Stderr, "verself-deploy run: WARN: deploy_events succeeded insert failed: %v\n", err)
 	}
 	return 0
+}
+
+func runSubstrateSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {
+	inventoryPath := authoredInventoryPath(repoRoot, site)
+	if _, err := os.Stat(inventoryPath); err != nil {
+		return nil, fmt.Errorf("inventory missing at %s: %w", inventoryPath, err)
+	}
+	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
+	args := append([]string{}, extraArgs...)
+	args = append(args, "-e", "verself_site="+site)
+	return ansible.Run(ctx, rt.ClickHouse, ansible.Options{
+		Playbook:      substrateSitePlaybook,
+		Inventory:     inventoryPath,
+		AnsibleDir:    ansibleDir,
+		ExtraArgs:     args,
+		Site:          site,
+		Phase:         substratePhase,
+		OTLPEndpoint:  rt.OTLPEndpoint(),
+		AdditionalEnv: []string{"VERSELF_SITE=" + site},
+	})
+}
+
+func ansibleFailureMessage(playbook string, res *ansible.Result, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if res == nil {
+		return "ansible-playbook " + playbook + " failed without a result"
+	}
+	return fmt.Sprintf("ansible-playbook %s exited %d", playbook, res.ExitCode)
 }
 
 // writeFailedDeployEvent is a defer-friendly companion to
@@ -259,49 +249,4 @@ func truncateError(s string) string {
 		return s
 	}
 	return s[:maxLen-1] + "…"
-}
-
-// runExternalReconcilers shells out to the per-reconciler scripts.
-// They live in src/host-configuration/scripts because they own their own
-// row schema (verself.reconciler_runs) and SSH lifetime; collapsing
-// them into the binary is a future cleanup, not a Phase 4 deliverable.
-func runExternalReconcilers(ctx context.Context, rt *runtime.Runtime, repoRoot, site string) error {
-	tracer := rt.Tracer
-	ctx, span := tracer.Start(ctx, "verself_deploy.external_reconcilers",
-		trace.WithSpanKind(trace.SpanKindInternal),
-		trace.WithAttributes(attribute.String("verself.site", site)),
-	)
-	defer span.End()
-
-	scripts := []string{"reconcile-cloudflare-dns.sh"}
-	for _, name := range scripts {
-		if err := runOneReconciler(ctx, rt, repoRoot, site, name); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-	}
-	span.SetStatus(codes.Ok, "")
-	return nil
-}
-
-func runOneReconciler(ctx context.Context, rt *runtime.Runtime, repoRoot, site, scriptName string) error {
-	scriptPath := filepath.Join(repoRoot, "src", "host-configuration", "scripts", scriptName)
-	if _, err := os.Stat(scriptPath); err != nil {
-		return fmt.Errorf("reconciler script missing at %s: %w", scriptPath, err)
-	}
-	cmd := exec.CommandContext(ctx, scriptPath, "--site="+site)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(),
-		"OTEL_EXPORTER_OTLP_ENDPOINT=http://"+rt.OTLPEndpoint(),
-		"VERSELF_OTLP_ENDPOINT="+rt.OTLPEndpoint(),
-	)
-	cmd.Dir = filepath.Join(repoRoot, "src", "host-configuration")
-	if err := cmd.Run(); err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return fmt.Errorf("%s exited %d", scriptName, ee.ExitCode())
-		}
-		return err
-	}
-	return nil
 }

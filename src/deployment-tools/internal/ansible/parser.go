@@ -51,8 +51,6 @@ type TaskEvent struct {
 }
 
 // PlayRecap aggregates the post-run PLAY RECAP totals per host.
-// changed_count is summed across hosts to give the layer's overall
-// changed-task count consumed by verself.deploy_layer_runs.
 type PlayRecap struct {
 	Hosts map[string]RecapStats
 }
@@ -68,8 +66,7 @@ type RecapStats struct {
 	Ignored     int
 }
 
-// ChangedTotal is the summed changed= counts across every host. Used
-// to populate verself.deploy_layer_runs.changed_count.
+// ChangedTotal is the summed changed= counts across every host.
 func (r *PlayRecap) ChangedTotal() int {
 	total := 0
 	for _, s := range r.Hosts {

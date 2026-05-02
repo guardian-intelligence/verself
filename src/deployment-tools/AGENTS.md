@@ -25,7 +25,7 @@ correctness invariants for this binary to encode.
 
 This module owns deploy orchestration: BEP-driven artifact resolution,
 Nomad submit/monitor, streaming Ansible event capture, identity propagation,
-and ClickHouse ledger rows.
+and ClickHouse deploy ledger rows.
 
 ## Conventions
 

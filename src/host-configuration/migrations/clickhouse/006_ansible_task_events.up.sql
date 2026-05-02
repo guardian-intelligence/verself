@@ -8,9 +8,8 @@ CREATE TABLE IF NOT EXISTS verself.ansible_task_events
     `play`            String                       CODEC(ZSTD(3)),
     `task`            String                       CODEC(ZSTD(3)),
     `host`            LowCardinality(String)       CODEC(ZSTD(3)),
-    -- Status set: ok | changed | skipped | failed | unreachable. The
-    -- divergence canary's "changed task inside a skipped layer" query
-    -- joins on (deploy_run_key, layer, status='changed').
+    -- Status set: ok | changed | skipped | failed | unreachable.
+    -- The `layer` column stores the Ansible phase label for current writers.
     `status`          LowCardinality(String)       CODEC(ZSTD(3)),
     `item`            String         DEFAULT ''    CODEC(ZSTD(3)),
     `duration_ms`     UInt32         DEFAULT 0     CODEC(T64, ZSTD(3)),

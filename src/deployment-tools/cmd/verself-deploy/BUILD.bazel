@@ -21,7 +21,6 @@ go_library(
         "//src/deployment-tools/internal/caddyupstreams",
         "//src/deployment-tools/internal/garage",
         "//src/deployment-tools/internal/identity",
-        "//src/deployment-tools/internal/layers",
         "//src/deployment-tools/internal/ledger",
         "//src/deployment-tools/internal/nomadclient",
         "//src/deployment-tools/internal/render",

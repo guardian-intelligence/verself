@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// fixture is a representative ansible-playbook stdout for a layer
-// playbook with one play, two tasks, two hosts, and a recap. Output
-// is colorless because we strip ANSI before matching.
+// fixture is a representative ansible-playbook stdout with one play,
+// two tasks, two hosts, and a recap. Output is colorless because we
+// strip ANSI before matching.
 const fixture = `
 PLAY [Substrate L1 OS] *********************************************************
 

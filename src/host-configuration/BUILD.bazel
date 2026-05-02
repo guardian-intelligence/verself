@@ -1,7 +1,5 @@
 # gazelle:prefix github.com/verself/host-configuration
 
-load(":digests.bzl", "layer_digest_genrule")
-
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -30,100 +28,4 @@ filegroup(
             "scripts/**/__pycache__/**",
         ],
     ),
-)
-
-# Path patterns scoping each layer's Ansible source subset. The L1 hash only
-# changes when host/OS-shaped roles, the L1 playbook, or the shared Ansible
-# config change. Same for the rest. Shared paths (group_vars, ansible.cfg,
-# callback_plugins, plugins) are included in every layer's digest because any
-# of them can change task behavior at runtime.
-#
-# Bash `case` glob: `*` matches any character including `/`, so a pattern
-# like `src/host-configuration/ansible/roles/base/*` matches every file at any depth
-# under that directory. The patterns are unquoted in the rendered cmd so
-# bash treats them as globs.
-_SHARED_ANSIBLE_PATTERNS = [
-    "src/host-configuration/ansible/group_vars/all/catalog.yml",
-    "src/host-configuration/ansible/ansible.cfg",
-    "src/host-configuration/ansible/callback_plugins/*",
-    "src/host-configuration/ansible/plugins/*",
-    "src/host-configuration/ansible/group_vars/*",
-    "src/host-configuration/ansible/rendered/*",
-]
-
-_L1_OS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
-    "src/host-configuration/ansible/playbooks/l1_os.yml",
-    "src/host-configuration/ansible/playbooks/tasks/controller-preflight.yml",
-    "src/host-configuration/ansible/roles/base/*",
-    "src/host-configuration/ansible/roles/zfs/*",
-    "src/host-configuration/ansible/roles/nftables/*",
-    "src/host-configuration/ansible/roles/wireguard/*",
-    "src/host-configuration/ansible/roles/substrate_profile/*",
-    "src/host-configuration/ansible/roles/containerd/*",
-    "src/host-configuration/ansible/roles/firecracker/*",
-]
-
-_L2_USERSPACE_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
-    "src/host-configuration/ansible/playbooks/l2_userspace.yml",
-    "src/host-configuration/ansible/tasks/userspace_batch.yml",
-]
-
-_L3_BINARIES_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
-    "src/host-configuration/ansible/playbooks/l3_binaries.yml",
-    "src/host-configuration/ansible/roles/spire/*",
-    "src/host-configuration/ansible/roles/garage/*",
-    "src/host-configuration/ansible/roles/bazel_remote/*",
-    "src/host-configuration/ansible/roles/nomad/*",
-    "src/host-configuration/ansible/roles/clickhouse/*",
-    "src/host-configuration/ansible/roles/tigerbeetle/*",
-    "src/host-configuration/ansible/roles/postgresql/*",
-    "src/host-configuration/ansible/roles/zitadel/*",
-    "src/host-configuration/ansible/roles/openbao/*",
-    "src/host-configuration/ansible/roles/wireguard/*",
-    "src/host-configuration/ansible/roles/ssh_ca/*",
-    "src/host-configuration/ansible/roles/nats/*",
-    "src/host-configuration/ansible/roles/temporal/*",
-    "src/host-configuration/ansible/roles/stalwart/*",
-    "src/host-configuration/ansible/roles/electric/*",
-    "src/host-configuration/ansible/roles/otelcol/*",
-    "src/host-configuration/ansible/roles/grafana/*",
-    "src/host-configuration/ansible/roles/verdaccio/*",
-    "src/host-configuration/ansible/roles/caddy/*",
-    "src/host-configuration/ansible/roles/forgejo/*",
-]
-
-_L4A_COMPONENTS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
-    "src/host-configuration/ansible/playbooks/l4a_components.yml",
-    "src/host-configuration/ansible/tasks/component_substrate.yml",
-    "src/host-configuration/ansible/tasks/component/*",
-    "src/host-configuration/ansible/tasks/bootstrap/*",
-    "src/host-configuration/ansible/roles/resend/*",
-    "src/host-configuration/ansible/roles/spire_registrations/*",
-    "src/host-configuration/ansible/roles/openbao_tenancy/*",
-    "src/host-configuration/ansible/roles/zitadel_oauth_app/*",
-    "src/host-configuration/ansible/roles/zitadel_project_roles/*",
-]
-
-layer_digest_genrule(
-    name = "prod_l1_os_digest",
-    output = "prod.l1_os.sha256",
-    patterns = _L1_OS_ANSIBLE_PATTERNS,
-)
-
-layer_digest_genrule(
-    name = "prod_l2_userspace_digest",
-    output = "prod.l2_userspace.sha256",
-    patterns = _L2_USERSPACE_ANSIBLE_PATTERNS,
-)
-
-layer_digest_genrule(
-    name = "prod_l3_binaries_digest",
-    output = "prod.l3_binaries.sha256",
-    patterns = _L3_BINARIES_ANSIBLE_PATTERNS,
-)
-
-layer_digest_genrule(
-    name = "prod_l4a_components_digest",
-    output = "prod.l4a_components.sha256",
-    patterns = _L4A_COMPONENTS_ANSIBLE_PATTERNS,
 )

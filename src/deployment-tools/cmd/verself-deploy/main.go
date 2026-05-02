@@ -7,7 +7,7 @@
 //
 //	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
 //	verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
-//	verself-deploy ansible run      --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
+//	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
 //
 // Every subcommand routes through internal/runtime.Init, which owns
 // the start ordering: SSH dial → OTLP forward channel → OTel SDK
@@ -56,16 +56,16 @@ func usage() {
 	fmt.Fprint(os.Stderr, `verself-deploy — typed orchestrator for verself deploys
 
 usage:
-  verself-deploy run                  --site=<site> [--sha=<rev>] [--scope=all|affected] [--substrate=auto|always]
+  verself-deploy run                  --site=<site> [--sha=<rev>] [--scope=all|affected]
   verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
   verself-deploy nomad deploy-all     --site=<site> [--repo-root=<path>]
-  verself-deploy ansible run          --site=<site> --layer=<layer> --playbook=<path> --inventory=<dir>
-  verself-deploy substrate converge   --site=<site> [--force]
+  verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
+  verself-deploy substrate converge   --site=<site>
   verself-deploy substrate verify     --site=<site>
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+
-		"`run` is the AXL deploy entry point: identity, ledger, layered\nsubstrate, external reconcilers, and Nomad fan-out all happen inside\nthis single process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
+		"`run` is the AXL deploy entry point: identity, deploy ledger,\nAnsible site convergence, and Nomad fan-out all happen inside this\nsingle process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
 }
 
 func runNomad(args []string) int {
