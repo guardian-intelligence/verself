@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -23,7 +25,7 @@ const supplyChainComponent = "supply-chain"
 
 func runSupplyChain(args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "verself-deploy supply-chain: missing subcommand (try `inventory`, `check`, or `record`)")
+		fmt.Fprintln(os.Stderr, "verself-deploy supply-chain: missing subcommand (try `inventory`, `check`, `record`, or `assert-evidence`)")
 		return 2
 	}
 	switch args[0] {
@@ -33,6 +35,8 @@ func runSupplyChain(args []string) int {
 		return runSupplyChainCheck(args[1:])
 	case "record":
 		return runSupplyChainRecord(args[1:])
+	case "assert-evidence":
+		return runSupplyChainAssertEvidence(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain: unknown subcommand: %s\n", args[0])
 		return 2
@@ -169,6 +173,78 @@ func runSupplyChainRecord(args []string) int {
 	return 0
 }
 
+func runSupplyChainAssertEvidence(args []string) int {
+	fs := flag.NewFlagSet("supply-chain assert-evidence", flag.ContinueOnError)
+	site := fs.String("site", "prod", "deployment site")
+	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
+	policyPath := fs.String("policy", supplychain.DefaultPolicyPath, "artifact policy path")
+	runKey := fs.String("run-key", "", "deploy run key to assert")
+	requireSucceeded := fs.Bool("require-succeeded", true, "require a succeeded deploy_events row and no failed row")
+	wait := fs.Duration("wait", 5*time.Second, "maximum time to wait for ClickHouse evidence")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *runKey == "" {
+		fmt.Fprintln(os.Stderr, "verself-deploy supply-chain assert-evidence: --run-key is required")
+		return 2
+	}
+	if *wait <= 0 || *wait > 5*time.Second {
+		fmt.Fprintln(os.Stderr, "verself-deploy supply-chain assert-evidence: --wait must be >0 and <=5s")
+		return 2
+	}
+	rr, ok := resolveRepoRoot("verself-deploy supply-chain assert-evidence", *repoRoot)
+	if !ok {
+		return 1
+	}
+	_, eval, err := evaluateSupplyChain(context.Background(), rr, *policyPath, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain assert-evidence: %v\n", err)
+		return 1
+	}
+	if eval.HasRejected() {
+		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain assert-evidence: local policy rejects %d artifact source(s)\n", eval.Rejected)
+		return 1
+	}
+	generated, err := identity.Generate(identity.GenerateOptions{
+		Site:  *site,
+		Scope: "supply-chain",
+		Kind:  "supply-chain-assert-evidence",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain assert-evidence: derive identity: %v\n", err)
+		return 1
+	}
+	generated.ApplyEnv()
+	rt, err := runtime.Init(context.Background(), runtime.Options{
+		ServiceName:    serviceName,
+		ServiceVersion: serviceVersion,
+		Site:           *site,
+		RepoRoot:       rr,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain assert-evidence: %v\n", err)
+		return 1
+	}
+	defer rt.Close()
+	summary, err := waitForSupplyChainEvidence(rt.Ctx, rt, *runKey, len(eval.Results), *requireSucceeded, *wait)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain assert-evidence: %v\n", err)
+		return 1
+	}
+	fmt.Printf(
+		"supply-chain evidence ok: run_key=%s rows=%d rejected=%d provisional=%d accepted=%d policy_check_spans=%d policy_record_spans=%d trace_id=%s\n",
+		summary.DeployRunKey,
+		summary.RowCount,
+		summary.Rejected,
+		summary.Provisional,
+		summary.Accepted,
+		summary.PolicyCheckSpans,
+		summary.PolicyRecordSpans,
+		summary.TraceID,
+	)
+	return 0
+}
+
 func runSupplyChainGate(ctx context.Context, rt *runtime.Runtime, site, repoRoot, policyPath, runKey string, strictAdmitted bool) error {
 	_, eval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, policyPath, strictAdmitted)
 	if err != nil {
@@ -230,6 +306,68 @@ func recordSupplyChainEvaluation(ctx context.Context, rt *runtime.Runtime, site,
 		return err
 	}
 	span.SetStatus(codes.Ok, "")
+	return nil
+}
+
+func waitForSupplyChainEvidence(ctx context.Context, rt *runtime.Runtime, runKey string, expectedRows int, requireSucceeded bool, wait time.Duration) (deploydb.SupplyChainEvidenceSummary, error) {
+	if rt == nil || rt.DeployDB == nil {
+		return deploydb.SupplyChainEvidenceSummary{}, errors.New("runtime ClickHouse client is required")
+	}
+	deadline := time.Now().Add(wait)
+	var lastErr error
+	for {
+		summary, err := rt.DeployDB.SupplyChainEvidenceSummary(ctx, runKey)
+		if err != nil {
+			lastErr = err
+		} else if err := validateSupplyChainEvidence(summary, expectedRows, requireSucceeded); err != nil {
+			lastErr = err
+		} else {
+			return summary, nil
+		}
+		if time.Now().After(deadline) {
+			return deploydb.SupplyChainEvidenceSummary{}, lastErr
+		}
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return deploydb.SupplyChainEvidenceSummary{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func validateSupplyChainEvidence(summary deploydb.SupplyChainEvidenceSummary, expectedRows int, requireSucceeded bool) error {
+	var issues []string
+	if summary.RowCount != uint64(expectedRows) {
+		issues = append(issues, fmt.Sprintf("expected %d supply-chain rows, observed %d", expectedRows, summary.RowCount))
+	}
+	if summary.Rejected != 0 {
+		issues = append(issues, fmt.Sprintf("expected zero rejected policy rows, observed %d", summary.Rejected))
+	}
+	if summary.EmptyTraceID != 0 {
+		issues = append(issues, fmt.Sprintf("expected zero empty trace IDs, observed %d", summary.EmptyTraceID))
+	}
+	if summary.DistinctTraceID != 1 {
+		issues = append(issues, fmt.Sprintf("expected one supply-chain trace ID, observed %d", summary.DistinctTraceID))
+	}
+	if summary.PolicyCheckSpans == 0 {
+		issues = append(issues, "missing OK policy_check span")
+	}
+	if summary.PolicyRecordSpans == 0 {
+		issues = append(issues, "missing OK policy_record span")
+	}
+	if requireSucceeded {
+		if summary.DeploySucceeded == 0 {
+			issues = append(issues, "missing succeeded deploy_events row")
+		}
+		if summary.DeployFailed != 0 {
+			issues = append(issues, fmt.Sprintf("expected zero failed deploy_events rows, observed %d", summary.DeployFailed))
+		}
+	}
+	if len(issues) > 0 {
+		return errors.New(strings.Join(issues, "; "))
+	}
 	return nil
 }
 
