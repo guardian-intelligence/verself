@@ -7,9 +7,18 @@
 platform_rendered_dir: "{{ playbook_dir }}/../rendered"
 postgresql_log_dir: /var/log/postgresql
 
-# Platform-owned organization ID used for first-party runtime secrets that
-# services fetch through secrets-service over SPIFFE mTLS.
-secrets_service_platform_org_id: "370200542594579812"
+# Platform-owned organization. This org is the first-party customer account the
+# deployment dogfoods for CI, runtime secrets, source hosting, and showback.
+platform_org_id: "370200542594579812"
+platform_company_slug: guardian-intelligence
+platform_company_display_name: Guardian Intelligence
+platform_repo_slug: verself
+platform_repo_display_name: Verself
+platform_repo_description: Verself platform monorepo.
+
+# First-party runtime secrets are scoped to the platform organization and are
+# fetched through secrets-service over SPIFFE mTLS.
+secrets_service_platform_org_id: "{{ platform_org_id }}"
 
 # Operator email forwarding — all mail to ceo@<domain> is copied here by the
 # mailbox-service internal forwarder. Required for turnkey operator
