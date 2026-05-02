@@ -295,10 +295,13 @@
     owner: root
     group: haproxy
     mode: "0640"
-    # `haproxy -c` opens shm-stats-file, so validate as the service user that must reload it.
+    # Ansible stages the template under the SSH user's private tmpdir; validate a service-owned copy.
     validate: >-
-      /usr/bin/sudo -u haproxy /bin/sh -c
-      'cd / && LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$1"'
+      /bin/sh -ec
+      'tmp="$(/usr/bin/mktemp /var/lib/haproxy/haproxy-validate.XXXXXX.cfg)";
+      trap "rm -f \"$tmp\"" EXIT;
+      /usr/bin/install -o haproxy -g haproxy -m 0640 "$1" "$tmp";
+      /usr/bin/sudo -u haproxy /usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$tmp"'
       -- %s
   notify: restart haproxy
 
