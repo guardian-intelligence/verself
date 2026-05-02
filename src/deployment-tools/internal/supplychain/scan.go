@@ -92,6 +92,9 @@ func shouldScanFile(rel string) bool {
 	if !strings.HasPrefix(rel, "src/") {
 		return false
 	}
+	if rel == "src/viteplus-monorepo/.npmrc" {
+		return true
+	}
 	if strings.HasPrefix(rel, "src/deployment-tools/internal/supplychain/") {
 		return false
 	}
@@ -127,6 +130,9 @@ func scanFile(path, rel string) ([]Finding, error) {
 	}
 	if rel == "src/viteplus-monorepo/pnpm-workspace.yaml" {
 		findings = append(findings, scanPnpmSettings(rel, text)...)
+	}
+	if rel == "src/viteplus-monorepo/.npmrc" {
+		findings = append(findings, scanNpmrcSettings(rel, text)...)
 	}
 	if strings.HasSuffix(rel, "catalog.yml") {
 		findings = append(findings, scanCatalogURLs(rel, text)...)
@@ -196,6 +202,7 @@ var (
 	pnpmScalarRe    = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]*):\s*([^#\s]+)\s*$`)
 	pnpmAllowRe     = regexp.MustCompile(`^  ([A-Za-z0-9@/_.-]+):\s*(true|false)\s*$`)
 	pnpmListRe      = regexp.MustCompile(`^  -\s+([A-Za-z0-9@/_.|\s-]+)\s*$`)
+	npmrcRegistryRe = regexp.MustCompile(`^\s*registry\s*=\s*([^#\s]+)\s*$`)
 	registryRe      = regexp.MustCompile(`https?://[^"'\s]*registry\.npmjs\.org[^"'\s]*|registry\.npmjs\.org`)
 	githubReleaseRe = regexp.MustCompile(`https://(?:github\.com|codeberg\.org|code\.forgejo\.org)/[^"'\s]+/releases/download/[^"'\s]+`)
 	httpURLRe       = regexp.MustCompile(`https?://[^"'\s)>,]+`)
@@ -249,6 +256,18 @@ func scanPnpmSettings(rel, text string) []Finding {
 		if m := pnpmScalarRe.FindStringSubmatch(line); m != nil && required[m[1]] {
 			artifact := "pnpm." + m[1]
 			findings = append(findings, finding(rel, lineNo, "pnpm_setting", "developer-only", artifact, "", "value:"+m[2], strings.TrimSpace(line)))
+		}
+	}
+	return findings
+}
+
+func scanNpmrcSettings(rel, text string) []Finding {
+	lines := strings.Split(text, "\n")
+	var findings []Finding
+	for idx, line := range lines {
+		if m := npmrcRegistryRe.FindStringSubmatch(line); m != nil {
+			raw := strings.TrimRight(m[1], "/") + "/"
+			findings = append(findings, finding(rel, uint32(idx+1), "registry_url", classifySurface(rel, "registry_url", registryArtifact(raw)), registryArtifact(raw), raw, "", strings.TrimSpace(line)))
 		}
 	}
 	return findings
@@ -511,6 +530,8 @@ func goInstallArtifact(line string) string {
 
 func classifySurface(rel, kind, artifact string) string {
 	switch {
+	case rel == "src/viteplus-monorepo/.npmrc":
+		return "build-time"
 	case strings.HasPrefix(rel, "src/vm-orchestrator/guest-images/"):
 		return "guest-rootfs"
 	case strings.Contains(rel, "build-substrate.sh"):
