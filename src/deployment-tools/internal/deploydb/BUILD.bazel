@@ -8,6 +8,7 @@ go_library(
         "deploy_events.go",
         "open_operator.go",
         "operator_config.go",
+        "supply_chain_events.go",
         "tls.go",
     ],
     importpath = "github.com/verself/deployment-tools/internal/deploydb",

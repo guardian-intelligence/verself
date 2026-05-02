@@ -75,6 +75,7 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 
 - Git repos (including this one) are hosted on the deployed Forgejo instance at `git.<domain>`.
 - NPM mirror self-hosted via Verdaccio.
+- Artifact admission policy, TUF target metadata contract, and deploy evidence are documented in [`docs/architecture/artifact-admission.md`](architecture/artifact-admission.md).
 
 ## Founder Focus Areas
 

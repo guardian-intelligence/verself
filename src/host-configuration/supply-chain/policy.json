@@ -1,0 +1,1790 @@
+{
+  "schema_version": 1,
+  "requirements": {
+    "reject_untracked_fetch_paths": true,
+    "require_digest_for_bytes": true,
+    "minimum_age_days": 3
+  },
+  "artifacts": [
+    {
+      "id": "bootstrap-bootstrap-url-bazelisk-f03393a63bf6",
+      "source_path": "scripts/bootstrap",
+      "source_kind": "bootstrap_url",
+      "surface": "host-bootstrap",
+      "artifact": "bazelisk",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64",
+        "digest": "sha256:22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "bootstrap-bootstrap-url-aspect-35c65a6141cf",
+      "source_path": "scripts/bootstrap",
+      "source_kind": "bootstrap_url",
+      "surface": "host-bootstrap",
+      "artifact": "aspect",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl",
+        "digest": "sha256:db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "bootstrap-bootstrap-url-viteplus-7286b020bcbf",
+      "source_path": "scripts/bootstrap",
+      "source_kind": "bootstrap_url",
+      "surface": "host-bootstrap",
+      "artifact": "viteplus",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://vite.plus",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-go-5c7eb4a4911a",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_go",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+        "digest": "sha256:ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-zig-0a955a4f206d",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_zig",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz",
+        "digest": "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-tofu-20e366bca3c2",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_tofu",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip",
+        "digest": "sha256:901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-protoc-0c62aaad74fd",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_protoc",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/protocolbuffers/protobuf/releases/download/v34.0/protoc-34.0-linux-x86_64.zip",
+        "digest": "sha256:e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-buf-e7702faa9b62",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_buf",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64",
+        "digest": "sha256:ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-buildifier-c4fe31c07bd6",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_buildifier",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
+        "digest": "sha256:887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-shellcheck-f3b131031a7c",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_shellcheck",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz",
+        "digest": "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-jq-7abf70308150",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_jq",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
+        "digest": "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-sops-1825f32c87e5",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_sops",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
+        "digest": "sha256:14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-age-535331c6ab44",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_age",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
+        "digest": "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-uv-55ed686ab6a4",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_uv",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "digest": "sha256:c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-clickhouse-ec064d651f3b",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_clickhouse",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "digest": "sha256:2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-osv-scanner-1f27a7d292dd",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_osv_scanner",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64",
+        "digest": "sha256:bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-stripe-f04301934555",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_stripe",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz",
+        "digest": "sha256:a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "dev-tools-module-bazel-bazel-http-file-dev-tool-agent-browser-ed09a8dd53aa",
+      "source_path": "src/dev-tools/binaries/dev_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "developer-only",
+      "artifact": "dev_tool_agent_browser",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64",
+        "digest": "sha256:02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-age-d35796639168",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.age",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
+        "digest": "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-agent-browser-f98f6b2cc084",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.agent-browser",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64",
+        "digest": "sha256:02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-aspect-ac87ce834bd8",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.aspect",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.17.17/aspect-cli-x86_64-unknown-linux-musl",
+        "digest": "sha256:db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-bazelisk-fe0f056bfe09",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.bazelisk",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.28.1/bazelisk-linux-amd64",
+        "digest": "sha256:22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-buf-123ee8f53a41",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.buf",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64",
+        "digest": "sha256:ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-buildifier-a980144d2fb1",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.buildifier",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
+        "digest": "sha256:887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-clickhouse-124589f5b99c",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.clickhouse",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "digest": "sha256:2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-go-b08673932c41",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.go",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+        "digest": "sha256:ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-jq-0200ed90cd60",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.jq",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
+        "digest": "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-osv-scanner-109e2f3d4eeb",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.osv-scanner",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64",
+        "digest": "sha256:bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-protoc-1a933d67cbb1",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.protoc",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/protocolbuffers/protobuf/releases/download/v34.0/protoc-34.0-linux-x86_64.zip",
+        "digest": "sha256:e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-shellcheck-3700ace32414",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.shellcheck",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz",
+        "digest": "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-sops-17d0590a563c",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.sops",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
+        "digest": "sha256:14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-stripe-0a4a277af990",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.stripe",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz",
+        "digest": "sha256:a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-tofu-2db5a98b6830",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.tofu",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip",
+        "digest": "sha256:901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-uv-848fec64e64c",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.uv",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "digest": "sha256:c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-viteplus-d8031f6c5076",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.viteplus",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://vite.plus",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-dev-tools-zig-b85f16862823",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "developer-only",
+      "artifact": "topology_dev_tools.zig",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz",
+        "digest": "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-firecracker-0fde13ab645c",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.firecracker",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.0/firecracker-v1.15.0-x86_64.tgz",
+        "digest": "sha256:00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-forgejo-runner-d092d8a22d12",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.forgejo_runner",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
+        "digest": "sha256:41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-github-actions-runner-b24757074f3e",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.github_actions_runner",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz",
+        "digest": "sha256:18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-go-d5f2a15e3fcd",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.go",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+        "digest": "sha256:ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-guest-kernel-config-f2489de83806",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.guest_kernel.config_",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155.config",
+        "digest": "sha256:024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-guest-kernel-f324a101cb91",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.guest_kernel",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155",
+        "digest": "sha256:e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-nodejs-9afed1ed523b",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.nodejs",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz",
+        "digest": "sha256:472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "catalog-yml-catalog-url-topology-guest-versions-ubuntu-base-75f2ccb354b6",
+      "source_path": "src/host-configuration/ansible/group_vars/all/catalog.yml",
+      "source_kind": "catalog_url",
+      "surface": "guest-rootfs",
+      "artifact": "topology_guest_versions.ubuntu_base",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz",
+        "digest": "sha256:c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "main-yml-direct-release-url-webadmin-b6985954e776",
+      "source_path": "src/host-configuration/ansible/roles/stalwart/defaults/main.yml",
+      "source_kind": "direct_release_url",
+      "surface": "host-bootstrap",
+      "artifact": "webadmin",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stalwartlabs/webadmin/releases/download/v0.1.37/webadmin.zip",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "main-yml-direct-release-url-spam-filter-1680d293417f",
+      "source_path": "src/host-configuration/ansible/roles/stalwart/defaults/main.yml",
+      "source_kind": "direct_release_url",
+      "surface": "host-bootstrap",
+      "artifact": "spam-filter",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stalwartlabs/spam-filter/releases/download/v2.0.5/spam-filter.toml",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "main-yml-npm-install-npm-install-2b758d8f1246",
+      "source_path": "src/host-configuration/ansible/roles/verdaccio/tasks/main.yml",
+      "source_kind": "npm_install",
+      "surface": "host-bootstrap",
+      "artifact": "npm-install",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "main-yml-registry-url-npmjs-registry-50b7638e70ae",
+      "source_path": "src/host-configuration/ansible/roles/verdaccio/tasks/main.yml",
+      "source_kind": "registry_url",
+      "surface": "host-bootstrap",
+      "artifact": "npmjs-registry",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://registry.npmjs.org",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-clickhouse-aba127f981fa",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_clickhouse",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "digest": "sha256:2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-tigerbeetle-aa5340a9c7c8",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_tigerbeetle",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/tigerbeetle/tigerbeetle/releases/download/0.17.1/tigerbeetle-x86_64-linux.zip",
+        "digest": "sha256:0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zitadel-988aadc7521d",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_zitadel",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/zitadel/zitadel/releases/download/v4.13.1/zitadel-linux-amd64.tar.gz",
+        "digest": "sha256:fe1f5231e5dcbdca63ae77adab0d2241daafeb9712e7d6cded3713e9ef50f1cb",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-openbao-28841cd85a38",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_openbao",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/openbao/openbao/releases/download/v2.5.2/openbao_2.5.2_linux_amd64.deb",
+        "digest": "sha256:5b915011ba8fa8137bd3309830aded0250b8fce42706bd6dcd2b91ac5560cde7",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-pomerium-59a5cf60f11b",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_pomerium",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/pomerium/pomerium/releases/download/v0.32.6/pomerium-linux-amd64.tar.gz",
+        "digest": "sha256:817b4c13788800f1b3a79d4ad96aeb20ba97c55490690040dc9956150b8d1151",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spire-219a774d7631",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_spire",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/spiffe/spire/releases/download/v1.14.5/spire-1.14.5-linux-amd64-musl.tar.gz",
+        "digest": "sha256:cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spiffe-helper-90926e38054d",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_spiffe_helper",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/spiffe/spiffe-helper/releases/download/v0.11.0/spiffe-helper_v0.11.0_Linux-x86_64.tar.gz",
+        "digest": "sha256:7fba909574320d6a656e2e7d7f0657890fefad08a2abecd86c7bafe62d6d9134",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nats-server-6a6bb6cfb4e7",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_nats_server",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/nats-io/nats-server/releases/download/v2.12.7/nats-server-v2.12.7-linux-amd64.tar.gz",
+        "digest": "sha256:570d2d627db111e679cc1e6bc57ba78f373ed1769acd8dc9c21c8f62d15b3c52",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-garage-898c9f982338",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_garage",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://garagehq.deuxfleurs.fr/_releases/v2.3.0/x86_64-unknown-linux-musl/garage",
+        "digest": "sha256:f98d317942bb341151a2775162016bb50cf86b865d0108de03eb5db16e2120cd",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-forgejo-7289228635a8",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_forgejo",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://codeberg.org/forgejo/forgejo/releases/download/v15.0.0/forgejo-15.0.0-linux-amd64",
+        "digest": "sha256:3919f10a7845f3b71bacc2c7a3bfa2cd71aed58a0b8be6ab5e95f2e150b4ded7",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-bazel-remote-02a7ead3f6cd",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_bazel_remote",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/buchgr/bazel-remote/releases/download/v2.6.1/bazel-remote-2.6.1-linux-amd64",
+        "digest": "sha256:025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-otelcol-contrib-4141c55896f5",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_otelcol_contrib",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.149.0/otelcol-contrib_0.149.0_linux_amd64.tar.gz",
+        "digest": "sha256:4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-temporal-4c3ada3c24ad",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_temporal",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "digest": "sha256:83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-grafana-f516b5420727",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_grafana",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://dl.grafana.com/oss/release/grafana-12.4.2.linux-amd64.tar.gz",
+        "digest": "sha256:f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-grafana-clickhouse-5880b4243461",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_grafana_clickhouse_datasource",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/grafana/clickhouse-datasource/releases/download/v4.14.1/grafana-clickhouse-datasource-4.14.1.linux_amd64.zip",
+        "digest": "sha256:11f569287a607043a9c60c4abca493784cc187b6bc4298270e5ef764719a22f1",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-47593fe88a2e",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_stalwart",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-x86_64-unknown-linux-musl.tar.gz",
+        "digest": "sha256:b2042dbcf0a110a4a756a5288de013649fd1f7ee84fa002bb3d2e6ec1e5f1f0b",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-cli-7d359de41520",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_stalwart_cli",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-cli-x86_64-unknown-linux-musl.tar.gz",
+        "digest": "sha256:8fbe74206bed46974c272623e184b11d6c8362eb606dddc155fdb6ae9df7b3e9",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-containerd-941c5dfe1b1f",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_containerd",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz",
+        "digest": "sha256:5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nodejs-3c617a244493",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_nodejs",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
+        "digest": "sha256:88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-haproxy-awslc-3b86c7b792d8",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_haproxy_awslc",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+        "digest": "sha256:02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-libssl-awslc-b532e5eb6417",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_libssl_awslc",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/a/awslc/libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+        "digest": "sha256:e75ceefa692bb002ae76d2e04ad88c344e524f28aeabf8b165c7bab922474b5c",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-lego-086a6a770911",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_lego",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/go-acme/lego/releases/download/v4.35.2/lego_v4.35.2_linux_amd64.tar.gz",
+        "digest": "sha256:ee5be4bf457de8e3efa86a51651c75c87f0ee0e4e9f3ae14f6034d68365770f3",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nomad-8d449a5f3c2f",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_nomad",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
+        "digest": "sha256:19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "network-policy-sh-curl-fetch-curl-0b960ea40f88",
+      "source_path": "src/host-configuration/scripts/security/network-policy.sh",
+      "source_kind": "curl_fetch",
+      "surface": "host-bootstrap",
+      "artifact": "curl",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://httpbin.org/get",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "network-policy-sh-curl-fetch-curl-8364b5db9f5d",
+      "source_path": "src/host-configuration/scripts/security/network-policy.sh",
+      "source_kind": "curl_fetch",
+      "surface": "host-bootstrap",
+      "artifact": "curl",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "http://127.0.0.1:4873/",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-minimumreleaseage-e8c7e3f12edc",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.minimumReleaseAge",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:4320",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-strictdepbuilds-5fac901a908a",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.strictDepBuilds",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:true",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-allowbuilds-esbuild-f36779a41c2a",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.allowBuilds.esbuild",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:true",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-allowbuilds-protobufjs-a12228061eb8",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.allowBuilds.protobufjs",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:true",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-dangerouslyallowallbuilds-465d51676ce1",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.dangerouslyAllowAllBuilds",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:false",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-verifydepsbeforerun-28604b734e46",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.verifyDepsBeforeRun",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:error",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-packagemanagerstrict-88005f2b8200",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.packageManagerStrict",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:true",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-packagemanagerstrictversion-3e9749e903b7",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.packageManagerStrictVersion",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "value:true",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "guest-images-module-bazel-bazel-http-file-guest-image-ubuntu-base-32cd2b8ac4d8",
+      "source_path": "src/vm-orchestrator/guest-images/guest_images.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "guest-rootfs",
+      "artifact": "guest_image_ubuntu_base",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz",
+        "digest": "sha256:c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "guest-images-module-bazel-bazel-http-file-guest-image-vmlinux-b77ae77e7b20",
+      "source_path": "src/vm-orchestrator/guest-images/guest_images.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "guest-rootfs",
+      "artifact": "guest_image_vmlinux",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155",
+        "digest": "sha256:e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "guest-images-module-bazel-bazel-http-file-guest-image-vmlinux-config-5e85eadd2c00",
+      "source_path": "src/vm-orchestrator/guest-images/guest_images.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "guest-rootfs",
+      "artifact": "guest_image_vmlinux_config",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155.config",
+        "digest": "sha256:024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "guest-images-module-bazel-bazel-http-file-guest-image-firecracker-releas-347badf17579",
+      "source_path": "src/vm-orchestrator/guest-images/guest_images.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "guest-rootfs",
+      "artifact": "guest_image_firecracker_release",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.0/firecracker-v1.15.0-x86_64.tgz",
+        "digest": "sha256:00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "guest-images-module-bazel-bazel-http-file-guest-image-github-actions-run-38d7994bc2d9",
+      "source_path": "src/vm-orchestrator/guest-images/guest_images.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "guest-rootfs",
+      "artifact": "guest_image_github_actions_runner",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz",
+        "digest": "sha256:18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "guest-images-module-bazel-bazel-http-file-guest-image-forgejo-runner-fa428a66eab2",
+      "source_path": "src/vm-orchestrator/guest-images/guest_images.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "guest-rootfs",
+      "artifact": "guest_image_forgejo_runner",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
+        "digest": "sha256:41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "build-substrate-sh-apt-get-update-apt-get-update-0191c8d3ac24",
+      "source_path": "src/vm-orchestrator/guest-images/substrate/build-substrate.sh",
+      "source_kind": "apt_get_update",
+      "surface": "guest-rootfs",
+      "artifact": "apt-get-update",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "build-substrate-sh-apt-get-install-apt-get-install-f102abfd87da",
+      "source_path": "src/vm-orchestrator/guest-images/substrate/build-substrate.sh",
+      "source_kind": "apt_get_install",
+      "surface": "guest-rootfs",
+      "artifact": "apt-get-install",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    }
+  ]
+}

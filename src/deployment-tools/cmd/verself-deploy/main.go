@@ -8,6 +8,7 @@
 //	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
 //	verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
 //	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
+//	verself-deploy supply-chain check --repo-root=<path>
 //
 // Every subcommand routes through internal/runtime.Init, which owns
 // the start ordering: SSH dial -> OTLP forward channel -> OTel SDK
@@ -41,6 +42,8 @@ func main() {
 		os.Exit(runAnsible(os.Args[2:]))
 	case "host-configuration":
 		os.Exit(runHostConfiguration(os.Args[2:]))
+	case "supply-chain":
+		os.Exit(runSupplyChain(os.Args[2:]))
 	case "with-otel":
 		os.Exit(runWithOTel(os.Args[2:]))
 	case "-h", "--help", "help":
@@ -63,6 +66,8 @@ usage:
   verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
   verself-deploy host-configuration converge --site=<site>
   verself-deploy host-configuration verify   --site=<site>
+  verself-deploy supply-chain check   [--repo-root=<path>] [--policy=<path>]
+  verself-deploy supply-chain record  --site=<site> [--repo-root=<path>]
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+

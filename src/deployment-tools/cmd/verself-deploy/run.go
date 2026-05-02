@@ -19,6 +19,7 @@ import (
 	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/runtime"
+	"github.com/verself/deployment-tools/internal/supplychain"
 )
 
 const (
@@ -182,7 +183,16 @@ func runDeployBody(
 	snap identity.Snapshot,
 	hostConfigurationPlan hostConfigurationScopePlan,
 ) int {
-	// 1. Host configuration convergence. Ansible owns ordering via play order
+	// 1. Supply-chain policy gate. The gate is intentionally before host
+	// convergence so install-source drift fails before Ansible mutates the box.
+	_, supplyChainEval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, supplychain.DefaultPolicyPath, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain policy failed: %v\n", err)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, err.Error())
+		return 1
+	}
+
+	// 2. Host configuration convergence. Ansible owns ordering via play order
 	// and role order inside the canonical site playbook.
 	if len(hostConfigurationPlan.skippedTags) > 0 {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: scope=%s skips Ansible tags: %s\n", scope, strings.Join(hostConfigurationPlan.skippedTags, ","))
@@ -191,7 +201,7 @@ func runDeployBody(
 	if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, "host-configuration"}, msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, msg)
 		return 1
 	}
 	span.SetAttributes(
@@ -199,17 +209,22 @@ func runDeployBody(
 		attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
 		attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
 	)
+	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, err.Error())
+		return 1
+	}
 
-	// 2. Nomad fan-out — same in-process function as standalone
+	// 3. Nomad fan-out — same in-process function as standalone
 	// `verself-deploy nomad deploy-all`, no subprocess.
 	if err := deployAll(ctx, rt, span, site, repoRoot, false); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-all failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, "host-configuration", "nomad"},
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration", "nomad"},
 			"nomad deploy-all: "+err.Error())
 		return 1
 	}
 
-	// 3. Succeeded.
+	// 4. Succeeded.
 	durationMs := durationMillis(time.Since(startedAt), "deploy duration")
 	successEvent := deploydb.DeployEvent{
 		RunKey:             snap.RunKey(),
@@ -217,7 +232,7 @@ func runDeployBody(
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
-		AffectedComponents: []string{securityPatchComponent, "host-configuration", "nomad"},
+		AffectedComponents: []string{securityPatchComponent, supplyChainComponent, "host-configuration", "nomad"},
 		Kind:               deploydb.EventSucceeded,
 		DurationMs:         durationMs,
 	}
