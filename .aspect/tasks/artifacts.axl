@@ -1,4 +1,5 @@
 """aspect artifacts publish --site=prod
+aspect artifacts inventory
 
 Builds the resolved Nomad artifact set and uploads every content-addressed
 tarball to the private Garage artifact origin. Deployment calls the same
@@ -31,5 +32,31 @@ publish = task(
     summary = "Build and publish content-addressed Nomad artifacts to private Garage.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+def _inventory_impl(ctx):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    args = ["supply-chain", "inventory", "--repo-root", ws_path(ctx), "--format=" + (ctx.args.format or "json")]
+    if ctx.args.write_policy:
+        args = args + ["--write-policy", ctx.args.write_policy]
+    return checked_spawn(
+        ctx,
+        bin,
+        args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy supply-chain inventory",
+    )
+
+inventory = task(
+    implementation = _inventory_impl,
+    name = "inventory",
+    group = ["artifacts"],
+    summary = "Inventory supply-chain install/fetch paths or render the artifact policy.",
+    args = {
+        "format": args.string(default = "json", description = "json | policy."),
+        "write_policy": args.string(default = "", description = "Write generated policy JSON to a repo-relative path."),
     },
 )
