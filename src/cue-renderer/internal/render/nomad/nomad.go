@@ -533,7 +533,7 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	services := taskServices(jobID(component.Name), dynamicPorts)
 
 	// TaskGroup.Update is a runtime contract spliced onto the spec by
-	// src/cue-renderer/nomad/resolve_jobs.py from each component's
+	// src/deployment-tooling/nomad/resolve_jobs.py from each component's
 	// nomad-overrides.json before spec_sha256 is stamped. The renderer
 	// reserves the key so the resolver always updates an existing
 	// field rather than introducing one — this keeps the canonical-JSON
@@ -597,7 +597,7 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		"Name":  unitName,
 		"Count": count,
 		"Tasks": tasks,
-		// Update is filled by src/cue-renderer/nomad/resolve_jobs.py from
+		// Update is filled by src/deployment-tooling/nomad/resolve_jobs.py from
 		// the per-component nomad-overrides.json; declared here so the
 		// resolver overwrites an existing key rather than introducing one.
 		"Update": nil,

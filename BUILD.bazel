@@ -26,7 +26,6 @@ test_suite(
 write_source_files(
     name = "dev_update",
     additional_update_targets = [
-        "//src/cue-renderer:dev_update",
         "//src/viteplus-monorepo/apps/verself-web:dev_update",
     ],
 )

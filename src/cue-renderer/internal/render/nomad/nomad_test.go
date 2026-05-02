@@ -99,7 +99,7 @@ func TestRender_ProfileServiceShape(t *testing.T) {
 	group := groups[0].(map[string]any)
 
 	// TaskGroup.Update is a per-service runtime contract. The renderer
-	// reserves the key as a placeholder; src/cue-renderer/nomad/resolve_jobs.py
+	// reserves the key as a placeholder; src/deployment-tooling/nomad/resolve_jobs.py
 	// fills it in from each component's nomad-overrides.json before
 	// stamping spec_sha256. Confirm the key is declared and unfilled.
 	if _, present := group["Update"]; !present {

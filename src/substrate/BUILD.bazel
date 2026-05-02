@@ -1,3 +1,5 @@
+# gazelle:prefix github.com/verself/substrate
+
 load(":digests.bzl", "layer_digest_genrule")
 
 package(default_visibility = ["//visibility:public"])
@@ -7,8 +9,8 @@ filegroup(
     srcs = [
         ":substrate_sources",
         "//src/cue-renderer:topology_srcs",
-        "//src/cue-renderer/binaries:server_tools_archive",
-        "//src/cue-renderer/binaries:substrate_go_tools",
+        "//src/substrate/binaries:server_tools_archive",
+        "//src/substrate/binaries:substrate_go_tools",
     ],
 )
 
@@ -28,7 +30,7 @@ filegroup(
             "scripts/.venv/**",
             "scripts/**/__pycache__/**",
         ],
-    ),
+    ) + ["//src/devtools:catalog.yml"],
 )
 
 # Path patterns scoping each layer's Ansible source subset. The L1 hash only
@@ -42,6 +44,7 @@ filegroup(
 # under that directory. The patterns are unquoted in the rendered cmd so
 # bash treats them as globs.
 _SHARED_ANSIBLE_PATTERNS = [
+    "src/devtools/catalog.yml",
     "src/substrate/ansible/ansible.cfg",
     "src/substrate/ansible/callback_plugins/*",
     "src/substrate/ansible/plugins/*",

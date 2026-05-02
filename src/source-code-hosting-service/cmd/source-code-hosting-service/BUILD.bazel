@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//src/cue-renderer/nomad:artifact.bzl", "nomad_binary_artifact")
+load("//src/deployment-tooling/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "source-code-hosting-service_lib",

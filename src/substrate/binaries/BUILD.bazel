@@ -1,0 +1,12 @@
+load(":server_tools.bzl", "server_tools_archive", "substrate_go_tools_archive")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "server_tools.MODULE.bazel",
+    "server_tools.bzl",
+])
+
+server_tools_archive()
+
+substrate_go_tools_archive()

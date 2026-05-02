@@ -1,0 +1,361 @@
+---
+topology_dev_tools:
+  age:
+    bins:
+      - age
+      - age-keygen
+    install_dir: /tmp/age-extract
+    install_path: /usr/local/bin/age
+    sha256: bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377
+    strategy: tarball
+    strip_components: 1
+    tier: pinned_http_file
+    url: https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz
+    version: 1.3.1
+    version_cmd: age --version
+  agent-browser:
+    install_path: /usr/local/bin/agent-browser
+    sha256: 02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472
+    strategy: binary
+    tier: pinned_http_file
+    url: https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64
+    version: 0.25.4
+    version_cmd: agent-browser --version
+  ansible:
+    tier: uv_tool
+    version: 2.20.3
+    version_cmd: ansible --version
+  ansible-lint:
+    tier: uv_tool
+    version: 26.4.0
+    version_cmd: ansible-lint --version
+  aspect:
+    install_path: /usr/local/bin/aspect
+    sha256: db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0
+    strategy: binary
+    tier: bootstrap_pivot
+    url: https://github.com/aspect-build/aspect-cli/releases/download/v2026.17.17/aspect-cli-x86_64-unknown-linux-musl
+    version: 2026.17.17
+    version_cmd: aspect --version
+  bazel:
+    sha256: a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f
+    tier: bootstrap_pivot
+    version: 9.1.0
+  bazelisk:
+    install_path: /usr/local/bin/bazelisk
+    sha256: 22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8
+    strategy: binary
+    tier: bootstrap_pivot
+    url: https://github.com/bazelbuild/bazelisk/releases/download/v1.28.1/bazelisk-linux-amd64
+    version: 1.28.1
+    version_cmd: bazelisk version
+  buf:
+    install_path: /usr/local/bin/buf
+    sha256: ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be
+    strategy: binary
+    tier: pinned_http_file
+    url: https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64
+    version: 1.66.1
+    version_cmd: buf --version
+  buildifier:
+    install_path: /usr/local/bin/buildifier
+    sha256: 887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7
+    strategy: binary
+    tier: pinned_http_file
+    url: https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64
+    version: 8.5.1
+    version_cmd: buildifier --version
+  clickhouse:
+    install_path: /usr/local/bin/clickhouse
+    sha256: 2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278
+    strategy: tarball
+    tier: pinned_http_file
+    url: https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz
+    version: 26.3.2.3
+    version_cmd: clickhouse client --version
+  cue:
+    bin_name: cue
+    install_path: /usr/local/bin/cue
+    sha256: 5d644c1305a2b86504c8dcd2ec829cf5b4999efc2cf51ee375624e0455f774ae
+    strategy: tarball
+    strip_components: 0
+    tier: pinned_http_file
+    url: https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_amd64.tar.gz
+    version: 0.16.1
+    version_cmd: cue version
+  go:
+    bin_path: /usr/local/go/bin/go
+    install_dir: /usr/local
+    sha256: ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6
+    strategy: tarball
+    strip_components: 0
+    tier: pinned_http_file
+    url: https://go.dev/dl/go1.25.8.linux-amd64.tar.gz
+    version: 1.25.8
+    version_cmd: go version
+  gofumpt:
+    tier: source_built_go
+    version: 0.9.2
+    version_cmd: gofumpt --version
+  golangci-lint:
+    tier: source_built_go
+    version: 2.11.3
+    version_cmd: golangci-lint --version
+  gosec:
+    tier: source_built_go
+    version: 2.25.0
+    version_cmd: gosec --help
+  guarddog:
+    tier: uv_tool
+    version: 2.9.0
+    version_cmd: guarddog --version
+  jq:
+    install_path: /usr/local/bin/jq
+    sha256: 020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d
+    strategy: binary
+    tier: pinned_http_file
+    url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64
+    version: 1.8.1
+    version_cmd: jq --version
+  osv-scanner:
+    install_path: /usr/local/bin/osv-scanner
+    sha256: bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b
+    strategy: binary
+    tier: pinned_http_file
+    url: https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64
+    version: 2.3.5
+    version_cmd: osv-scanner --version
+  pre-commit:
+    tier: uv_tool
+    version: 4.5.1
+    version_cmd: pre-commit --version
+  protoc:
+    install_dir: /usr/local
+    sha256: e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab
+    strategy: zip
+    tier: pinned_http_file
+    url: https://github.com/protocolbuffers/protobuf/releases/download/v34.0/protoc-34.0-linux-x86_64.zip
+    version: "34.0"
+    version_cmd: protoc --version
+  protoc-gen-go:
+    tier: source_built_go
+    version: 1.36.11
+    version_cmd: protoc-gen-go --version
+  protoc-gen-go-grpc:
+    tier: source_built_go
+    version: 1.6.1
+    version_cmd: protoc-gen-go-grpc --version
+  shellcheck:
+    bin_name: shellcheck
+    install_path: /usr/local/bin/shellcheck
+    sha256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+    strategy: tarball
+    strip_components: 1
+    tier: pinned_http_file
+    url: https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+    version: 0.11.0
+    version_cmd: shellcheck --version
+  sops:
+    install_path: /usr/local/bin/sops
+    sha256: 14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998
+    strategy: binary
+    tier: pinned_http_file
+    url: https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64
+    version: 3.12.2
+    version_cmd: sops --version
+  sqlc:
+    tier: source_built_go
+    version: 1.30.0
+    version_cmd: sqlc version
+  stripe:
+    install_path: /usr/local/bin/stripe
+    sha256: a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f
+    strategy: tarball
+    tier: pinned_http_file
+    url: https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz
+    version: 1.40.0
+    version_cmd: stripe version
+  tofu:
+    install_path: /usr/local/bin/tofu
+    sha256: 901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13
+    strategy: zip
+    tier: pinned_http_file
+    url: https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip
+    version: 1.11.5
+    version_cmd: tofu version -json
+  uv:
+    bins:
+      - uv
+      - uvx
+    install_dir: /tmp/uv-extract
+    install_path: /usr/local/bin/uv
+    sha256: c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce
+    strategy: tarball
+    strip_components: 1
+    tier: pinned_http_file
+    url: https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz
+    version: 0.11.3
+    version_cmd: uv --version
+  viteplus:
+    install_path: $HOME/.vite-plus/bin/vp
+    strategy: shell_installer
+    tier: bootstrap_pivot
+    url: https://vite.plus
+    version: 0.1.19
+    version_cmd: vp --version
+  zig:
+    bin_path: /usr/local/zig/zig
+    install_dir: /usr/local/zig
+    sha256: 02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+    strategy: tarball
+    strip_components: 1
+    symlink: /usr/local/bin/zig
+    tier: pinned_http_file
+    url: https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
+    version: 0.15.2
+    version_cmd: zig version
+topology_dev_tools_archive:
+  bazel_label: //src/devtools/binaries:dev_tools.tar.zst
+  version: age-1.3.1_agent-browser-0.25.4_buf-1.66.1_buildifier-8.5.1_clickhouse-26.3.2.3_cue-0.16.1_go-1.25.8_jq-1.8.1_osv-scanner-2.3.5_protoc-34.0_shellcheck-0.11.0_sops-3.12.2_stripe-1.40.0_tofu-1.11.5_uv-0.11.3_zig-0.15.2
+topology_guest_versions:
+  firecracker:
+    arch: x86_64
+    sha256: 00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4
+    url: https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.0/firecracker-v1.15.0-x86_64.tgz
+    version: 1.15.0
+  forgejo_runner:
+    sha256: 41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521
+    url: https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64
+    version: 12.9.0
+  github_actions_runner:
+    sha256: 18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74
+    url: https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz
+    version: 2.333.1
+  go:
+    sha256: ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6
+    url: https://go.dev/dl/go1.25.8.linux-amd64.tar.gz
+    version: 1.25.8
+  guest_kernel:
+    arch: x86_64
+    config_sha256: 024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3
+    config_url: https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155.config
+    sha256: e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2
+    url: https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155
+    version: 6.1.155
+  nodejs:
+    sha256: 472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6
+    url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz
+    version: 24.15.0
+  pnpm:
+    version: 10.33.0
+  rootfs:
+    size: 8G
+  ubuntu_base:
+    arch: amd64
+    sha256: c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58
+    url: https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz
+    version: 24.04.4
+topology_server_tools:
+  bazel_label: //src/substrate/binaries:server_tools.tar.zst
+  version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_bazel-remote-2.6.1_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_nodejs-22.22.2_stalwart-0.15.5_stalwart-cli-0.15.5_caddy-2.11.2_nomad-1.11.3
+topology_substrate_tools:
+  bazel_label: //src/substrate/binaries:substrate_go_tools
+  version: 0.1.0
+topology_system_packages:
+  build-essential:
+    risk_acknowledgement: build-essential is a Debian metapackage that has no version of its own; we accept upstream Ubuntu's archive integrity for the gcc/g++/make versions it pulls in.
+    version_cmd: gcc --version
+  crun:
+    apt_version_constraint: 1.14.1
+    risk_acknowledgement: crun is consumed by Firecracker tooling; we accept upstream Ubuntu's archive integrity in exchange for kernel-matched OCI runtime defaults that a Bazel http_file rule would not give us.
+    version_cmd: crun --version
+  debootstrap:
+    apt_version_constraint: 1.0.134
+    risk_acknowledgement: debootstrap is the bootstrap utility for guest rootfs builds; we accept upstream Ubuntu's archive integrity because the binary's only output is a chroot tree we then sha-pin downstream.
+    version_cmd: debootstrap --version
+  xdg-utils:
+    risk_acknowledgement: xdg-utils ships xdg-open, the cross-DE default-app launcher invoked by browser-opening CLI tools (bao login -method=oidc, playwright, the ssh-cert OIDC dance). We accept upstream Ubuntu's archive integrity for a thin shell-script package whose only role on operator devices is to dispatch URLs to whichever browser is registered. aspect-operator passes skip_browser=true so missing xdg-open is not fatal; this entry just keeps the operator-side experience sane on graphical devices.
+    version_cmd: xdg-open --version
+topology_uv_tools:
+  ansible-core:
+    package: ansible-core
+    version: 2.20.3
+    with:
+      - ansible-lint==26.4.0
+  guarddog:
+    package: guarddog
+    version: 2.9.0
+  pre-commit:
+    package: pre-commit
+    version: 4.5.1
+topology_versions:
+  development:
+    age: 1.3.1
+    agentBrowser: 0.25.4
+    ansibleCore: 2.20.3
+    ansibleLint: 26.4.0
+    aspectCLI: 2026.17.17
+    bazel: 9.1.0
+    bazelisk: 1.28.1
+    buf: 1.66.1
+    buildifier: 8.5.1
+    clickhouse: 26.3.2.3
+    crun: 1.14.1
+    cue: 0.16.1
+    debootstrap: 1.0.134
+    go: 1.25.8
+    gofumpt: 0.9.2
+    golangciLint: 2.11.3
+    gosec: 2.25.0
+    guarddog: 2.9.0
+    jq: 1.8.1
+    latitudeProvider: 2.9.4
+    opentofu: 1.11.5
+    osvScanner: 2.3.5
+    pnpm: 10.33.0
+    preCommit: 4.5.1
+    protoc: "34.0"
+    protocGenGo: 1.36.11
+    protocGenGoGrpc: 1.6.1
+    shellcheck: 0.11.0
+    sops: 3.12.2
+    sqlc: 1.30.0
+    stripe: 1.40.0
+    uv: 0.11.3
+    viteplus: 0.1.19
+    zig: 0.15.2
+  production:
+    bazelRemote: 2.6.1
+    caddy: 2.11.2
+    clickhouse: 26.3.2.3
+    containerd: 2.2.2
+    electric: 1.5.0
+    firecracker: 1.15.0
+    forgejo: 15.0.0
+    forgejoRunner: 12.9.0
+    garage: v2.3.0
+    githubActionsRunner: 2.333.1
+    grafana: 12.4.2
+    grafanaClickhouseDatasource: 4.14.1
+    guestGo: 1.25.8
+    guestKernel: 6.1.155
+    guestNodejs: 24.15.0
+    natsServer: 2.12.7
+    nodejs: 22.22.2
+    nomad: 1.11.3
+    openbao: 2.5.2
+    otelcolContrib: 0.149.0
+    platform: 0.1.0
+    pnpm: 10.33.0
+    postgresql: "16"
+    spiffeHelper: 0.11.0
+    spire: 1.14.5
+    stalwart: 0.15.5
+    stalwartCli: 0.15.5
+    stalwartSpamFilter: 2.0.5
+    stalwartWebadmin: 0.1.37
+    temporal: 1.30.4
+    tigerbeetle: 0.17.1
+    ubuntu: "24.04"
+    ubuntuBase: 24.04.4
+    zitadel: 4.13.1

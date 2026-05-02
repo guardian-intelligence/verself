@@ -22,7 +22,7 @@
     # listed here — they take per-call args and are invoked via include_role
     # from tasks/bootstrap/*.yml and tasks/component/auth_owned_project.yml.
     #
-    # cloudflare_dns moved out of Ansible: src/cue-renderer/cmd/reconcile-cloudflare-dns
+    # cloudflare_dns moved out of Ansible: src/substrate/cmd/reconcile-cloudflare-dns
     # is a Go binary that lists+diffs+upserts in parallel. aspect deploy
     # invokes scripts/reconcile-cloudflare-dns.sh after the substrate layers.
     - role: resend

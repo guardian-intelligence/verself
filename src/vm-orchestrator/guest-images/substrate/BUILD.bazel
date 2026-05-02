@@ -1,6 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("@yq.bzl//yq:yq.bzl", "yq")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -20,13 +19,6 @@ sh_binary(
 # alongside it. The Ansible firecracker role builds this bundle on the
 # controller, scp's it to the host, and runs the script remotely.
 
-yq(
-    name = "versions",
-    srcs = ["//src/cue-renderer:catalog.yml"],
-    outs = ["versions.json"],
-    expression = ".topology_guest_versions",
-)
-
 pkg_tar(
     name = "substrate_inputs_bundle",
     files = {
@@ -36,7 +28,7 @@ pkg_tar(
         "@guest_image_ubuntu_base//file": "ubuntu-base.tar.gz",
         "@guest_image_vmlinux//file": "vmlinux",
         "@guest_image_vmlinux_config//file": "vmlinux.config",
-        ":versions": "versions.json",
+        "versions.json": "versions.json",
     },
     modes = {
         "build-substrate.sh": "0755",

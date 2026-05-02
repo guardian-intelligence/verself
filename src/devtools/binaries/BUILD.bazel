@@ -1,0 +1,10 @@
+load(":dev_tools.bzl", "dev_tools_archive")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "dev_tools.MODULE.bazel",
+    "dev_tools.bzl",
+])
+
+dev_tools_archive()

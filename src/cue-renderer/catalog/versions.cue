@@ -64,15 +64,15 @@ versions: {
 	}
 
 	development: {
-		go:                                        "1.25.8"
-		aspectCLI:                                 "2026.17.17"
-		bazel:                                     "9.1.0"
-		bazelisk:                                  "1.28.1"
-		buildifier:                                "8.5.1"
-		zig:                                       "0.15.2"
-		opentofu:                                  "1.11.5"
-		ansibleCore: "2.20.3"
-		ansibleLint: "26.4.0"
+		go:               "1.25.8"
+		aspectCLI:        "2026.17.17"
+		bazel:            "9.1.0"
+		bazelisk:         "1.28.1"
+		buildifier:       "8.5.1"
+		zig:              "0.15.2"
+		opentofu:         "1.11.5"
+		ansibleCore:      "2.20.3"
+		ansibleLint:      "26.4.0"
 		preCommit:        "4.5.1"
 		protoc:           "34.0"
 		cue:              "0.16.1"
@@ -109,7 +109,7 @@ versions: {
 // pinned version, so any catalog bump produces a new value and forces a
 // re-unpack on the host.
 serverTools: {
-	bazel_label: "//src/cue-renderer/binaries:server_tools.tar.zst"
+	bazel_label: "//src/substrate/binaries:server_tools.tar.zst"
 	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)_nomad-\(versions.production.nomad)"
 }
 
@@ -117,7 +117,7 @@ serverTools: {
 // facts. It carries first-party Go substrate daemons and helper commands;
 // third-party server binaries stay in serverTools.
 substrateToolsArchive: {
-	bazel_label: "//src/cue-renderer/binaries:substrate_go_tools"
+	bazel_label: "//src/substrate/binaries:substrate_go_tools"
 	version:     versions.production.platform
 }
 
@@ -126,7 +126,7 @@ substrateToolsArchive: {
 // whenever any pinned_http_file dev tool is bumped. Forces a re-unpack
 // on the controller when any version moves.
 devToolsArchive: {
-	bazel_label: "//src/cue-renderer/binaries:dev_tools.tar.zst"
+	bazel_label: "//src/devtools/binaries:dev_tools.tar.zst"
 	version:     "age-\(versions.development.age)_agent-browser-\(versions.development.agentBrowser)_buf-\(versions.development.buf)_buildifier-\(versions.development.buildifier)_clickhouse-\(versions.development.clickhouse)_cue-\(versions.development.cue)_go-\(versions.development.go)_jq-\(versions.development.jq)_osv-scanner-\(versions.development.osvScanner)_protoc-\(versions.development.protoc)_shellcheck-\(versions.development.shellcheck)_sops-\(versions.development.sops)_stripe-\(versions.development.stripe)_tofu-\(versions.development.opentofu)_uv-\(versions.development.uv)_zig-\(versions.development.zig)"
 }
 
@@ -842,13 +842,13 @@ devToolPackaging: {
 
 // guestImageDownloads mirrors serverToolDownloads / devToolDownloads:
 // each entry projects to one http_file rule emitted into
-// src/guest-images/guest_images.MODULE.bazel and is consumed by the
-// guest-image build rules under //src/guest-images/. SHA256 + URL stay
+// src/vm-orchestrator/guest-images/guest_images.MODULE.bazel and is consumed by the
+// guest-image build rules under //src/vm-orchestrator/guest-images/. SHA256 + URL stay
 // pinned alongside the version in `versions.production`; bumping a pin
-// happens here, then `bazelisk run //src/cue-renderer:dev_update` regenerates the Bazel
+// happens here, then the authored Bazel module file under guest-images moves with it.
 // manifest. Composable image catalog (firecracker.images in
 // instances/prod/config.cue) references the resulting Bazel labels via
-// pkg_tar/genrule layouts in //src/guest-images/.
+// pkg_tar layouts in //src/vm-orchestrator/guest-images/.
 guestImageDownloads: {
 	ubuntu_base: {
 		name:                 "guest_image_ubuntu_base"

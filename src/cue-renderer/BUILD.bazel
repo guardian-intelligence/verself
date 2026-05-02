@@ -1,7 +1,6 @@
 # gazelle:prefix github.com/verself/cue-renderer
 
-load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
-load("//src/cue-renderer/nomad:jobs.bzl", "nomad_resolved_jobs")
+load("//src/deployment-tooling/nomad:jobs.bzl", "nomad_resolved_jobs")
 
 # Every CUE source the loader walks. Tests in the renderer tree depend
 # on this filegroup via `data` so they can resolve the topology dir
@@ -26,70 +25,6 @@ filegroup(
         "//src/cue-renderer:__subpackages__",
         "//src/substrate:__pkg__",
     ],
-)
-
-# Bazel-input renderers — only artefacts that participate in the build
-# graph (loaded via include()/load() at evaluation time) are tracked
-# under git. Per-component nftables fragments, group_vars yml files,
-# and Nomad job specs flow through `aspect render --site=<site>` into
-# `.cache/render/<site>/`.
-
-genrule(
-    name = "bazel_module_render",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["server_tools.MODULE.bazel"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_module > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
-)
-
-genrule(
-    name = "bazel_dev_tools_module_render",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["dev_tools.MODULE.bazel"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_dev_tools_module > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
-)
-
-genrule(
-    name = "bazel_dev_tools_render",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["dev_tools.bzl"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_dev_tools > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
-)
-
-genrule(
-    name = "bazel_server_tools_render",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["server_tools.bzl"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_server_tools > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
-)
-
-genrule(
-    name = "bazel_guest_images_render",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["guest_images.MODULE.bazel"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_guest_images > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
-)
-
-# Catalog YAML, consumed by build-time inputs that need pinned upstream
-# versions (e.g. the substrate guest-image bundle). Not registered with
-# write_source_files: there is no on-disk copy in the working tree, the
-# catalog flows directly into downstream Bazel rules from this genrule.
-genrule(
-    name = "catalog_yaml",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["catalog.yml"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render catalog > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
 )
 
 nomad_resolved_jobs(
@@ -131,27 +66,8 @@ nomad_resolved_jobs(
     visibility = ["//visibility:public"],
 )
 
-write_source_files(
-    name = "freshness",
-    check_that_out_file_exists = False,
-    files = {
-        "//src/cue-renderer/binaries:dev_tools.MODULE.bazel": ":bazel_dev_tools_module_render",
-        "//src/cue-renderer/binaries:dev_tools.bzl": ":bazel_dev_tools_render",
-        "//src/cue-renderer/binaries:server_tools.MODULE.bazel": ":bazel_module_render",
-        "//src/cue-renderer/binaries:server_tools.bzl": ":bazel_server_tools_render",
-        "//src/vm-orchestrator/guest-images:guest_images.MODULE.bazel": ":bazel_guest_images_render",
-    },
-    visibility = ["//visibility:public"],
-)
-
 test_suite(
     name = "dev_check",
-    tests = [":freshness_tests"],
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "dev_update",
-    actual = ":freshness",
+    tests = ["//src/cue-renderer/cmd/cue-renderer:cue-renderer_test"],
     visibility = ["//visibility:public"],
 )

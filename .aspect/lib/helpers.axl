@@ -108,6 +108,13 @@ def render_site(ctx, site = DEFAULT_SITE):
     )
     if rc != 0:
         return rc
+    rc = checked_spawn(
+        ctx, "cp",
+        [ws_path(ctx, "src/devtools/catalog.yml"), cache_abs + "/inventory/group_vars/all/catalog.yml"],
+        label = "stage authored tool catalog",
+    )
+    if rc != 0:
+        return rc
     return 0
 
 def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
@@ -186,25 +193,6 @@ def build_verself_deploy(ctx):
     if rc != 0:
         return ""
     return ws_path(ctx, VERSELF_DEPLOY_BIN)
-
-def cue_pin(ctx, key):
-    """Read a single development-tier version pin out of versions.cue.
-
-    Spawns `cue-renderer render catalog` (single-artefact stdout) and pipes
-    the YAML through python yaml.safe_load. No on-disk cache is consulted —
-    aspect doctor must work before any render has run.
-    """
-    r = (ctx.std.process.command("bash")
-         .args([
-             "-c",
-             "bazelisk run -- //src/cue-renderer/cmd/cue-renderer render catalog 2>/dev/null | " +
-             "python3 -c \"import sys, yaml; d=yaml.safe_load(sys.stdin)['topology_versions']['development']; print(d['" + key + "'])\"",
-         ])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
-    if r.status.code != 0:
-        return None
-    return r.stdout.strip()
 
 def tool_version(ctx, program, *args):
     """Run `<program> <args...>` and return the first stdout line, or None."""
