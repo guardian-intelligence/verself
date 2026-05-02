@@ -29,13 +29,6 @@ http_file(
 )
 
 http_file(
-    name = "dev_tool_cue",
-    downloaded_file_path = "cue_v0.16.1_linux_amd64.tar.gz",
-    sha256 = "5d644c1305a2b86504c8dcd2ec829cf5b4999efc2cf51ee375624e0455f774ae",
-    url = "https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_amd64.tar.gz",
-)
-
-http_file(
     name = "dev_tool_buf",
     downloaded_file_path = "buf-Linux-x86_64",
     sha256 = "ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be",
