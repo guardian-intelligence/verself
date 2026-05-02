@@ -1547,7 +1547,47 @@
       }
     },
     {
-      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-dangerouslyallowallbuilds-465d51676ce1",
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-onlybuiltdependencies-esbuild-421a02a2fdb3",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.onlyBuiltDependencies.esbuild",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "listed",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-onlybuiltdependencies-protobufjs-207656cfcd54",
+      "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
+      "source_kind": "pnpm_setting",
+      "surface": "developer-only",
+      "artifact": "pnpm.onlyBuiltDependencies.protobufjs",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "",
+        "digest": "listed",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-dangerouslyallowallbuilds-6dc6d305e058",
       "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
       "source_kind": "pnpm_setting",
       "surface": "developer-only",
@@ -1567,7 +1607,7 @@
       }
     },
     {
-      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-verifydepsbeforerun-28604b734e46",
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-verifydepsbeforerun-17e0929c591b",
       "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
       "source_kind": "pnpm_setting",
       "surface": "developer-only",
@@ -1587,7 +1627,7 @@
       }
     },
     {
-      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-packagemanagerstrict-88005f2b8200",
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-packagemanagerstrict-d9c553fc93e5",
       "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
       "source_kind": "pnpm_setting",
       "surface": "developer-only",
@@ -1607,7 +1647,7 @@
       }
     },
     {
-      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-packagemanagerstrictversion-3e9749e903b7",
+      "id": "pnpm-workspace-yaml-pnpm-setting-pnpm-packagemanagerstrictversion-cdb454b1311c",
       "source_path": "src/viteplus-monorepo/pnpm-workspace.yaml",
       "source_kind": "pnpm_setting",
       "surface": "developer-only",

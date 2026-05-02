@@ -195,6 +195,7 @@ var (
 	wgetRe          = regexp.MustCompile(`\bwget\b`)
 	pnpmScalarRe    = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]*):\s*([^#\s]+)\s*$`)
 	pnpmAllowRe     = regexp.MustCompile(`^  ([A-Za-z0-9@/_.-]+):\s*(true|false)\s*$`)
+	pnpmListRe      = regexp.MustCompile(`^  -\s+([A-Za-z0-9@/_.|\s-]+)\s*$`)
 	registryRe      = regexp.MustCompile(`https?://[^"'\s]*registry\.npmjs\.org[^"'\s]*|registry\.npmjs\.org`)
 	githubReleaseRe = regexp.MustCompile(`https://(?:github\.com|codeberg\.org|code\.forgejo\.org)/[^"'\s]+/releases/download/[^"'\s]+`)
 	httpURLRe       = regexp.MustCompile(`https?://[^"'\s)>,]+`)
@@ -212,10 +213,17 @@ func scanPnpmSettings(rel, text string) []Finding {
 	lines := strings.Split(text, "\n")
 	var findings []Finding
 	inAllowBuilds := false
+	inOnlyBuiltDependencies := false
 	for idx, line := range lines {
 		lineNo := uint32(idx + 1)
 		if strings.TrimSpace(line) == "allowBuilds:" {
 			inAllowBuilds = true
+			inOnlyBuiltDependencies = false
+			continue
+		}
+		if strings.TrimSpace(line) == "onlyBuiltDependencies:" {
+			inAllowBuilds = false
+			inOnlyBuiltDependencies = true
 			continue
 		}
 		if inAllowBuilds {
@@ -227,6 +235,16 @@ func scanPnpmSettings(rel, text string) []Finding {
 				continue
 			}
 			inAllowBuilds = false
+		}
+		if inOnlyBuiltDependencies {
+			if strings.HasPrefix(line, "  ") {
+				if m := pnpmListRe.FindStringSubmatch(line); m != nil {
+					artifact := "pnpm.onlyBuiltDependencies." + strings.TrimSpace(m[1])
+					findings = append(findings, finding(rel, lineNo, "pnpm_setting", "developer-only", artifact, "", "listed", strings.TrimSpace(line)))
+				}
+				continue
+			}
+			inOnlyBuiltDependencies = false
 		}
 		if m := pnpmScalarRe.FindStringSubmatch(line); m != nil && required[m[1]] {
 			artifact := "pnpm." + m[1]
