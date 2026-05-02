@@ -175,11 +175,7 @@ import type {
   ContractRequest,
   ContractsResponse,
 } from "~/lib/sandbox-rental-api";
-import {
-  consoleAuthMiddleware,
-  getAccessTokenForAudience,
-  type ConsoleAuthContext,
-} from "./auth";
+import { consoleAuthMiddleware, getAccessTokenForAudience, type ConsoleAuthContext } from "./auth";
 
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
@@ -284,7 +280,11 @@ async function identityClientOptions(
   context: ConsoleAuthContext | undefined,
   options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
 ) {
-  const accessToken = await getAccessTokenForAudience(context, IDENTITY_SERVICE_AUTH_AUDIENCE, options);
+  const accessToken = await getAccessTokenForAudience(
+    context,
+    IDENTITY_SERVICE_AUTH_AUDIENCE,
+    options,
+  );
   return {
     accessToken,
     baseUrl: IDENTITY_SERVICE_BASE_URL,
@@ -324,7 +324,10 @@ async function projectsClientOptions(context: ConsoleAuthContext | undefined) {
 }
 
 async function sourceCodeHostingClientOptions(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getAccessTokenForAudience(
+    context,
+    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
+  );
   return {
     accessToken,
     baseUrl: SOURCE_CODE_HOSTING_SERVICE_BASE_URL,
