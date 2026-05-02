@@ -17,7 +17,6 @@ gazelle(
 test_suite(
     name = "dev_check",
     tests = [
-        "//src/cue-renderer:dev_check",
         "//src/viteplus-monorepo/apps/verself-web:dev_check",
     ],
 )

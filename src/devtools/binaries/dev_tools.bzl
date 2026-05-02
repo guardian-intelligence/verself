@@ -2,7 +2,6 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 TAR_SINGLE_BINARIES = [
-    ("cue", "@dev_tool_cue//file", "z", "cue", "usr/local/bin/cue"),
     ("shellcheck", "@dev_tool_shellcheck//file", "J", "shellcheck-v0.11.0/shellcheck", "usr/local/bin/shellcheck"),
     ("stripe", "@dev_tool_stripe//file", "z", "stripe", "usr/local/bin/stripe"),
     ("clickhouse", "@dev_tool_clickhouse//file", "z", "clickhouse-common-static-26.3.2.3/usr/bin/clickhouse", "usr/local/bin/clickhouse"),
@@ -51,7 +50,6 @@ DEV_TOOL_DEPS = [
     ":dev_tools_buf",
     ":dev_tools_buildifier",
     ":dev_tools_clickhouse",
-    ":dev_tools_cue",
     ":dev_tools_go_gofumpt",
     ":dev_tools_go_golangci_lint",
     ":dev_tools_go_gosec",

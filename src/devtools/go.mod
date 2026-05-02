@@ -1,5 +1,5 @@
 // Stub Go module that pins the upstream sources for source-built dev
-// tools (tier=source_built_go in catalog/versions.cue). The module
+// tools (tier=source_built_go in the devtools catalog). The module
 // itself contains no build artifacts; it exists so that go.work picks
 // up the require directives, gazelle's go_deps extension then
 // materialises one go_repository per tool, and Bazel's go_binary rules
@@ -31,7 +31,7 @@ tool (
 // from grpc-go's transitive default (1.5.1, July 2024) to the catalog
 // pin (1.6.1, Feb 2026). Without this line, gazelle's go_deps picks
 // the older version and the binary's reported version drifts from the
-// CUE pin.
+// catalog pin.
 require google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.1 // indirect
 
 require (
