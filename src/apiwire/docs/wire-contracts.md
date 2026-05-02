@@ -32,16 +32,6 @@ func toEntitlementsDTO(orgID billing.OrgID, view billing.EntitlementsView) apiwi
 
 Do not use hand-written `strconv.FormatUint` string fields in service-local DTOs for cross-service fields. The decimal type owns JSON encoding and the Huma schema provider.
 
-## Generated Contract Gate
-
-Each service's OpenAPI package declares the frontend wire-contract gate next to the spec it produces. The gate scans frontend-consumed OpenAPI 3.1 specs and fails for `type: integer`, `format: int64` or `format: uint64` unless one of these is true:
-
-- `maximum <= 9007199254740991`
-- `x-js-wire: bigint`
-- the value is encoded as an `apiwire` decimal string DTO instead of an integer schema
-
-The checker also treats OpenAPI 3.1 nullable integer schemas such as `type: [integer, "null"]` as integer schemas.
-
 ## Go Service Client Pattern
 
 Go services consume other Go services through generated `oapi-codegen` clients from committed OpenAPI 3.0 specs. Use the public `client` package for customer-authenticated API shapes and the `internalclient` package for SPIFFE-only operations. The generated client owns URL construction, request/response JSON, and problem parsing; the caller owns only the base URL and the `http.Client`.
