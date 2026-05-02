@@ -66,6 +66,20 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 			continue
 		}
 		res.AdmissionState = artifact.Admission.State
+		res.MinimumAgeResult = artifact.Admission.MinimumAgeResult
+		res.ScannerResults = artifact.Admission.ScannerResults
+		res.OCIRepository = artifact.Admission.OCIRepository
+		res.OCIManifestDigest = artifact.Admission.OCIManifestDigest
+		res.OCIMediaType = artifact.Admission.OCIMediaType
+		res.SignatureDigest = artifact.Admission.SignatureDigest
+		res.AttestationDigest = artifact.Admission.AttestationDigest
+		res.SBOMDigest = artifact.Admission.SBOMDigest
+		res.ProvenanceDigest = artifact.Admission.ProvenanceDigest
+		res.ScannerResultDigest = artifact.Admission.ScannerResultDigest
+		res.ScannerName = artifact.Admission.ScannerName
+		res.ScannerVersion = artifact.Admission.ScannerVersion
+		res.ScannerDatabaseDigest = artifact.Admission.ScannerDatabaseDigest
+		res.GUACSubject = artifact.Admission.GUACSubject
 		res.TUFTargetPath = artifact.Admission.TUFTargetPath
 		res.StorageURI = artifact.Admission.StorageURI
 		switch {
@@ -86,6 +100,26 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 		case artifact.Admission.State == AdmissionAdmitted:
 			if policy.Requirements.RequireDigestForBytes && requiresDigest(f.SourceKind) && f.Digest == "" {
 				res.PolicyReason = "admitted byte artifact source has no sha256 digest"
+				break
+			}
+			if artifact.Admission.OCIRepository == "" || artifact.Admission.OCIManifestDigest == "" || artifact.Admission.OCIMediaType == "" {
+				res.PolicyReason = "admitted artifact missing OCI repository, manifest digest, or media type"
+				break
+			}
+			if artifact.Admission.SignatureDigest == "" || artifact.Admission.AttestationDigest == "" {
+				res.PolicyReason = "admitted artifact missing admission signature or attestation digest"
+				break
+			}
+			if artifact.Admission.SBOMDigest == "" || artifact.Admission.ProvenanceDigest == "" || artifact.Admission.ScannerResultDigest == "" {
+				res.PolicyReason = "admitted artifact missing SBOM, provenance, or scanner evidence digest"
+				break
+			}
+			if artifact.Admission.MinimumAgeResult != "passed" || artifact.Admission.ScannerResults != "passed" {
+				res.PolicyReason = "admitted artifact has non-passing age or scanner result"
+				break
+			}
+			if artifact.Admission.StorageURI == "" {
+				res.PolicyReason = "admitted artifact missing storage URI"
 				break
 			}
 			res.PolicyResult = ResultAccepted
@@ -109,11 +143,25 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 				Artifact:   artifact.Artifact,
 				Digest:     artifact.Admission.Digest,
 			},
-			PolicyResult:   ResultRejected,
-			PolicyReason:   "required pnpm supply-chain control is missing",
-			AdmissionState: artifact.Admission.State,
-			TUFTargetPath:  artifact.Admission.TUFTargetPath,
-			StorageURI:     artifact.Admission.StorageURI,
+			PolicyResult:          ResultRejected,
+			PolicyReason:          "required pnpm supply-chain control is missing",
+			AdmissionState:        artifact.Admission.State,
+			MinimumAgeResult:      artifact.Admission.MinimumAgeResult,
+			ScannerResults:        artifact.Admission.ScannerResults,
+			OCIRepository:         artifact.Admission.OCIRepository,
+			OCIManifestDigest:     artifact.Admission.OCIManifestDigest,
+			OCIMediaType:          artifact.Admission.OCIMediaType,
+			SignatureDigest:       artifact.Admission.SignatureDigest,
+			AttestationDigest:     artifact.Admission.AttestationDigest,
+			SBOMDigest:            artifact.Admission.SBOMDigest,
+			ProvenanceDigest:      artifact.Admission.ProvenanceDigest,
+			ScannerResultDigest:   artifact.Admission.ScannerResultDigest,
+			ScannerName:           artifact.Admission.ScannerName,
+			ScannerVersion:        artifact.Admission.ScannerVersion,
+			ScannerDatabaseDigest: artifact.Admission.ScannerDatabaseDigest,
+			GUACSubject:           artifact.Admission.GUACSubject,
+			TUFTargetPath:         artifact.Admission.TUFTargetPath,
+			StorageURI:            artifact.Admission.StorageURI,
 		})
 	}
 	results = enforcePnpmControls(policy, results)
@@ -269,14 +317,20 @@ func validatePolicy(policy Policy) error {
 			return fmt.Errorf("artifact %s has unsupported admission state %q", artifact.ID, artifact.Admission.State)
 		}
 		if artifact.Admission.State == AdmissionAdmitted {
-			if artifact.Admission.TUFTargetPath == "" {
-				return fmt.Errorf("artifact %s admitted without tuf_target_path", artifact.ID)
-			}
 			if artifact.Admission.StorageURI == "" {
 				return fmt.Errorf("artifact %s admitted without storage_uri", artifact.ID)
 			}
-			if artifact.Admission.MinimumAgeResult == "" || artifact.Admission.ScannerResults == "" {
-				return fmt.Errorf("artifact %s admitted without age/scanner results", artifact.ID)
+			if artifact.Admission.OCIRepository == "" || artifact.Admission.OCIManifestDigest == "" || artifact.Admission.OCIMediaType == "" {
+				return fmt.Errorf("artifact %s admitted without complete OCI metadata", artifact.ID)
+			}
+			if artifact.Admission.SignatureDigest == "" || artifact.Admission.AttestationDigest == "" {
+				return fmt.Errorf("artifact %s admitted without signature and attestation digests", artifact.ID)
+			}
+			if artifact.Admission.SBOMDigest == "" || artifact.Admission.ProvenanceDigest == "" || artifact.Admission.ScannerResultDigest == "" {
+				return fmt.Errorf("artifact %s admitted without SBOM, provenance, and scanner evidence digests", artifact.ID)
+			}
+			if artifact.Admission.MinimumAgeResult != "passed" || artifact.Admission.ScannerResults != "passed" {
+				return fmt.Errorf("artifact %s admitted without passing age/scanner results", artifact.ID)
 			}
 		}
 	}

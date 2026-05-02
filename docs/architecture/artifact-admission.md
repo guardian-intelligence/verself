@@ -4,19 +4,66 @@ Artifact admission is the boundary between upstream package distribution and
 Verself-controlled installation. Direct upstream install paths are inventory
 inputs; admitted artifacts are the only installable outputs.
 
-The admission contract follows TUF's target model: targets metadata binds a
-target path to length and hashes, snapshot metadata pins target metadata
-versions, and timestamp metadata gives clients the current snapshot entry point.
-See the TUF specification for top-level roles and target metadata semantics:
-<https://theupdateframework.github.io/specification/v1.0.19/>.
+The Artifacts Service owns admission policy, scanner execution, signing,
+catalog generation, and evidence emission. Storage and metadata services are
+implementation details below that boundary.
 
-The repository implementation target is Repository Service for TUF (RSTUF). RSTUF
-separates the REST API from the worker that updates, signs, and publishes TUF
-metadata, and its deployment model requires Redis/RabbitMQ for task transport,
-Redis for result/settings state, and Postgres for persistent state. See the RSTUF
-guide and deployment-planning docs:
-<https://repository-service-tuf.readthedocs.io/en/v0.12.0/guide/> and
-<https://repository-service-tuf.readthedocs.io/en/v0.12.0/guide/deployment/planning/deployment.html>.
+Internal distribution uses `zot` as the OCI registry for admitted artifacts.
+OCI Distribution is content-type agnostic, so container images, tarballs, kernel
+images, rootfs inputs, SBOMs, provenance statements, scanner outputs, signatures,
+and attestations can share a single digest-addressed distribution surface. See
+the OCI Distribution Specification and zot documentation:
+<https://github.com/opencontainers/distribution-spec/blob/main/spec.md> and
+<https://zotregistry.dev/>.
+
+Public downloads that require TUF update semantics are published through
+Repository Service for TUF (RSTUF). RSTUF remains the target when external
+clients need signed root, targets, snapshot, and timestamp metadata with
+delegated target roles and rollback/freeze protection. See the TUF
+specification and RSTUF deployment-planning docs:
+<https://theupdateframework.github.io/specification/v1.0.19/> and
+<https://repository-service-tuf.readthedocs.io/en/stable/guide/deployment/planning/deployment.html>.
+
+Internal admission flow:
+
+```text
+upstream source
+  -> Artifacts Service fetch by explicit URL and expected digest
+  -> quarantine age check
+  -> scanner and source-reputation evidence ingestion
+  -> SBOM and provenance generation
+  -> OCI artifact push to zot
+  -> SBOM/provenance/scanner/signature evidence in the OCI manifest
+  -> Cosign or Notation signature and admission attestation verification
+  -> generated admitted-artifacts catalog
+  -> Ansible, Bazel, guest image staging, and developer tooling consume by digest
+```
+
+Internal consumers use `registry/repository@sha256:<digest>` references. Tags are
+diagnostic labels and are never install authorities. Pullers verify the digest,
+the Verself admission signature, and the admission attestation before unpacking
+or executing bytes. Verification failures are policy failures.
+
+The internal zot instance is loopback-only in the single-node topology. It
+allows anonymous reads, rejects unauthenticated writes, and grants create/update
+only to the generated local publisher identity used by artifact admission.
+
+zot may mirror upstream OCI registries only when the mirror is configured for
+the admission policy. Docker-format image conversion can change digests and
+invalidate upstream signatures unless compatibility and digest preservation are
+configured; mirrored OCI inputs that cannot preserve the upstream digest are
+treated as newly admitted artifacts under the resulting digest. See zot
+mirroring and signature-verification docs:
+<https://zotregistry.dev/v2.1.15/articles/mirroring/> and
+<https://zotregistry.dev/v2.1.5/articles/verifying-signatures/>.
+
+zot's CVE scanning extension uses Trivy. It is acceptable for internal registry
+visibility when the zot build, embedded Trivy dependency set, and vulnerability
+database artifacts are admitted and pinned. zot must not fetch vulnerability
+databases from the public internet during host convergence or artifact
+installation; database refreshes are admitted artifacts mirrored into internal
+zot first. Admission policy treats scanner execution failures as failed
+admissions and records the scanner version and database digest with each result.
 
 ## Metadata
 
@@ -28,16 +75,51 @@ Each artifact source has a policy identity and an admission record in
 - sha256 digest when upstream bytes are directly fetched
 - release time and observed time
 - minimum-age result
-- scanner result pointer
+- scanner result pointer and scanner/database digests
 - SBOM pointer
 - SLSA/in-toto provenance pointer
-- TUF target path
-- storage URI
+- OCI repository, OCI manifest digest, and OCI artifact media type
+- OCI referrer digests for signature, admission attestation, SBOM, provenance,
+  and scanner output
+- public TUF target path when an admitted artifact is promoted for public TUF
+  distribution
+- storage URI for large evidence objects kept outside zot
 
 Policy evaluation is fail-closed for untracked source paths. Existing direct
 sources remain `provisional` until their bytes are fetched, aged, scanned,
-stored, and published behind signed TUF metadata. `admitted` entries must carry a
-TUF target path and storage URI.
+stored, signed, and published to zot. `admitted` entries must carry an OCI
+manifest digest, an admission signature, and an admission attestation. Publicly
+distributed entries that use TUF also carry a TUF target path.
+
+The generated admitted-artifacts catalog is the handoff between policy and
+installers. It is produced by the Artifacts Service after admission and contains
+only digest-addressed OCI references, expected signatures, attestation subjects,
+media types, unpack instructions, and policy evidence pointers. Bazel repository
+rules, Ansible roles, guest rootfs staging, bootstrap tooling, and developer
+tool installers read the catalog rather than embedding upstream URLs.
+
+## Signing
+
+Admission signatures bind the OCI manifest digest to the Verself admission
+policy identity. Cosign is the default signing path for OCI artifacts because it
+supports OCI-registry signature storage, key-based verification, keyless
+verification, and attestation verification. Notation is available when X.509
+trust-policy semantics are a better match for a target consumer. See Sigstore
+Cosign verification docs:
+<https://docs.sigstore.dev/cosign/verifying/verify/>.
+
+The admission attestation is an in-toto statement whose subject is the OCI
+manifest digest. Its predicate includes the upstream URL, expected digest,
+observed time, minimum-age decision, scanner summaries, SBOM subject, provenance
+subject, policy version, and admission decision. SLSA provenance is attached
+when the artifact is built by Verself; third-party fetched bytes carry observed
+source metadata and upstream provenance pointers when available.
+
+Public TUF publication is a promotion from an admitted OCI artifact. The TUF
+target metadata points at public content and includes application `custom`
+metadata that references the admitted OCI digest, admission attestation, SBOM,
+provenance, scanner result, and GUAC subject. Public TUF publication consumes
+only artifacts present in internal zot.
 
 ## Enforcement
 
@@ -49,7 +131,8 @@ runs that gate in review and is also the first gate in `aspect check --kind=all`
 records the evaluation after host convergence so first-run ClickHouse migrations
 can create the evidence table. It inserts one row per source into
 `verself.supply_chain_policy_events`, with the deploy run key, source surface,
-policy result, admission state, TUF target path, storage URI, and trace/span IDs.
+policy result, admission state, distribution references, storage URI, and
+trace/span IDs.
 
 Deployment evidence query:
 
@@ -75,6 +158,30 @@ run, zero rejected rows, non-empty trace IDs, one supply-chain trace ID, OK
 `policy_check` and `policy_record` spans, and a succeeded deploy event without a
 failed deploy event.
 
+`aspect artifacts admit-url` admits a fetched upstream URL into internal zot and
+records a row in `verself.artifact_admission_events`. The first implementation
+verifies the declared sha256 digest, enforces release age, requires scanner,
+signature, and provenance evidence files, generates a CycloneDX SBOM, publishes
+an OCI manifest to zot, and records the OCI manifest digest, evidence digests,
+storage URI, GUAC subject, and trace/span IDs.
+
+`aspect artifacts verify-install` records the consumer boundary in
+`verself.artifact_install_verification_events`. It fetches the digest-addressed
+manifest from zot, verifies the manifest digest, requires the expected admission
+signature and attestation digests, and records the installer, surface, artifact,
+OCI reference, policy result, and trace/span IDs.
+
+`aspect artifacts admission-evidence --run-key=<deploy-run-key>` verifies the
+artifact admission and install verification rows and the corresponding
+`artifacts.admit` and `artifacts.install_verify` spans.
+
+Installers emit verification events with artifact name, OCI reference, manifest
+digest, signature digest, attestation digest, policy result, deploy run key, and
+trace/span IDs. ClickHouse remains the live proof surface for host convergence
+and guest image staging. GUAC is the graph layer over SBOMs, provenance,
+vulnerability data, signatures, admission attestations, and install evidence; it
+feeds policy analysis, incident response, and blast-radius queries.
+
 ## Node Policy
 
 pnpm hardening is configured in the workspace so agents and CI resolve the same
@@ -92,3 +199,50 @@ workspace settings reference:
 `onlyBuiltDependencies` to decide which package lifecycle hooks it may generate.
 The two allowlists must stay byte-for-byte equivalent until `aspect_rules_js`
 recognizes `allowBuilds` directly.
+
+## Implementation Plan
+
+1. Extend the policy and evidence schema with OCI distribution fields:
+   `oci_repository`, `oci_manifest_digest`, `oci_media_type`,
+   `signature_digest`, `attestation_digest`, `sbom_digest`,
+   `provenance_digest`, `scanner_result_digest`, `scanner_name`,
+   `scanner_version`, `scanner_database_digest`, and `guac_subject`. Keep
+   `tuf_target_path` only for public TUF promotion.
+
+2. Add a `zot` host role backed by an admitted zot artifact. Configure local ZFS
+   storage for the single-node topology, S3-compatible storage when Garage is
+   ready, authenticated push access for the Artifacts Service, and read access
+   for host convergence and build clients. Disable unauthenticated pushes and
+   public upstream egress from zot.
+
+3. Implement `verself-deploy artifacts admit-url` in Go. The initial command
+   fetches upstream bytes, verifies the expected digest, enforces quarantine
+   age, requires scanner/signature/provenance evidence, generates an SBOM,
+   publishes an OCI artifact to zot, writes policy evidence, and emits
+   ClickHouse rows. Replace the small in-process OCI HTTP publisher with ORAS
+   libraries before broad cutover to avoid carrying a registry client as
+   platform logic. Wire Cosign or Notation verification, Syft SBOM generation,
+   Grype/OSV-Scanner/GuardDog/Scorecard scanner execution, and zot/Trivy scan
+   results into the same evidence contract.
+
+4. Generate an admitted-artifacts catalog as a Bazel output. The catalog becomes
+   the only source for host binary downloads, Bazel external artifact rules,
+   guest image inputs, dev-tool bundles, Verdaccio packaging, uv tools, Ansible
+   collections, and bootstrap binaries. Repo checks reject new raw upstream
+   install paths outside the admission implementation.
+
+5. Cut over installers by surface. Start with high-risk host and guest paths:
+   guest rootfs apt staging, Verdaccio, Bazel `http_file` server tools, guest
+   kernel/Firecracker/runner inputs, dev-tool binaries, uv tools, and Ansible
+   Galaxy collections. Each cutover removes the direct upstream path and adds a
+   verifier that consumes the admitted catalog by digest.
+
+6. Add public promotion after internal consumers are digest-verified. Promotion
+   publishes selected admitted OCI artifacts through RSTUF with public target
+   paths, delegated roles, and TUF custom metadata pointing back to the internal
+   admission evidence.
+
+7. Ingest admission and installation evidence into GUAC. GUAC receives SBOMs,
+   provenance, vulnerability findings, signatures, admission attestations, TUF
+   metadata for public artifacts, and ClickHouse install evidence. Operational
+   gates continue to use local policy verification and ClickHouse evidence.
