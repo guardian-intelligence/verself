@@ -48,7 +48,6 @@ func cmdMailSend(args []string) error {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	to := fs.String("to", "", "Recipient (agents, ceo, or user@example.com)")
 	subject := fs.String("subject", "", "Email subject")
 	body := fs.String("body", "", "Email body")
@@ -126,7 +125,6 @@ func cmdMailPasswords(args []string) error {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

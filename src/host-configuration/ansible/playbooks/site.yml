@@ -178,6 +178,28 @@
       tags:
         - openbao
         - secrets
+
+- name: "OpenBao platform bindings"
+  hosts: infra
+  become: true
+  gather_facts: false
+  tags:
+    - openbao-bindings
+    - platform-bindings
+  roles:
+    - role: openbao_runtime_secrets
+      tags:
+        - openbao-runtime-secrets
+        - secrets
+        - components
+
+- name: "Substrate edge daemons"
+  hosts: infra
+  become: true
+  gather_facts: false
+  tags:
+    - daemons
+  roles:
     - role: wireguard
       tags:
         - network
@@ -190,10 +212,6 @@
             | map('extract', topology_wireguard.tunnels)
             | list
           }}
-    - role: ssh_ca
-      tags:
-        - ssh-ca
-        - access
     - role: nats
       tags:
         - nats
@@ -230,6 +248,10 @@
     - role: pomerium
       tags:
         - pomerium
+        - access
+    - role: operator_ssh_access
+      tags:
+        - ssh
         - access
     - role: verdaccio
       tags:

@@ -18,7 +18,6 @@ const operatorCommandBudget = 30 * time.Second
 type operatorRuntimeOptions struct {
 	site     string
 	repoRoot string
-	device   string
 }
 
 func addOperatorRuntimeFlags(opts *operatorRuntimeOptions) {
@@ -43,7 +42,6 @@ func runOperatorRuntime(command string, opts operatorRuntimeOptions, interactive
 		Command:        command,
 		RepoRoot:       opts.repoRoot,
 		Site:           opts.site,
-		Device:         opts.device,
 		NeedSSH:        true,
 		NeedOTel:       true,
 	}, func(rt *opruntime.Runtime) error {

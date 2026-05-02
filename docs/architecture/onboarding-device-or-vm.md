@@ -1,243 +1,90 @@
-# Onboarding devices and workloads
+# Operator Access
 
-Cert-authenticated SSH for arbitrary operator laptops and ephemeral
-workload VMs (Devin, Cursor, CI runners) without exposing port 22 to
-the public internet.
+Pomerium is the operator access plane for browser and SSH entry points.
+Zitadel remains the human identity provider. OpenBao remains the workload
+secret store and runtime relying party, but it does not issue operator SSH
+certificates.
 
-## Trust model
+## SSH Path
 
-- Authored topology declares trusted devices (`operators.<name>.devices.<device>`)
-  and the workload-pool capacity (`workloads.pool.slot_count`). All
-  WireGuard peers in `wg-ops` are projected from this set; nothing
-  writes peers to the kernel outside of the convergence loop.
-- OpenBao runs the SSH CA. Two auth methods front it:
-  - **OIDC** at `auth/oidc-ssh-ca`, bound to Zitadel. Mints periodic
-    Vault tokens (`token_period=14d`, `token_max_ttl=30d`) scoped to
-    `ssh-ca/sign/operator`. Used by humans on interactive devices.
-  - **AppRole** at `auth/approle/workload-enrollment`. `secret_id_ttl=15m`,
-    `secret_id_num_uses=1`, `token_ttl=24h`, `token_max_ttl=24h`,
-    scoped to `ssh-ca/sign/workload`. Used by ephemeral VMs.
-- sshd binds to the wg-ops interface only (`10.66.66.1`). Public `:22`
-  is dropped at nftables. `AuthorizedKeysFile=none`; the only
-  admissible credential is a cert signed by the OpenBao CA whose
-  `valid_principals` intersects `/etc/ssh/principals/ubuntu`.
-- Every signed cert carries a stamped KeyID: `verself-<principal>-<device-or-slot>`.
-  sshd records the KeyID into journald on every accept; the
-  `verself.host_auth_events` MV materialises it as `cert_id`.
-
-Pomerium fronts browser-based operator surfaces. HAProxy terminates public TLS
-for `access.<domain>` and operator route hosts, then forwards to Pomerium's
-loopback listener. Pomerium authenticates through Zitadel OIDC, enforces the
-operator HTTP route policy, and proxies to the loopback-only upstream service
-such as Grafana. OpenBao remains the SSH certificate authority; Pomerium does
-not mint SSH certificates or manage workload bootstrap secrets.
-
-## Discovery surface
-
-HAProxy serves three immutable, public-by-design artifacts under
-`https://verself.sh/.well-known/`:
-
-| Path                                | Content                                      | Purpose                                                          |
-| ----------------------------------- | -------------------------------------------- | ---------------------------------------------------------------- |
-| `/.well-known/verself-ssh-ca.pub`   | OpenBao SSH CA public key (`/etc/ssh/verself-ssh-ca.pub`) | Operator devices verify cert chain; never trust foreign CAs.     |
-| `/.well-known/verself-openbao-ca.pem` | OpenBao TLS server cert (`/etc/openbao/tls/cert.pem`) | Operator devices' `bao` CLI uses this as the TLS trust anchor.   |
-| `/.well-known/verself-wireguard.json` | `{server_pubkey, endpoint, port, network}` | Operator devices configure their `wg-ops` interface from this.   |
-
-Cached locally on each device under `~/.config/verself/trust-anchors/`
-on first fetch (TLS-verified). Subsequent fetches must match the
-pinned sha256 or the operation aborts.
-
-## Operator-device onboarding (laptops)
-
-A trusted operator owns merge access to the authored topology. Onboarding a
-new device is a two-actor flow: the new device generates its keys, the
-trusted operator opens the PR.
+Public `:22` terminates at Pomerium native SSH. Pomerium authenticates the
+operator through Zitadel, evaluates route policy, signs an ephemeral SSH user
+certificate with its local user CA, and opens an upstream SSH session to host
+loopback.
 
 ```
-new device                                   trusted operator
-──────────                                   ────────────────
-aspect operator onboard --device=<name> --wg-address=<ipv4>
-  ├─ generate ed25519 SSH keypair
-  │  at ~/.config/verself/ssh/<name>{,.pub}
-  ├─ generate WireGuard keypair
-  │  at ~/.config/verself/wg/<name>{,.pub}
-  ├─ fetch /.well-known/verself-* (TLS, pin sha256)
-  └─ print topology YAML snippet for the device entry  ─►  open PR with diff
-                                              merge → deploy
-                                              wg-ops peer list reconciles
-                                              ssh principals reconcile
-                       ◄──  device entry live
-  ├─ wg-quick up wg-ops (using fetched discovery + local priv key)
-  ├─ bao login -method=oidc -path=oidc-ssh-ca role=operator
-  │  (browser → Zitadel; one-shot)
-  ├─ bao write ssh-ca/sign/operator
-  │     public_key=@<name>.pub
-  │     valid_principals=operator
-  │     key_id=verself-operator-<name>
-  └─ ssh fm-dev-w0 'true'  (validates the full path)
+operator ssh client -> access.<domain>:22 -> Pomerium -> 127.0.0.1:22 sshd
 ```
 
-`--wg-address` is the device's slot inside `10.66.66.0/24`. Pick an
-unused IPv4 in `.2..99` (operators) — `.100..163` is reserved for the
-workload pool, `.1` is the wg-ops gateway. The binary refuses anything
-outside `.2..99`; collision with an existing operator is detected at
-PR review (the binary cannot enumerate `operators.cue` without already
-being on the mesh).
+The upstream sshd configuration is intentionally narrow:
 
-Host-key trust on first contact uses OpenSSH's `accept-new` mode: the
-generated `~/.ssh/config.d/verself.conf` records the host's pubkey on
-the first successful connection and rejects drift thereafter.
-Publishing the host's SSH host pubkey under
-`/.well-known/verself-ssh-host.pub` so the binary can pin it without
-TOFU is a documented future hardening.
+- `ListenAddress 127.0.0.1`
+- `TrustedUserCAKeys /etc/ssh/verself-pomerium-user-ca.pub`
+- `AuthorizedKeysFile none`
+- password and keyboard-interactive authentication disabled
 
-The Vault token returned by OIDC is **periodic**: `aspect operator refresh`
-(invoked by `aspect deploy` pre-flight) renews it indefinitely so long
-as `token_max_ttl` (30d) has not elapsed. After 30d the operator
-re-runs `aspect operator onboard --refresh-oidc`, which re-OIDCs and
-reuses the existing keys/cert path.
+The SSH route name is `prod`, so a standard client connects with:
 
-OIDC uses the **authorization-code flow** with a `localhost:8250`
-redirect URI. `bao login` is invoked with `skip_browser=true` so the
-auth URL is always printed to stderr — no `xdg-open` dependency.
-On a graphical operator device, paste the URL into the local
-browser; on a headless controller, open a second SSH session with
-`ssh -L 8250:localhost:8250 ubuntu@<host>` first and paste into the
-laptop browser. The redirect lands on the laptop's `localhost:8250`,
-tunnels back to the controller's bao process, and login completes.
-
-The Zitadel OIDC app carries `OIDC_GRANT_TYPE_DEVICE_CODE` alongside
-the authorization-code grant in anticipation of a future switch to
-device-code flow (RFC 8628), which would eliminate the localhost
-callback. OpenBao 2.5.2's OIDC plugin currently returns "no state
-returned in device callback mode" under `callbackmode=device`;
-re-enable the device flow when an upstream fix lands.
-
-Hard-fail conditions (loud, no silent fallbacks):
-
-- Vault token expired: `aspect operator refresh` exits non-zero with the
-  recovery command in stderr. Subsequent `aspect deploy` aborts before
-  touching the substrate.
-- `/.well-known/` artifact sha256 differs from the pinned hash: onboard
-  aborts. Recovery is manual hash verification against the host's
-  `/etc/openbao/credstore/ssh-ca.pub` via an already-onboarded device.
-- WireGuard handshake does not complete within 10s: onboard aborts;
-  nothing else is attempted.
-
-## Workload onboarding (Devin, Cursor, CI runners)
-
-The pool model. `workloads.pool.slot_count` (default 4) is declared in
-Authored topology. Each slot has a permanent `(wg_pubkey, wg_addr)` pair generated on
-first deploy and stored in OpenBao KV at
-`kv/workload-pool/slots/<n>/{wg-private-key,wg-public-key}`. Slot
-pubkeys are projected into `wg-ops` peers alongside operator devices,
-so the kernel WireGuard config is byte-stable across reconfigures.
-
-Claiming is metadata, not kernel state:
-
-```
-operator                                      workload (Devin/Cursor VM)
-────────                                      ──────────────────────────
-aspect operator enroll-workload
-  ├─ claim a free slot from
-  │  kv/workload-pool/leases (CAS write)
-  ├─ mint AppRole secret-id
-  │  (15m TTL, single-use)
-  └─ emit env block:                         ►  injected as VM secret
-       VERSELF_BOOTSTRAP_ROLE_ID=...
-       VERSELF_BOOTSTRAP_SECRET_ID=...
-       VERSELF_WG_PRIVATE_KEY=...   (slot's)
-       VERSELF_SLOT=<n>
-                                              verself-workload-bootstrap
-                                                ├─ fetch /.well-known/verself-*
-                                                ├─ wg-quick up wg-ops
-                                                ├─ bao write auth/approle/login
-                                                │   (returns 24h Vault token)
-                                                ├─ bao write ssh-ca/sign/workload
-                                                │   key_id=verself-workload-slot-<n>
-                                                └─ exit (no daemon)
+```bash
+ssh ubuntu@prod@access.<domain>
 ```
 
-Cert TTL is 24h, hard-capped by the AppRole's `token_max_ttl`. The
-slot lease auto-expires 24h after issue; on expiry the slot returns to
-the free pool. Pool exhaustion fails `enroll-workload` with an
-explicit error pointing at `slot_count` in `instances/prod/operators.cue`.
+Pomerium binds the local SSH public key to the authenticated Zitadel subject on
+first use. Subsequent SSH, SCP, SFTP, Ansible, and Go SSH connections use the
+same public-key source and re-evaluate Pomerium policy on each connection.
 
-Workloads do not run a refresh daemon. A 24h cert is enough for one
-work session; extending requires the operator to mint a new bootstrap
-secret. This is the explicit constraint: a stolen workload secret-id
-buys at most 24h of access from the wg-ops CIDR, the slot's KeyID
-stamps every action, and revocation is "delete the lease in
-OpenBao KV" with no host-side reconvergence required.
+## HTTP Operator Routes
 
-## SSH cert lifecycle
+Operator HTTP routes are derived from `topology_routes` entries whose kind is
+`operator_origin`. HAProxy terminates public TLS and forwards those origins to
+Pomerium's loopback HTTP listener. Pomerium injects signed identity headers for
+upstreams that can consume them.
 
-| Principal    | Source        | Cert max TTL | Vault token TTL          | Refresh                                        |
-| ------------ | ------------- | ------------ | ------------------------ | ---------------------------------------------- |
-| `operator`   | OIDC (human)  | 24h          | 14d periodic, 30d max    | `aspect operator refresh` (auto on `aspect deploy`; manually between deploys) |
-| `workload`   | AppRole       | 24h          | 24h, no renewal          | reissue via fresh AppRole secret-id            |
-| `breakglass` | OIDC (human)  | 24h          | 24h                      | manual; deliberately friction-heavy            |
+Grafana uses Grafana's JWT auth provider with `X-Pomerium-Jwt-Assertion` and
+Pomerium's JWKS endpoint. Grafana's local admin remains enabled for host-level
+recovery through direct credential-store access.
 
-The breakglass path remains as-is. No daemon, no agent process — the
-periodic-token model means the only persistent on-disk state on an
-operator device is the Vault token in `~/.vault-token`, which the
-existing OpenBao TTL machinery already manages.
+## Authorization
 
-## Observability
+The initial policy is an explicit operator email allow-list in the Pomerium
+role defaults. Domain-wide access is available through
+`pomerium_operator_allowed_domains`, but the default is empty.
 
-`verself.host_auth_events` is the single queryable surface. Every sshd
-accept lands a row whose `cert_id` is the stamped KeyID, so the trusted
-device set is recoverable by string match without joining other tables.
+SSH authorization constrains two dimensions:
 
-`aspect observe detect-recent-intrusions` runs:
+- the authenticated identity must match an allowed Pomerium subject
+- the requested upstream SSH username must be `ubuntu`
+
+Broader environment scoping belongs in Pomerium route policy. Separate route
+names such as `staging`, `prod`, and future preview environments can point at
+different upstreams and carry different allowed subjects.
+
+## Detection
+
+After the cutover, accepted sshd sessions should have a loopback source address
+because only Pomerium reaches upstream sshd. `aspect detect-intrusions` queries
+`verself.host_auth_events` for accepted events with `source_ip` outside
+`127.0.0.1` and `::1`.
 
 ```sql
-SELECT recorded_at, source_ip, cert_id, key_fingerprint, body
+SELECT recorded_at, outcome, auth_method, cert_id, user, source_ip, body
 FROM verself.host_auth_events
-WHERE event_date >= today() - 1
+WHERE event_date >= today() - 31
+  AND recorded_at >= now() - toIntervalHour({hours:UInt32})
   AND outcome = 'accepted'
-  AND (
-    NOT match(cert_id, '^verself-(operator|workload|breakglass)-[a-z0-9-]+$')
-    OR splitByChar('-', cert_id)[3] NOT IN (
-      -- the current trusted set, read from authored topology at query time
-      <known device + slot suffix list>
-    )
-  )
+  AND source_ip NOT IN ('127.0.0.1', '::1')
 ORDER BY recorded_at DESC;
 ```
 
-The "known set" is materialised on the controller from the rendered
-authored topology and shipped into the
-ClickHouse query body. A Grafana panel on the host-auth dashboard runs
-the same query as an alert with a 5-minute evaluation window.
+The expected result is zero rows.
 
-## Operator commands
+## Recovery
 
-- `aspect operator onboard --device=<name> --wg-address=<ipv4>` —
-  interactive onboarding on the new device. Idempotent: re-running on
-  an already-onboarded device refreshes the cert and exits.
-- `aspect operator refresh` — non-interactive Vault token renew + cert
-  re-sign. Invoked by `aspect deploy` pre-flight. Fails loudly with the
-  required recovery command if the token is past `token_max_ttl`.
-- `aspect operator enroll-workload [--slot=<n>]` — operator-side. Claims
-  a free slot, mints a single-use 15-min AppRole secret-id, prints the
-  env block. Slot selection is automatic unless `--slot` pins it. Lease
-  and token TTLs are both 24h by construction.
-- `aspect detect-intrusions` — runs the unknown-cert-id query for the
-  configured lookback window.
+Lockout recovery is host reprovisioning. During pre-release operation this is
+preferable to preserving a second production SSH authority or static host key
+path. The Pomerium SSH user CA key lives in `/etc/credstore/pomerium/`; deleting
+that credstore and rerunning host convergence rotates operator SSH trust.
 
-## Out of scope (deferred)
-
-- Lifecycle audit table (`verself.operator_lifecycle_events`), status
-  MV, governance audit events. The cert-id-stamped `host_auth_events`
-  is the single observability surface until that proves insufficient.
-- topology-projected `RevokedKeys` and a future `aspect host-configuration rotate-ssh-ca`
-  playbook. Rotation policy: delete the CA in OpenBao, redeploy, every
-  device re-onboards. Acceptable while pre-release.
-- SPIRE node-attestation path for headless workloads. The AppRole
-  bootstrap-secret model covers Devin/Cursor without requiring an
-  attestor that ephemeral VMs can satisfy.
-- Pinning the host's SSH host pubkey via `/.well-known/verself-ssh-host.pub`.
-  Today the generated SSH config drop-in uses
-  `StrictHostKeyChecking=accept-new` (TOFU on first contact); pinning
-  via the discovery surface eliminates the TOFU window.
+OpenBao recovery remains independent of operator SSH. OpenBao runtime-secret
+bindings are reconciled by the `openbao_runtime_secrets` role after the OpenBao
+daemon is healthy.

@@ -15,6 +15,9 @@ pomerium_shared_secret_path: "{{ pomerium_credstore_dir }}/shared-secret"
 pomerium_cookie_secret_path: "{{ pomerium_credstore_dir }}/cookie-secret"
 pomerium_signing_key_path: "{{ pomerium_credstore_dir }}/signing-key"
 pomerium_signing_key_raw_path: "{{ pomerium_credstore_dir }}/signing-key.pem"
+pomerium_ssh_user_ca_key_path: "{{ pomerium_credstore_dir }}/ssh-user-ca"
+pomerium_ssh_user_ca_pubkey_path: "{{ pomerium_ssh_user_ca_key_path }}.pub"
+pomerium_ssh_host_key_path: "{{ pomerium_credstore_dir }}/ssh-host-ed25519"
 pomerium_db_password_path: "{{ pomerium_credstore_dir }}/pg-password"
 pomerium_db_connection_string_path: "{{ pomerium_credstore_dir }}/databroker-postgres-url"
 pomerium_oidc_client_secret_path: "{{ pomerium_credstore_dir }}/oidc-client-secret"
@@ -29,14 +32,11 @@ pomerium_oidc_redirect_uri: "https://{{ pomerium_domain }}/oauth2/callback"
 pomerium_oidc_post_logout_redirect_uri: "https://{{ pomerium_domain }}"
 pomerium_oidc_scopes: "openid, profile, email, offline_access"
 
-pomerium_operator_allowed_domains:
-  - "{{ verself_domain }}"
-  - "{{ company_domain }}"
-pomerium_operator_allowed_emails: []
+pomerium_operator_allowed_domains: []
+pomerium_operator_allowed_emails:
+  - "ceo@{{ verself_domain }}"
 
-pomerium_operator_routes:
-  - name: grafana
-    from: "https://{{ grafana_domain }}"
-    to: "http://{{ topology_endpoints.grafana.endpoints.http.address }}"
-    pass_identity_headers: true
-    preserve_host_header: true
+pomerium_ssh_address: "{{ bare_metal_public_ipv4 }}:22"
+pomerium_ssh_route_name: prod
+pomerium_ssh_upstream: "127.0.0.1:22"
+pomerium_ssh_allowed_user: ubuntu

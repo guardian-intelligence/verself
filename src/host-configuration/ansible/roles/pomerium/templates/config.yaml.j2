@@ -1,6 +1,27 @@
+{% macro route_fqdn(route) -%}
+{%- if route.zone == 'company' -%}
+{{ company_domain if route.host == '@' else route.host ~ '.' ~ company_domain }}
+{%- else -%}
+{{ verself_domain if route.host == '@' else route.host ~ '.' ~ verself_domain }}
+{%- endif -%}
+{%- endmacro -%}
+{% macro operator_subjects(indent) -%}
+{%- for domain in pomerium_operator_allowed_domains %}
+{{ ' ' * indent }}- domain:
+{{ ' ' * (indent + 4) }}is: {{ domain | to_json }}
+{%- endfor %}
+{%- for email in pomerium_operator_allowed_emails %}
+{{ ' ' * indent }}- email:
+{{ ' ' * (indent + 4) }}is: {{ email | to_json }}
+{%- endfor %}
+{%- endmacro -%}
 authenticate_service_url: "https://{{ pomerium_domain }}"
 address: "{{ pomerium_listen_address }}"
 grpc_address: "{{ pomerium_grpc_address }}"
+ssh_address: "{{ pomerium_ssh_address }}"
+ssh_user_ca_key_file: "{{ pomerium_ssh_user_ca_key_path }}"
+ssh_host_key_files:
+  - "{{ pomerium_ssh_host_key_path }}"
 insecure_server: true
 xff_num_trusted_hops: 1
 
@@ -20,20 +41,24 @@ databroker_storage_type: postgres
 databroker_storage_connection_string_file: "{{ pomerium_db_connection_string_path }}"
 
 routes:
-{% for route in pomerium_operator_routes %}
-  - from: "{{ route.from }}"
-    to: "{{ route.to }}"
-    pass_identity_headers: {{ route.pass_identity_headers | default(false) | bool | lower }}
-    preserve_host_header: {{ route.preserve_host_header | default(false) | bool | lower }}
+{% for route in topology_routes | selectattr('kind', 'equalto', 'operator_origin') | rejectattr('to.component', 'equalto', 'pomerium') %}
+{% set interface = topology_endpoints[route.to.component].interfaces[route.to.interface] %}
+{% set endpoint = topology_endpoints[route.to.component].endpoints[interface.endpoint] %}
+  - from: "https://{{ route_fqdn(route) }}"
+    to: "{{ endpoint.protocol }}://{{ endpoint.address }}"
+    pass_identity_headers: true
+    preserve_host_header: true
     policy:
       - allow:
           or:
-{% for domain in pomerium_operator_allowed_domains %}
-            - domain:
-                is: {{ domain | to_json }}
+{{ operator_subjects(12) }}
 {% endfor %}
-{% for email in pomerium_operator_allowed_emails %}
-            - email:
-                is: {{ email | to_json }}
-{% endfor %}
-{% endfor %}
+  - from: "ssh://{{ pomerium_ssh_route_name }}"
+    to: "ssh://{{ pomerium_ssh_upstream }}"
+    policy:
+      - allow:
+          and:
+            - or:
+{{ operator_subjects(14) }}
+            - ssh_username:
+                is: {{ pomerium_ssh_allowed_user | to_json }}

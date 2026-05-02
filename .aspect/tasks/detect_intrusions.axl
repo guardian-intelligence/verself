@@ -1,19 +1,12 @@
-"""aspect detect-intrusions — scan verself.host_auth_events for SSH
-events that escaped the authored trust set.
+"""aspect detect-intrusions — scan verself.host_auth_events for direct SSH
+accepts that bypassed Pomerium.
 
   aspect detect-intrusions [--site=prod] [--hours=24] [--format=table]
 
-What this catches (the Blacksmith-CI-runner class of incident):
-  1. outcome='accepted' AND auth_method != 'publickey-cert' — any
-     legacy static-key path. Should be 0 post-cutover.
-  2. cert_id shape doesn't match
-     `^verself-(operator|workload|breakglass)-[a-z0-9-]+\$`.
-  3. cert_id shape is valid, but the suffix is not in the current
-     known_cert_id_suffixes set authored in ops.yml.
-
-The trusted suffix set lives in
-src/host-configuration/ansible/group_vars/all/generated/ops.yml under
-`known_cert_id_suffixes`.
+After the Pomerium native-SSH cutover, authorised sshd accepts arrive from
+loopback because Pomerium terminates the public connection and opens the
+upstream SSH session locally. Any accepted source outside 127.0.0.1/::1 is a
+direct-host bypass signal.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
@@ -49,7 +42,7 @@ def _impl(ctx):
 detect_intrusions = task(
     implementation = _impl,
     name = "detect-intrusions",
-    summary = "Scan verself.host_auth_events for SSH events outside the authored trust set (Blacksmith-CI-class detection).",
+    summary = "Scan verself.host_auth_events for accepted SSH sessions that bypassed Pomerium.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "hours": args.string(default = "24", description = "Lookback window."),

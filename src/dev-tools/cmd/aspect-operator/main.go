@@ -1,31 +1,13 @@
-// Command aspect-operator manages operator-device + workload-VM
-// onboarding for the Verself bare-metal node.
+// Command aspect-operator exposes operator-side helpers for the Verself
+// bare-metal node.
 //
 // Subcommands:
 //
-//	aspect-operator onboard --device=<name>
-//	    Interactive: generate ed25519 SSH + WireGuard keypairs,
-//	    fetch trust anchors from /.well-known/verself-*, configure
-//	    wg-ops locally, run OIDC, sign first SSH cert, drop SSH
-//	    config alias.
-//
-//	aspect-operator refresh
-//	    Non-interactive: renew the cached Vault token and re-sign
-//	    the SSH cert. Fails loudly with a clear recovery message
-//	    when the token has exceeded token_explicit_max_ttl (30d
-//	    by default) and OIDC re-auth is required. Invoked by
-//	    aspect deploy pre-flight.
-//
-//	aspect-operator enroll-workload [--slot=<n>]
-//	    Operator-side: claim a workload-pool slot, mint a 15-min
-//	    single-use AppRole secret-id, print an env block to feed
-//	    into a Devin / Cursor / CI VM.
-//
 //	aspect-operator db pg|ch|tb ...
-//	    Operator-side database access over the operator SSH cert.
+//	    Operator-side database access over the configured SSH access plane.
 //
 //	aspect-operator detect-intrusions
-//	    Query accepted SSH auth events outside the authored trust set.
+//	    Query accepted SSH auth events that bypassed Pomerium.
 //
 //	aspect-operator billing seed|clock|state|documents|finalizations|events
 //	    Operator billing fixture and inspection tooling.
@@ -46,9 +28,6 @@
 //	aspect-operator platform --action=check|seed
 //	    Operator-side platform organization convergence for the dogfooded
 //	    first-party org, project, Forgejo repository, and source backend.
-//
-// Source of truth for principals, slot count, and well-known paths:
-// src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 package main
 
 import (
@@ -81,12 +60,6 @@ func run(args []string) error {
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
-	case "onboard":
-		return cmdOnboard(rest)
-	case "refresh":
-		return cmdRefresh(rest)
-	case "enroll-workload":
-		return cmdEnrollWorkload(rest)
 	case "db":
 		return cmdDB(rest)
 	case "detect-intrusions":
@@ -116,11 +89,8 @@ func printUsage(w *os.File) {
 	_, _ = fmt.Fprint(w, `aspect-operator <subcommand> [flags]
 
 Subcommands:
-  onboard           Interactive: keygen + trust-anchor fetch + OIDC + first cert
-  refresh           Non-interactive: renew Vault token + re-sign SSH cert
-  enroll-workload   Operator-side: claim slot + mint AppRole secret-id
   db                Operator database access
-  detect-intrusions Scan accepted SSH auth events outside authored trust
+  detect-intrusions Scan accepted SSH auth events that bypassed Pomerium
   billing           Billing fixture and inspection tooling
   persona           Persona credential and fixture tooling
   mail              Mail operator helpers

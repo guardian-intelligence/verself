@@ -1,0 +1,28 @@
+---
+- name: Read Pomerium SSH user CA public key
+  ansible.builtin.slurp:
+    src: "{{ operator_ssh_pomerium_user_ca_pubkey_path }}"
+  register: operator_ssh_user_ca_pubkey_raw
+
+- name: Materialise trusted Pomerium SSH user CA
+  ansible.builtin.copy:
+    content: "{{ operator_ssh_user_ca_pubkey_raw.content | b64decode }}"
+    dest: "{{ operator_ssh_trusted_user_ca_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload operator sshd
+
+- name: Render sshd Pomerium upstream configuration
+  ansible.builtin.template:
+    src: 60-operator-access.conf.j2
+    dest: "{{ operator_ssh_sshd_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload operator sshd
+
+- name: Validate merged sshd configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -t
+  changed_when: false

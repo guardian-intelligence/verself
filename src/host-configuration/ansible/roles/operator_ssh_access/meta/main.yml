@@ -1,0 +1,5 @@
+---
+galaxy_info:
+  role_name: operator_ssh_access
+  description: Configure sshd as the Pomerium native-SSH upstream.
+dependencies: []

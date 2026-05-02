@@ -225,7 +225,6 @@ func addBillingFlags(fs *flag.FlagSet) *billingOptions {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	fs.StringVar(&opts.secretsFile, "secrets-file", os.Getenv("SOPS_SECRETS_FILE"), "SOPS secrets file")
 	fs.StringVar(&opts.pgUser, "pg-user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.remotePort, "remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port")

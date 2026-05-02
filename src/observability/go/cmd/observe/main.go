@@ -43,7 +43,6 @@ type config struct {
 	repoRoot      string
 	substrateRoot string
 	site          string
-	device        string
 	what          string
 	signal        string
 	service       string
@@ -125,7 +124,6 @@ func runObserve(ctx context.Context, cfg config) error {
 		Command:        command,
 		RepoRoot:       cfg.repoRoot,
 		Site:           cfg.site,
-		Device:         cfg.device,
 		NeedSSH:        true,
 		NeedOTel:       true,
 	}, func(rt *opruntime.Runtime) error {
@@ -212,7 +210,6 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/host-configuration")
 	flags.StringVar(&cfg.site, "site", strings.TrimSpace(os.Getenv("VERSELF_SITE")), "deployment site")
-	flags.StringVar(&cfg.device, "device", "", "operator device name")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "query family to run")
 	flags.StringVar(&cfg.signal, "signal", strings.TrimSpace(os.Getenv("SIGNAL")), "signal catalog: metrics, traces, logs, http, deploys")
 	flags.StringVar(&cfg.service, "service", strings.TrimSpace(os.Getenv("SERVICE")), "service name")

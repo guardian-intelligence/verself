@@ -58,7 +58,6 @@ func cmdDevVerselfWeb(args []string) error {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	printEnv := fs.Bool("print-env", false, "Print resolved env and exit before starting HMR")
 	stateFile := fs.String("state-file", envOr("VERSELF_WEB_DEV_STATE_FILE", "/tmp/verself-web-dev.env"), "State env file path")
 	if err := fs.Parse(args); err != nil {

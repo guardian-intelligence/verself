@@ -19,7 +19,6 @@ const dbQueryBudget = 5 * time.Second
 type dbRuntimeOptions struct {
 	site     string
 	repoRoot string
-	device   string
 }
 
 func addDBRuntimeFlags(opts *dbRuntimeOptions) {
@@ -48,7 +47,6 @@ func runDBRuntimeWithClickHouse(command string, opts dbRuntimeOptions, interacti
 		Command:        command,
 		RepoRoot:       opts.repoRoot,
 		Site:           opts.site,
-		Device:         opts.device,
 		NeedSSH:        true,
 		NeedOTel:       true,
 	}, func(rt *opruntime.Runtime) error {

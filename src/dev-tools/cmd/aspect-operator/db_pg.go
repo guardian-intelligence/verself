@@ -159,7 +159,6 @@ func addDBPGFlags(fs *flag.FlagSet) *dbPGOptions {
 	addDBRuntimeFlags(&opts.dbRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	fs.StringVar(&opts.secretsFile, "secrets-file", os.Getenv("SOPS_SECRETS_FILE"), "SOPS secrets file")
 	fs.StringVar(&opts.user, "user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.remotePort, "remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port on the worker loopback")

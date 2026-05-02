@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS verself.operator_command_runs
     `run_id`        String                  CODEC(ZSTD(3)),
     `site`          LowCardinality(String)  CODEC(ZSTD(3)),
     `command`       LowCardinality(String)  CODEC(ZSTD(3)),
-    `actor_device`  LowCardinality(String)  CODEC(ZSTD(3)),
+    `ssh_auth_method` LowCardinality(String) CODEC(ZSTD(3)),
     `target_host`   String                  CODEC(ZSTD(3)),
     `target_user`   LowCardinality(String)  CODEC(ZSTD(3)),
     `status`        LowCardinality(String)  CODEC(ZSTD(3)),

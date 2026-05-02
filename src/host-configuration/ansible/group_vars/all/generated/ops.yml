@@ -42,12 +42,6 @@ governance_service_domain: '{{ governance_service_subdomain }}.{{ verself_domain
 governance_service_subdomain: governance.api
 identity_service_domain: '{{ identity_service_subdomain }}.{{ verself_domain }}'
 identity_service_subdomain: identity.api
-known_cert_id_suffixes:
-  - shovon-mbp
-  - slot-0
-  - slot-1
-  - slot-2
-  - slot-3
 mailbox_service_domain: '{{ mailbox_service_subdomain }}.{{ verself_domain }}'
 mailbox_service_subdomain: mail.api
 notifications_service_domain: '{{ notifications_service_subdomain }}.{{ verself_domain }}'
@@ -169,49 +163,6 @@ topology_operators:
         wg_address: 10.66.66.2
         wg_pubkey: AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc=
     zitadel_user_id: ""
-topology_ssh_ca:
-  ca_name: verself-ssh-ca
-  ca_pubkey_path: /etc/ssh/verself-ssh-ca.pub
-  default_user: ubuntu
-  mount: ssh-ca
-  oidc:
-    allowed_redirect_uris:
-      - http://localhost:8250/oidc/callback
-      - http://localhost:8251/oidc/callback
-      - http://localhost:8252/oidc/callback
-    discovery_url: https://auth.verself.sh
-    operator_project_role: platform-operator
-    project_name: verself-ssh-ca
-  principals:
-    breakglass:
-      force_command: ""
-      max_ttl_seconds: 86400
-      name: breakglass
-      permit_port_forwarding: false
-      permit_pty: true
-      role: breakglass
-      source_address_cidrs:
-        - 10.66.66.0/24
-        - 0.0.0.0/0
-    operator:
-      force_command: ""
-      max_ttl_seconds: 86400
-      name: operator
-      permit_port_forwarding: true
-      permit_pty: true
-      role: operator
-      source_address_cidrs:
-        - 10.66.66.0/24
-    workload:
-      force_command: ""
-      max_ttl_seconds: 86400
-      name: workload
-      permit_port_forwarding: false
-      permit_pty: true
-      role: workload
-      source_address_cidrs:
-        - 10.66.66.0/24
-  principals_file: /etc/ssh/principals/ubuntu
 topology_wireguard:
   host_groups:
     infra:
@@ -236,11 +187,6 @@ topology_wireguard:
       network: 10.0.0.0/16
       peers: []
       port: 51820
-topology_workload_pool:
-  enroll_secret_id_ttl_seconds: 900
-  slot_address_base: 10.66.66.100
-  slot_count: 4
-  workload_token_ttl_seconds: 86400
 verself_bin: /opt/verself/profile/bin
 verself_domain: verself.sh
 verself_version: 0.1.0

@@ -17,7 +17,7 @@ table inet verself_host {
         iifname "fc-tap-*" ip saddr 172.16.0.0/16 ip daddr 10.255.0.1 tcp dport { 4873, 18080 } accept
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
-        tcp dport { 25, 80, 443 } accept
+        tcp dport { 22, 25, 80, 443 } accept
         udp dport { 51820, 51821 } accept
     }
 }

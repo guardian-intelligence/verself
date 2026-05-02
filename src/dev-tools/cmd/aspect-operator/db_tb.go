@@ -141,7 +141,6 @@ func addDBTBFlags(fs *flag.FlagSet) *dbTBOptions {
 	addDBRuntimeFlags(&opts.dbRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	fs.StringVar(&opts.clusterID, "cluster", envOr("TIGERBEETLE_CLUSTER_ID", optb.DefaultClusterID), "TigerBeetle cluster ID")
 	fs.StringVar(&opts.addresses, "addresses", envOr("TIGERBEETLE_ADDRESSES", optb.DefaultAddresses), "TigerBeetle addresses visible from the worker")
 	return opts

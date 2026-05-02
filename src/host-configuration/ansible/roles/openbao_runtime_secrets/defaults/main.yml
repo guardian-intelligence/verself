@@ -1,0 +1,11 @@
+---
+openbao_credstore_dir: /etc/credstore/openbao
+openbao_tls_dir: /etc/openbao/tls
+openbao_spiffe_jwt_mount: spiffe-jwt
+openbao_workload_audience: openbao
+openbao_workload_token_ttl: 15m
+openbao_workload_token_max_ttl: 1h
+openbao_runtime_secret_platform_org_id: "{{ secrets_service_platform_org_id }}"
+openbao_runtime_secret_kv_mount_prefix: kv
+openbao_runtime_secret_consumer_subject: "{{ spire_secrets_service_id }}"
+openbao_runtime_secret_force: false

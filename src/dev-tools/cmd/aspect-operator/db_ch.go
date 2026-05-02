@@ -73,7 +73,6 @@ func addDBCHFlags(fs *flag.FlagSet) *dbCHOptions {
 	addDBRuntimeFlags(&opts.dbRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.device, "device", "", "Operator device name (defaults to the single onboarded device)")
 	fs.StringVar(&opts.database, "database", opch.DefaultDatabase, "ClickHouse database")
 	return opts
 }

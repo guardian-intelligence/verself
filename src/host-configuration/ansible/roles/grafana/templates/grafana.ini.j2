@@ -50,24 +50,17 @@ preinstall_auto_update = false
 [auth]
 disable_login_form = false
 oauth_auto_login = false
+signout_redirect_url = {{ grafana_signout_redirect_url }}
 
-[auth.generic_oauth]
+[auth.jwt]
 enabled = true
-name = Zitadel
-allow_sign_up = true
-client_id = $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_ID}
-client_secret = $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
-scopes = {{ grafana_oidc_scopes }}
-auth_url = https://auth.{{ verself_domain }}/oauth/v2/authorize
-token_url = https://auth.{{ verself_domain }}/oauth/v2/token
-api_url = https://auth.{{ verself_domain }}/oidc/v1/userinfo
-auth_style = InParams
-use_pkce = true
-use_refresh_token = true
-login_attribute_path = preferred_username
-name_attribute_path = name
-email_attribute_path = email
-allow_assign_grafana_admin = false
+header_name = X-Pomerium-Jwt-Assertion
+email_claim = email
+username_claim = email
+jwk_set_url = {{ grafana_jwt_jwks_url }}
+cache_ttl = 60m
+auto_sign_up = true
+url_login = false
 
 [auth.anonymous]
 enabled = false
