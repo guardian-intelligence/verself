@@ -9,7 +9,7 @@ Canonical layout in `docs/architecture/directory-structure.md`. Read that file d
 Polyglot monorepo structured as a modular monolith.
 Layers:
 
-1. Substrate layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
+1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
 2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
@@ -27,9 +27,8 @@ Tech Stack:
 
 Invariant patterns:
 
-* Topology is source-owned by substrate/service files. Do not reintroduce CUE or a central renderer pipeline.
-* Efficient rebuilding: Bazel's job is to cache and schedule, not transform platform policy. Bazel decides when to run a unit's build pipeline. Nomad orchestrates deploys. Ansible's job is to run playbooks to ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main and CI runs Bazel and Nomad. Let each language/package decide how to build itself. We finetune our build process per unit, not through Bazel.
-
+* Do not add shell scripts. The only shell script allowed is in scripts/bootstrap. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
+* Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host-configuration concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. Despite having a notion of internal and external clients, the only difference is the auth method (SPIFFE mTLS for internal clients, Zitadel-based auth for public)
@@ -83,7 +82,7 @@ No need to be frugal with telemetry. We store 10+ million rows for around ~150MB
 
 <operational_runbook>
 
-Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the substrate server-binaries strategy, Ansible playbooks table.
+Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
 The repo started as a CI orchestrator; that history lives in `README.md`.
 
@@ -160,7 +159,7 @@ The contained instructions in this block are guidelines that apply to writing ma
 - Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
 - 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in a tiny set of niche cases, but a comprehensive suite of e2e tests is preferred. <note>We are moving to ongoing e2e canaries instead of our verify/smoke test scripts. Keep using the scripts in the meantime.</note>
 - Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
-- One database per service on a single PG instance, provisioned via Ansible only at substrate configuration time.
+- One database per service on a single PG instance, provisioned via Ansible only at host configuration time.
 - ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. `batch.Append` silently corrupts data when columns are added or reordered.
 - ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden `UInt8` column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (`UInt8` over `Int32` when the range fits).
 - Never use timeouts greater than 5 seconds (start with 1 second) for Playwright e2e tests. Playwright has a quirk where every test failure is reported as a timeout issue, which is misleading; the underlying issue is behavior/logic, not latency. Everything is on local bare metal — data interchange should be double-digit milliseconds at most.

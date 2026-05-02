@@ -43,7 +43,7 @@
       --config-file {{ clickhouse_operator_client_config_path }}
       --user {{ clickhouse_operator_db_user }}
 
-- name: Create ClickHouse directories
+- name: Create ClickHouse static config directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -53,6 +53,15 @@
   loop:
     - /etc/clickhouse-server/config.d
     - /etc/clickhouse-server/tls
+
+- name: Create ClickHouse runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ clickhouse_system_user }}"
+    group: "{{ clickhouse_system_group }}"
+    mode: "0750"
+  loop:
     - "{{ clickhouse_data_path }}"
     - /var/log/clickhouse-server
 

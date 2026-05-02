@@ -26,7 +26,11 @@
     mode: "0755"
 
 - name: Check installed Verdaccio version
-  ansible.builtin.command: "{{ verdaccio_install_prefix }}/bin/verdaccio --version"
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/node"
+      - "-p"
+      - "require('{{ verdaccio_install_prefix }}/lib/node_modules/verdaccio/package.json').version"
   register: verdaccio_installed_version
   changed_when: false
   failed_when: false
