@@ -1,4 +1,0 @@
----
-- name: Configure OpenBao tenancy after secrets-service prerequisites
-  ansible.builtin.include_role:
-    name: openbao_tenancy

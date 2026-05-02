@@ -1037,10 +1037,7 @@ topology_components:
           - display_name: Member
             group: secrets
             key: member
-      bootstrap:
-        - class: secret_backend
-          name: openbao_tenancy
-          reason: Reconciles OpenBao mounts, auth backends, policies, and platform runtime secrets.
+      bootstrap: []
       bootstrap_config: {}
       directories:
         - group: secrets_service

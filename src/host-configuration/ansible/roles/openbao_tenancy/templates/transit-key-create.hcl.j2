@@ -1,7 +1,0 @@
-path "{{ openbao_tenancy_kv_mount }}/data/_platform/transit/*" {
-  capabilities = ["create", "read", "update"]
-}
-
-path "{{ openbao_tenancy_transit_mount }}/keys/*" {
-  capabilities = ["create", "read", "update"]
-}
