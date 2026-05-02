@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 func LoadPolicy(repoRoot, policyPath string) (Policy, error) {
@@ -49,7 +51,6 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 		byID[artifact.ID] = artifact
 	}
 	results := make([]FindingResult, 0, len(report.Findings))
-	eval := Evaluation{}
 	observed := map[string]bool{}
 	for _, f := range report.Findings {
 		observed[f.ID] = true
@@ -62,7 +63,6 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 		artifact, ok := byID[f.ID]
 		if !ok {
 			results = append(results, res)
-			eval.Rejected++
 			continue
 		}
 		res.AdmissionState = artifact.Admission.State
@@ -90,14 +90,9 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 			}
 			res.PolicyResult = ResultAccepted
 			res.PolicyReason = "artifact admitted by policy"
-			eval.Accepted++
 		default:
 			res.PolicyResult = ResultProvisional
 			res.PolicyReason = "artifact tracked for cutover but not yet admitted"
-			eval.Provisional++
-		}
-		if res.PolicyResult == ResultRejected {
-			eval.Rejected++
 		}
 		results = append(results, res)
 	}
@@ -105,7 +100,6 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 		if observed[artifact.ID] || artifact.SourceKind != "pnpm_setting" {
 			continue
 		}
-		eval.Rejected++
 		results = append(results, FindingResult{
 			Finding: Finding{
 				ID:         artifact.ID,
@@ -122,8 +116,132 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 			StorageURI:     artifact.Admission.StorageURI,
 		})
 	}
+	results = enforcePnpmControls(policy, results)
+	eval := Evaluation{}
 	eval.Results = results
+	for _, result := range results {
+		switch result.PolicyResult {
+		case ResultAccepted:
+			eval.Accepted++
+		case ResultProvisional:
+			eval.Provisional++
+		case ResultRejected:
+			eval.Rejected++
+		}
+	}
 	return eval, nil
+}
+
+func enforcePnpmControls(policy Policy, results []FindingResult) []FindingResult {
+	byArtifact := map[string][]int{}
+	for i, result := range results {
+		if result.Finding.SourceKind != "pnpm_setting" {
+			continue
+		}
+		byArtifact[result.Finding.Artifact] = append(byArtifact[result.Finding.Artifact], i)
+	}
+
+	reject := func(idx int, reason string) {
+		results[idx].PolicyResult = ResultRejected
+		results[idx].PolicyReason = reason
+	}
+	appendMissing := func(artifact, reason string) {
+		results = append(results, FindingResult{
+			Finding: Finding{
+				ID:         MakeID(PnpmWorkspacePath, 0, "pnpm_setting", artifact),
+				SourcePath: PnpmWorkspacePath,
+				SourceKind: "pnpm_setting",
+				Surface:    "developer-only",
+				Artifact:   artifact,
+			},
+			PolicyResult: ResultRejected,
+			PolicyReason: reason,
+		})
+	}
+	requireExact := func(artifact, want string) {
+		indexes := byArtifact[artifact]
+		if len(indexes) == 0 {
+			appendMissing(artifact, "required pnpm hardening setting is missing")
+			return
+		}
+		for _, idx := range indexes {
+			got := strings.TrimPrefix(results[idx].Finding.Digest, "value:")
+			if got != want {
+				reject(idx, fmt.Sprintf("required pnpm hardening setting %s=%s, observed %s", artifact, want, got))
+			}
+		}
+	}
+
+	requireExact("pnpm.strictDepBuilds", "true")
+	requireExact("pnpm.dangerouslyAllowAllBuilds", "false")
+	requireExact("pnpm.verifyDepsBeforeRun", "error")
+	requireExact("pnpm.packageManagerStrict", "true")
+	requireExact("pnpm.packageManagerStrictVersion", "true")
+
+	minimumAgeArtifact := "pnpm.minimumReleaseAge"
+	minimumAgeIndexes := byArtifact[minimumAgeArtifact]
+	if len(minimumAgeIndexes) == 0 {
+		appendMissing(minimumAgeArtifact, "required pnpm dependency age quarantine setting is missing")
+	} else {
+		minimumMinutes := int(policy.Requirements.MinimumAgeDays) * 24 * 60
+		for _, idx := range minimumAgeIndexes {
+			gotRaw := strings.TrimPrefix(results[idx].Finding.Digest, "value:")
+			got, err := strconv.Atoi(gotRaw)
+			if err != nil {
+				reject(idx, fmt.Sprintf("pnpm.minimumReleaseAge is not an integer minute count: %s", gotRaw))
+				continue
+			}
+			if got < minimumMinutes {
+				reject(idx, fmt.Sprintf("pnpm.minimumReleaseAge=%d below policy minimum %d", got, minimumMinutes))
+			}
+		}
+	}
+
+	allowTrue := map[string]int{}
+	allowFalse := map[string]int{}
+	onlyBuilt := map[string]int{}
+	for artifact, indexes := range byArtifact {
+		if len(indexes) == 0 {
+			continue
+		}
+		idx := indexes[0]
+		switch {
+		case strings.HasPrefix(artifact, "pnpm.allowBuilds."):
+			matcher := strings.TrimPrefix(artifact, "pnpm.allowBuilds.")
+			value := strings.TrimPrefix(results[idx].Finding.Digest, "value:")
+			switch value {
+			case "true":
+				allowTrue[matcher] = idx
+			case "false":
+				allowFalse[matcher] = idx
+			default:
+				reject(idx, fmt.Sprintf("pnpm allowBuilds matcher %s has unsupported value %s", matcher, value))
+			}
+		case strings.HasPrefix(artifact, "pnpm.onlyBuiltDependencies."):
+			matcher := strings.TrimPrefix(artifact, "pnpm.onlyBuiltDependencies.")
+			if results[idx].Finding.Digest != "listed" {
+				reject(idx, fmt.Sprintf("pnpm onlyBuiltDependencies matcher %s has unsupported marker %s", matcher, results[idx].Finding.Digest))
+			}
+			onlyBuilt[matcher] = idx
+		}
+	}
+	for matcher, idx := range allowTrue {
+		if _, ok := onlyBuilt[matcher]; !ok {
+			reject(idx, fmt.Sprintf("pnpm allowBuilds permits %s but rules_js onlyBuiltDependencies omits it", matcher))
+		}
+	}
+	for matcher, idx := range onlyBuilt {
+		if _, ok := allowTrue[matcher]; !ok {
+			reject(idx, fmt.Sprintf("rules_js onlyBuiltDependencies lists %s without matching pnpm allowBuilds permission", matcher))
+		}
+	}
+	for matcher, allowIdx := range allowFalse {
+		if onlyIdx, ok := onlyBuilt[matcher]; ok {
+			reject(allowIdx, fmt.Sprintf("pnpm allowBuilds denies %s but rules_js onlyBuiltDependencies lists it", matcher))
+			reject(onlyIdx, fmt.Sprintf("rules_js onlyBuiltDependencies lists %s despite pnpm allowBuilds denial", matcher))
+		}
+	}
+	return results
 }
 
 func validatePolicy(policy Policy) error {
