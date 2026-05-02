@@ -244,13 +244,6 @@
     mode: "0640"
   notify: restart grafana
 
-- name: Remove Grafana unmanaged preinstalled plugins
-  ansible.builtin.file:
-    path: "{{ grafana_plugin_dir }}/{{ item }}"
-    state: absent
-  loop: "{{ grafana_unmanaged_plugin_dirs }}"
-  notify: restart grafana
-
 - name: Deploy Grafana configuration
   ansible.builtin.template:
     src: grafana.ini.j2
@@ -297,28 +290,6 @@
     owner: root
     group: grafana
     mode: "0640"
-  notify: restart grafana
-
-- name: Set expected Grafana dashboard filenames
-  ansible.builtin.set_fact:
-    grafana_dashboard_filenames: >-
-      {{ grafana_dashboards | map(attribute='uid') | map('regex_replace', '$', '.json') | list }}
-
-- name: List existing provisioned Grafana dashboards
-  ansible.builtin.find:
-    paths: "{{ grafana_config_dir }}/dashboards"
-    patterns: "*.json"
-    file_type: file
-  register: grafana_existing_dashboard_files
-
-- name: Remove stale provisioned Grafana dashboards
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ grafana_existing_dashboard_files.files }}"
-  loop_control:
-    label: "{{ item.path | basename }}"
-  when: (item.path | basename) not in grafana_dashboard_filenames
   notify: restart grafana
 
 - name: Deploy Grafana dashboards

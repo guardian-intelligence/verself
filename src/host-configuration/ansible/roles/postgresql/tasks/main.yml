@@ -54,23 +54,6 @@
     group: adm
     mode: "2755"
 
-- name: Discover PostgreSQL log files
-  ansible.builtin.find:
-    paths: "{{ postgresql_log_dir }}"
-    patterns: "postgresql-*.log"
-    file_type: file
-  register: postgresql_log_files
-
-- name: Repair PostgreSQL log file permissions for OTel ingestion
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    owner: postgres
-    group: adm
-    mode: "0640"
-  loop: "{{ postgresql_log_files.files }}"
-  loop_control:
-    label: "{{ item.path }}"
-
 - name: Create PostgreSQL run directory
   ansible.builtin.file:
     path: /var/run/postgresql

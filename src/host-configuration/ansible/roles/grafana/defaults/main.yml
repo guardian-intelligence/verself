@@ -27,9 +27,3 @@ grafana_auth_app_name: grafana
 grafana_oidc_redirect_uri: "https://{{ grafana_domain }}/login/generic_oauth"
 grafana_oidc_post_logout_redirect_uri: "https://{{ grafana_domain }}"
 grafana_oidc_scopes: "openid profile email offline_access"
-
-grafana_unmanaged_plugin_dirs:
-  - grafana-exploretraces-app
-  - grafana-lokiexplore-app
-  - grafana-metricsdrilldown-app
-  - grafana-pyroscope-app

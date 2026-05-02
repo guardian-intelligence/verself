@@ -34,32 +34,6 @@
   changed_when: false
   no_log: true
 
-- name: Remove obsolete Stalwart relay and Sieve settings
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/stalwart-cli"
-      - -u
-      - "http://{{ topology_endpoints.stalwart.endpoints.http.address }}"
-      - server
-      - delete-config
-      - "{{ item }}"
-  loop:
-    - queue.route.relay
-    - queue.strategy.route
-    - remote.resend
-    - queue.outbound
-    - session.rcpt.directory
-    - session.data.script
-    - sieve.trusted.scripts.operator_forward
-    - sieve.trusted.scripts.operator_forward.contents
-  environment:
-    CREDENTIALS: "admin:{{ stalwart_admin_password }}"
-  # stalwart-cli 0.15.5 returns 0 on delete-config of a missing key, so the
-  # previous failed_when:false was load-bearing only for server-unreachable
-  # errors — which we now want to surface.
-  changed_when: false
-  no_log: true
-
 - name: Reload Stalwart configuration after settings update
   ansible.builtin.command:
     argv:
