@@ -129,7 +129,7 @@
     - role: grafana
     - role: pomerium
     - role: verdaccio
-    - role: caddy
+    - role: haproxy
     - role: forgejo
 
 - name: "External APIs and per-component substrate bindings"

@@ -10,6 +10,5 @@ stalwart_spam_filter_url: "https://github.com/stalwartlabs/spam-filter/releases/
 stalwart_spam_filter_sha256: "4ac035283240e5772ad1e422ba68a9cbcb985b8de86dc4c88dbb60061b51bd07"
 stalwart_spam_filter_local_path: "{{ stalwart_data_dir }}/spam-filter.toml"
 
-# TLS certificate paths (synced from Caddy's ACME storage)
+# TLS certificate paths populated by the HAProxy lego renewal unit.
 stalwart_tls_cert_dir: /etc/stalwart/certs
-stalwart_caddy_cert_base: /caddy/certificates

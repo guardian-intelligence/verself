@@ -8,12 +8,12 @@ topology_gateways:
   firecracker_host:
     host: 10.255.0.1
     kind: firecracker_host
-  public_caddy:
+  public_haproxy:
     host: 0.0.0.0
-    kind: caddy
+    kind: haproxy
 topology_routes:
   - browser_cors: same_origin
-    gateway: public_caddy
+    gateway: public_haproxy
     host: '@'
     kind: browser_origin
     max_body_bytes: 65536
@@ -30,7 +30,7 @@ topology_routes:
     waf: detection
     zone: product
   - browser_cors: same_origin
-    gateway: public_caddy
+    gateway: public_haproxy
     host: '@'
     kind: browser_origin
     max_body_bytes: 0
@@ -42,7 +42,7 @@ topology_routes:
     waf: detection
     zone: product
   - browser_cors: same_origin
-    gateway: public_caddy
+    gateway: public_haproxy
     host: '@'
     kind: browser_origin
     max_body_bytes: 0
@@ -54,7 +54,7 @@ topology_routes:
     waf: detection
     zone: company
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: billing.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -66,7 +66,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: sandbox.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -78,7 +78,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: identity.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -90,7 +90,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: profile.api
     kind: public_api_origin
     max_body_bytes: 16384
@@ -102,7 +102,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: notifications.api
     kind: public_api_origin
     max_body_bytes: 16384
@@ -114,7 +114,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: projects.api
     kind: public_api_origin
     max_body_bytes: 65536
@@ -126,7 +126,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: source.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -138,7 +138,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: governance.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -150,7 +150,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: secrets.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -162,7 +162,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: none
-    gateway: public_caddy
+    gateway: public_haproxy
     host: mail.api
     kind: public_api_origin
     max_body_bytes: 1048576
@@ -174,7 +174,7 @@ topology_routes:
     waf: blocking
     zone: product
   - browser_cors: not_browser_reachable
-    gateway: public_caddy
+    gateway: public_haproxy
     host: dashboard
     kind: operator_origin
     max_body_bytes: 0
@@ -186,7 +186,7 @@ topology_routes:
     waf: detection
     zone: product
   - browser_cors: not_browser_reachable
-    gateway: public_caddy
+    gateway: public_haproxy
     host: access
     kind: operator_origin
     max_body_bytes: 0
@@ -198,7 +198,7 @@ topology_routes:
     waf: detection
     zone: product
   - browser_cors: not_browser_reachable
-    gateway: public_caddy
+    gateway: public_haproxy
     host: git
     kind: protocol_origin
     max_body_bytes: 1048576
@@ -210,7 +210,7 @@ topology_routes:
     waf: detection
     zone: product
   - browser_cors: not_browser_reachable
-    gateway: public_caddy
+    gateway: public_haproxy
     host: auth
     kind: protocol_origin
     max_body_bytes: 0
@@ -222,7 +222,7 @@ topology_routes:
     waf: detection
     zone: product
   - browser_cors: not_browser_reachable
-    gateway: public_caddy
+    gateway: public_haproxy
     host: mail
     kind: protocol_origin
     max_body_bytes: 0

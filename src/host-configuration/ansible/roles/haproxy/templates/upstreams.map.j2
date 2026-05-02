@@ -1,0 +1,11 @@
+{% set seen = [] -%}
+{% for route in topology_routes | selectattr('gateway', 'equalto', 'public_haproxy') -%}
+{% if route.to.component in topology_endpoints and route.to.interface in topology_endpoints[route.to.component].interfaces -%}
+{% set endpoint_name = topology_endpoints[route.to.component].interfaces[route.to.interface].endpoint -%}
+{% set key = 'VERSELF_UPSTREAM_' ~ route.to.component | upper ~ '_' ~ endpoint_name | upper -%}
+{% if key not in seen -%}
+{% set _ = seen.append(key) -%}
+{{ key }} 127.0.0.1:1
+{% endif -%}
+{% endif -%}
+{% endfor -%}

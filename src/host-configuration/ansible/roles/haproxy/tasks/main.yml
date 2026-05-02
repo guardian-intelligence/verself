@@ -1,0 +1,447 @@
+---
+# HAProxy public edge with lego-managed DNS-01 certificates.
+# Binary provided by substrate_profile role via server_tools.tar.zst.
+
+- name: Create HAProxy system group
+  ansible.builtin.group:
+    name: haproxy
+    system: true
+
+- name: Create HAProxy system user
+  ansible.builtin.user:
+    name: haproxy
+    group: haproxy
+    groups: adm
+    append: true
+    system: true
+    home: /var/lib/haproxy
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create HAProxy directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ haproxy_config_dir }}", owner: root, group: haproxy, mode: "0750" }
+    - { path: "{{ haproxy_cert_dir }}", owner: root, group: haproxy, mode: "0750" }
+    - { path: "{{ haproxy_map_dir }}", owner: root, group: haproxy, mode: "0750" }
+    - { path: "{{ haproxy_credstore_dir }}", owner: root, group: haproxy, mode: "0750" }
+    - { path: "{{ haproxy_lego_path }}", owner: root, group: haproxy, mode: "0750" }
+    - { path: /var/lib/haproxy, owner: haproxy, group: haproxy, mode: "0750" }
+    - { path: "{{ haproxy_log_dir }}", owner: haproxy, group: adm, mode: "2750" }
+
+- name: Create well-known publication directory
+  ansible.builtin.file:
+    path: /var/www/verself/.well-known
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Store Cloudflare DNS token for lego
+  ansible.builtin.copy:
+    content: "{{ cloudflare_api_token }}\n"
+    dest: "{{ haproxy_cloudflare_token_path }}"
+    owner: root
+    group: haproxy
+    mode: "0640"
+  no_log: true
+
+- name: Create Verself PKI directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/verself/pki, group: root, mode: "0755" }
+    - { path: /etc/verself/pki/private, group: haproxy, mode: "0750" }
+
+- name: Map private Nomad artifact origin to loopback
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^.*\\s{{ topology_artifacts.nomad.origin.hostname | regex_escape }}$"
+    line: "127.0.0.1 {{ topology_artifacts.nomad.origin.hostname }}"
+    state: present
+
+- name: Deploy Nomad artifact origin server certificate extensions
+  ansible.builtin.copy:
+    dest: /etc/verself/pki/nomad-artifacts-server.ext
+    owner: root
+    group: haproxy
+    mode: "0640"
+    content: |
+      basicConstraints=CA:FALSE
+      keyUsage=digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=DNS:{{ topology_artifacts.nomad.origin.hostname }},IP:127.0.0.1
+
+- name: Generate Nomad artifact local CA private key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -out
+      - /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+      - "4096"
+    creates: /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+
+- name: Generate Nomad artifact local CA certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -nodes
+      - -key
+      - /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+      - -sha256
+      - -days
+      - "3650"
+      - -out
+      - "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+      - -subj
+      - /CN=Verself Nomad artifact local CA
+    creates: "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+
+- name: Inspect Nomad artifact server certificate SAN
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - /etc/verself/pki/nomad-artifacts-server.pem
+      - -noout
+      - -ext
+      - subjectAltName
+  register: haproxy_nomad_artifacts_cert_san
+  changed_when: false
+  failed_when: false
+
+- name: Remove stale Nomad artifact server certificate
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/verself/pki/nomad-artifacts-server.pem
+    - /etc/verself/pki/nomad-artifacts-server.csr
+    - /etc/verself/pki/private/nomad-artifacts-server-key.pem
+  when: >-
+    haproxy_nomad_artifacts_cert_san.rc != 0
+    or ('DNS:' ~ topology_artifacts.nomad.origin.hostname) not in haproxy_nomad_artifacts_cert_san.stdout
+
+- name: Generate Nomad artifact origin server private key and CSR
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -keyout
+      - /etc/verself/pki/private/nomad-artifacts-server-key.pem
+      - -out
+      - /etc/verself/pki/nomad-artifacts-server.csr
+      - -subj
+      - "/CN={{ topology_artifacts.nomad.origin.hostname }}"
+    creates: /etc/verself/pki/private/nomad-artifacts-server-key.pem
+
+- name: Sign Nomad artifact origin server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -in
+      - /etc/verself/pki/nomad-artifacts-server.csr
+      - -CA
+      - "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+      - -CAkey
+      - /etc/verself/pki/private/nomad-artifacts-ca-key.pem
+      - -CAcreateserial
+      - -out
+      - /etc/verself/pki/nomad-artifacts-server.pem
+      - -days
+      - "3650"
+      - -sha256
+      - -extfile
+      - /etc/verself/pki/nomad-artifacts-server.ext
+    creates: /etc/verself/pki/nomad-artifacts-server.pem
+
+- name: Converge Nomad artifact TLS material ownership
+  ansible.builtin.file:
+    path: "/etc/verself/pki/{{ item.name }}"
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: nomad-artifacts-ca.pem, group: root, mode: "0644" }
+    - { name: private/nomad-artifacts-ca-key.pem, group: root, mode: "0600" }
+    - { name: nomad-artifacts-server.pem, group: haproxy, mode: "0640" }
+    - { name: private/nomad-artifacts-server-key.pem, group: haproxy, mode: "0640" }
+    - { name: nomad-artifacts-server.csr, group: haproxy, mode: "0640" }
+    - { name: nomad-artifacts-server.ext, group: haproxy, mode: "0640" }
+
+- name: Read Nomad artifact origin server certificate
+  ansible.builtin.slurp:
+    src: /etc/verself/pki/nomad-artifacts-server.pem
+  register: haproxy_nomad_artifacts_server_cert
+  no_log: true
+
+- name: Read Nomad artifact origin server private key
+  ansible.builtin.slurp:
+    src: /etc/verself/pki/private/nomad-artifacts-server-key.pem
+  register: haproxy_nomad_artifacts_server_key
+  no_log: true
+
+- name: Write HAProxy combined Nomad artifact origin PEM
+  ansible.builtin.copy:
+    dest: /etc/verself/pki/nomad-artifacts-server-haproxy.pem
+    owner: root
+    group: haproxy
+    mode: "0640"
+    content: |
+      {{ haproxy_nomad_artifacts_server_key.content | b64decode }}
+      {{ haproxy_nomad_artifacts_server_cert.content | b64decode }}
+  no_log: true
+  notify: reload haproxy
+
+- name: Check Nomad artifact local CA serial file
+  ansible.builtin.stat:
+    path: /etc/verself/pki/nomad-artifacts-ca.srl
+  register: haproxy_nomad_artifacts_ca_serial
+
+- name: Set Nomad artifact local CA serial ownership
+  ansible.builtin.file:
+    path: /etc/verself/pki/nomad-artifacts-ca.srl
+    owner: root
+    group: root
+    mode: "0600"
+  when: haproxy_nomad_artifacts_ca_serial.stat.exists
+
+- name: Install Nomad artifact local CA into system trust
+  ansible.builtin.copy:
+    src: "{{ topology_artifacts.nomad.origin.tls.ca_bundle_path }}"
+    dest: /usr/local/share/ca-certificates/verself-nomad-artifacts.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: update ca certificates
+
+- name: Require billing webhook DNS to remain DNS-only
+  ansible.builtin.assert:
+    that: not (cloudflare_proxied | default(false) | bool)
+    fail_msg: >-
+      billing webhook origin IP allowlisting requires billing DNS to remain
+      DNS-only (cloudflare_proxied=false). Move the allowlist to the
+      Cloudflare edge before enabling orange-cloud proxying.
+
+- name: Assert Stripe webhook IP list parsed
+  ansible.builtin.assert:
+    that:
+      - haproxy_stripe_webhook_ips | length > 0
+      - haproxy_stripe_webhook_ips | select('string') | list | length == haproxy_stripe_webhook_ips | length
+    fail_msg: >-
+      haproxy_stripe_webhook_ips must contain the published Stripe webhook source IPs.
+
+- name: Install HAProxy placeholder certificates for first config validation
+  ansible.builtin.include_tasks: placeholder_cert.yml
+  loop: "{{ haproxy_public_certificates }}"
+  loop_control:
+    loop_var: haproxy_public_certificate
+    label: "{{ haproxy_public_certificate.name }}"
+
+- name: Deploy HAProxy public host map
+  ansible.builtin.template:
+    src: public-hosts.map.j2
+    dest: "{{ haproxy_map_dir }}/public-hosts.map"
+    owner: root
+    group: haproxy
+    mode: "0640"
+  notify: reload haproxy
+
+- name: Initialise HAProxy Nomad upstream map
+  ansible.builtin.template:
+    src: upstreams.map.j2
+    dest: "{{ haproxy_map_dir }}/upstreams.map"
+    owner: root
+    group: haproxy
+    mode: "0640"
+    force: false
+
+- name: Deploy HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: "{{ haproxy_config_dir }}/haproxy.cfg"
+    owner: root
+    group: haproxy
+    mode: "0640"
+    validate: "/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f %s"
+  notify: restart haproxy
+
+- name: Deploy HAProxy systemd unit
+  ansible.builtin.template:
+    src: haproxy.service.j2
+    dest: /etc/systemd/system/haproxy.service
+    mode: "0644"
+  notify: restart haproxy
+
+- name: Deploy HAProxy lego renew systemd service
+  ansible.builtin.template:
+    src: haproxy-lego-renew.service.j2
+    dest: /etc/systemd/system/haproxy-lego-renew.service
+    mode: "0644"
+
+- name: Deploy HAProxy lego renew systemd timer
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Renew HAProxy TLS certificates with lego
+
+      [Timer]
+      Persistent=true
+      OnCalendar=*-*-* 03:35:00
+      RandomizedDelaySec=1h
+
+      [Install]
+      WantedBy=timers.target
+    dest: /etc/systemd/system/haproxy-lego-renew.timer
+    mode: "0644"
+
+- name: Issue or renew HAProxy public certificates
+  ansible.builtin.command:
+    argv: "{{ haproxy_lego_base_argv + haproxy_lego_wait_argv + haproxy_lego_disable_ans_argv + haproxy_lego_dns_resolver_argv + haproxy_lego_domain_argv + haproxy_lego_split_argv }}"
+  environment:
+    CF_DNS_API_TOKEN_FILE: "{{ haproxy_cloudflare_token_path }}"
+    CLOUDFLARE_PROPAGATION_TIMEOUT: "600"
+    CLOUDFLARE_POLLING_INTERVAL: "5"
+  vars:
+    haproxy_lego_base_argv:
+      - "{{ verself_bin }}/haproxy-lego-renew"
+      - --lego-bin
+      - "{{ verself_bin }}/lego"
+      - --haproxy-bin
+      - "{{ verself_bin }}/haproxy"
+      - --haproxy-config
+      - "{{ haproxy_config_dir }}/haproxy.cfg"
+      - --haproxy-ld-library-path
+      - "{{ haproxy_aws_lc_library_path }}"
+      - --lego-path
+      - "{{ haproxy_lego_path }}"
+      - --email
+      - "{{ haproxy_lego_email }}"
+      - --cert-name
+      - "{{ item.name }}"
+      - --pem-out
+      - "{{ item.pem_path }}"
+      - --pem-group
+      - haproxy
+      - --reload-unit
+      - haproxy.service
+    haproxy_lego_wait_argv: "{{ ['--dns-propagation-wait', haproxy_lego_dns_propagation_wait] if haproxy_lego_dns_propagation_wait | default('0s') != '0s' else [] }}"
+    haproxy_lego_disable_ans_argv: "{{ ['--dns-propagation-disable-ans'] if haproxy_lego_dns_propagation_disable_ans and (haproxy_lego_dns_propagation_wait | default('0s')) == '0s' else [] }}"
+    haproxy_lego_dns_resolver_argv: "{{ haproxy_lego_dns_resolvers | map('regex_replace', '^(.*)$', '--dns-resolver=\\1') | list }}"
+    haproxy_lego_domain_argv: "{{ item.domains | map('regex_replace', '^(.*)$', '--domain=\\1') | list }}"
+    haproxy_lego_split_argv: >-
+      {{
+        [
+          '--split-cert-out', item.split_cert_path,
+          '--split-key-out', item.split_key_path,
+          '--split-group', item.split_group | default('stalwart'),
+          '--restart-unit', 'stalwart.service'
+        ]
+        if item.split_cert_path is defined and item.split_key_path is defined else []
+      }}
+  loop: "{{ haproxy_public_certificates }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Stop Caddy before HAProxy binds public edge ports
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+
+- name: Remove obsolete Caddy systemd unit and upstream env
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/caddy.service
+    - /etc/caddy
+    - /etc/caddy/upstreams.env
+    - /var/lib/caddy
+    - /var/cache/caddy
+    - /var/log/caddy
+    - "{{ verself_bin }}/caddy"
+
+- name: Remove obsolete Caddy system user
+  ansible.builtin.user:
+    name: caddy
+    state: absent
+    remove: true
+  failed_when: false
+
+- name: Remove obsolete Caddy system group
+  ansible.builtin.group:
+    name: caddy
+    state: absent
+  failed_when: false
+
+- name: Remove obsolete Stalwart Caddy cert sync units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop:
+    - stalwart-cert-sync.timer
+    - stalwart-cert-sync.service
+  failed_when: false
+
+- name: Remove obsolete Stalwart Caddy cert sync files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/stalwart-cert-sync.timer
+    - /etc/systemd/system/stalwart-cert-sync.service
+    - /usr/local/bin/stalwart-cert-sync
+
+- name: Apply systemd removals
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Apply HAProxy unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start HAProxy
+  ansible.builtin.systemd:
+    name: haproxy
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable HAProxy lego renew timer
+  ansible.builtin.systemd:
+    name: haproxy-lego-renew.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for HAProxy HTTPS listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 443
+    timeout: 30

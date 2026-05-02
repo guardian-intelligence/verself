@@ -18,9 +18,9 @@ go_library(
     deps = [
         "//src/deployment-tools/internal/ansible",
         "//src/deployment-tools/internal/bazelbuild",
-        "//src/deployment-tools/internal/caddyupstreams",
         "//src/deployment-tools/internal/deploydb",
         "//src/deployment-tools/internal/garage",
+        "//src/deployment-tools/internal/haproxyupstreams",
         "//src/deployment-tools/internal/identity",
         "//src/deployment-tools/internal/nomadclient",
         "//src/deployment-tools/internal/render",

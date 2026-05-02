@@ -1,0 +1,12 @@
+{% macro route_fqdn(route) -%}
+{%- if route.zone == 'company' -%}
+{{ company_domain if route.host == '@' else route.host ~ '.' ~ company_domain }}
+{%- else -%}
+{{ verself_domain if route.host == '@' else route.host ~ '.' ~ verself_domain }}
+{%- endif -%}
+{%- endmacro -%}
+{% for route in topology_routes | selectattr('gateway', 'equalto', 'public_haproxy') -%}
+{% if route.paths | length == 0 -%}
+{{ route_fqdn(route) | lower }} be_route_{{ route.zone | replace('-', '_') }}_{{ route.host | replace('@', 'apex') | replace('.', '_') }}_{{ route.to.component }}_{{ route.to.interface }}
+{% endif -%}
+{% endfor -%}

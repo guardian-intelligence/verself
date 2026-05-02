@@ -25,7 +25,7 @@
     state: directory
     owner: root
     group: root
-    # 0755 so substrate users (caddy, openbao, wireguard) can traverse
+    # 0755 so substrate users (haproxy, openbao, wireguard) can traverse
     # into their per-component config subdirs without needing
     # supplementary group membership on /etc/verself itself. The
     # contents stay tight: each subdirectory carries its own mode.

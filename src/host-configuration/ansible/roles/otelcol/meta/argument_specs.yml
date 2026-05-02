@@ -4,7 +4,7 @@ argument_specs:
     short_description: "OpenTelemetry Collector exporting directly to ClickHouse"
     description:
       - "Deploys otelcol-contrib, configures OTLP"
-      - "receivers plus host and Caddy scraping, and exports logs, traces,"
+      - "receivers plus host and HAProxy scraping, and exports logs, traces,"
       - "and metrics into ClickHouse."
       - "Service ports come from authored topology, not from this role."
     options:

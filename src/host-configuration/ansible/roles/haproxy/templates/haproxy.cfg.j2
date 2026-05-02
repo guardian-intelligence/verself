@@ -1,0 +1,311 @@
+{% macro route_fqdn(route) -%}
+{%- if route.zone == 'company' -%}
+{{ company_domain if route.host == '@' else route.host ~ '.' ~ company_domain }}
+{%- else -%}
+{{ verself_domain if route.host == '@' else route.host ~ '.' ~ verself_domain }}
+{%- endif -%}
+{%- endmacro -%}
+{% macro backend_name(route) -%}
+be_route_{{ route.zone | replace('-', '_') }}_{{ route.host | replace('@', 'apex') | replace('.', '_') }}_{{ route.to.component }}_{{ route.to.interface }}
+{%- endmacro -%}
+{% macro upstream_key(route) -%}
+VERSELF_UPSTREAM_{{ route.to.component | upper }}_{{ topology_endpoints[route.to.component].interfaces[route.to.interface].endpoint | upper }}
+{%- endmacro -%}
+{% macro api_security_headers() -%}
+  http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+  http-response set-header Cross-Origin-Resource-Policy same-origin
+  http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+  http-response set-header Referrer-Policy no-referrer
+  http-response set-header X-Content-Type-Options nosniff
+  http-response set-header X-Frame-Options DENY
+{%- endmacro %}
+{% macro frontend_security_headers() -%}
+  http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+  http-response set-header Cross-Origin-Opener-Policy same-origin
+  http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+  http-response set-header Referrer-Policy strict-origin-when-cross-origin
+  http-response set-header X-Content-Type-Options nosniff
+  http-response set-header X-Frame-Options DENY
+{%- endmacro %}
+{% macro body_limit_rules(limit) -%}
+  acl has_content_length req.hdr(content-length) -m found
+  acl has_transfer_encoding req.hdr(transfer-encoding) -m found
+  http-request wait-for-body time 1s at-least {{ limit + 1 }} if has_content_length
+  http-request wait-for-body time 1s at-least {{ limit + 1 }} if has_transfer_encoding
+  http-request deny deny_status 413 if { req.body_size gt {{ limit }} }
+{%- endmacro %}
+{% macro dynamic_nomad_backend(route, proto) -%}
+  # Dynamic set-dst backends disable reuse so pooled connections cannot cross Nomad allocations.
+  http-reuse never
+  http-request set-var(txn.upstream_addr) str({{ upstream_key(route) }}),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0{% if proto == 'h2c' %} proto h2{% endif %}
+{%- endmacro %}
+
+global
+  log stdout format raw local0
+  stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
+  crt-base {{ haproxy_cert_dir }}
+  hard-stop-after 5s
+  ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+  ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+
+defaults
+  mode http
+  log global
+  option dontlognull
+  option http-keep-alive
+  timeout connect 1s
+  timeout client 30s
+  timeout server 30s
+  timeout http-request 5s
+  timeout http-keep-alive 10s
+  log-format "client_ip=%ci client_port=%cp method=%HM host=%[var(txn.host)] path=%HP status=%ST bytes=%B duration_ms=%Ta frontend=%ft backend=%b server=%s"
+
+frontend fe_http
+  bind {{ topology_gateways.public_haproxy.host }}:80
+  http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  http-request redirect scheme https code 308
+
+frontend fe_https
+  bind {{ topology_gateways.public_haproxy.host }}:443 ssl crt {{ haproxy_cert_dir }} alpn h2,http/1.1
+  http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  acl from_cloudflare src {{ haproxy_cloudflare_trusted_proxies | join(' ') }}
+  http-request set-src req.hdr(CF-Connecting-IP) if from_cloudflare { req.hdr(CF-Connecting-IP) -m found }
+  http-request set-header X-Real-IP %[src]
+  http-request set-header X-Forwarded-For %[src]
+  http-request set-header X-Forwarded-Host %[req.hdr(host)]
+  http-request set-header X-Forwarded-Proto https
+
+  acl host_verself var(txn.host) -m str {{ verself_domain }}
+  acl host_billing var(txn.host) -m str {{ billing_service_domain }}
+  acl host_sandbox var(txn.host) -m str {{ sandbox_rental_service_domain }}
+  acl host_source var(txn.host) -m str {{ source_code_hosting_service_domain }}
+  acl host_zitadel var(txn.host) -m str {{ zitadel_domain }}
+  acl method_get method GET
+  acl method_post method POST
+  acl stripe_webhook path -i /webhooks/stripe
+  acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
+
+  http-request return status 200 content-type text/plain file /var/www/verself/.well-known/verself-ssh-ca.pub hdr Cache-Control "public, max-age=300" hdr X-Content-Type-Options nosniff if host_verself method_get { path -i /.well-known/verself-ssh-ca.pub }
+  http-request return status 200 content-type application/pem-certificate-chain file /var/www/verself/.well-known/verself-openbao-ca.pem hdr Cache-Control "public, max-age=300" hdr X-Content-Type-Options nosniff if host_verself method_get { path -i /.well-known/verself-openbao-ca.pem }
+  http-request return status 200 content-type application/json file /var/www/verself/.well-known/verself-wireguard.json hdr Cache-Control "public, max-age=300" hdr X-Content-Type-Options nosniff if host_verself method_get { path -i /.well-known/verself-wireguard.json }
+
+  http-request return status 403 if host_billing stripe_webhook method_post !stripe_source
+  http-request return status 405 if host_billing stripe_webhook !method_post
+  http-request return status 405 if host_sandbox { path -i /webhooks/github/actions } !method_post
+  http-request return status 405 if host_sandbox { path -i /webhooks/forgejo/actions } !method_post
+  http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get
+  http-request return status 405 if host_zitadel { path -i /internal/zitadel/actions/api-credential-claims } !method_post
+
+  use_backend be_billing_stripe_webhook if host_billing stripe_webhook method_post stripe_source
+  use_backend be_sandbox_github_actions_webhook if host_sandbox method_post { path -i /webhooks/github/actions }
+  use_backend be_sandbox_forgejo_actions_webhook if host_sandbox method_post { path -i /webhooks/forgejo/actions }
+  use_backend be_sandbox_github_installation_callback if host_sandbox method_get { path -i /github/installations/callback }
+  use_backend be_sandbox_small_json_mutation if host_sandbox method_post { path -i /api/v1/billing/checkout /api/v1/billing/contracts }
+  use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
+  use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
+
+  use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
+  use_backend be_zitadel_action_api_credentials if host_zitadel method_post { path -i /internal/zitadel/actions/api-credential-claims }
+
+{% for route in topology_routes | selectattr('gateway', 'equalto', 'public_haproxy') %}
+{% if route.paths | length > 0 %}
+  acl route_{{ loop.index }}_host var(txn.host) -m str {{ route_fqdn(route) | lower }}
+  acl route_{{ loop.index }}_path path -i {{ route.paths | join(' ') }}
+  use_backend {{ backend_name(route) }} if route_{{ loop.index }}_host route_{{ loop.index }}_path
+{% endif %}
+{% endfor %}
+  use_backend %[var(txn.host),map({{ haproxy_map_dir }}/public-hosts.map,be_not_found)]
+
+frontend fe_firecracker_host_http
+  bind {{ haproxy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker_host_service.endpoints.host_http.port }}
+  http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  http-request set-header X-Forwarded-Proto http
+  acl method_get method GET
+  acl method_post method POST
+  acl forgejo_actions path -i /api/actions
+  acl forgejo_actions_prefix path_beg /api/actions/
+  acl forgejo_smart_http path_reg ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack)$
+  use_backend be_firecracker_sandbox_h2c if method_get { path -i /internal/sandbox/v1/github-runner-jit }
+  use_backend be_firecracker_sandbox_h2c if method_get { path -i /internal/sandbox/v1/runner-bootstrap }
+  use_backend be_firecracker_sandbox_h2c if { path_beg /internal/sandbox/v1/stickydisk/ }
+  use_backend be_firecracker_sandbox_h2c if method_post { path -i /internal/sandbox/v1/github-checkout/bundle }
+  use_backend be_firecracker_forgejo if method_get forgejo_actions
+  use_backend be_firecracker_forgejo if method_post forgejo_actions
+  use_backend be_firecracker_forgejo if method_get forgejo_actions_prefix
+  use_backend be_firecracker_forgejo if method_post forgejo_actions_prefix
+  use_backend be_firecracker_forgejo if method_get forgejo_smart_http
+  use_backend be_firecracker_forgejo if method_post forgejo_smart_http
+  default_backend be_forbidden
+
+frontend fe_nomad_artifacts
+  bind {{ topology_artifacts.nomad.origin.listen_host }}:{{ topology_artifacts.nomad.origin.port }} ssl crt /etc/verself/pki/nomad-artifacts-server-haproxy.pem alpn h2,http/1.1
+  http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  default_backend be_garage_nomad_artifacts
+
+backend be_not_found
+  http-request return status 404
+
+backend be_forbidden
+  http-request return status 403
+
+backend be_billing_stripe_webhook
+{{ api_security_headers() }}
+{{ body_limit_rules(65536) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_sandbox_github_actions_webhook
+{{ api_security_headers() }}
+{{ body_limit_rules(1048576) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_sandbox_forgejo_actions_webhook
+{{ api_security_headers() }}
+{{ body_limit_rules(1048576) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_sandbox_github_installation_callback
+{{ api_security_headers() }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_sandbox_small_json_mutation
+{{ api_security_headers() }}
+{{ body_limit_rules(8192) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_sandbox_execution_submit
+{{ api_security_headers() }}
+{{ body_limit_rules(65536) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_sandbox_execution_schedule_create
+{{ api_security_headers() }}
+{{ body_limit_rules(65536) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_source_forgejo_webhook
+{{ api_security_headers() }}
+{{ body_limit_rules(1048576) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_zitadel_action_api_credentials
+{{ api_security_headers() }}
+{{ body_limit_rules(65536) }}
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_IDENTITY_SERVICE_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_firecracker_sandbox_h2c
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
+  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 unless valid_nomad_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:)
+  http-request set-dst-port var(txn.upstream_addr),field(2,:)
+  server dyn 0.0.0.0:0 proto h2
+
+backend be_firecracker_forgejo
+  http-request set-header Host {{ forgejo_domain }}
+  http-request set-header X-Forwarded-Host {{ forgejo_domain }}
+  server forgejo {{ topology_endpoints.forgejo.endpoints.http.address }}
+
+backend be_garage_nomad_artifacts
+  balance random
+{% for garage_node in topology_clusters.garage.nodes %}
+  server garage_{{ loop.index0 }} {{ topology_clusters.garage.host }}:{{ garage_node.s3_port }}
+{% endfor %}
+
+{% for route in topology_routes | selectattr('gateway', 'equalto', 'public_haproxy') %}
+backend {{ backend_name(route) }}
+{% if route.kind == 'operator_origin' %}
+  http-request set-header Host %[req.hdr(host)]
+  http-request set-header X-Forwarded-Host %[req.hdr(host)]
+  http-request set-header X-Forwarded-Proto https
+  server pomerium {{ topology_endpoints.pomerium.endpoints.http.address }}
+{% elif route.to.component == 'zitadel' %}
+  server zitadel {{ topology_endpoints.zitadel.endpoints.http.address }} proto h2
+{% elif route.to.component == 'stalwart' %}
+  acl jmap_session path -i /jmap/session
+  acl stalwart_direct path -i /.well-known/jmap
+  acl stalwart_direct path_beg /jmap/ /auth/
+  acl mail_allowed path -i /jmap/session /.well-known/jmap
+  acl mail_allowed path_beg /jmap/ /auth/
+  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_MAILBOX_SERVICE_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map) if jmap_session
+  acl valid_mailbox_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
+  http-request deny deny_status 502 if jmap_session !valid_mailbox_upstream
+  http-request set-dst var(txn.upstream_addr),field(1,:) if jmap_session
+  http-request set-dst-port var(txn.upstream_addr),field(2,:) if jmap_session
+  http-request return status 404 unless mail_allowed
+  use-server mailbox if jmap_session
+  use-server stalwart if stalwart_direct !jmap_session
+  server mailbox 0.0.0.0:0 proto h2
+  server stalwart {{ topology_endpoints.stalwart.endpoints.http.address }}
+{% elif route.to.component == 'source_code_hosting_service' and route.to.interface == 'git_smart_http' %}
+  acl source_git method GET POST
+  acl source_git_path path_reg ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack|git-receive-pack)$
+  http-request return status 404 unless source_git source_git_path
+  http-request set-header X-Forwarded-Host {{ forgejo_domain }}
+  http-request set-header X-Forwarded-Proto https
+{{ dynamic_nomad_backend(route, 'h2c') }}
+{% else %}
+{% if route.kind == 'public_api_origin' %}
+{{ api_security_headers() }}
+  http-request return status 404 unless { path_beg /api/ }
+{% elif route.kind == 'browser_origin' and route.to.interface == 'frontend' %}
+{{ frontend_security_headers() }}
+{% elif route.kind == 'browser_origin' %}
+{{ api_security_headers() }}
+{% endif %}
+{% if route.max_body_bytes | int > 0 %}
+{{ body_limit_rules(route.max_body_bytes | int) }}
+{% endif %}
+{{ dynamic_nomad_backend(route, 'h2c' if route.to.component in haproxy_h2c_components else 'http') }}
+{% endif %}
+
+{% endfor %}

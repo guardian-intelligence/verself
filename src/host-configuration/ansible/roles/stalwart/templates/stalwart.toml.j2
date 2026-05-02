@@ -19,9 +19,8 @@ protocol = "http"
 tls.implicit = false
 
 # --- TLS ---
-# Certs synced from Caddy's ACME storage by stalwart-cert-sync.timer.
-# Self-signed placeholder deployed on first run; real cert replaces it
-# after Caddy obtains the ACME cert for {{ stalwart_domain }}.
+# HAProxy's lego renewal unit writes this material from the product
+# wildcard certificate and reloads Stalwart after successful validation.
 
 [certificate."default"]
 cert = "%{file:{{ stalwart_tls_cert_dir }}/cert.pem}%"
