@@ -939,11 +939,19 @@ func expandNomadServiceMarkers(value string) (string, error) {
 			return match
 		}
 		serviceName, kind := m[1], m[2]
+		// `with`/`else` produces a parseable placeholder when the
+		// referenced service has not registered yet — without the
+		// fallback, mutually-dependent services (e.g. billing ↔
+		// secrets-service) cycle on RequireURL("") at boot. The
+		// placeholder `127.0.0.1:1` is a parseable but-deliberately-
+		// unreachable target; the consumer fails individual calls
+		// fast, and Nomad's template `change_mode = restart` cycles
+		// the task once the real upstream registers.
 		switch kind {
 		case "addr":
-			return `{{ range nomadService "` + serviceName + `" }}{{ .Address }}:{{ .Port }}{{ end }}`
+			return `{{- with nomadService "` + serviceName + `" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}`
 		case "port":
-			return `{{ range nomadService "` + serviceName + `" }}{{ .Port }}{{ end }}`
+			return `{{- with nomadService "` + serviceName + `" }}{{ range . }}{{ .Port }}{{ end }}{{- else }}1{{- end }}`
 		}
 		return match
 	})
