@@ -1,0 +1,40 @@
+[Unit]
+Description=Issue and renew HAProxy TLS certificates with lego
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=CF_DNS_API_TOKEN_FILE={{ haproxy_cloudflare_token_path }}
+Environment=CLOUDFLARE_PROPAGATION_TIMEOUT=600
+Environment=CLOUDFLARE_POLLING_INTERVAL=5
+{% for cert in haproxy_public_certificates %}
+ExecStart={{ verself_bin }}/haproxy-lego-renew \
+  --lego-bin {{ verself_bin }}/lego \
+  --haproxy-bin {{ verself_bin }}/haproxy \
+  --haproxy-config {{ haproxy_config_dir }}/haproxy.cfg \
+  --haproxy-ld-library-path {{ haproxy_aws_lc_library_path }} \
+  --lego-path {{ haproxy_lego_path }} \
+  --email {{ haproxy_lego_email }} \
+{% if haproxy_lego_dns_propagation_wait | default('0s') != '0s' %}
+  --dns-propagation-wait {{ haproxy_lego_dns_propagation_wait }} \
+{% elif haproxy_lego_dns_propagation_disable_ans %}
+  --dns-propagation-disable-ans \
+{% endif %}
+{% for resolver in haproxy_lego_dns_resolvers %}
+  --dns-resolver {{ resolver }} \
+{% endfor %}
+  --cert-name {{ cert.name }} \
+{% for domain in cert.domains %}
+  --domain {{ domain }} \
+{% endfor %}
+  --pem-out {{ cert.pem_path }} \
+  --pem-group haproxy \
+{% if cert.split_cert_path is defined and cert.split_key_path is defined %}
+  --split-cert-out {{ cert.split_cert_path }} \
+  --split-key-out {{ cert.split_key_path }} \
+  --split-group {{ cert.split_group | default('stalwart') }} \
+  --restart-unit stalwart.service \
+{% endif %}
+  --reload-unit haproxy.service
+{% endfor %}

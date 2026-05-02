@@ -157,8 +157,8 @@ Stalwart emits 500+ event types across SMTP, IMAP, JMAP, auth, delivery, spam, T
 ## TLS cert lifecycle
 
 1. **First deploy:** A self-signed EC placeholder cert is generated for `mail.<domain>`. Stalwart starts with STARTTLS using this cert. External senders will see an untrusted cert but most MTAs proceed anyway (opportunistic TLS).
-2. **~2 minutes later:** Caddy obtains the real Let's Encrypt cert for `mail.<domain>` (it's in the Caddyfile as a reverse proxy target, which triggers ACME).
-3. **Every 12 hours:** A systemd timer (`stalwart-cert-sync.timer`) runs `/usr/local/bin/stalwart-cert-sync`, which copies the ACME cert from Caddy's storage (`/caddy/certificates/`) to `/etc/stalwart/certs/` if newer, then sends SIGHUP to reload Stalwart's TLS context without dropping active connections.
+2. **Certificate issuance:** The HAProxy lego renewal unit obtains the product apex and wildcard certificate with Cloudflare DNS-01 and derives Stalwart's `cert.pem` and `key.pem` from that material.
+3. **Renewal:** `haproxy-lego-renew.timer` revalidates the HAProxy PEM with `haproxy -c`, then reloads HAProxy and Stalwart after writing the split mail cert/key.
 
 ## DNS records
 
@@ -204,9 +204,7 @@ aspect mail list --mailbox=ceo                # Switch to ceo@
 - `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
 - `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
 - `src/host-configuration/ansible/rendered/etc/nftables.d/stalwart.nft` — source-owned Stalwart nftables contract copied to `/etc/nftables.d/` by the role
-- `roles/stalwart/templates/stalwart-cert-sync.sh.j2` — ACME cert sync script
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
-- `roles/stalwart/tasks/cert_sync.yml` — systemd timer + oneshot for cert sync
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
 - `cmd/mailbox-openapi/` + `client/` — generated operator/mutation API client surface
 - `cmd/mailbox-tool/` — typed operator CLI over the generated mailbox-service client

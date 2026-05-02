@@ -20,7 +20,7 @@ type trustAnchor struct {
 	CachePath string // absolute path under ~/.config/verself/trust-anchors/
 }
 
-// wireguardWellKnown is the shape Caddy serves at
+// wireguardWellKnown is the shape HAProxy serves at
 // /.well-known/verself-wireguard.json. Field names match what the
 // wireguard role's tunnel.yml writes; if the two ever drift, fetch
 // fails with a JSON decode error.

@@ -77,4 +77,7 @@
       - xz-utils
       - zstd
       - e2fsprogs
+      - libjemalloc2
+      - liblua5.4-0
+      - libopentracing-c-wrapper0t64
     state: present

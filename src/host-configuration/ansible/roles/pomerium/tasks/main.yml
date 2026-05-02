@@ -1,5 +1,5 @@
 ---
-# Pomerium is the HTTP operator access plane. Caddy remains the public TLS
+# Pomerium is the HTTP operator access plane. HAProxy is the public TLS
 # edge and forwards only operator hostnames to this loopback listener.
 
 - name: Create Pomerium system group

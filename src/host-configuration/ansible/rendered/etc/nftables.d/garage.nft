@@ -20,7 +20,7 @@ table inet verself_garage {
         oifname "lo" tcp dport { 3903, 3913, 3923 } drop
         oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid 960 accept
         oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid 961 accept
-        oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid caddy accept
+        oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid haproxy accept
         oifname "lo" tcp dport { 3900, 3910, 3920 } drop
         oifname "lo" tcp dport { 3901, 3911, 3921 } meta skuid garage accept
         oifname "lo" tcp dport { 3901, 3911, 3921 } drop

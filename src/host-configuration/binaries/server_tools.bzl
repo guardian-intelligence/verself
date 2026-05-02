@@ -19,7 +19,7 @@ TAR_SINGLE_BINARIES = [
     ("stalwart_cli", "@server_tool_stalwart_cli//file", "z", "stalwart-cli", "stalwart-cli"),
     ("pomerium", "@server_tool_pomerium//file", "z", "pomerium", "pomerium"),
     ("containerd", "@server_tool_containerd//file", "z", "bin/containerd", "containerd"),
-    ("caddy", "@server_tool_caddy//file", "z", "caddy", "caddy"),
+    ("lego", "@server_tool_lego//file", "z", "lego", "lego"),
 ]
 
 ZIP_SINGLE_BINARIES = [
@@ -28,7 +28,12 @@ ZIP_SINGLE_BINARIES = [
 ]
 
 DEB_BINARY_SPECS = [
+    ("haproxy", "@server_tool_haproxy_awslc//file", "usr/sbin/haproxy", "haproxy"),
     ("openbao", "@server_tool_openbao//file", "usr/bin/bao", "bao"),
+]
+
+DEB_DIRECTORY_SPECS = [
+    ("haproxy_awslc_libs", "@server_tool_libssl_awslc//file", "opt/aws-lc", "opt/aws-lc"),
 ]
 
 RAW_BINARY_SPECS = [
@@ -44,7 +49,6 @@ ARCHIVE_DIRECTORIES = [
 
 SERVER_TOOL_DEPS = [
     ":bazel_remote",
-    ":caddy",
     ":clickhouse",
     ":containerd",
     ":forgejo",
@@ -52,6 +56,9 @@ SERVER_TOOL_DEPS = [
     ":grafana",
     ":grafana_clickhouse_datasource",
     ":grafana_clickhouse_datasource_version",
+    ":haproxy",
+    ":haproxy_awslc_libs",
+    ":lego",
     ":nats_server",
     ":nodejs",
     ":nomad",
@@ -71,6 +78,7 @@ SERVER_TOOL_DEPS = [
 ]
 
 HOST_GO_TOOLS = [
+    ("//src/host-configuration/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
     ("//src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
     ("//src/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
     ("//src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
@@ -157,6 +165,22 @@ rm -rf "$$tmp/extract"
         ),
     )
 
+def _package_deb_directory(name, src, source_dir, dest):
+    _tar_fragment(
+        name = name,
+        src = src,
+        cmd = """
+mkdir -p "$$tmp/extract" "$$tmp/{dest}"
+dpkg-deb -x "$(location {src})" "$$tmp/extract"
+cp -a "$$tmp/extract"/{source_dir}/. "$$tmp/{dest}/"
+rm -rf "$$tmp/extract"
+""".format(
+            dest = dest,
+            source_dir = source_dir,
+            src = src,
+        ),
+    )
+
 def _package_raw_file(name, src, dest):
     _tar_fragment(
         name = name,
@@ -236,6 +260,14 @@ def server_tools_archive():
             name = name,
             src = src,
             binary = binary,
+            dest = dest,
+        )
+
+    for name, src, source_dir, dest in DEB_DIRECTORY_SPECS:
+        _package_deb_directory(
+            name = name,
+            src = src,
+            source_dir = source_dir,
             dest = dest,
         )
 

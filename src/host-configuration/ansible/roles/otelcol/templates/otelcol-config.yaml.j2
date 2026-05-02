@@ -5,77 +5,17 @@ receivers:
         endpoint: 127.0.0.1:{{ topology_endpoints.otelcol.endpoints.otlp_grpc.port }}
       http:
         endpoint: 127.0.0.1:{{ topology_endpoints.otelcol.endpoints.otlp_http.port }}
-  filelog/caddy:
-    include: [/var/log/caddy/access.log]
-    storage: file_storage
+  journald/haproxy:
+    units: [haproxy]
     resource:
-      service.name: caddy
+      service.name: haproxy
     operators:
-      - type: json_parser
-        timestamp:
-          parse_from: attributes.ts
-          layout_type: epoch
-          layout: s.ns
       - type: move
-        from: attributes.request.remote_ip
-        to: attributes.client_ip
-      - type: move
-        from: attributes.request.method
-        to: attributes.http_method
-      - type: move
-        from: attributes.request.host
-        to: attributes.http_host
-      - type: move
-        from: attributes.request.uri
-        to: attributes.http_uri
-      - type: move
-        from: attributes.request.proto
-        to: attributes.http_proto
-      - type: move
-        from: attributes.status
-        to: attributes.http_status
-      - type: move
-        from: attributes.size
-        to: attributes.resp_size_bytes
-      - type: move
-        from: attributes.duration
-        to: attributes.duration_s
-      - type: remove
-        field: attributes.request
-      - type: remove
-        field: attributes.resp_headers
-      # Severity from HTTP status code (range-based)
-      - type: router
-        routes:
-          - expr: 'attributes.http_status >= 500'
-            output: set_severity_error
-          - expr: 'attributes.http_status >= 400'
-            output: set_severity_warn
-        default: set_severity_info
-      - id: set_severity_error
-        type: add
-        field: attributes._severity
-        value: ERROR
-        output: parse_severity
-      - id: set_severity_warn
-        type: add
-        field: attributes._severity
-        value: WARN
-        output: parse_severity
-      - id: set_severity_info
-        type: add
-        field: attributes._severity
-        value: INFO
-        output: parse_severity
-      - id: parse_severity
-        type: severity_parser
-        parse_from: attributes._severity
-      - type: remove
-        field: attributes._severity
-  journald/caddy:
-    units: [caddy]
-    resource:
-      service.name: caddy
+        from: body.MESSAGE
+        to: body
+      - type: regex_parser
+        parse_from: body
+        regex: '^client_ip=(?P<client_ip>[^ ]+) client_port=(?P<client_port>[0-9]+) method=(?P<http_method>[^ ]+) host=(?P<http_host>[^ ]*) path=(?P<http_uri>[^ ]*) status=(?P<http_status>[0-9]+) bytes=(?P<resp_size_bytes>-|[0-9]+) duration_ms=(?P<duration_ms>-|[0-9]+) frontend=(?P<frontend>[^ ]+) backend=(?P<backend>[^ ]+) server=(?P<server>[^ ]+)$'
   journald/zitadel:
     units: [zitadel]
     resource:
@@ -449,7 +389,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server"]
+          names: ["billing-service", "sandbox-rental.*", "haproxy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -560,7 +500,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
+      receivers: [otlp, journald/haproxy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:

@@ -63,7 +63,7 @@
 
 # --- Self-signed TLS placeholder ---
 # Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one
-# that will be replaced by the real ACME cert once Caddy obtains it.
+# that will be replaced by the lego-managed wildcard cert from the HAProxy role.
 
 - name: Create stalwart TLS cert directory
   ansible.builtin.file:
@@ -227,8 +227,3 @@
     return_content: true
   when: stalwart_domain_check.json.error is defined
   no_log: true
-
-# --- Cert sync timer (replaces self-signed with Caddy ACME cert) ---
-
-- name: Include cert sync tasks
-  ansible.builtin.include_tasks: cert_sync.yml

@@ -134,10 +134,24 @@ http_file(
 )
 
 http_file(
-    name = "server_tool_caddy",
-    downloaded_file_path = "caddy_2.11.2_linux_amd64.tar.gz",
-    sha256 = "94391dfefe1f278ac8f387ab86162f0e88d87ff97df367f360e51e3cda3df56f",
-    url = "https://github.com/caddyserver/caddy/releases/download/v2.11.2/caddy_2.11.2_linux_amd64.tar.gz",
+    name = "server_tool_haproxy_awslc",
+    downloaded_file_path = "haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+    sha256 = "02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
+    url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+)
+
+http_file(
+    name = "server_tool_libssl_awslc",
+    downloaded_file_path = "libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+    sha256 = "e75ceefa692bb002ae76d2e04ad88c344e524f28aeabf8b165c7bab922474b5c",
+    url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/a/awslc/libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+)
+
+http_file(
+    name = "server_tool_lego",
+    downloaded_file_path = "lego_v4.35.2_linux_amd64.tar.gz",
+    sha256 = "ee5be4bf457de8e3efa86a51651c75c87f0ee0e4e9f3ae14f6034d68365770f3",
+    url = "https://github.com/go-acme/lego/releases/download/v4.35.2/lego_v4.35.2_linux_amd64.tar.gz",
 )
 
 http_file(

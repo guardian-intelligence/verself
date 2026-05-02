@@ -18,8 +18,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tools/internal/bazelbuild"
-	"github.com/verself/deployment-tools/internal/caddyupstreams"
 	"github.com/verself/deployment-tools/internal/garage"
+	"github.com/verself/deployment-tools/internal/haproxyupstreams"
 	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/render"
 	"github.com/verself/deployment-tools/internal/runtime"
@@ -195,12 +195,11 @@ func submitAll(ctx context.Context, rt *runtime.Runtime, jobsDir string, entries
 		}
 	}
 	// Once every alloc reports healthy, the Nomad service catalog
-	// holds the live <jobid>-<endpoint> → 127.0.0.1:port map. Caddy
-	// reads those addresses via /etc/caddy/upstreams.env (env-file
-	// substituted at parse time). Reconcile rewrites the file and
-	// restarts Caddy so its proxy upstreams reflect the new alloc.
-	if err := caddyupstreams.Reconcile(ctx, client, rt.SSH); err != nil {
-		return fmt.Errorf("reconcile caddy upstreams: %w", err)
+	// holds the live <jobid>-<endpoint> to 127.0.0.1:port map. HAProxy
+	// reads those addresses from a map file at request time. Reconcile
+	// rewrites the map, validates the config, and reloads HAProxy.
+	if err := haproxyupstreams.Reconcile(ctx, client, rt.SSH); err != nil {
+		return fmt.Errorf("reconcile haproxy upstreams: %w", err)
 	}
 	return nil
 }

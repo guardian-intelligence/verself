@@ -25,7 +25,7 @@ the public internet.
   sshd records the KeyID into journald on every accept; the
   `verself.host_auth_events` MV materialises it as `cert_id`.
 
-Pomerium fronts browser-based operator surfaces. Caddy terminates public TLS
+Pomerium fronts browser-based operator surfaces. HAProxy terminates public TLS
 for `access.<domain>` and operator route hosts, then forwards to Pomerium's
 loopback listener. Pomerium authenticates through Zitadel OIDC, enforces the
 operator HTTP route policy, and proxies to the loopback-only upstream service
@@ -34,7 +34,7 @@ not mint SSH certificates or manage workload bootstrap secrets.
 
 ## Discovery surface
 
-Caddy serves three immutable, public-by-design artifacts under
+HAProxy serves three immutable, public-by-design artifacts under
 `https://verself.sh/.well-known/`:
 
 | Path                                | Content                                      | Purpose                                                          |
@@ -231,7 +231,7 @@ the same query as an alert with a 5-minute evaluation window.
 - Lifecycle audit table (`verself.operator_lifecycle_events`), status
   MV, governance audit events. The cert-id-stamped `host_auth_events`
   is the single observability surface until that proves insufficient.
-- topology-projected `RevokedKeys` and a future `aspect substrate rotate-ssh-ca`
+- topology-projected `RevokedKeys` and a future `aspect host-configuration rotate-ssh-ca`
   playbook. Rotation policy: delete the CA in OpenBao, redeploy, every
   device re-onboards. Acceptable while pre-release.
 - SPIRE node-attestation path for headless workloads. The AppRole

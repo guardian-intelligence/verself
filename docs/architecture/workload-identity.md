@@ -386,7 +386,7 @@ Smoke-test queries assert:
 - no OpenBao JWT login with an unbound subject;
 - no service audit rows missing `actor_spiffe_id`;
 - no removed credential names or sentinel values in logs, traces, audit
-  payloads, Caddy logs, journals, or smoke-test artifacts.
+  payloads, HAProxy logs, journals, or smoke-test artifacts.
 
 ## Source Notes
 

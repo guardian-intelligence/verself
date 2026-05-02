@@ -336,14 +336,14 @@ SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 -- HTTP access logs: denormalized projection of otel_logs
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Filters on mapContains(LogAttributes, 'http_method') which is emitted by
--- Caddy (filelog), console (OTLP), and Zitadel (journald).
+-- HAProxy (journald), console (OTLP), and Zitadel (journald).
 --
 -- Attribute name normalization per service:
---   status:    caddy=http_status, console=http_status_code, zitadel=status
---   path:      caddy=http_uri,    console=http_target,      zitadel=path
---   host:      caddy=http_host,   console=(none),           zitadel=instance_host
---   client_ip: caddy=client_ip,   console=forwarded_for,    zitadel=(none)
---   duration:  caddy=duration_s,  console=duration_ms,      zitadel=duration (ns)
+--   status:    haproxy=http_status, console=http_status_code, zitadel=status
+--   path:      haproxy=http_uri,    console=http_target,      zitadel=path
+--   host:      haproxy=http_host,   console=(none),           zitadel=instance_host
+--   client_ip: haproxy=client_ip,   console=forwarded_for,    zitadel=(none)
+--   duration:  haproxy=duration_ms, console=duration_ms,      zitadel=duration (ns)
 
 CREATE TABLE IF NOT EXISTS default.http_access_logs
 (
@@ -406,7 +406,7 @@ AS SELECT
         ''
     )                                                                  AS ClientIP,
     multiIf(
-        -- caddy: seconds (float string)
+        -- Some log producers report seconds as a float string.
         LogAttributes['duration_s']  != '', toFloat64OrZero(LogAttributes['duration_s']) * 1000,
         -- console: milliseconds
         LogAttributes['duration_ms'] != '', toFloat64OrZero(LogAttributes['duration_ms']),

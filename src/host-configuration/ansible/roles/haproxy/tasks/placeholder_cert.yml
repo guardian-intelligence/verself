@@ -1,0 +1,65 @@
+---
+- name: Check HAProxy public certificate
+  ansible.builtin.stat:
+    path: "{{ haproxy_public_certificate.pem_path }}"
+  register: haproxy_placeholder_cert_stat
+
+- name: Generate HAProxy placeholder key and cert
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -newkey
+      - ec
+      - -pkeyopt
+      - ec_paramgen_curve:prime256v1
+      - -days
+      - "14"
+      - -nodes
+      - -keyout
+      - "{{ haproxy_public_certificate.pem_path }}.placeholder.key"
+      - -out
+      - "{{ haproxy_public_certificate.pem_path }}.placeholder.crt"
+      - -subj
+      - "/CN={{ haproxy_public_certificate.domains[0] }}"
+      - -addext
+      - "subjectAltName={{ haproxy_public_certificate.domains | map('regex_replace', '^(.*)$', 'DNS:\\1') | join(',') }}"
+  when: not haproxy_placeholder_cert_stat.stat.exists
+  changed_when: true
+  no_log: true
+
+- name: Read HAProxy placeholder key
+  ansible.builtin.slurp:
+    src: "{{ haproxy_public_certificate.pem_path }}.placeholder.key"
+  register: haproxy_placeholder_key
+  when: not haproxy_placeholder_cert_stat.stat.exists
+  no_log: true
+
+- name: Read HAProxy placeholder cert
+  ansible.builtin.slurp:
+    src: "{{ haproxy_public_certificate.pem_path }}.placeholder.crt"
+  register: haproxy_placeholder_cert
+  when: not haproxy_placeholder_cert_stat.stat.exists
+  no_log: true
+
+- name: Install HAProxy placeholder PEM
+  ansible.builtin.copy:
+    content: |
+      {{ haproxy_placeholder_key.content | b64decode }}{{ haproxy_placeholder_cert.content | b64decode }}
+    dest: "{{ haproxy_public_certificate.pem_path }}"
+    owner: root
+    group: haproxy
+    mode: "0640"
+  when: not haproxy_placeholder_cert_stat.stat.exists
+  no_log: true
+
+- name: Remove transient HAProxy placeholder fragments
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ haproxy_public_certificate.pem_path }}.placeholder.key"
+    - "{{ haproxy_public_certificate.pem_path }}.placeholder.crt"
+  when: not haproxy_placeholder_cert_stat.stat.exists
+  no_log: true

@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "caddyupstreams",
-    srcs = ["caddyupstreams.go"],
-    importpath = "github.com/verself/deployment-tools/internal/caddyupstreams",
+    name = "haproxyupstreams",
+    srcs = ["haproxyupstreams.go"],
+    importpath = "github.com/verself/deployment-tools/internal/haproxyupstreams",
     visibility = ["//src/deployment-tools:__subpackages__"],
     deps = [
         "//src/deployment-tools/internal/nomadclient",
@@ -16,9 +16,9 @@ go_library(
 )
 
 go_test(
-    name = "caddyupstreams_test",
-    srcs = ["caddyupstreams_test.go"],
-    embed = [":caddyupstreams"],
+    name = "haproxyupstreams_test",
+    srcs = ["haproxyupstreams_test.go"],
+    embed = [":haproxyupstreams"],
     deps = [
         "//src/deployment-tools/internal/nomadclient",
     ],

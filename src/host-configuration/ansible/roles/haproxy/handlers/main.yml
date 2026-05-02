@@ -1,0 +1,23 @@
+---
+- name: Restart HAProxy
+  listen: restart haproxy
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: haproxy
+    state: restarted
+
+- name: Reload HAProxy
+  listen: reload haproxy
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: haproxy
+    state: reloaded
+
+- name: Update CA certificates
+  listen: update ca certificates
+  ansible.builtin.command:
+    cmd: update-ca-certificates
+  register: haproxy_update_ca_certificates
+  changed_when: >-
+    '0 added, 0 removed' not in
+    (haproxy_update_ca_certificates.stdout ~ haproxy_update_ca_certificates.stderr)
