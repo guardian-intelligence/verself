@@ -461,6 +461,9 @@
   changed_when: true
   no_log: true
 
+- name: Converge OpenBao platform runtime-secret roles
+  ansible.builtin.include_tasks: runtime-secrets.yml
+
 - name: Configure OpenBao audited request headers
   ansible.builtin.uri:
     url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"

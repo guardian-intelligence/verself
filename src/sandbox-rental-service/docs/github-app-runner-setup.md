@@ -21,7 +21,6 @@ https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci
 Current dev public identifiers:
 
 ```yaml
-sandbox_rental_service_github_app_enabled: true
 sandbox_rental_service_github_app_id: 3370540
 sandbox_rental_service_github_app_slug: verself-ci
 sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
@@ -66,9 +65,17 @@ sandbox-rental-service.github.webhook_secret
 sandbox-rental-service.github.client_secret
 ```
 
-The deploy reads these values only from the platform-org OpenBao mount. The
-service reads them through `secrets-service` via SPIFFE-authenticated startup
-code.
+Populate the corresponding SOPS variables before deploying:
+
+```text
+sandbox_rental_service_github_app_private_key
+sandbox_rental_service_github_app_webhook_secret
+sandbox_rental_service_github_app_client_secret
+```
+
+Ansible seeds the platform-org OpenBao mount, and the service reads the
+org-scoped runtime secrets through `secrets-service` via SPIFFE-authenticated
+startup code.
 
 Then redeploy:
 

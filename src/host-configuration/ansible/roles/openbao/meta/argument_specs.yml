@@ -52,6 +52,18 @@ argument_specs:
       openbao_workload_token_max_ttl:
         type: str
         default: 1h
+      openbao_runtime_secret_platform_org_id:
+        type: str
+        required: true
+      openbao_runtime_secret_kv_mount_prefix:
+        type: str
+        default: kv
+      openbao_runtime_secret_consumer_subject:
+        type: str
+        required: true
+      openbao_runtime_secret_force:
+        type: bool
+        default: false
       openbao_audit_request_headers:
         type: list
         elements: dict
