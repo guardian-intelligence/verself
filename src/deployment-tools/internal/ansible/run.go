@@ -91,7 +91,7 @@ func Run(ctx context.Context, db *deploydb.Client, opts Options) (*Result, error
 	if !filepath.IsAbs(opts.Inventory) {
 		return nil, fmt.Errorf("ansible: Inventory must be an absolute path: %q", opts.Inventory)
 	}
-	sink, err := newTaskEventSink(ctx, db, opts)
+	sink, err := newTaskEventSink(db, opts)
 	if err != nil {
 		return nil, err
 	}

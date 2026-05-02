@@ -3,17 +3,14 @@ package ansible
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/verself/deployment-tools/internal/deploydb"
 )
 
 const (
-	taskEventBatchRows     = 512
-	taskEventFlushInterval = 5 * time.Second
-	taskEventCloseTimeout  = 5 * time.Second
-	taskEventQueueDepth    = 8192
+	taskEventCloseTimeout = 5 * time.Second
+	taskEventInitialRows  = 2048
 )
 
 type taskEventWriter interface {
@@ -23,16 +20,11 @@ type taskEventWriter interface {
 type taskEventSink struct {
 	writer taskEventWriter
 	opts   Options
-	ctx    context.Context
-	rows   chan deploydb.AnsibleTaskEventRow
-	done   chan struct{}
-
-	mu        sync.Mutex
-	firstErr  error
-	closeOnce sync.Once
+	rows   []deploydb.AnsibleTaskEventRow
+	closed bool
 }
 
-func newTaskEventSink(ctx context.Context, db taskEventWriter, opts Options) (*taskEventSink, error) {
+func newTaskEventSink(db taskEventWriter, opts Options) (*taskEventSink, error) {
 	if db == nil {
 		return nil, nil
 	}
@@ -42,99 +34,37 @@ func newTaskEventSink(ctx context.Context, db taskEventWriter, opts Options) (*t
 	s := &taskEventSink{
 		writer: db,
 		opts:   opts,
-		ctx:    context.WithoutCancel(ctx),
-		rows:   make(chan deploydb.AnsibleTaskEventRow, taskEventQueueDepth),
-		done:   make(chan struct{}),
+		rows:   make([]deploydb.AnsibleTaskEventRow, 0, taskEventInitialRows),
 	}
-	go s.run()
 	return s, nil
 }
 
 func (s *taskEventSink) Record(ctx context.Context, ev TaskEvent) error {
-	if err := s.err(); err != nil {
-		return err
-	}
-	row := taskEventRow(s.opts, ev)
-	select {
-	case s.rows <- row:
-		return nil
-	case <-s.done:
-		if err := s.err(); err != nil {
-			return err
-		}
+	if s.closed {
 		return fmt.Errorf("ansible: task event sink closed")
+	}
+	select {
 	case <-ctx.Done():
 		return ctx.Err()
+	default:
 	}
+	s.rows = append(s.rows, taskEventRow(s.opts, ev))
+	return nil
 }
 
 func (s *taskEventSink) Close(ctx context.Context) error {
-	s.closeOnce.Do(func() {
-		close(s.rows)
-	})
-	select {
-	case <-s.done:
-		return s.err()
-	case <-ctx.Done():
-		return ctx.Err()
+	if s.closed {
+		return nil
 	}
-}
-
-func (s *taskEventSink) run() {
-	defer close(s.done)
-
-	timer := time.NewTimer(taskEventFlushInterval)
-	defer timer.Stop()
-
-	buffered := make([]deploydb.AnsibleTaskEventRow, 0, taskEventBatchRows)
-	flush := func() bool {
-		if len(buffered) == 0 {
-			return true
-		}
-		rows := buffered
-		buffered = make([]deploydb.AnsibleTaskEventRow, 0, taskEventBatchRows)
-		if err := s.writer.InsertAnsibleTaskEvents(s.ctx, rows); err != nil {
-			s.setErr(err)
-			return false
-		}
-		return true
+	s.closed = true
+	if len(s.rows) == 0 {
+		return nil
 	}
-
-	for {
-		select {
-		case row, ok := <-s.rows:
-			if !ok {
-				_ = flush()
-				return
-			}
-			buffered = append(buffered, row)
-			if len(buffered) >= taskEventBatchRows {
-				if !flush() {
-					return
-				}
-				resetTimer(timer, taskEventFlushInterval)
-			}
-		case <-timer.C:
-			if !flush() {
-				return
-			}
-			resetTimer(timer, taskEventFlushInterval)
-		}
-	}
-}
-
-func (s *taskEventSink) setErr(err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err != nil && s.firstErr == nil {
-		s.firstErr = err
-	}
-}
-
-func (s *taskEventSink) err() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.firstErr
+	rows := s.rows
+	s.rows = nil
+	// The per-insert round trip dominates small ClickHouse writes over
+	// the SSH tunnel, so deploy task events persist as one close-time batch.
+	return s.writer.InsertAnsibleTaskEvents(ctx, rows)
 }
 
 func taskEventRow(opts Options, ev TaskEvent) deploydb.AnsibleTaskEventRow {
@@ -179,16 +109,4 @@ func durationMS(n int64) uint32 {
 		return maxUint32
 	}
 	return uint32(n)
-}
-
-// resetTimer resets t to fire after d, draining any pending value per
-// the time.Timer Reset contract.
-func resetTimer(t *time.Timer, d time.Duration) {
-	if !t.Stop() {
-		select {
-		case <-t.C:
-		default:
-		}
-	}
-	t.Reset(d)
 }
