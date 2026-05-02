@@ -10,10 +10,11 @@
 //	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
 //
 // Every subcommand routes through internal/runtime.Init, which owns
-// the start ordering: SSH dial → OTLP forward channel → OTel SDK
-// init. Shutdown reverses that order so the SDK's BatchSpanProcessor
-// flushes through the SSH-forwarded OTLP channel to the bare-metal
-// otelcol before the tunnel closes.
+// the start ordering: SSH dial -> OTLP forward channel -> OTel SDK
+// init -> optional ClickHouse evidence client. Shutdown reverses
+// that order so the SDK's BatchSpanProcessor flushes through the
+// SSH-forwarded OTLP channel to the bare-metal otelcol before the
+// tunnel closes.
 package main
 
 import (
@@ -65,7 +66,7 @@ usage:
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+
-		"`run` is the AXL deploy entry point: identity, deploy ledger,\nAnsible site convergence, and Nomad fan-out all happen inside this\nsingle process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
+		"`run` is the AXL deploy entry point: identity, deploy evidence,\nAnsible site convergence, and Nomad fan-out all happen inside this\nsingle process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
 }
 
 func runNomad(args []string) int {

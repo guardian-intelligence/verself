@@ -108,6 +108,16 @@ func runSubstrateVerify(args []string) int {
 		return 1
 	}
 
+	snap, err := identity.Generate(identity.GenerateOptions{
+		Site:  *site,
+		Scope: "substrate-verify",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy substrate verify: derive identity: %v\n", err)
+		return 1
+	}
+	snap.ApplyEnv()
+
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

@@ -48,6 +48,7 @@ func runWithOTel(args []string) int {
 		ServiceVersion: serviceVersion,
 		Site:           *site,
 		RepoRoot:       *repoRoot,
+		SkipClickHouse: true,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy with-otel: %v\n", err)

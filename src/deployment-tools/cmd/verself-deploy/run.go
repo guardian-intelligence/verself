@@ -16,8 +16,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tools/internal/ansible"
+	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
-	"github.com/verself/deployment-tools/internal/ledger"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
 
@@ -27,7 +27,7 @@ const (
 )
 
 // runRun is the `verself-deploy run` entry point. It owns identity,
-// deploy ledger writes, substrate convergence through the canonical
+// deploy evidence writes, substrate convergence through the canonical
 // Ansible site playbook, and Nomad submits.
 //
 // AXL-side responsibilities preserved (because they sit outside the
@@ -92,33 +92,30 @@ func runRun(args []string) int {
 	)
 	defer span.End()
 
-	led := ledger.New(rt.ClickHouse)
 	resolvedSha := snap.Get("VERSELF_DEPLOY_SHA")
 	if resolvedSha == "" {
-		// Fallback to the commit sha so the ledger schema's
+		// Fallback to the commit sha so the deploy_events schema's
 		// FixedString(40) requirement is satisfied even on a
 		// detached-HEAD harness invocation.
 		resolvedSha = snap.Get("VERSELF_COMMIT_SHA")
 	}
 	startedAt := time.Now()
-	startedEvent := ledger.DeployEvent{
+	startedEvent := deploydb.DeployEvent{
 		RunKey: snap.RunKey(),
 		Site:   *site,
 		Sha:    resolvedSha,
 		Actor:  snap.Get("VERSELF_AUTHOR"),
 		Scope:  *scope,
-		Kind:   ledger.EventStarted,
+		Kind:   deploydb.EventStarted,
 	}
-	if err := led.RecordDeployEvent(ctx, startedEvent); err != nil {
-		// Mirror the bash behaviour: the started row is best-effort
-		// observability. The succeeded/failed row is the gating
-		// record. Surface as a span event so the failure remains
-		// queryable even though we proceed.
-		span.AddEvent("started-row insert failed",
-			trace.WithAttributes(attribute.String("error", err.Error())))
+	if err := rt.DeployDB.RecordDeployEvent(ctx, startedEvent); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		fmt.Fprintf(os.Stderr, "verself-deploy run: deploy_events started insert failed: %v\n", err)
+		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, led, *site, resolvedSha, *scope, rr, span, startedAt, snap)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, *scope, rr, span, startedAt, snap)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -131,7 +128,7 @@ func runRun(args []string) int {
 func runDeployBody(
 	ctx context.Context,
 	rt *runtime.Runtime,
-	led *ledger.Writer,
+	db *deploydb.Client,
 	site, sha, scope, repoRoot string,
 	span trace.Span,
 	startedAt time.Time,
@@ -143,7 +140,7 @@ func runDeployBody(
 	if err != nil || substrateRes == nil || substrateRes.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, substrateRes, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: substrate failed: %s\n", msg)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, []string{"substrate"}, msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"substrate"}, msg)
 		return 1
 	}
 	span.SetAttributes(
@@ -156,25 +153,28 @@ func runDeployBody(
 	// `verself-deploy nomad deploy-all`, no subprocess.
 	if err := deployAll(ctx, rt, span, site, repoRoot, false); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-all failed: %v\n", err)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, []string{"substrate"},
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"substrate"},
 			"nomad deploy-all: "+err.Error())
 		return 1
 	}
 
 	// 3. Succeeded.
 	durationMs := durationMillis(time.Since(startedAt), "deploy duration")
-	successEvent := ledger.DeployEvent{
+	successEvent := deploydb.DeployEvent{
 		RunKey:             snap.RunKey(),
 		Site:               site,
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
 		AffectedComponents: []string{"substrate", "nomad"},
-		Kind:               ledger.EventSucceeded,
+		Kind:               deploydb.EventSucceeded,
 		DurationMs:         durationMs,
 	}
-	if err := led.RecordDeployEvent(ctx, successEvent); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: WARN: deploy_events succeeded insert failed: %v\n", err)
+	if err := db.RecordDeployEvent(ctx, successEvent); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		fmt.Fprintf(os.Stderr, "verself-deploy run: deploy_events succeeded insert failed: %v\n", err)
+		return 1
 	}
 	return 0
 }
@@ -187,13 +187,14 @@ func runSubstrateSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, re
 	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
 	args := append([]string{}, extraArgs...)
 	args = append(args, "-e", "verself_site="+site)
-	return ansible.Run(ctx, rt.ClickHouse, ansible.Options{
+	return ansible.Run(ctx, rt.DeployDB, ansible.Options{
 		Playbook:      substrateSitePlaybook,
 		Inventory:     inventoryPath,
 		AnsibleDir:    ansibleDir,
 		ExtraArgs:     args,
 		Site:          site,
 		Phase:         substratePhase,
+		RunKey:        rt.Identity.RunKey(),
 		OTLPEndpoint:  rt.OTLPEndpoint(),
 		AdditionalEnv: []string{"VERSELF_SITE=" + site},
 	})
@@ -215,7 +216,7 @@ func ansibleFailureMessage(playbook string, res *ansible.Result, err error) stri
 // than recording a blanket failure.
 func writeFailedDeployEvent(
 	ctx context.Context,
-	led *ledger.Writer,
+	db *deploydb.Client,
 	site, sha, scope string,
 	snap identity.Snapshot,
 	startedAt time.Time,
@@ -223,18 +224,18 @@ func writeFailedDeployEvent(
 	errorMessage string,
 ) {
 	durationMs := durationMillis(time.Since(startedAt), "deploy duration")
-	ev := ledger.DeployEvent{
+	ev := deploydb.DeployEvent{
 		RunKey:             snap.RunKey(),
 		Site:               site,
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
 		AffectedComponents: components,
-		Kind:               ledger.EventFailed,
+		Kind:               deploydb.EventFailed,
 		DurationMs:         durationMs,
 		ErrorMessage:       truncateError(errorMessage),
 	}
-	if err := led.RecordDeployEvent(ctx, ev); err != nil {
+	if err := db.RecordDeployEvent(ctx, ev); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: WARN: deploy_events failed-row insert failed: %v\n", err)
 	}
 }

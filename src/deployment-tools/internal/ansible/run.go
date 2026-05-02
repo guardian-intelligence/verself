@@ -8,27 +8,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tools/internal/chwriter"
+	"github.com/verself/deployment-tools/internal/deploydb"
 )
 
 const tracerName = "github.com/verself/deployment-tools/internal/ansible"
-
-// flushBatchSize is the number of buffered task events that triggers
-// a ClickHouse insert. Flushing in batches keeps insert overhead bounded
-// without waiting for the playbook to finish.
-const flushBatchSize = 64
-
-// flushInterval is the maximum time between insert flushes. Combined
-// with flushBatchSize, this caps the worst-case visibility lag for a
-// task event at ~1s.
-const flushInterval = 1 * time.Second
 
 // Options configure a Run call. Playbook and Inventory are required;
 // the rest are optional contextual labels surfaced as span attributes
@@ -52,6 +41,9 @@ type Options struct {
 	// remain writable before ClickHouse schema convergence has run.
 	Site  string
 	Phase string
+	// RunKey is the deploy correlation key written with each task
+	// event row. Required when a ClickHouse client is passed to Run.
+	RunKey string
 
 	// OTLPEndpoint, when non-empty, sets OTEL_EXPORTER_OTLP_ENDPOINT
 	// on the child process so any OTel SDK it loads (or scripts it
@@ -82,10 +74,10 @@ type Result struct {
 // fans events out to (a) the operator's terminal and (b) per-task
 // span/row emission, and waits for the child to exit.
 //
-// The ClickHouse writer may be nil; the run still emits per-task
+// The ClickHouse client may be nil; the run still emits per-task
 // spans via OTel. Persistence to verself.ansible_task_events is
-// suppressed when w is nil (used by tests).
-func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error) {
+// suppressed when db is nil (used by tests).
+func Run(ctx context.Context, db *deploydb.Client, opts Options) (*Result, error) {
 	if opts.Playbook == "" {
 		return nil, fmt.Errorf("ansible: Playbook is required")
 	}
@@ -98,6 +90,10 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 	}
 	if !filepath.IsAbs(opts.Inventory) {
 		return nil, fmt.Errorf("ansible: Inventory must be an absolute path: %q", opts.Inventory)
+	}
+	sink, err := newTaskEventSink(ctx, db, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	tracer := otel.Tracer(tracerName)
@@ -122,6 +118,9 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		if sink != nil {
+			_ = sink.Close(ctx)
+		}
 		return nil, fmt.Errorf("ansible: stdout pipe: %w", err)
 	}
 	cmd.Stderr = os.Stderr
@@ -129,6 +128,9 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 	if err := cmd.Start(); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		if sink != nil {
+			_ = sink.Close(ctx)
+		}
 		return nil, fmt.Errorf("ansible: start ansible-playbook: %w", err)
 	}
 
@@ -141,9 +143,8 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 	recorder := &recorder{
 		ctx:    ctx,
 		tracer: tracer,
-		writer: w,
+		sink:   sink,
 		opts:   opts,
-		runKey: os.Getenv("VERSELF_DEPLOY_RUN_KEY"),
 	}
 
 	parserDone := make(chan error, 1)
@@ -157,15 +158,10 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 	// EOF is what closes the events channel, so consume blocks until
 	// the parser Run goroutine sees EOF on stdout.
 	parserErr := <-parserDone
+	closeCtx, cancelClose := context.WithTimeout(context.WithoutCancel(ctx), taskEventCloseTimeout)
+	sinkErr := recorder.closeSink(closeCtx)
+	cancelClose()
 	waitErr := cmd.Wait()
-
-	// Final flush captures any tail of events buffered below the
-	// batch threshold.
-	if err := recorder.flush(); err != nil {
-		// Parser/exec errors are more interesting; record but don't
-		// override.
-		span.RecordError(err)
-	}
 
 	exitCode := 0
 	if waitErr != nil {
@@ -202,43 +198,56 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 	if parserErr != nil {
 		span.RecordError(parserErr)
 	}
+	if sinkErr != nil {
+		span.RecordError(sinkErr)
+		span.SetStatus(codes.Error, sinkErr.Error())
+		return res, fmt.Errorf("ansible: persist task events: %w", sinkErr)
+	}
 	return res, nil
 }
 
-// recorder fans TaskEvents out to per-task spans and a buffered
-// ClickHouse insert. Single-goroutine: the consume loop owns the
-// state so no mutex is needed.
+// recorder fans TaskEvents out to per-task spans and a native
+// ClickHouse batch sink. Single-goroutine: the consume loop owns the
+// counters and first sink error.
 type recorder struct {
 	ctx    context.Context
 	tracer trace.Tracer
-	writer *chwriter.Writer
+	sink   *taskEventSink
 	opts   Options
-	runKey string
 
-	buffered    []chwriter.Row
 	taskCount   int
 	failedCount int
+	sinkErr     error
 }
 
 func (r *recorder) consume(events <-chan TaskEvent) {
-	timer := time.NewTimer(flushInterval)
-	defer timer.Stop()
+	for ev := range events {
+		r.observe(ev)
+	}
+}
 
-	for {
-		select {
-		case ev, ok := <-events:
-			if !ok {
-				return
-			}
-			r.observe(ev)
-			if len(r.buffered) >= flushBatchSize {
-				_ = r.flush()
-				resetTimer(timer, flushInterval)
-			}
-		case <-timer.C:
-			_ = r.flush()
-			resetTimer(timer, flushInterval)
-		}
+func (r *recorder) closeSink(ctx context.Context) error {
+	if r.sink == nil {
+		return r.sinkErr
+	}
+	if err := r.sink.Close(ctx); err != nil && r.sinkErr == nil {
+		r.sinkErr = err
+	}
+	return r.sinkErr
+}
+
+func (r *recorder) recordSinkError(err error) {
+	if err != nil && r.sinkErr == nil {
+		r.sinkErr = err
+	}
+}
+
+func (r *recorder) recordTaskEvent(ev TaskEvent) {
+	if r.sink == nil || r.sinkErr != nil {
+		return
+	}
+	if err := r.sink.Record(r.ctx, ev); err != nil {
+		r.recordSinkError(err)
 	}
 }
 
@@ -269,45 +278,7 @@ func (r *recorder) observe(ev TaskEvent) {
 	}
 	span.End(trace.WithTimestamp(ev.Time))
 
-	if r.writer == nil {
-		return
-	}
-	r.buffered = append(r.buffered, chwriter.Row{
-		"event_at":       chwriter.DateTime(ev.Time),
-		"deploy_run_key": chwriter.String(r.runKey),
-		"site":           chwriter.String(r.opts.Site),
-		"layer":          chwriter.String(r.opts.Phase),
-		"playbook":       chwriter.String(r.opts.Playbook),
-		"play":           chwriter.String(ev.Play),
-		"task":           chwriter.String(ev.Task),
-		"host":           chwriter.String(ev.Host),
-		"status":         chwriter.String(string(ev.Status)),
-		"item":           chwriter.String(ev.Item),
-		"duration_ms":    chwriter.UInt(uint64Of(ev.DurationMs)),
-		"message":        chwriter.String(ev.Message),
-	})
-}
-
-func (r *recorder) flush() error {
-	if r.writer == nil || len(r.buffered) == 0 {
-		r.buffered = nil
-		return nil
-	}
-	rows := r.buffered
-	r.buffered = nil
-	return r.writer.InsertRows(r.ctx, "ansible_task_events", rows)
-}
-
-// resetTimer resets t to fire after d, draining any pending value
-// per the time.Timer Reset contract.
-func resetTimer(t *time.Timer, d time.Duration) {
-	if !t.Stop() {
-		select {
-		case <-t.C:
-		default:
-		}
-	}
-	t.Reset(d)
+	r.recordTaskEvent(ev)
 }
 
 // buildChildEnv composes the env for ansible-playbook. The parent's
@@ -327,14 +298,4 @@ func buildChildEnv(opts Options) []string {
 		env = append(env, opts.AdditionalEnv...)
 	}
 	return env
-}
-
-// uint64Of clamps a possibly-negative int64 to zero before widening.
-// DurationMs can in theory be negative if the system clock jumps; we
-// don't want to insert a wraparound value into a UInt32 column.
-func uint64Of(n int64) uint64 {
-	if n < 0 {
-		return 0
-	}
-	return uint64(n)
 }

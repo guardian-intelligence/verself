@@ -123,6 +123,8 @@ type Forward struct {
 	ListenAddr string
 	listener   net.Listener
 	cancel     context.CancelFunc
+	once       sync.Once
+	closeErr   error
 }
 
 // Forward starts a local TCP listener on 127.0.0.1:0 (kernel picks
@@ -149,19 +151,34 @@ func (c *Client) Forward(ctx context.Context, role string, remotePort int) (*For
 	span.SetAttributes(attribute.String("channel.listen_addr", listener.Addr().String()))
 
 	forwardCtx, cancel := context.WithCancel(context.Background())
-	go c.acceptLoop(forwardCtx, listener, remotePort)
-
-	c.mu.Lock()
-	c.closers = append(c.closers, &listenerCloser{l: listener, cancel: cancel})
-	c.mu.Unlock()
-
-	span.SetStatus(codes.Ok, "")
-	return &Forward{
+	forward := &Forward{
 		Role:       role,
 		ListenAddr: listener.Addr().String(),
 		listener:   listener,
 		cancel:     cancel,
-	}, nil
+	}
+	go c.acceptLoop(forwardCtx, listener, remotePort)
+
+	c.mu.Lock()
+	c.closers = append(c.closers, forward)
+	c.mu.Unlock()
+
+	span.SetStatus(codes.Ok, "")
+	return forward, nil
+}
+
+// Close tears down the listener backing this forward. The parent SSH
+// client also calls this during Close; idempotence lets owner packages
+// release role-specific tunnels earlier without racing final cleanup.
+func (f *Forward) Close() error {
+	if f == nil {
+		return nil
+	}
+	f.once.Do(func() {
+		f.cancel()
+		f.closeErr = f.listener.Close()
+	})
+	return f.closeErr
 }
 
 func (c *Client) acceptLoop(ctx context.Context, listener net.Listener, remotePort int) {
@@ -338,14 +355,4 @@ func loadVerselfCertSigner() (ssh.Signer, error) {
 		return certSigner, nil
 	}
 	return nil, errNoVerselfCert
-}
-
-type listenerCloser struct {
-	l      net.Listener
-	cancel context.CancelFunc
-}
-
-func (lc *listenerCloser) Close() error {
-	lc.cancel()
-	return lc.l.Close()
 }

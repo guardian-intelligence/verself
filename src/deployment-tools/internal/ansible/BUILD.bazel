@@ -5,11 +5,12 @@ go_library(
     srcs = [
         "parser.go",
         "run.go",
+        "task_sink.go",
     ],
     importpath = "github.com/verself/deployment-tools/internal/ansible",
     visibility = ["//src/deployment-tools:__subpackages__"],
     deps = [
-        "//src/deployment-tools/internal/chwriter",
+        "//src/deployment-tools/internal/deploydb",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",

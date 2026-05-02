@@ -42,6 +42,7 @@ func runNomadSubmit(args []string) int {
 		ServiceVersion: serviceVersion,
 		Site:           *site,
 		RepoRoot:       *repoRoot,
+		SkipClickHouse: true,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad submit: %v\n", err)
