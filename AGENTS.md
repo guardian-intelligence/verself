@@ -22,8 +22,8 @@ Tech Stack:
 * Zitadel for human identity & OIDC/SAML with third parties. We support multi-tenancy in that all users belong to an org (users belonging to multiple orgs not yet supported)
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
 * HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders `haproxy.cfg` and the per-service nftables drop-ins from Jinja2 templates
-* SPIRE for our SPIFFE implementation, everything speaks x509-SVIDs to eachother except for services that don't support SPIFFE, then we use short-lived JWT-SVIDs.
-* Golang's River library for background jobs *within* a service. NATS JetStream for messaging/fan-out batch jobs between services.
+* SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
+* Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 
 Invariant patterns:
 
@@ -157,6 +157,7 @@ The contained instructions in this block are guidelines that apply to writing ma
 - When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
 - Treat errors as data. Use tagged and structured errors to aid control flow.
 - Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
+- Avoid verbosity. When solving a specific problem, the patch should solve the general case. E.g. if solving a TOCTOU vuln, don't write a function named `fix_toctou_bug`, make the simple patch to use the toctou-safe call and optionally leave a comment (no more than a few words).
 - 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in a tiny set of niche cases, but a comprehensive suite of e2e tests is preferred. <note>We are moving to ongoing e2e canaries instead of our verify/smoke test scripts. Keep using the scripts in the meantime.</note>
 - Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
 - One database per service on a single PG instance, provisioned via Ansible only at host configuration time.
