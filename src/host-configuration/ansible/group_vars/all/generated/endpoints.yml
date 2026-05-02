@@ -663,6 +663,31 @@ topology_endpoints:
         openapi: ""
         path_prefix: ""
     probes: {}
+  pomerium:
+    endpoints:
+      http:
+        address: "127.0.0.1:4180"
+        bind_address: "127.0.0.1:4180"
+        exposure: loopback
+        host: 127.0.0.1
+        listen_host: ""
+        port: 4180
+        protocol: http
+    host: 127.0.0.1
+    interfaces:
+      access_portal:
+        auth: zitadel_oidc
+        endpoint: http
+        kind: operator_access_gateway
+        openapi: ""
+        path_prefix: ""
+      operator_proxy:
+        auth: zitadel_oidc
+        endpoint: http
+        kind: operator_access_gateway
+        openapi: ""
+        path_prefix: ""
+    probes: {}
   profile_service:
     endpoints:
       internal_https:
