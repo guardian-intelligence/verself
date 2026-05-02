@@ -295,7 +295,11 @@
     owner: root
     group: haproxy
     mode: "0640"
-    validate: "/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f %s"
+    # `haproxy -c` opens shm-stats-file, so validate as the service user that must reload it.
+    validate: >-
+      /usr/bin/sudo -u haproxy /bin/sh -c
+      'cd / && LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$1"'
+      -- %s
   notify: restart haproxy
 
 - name: Deploy HAProxy systemd unit

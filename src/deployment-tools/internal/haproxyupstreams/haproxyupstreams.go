@@ -140,6 +140,12 @@ func validateLoopbackAddress(addr nomadclient.ServiceAddress) error {
 func writeAndValidateUpstreamFile(ctx context.Context, ssh *sshtun.Client, body string) error {
 	// HAProxy validates the fixed map path, so the command installs a
 	// backup first and restores it if config validation fails.
+	checkCommand := fmt.Sprintf(
+		"cd / && LD_LIBRARY_PATH=%s %s -c -f %s",
+		haproxyLDLibraryPath,
+		haproxyBin,
+		haproxyConfig,
+	)
 	cmd := fmt.Sprintf(
 		"set -eu\n"+
 			"tmp=$(sudo mktemp %s.tmp.XXXXXX)\n"+
@@ -153,7 +159,8 @@ func writeAndValidateUpstreamFile(ctx context.Context, ssh *sshtun.Client, body 
 			"sudo chmod 0640 \"$tmp\"\n"+
 			"sudo chown root:haproxy \"$tmp\"\n"+
 			"sudo mv \"$tmp\" %s\n"+
-			"if ! sudo env LD_LIBRARY_PATH=%s %s -c -f %s; then\n"+
+			// `haproxy -c` opens shm-stats-file, so validate as the service user that must reload it.
+			"if ! sudo -u haproxy /bin/sh -c %s; then\n"+
 			"  if [ -n \"$backup\" ]; then\n"+
 			"    sudo mv \"$backup\" %s\n"+
 			"  else\n"+
@@ -170,9 +177,7 @@ func writeAndValidateUpstreamFile(ctx context.Context, ssh *sshtun.Client, body 
 		upstreamsPath,
 		body,
 		upstreamsPath,
-		haproxyLDLibraryPath,
-		haproxyBin,
-		haproxyConfig,
+		strconv.Quote(checkCommand),
 		upstreamsPath,
 		upstreamsPath,
 	)
