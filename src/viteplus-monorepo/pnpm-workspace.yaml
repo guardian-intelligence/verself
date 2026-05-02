@@ -7,6 +7,10 @@ strictDepBuilds: true
 allowBuilds:
   esbuild: true
   protobufjs: true
+# rules_js 3.0.3 still reads this allowlist when generating lifecycle hooks.
+onlyBuiltDependencies:
+  - esbuild
+  - protobufjs
 dangerouslyAllowAllBuilds: false
 verifyDepsBeforeRun: error
 packageManagerStrict: true

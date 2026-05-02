@@ -75,5 +75,13 @@ policy. pnpm 10 supports dependency age quarantine via `minimumReleaseAge`,
 reviewed dependency build scripts via `strictDepBuilds`, and explicit build
 allow/deny maps via `allowBuilds`; those settings are documented in pnpm's
 workspace settings reference:
-<https://pnpm.io/settings#minimumreleaseage> and
-<https://pnpm.io/settings#strictdepbuilds>.
+<https://pnpm.io/settings#minimumreleaseage>,
+<https://pnpm.io/settings#strictdepbuilds>, and
+<https://pnpm.io/settings#allowbuilds>.
+
+`onlyBuiltDependencies` is intentionally retained as compatibility debt for
+`aspect_rules_js` 3.0.3. The repo's canonical pnpm build-script policy is
+`allowBuilds`, but the Bazel `npm_translate_lock` integration still requires
+`onlyBuiltDependencies` to decide which package lifecycle hooks it may generate.
+The two allowlists must stay byte-for-byte equivalent until `aspect_rules_js`
+recognizes `allowBuilds` directly.
