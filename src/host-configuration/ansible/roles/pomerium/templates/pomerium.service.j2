@@ -1,0 +1,27 @@
+[Unit]
+Description=Pomerium operator access gateway
+After=verself-firewall.target network.target postgresql.service zitadel.service otelcol.service grafana.service
+Requires=verself-firewall.target postgresql.service zitadel.service
+Wants=otelcol.service grafana.service
+
+[Service]
+Type=simple
+User=pomerium
+Group=pomerium
+WorkingDirectory={{ pomerium_data_dir }}
+Environment=OTEL_TRACES_EXPORTER=otlp
+Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
+Environment=OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+Environment=OTEL_RESOURCE_ATTRIBUTES=service.name=pomerium,service.namespace=verself-substrate
+ExecStart={{ verself_bin }}/pomerium --config {{ pomerium_config_path }}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths={{ pomerium_data_dir }} {{ pomerium_log_dir }}
+
+[Install]
+WantedBy=multi-user.target

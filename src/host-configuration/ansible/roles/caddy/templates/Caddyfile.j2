@@ -154,7 +154,22 @@ https://{{ topology_artifacts.nomad.origin.hostname }}:{{ topology_artifacts.nom
 
 {{ grafana_domain }} {
 	import access_log
-	reverse_proxy {{ topology_endpoints.grafana.endpoints.http.address }}
+	reverse_proxy {{ topology_endpoints.pomerium.endpoints.http.address }} {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto https
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+{{ pomerium_domain }} {
+	import access_log
+	reverse_proxy {{ topology_endpoints.pomerium.endpoints.http.address }} {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto https
+		header_up X-Real-IP {remote_host}
+	}
 }
 
 {{ forgejo_domain }} {

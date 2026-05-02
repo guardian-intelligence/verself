@@ -1,0 +1,38 @@
+authenticate_service_url: "https://{{ pomerium_domain }}"
+address: "{{ pomerium_listen_address }}"
+insecure_server: true
+xff_num_trusted_hops: 1
+
+log_level: info
+cookie_name: "{{ pomerium_cookie_name }}"
+cookie_secret_file: "{{ pomerium_cookie_secret_path }}"
+shared_secret_file: "{{ pomerium_shared_secret_path }}"
+signing_key_file: "{{ pomerium_signing_key_path }}"
+
+idp_provider: oidc
+idp_provider_url: "https://{{ zitadel_domain }}"
+idp_client_id: "{{ pomerium_oidc_client_id }}"
+idp_client_secret_file: "{{ pomerium_oidc_client_secret_path }}"
+idp_scopes: "{{ pomerium_oidc_scopes }}"
+
+databroker_storage_type: postgres
+databroker_storage_connection_string_file: "{{ pomerium_db_connection_string_path }}"
+
+routes:
+{% for route in pomerium_operator_routes %}
+  - from: "{{ route.from }}"
+    to: "{{ route.to }}"
+    pass_identity_headers: {{ route.pass_identity_headers | default(false) | bool | lower }}
+    preserve_host_header: {{ route.preserve_host_header | default(false) | bool | lower }}
+    policy:
+      - allow:
+          or:
+{% for domain in pomerium_operator_allowed_domains %}
+            - domain:
+                is: {{ domain | to_json }}
+{% endfor %}
+{% for email in pomerium_operator_allowed_emails %}
+            - email:
+                is: {{ email | to_json }}
+{% endfor %}
+{% endfor %}

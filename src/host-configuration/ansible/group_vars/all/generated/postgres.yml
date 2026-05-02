@@ -12,6 +12,7 @@ postgresql_role_connection_limits:
   mailbox_service: 10
   notifications_service: 10
   object_storage_service: 10
+  pomerium: 20
   profile_service: 10
   projects_service: 10
   sandbox_rental: 30
@@ -25,6 +26,9 @@ topology_postgres:
     - component: grafana
       database: grafana
       owner: grafana
+    - component: pomerium
+      database: pomerium
+      owner: pomerium
     - component: temporal
       database: temporal
       owner: temporal

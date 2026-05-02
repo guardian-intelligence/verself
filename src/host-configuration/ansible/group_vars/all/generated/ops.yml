@@ -70,6 +70,8 @@ openbao_tenancy_token_max_ttl: 1h
 openbao_tenancy_token_ttl: 15m
 openbao_tenancy_transit_mount_prefix: transit
 openbao_workload_audience: openbao
+pomerium_domain: '{{ pomerium_subdomain }}.{{ verself_domain }}'
+pomerium_subdomain: access
 profile_service_domain: '{{ profile_service_subdomain }}.{{ verself_domain }}'
 profile_service_subdomain: profile.api
 projects_service_domain: '{{ projects_service_subdomain }}.{{ verself_domain }}'

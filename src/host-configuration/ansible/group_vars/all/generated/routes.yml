@@ -187,6 +187,18 @@ topology_routes:
     zone: product
   - browser_cors: not_browser_reachable
     gateway: public_caddy
+    host: access
+    kind: operator_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: pomerium
+      interface: access_portal
+    waf: detection
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: public_caddy
     host: git
     kind: protocol_origin
     max_body_bytes: 1048576

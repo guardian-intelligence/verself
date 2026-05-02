@@ -1,0 +1,285 @@
+---
+# Pomerium is the HTTP operator access plane. Caddy remains the public TLS
+# edge and forwards only operator hostnames to this loopback listener.
+
+- name: Create Pomerium system group
+  ansible.builtin.group:
+    name: pomerium
+    system: true
+
+- name: Create Pomerium system user
+  ansible.builtin.user:
+    name: pomerium
+    group: pomerium
+    system: true
+    home: "{{ pomerium_data_dir }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create Pomerium directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ pomerium_config_dir }}", owner: root, group: pomerium, mode: "0750" }
+    - { path: "{{ pomerium_credstore_dir }}", owner: root, group: pomerium, mode: "0750" }
+    - { path: "{{ pomerium_data_dir }}", owner: pomerium, group: pomerium, mode: "0750" }
+    - { path: "{{ pomerium_log_dir }}", owner: pomerium, group: adm, mode: "2750" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Assert Pomerium operator route policy has at least one subject
+  ansible.builtin.assert:
+    that:
+      - (pomerium_operator_allowed_domains | length) + (pomerium_operator_allowed_emails | length) > 0
+    fail_msg: >-
+      Pomerium operator access needs at least one allowed email domain or
+      explicit email. Configure pomerium_operator_allowed_domains or
+      pomerium_operator_allowed_emails before exposing operator routes.
+
+- name: Check Pomerium shared secret
+  ansible.builtin.stat:
+    path: "{{ pomerium_shared_secret_path }}"
+  register: pomerium_shared_secret_stat
+
+- name: Generate Pomerium shared secret
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - rand
+      - -base64
+      - "32"
+  register: pomerium_shared_secret_generated
+  changed_when: false
+  when: not pomerium_shared_secret_stat.stat.exists
+  no_log: true
+
+- name: Store Pomerium shared secret
+  ansible.builtin.copy:
+    content: "{{ pomerium_shared_secret_generated.stdout }}"
+    dest: "{{ pomerium_shared_secret_path }}"
+    owner: root
+    group: pomerium
+    mode: "0640"
+  when: not pomerium_shared_secret_stat.stat.exists
+  no_log: true
+
+- name: Check Pomerium cookie secret
+  ansible.builtin.stat:
+    path: "{{ pomerium_cookie_secret_path }}"
+  register: pomerium_cookie_secret_stat
+
+- name: Generate Pomerium cookie secret
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - rand
+      - -base64
+      - "32"
+  register: pomerium_cookie_secret_generated
+  changed_when: false
+  when: not pomerium_cookie_secret_stat.stat.exists
+  no_log: true
+
+- name: Store Pomerium cookie secret
+  ansible.builtin.copy:
+    content: "{{ pomerium_cookie_secret_generated.stdout }}"
+    dest: "{{ pomerium_cookie_secret_path }}"
+    owner: root
+    group: pomerium
+    mode: "0640"
+  when: not pomerium_cookie_secret_stat.stat.exists
+  no_log: true
+
+- name: Check Pomerium signing key
+  ansible.builtin.stat:
+    path: "{{ pomerium_signing_key_path }}"
+  register: pomerium_signing_key_stat
+
+- name: Generate Pomerium JWT signing key PEM
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - ecparam
+      - -genkey
+      - -name
+      - prime256v1
+      - -noout
+      - -out
+      - "{{ pomerium_signing_key_raw_path }}"
+    creates: "{{ pomerium_signing_key_raw_path }}"
+  when: not pomerium_signing_key_stat.stat.exists
+  no_log: true
+
+- name: Read Pomerium JWT signing key PEM
+  ansible.builtin.slurp:
+    src: "{{ pomerium_signing_key_raw_path }}"
+  register: pomerium_signing_key_raw
+  when: not pomerium_signing_key_stat.stat.exists
+  no_log: true
+
+- name: Store Pomerium JWT signing key
+  ansible.builtin.copy:
+    content: "{{ pomerium_signing_key_raw.content | trim }}"
+    dest: "{{ pomerium_signing_key_path }}"
+    owner: root
+    group: pomerium
+    mode: "0640"
+  when: not pomerium_signing_key_stat.stat.exists
+  no_log: true
+
+- name: Remove transient Pomerium raw signing key
+  ansible.builtin.file:
+    path: "{{ pomerium_signing_key_raw_path }}"
+    state: absent
+  when: not pomerium_signing_key_stat.stat.exists
+
+- name: Ensure Pomerium PostgreSQL password exists
+  ansible.builtin.copy:
+    content: "{{ lookup('community.general.random_string', length=64, upper=true, lower=true, numbers=true, special=false) }}\n"
+    dest: "{{ pomerium_db_password_path }}"
+    owner: root
+    group: pomerium
+    mode: "0640"
+    force: false
+  no_log: true
+
+- name: Read Pomerium PostgreSQL password
+  ansible.builtin.slurp:
+    src: "{{ pomerium_db_password_path }}"
+  register: pomerium_db_password_raw
+  no_log: true
+
+- name: Set Pomerium PostgreSQL password fact
+  ansible.builtin.set_fact:
+    pomerium_db_password: "{{ pomerium_db_password_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Configure Pomerium Zitadel OIDC application
+  ansible.builtin.include_role:
+    name: zitadel_oauth_app
+  vars:
+    zitadel_oauth_app_name: "{{ pomerium_oidc_app_name }}"
+    zitadel_oauth_app_project_name: "{{ pomerium_oidc_project_name }}"
+    zitadel_oauth_app_redirect_uris:
+      - "{{ pomerium_oidc_redirect_uri }}"
+    zitadel_oauth_app_post_logout_redirect_uris:
+      - "{{ pomerium_oidc_post_logout_redirect_uri }}"
+    zitadel_oauth_app_credstore_dir: "{{ pomerium_credstore_dir }}"
+    zitadel_oauth_app_credstore_group: pomerium
+    zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_POST
+    zitadel_oauth_app_grant_types:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+      - OIDC_GRANT_TYPE_REFRESH_TOKEN
+    zitadel_oauth_app_create_project_if_missing: true
+    zitadel_oauth_app_role_assertions: false
+
+- name: Export Pomerium OIDC app facts
+  ansible.builtin.set_fact:
+    pomerium_oidc_client_id: "{{ zitadel_oauth_app_out_client_id }}"
+  no_log: true
+
+- name: Ensure Pomerium PostgreSQL role and database exist
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+  block:
+    - name: Ensure Pomerium PostgreSQL user exists
+      community.postgresql.postgresql_user:
+        name: "{{ pomerium_db_user }}"
+        password: "{{ pomerium_db_password }}"
+        role_attr_flags: LOGIN
+        conn_limit: "{{ pomerium_db_connection_limit }}"
+      no_log: true
+
+    - name: Ensure Pomerium PostgreSQL database exists
+      community.postgresql.postgresql_db:
+        name: "{{ pomerium_db_name }}"
+        owner: "{{ pomerium_db_user }}"
+        state: present
+      no_log: true
+
+    - name: Ensure Pomerium owns Pomerium PostgreSQL database
+      community.postgresql.postgresql_owner:
+        obj_name: "{{ pomerium_db_name }}"
+        obj_type: database
+        new_owner: "{{ pomerium_db_user }}"
+      no_log: true
+
+- name: Store Pomerium Databroker PostgreSQL connection string
+  ansible.builtin.copy:
+    content: >-
+      postgresql://{{ pomerium_db_user }}:{{ pomerium_db_password }}@{{
+      topology_endpoints.postgresql.endpoints.postgres.address }}/{{ pomerium_db_name }}?sslmode=disable
+    dest: "{{ pomerium_db_connection_string_path }}"
+    owner: root
+    group: pomerium
+    mode: "0640"
+  notify: restart pomerium
+  no_log: true
+
+- name: Deploy Pomerium configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ pomerium_config_path }}"
+    owner: root
+    group: pomerium
+    mode: "0640"
+  notify: restart pomerium
+
+- name: Deploy Pomerium systemd unit
+  ansible.builtin.template:
+    src: pomerium.service.j2
+    dest: /etc/systemd/system/pomerium.service
+    mode: "0644"
+  notify: restart pomerium
+
+- name: Apply Pomerium unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Pomerium
+  ansible.builtin.systemd:
+    name: pomerium
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Pomerium HTTP listener
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.pomerium.host }}"
+    port: "{{ topology_endpoints.pomerium.endpoints.http.port }}"
+    timeout: 30
+
+- name: Check Pomerium health
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/pomerium"
+      - health
+      - --health-addr
+      - "{{ pomerium_health_address }}"
+  register: pomerium_health
+  changed_when: false
+  retries: 10
+  delay: 1
+  until: pomerium_health.rc == 0

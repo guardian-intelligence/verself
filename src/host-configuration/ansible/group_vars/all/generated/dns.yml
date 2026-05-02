@@ -44,6 +44,9 @@ topology_dns_records:
   - kind: operator_origin
     record: dashboard
     zone: product
+  - kind: operator_origin
+    record: access
+    zone: product
   - kind: protocol_origin
     record: git
     zone: product

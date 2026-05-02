@@ -127,6 +127,7 @@
         electric_config: "{{ topology_electric_instances.default }}"
     - role: otelcol
     - role: grafana
+    - role: pomerium
     - role: verdaccio
     - role: caddy
     - role: forgejo

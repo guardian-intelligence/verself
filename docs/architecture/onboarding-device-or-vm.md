@@ -25,6 +25,13 @@ the public internet.
   sshd records the KeyID into journald on every accept; the
   `verself.host_auth_events` MV materialises it as `cert_id`.
 
+Pomerium fronts browser-based operator surfaces. Caddy terminates public TLS
+for `access.<domain>` and operator route hosts, then forwards to Pomerium's
+loopback listener. Pomerium authenticates through Zitadel OIDC, enforces the
+operator HTTP route policy, and proxies to the loopback-only upstream service
+such as Grafana. OpenBao remains the SSH certificate authority; Pomerium does
+not mint SSH certificates or manage workload bootstrap secrets.
+
 ## Discovery surface
 
 Caddy serves three immutable, public-by-design artifacts under
