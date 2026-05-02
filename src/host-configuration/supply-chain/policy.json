@@ -1427,6 +1427,26 @@
       }
     },
     {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zot-9fcdaa210ea2",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_zot",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/project-zot/zot/releases/download/v2.1.16/zot-linux-amd64",
+        "digest": "sha256:f9b7e805056db94c97d34bcff4eab77ec8e7cdc2cb76fd6db3d7ad7143605dba",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "sbom_uri": "",
+        "provenance_uri": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
       "id": "network-policy-sh-curl-fetch-curl-0b960ea40f88",
       "source_path": "src/host-configuration/scripts/security/network-policy.sh",
       "source_kind": "curl_fetch",

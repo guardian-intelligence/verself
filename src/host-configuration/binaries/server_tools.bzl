@@ -40,6 +40,7 @@ RAW_BINARY_SPECS = [
     ("garage", "@server_tool_garage//file", "garage"),
     ("forgejo", "@server_tool_forgejo//file", "forgejo"),
     ("bazel_remote", "@server_tool_bazel_remote//file", "bazel-remote"),
+    ("zot", "@server_tool_zot//file", "zot"),
 ]
 
 ARCHIVE_DIRECTORIES = [
@@ -75,10 +76,12 @@ SERVER_TOOL_DEPS = [
     ":temporal_sql_tool",
     ":tigerbeetle",
     ":zitadel",
+    ":zot",
 ]
 
 HOST_GO_TOOLS = [
     ("//src/host-configuration/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
+    ("//src/host-configuration/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
     ("//src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
     ("//src/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
     ("//src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),

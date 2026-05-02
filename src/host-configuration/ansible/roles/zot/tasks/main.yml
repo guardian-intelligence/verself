@@ -1,0 +1,177 @@
+---
+- name: Check zot binary version
+  ansible.builtin.command:
+    cmd: "{{ verself_bin }}/zot --version"
+  changed_when: false
+
+- name: Create zot system group
+  ansible.builtin.group:
+    name: "{{ zot_group }}"
+    system: true
+
+- name: Create zot system user
+  ansible.builtin.user:
+    name: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ zot_storage_dir }}"
+    create_home: false
+
+- name: Create zot configuration directory
+  ansible.builtin.file:
+    path: "{{ zot_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ zot_group }}"
+    mode: "0750"
+
+- name: Create zot storage directory
+  ansible.builtin.file:
+    path: "{{ zot_storage_dir }}"
+    state: directory
+    owner: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    mode: "0750"
+
+- name: Check zot publisher credential files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ zot_publisher_password_path }}"
+    - "{{ zot_htpasswd_path }}"
+  register: zot_publisher_credential_files
+  no_log: true
+
+- name: Generate missing zot publisher password
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}\n"
+    dest: "{{ zot_publisher_password_path }}"
+    owner: root
+    group: "{{ zot_group }}"
+    mode: "0640"
+  when: not zot_publisher_credential_files.results[0].stat.exists
+  no_log: true
+
+- name: Read zot publisher password
+  ansible.builtin.slurp:
+    src: "{{ zot_publisher_password_path }}"
+  register: zot_publisher_password_raw
+  no_log: true
+
+- name: Generate missing zot publisher htpasswd line
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/zot-htpasswd"
+      - --username
+      - "{{ zot_publisher_user }}"
+      - --password-file
+      - "{{ zot_publisher_password_path }}"
+  when: not zot_publisher_credential_files.results[1].stat.exists
+  register: zot_publisher_htpasswd_line
+  changed_when: true
+  no_log: true
+
+- name: Render missing zot publisher htpasswd
+  ansible.builtin.copy:
+    content: "{{ zot_publisher_htpasswd_line.stdout }}\n"
+    dest: "{{ zot_htpasswd_path }}"
+    owner: root
+    group: "{{ zot_group }}"
+    mode: "0640"
+  when: not zot_publisher_credential_files.results[1].stat.exists
+  no_log: true
+
+- name: Converge zot publisher credential ownership
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: "{{ zot_group }}"
+    mode: "0640"
+  loop:
+    - "{{ zot_publisher_password_path }}"
+    - "{{ zot_htpasswd_path }}"
+  no_log: true
+
+- name: Deploy zot configuration
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ zot_config_path }}"
+    owner: root
+    group: "{{ zot_group }}"
+    mode: "0640"
+  notify: restart zot
+
+- name: Verify zot configuration
+  ansible.builtin.command:
+    cmd: "{{ verself_bin }}/zot verify {{ zot_config_path }}"
+  changed_when: false
+
+- name: Deploy zot systemd unit
+  ansible.builtin.template:
+    src: zot.service.j2
+    dest: /etc/systemd/system/zot.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart zot
+
+- name: Apply zot unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start zot
+  ansible.builtin.systemd:
+    name: zot
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for zot listener
+  ansible.builtin.wait_for:
+    host: "{{ zot_endpoint.host }}"
+    port: "{{ zot_endpoint.port }}"
+    timeout: 30
+
+- name: Assert zot registry read path is available
+  ansible.builtin.uri:
+    url: "http://{{ zot_endpoint.address }}/v2/"
+    method: GET
+    status_code: 200
+  changed_when: false
+
+- name: Assert unauthenticated zot uploads are denied
+  ansible.builtin.uri:
+    url: "http://{{ zot_endpoint.address }}/v2/verself-probe/blobs/uploads/"
+    method: POST
+    status_code: 401
+  changed_when: false
+
+- name: Assert zot publisher identity can create uploads
+  ansible.builtin.uri:
+    url: "http://{{ zot_endpoint.address }}/v2/admitted/verself-probe/blobs/uploads/"
+    method: POST
+    url_username: "{{ zot_publisher_user }}"
+    url_password: "{{ zot_publisher_password_raw.content | b64decode | trim }}"
+    force_basic_auth: true
+    status_code: 202
+  register: zot_publisher_upload_probe
+  changed_when: false
+  no_log: true
+
+- name: Remove zot publisher upload probe
+  ansible.builtin.uri:
+    url: >-
+      {{
+        zot_publisher_upload_probe.location
+        if (zot_publisher_upload_probe.location | regex_search('^https?://'))
+        else 'http://' ~ zot_endpoint.address ~ zot_publisher_upload_probe.location
+      }}
+    method: DELETE
+    url_username: "{{ zot_publisher_user }}"
+    url_password: "{{ zot_publisher_password_raw.content | b64decode | trim }}"
+    force_basic_auth: true
+    status_code: 204
+  when: zot_publisher_upload_probe.location is defined
+  changed_when: false
+  no_log: true

@@ -1,0 +1,12 @@
+---
+zot_user: zot
+zot_group: zot
+zot_config_dir: /etc/zot
+zot_config_path: "{{ zot_config_dir }}/config.json"
+zot_storage_dir: /var/lib/zot
+zot_endpoint: "{{ topology_endpoints.zot.endpoints.http }}"
+zot_log_level: info
+zot_realm: verself-artifacts
+zot_htpasswd_path: "{{ zot_config_dir }}/htpasswd"
+zot_publisher_user: artifact-publisher
+zot_publisher_password_path: "{{ zot_config_dir }}/publisher-password"

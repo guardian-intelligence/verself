@@ -1,0 +1,62 @@
+---
+argument_specs:
+  main:
+    short_description: "zot internal OCI artifact registry"
+    description:
+      - "Brings up a loopback-only zot registry for admitted internal OCI artifacts."
+      - "Anonymous clients can read objects; unauthenticated create/update/delete"
+      - "requests are rejected so installers cannot populate the registry directly."
+    options:
+      verself_bin:
+        type: str
+        required: true
+        description: "Profile bin directory containing the zot binary."
+      zot_user:
+        type: str
+        required: true
+        description: "System user that runs the daemon."
+      zot_group:
+        type: str
+        required: true
+        description: "System group that owns config and storage."
+      zot_config_dir:
+        type: str
+        required: true
+        description: "Configuration directory."
+      zot_config_path:
+        type: str
+        required: true
+        description: "Rendered zot configuration path."
+      zot_storage_dir:
+        type: str
+        required: true
+        description: "Registry storage root."
+      zot_endpoint:
+        type: dict
+        required: true
+        description: "Topology endpoint contract for zot's HTTP listener."
+      zot_log_level:
+        type: str
+        required: true
+        choices:
+          - debug
+          - info
+          - warn
+          - error
+        description: "zot log verbosity."
+      zot_realm:
+        type: str
+        required: true
+        description: "zot HTTP realm."
+      zot_htpasswd_path:
+        type: str
+        required: true
+        description: "Path to the zot htpasswd file."
+      zot_publisher_user:
+        type: str
+        required: true
+        description: "Local identity allowed to publish admitted artifacts."
+      zot_publisher_password_path:
+        type: str
+        required: true
+        description: "Root-owned generated password file for the local publisher identity."
