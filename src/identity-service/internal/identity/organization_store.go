@@ -198,7 +198,7 @@ func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, a
 	actorID = firstNonEmpty(actorID, "system:identity")
 	displayName := "Organization " + orgID
 	baseSlug := normalizeSlug(displayName)
-	if baseSlug == "" || reservedLegacyOrgSlug(baseSlug) {
+	if baseSlug == "" {
 		baseSlug = "organization"
 	}
 	suffix := shortStableSuffix(orgID)
@@ -220,15 +220,6 @@ func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, a
 			profile, err := organizationProfileFromCreateRow(row)
 			if err != nil {
 				return OrganizationProfile{}, err
-			}
-			if legacy := legacyOrgSlug(orgID); legacy != "" && legacy != profile.Slug {
-				if err := q.InsertOrganizationSlugRedirect(ctx, identitystore.InsertOrganizationSlugRedirectParams{
-					Slug:    legacy,
-					OrgID:   orgID,
-					ActorID: actorID,
-				}); err != nil {
-					return OrganizationProfile{}, fmt.Errorf("%w: reserve legacy organization slug: %v", ErrStoreUnavailable, err)
-				}
 			}
 			if err := tx.Commit(ctx); err != nil {
 				return OrganizationProfile{}, fmt.Errorf("%w: commit organization profile create: %v", ErrStoreUnavailable, err)
@@ -359,9 +350,6 @@ func validateSlug(field, value string) error {
 	if len(value) > 80 {
 		return fmt.Errorf("%w: %s is too long", ErrInvalidInput, field)
 	}
-	if reservedLegacyOrgSlug(value) {
-		return fmt.Errorf("%w: %s uses a reserved legacy org path", ErrInvalidInput, field)
-	}
 	for _, r := range value {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
 			continue
@@ -422,23 +410,6 @@ func slugCandidate(baseSlug, suffix string, attempt int) string {
 		baseSlug = strings.Trim(baseSlug[:maxBase], "-")
 	}
 	return baseSlug + tail
-}
-
-func legacyOrgSlug(orgID string) string {
-	orgID = strings.TrimSpace(orgID)
-	if orgID == "" {
-		return ""
-	}
-	return "org-" + orgID
-}
-
-func reservedLegacyOrgSlug(value string) bool {
-	value = strings.TrimSpace(value)
-	if !strings.HasPrefix(value, "org-") {
-		return false
-	}
-	legacy := strings.TrimPrefix(value, "org-")
-	return legacy != "" && strings.Trim(legacy, "0123456789") == ""
 }
 
 func shortStableSuffix(value string) string {
