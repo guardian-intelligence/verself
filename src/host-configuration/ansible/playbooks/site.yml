@@ -3,6 +3,9 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  tags:
+    - preflight
+    - controller
   tasks:
     - name: Run controller preflight checks
       ansible.builtin.import_tasks: tasks/controller-preflight.yml
@@ -11,6 +14,10 @@
   hosts: workers
   gather_facts: false
   become: true
+  tags:
+    - preflight
+    - worker
+    - firecracker
   tasks:
     - name: Check ZFS pool exists
       ansible.builtin.command: "zpool status {{ firecracker_zfs_pool | default(zfs_pool) }}"
@@ -49,19 +56,39 @@
   hosts: all
   become: true
   gather_facts: true
+  tags:
+    - foundation
   roles:
     - role: substrate_profile
+      tags:
+        - profile
+        - packages
     - role: base
+      tags:
+        - base
+        - packages
     - role: nftables
+      tags:
+        - firewall
+        - network
     - role: zfs
+      tags:
+        - zfs
 
 - name: "Worker substrate"
   hosts: workers
   become: true
   gather_facts: false
+  tags:
+    - worker
   roles:
     - role: containerd
+      tags:
+        - containerd
     - role: wireguard
+      tags:
+        - network
+        - wireguard
       vars:
         wireguard_tunnels: >-
           {{
@@ -70,13 +97,20 @@
             | list
           }}
     - role: firecracker
+      tags:
+        - firecracker
 
 - name: "Infrastructure host networking"
   hosts: infra
   become: true
   gather_facts: false
+  tags:
+    - infra
+    - network
   roles:
     - role: wireguard
+      tags:
+        - wireguard
       vars:
         wireguard_tunnels: >-
           {{
@@ -89,6 +123,8 @@
   hosts: infra
   become: true
   gather_facts: false
+  tags:
+    - userspace
   tasks:
     - name: Materialise system users and groups for every component
       ansible.builtin.import_tasks: ../tasks/userspace_batch.yml
@@ -97,17 +133,51 @@
   hosts: infra
   become: true
   gather_facts: false
+  tags:
+    - daemons
   roles:
     - role: spire
+      tags:
+        - spire
+        - identity
     - role: garage
+      tags:
+        - garage
+        - object-storage
     - role: bazel_remote
+      tags:
+        - bazel-remote
+        - build-cache
     - role: nomad
+      tags:
+        - nomad
+        - scheduler
     - role: clickhouse
+      tags:
+        - clickhouse
+        - database
+        - observability
     - role: tigerbeetle
+      tags:
+        - tigerbeetle
+        - ledger
     - role: postgresql
+      tags:
+        - postgresql
+        - database
     - role: zitadel
+      tags:
+        - zitadel
+        - auth
     - role: openbao
+      tags:
+        - openbao
+        - secrets
     - role: wireguard
+      tags:
+        - network
+        - wireguard
+        - ops-network
       vars:
         wireguard_tunnels: >-
           {{
@@ -116,29 +186,74 @@
             | list
           }}
     - role: ssh_ca
+      tags:
+        - ssh-ca
+        - access
     - role: nats
+      tags:
+        - nats
+        - messaging
     - role: temporal
+      tags:
+        - temporal
+        - workflow
     - role: stalwart
+      tags:
+        - stalwart
+        - mail
     - role: electric
+      tags:
+        - electric
+        - sync
+        - notifications
       vars:
         electric_config: "{{ topology_electric_instances.notifications }}"
     - role: electric
+      tags:
+        - electric
+        - sync
       vars:
         electric_config: "{{ topology_electric_instances.default }}"
     - role: otelcol
+      tags:
+        - otelcol
+        - observability
     - role: grafana
+      tags:
+        - grafana
+        - observability
     - role: pomerium
+      tags:
+        - pomerium
+        - access
     - role: verdaccio
+      tags:
+        - verdaccio
+        - package-registry
     - role: haproxy
+      tags:
+        - haproxy
+        - ingress
     - role: forgejo
+      tags:
+        - forgejo
+        - scm
 
 - name: "External APIs and per-component substrate bindings"
   hosts: infra
   become: true
   gather_facts: false
+  tags:
+    - components
   roles:
     - role: resend
+      tags:
+        - resend
+        - external-api
     - role: spire_registrations
+      tags:
+        - spire-registrations
+        - identity
 
   tasks:
     - name: Re-derive daemon facts consumed by per-component tasks
@@ -359,6 +474,9 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  tags:
+    - external-dns
+    - cloudflare-dns
   tasks:
     - name: Reconcile Cloudflare DNS
       ansible.builtin.command:

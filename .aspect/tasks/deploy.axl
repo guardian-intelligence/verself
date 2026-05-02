@@ -6,6 +6,9 @@ worktree when non-HEAD), refreshes the operator's SSH cert, stages
 The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and Nomad fan-out inside one process sharing one SSH session
 and one SSH-forwarded OTLP channel to the bare-metal otelcol.
+When --scope=affected, the binary still records the host-configuration
+phase but asks Ansible to skip the host-only concern tags so app-only
+deploys pay the Nomad path instead of the full substrate convergence tax.
 
 Correlation: rows in verself.deploy_events, verself.ansible_task_events,
 verself.reconciler_runs, and the ansible.* / verself_deploy.* span families
@@ -56,7 +59,7 @@ def _deploy_one(ctx, site, sha, scope):
             "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
-        label = "verself-deploy run --site=" + site,
+        label = "verself-deploy run --site=" + site + " --scope=" + scope,
     )
 
 def _deploy_in_worktree(ctx, site, sha, scope):
@@ -104,6 +107,6 @@ deploy = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
-        "scope": args.string(default = "all", description = "all | affected. The affected machinery is a future follow-up; same behavior as `all` for now."),
+        "scope": args.string(default = "all", description = "all | affected. affected skips host-only Ansible concern tags before Nomad fan-out."),
     },
 )
