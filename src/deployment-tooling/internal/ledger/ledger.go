@@ -1,8 +1,6 @@
 // Package ledger writes deploy_events and deploy_layer_runs rows
-// through the typed chwriter. Replaces scripts/record-deploy-event.sh
-// and scripts/record-layer-run.sh — same column shape, server-side
-// timestamping, but with Go-side validation and SQL escaping in place
-// of bash + python heredocs.
+// through the typed chwriter with server-side timestamping, Go-side
+// validation, and SQL escaping.
 package ledger
 
 import (
@@ -52,17 +50,17 @@ type DeployEvent struct {
 // stamped server-side. LastAppliedHash may be empty on the layer's
 // first-ever run.
 type LayerRun struct {
-	RunKey           string
-	Site             string
-	Layer            string
-	InputHash        string
-	LastAppliedHash  string
-	Kind             LayerEventKind
-	Skipped          bool
-	SkipReason       string
-	DurationMs       uint32
-	ChangedCount     uint32
-	ErrorMessage     string
+	RunKey          string
+	Site            string
+	Layer           string
+	InputHash       string
+	LastAppliedHash string
+	Kind            LayerEventKind
+	Skipped         bool
+	SkipReason      string
+	DurationMs      uint32
+	ChangedCount    uint32
+	ErrorMessage    string
 }
 
 // Writer wraps a chwriter scoped at the verself database.
@@ -157,8 +155,7 @@ func (w *Writer) RecordLayerRun(ctx context.Context, lr LayerRun) error {
 
 // LastAppliedHash returns the input_hash of the most recent
 // succeeded-or-skipped run for (site, layer). Returns the empty
-// string when no row matches (first-ever run). Replaces
-// scripts/layer-last-applied.sh.
+// string when no row matches (first-ever run).
 func (w *Writer) LastAppliedHash(ctx context.Context, site, layer string) (string, error) {
 	if w == nil || w.ch == nil {
 		return "", fmt.Errorf("ledger: nil writer")
@@ -181,7 +178,7 @@ func (w *Writer) LastAppliedHash(ctx context.Context, site, layer string) (strin
 		return "", nil
 	}
 	if !sha64Re.MatchString(out) {
-		return "", fmt.Errorf("ledger: layer-last-applied returned non-hash value: %q", out)
+		return "", fmt.Errorf("ledger: last applied layer hash query returned non-hash value: %q", out)
 	}
 	return out, nil
 }

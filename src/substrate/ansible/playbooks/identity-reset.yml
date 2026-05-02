@@ -1,7 +1,6 @@
 ---
 # Wipe-only: aspect substrate reset identity invokes this playbook first,
-# then drives the layered substrate converge via run_layered_substrate to
-# rebuild per-component state.
+# then runs layered substrate convergence to rebuild per-component state.
 
 - name: Wipe identity-service PostgreSQL state
   import_playbook: wipe-pg-db.yml
