@@ -1,6 +1,9 @@
 """aspect artifacts publish --site=prod
 aspect artifacts inventory
 aspect artifacts evidence --run-key=<deploy-run-key>
+aspect artifacts admit-url --artifact=<name> --upstream-url=<url> --digest=sha256:<hex>
+aspect artifacts verify-install --artifact=<name> --oci-repository=<repo> --oci-manifest-digest=sha256:<hex>
+aspect artifacts admission-evidence --run-key=<deploy-run-key>
 
 Builds the resolved Nomad artifact set and uploads every content-addressed
 tarball to the private Garage artifact origin. Deployment calls the same
@@ -91,6 +94,170 @@ evidence = task(
     group = ["artifacts"],
     summary = "Assert deploy-time supply-chain rows and spans exist in ClickHouse.",
     args = {
+        "run_key": args.string(default = "", description = "Deploy run key to assert."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "wait": args.string(default = "5s", description = "Wait for ClickHouse evidence, maximum 5s."),
+    },
+)
+
+def _admit_url_impl(ctx):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    admission_args = [
+        "artifacts",
+        "admit-url",
+        "--repo-root",
+        ws_path(ctx),
+        "--site=" + (ctx.args.site or DEFAULT_SITE),
+        "--artifact=" + (ctx.args.artifact or ""),
+        "--source-path=" + (ctx.args.source_path or ""),
+        "--source-kind=" + (ctx.args.source_kind or ""),
+        "--surface=" + (ctx.args.surface or ""),
+        "--upstream-url=" + (ctx.args.upstream_url or ""),
+        "--digest=" + (ctx.args.digest or ""),
+        "--released-at=" + (ctx.args.released_at or ""),
+        "--scanner-result=" + (ctx.args.scanner_result or ""),
+        "--scanner-name=" + (ctx.args.scanner_name or ""),
+        "--scanner-version=" + (ctx.args.scanner_version or ""),
+        "--signature=" + (ctx.args.signature or ""),
+        "--provenance=" + (ctx.args.provenance or ""),
+        "--zot-url=" + (ctx.args.zot_url or "http://127.0.0.1:5080"),
+        "--zot-username=" + (ctx.args.zot_username or "artifact-publisher"),
+        "--zot-password-file=" + (ctx.args.zot_password_file or "/etc/zot/publisher-password"),
+    ]
+    if ctx.args.observed_at:
+        admission_args = admission_args + ["--observed-at=" + ctx.args.observed_at]
+    if ctx.args.minimum_age_days:
+        admission_args = admission_args + ["--minimum-age-days=" + ctx.args.minimum_age_days]
+    if ctx.args.scanner_database_digest:
+        admission_args = admission_args + ["--scanner-database-digest=" + ctx.args.scanner_database_digest]
+    if ctx.args.zot_repository:
+        admission_args = admission_args + ["--zot-repository=" + ctx.args.zot_repository]
+    if ctx.args.tuf_target_path:
+        admission_args = admission_args + ["--tuf-target-path=" + ctx.args.tuf_target_path]
+    if ctx.args.guac_subject:
+        admission_args = admission_args + ["--guac-subject=" + ctx.args.guac_subject]
+    return checked_spawn(
+        ctx,
+        bin,
+        admission_args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy artifacts admit-url",
+    )
+
+admit_url = task(
+    implementation = _admit_url_impl,
+    name = "admit-url",
+    group = ["artifacts"],
+    summary = "Admit an upstream URL into internal zot and record ClickHouse evidence.",
+    args = {
+        "artifact": args.string(default = "", description = "Artifact name."),
+        "digest": args.string(default = "", description = "Expected upstream digest, sha256:<hex>."),
+        "guac_subject": args.string(default = "", description = "GUAC subject identifier."),
+        "minimum_age_days": args.string(default = "3", description = "Minimum release age in days."),
+        "observed_at": args.string(default = "", description = "Observation time, RFC3339."),
+        "provenance": args.string(default = "", description = "SLSA/in-toto provenance or attestation path."),
+        "released_at": args.string(default = "", description = "Release time, RFC3339."),
+        "scanner_database_digest": args.string(default = "", description = "Scanner database digest."),
+        "scanner_name": args.string(default = "", description = "Scanner name."),
+        "scanner_result": args.string(default = "", description = "Scanner result JSON path."),
+        "scanner_version": args.string(default = "", description = "Scanner version."),
+        "signature": args.string(default = "", description = "Signature evidence path."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "source_kind": args.string(default = "", description = "Source kind."),
+        "source_path": args.string(default = "", description = "Repo source path."),
+        "surface": args.string(default = "", description = "Artifact surface."),
+        "tuf_target_path": args.string(default = "", description = "Logical TUF target path."),
+        "upstream_url": args.string(default = "", description = "Upstream URL."),
+        "zot_password_file": args.string(default = "/etc/zot/publisher-password", description = "zot publisher password file."),
+        "zot_repository": args.string(default = "", description = "zot repository path."),
+        "zot_url": args.string(default = "http://127.0.0.1:5080", description = "zot registry base URL."),
+        "zot_username": args.string(default = "artifact-publisher", description = "zot publisher username."),
+    },
+)
+
+def _verify_install_impl(ctx):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    install_args = [
+        "artifacts",
+        "verify-install",
+        "--repo-root",
+        ws_path(ctx),
+        "--site=" + (ctx.args.site or DEFAULT_SITE),
+        "--surface=" + (ctx.args.surface or ""),
+        "--installer=" + (ctx.args.installer or ""),
+        "--artifact=" + (ctx.args.artifact or ""),
+        "--zot-url=" + (ctx.args.zot_url or "http://127.0.0.1:5080"),
+        "--oci-repository=" + (ctx.args.oci_repository or ""),
+        "--oci-manifest-digest=" + (ctx.args.oci_manifest_digest or ""),
+        "--signature-digest=" + (ctx.args.signature_digest or ""),
+        "--attestation-digest=" + (ctx.args.attestation_digest or ""),
+    ]
+    return checked_spawn(
+        ctx,
+        bin,
+        install_args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy artifacts verify-install",
+    )
+
+verify_install = task(
+    implementation = _verify_install_impl,
+    name = "verify-install",
+    group = ["artifacts"],
+    summary = "Verify a digest-addressed admitted OCI artifact and record install evidence.",
+    args = {
+        "artifact": args.string(default = "", description = "Artifact name."),
+        "attestation_digest": args.string(default = "", description = "Expected admission attestation digest."),
+        "installer": args.string(default = "", description = "Installer name."),
+        "oci_manifest_digest": args.string(default = "", description = "Expected OCI manifest digest."),
+        "oci_repository": args.string(default = "", description = "zot repository path."),
+        "signature_digest": args.string(default = "", description = "Expected signature digest."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "surface": args.string(default = "", description = "Artifact surface."),
+        "zot_url": args.string(default = "http://127.0.0.1:5080", description = "zot registry base URL."),
+    },
+)
+
+def _admission_evidence_impl(ctx):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    run_key = ctx.args.run_key or ""
+    if run_key == "":
+        ctx.std.io.stderr.write("ERROR: --run-key is required\n")
+        return 2
+    evidence_args = [
+        "artifacts",
+        "assert-evidence",
+        "--repo-root",
+        ws_path(ctx),
+        "--site=" + (ctx.args.site or DEFAULT_SITE),
+        "--run-key=" + run_key,
+        "--expected-admissions=" + (ctx.args.expected_admissions or "1"),
+        "--expected-install-verifications=" + (ctx.args.expected_install_verifications or "0"),
+    ]
+    if ctx.args.wait:
+        evidence_args = evidence_args + ["--wait=" + ctx.args.wait]
+    return checked_spawn(
+        ctx,
+        bin,
+        evidence_args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy artifacts assert-evidence",
+    )
+
+admission_evidence = task(
+    implementation = _admission_evidence_impl,
+    name = "admission-evidence",
+    group = ["artifacts"],
+    summary = "Assert artifact admission/install rows and spans exist in ClickHouse.",
+    args = {
+        "expected_admissions": args.string(default = "1", description = "Expected admission rows."),
+        "expected_install_verifications": args.string(default = "0", description = "Expected install verification rows."),
         "run_key": args.string(default = "", description = "Deploy run key to assert."),
         "site": args.string(default = "prod", description = "Deployment site."),
         "wait": args.string(default = "5s", description = "Wait for ClickHouse evidence, maximum 5s."),
