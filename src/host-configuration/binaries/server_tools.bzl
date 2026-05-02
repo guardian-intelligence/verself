@@ -312,7 +312,9 @@ def substrate_go_tools_archive():
 
     pkg_tar(
         name = "substrate_go_tools",
-        out = "substrate_go_tools.tar",
+        out = "substrate_go_tools.tar.zst",
+        compressor = ":zstd_compressor",
+        extension = "tar.zst",
         files = files,
         modes = modes,
         visibility = ["//visibility:public"],

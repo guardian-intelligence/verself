@@ -9,7 +9,7 @@
 
 - name: Initialize component substrate context
   ansible.builtin.set_fact:
-    component_secret_values: {}
+    component_secret_values: "{{ (component_filesystem_convergence.exposed_values | default({})).get(component.name, {}) }}"
     component_units: "{{ component.workload.units }}"
 
 - name: Create component directories
@@ -22,21 +22,29 @@
   loop: "{{ component.workload.directories }}"
   loop_control:
     label: "{{ item.path }}"
+  when: not (component_filesystem_convergence.converged | default(false) | bool)
 
 - name: Configure component credentials
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/secrets.yml"
+  when: not (component_filesystem_convergence.converged | default(false) | bool)
 
 - name: Configure component PostgreSQL binding
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/postgres.yml"
-  when: component.postgres.database | length > 0
+  when:
+    - component.postgres.database | length > 0
+    - not (component_postgres_convergence.converged | default(false) | bool)
 
 - name: Configure component ClickHouse binding
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/clickhouse.yml"
-  when: component.workload.clickhouse is defined
+  when:
+    - component.workload.clickhouse is defined
+    - not (component_clickhouse_batched | default(false) | bool)
 
-- name: Reconcile component Zitadel auth
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/auth.yml"
-  when: component.workload.auth.kind != "none"
+- name: Reconcile owned component Zitadel auth
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/auth_owned_project.yml"
+  when:
+    - component.workload.auth.kind == "owned_project"
+    - component_zitadel_admin_pat is defined
 
 - name: Run component substrate bootstrap hooks
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/bootstrap/{{ component_bootstrap_hook.name }}.yml"

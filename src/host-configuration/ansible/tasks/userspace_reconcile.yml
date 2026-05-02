@@ -1,0 +1,47 @@
+---
+- name: Ensure component primary groups exist
+  ansible.builtin.group:
+    name: "{{ unit.group }}"
+    system: true
+  loop: "{{ all_component_units }}"
+  loop_control:
+    loop_var: unit
+    label: "{{ unit.group }}"
+
+- name: Ensure SPIRE workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Ensure component supplementary groups exist
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+  loop: "{{ all_component_units | map(attribute='supplementary_groups') | flatten | unique | list }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Ensure component users exist
+  ansible.builtin.user:
+    name: "{{ unit.user }}"
+    uid: "{{ unit.uid | default(omit) }}"
+    group: "{{ unit.group }}"
+    # Multiple units can share one runtime user; compute the union so later units do not drop required groups.
+    groups: >-
+      {{
+        all_component_units
+        | selectattr('user', 'equalto', unit.user)
+        | map(attribute='supplementary_groups')
+        | flatten
+        | unique
+        | list
+      }}
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ unit.home if (unit.home | default('', true) | length > 0) else omit }}"
+    create_home: "{{ unit.create_home | default(false) }}"
+  loop: "{{ all_component_units }}"
+  loop_control:
+    loop_var: unit
+    label: "{{ unit.user }}"
