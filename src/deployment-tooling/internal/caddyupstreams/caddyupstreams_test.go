@@ -9,9 +9,9 @@ import (
 
 func TestEnvVarName(t *testing.T) {
 	cases := map[string]string{
-		"billing-public_http":                       "VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP",
-		"sandbox-rental-public_http":                "VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP",
-		"source-code-hosting-service-internal_https": "VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_INTERNAL_HTTPS",
+		"billing-public-http":                       "VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP",
+		"sandbox-rental-public-http":                "VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP",
+		"source-code-hosting-service-internal-https": "VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_INTERNAL_HTTPS",
 		"verself-web-http":                          "VERSELF_UPSTREAM_VERSELF_WEB_HTTP",
 	}
 	for in, want := range cases {
@@ -32,7 +32,7 @@ func TestEnvVarName(t *testing.T) {
 func TestBuildEnvFile_DeterministicOrder(t *testing.T) {
 	body := buildEnvFile([]nomadclient.ServiceAddress{
 		{Name: "verself-web-http", Address: "127.0.0.1", Port: 21345},
-		{Name: "billing-public_http", Address: "127.0.0.1", Port: 24501},
+		{Name: "billing-public-http", Address: "127.0.0.1", Port: 24501},
 		{Name: "company-http", Address: "127.0.0.1", Port: 25789},
 	})
 
@@ -57,7 +57,7 @@ func TestBuildEnvFile_DeterministicOrder(t *testing.T) {
 // the file must remain valid env-file syntax.
 func TestBuildEnvFile_IncludesInternalEndpoints(t *testing.T) {
 	body := buildEnvFile([]nomadclient.ServiceAddress{
-		{Name: "billing-internal_https", Address: "127.0.0.1", Port: 31337},
+		{Name: "billing-internal-https", Address: "127.0.0.1", Port: 31337},
 	})
 	if !strings.Contains(body, "VERSELF_UPSTREAM_BILLING_INTERNAL_HTTPS=127.0.0.1:31337\n") {
 		t.Errorf("internal endpoint dropped from upstreams.env: %q", body)
