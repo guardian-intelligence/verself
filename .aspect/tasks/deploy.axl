@@ -1,8 +1,8 @@
 """aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
-worktree when non-HEAD), refreshes the operator's SSH cert, stages
-.cache/render/<site>/ for review, shells out to `verself-deploy run`, and
+worktree when non-HEAD), refreshes the operator's SSH cert, shells out to
+`verself-deploy run`, and
 converges the dogfooded platform org/repo after Nomad services are up.
 The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and Nomad fan-out inside one process sharing one SSH session
@@ -23,7 +23,6 @@ load(
     "build_verself_deploy",
     "checked_spawn",
     "git_head",
-    "render_site",
     "resolve_sha",
     "ws_path",
 )
@@ -69,9 +68,6 @@ def _deploy_one(ctx, site, sha, scope):
         return 1
     if _refresh_operator_cert(ctx) != 0:
         return 1
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
@@ -132,7 +128,7 @@ def _deploy_impl(ctx):
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Stage deploy inputs, refresh operator cert, then run verself-deploy end-to-end.",
+    summary = "Refresh operator cert, then run verself-deploy end-to-end from authored inputs.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),

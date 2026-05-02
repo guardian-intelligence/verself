@@ -1,6 +1,6 @@
 """aspect dev <action> — controller development helpers."""
 
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "render_site", "ws_path")
+load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
 
 def _aspect_operator_bin(ctx):
     target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
@@ -35,8 +35,6 @@ def _hooks_install_impl(ctx):
 
 def _verself_web_impl(ctx):
     if inventory_check(ctx) != 0:
-        return 1
-    if render_site(ctx) != 0:
         return 1
     bin = _aspect_operator_bin(ctx)
     if bin == "":

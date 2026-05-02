@@ -41,7 +41,6 @@ load(
     artifacts_inventory = "inventory",
     artifacts_publish = "publish",
 )
-load(".aspect/tasks/render.axl", "render")
 load(
     ".aspect/tasks/db.axl",
     db_pg_list = "pg_list",
@@ -102,7 +101,6 @@ def config(ctx):
     ctx.tasks.add(artifacts_publish)
     ctx.tasks.add(artifacts_inventory)
     ctx.tasks.add(artifacts_evidence)
-    ctx.tasks.add(render)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
 

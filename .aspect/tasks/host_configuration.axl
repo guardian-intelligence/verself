@@ -16,8 +16,8 @@ load(
     "SUBSTRATE_DIR",
     "build_verself_deploy",
     "checked_spawn",
-    "render_site",
-    "site_cache_inventory",
+    "inventory_check",
+    "site_inventory_source",
     "ws_path",
 )
 
@@ -30,13 +30,15 @@ def _run_ansible(ctx, site, env, playbook, *extra_args):
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
-    inventory_dir = ws_path(ctx, site_cache_inventory(site))
+    if inventory_check(ctx, site) != 0:
+        return 1
+    inventory = ws_path(ctx, site_inventory_source(site))
     args_list = [
         "ansible", "run",
         "--site=" + site,
         "--phase=maintenance",
         "--playbook=" + playbook,
-        "--inventory=" + inventory_dir,
+        "--inventory=" + inventory,
         "--repo-root=" + ws_path(ctx),
     ]
     for a in extra_args:
@@ -52,9 +54,8 @@ def _run_ansible(ctx, site, env, playbook, *extra_args):
 
 def _converge_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
+    if inventory_check(ctx, site) != 0:
+        return 1
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
@@ -72,9 +73,8 @@ def _converge_impl(ctx):
 def _verify_impl(ctx):
     """Run ansible-playbook --syntax-check against the canonical site playbook."""
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
+    if inventory_check(ctx, site) != 0:
+        return 1
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
@@ -91,9 +91,8 @@ def _verify_impl(ctx):
 
 def _security_patch_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
+    if inventory_check(ctx, site) != 0:
+        return 1
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
@@ -111,9 +110,6 @@ def _security_patch_impl(ctx):
 
 def _guest_rootfs_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
     return _run_ansible(ctx, site, None, "playbooks/guest-rootfs.yml")
 
 def _nomad_apps(ctx, site):
@@ -156,9 +152,6 @@ def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_ansible_args):
     """Wipe a per-service slice via its reset playbook, then run the
     canonical host configuration site playbook and resubmit Nomad apps.
     """
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
     rc = _run_ansible(ctx, site, None, wipe_playbook)
     if rc != 0:
         return rc
