@@ -15,16 +15,29 @@
     filename: pgdg
     state: present
 
-- name: Install PostgreSQL {{ substrate_profile_postgresql_version }}
+- name: Install substrate apt packages
   ansible.builtin.apt:
-    name: "postgresql-{{ substrate_profile_postgresql_version }}"
+    name:
+      - "postgresql-{{ substrate_profile_postgresql_version }}"
+      - python3-psycopg2
+      - wireguard-tools
+      - git
+      - ca-certificates
+      - curl
+      - jq
+      - openssl
+      - python3
+      - sqlite3
+      - unzip
+      - xz-utils
+      - zstd
+      - e2fsprogs
+      - libjemalloc2
+      - liblua5.4-0
+      - libopentracing-c-wrapper0t64
     state: present
     update_cache: true
-
-- name: Install PostgreSQL Ansible module runtime dependency
-  ansible.builtin.apt:
-    name: python3-psycopg2
-    state: present
+    cache_valid_time: 3600
 
 # Disable the auto-started PostgreSQL cluster — we manage our own data directory.
 - name: Stop default PostgreSQL cluster
@@ -47,37 +60,9 @@
     - pg_restore
     - pg_isready
 
-# ── wireguard-tools ──────────────────────────────────────────────────────────
-
-- name: Install wireguard-tools
-  ansible.builtin.apt:
-    name: wireguard-tools
-    state: present
-
 - name: Symlink wg into verself_bin
   ansible.builtin.file:
     src: /usr/bin/wg
     dest: "{{ verself_bin }}/wg"
     state: link
     force: true
-
-# ── System tools (not in verself_bin, just need to be present) ────────────────────
-
-- name: Install system tools
-  ansible.builtin.apt:
-    name:
-      - git
-      - ca-certificates
-      - curl
-      - jq
-      - openssl
-      - python3
-      - sqlite3
-      - unzip
-      - xz-utils
-      - zstd
-      - e2fsprogs
-      - libjemalloc2
-      - liblua5.4-0
-      - libopentracing-c-wrapper0t64
-    state: present
