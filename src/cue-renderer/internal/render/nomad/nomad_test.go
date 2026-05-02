@@ -285,11 +285,17 @@ func TestRender_SandboxRentalMultiUnitShape(t *testing.T) {
 		t.Error("primary Template.Envvars: got false, want true")
 	}
 	body, _ := tmpl["EmbeddedTmpl"].(string)
+	// Each cross-Nomad URL renders with a `with/else` fallback so the
+	// consumer task boots with a parseable placeholder address even
+	// when the upstream has not registered yet (the deploy is
+	// dependency-cyclic between billing ↔ secrets-service). Once the
+	// upstream registers, change_mode=restart cycles the task with
+	// the real address.
 	for _, want := range []string{
-		`SANDBOX_BILLING_URL=https://{{ range nomadService "billing-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
-		`SANDBOX_GOVERNANCE_AUDIT_URL=https://{{ range nomadService "governance-service-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
-		`SANDBOX_SECRETS_URL=https://{{ range nomadService "secrets-service-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
-		`SANDBOX_SOURCE_INTERNAL_URL=https://{{ range nomadService "source-code-hosting-service-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_BILLING_URL=https://{{- with nomadService "billing-internal-https" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}`,
+		`SANDBOX_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}`,
+		`SANDBOX_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}`,
+		`SANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService "source-code-hosting-service-internal-https" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("primary upstreams template missing %q", want)
