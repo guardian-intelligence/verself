@@ -1,9 +1,8 @@
 ---
 # Batched user/group creation across the union of every Nomad-supervised
 # component's workload.units. Replaces the per-component loop that previously
-# walked tasks/component/users.yml inside component_substrate.yml — that loop
-# ran on every converge regardless of input changes; the batched form runs
-# only when L2's input hash changes.
+# walked tasks/component/users.yml inside component_substrate.yml. A single
+# userspace probe gates the module loops so external drift still reconciles.
 #
 # Multiple units across multiple components can share one runtime user; we
 # union supplementary_groups across all units that target the same user so
@@ -30,49 +29,28 @@
         | list
       }}
 
-- name: Ensure component primary groups exist
-  ansible.builtin.group:
-    name: "{{ unit.group }}"
-    system: true
-  loop: "{{ all_component_units }}"
-  loop_control:
-    loop_var: unit
-    label: "{{ unit.group }}"
+- name: Probe component userspace convergence once
+  ansible.builtin.script: >-
+    {{ playbook_dir }}/../files/userspace_convergence.py
+    --workload-group {{ spire_workload_group }}
+  environment:
+    COMPONENT_USERSPACE_UNITS: "{{ all_component_units | to_json }}"
+  register: component_userspace_convergence_raw
+  changed_when: false
 
-- name: Ensure SPIRE workload socket group exists
-  ansible.builtin.group:
-    name: "{{ spire_workload_group }}"
-    system: true
+- name: Set component userspace convergence plan
+  ansible.builtin.set_fact:
+    component_userspace_convergence: "{{ component_userspace_convergence_raw.stdout | from_json }}"
+  changed_when: false
 
-- name: Ensure component supplementary groups exist
-  ansible.builtin.group:
-    name: "{{ item }}"
-    system: true
-  loop: "{{ all_component_units | map(attribute='supplementary_groups') | flatten | unique | list }}"
-  loop_control:
-    label: "{{ item }}"
+- name: Skip component userspace reconciliation when already converged
+  ansible.builtin.debug:
+    msg: >-
+      Component userspace already converged for {{
+      component_userspace_convergence.desired_user_count }} runtime users and {{
+      component_userspace_convergence.desired_group_count }} groups; skipping group and user tasks.
+  when: component_userspace_convergence.converged | bool
 
-- name: Ensure component users exist
-  ansible.builtin.user:
-    name: "{{ unit.user }}"
-    uid: "{{ unit.uid | default(omit) }}"
-    group: "{{ unit.group }}"
-    # Multiple units can share one runtime user; compute the union so later units do not drop required groups.
-    groups: >-
-      {{
-        all_component_units
-        | selectattr('user', 'equalto', unit.user)
-        | map(attribute='supplementary_groups')
-        | flatten
-        | unique
-        | list
-      }}
-    append: false
-    system: true
-    shell: /usr/sbin/nologin
-    home: "{{ unit.home if (unit.home | default('', true) | length > 0) else omit }}"
-    create_home: "{{ unit.create_home | default(false) }}"
-  loop: "{{ all_component_units }}"
-  loop_control:
-    loop_var: unit
-    label: "{{ unit.user }}"
+- name: Reconcile component userspace
+  ansible.builtin.include_tasks: userspace_reconcile.yml
+  when: not (component_userspace_convergence.converged | bool)

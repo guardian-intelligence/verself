@@ -1,28 +1,8 @@
 ---
-- name: List Zitadel projects for owned component auth
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ component_zitadel_admin_pat }}"
-      Host: "auth.{{ verself_domain }}"
-    body_format: json
-    body: {}
-    return_content: true
-  register: component_zitadel_projects
-  no_log: true
-
 - name: Select owned component Zitadel project
   ansible.builtin.set_fact:
     component_auth_project: >-
-      {{
-        (
-          component_zitadel_projects.json.result
-          | selectattr('name', 'equalto', component.workload.auth.project_name)
-          | list
-          | first
-        ) | default({})
-      }}
+      {{ component_zitadel_projects_by_name.get(component.workload.auth.project_name, {}) }}
   no_log: true
 
 - name: Create owned component Zitadel project if missing

@@ -48,8 +48,9 @@
 - name: Set server tools archive deployment facts
   ansible.builtin.set_fact:
     substrate_profile_server_tools_expected_marker: |-
+      label={{ substrate_profile_server_tools_artifact.bazel_label }}
       version={{ substrate_profile_server_tools_artifact.version }}
-      sha256={{ substrate_profile_server_tools_archive_stat.stat.checksum }}
+      archive_sha256={{ substrate_profile_server_tools_archive_stat.stat.checksum }}
     substrate_profile_server_tools_remote_archive: >-
       {{ substrate_profile_staging_dir }}/server_tools-{{ (substrate_profile_server_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
 
@@ -59,14 +60,28 @@
   register: substrate_profile_server_tools_marker
   failed_when: false
 
+- name: Decode installed server tools marker
+  ansible.builtin.set_fact:
+    substrate_profile_server_tools_installed_marker: >-
+      {{ substrate_profile_server_tools_marker.content | default('') | b64decode }}
+    substrate_profile_server_tools_installed_sha256_matches: >-
+      {{
+        (
+          (
+            substrate_profile_server_tools_marker.content | default('') | b64decode
+          ).splitlines()
+          | select('match', '^(sha256|archive_sha256)=' ~ substrate_profile_server_tools_archive_stat.stat.checksum ~ '$')
+          | list
+          | length
+        ) > 0
+      }}
+
 - name: Decide whether server tools archive needs unpacking
   ansible.builtin.set_fact:
     substrate_profile_server_tools_needs_unpack: >-
       {{
         substrate_profile_server_tools_marker is failed
-        or (
-          substrate_profile_server_tools_marker.content | default('') | b64decode | trim
-        ) != (substrate_profile_server_tools_expected_marker | trim)
+        or not (substrate_profile_server_tools_installed_sha256_matches | bool)
       }}
 
 - name: Upload server tools archive
@@ -91,6 +106,15 @@
     dest: "{{ substrate_profile_server_tools_marker_path }}"
     mode: "0644"
   when: substrate_profile_server_tools_needs_unpack | bool
+
+- name: Refresh server tools marker metadata
+  ansible.builtin.copy:
+    content: "{{ substrate_profile_server_tools_expected_marker }}\n"
+    dest: "{{ substrate_profile_server_tools_marker_path }}"
+    mode: "0644"
+  when:
+    - not (substrate_profile_server_tools_needs_unpack | bool)
+    - (substrate_profile_server_tools_installed_marker | trim) != (substrate_profile_server_tools_expected_marker | trim)
 
 - name: Build substrate Go tools archive with Bazel
   delegate_to: localhost
@@ -132,10 +156,11 @@
   ansible.builtin.set_fact:
     substrate_profile_go_tools_marker_path: /opt/verself/profile/.substrate-go-tools-version
     substrate_profile_go_tools_expected_marker: |-
+      label={{ topology_substrate_tools.bazel_label }}
       version={{ topology_substrate_tools.version }}
-      sha256={{ substrate_profile_go_tools_archive_stat.stat.checksum }}
+      archive_sha256={{ substrate_profile_go_tools_archive_stat.stat.checksum }}
     substrate_profile_go_tools_remote_archive: >-
-      {{ substrate_profile_staging_dir }}/substrate_go_tools-{{ (substrate_profile_go_tools_archive_stat.stat.checksum)[:16] }}.tar
+      {{ substrate_profile_staging_dir }}/substrate_go_tools-{{ (substrate_profile_go_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
 
 - name: Read installed substrate Go tools version marker
   ansible.builtin.slurp:
@@ -143,14 +168,28 @@
   register: substrate_profile_go_tools_marker
   failed_when: false
 
+- name: Decode installed substrate Go tools marker
+  ansible.builtin.set_fact:
+    substrate_profile_go_tools_installed_marker: >-
+      {{ substrate_profile_go_tools_marker.content | default('') | b64decode }}
+    substrate_profile_go_tools_installed_sha256_matches: >-
+      {{
+        (
+          (
+            substrate_profile_go_tools_marker.content | default('') | b64decode
+          ).splitlines()
+          | select('match', '^(sha256|archive_sha256)=' ~ substrate_profile_go_tools_archive_stat.stat.checksum ~ '$')
+          | list
+          | length
+        ) > 0
+      }}
+
 - name: Decide whether substrate Go tools archive needs unpacking
   ansible.builtin.set_fact:
     substrate_profile_go_tools_needs_unpack: >-
       {{
         substrate_profile_go_tools_marker is failed
-        or (
-          substrate_profile_go_tools_marker.content | default('') | b64decode | trim
-        ) != (substrate_profile_go_tools_expected_marker | trim)
+        or not (substrate_profile_go_tools_installed_sha256_matches | bool)
       }}
 
 - name: Upload substrate Go tools archive
@@ -175,3 +214,12 @@
     dest: "{{ substrate_profile_go_tools_marker_path }}"
     mode: "0644"
   when: substrate_profile_go_tools_needs_unpack | bool
+
+- name: Refresh substrate Go tools marker metadata
+  ansible.builtin.copy:
+    content: "{{ substrate_profile_go_tools_expected_marker }}\n"
+    dest: "{{ substrate_profile_go_tools_marker_path }}"
+    mode: "0644"
+  when:
+    - not (substrate_profile_go_tools_needs_unpack | bool)
+    - (substrate_profile_go_tools_installed_marker | trim) != (substrate_profile_go_tools_expected_marker | trim)
