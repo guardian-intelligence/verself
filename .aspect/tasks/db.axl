@@ -1,4 +1,4 @@
-"""aspect db pg|ch|tb — database access wrappers over the SSH tunnel.
+"""aspect db pg|ch|tb — operator database access.
 
   aspect db pg list
   aspect db pg shell --db=<name>
@@ -6,58 +6,70 @@
   aspect db ch schemas [--database=<name>]
   aspect db ch query --query=<sql> [--database=<name>]
   aspect db tb shell
-  aspect db tb command --command=<op>
+  aspect db tb query-accounts [--limit=<n>]
+  aspect db tb lookup-account --id=<id>
 
-These shell out to scripts/{pg.sh, clickhouse.sh, tigerbeetle.sh}, all of
-which open the SSH tunnel themselves. There are intentionally no per-service
-shortcuts; `aspect db pg query --db=billing --query=...` covers them.
+PostgreSQL goes through the typed aspect-operator binary because it carries
+operator identity, SSH certificate, inventory, credential, and telemetry
+invariants. ClickHouse and TigerBeetle use the same operator runtime.
 """
 
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "require_arg", "ws_path")
+load(".aspect/lib/helpers.axl", "checked_spawn", "require_arg", "ws_path")
+
+def _aspect_operator_bin(ctx):
+    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    return ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _pg_list_impl(ctx):
-    if inventory_check(ctx) != 0:
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/pg.sh"),
-        ["--list"],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "pg.sh --list",
+        bin,
+        ["db", "pg", "list", "--repo-root", ws_path(ctx)],
+        cwd = ws_path(ctx),
+        label = "aspect-operator db pg list",
     )
 
 def _pg_shell_impl(ctx):
-    if inventory_check(ctx) != 0:
-        return 1
     if not require_arg(ctx, "db", ctx.args.db):
+        return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/pg.sh"),
-        [ctx.args.db],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "pg.sh " + ctx.args.db,
+        bin,
+        ["db", "pg", "shell", "--repo-root", ws_path(ctx), "--db", ctx.args.db],
+        cwd = ws_path(ctx),
+        label = "aspect-operator db pg shell",
     )
 
 def _pg_query_impl(ctx):
-    if inventory_check(ctx) != 0:
-        return 1
     if not require_arg(ctx, "db", ctx.args.db):
         return 1
     if not require_arg(ctx, "query", ctx.args.query):
         return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
+        return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/pg.sh"),
-        [ctx.args.db, "--query", ctx.args.query],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "pg.sh " + ctx.args.db + " --query",
+        bin,
+        ["db", "pg", "query", "--repo-root", ws_path(ctx), "--db", ctx.args.db, "--query", ctx.args.query],
+        cwd = ws_path(ctx),
+        label = "aspect-operator db pg query",
     )
 
 def _ch_query_impl(ctx):
-    if inventory_check(ctx) != 0:
-        return 1
     if not require_arg(ctx, "query", ctx.args.query):
+        return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     cli_args = []
     if ctx.args.database:
@@ -65,46 +77,79 @@ def _ch_query_impl(ctx):
     cli_args = cli_args + ["--query", ctx.args.query]
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/clickhouse.sh"),
-        cli_args,
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "clickhouse.sh --query",
+        bin,
+        ["db", "ch", "query", "--repo-root", ws_path(ctx)] + cli_args,
+        cwd = ws_path(ctx),
+        label = "aspect-operator db ch query",
     )
 
 def _ch_schemas_impl(ctx):
-    if inventory_check(ctx) != 0:
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
-    q = "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('verself', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/clickhouse.sh"),
-        ["--query", q],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "clickhouse.sh schemas",
+        bin,
+        ["db", "ch", "schemas", "--repo-root", ws_path(ctx)],
+        cwd = ws_path(ctx),
+        label = "aspect-operator db ch schemas",
     )
 
 def _tb_shell_impl(ctx):
-    if inventory_check(ctx) != 0:
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/tigerbeetle.sh"),
-        [],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "tigerbeetle.sh",
+        bin,
+        ["db", "tb", "shell", "--repo-root", ws_path(ctx)],
+        cwd = ws_path(ctx),
+        label = "aspect-operator db tb shell",
     )
 
-def _tb_command_impl(ctx):
-    if inventory_check(ctx) != 0:
+def _tb_query_accounts_impl(ctx):
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
-    if not require_arg(ctx, "command", ctx.args.command):
+    cli_args = []
+    if ctx.args.limit:
+        cli_args = cli_args + ["--limit", ctx.args.limit]
+    if ctx.args.ledger:
+        cli_args = cli_args + ["--ledger", ctx.args.ledger]
+    if ctx.args.code:
+        cli_args = cli_args + ["--code", ctx.args.code]
+    if ctx.args.user_data_128:
+        cli_args = cli_args + ["--user-data-128", ctx.args.user_data_128]
+    if ctx.args.user_data_64:
+        cli_args = cli_args + ["--user-data-64", ctx.args.user_data_64]
+    if ctx.args.user_data_32:
+        cli_args = cli_args + ["--user-data-32", ctx.args.user_data_32]
+    if ctx.args.timestamp_min:
+        cli_args = cli_args + ["--timestamp-min", ctx.args.timestamp_min]
+    if ctx.args.timestamp_max:
+        cli_args = cli_args + ["--timestamp-max", ctx.args.timestamp_max]
+    if ctx.args.reversed:
+        cli_args.append("--reversed")
+    return checked_spawn(
+        ctx,
+        bin,
+        ["db", "tb", "query-accounts", "--repo-root", ws_path(ctx)] + cli_args,
+        cwd = ws_path(ctx),
+        label = "aspect-operator db tb query-accounts",
+    )
+
+def _tb_lookup_account_impl(ctx):
+    if not require_arg(ctx, "id", ctx.args.id):
+        return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/tigerbeetle.sh"),
-        ["--command", ctx.args.command],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "tigerbeetle.sh --command",
+        bin,
+        ["db", "tb", "lookup-account", "--repo-root", ws_path(ctx), "--id", ctx.args.id],
+        cwd = ws_path(ctx),
+        label = "aspect-operator db tb lookup-account",
     )
 
 pg_list = task(
@@ -160,12 +205,30 @@ tb_shell = task(
     summary = "Open the TigerBeetle REPL (Ctrl+D to exit).",
 )
 
-tb_command = task(
-    implementation = _tb_command_impl,
-    name = "command",
+tb_query_accounts = task(
+    implementation = _tb_query_accounts_impl,
+    name = "query-accounts",
     group = ["db", "tb"],
-    summary = "Run a single TigerBeetle REPL op (e.g. --command='lookup_accounts id=1;').",
+    summary = "Query TigerBeetle accounts through the official client over the operator SSH tunnel.",
     args = {
-        "command": args.string(description = "TigerBeetle REPL command, including trailing ';'."),
+        "limit": args.string(default = "10", description = "Maximum accounts to return."),
+        "ledger": args.string(default = "", description = "TigerBeetle ledger filter."),
+        "code": args.string(default = "", description = "TigerBeetle code filter."),
+        "user_data_128": args.string(default = "", description = "user_data_128 filter, decimal or 0x hex."),
+        "user_data_64": args.string(default = "", description = "user_data_64 filter."),
+        "user_data_32": args.string(default = "", description = "user_data_32 filter."),
+        "timestamp_min": args.string(default = "", description = "Minimum TigerBeetle timestamp."),
+        "timestamp_max": args.string(default = "", description = "Maximum TigerBeetle timestamp."),
+        "reversed": args.boolean(default = False, description = "Return newest accounts first."),
+    },
+)
+
+tb_lookup_account = task(
+    implementation = _tb_lookup_account_impl,
+    name = "lookup-account",
+    group = ["db", "tb"],
+    summary = "Lookup a TigerBeetle account by ID through the official client.",
+    args = {
+        "id": args.string(description = "Account ID as decimal or 0x-prefixed Uint128 hex."),
     },
 )

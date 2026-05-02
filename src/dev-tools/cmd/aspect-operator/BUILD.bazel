@@ -4,6 +4,11 @@ go_library(
     name = "aspect-operator_lib",
     srcs = [
         "bao.go",
+        "db_ch.go",
+        "db_common.go",
+        "db.go",
+        "db_pg.go",
+        "db_tb.go",
         "enroll_workload.go",
         "main.go",
         "onboard.go",
@@ -12,6 +17,15 @@ go_library(
     ],
     importpath = "github.com/verself/dev-tools/cmd/aspect-operator",
     visibility = ["//visibility:private"],
+    deps = [
+        "//src/operator-runtime/go/clickhouse",
+        "//src/operator-runtime/go/evidence",
+        "//src/operator-runtime/go/postgres",
+        "//src/operator-runtime/go/runtime",
+        "//src/operator-runtime/go/tigerbeetle",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_tigerbeetle_tigerbeetle_go//:tigerbeetle-go",
+    ],
 )
 
 go_binary(

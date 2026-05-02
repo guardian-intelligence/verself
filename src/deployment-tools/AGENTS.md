@@ -3,9 +3,9 @@
 The typed Go orchestrator for verself deploys. Subsumes the bash + python
 plumbing under `src/host-configuration/scripts/` for the orchestration layer
 (Nomad submit/monitor, Bazel artifact resolution, Ansible run wrapping,
-deploy evidence writes). Substrate-side scripts that wrap third-party CLIs
-(`pg.sh`, `clickhouse.sh`, `tigerbeetle.sh`) stay in shell — they have no
-correctness invariants for this binary to encode.
+deploy evidence writes). Operator database access is owned by
+`src/dev-tools/cmd/aspect-operator` and the shared `src/operator-runtime/go`
+packages, not this deployment orchestrator.
 
 ## Layout
 

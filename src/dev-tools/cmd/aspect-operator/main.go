@@ -21,18 +21,31 @@
 //	    single-use AppRole secret-id, print an env block to feed
 //	    into a Devin / Cursor / CI VM.
 //
+//	aspect-operator db pg|ch|tb ...
+//	    Operator-side database access over the operator SSH cert.
+//
 // Source of truth for principals, slot count, and well-known paths:
 // src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 )
 
+const (
+	serviceName    = "aspect-operator"
+	serviceVersion = "dev"
+)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var exit exitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.code)
+		}
 		fmt.Fprintln(os.Stderr, "aspect-operator: "+err.Error())
 		os.Exit(1)
 	}
@@ -51,6 +64,8 @@ func run(args []string) error {
 		return cmdRefresh(rest)
 	case "enroll-workload":
 		return cmdEnrollWorkload(rest)
+	case "db":
+		return cmdDB(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -67,9 +82,18 @@ Subcommands:
   onboard           Interactive: keygen + trust-anchor fetch + OIDC + first cert
   refresh           Non-interactive: renew Vault token + re-sign SSH cert
   enroll-workload   Operator-side: claim slot + mint AppRole secret-id
+  db                Operator database access
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)
+}
+
+type exitError struct {
+	code int
+}
+
+func (e exitError) Error() string {
+	return fmt.Sprintf("exit %d", e.code)
 }
 
 // flagSet returns a FlagSet that prints to stderr and exits non-zero on
