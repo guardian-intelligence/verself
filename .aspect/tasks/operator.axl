@@ -4,6 +4,7 @@
   aspect operator refresh [--device=<name>]
   aspect operator enroll-workload [--slot=N] [--device=<tag>]
   aspect operator edge --action=check|manifest [--format=text|json|yaml]
+  aspect operator platform --action=check|seed [--format=text|json]
 
 The implementation lives in src/dev-tools/cmd/aspect-operator. End-to-end
 flow: docs/architecture/onboarding-device-or-vm.md.
@@ -72,6 +73,31 @@ def _edge_impl(ctx):
     ]
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator edge " + action)
 
+def _platform_impl(ctx):
+    bin = build_aspect_operator(ctx)
+    if bin == "":
+        return 1
+    action = ctx.args.action or "check"
+    if action != "check" and action != "seed":
+        ctx.std.io.stderr.write("ERROR: --action must be check or seed\n")
+        return 1
+    fmt = ctx.args.format or "text"
+    if fmt != "text" and fmt != "json":
+        ctx.std.io.stderr.write("ERROR: --format must be text or json\n")
+        return 1
+    cli_args = [
+        "platform",
+        "--action",
+        action,
+        "--repo-root",
+        ws_path(ctx),
+        "--site",
+        ctx.args.site or "prod",
+        "--format",
+        fmt,
+    ]
+    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator platform " + action)
+
 onboard = task(
     implementation = _onboard_impl,
     name = "onboard",
@@ -118,5 +144,17 @@ edge = task(
         "action": args.string(default = "check", description = "check | manifest."),
         "site": args.string(default = "prod", description = "Deployment site."),
         "format": args.string(default = "text", description = "Manifest output format: text | json | yaml."),
+    },
+)
+
+platform = task(
+    implementation = _platform_impl,
+    name = "platform",
+    group = ["operator"],
+    summary = "Check or seed the dogfooded platform organization and source repository.",
+    args = {
+        "action": args.string(default = "check", description = "check | seed."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "format": args.string(default = "text", description = "Output format: text | json."),
     },
 )

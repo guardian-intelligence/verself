@@ -2,7 +2,8 @@
 
 The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD), refreshes the operator's SSH cert, stages
-.cache/render/<site>/ for review, and shells out to `verself-deploy run`.
+.cache/render/<site>/ for review, shells out to `verself-deploy run`, and
+converges the dogfooded platform org/repo after Nomad services are up.
 The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and Nomad fan-out inside one process sharing one SSH session
 and one SSH-forwarded OTLP channel to the bare-metal otelcol.
@@ -51,6 +52,18 @@ def _edge_preflight(ctx, site):
         label = "aspect-operator edge check",
     )
 
+def _platform_seed(ctx, site):
+    bin = build_aspect_operator(ctx)
+    if bin == "":
+        return 1
+    return checked_spawn(
+        ctx,
+        bin,
+        ["platform", "--action", "seed", "--repo-root", ws_path(ctx), "--site", site],
+        cwd = ws_path(ctx),
+        label = "aspect-operator platform seed",
+    )
+
 def _deploy_one(ctx, site, sha, scope):
     if _edge_preflight(ctx, site) != 0:
         return 1
@@ -62,7 +75,7 @@ def _deploy_one(ctx, site, sha, scope):
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1
-    return checked_spawn(
+    deploy_rc = checked_spawn(
         ctx, bin,
         [
             "run",
@@ -74,6 +87,9 @@ def _deploy_one(ctx, site, sha, scope):
         cwd = ws_path(ctx),
         label = "verself-deploy run --site=" + site + " --scope=" + scope,
     )
+    if deploy_rc != 0:
+        return deploy_rc
+    return _platform_seed(ctx, site)
 
 def _deploy_in_worktree(ctx, site, sha, scope):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,

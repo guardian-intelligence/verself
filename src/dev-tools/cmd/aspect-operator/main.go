@@ -43,6 +43,10 @@
 //	    Operator-side public edge contract checker derived from topology,
 //	    authored Nomad jobs, and HAProxy template references.
 //
+//	aspect-operator platform --action=check|seed
+//	    Operator-side platform organization convergence for the dogfooded
+//	    first-party org, project, Forgejo repository, and source backend.
+//
 // Source of truth for principals, slot count, and well-known paths:
 // src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 package main
@@ -97,6 +101,8 @@ func run(args []string) error {
 		return cmdDev(rest)
 	case "edge":
 		return cmdEdge(rest)
+	case "platform":
+		return cmdPlatform(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -120,6 +126,7 @@ Subcommands:
   mail              Mail operator helpers
   dev               Local development helpers
   edge              Public edge contract checker
+  platform          Platform org/project/source convergence
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)
