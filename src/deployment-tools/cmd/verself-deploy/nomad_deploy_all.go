@@ -88,6 +88,12 @@ func runNomadDeployAll(args []string) int {
 }
 
 func deployAll(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot string, publishOnly bool) error {
+	closeViteplusRegistry, err := prepareViteplusWorkspace(ctx, rt, repoRoot)
+	if err != nil {
+		return err
+	}
+	defer closeViteplusRegistry()
+
 	jobsTarget := fmt.Sprintf("//src/deployment-tools/nomad:%s_nomad_jobs", site)
 	// The Nomad jobs target depends transitively on every per-component
 	// artifact tarball; building it materialises every publishable file

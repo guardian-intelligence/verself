@@ -66,8 +66,8 @@ npm.npm_translate_lock(
     name = "npm",
     bins = {
         "@hey-api/openapi-ts": ["openapi-ts=./bin/index.cjs"],
-        "vite-plus": ["vp=./dist/cli/index.js"],
     },
+    npmrc = "//src/viteplus-monorepo:.npmrc",
     pnpm_lock = "//src/viteplus-monorepo:pnpm-lock.yaml",
 )
 use_repo(npm, "npm")

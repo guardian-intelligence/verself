@@ -133,16 +133,28 @@ type Forward struct {
 // surfaced as a span attribute and is part of the
 // ssh.channel.open span tree.
 func (c *Client) Forward(ctx context.Context, role string, remotePort int) (*Forward, error) {
+	return c.forward(ctx, role, "127.0.0.1:0", remotePort)
+}
+
+func (c *Client) ForwardLocalPort(ctx context.Context, role string, localPort, remotePort int) (*Forward, error) {
+	if localPort <= 0 {
+		return nil, fmt.Errorf("local port must be positive: %d", localPort)
+	}
+	return c.forward(ctx, role, fmt.Sprintf("127.0.0.1:%d", localPort), remotePort)
+}
+
+func (c *Client) forward(ctx context.Context, role, localAddr string, remotePort int) (*Forward, error) {
 	_, span := c.tracer.Start(ctx, "verself_deploy.ssh.channel.open",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("channel.role", role),
+			attribute.String("channel.local_addr", localAddr),
 			attribute.Int("channel.remote_port", remotePort),
 		),
 	)
 	defer span.End()
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

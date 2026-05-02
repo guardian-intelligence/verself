@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 // The company app serves the root domain. BASE_URL is set by deploy/e2e
 // callers and falls back to the local dev bind when a developer runs
-// `pnpm -F @verself/company test:e2e`.
+// `vp run @verself/company#test:e2e`.
 const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:4252";
 
 export default defineConfig({
