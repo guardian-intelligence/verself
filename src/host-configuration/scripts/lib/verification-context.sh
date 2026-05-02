@@ -11,12 +11,12 @@ verification_context_init() {
 
   # Source the helper so canaries see the same authored inventory and topology
   # vars that `verself-deploy run` consumes.
-  # shellcheck source=src/host-configuration/scripts/lib/site-cache.sh
-  source "${VERIFICATION_SCRIPT_DIR}/lib/site-cache.sh"
-  site_cache_init
+  # shellcheck source=src/host-configuration/scripts/lib/site-layout.sh
+  source "${VERIFICATION_SCRIPT_DIR}/lib/site-layout.sh"
+  site_layout_init
 
   VERIFICATION_SITE="${VERSELF_SITE}"
-  VERIFICATION_CACHE_DIR="${VERSELF_RENDER_CACHE_DIR}"
+  VERIFICATION_ANSIBLE_DIR="${VERSELF_ANSIBLE_DIR}"
   VERIFICATION_INVENTORY_DIR="${VERSELF_ANSIBLE_INVENTORY}"
   VERIFICATION_INVENTORY="${VERSELF_ANSIBLE_HOSTS_INI}"
   VERIFICATION_VARS_FILE="${VERIFICATION_SUBSTRATE_ROOT}/ansible/group_vars/all/main.yml"
@@ -44,7 +44,7 @@ verification_context_init() {
     echo "failed to resolve verification context from inventory/group vars" >&2
     return 1
   fi
-  export VERIFICATION_SITE VERIFICATION_CACHE_DIR VERIFICATION_INVENTORY_DIR
+  export VERIFICATION_SITE VERIFICATION_ANSIBLE_DIR VERIFICATION_INVENTORY_DIR
 }
 
 verification_ssh() {

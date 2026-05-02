@@ -68,20 +68,11 @@ def resolve_registry_path(path: str | Path | None = None) -> Path:
 
     Order of preference:
       1. Explicit `path` argument (used by `main()` and direct test invocation).
-      2. `${VERSELF_RENDER_CACHE_DIR}/group_vars/all/generated/endpoints.yml`.
-      3. CWD-relative `group_vars/all/generated/endpoints.yml`,
-         which catches the `cd <cache>` test layout used by the rule's
-         pytest fixtures.
-    Returning the env-resolved path even when it does not exist surfaces the
-    "no cache" failure mode loudly.
+      2. CWD-relative `group_vars/all/generated/endpoints.yml`, used by
+         ansible-lint when it runs from the authored Ansible directory.
     """
-    import os
     if path is not None:
         return Path(path)
-
-    cache_dir = os.environ.get("VERSELF_RENDER_CACHE_DIR", "")
-    if cache_dir:
-        return Path(cache_dir) / REGISTRY_RELATIVE
 
     return Path.cwd() / REGISTRY_RELATIVE
 
@@ -266,7 +257,7 @@ if Lintable is not None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the Verself topology endpoint artifact.")
-    parser.add_argument("path", nargs="?", help=f"registry path, default: $VERSELF_RENDER_CACHE_DIR/{REGISTRY_RELATIVE}")
+    parser.add_argument("path", nargs="?", help=f"registry path, default: ./{REGISTRY_RELATIVE}")
     args = parser.parse_args()
 
     registry = resolve_registry_path(args.path)

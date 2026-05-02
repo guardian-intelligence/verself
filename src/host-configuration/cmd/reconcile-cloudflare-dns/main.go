@@ -36,7 +36,7 @@ func main() {
 
 type config struct {
 	site        string
-	renderRoot  string
+	ansibleDir  string
 	secretsPath string
 	timeout     time.Duration
 	concurrency int
@@ -47,22 +47,22 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("reconcile-cloudflare-dns", flag.ContinueOnError)
 	cfg := config{}
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
-	fs.StringVar(&cfg.renderRoot, "render-root", "", "Path to substrate Ansible root (defaults to src/host-configuration/ansible).")
-	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted secrets.yml (defaults to <render-root>/group_vars/all/secrets.sops.yml).")
+	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host-configuration Ansible root (defaults to src/host-configuration/ansible).")
+	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted secrets.yml (defaults to <ansible-dir>/group_vars/all/secrets.sops.yml).")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print the diff without applying.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if cfg.renderRoot == "" {
-		cfg.renderRoot = "src/host-configuration/ansible"
+	if cfg.ansibleDir == "" {
+		cfg.ansibleDir = "src/host-configuration/ansible"
 	}
 	if cfg.secretsPath == "" {
-		cfg.secretsPath = cfg.renderRoot + "/group_vars/all/secrets.sops.yml"
+		cfg.secretsPath = cfg.ansibleDir + "/group_vars/all/secrets.sops.yml"
 	}
 
-	desired, err := loadDesired(cfg.renderRoot)
+	desired, err := loadDesired(cfg.ansibleDir)
 	if err != nil {
 		return err
 	}
@@ -225,9 +225,9 @@ func (d *desiredState) byZone(zone string) []desiredRecord {
 // loadDesired reads authored substrate vars that drive Cloudflare DNS shape:
 // generated/dns.yml (topology_dns_records) and generated/ops.yml
 // (verself_domain, company_domain, bare_metal_public_ipv4).
-func loadDesired(renderRoot string) (*desiredState, error) {
-	dnsPath := renderRoot + "/group_vars/all/generated/dns.yml"
-	opsPath := renderRoot + "/group_vars/all/generated/ops.yml"
+func loadDesired(ansibleDir string) (*desiredState, error) {
+	dnsPath := ansibleDir + "/group_vars/all/generated/dns.yml"
+	opsPath := ansibleDir + "/group_vars/all/generated/ops.yml"
 
 	var dnsDoc struct {
 		Records []struct {

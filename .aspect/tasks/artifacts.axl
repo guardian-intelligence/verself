@@ -8,13 +8,10 @@ publisher before submitting jobs; this task exists for operator rehearsal and
 for verifying Garage artifact substrate independently.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "build_verself_deploy", "checked_spawn", "render_site", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "build_verself_deploy", "checked_spawn", "ws_path")
 
 def _publish_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = render_site(ctx, site)
-    if rc != 0:
-        return rc
     bin = build_verself_deploy(ctx)
     if bin == "":
         return 1

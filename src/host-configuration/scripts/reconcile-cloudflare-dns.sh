@@ -78,9 +78,9 @@ SQL
 write_row "started" 0 0 0 0 ""
 
 start_ns="$(date +%s%N)"
-render_root="${repo_root}/src/host-configuration/ansible"
+ansible_dir="${repo_root}/src/host-configuration/ansible"
 set +e
-output="$( "${binary}" --site="${site}" --render-root="${render_root}" 2>&1 )"
+output="$( "${binary}" --site="${site}" --ansible-dir="${ansible_dir}" 2>&1 )"
 rc=$?
 set -e
 end_ns="$(date +%s%N)"

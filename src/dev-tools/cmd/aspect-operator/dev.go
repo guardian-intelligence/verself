@@ -194,7 +194,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 }
 
 func verselfWebJobEnv(repoRoot, site string) (map[string]string, error) {
-	path := filepath.Join(repoRoot, ".cache", "render", site, "jobs", "verself-web.nomad.json")
+	path := filepath.Join(repoRoot, "src", "deployment-tools", "nomad", "sites", site, "jobs", "verself-web.nomad.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
