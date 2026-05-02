@@ -33,7 +33,7 @@ func runAnsible(args []string) int {
 func runAnsibleRun(args []string) int {
 	fs := flag.NewFlagSet("ansible run", flag.ContinueOnError)
 	site := fs.String("site", "prod", "site label")
-	layer := fs.String("layer", "", "substrate layer label (l1_os|l2_userspace|l3_binaries|l4a_components|empty)")
+	phase := fs.String("phase", "ad-hoc", "Ansible phase label for telemetry")
 	playbook := fs.String("playbook", "", "playbook path relative to --ansible-dir")
 	inventory := fs.String("inventory", "", "absolute inventory path or directory")
 	ansibleDir := fs.String("ansible-dir", "", "working dir for ansible-playbook (defaults to <repo>/src/host-configuration/ansible)")
@@ -85,7 +85,7 @@ func runAnsibleRun(args []string) int {
 		Inventory:    resolveInventoryPath(*inventory),
 		AnsibleDir:   ad,
 		Site:         *site,
-		Layer:        *layer,
+		Phase:        *phase,
 		ExtraArgs:    extraArgs,
 		OTLPEndpoint: rt.OTLPEndpoint(),
 	})

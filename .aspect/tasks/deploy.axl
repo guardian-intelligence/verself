@@ -1,16 +1,15 @@
-"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--substrate=auto|always]
+"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD), refreshes the operator's SSH cert, stages
 .cache/render/<site>/ for review, and shells out to `verself-deploy run`.
-The binary owns identity derivation, deploy_events writes, layered
-substrate convergence, external reconcilers, and Nomad fan-out — all
-inside one process sharing one SSH session and one SSH-forwarded
-OTLP channel to the bare-metal otelcol.
+The binary owns identity derivation, deploy_events writes, Ansible site
+convergence, and Nomad fan-out inside one process sharing one SSH session
+and one SSH-forwarded OTLP channel to the bare-metal otelcol.
 
-Correlation: rows in verself.deploy_events / verself.deploy_layer_runs
-and the ansible.* / verself_deploy.* span families in
-default.otel_traces all join on
+Correlation: rows in verself.deploy_events, verself.ansible_task_events,
+verself.reconciler_runs, and the ansible.* / verself_deploy.* span families
+in default.otel_traces all join on
 ResourceAttributes['verself.deploy_run_key'].
 """
 
@@ -38,7 +37,7 @@ def _refresh_operator_cert(ctx):
     bin = ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
     return checked_spawn(ctx, bin, ["refresh"], label = "aspect-operator refresh")
 
-def _deploy_one(ctx, site, sha, scope, substrate_mode):
+def _deploy_one(ctx, site, sha, scope):
     if _refresh_operator_cert(ctx) != 0:
         return 1
     rc = render_site(ctx, site)
@@ -54,14 +53,13 @@ def _deploy_one(ctx, site, sha, scope, substrate_mode):
             "--site=" + site,
             "--sha=" + sha,
             "--scope=" + scope,
-            "--substrate=" + substrate_mode,
             "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
         label = "verself-deploy run --site=" + site,
     )
 
-def _deploy_in_worktree(ctx, site, sha, scope, substrate_mode):
+def _deploy_in_worktree(ctx, site, sha, scope):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
     and clean up. Inside the worktree HEAD == sha, so the inner invocation
     falls through to the in-tree path with no further branching."""
@@ -74,7 +72,7 @@ def _deploy_in_worktree(ctx, site, sha, scope, substrate_mode):
     )
     if rc != 0:
         return rc
-    inner_args = ["deploy", "--site=" + site, "--scope=" + scope, "--substrate=" + substrate_mode]
+    inner_args = ["deploy", "--site=" + site, "--scope=" + scope]
     deploy_rc = checked_spawn(
         ctx, "aspect",
         inner_args,
@@ -91,17 +89,13 @@ def _deploy_in_worktree(ctx, site, sha, scope, substrate_mode):
 def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
     scope = ctx.args.scope or "all"
-    substrate_mode = ctx.args.substrate or "auto"
-    if substrate_mode not in ["auto", "always"]:
-        ctx.std.io.stderr.write("ERROR: --substrate must be auto or always (skip is gated per-layer inside verself-deploy run)\n")
-        return 1
     sha = resolve_sha(ctx, ctx.args.sha or "")
     if sha == "":
         return 1
     head = git_head(ctx)
     if sha != head:
-        return _deploy_in_worktree(ctx, site, sha, scope, substrate_mode)
-    return _deploy_one(ctx, site, sha, scope, substrate_mode)
+        return _deploy_in_worktree(ctx, site, sha, scope)
+    return _deploy_one(ctx, site, sha, scope)
 
 deploy = task(
     implementation = _deploy_impl,
@@ -111,6 +105,5 @@ deploy = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
         "scope": args.string(default = "all", description = "all | affected. The affected machinery is a future follow-up; same behavior as `all` for now."),
-        "substrate": args.string(default = "auto", description = "auto | always. auto skips layers whose hash matches last-applied; always re-runs every layer regardless."),
     },
 )

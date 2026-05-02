@@ -21,9 +21,8 @@ import (
 const tracerName = "github.com/verself/deployment-tools/internal/ansible"
 
 // flushBatchSize is the number of buffered task events that triggers
-// a ClickHouse insert. A typical layer playbook emits 50–200 tasks;
-// flushing in batches keeps insert overhead bounded without waiting
-// for the playbook to finish.
+// a ClickHouse insert. Flushing in batches keeps insert overhead bounded
+// without waiting for the playbook to finish.
 const flushBatchSize = 64
 
 // flushInterval is the maximum time between insert flushes. Combined
@@ -47,12 +46,12 @@ type Options struct {
 	AnsibleDir string
 	// ExtraArgs are appended to the ansible-playbook command line.
 	ExtraArgs []string
-	// Site, Layer label rows in verself.ansible_task_events and span
-	// attributes. Layer is the substrate layer name when the playbook
-	// is one of the L1/L2/L3/L4a layer playbooks; empty for one-shot
-	// invocations.
+	// Site and Phase label rows in verself.ansible_task_events and span
+	// attributes. The ClickHouse task-event projection still stores the
+	// phase label in its historical `layer` column so deploy-time rows
+	// remain writable before ClickHouse schema convergence has run.
 	Site  string
-	Layer string
+	Phase string
 
 	// OTLPEndpoint, when non-empty, sets OTEL_EXPORTER_OTLP_ENDPOINT
 	// on the child process so any OTel SDK it loads (or scripts it
@@ -69,9 +68,8 @@ type Options struct {
 }
 
 // Result is the outcome of one playbook run. ChangedCount is the
-// summed PLAY RECAP changed= column across hosts — the legacy column
-// consumed by verself.deploy_layer_runs. ExitCode mirrors the child's
-// exit code so callers can decide whether to treat the run as failed.
+// summed PLAY RECAP changed= column across hosts. ExitCode mirrors the
+// child's exit code so callers can decide whether to treat the run as failed.
 type Result struct {
 	ExitCode     int
 	ChangedCount int
@@ -109,7 +107,7 @@ func Run(ctx context.Context, w *chwriter.Writer, opts Options) (*Result, error)
 			attribute.String("ansible.playbook", opts.Playbook),
 			attribute.String("ansible.inventory", opts.Inventory),
 			attribute.String("verself.site", opts.Site),
-			attribute.String("verself.layer", opts.Layer),
+			attribute.String("verself.phase", opts.Phase),
 		),
 	)
 	defer span.End()
@@ -263,7 +261,7 @@ func (r *recorder) observe(ev TaskEvent) {
 			attribute.String("ansible.status", string(ev.Status)),
 			attribute.String("ansible.item", ev.Item),
 			attribute.Int64("ansible.duration_ms", ev.DurationMs),
-			attribute.String("verself.layer", r.opts.Layer),
+			attribute.String("verself.phase", r.opts.Phase),
 		),
 	)
 	if ev.Status == StatusFailed || ev.Status == StatusUnreachable {
@@ -278,7 +276,7 @@ func (r *recorder) observe(ev TaskEvent) {
 		"event_at":       chwriter.DateTime(ev.Time),
 		"deploy_run_key": chwriter.String(r.runKey),
 		"site":           chwriter.String(r.opts.Site),
-		"layer":          chwriter.String(r.opts.Layer),
+		"layer":          chwriter.String(r.opts.Phase),
 		"playbook":       chwriter.String(r.opts.Playbook),
 		"play":           chwriter.String(ev.Play),
 		"task":           chwriter.String(ev.Task),
@@ -315,15 +313,15 @@ func resetTimer(t *time.Timer, d time.Duration) {
 // buildChildEnv composes the env for ansible-playbook. The parent's
 // env is the base; OTLPEndpoint pins OTEL_EXPORTER_OTLP_ENDPOINT to
 // the SSH-forwarded tunnel for any subprocess that itself initialises
-// an OTel SDK; AdditionalEnv layers on top.
+// an OTel SDK; AdditionalEnv is appended last.
 func buildChildEnv(opts Options) []string {
 	env := os.Environ()
 	if opts.OTLPEndpoint != "" {
 		env = append(env, "OTEL_EXPORTER_OTLP_ENDPOINT=http://"+opts.OTLPEndpoint)
 		env = append(env, "VERSELF_OTLP_ENDPOINT="+opts.OTLPEndpoint)
 	}
-	if opts.Layer != "" {
-		env = append(env, "VERSELF_LAYER="+opts.Layer)
+	if opts.Phase != "" {
+		env = append(env, "VERSELF_ANSIBLE_PHASE="+opts.Phase)
 	}
 	if len(opts.AdditionalEnv) > 0 {
 		env = append(env, opts.AdditionalEnv...)

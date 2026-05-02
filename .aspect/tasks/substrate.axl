@@ -4,10 +4,9 @@ Substrate owns machine convergence: host packages, trust roots, stateful
 daemons, operator daemons, and per-component prerequisites. Nomad owns product
 application rollout.
 
-The convergence loop is layered (L1 OS, L2 userspace, L3 daemons,
-L4a per-component + API reconcile). `aspect substrate converge` forces every
-layer regardless of hash; `aspect deploy` hash-gates layer-by-layer. Both
-route through `verself-deploy` so identity, ledger writes, and the streaming
+Convergence is the canonical Ansible site playbook at `playbooks/site.yml`.
+`aspect deploy` runs that playbook before Nomad fan-out. `aspect substrate
+converge` runs the same playbook without Nomad so identity and the streaming
 Ansible parser are exercised on every path.
 """
 
@@ -25,9 +24,8 @@ load(
 def _run_ansible(ctx, site, env, playbook, *extra_args):
     """Run a single ad-hoc playbook (security-patch, guest-rootfs, reset/wipe).
 
-    Layered convergence goes through `verself-deploy substrate converge`;
-    this entry point exists only for one-shot maintenance playbooks that
-    don't have a layer home and won't ever benefit from hash-gating.
+    Full convergence goes through `verself-deploy substrate converge`; this
+    entry point exists for one-shot maintenance playbooks.
     """
     bin = build_verself_deploy(ctx)
     if bin == "":
@@ -36,6 +34,7 @@ def _run_ansible(ctx, site, env, playbook, *extra_args):
     args_list = [
         "ansible", "run",
         "--site=" + site,
+        "--phase=maintenance",
         "--playbook=" + playbook,
         "--inventory=" + inventory_dir,
         "--repo-root=" + ws_path(ctx),
@@ -64,7 +63,6 @@ def _converge_impl(ctx):
         [
             "substrate", "converge",
             "--site=" + site,
-            "--force",
             "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
@@ -72,12 +70,7 @@ def _converge_impl(ctx):
     )
 
 def _verify_impl(ctx):
-    """Print the per-layer last-applied vs current digest comparison.
-
-    Exit 0 when every layer's last_applied_hash equals its current input_hash;
-    exit 10 on at least one mismatch. Useful for CI gates that want to assert
-    'this commit's substrate is fully converged on this site'.
-    """
+    """Run ansible-playbook --syntax-check against the canonical site playbook."""
     site = ctx.args.site or DEFAULT_SITE
     rc = render_site(ctx, site)
     if rc != 0:
@@ -146,10 +139,9 @@ def _wipe_server_impl(ctx):
         label = "wipe-server.sh",
     )
 
-def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_layer_args):
-    """Wipe a per-service slice via its reset playbook, then force-converge
-    every substrate layer (the wipe invalidates per-component state that L4a
-    bindings rebuild) and resubmit Nomad apps.
+def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_ansible_args):
+    """Wipe a per-service slice via its reset playbook, then run the
+    canonical substrate site playbook and resubmit Nomad apps.
     """
     rc = render_site(ctx, site)
     if rc != 0:
@@ -163,10 +155,9 @@ def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_layer_args):
     converge_args = [
         "substrate", "converge",
         "--site=" + site,
-        "--force",
         "--repo-root=" + ws_path(ctx),
     ]
-    for a in extra_layer_args:
+    for a in extra_ansible_args:
         converge_args.append("--ansible-arg=" + a)
     rc = checked_spawn(
         ctx, bin, converge_args,
@@ -199,7 +190,7 @@ converge = task(
     implementation = _converge_impl,
     name = "converge",
     group = ["substrate"],
-    summary = "Force-converge every substrate layer regardless of hash; aspect deploy hash-gates layer-by-layer.",
+    summary = "Run the canonical substrate Ansible site playbook.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -209,7 +200,7 @@ verify = task(
     implementation = _verify_impl,
     name = "verify",
     group = ["substrate"],
-    summary = "Compare each layer's current input_hash to its last_applied_hash; exit 10 if any layer is stale.",
+    summary = "Syntax-check the canonical substrate Ansible site playbook.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -256,7 +247,7 @@ reset_identity = task(
     implementation = _reset_identity_impl,
     name = "identity",
     group = ["substrate", "reset"],
-    summary = "Wipe identity-service PostgreSQL state and force-reconverge every layer.",
+    summary = "Wipe identity-service PostgreSQL state, reconverge substrate, then resubmit Nomad apps.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -266,7 +257,7 @@ reset_billing = task(
     implementation = _reset_billing_impl,
     name = "billing",
     group = ["substrate", "reset"],
-    summary = "Wipe billing state and force-reconverge every layer.",
+    summary = "Wipe billing state, reconverge substrate, then resubmit Nomad apps.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -276,7 +267,7 @@ reset_verification = task(
     implementation = _reset_verification_impl,
     name = "verification",
     group = ["substrate", "reset"],
-    summary = "Wipe verification state and force-reconverge every layer with schema reset flags.",
+    summary = "Wipe verification state, reconverge substrate with schema reset flags, then resubmit Nomad apps.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
