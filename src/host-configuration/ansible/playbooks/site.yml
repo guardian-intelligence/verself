@@ -1,0 +1,181 @@
+---
+- name: "Preflight: controller prerequisites"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run controller preflight checks
+      ansible.builtin.import_tasks: tasks/controller-preflight.yml
+
+- name: "Preflight: Firecracker worker prerequisites"
+  hosts: workers
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check ZFS pool exists
+      ansible.builtin.command: "zpool status {{ firecracker_zfs_pool | default(zfs_pool) }}"
+      changed_when: false
+      failed_when: false
+      register: preflight_zpool
+
+    - name: Check guest kernel exists
+      ansible.builtin.stat:
+        path: /var/lib/verself/guest-images/vmlinux
+        get_checksum: false
+      register: preflight_guest_kernel
+
+    - name: Check substrate ext4 exists
+      ansible.builtin.stat:
+        path: /var/lib/verself/guest-images/substrate.ext4
+        get_checksum: false
+      register: preflight_substrate
+
+    - name: Warn if ZFS pool is missing
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: ZFS pool '{{ firecracker_zfs_pool | default(zfs_pool) }}' not found on {{ inventory_hostname }}.
+          The zfs role will create it, but only if a suitable disk is available.
+      when: preflight_zpool.rc != 0
+
+    - name: Fail if guest images are missing
+      ansible.builtin.fail:
+        msg: >-
+          Guest images not staged on {{ inventory_hostname }}. The firecracker role
+          requires vmlinux and substrate.ext4 at /var/lib/verself/guest-images/.
+          Run: aspect substrate guest-rootfs
+      when: not preflight_guest_kernel.stat.exists or not preflight_substrate.stat.exists
+
+- name: "Host foundation"
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: substrate_profile
+    - role: base
+    - role: nftables
+    - role: zfs
+
+- name: "Worker substrate"
+  hosts: workers
+  become: true
+  gather_facts: false
+  roles:
+    - role: containerd
+    - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            topology_wireguard.host_groups.workers
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
+    - role: firecracker
+
+- name: "Infrastructure host networking"
+  hosts: infra
+  become: true
+  gather_facts: false
+  roles:
+    - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            topology_wireguard.host_groups.infra
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
+
+- name: "Userspace"
+  hosts: infra
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Materialise system users and groups for every component
+      ansible.builtin.import_tasks: ../tasks/userspace_batch.yml
+
+- name: "Substrate daemons"
+  hosts: infra
+  become: true
+  gather_facts: false
+  roles:
+    - role: spire
+    - role: garage
+    - role: bazel_remote
+    - role: nomad
+    - role: clickhouse
+    - role: tigerbeetle
+    - role: postgresql
+    - role: zitadel
+    - role: openbao
+    - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            ['ops']
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
+    - role: ssh_ca
+    - role: nats
+    - role: temporal
+    - role: stalwart
+    - role: electric
+      vars:
+        electric_config: "{{ topology_electric_instances.notifications }}"
+    - role: electric
+      vars:
+        electric_config: "{{ topology_electric_instances.default }}"
+    - role: otelcol
+    - role: grafana
+    - role: verdaccio
+    - role: caddy
+    - role: forgejo
+
+- name: "External APIs and per-component substrate bindings"
+  hosts: infra
+  become: true
+  gather_facts: false
+  roles:
+    - role: resend
+    - role: spire_registrations
+
+  tasks:
+    - name: Re-derive daemon facts consumed by per-component tasks
+      ansible.builtin.set_fact:
+        clickhouse_operator_client_command: >-
+          sudo -u {{ clickhouse_operator_system_user | default('clickhouse_operator') }}
+          {{ verself_bin }}/clickhouse-client
+          --config-file {{ clickhouse_operator_client_config_path | default('/etc/clickhouse-client/operator.xml') }}
+          --user {{ clickhouse_operator_db_user | default('clickhouse_operator') }}
+
+    - name: Select Nomad application components for substrate configuration
+      ansible.builtin.set_fact:
+        application_components: >-
+          {{
+            topology_components
+            | selectattr('deployment.supervisor', 'equalto', 'nomad')
+            | selectattr('workload.units')
+            | sort(attribute='workload.order')
+            | list
+          }}
+
+    - name: Configure Nomad application substrate state
+      ansible.builtin.include_tasks: ../tasks/component_substrate.yml
+      loop: "{{ application_components }}"
+      loop_control:
+        loop_var: component
+        label: "{{ component.name }}"
+
+- name: "External reconciler: Cloudflare DNS"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Reconcile Cloudflare DNS
+      ansible.builtin.command:
+        argv:
+          - "{{ playbook_dir }}/../../scripts/reconcile-cloudflare-dns.sh"
+          - "--site={{ verself_site }}"
+        chdir: "{{ playbook_dir }}/../.."
+      register: cloudflare_dns_reconcile
+      changed_when: cloudflare_dns_reconcile.stderr is search('applied=[1-9][0-9]*')

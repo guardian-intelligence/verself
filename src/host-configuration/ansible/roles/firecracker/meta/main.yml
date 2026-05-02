@@ -1,5 +1,2 @@
 ---
-# zfs: pool must exist before substrate / toolchain image zvol creation.
-# (zfs transitively depends on base for zfsutils-linux.)
-dependencies:
-  - role: zfs
+dependencies: []
