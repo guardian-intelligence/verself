@@ -485,14 +485,15 @@ func (q *Queries) InsertExecutionFilesystemMount(ctx context.Context, arg Insert
 
 const insertExecutionLog = `-- name: InsertExecutionLog :exec
 INSERT INTO execution_logs (
-    execution_id, attempt_id, seq, stream, chunk, created_at
+    execution_id, org_id, attempt_id, seq, stream, chunk, created_at
 ) VALUES (
-    $1, $2, 1, 'combined', $3, $4
+    $1, $2, $3, 1, 'combined', $4, $5
 )
 `
 
 type InsertExecutionLogParams struct {
 	ExecutionID uuid.UUID
+	OrgID       int64
 	AttemptID   uuid.UUID
 	Chunk       string
 	CreatedAt   pgtype.Timestamptz
@@ -501,6 +502,7 @@ type InsertExecutionLogParams struct {
 func (q *Queries) InsertExecutionLog(ctx context.Context, arg InsertExecutionLogParams) error {
 	_, err := q.db.Exec(ctx, insertExecutionLog,
 		arg.ExecutionID,
+		arg.OrgID,
 		arg.AttemptID,
 		arg.Chunk,
 		arg.CreatedAt,
@@ -736,16 +738,18 @@ func (q *Queries) ListExecutionFilesystemMounts(ctx context.Context, arg ListExe
 const listExecutionLogChunks = `-- name: ListExecutionLogChunks :many
 SELECT chunk
 FROM execution_logs
-WHERE attempt_id = $1
+WHERE org_id = $1
+  AND attempt_id = $2
 ORDER BY seq ASC
 `
 
 type ListExecutionLogChunksParams struct {
+	OrgID     int64
 	AttemptID uuid.UUID
 }
 
 func (q *Queries) ListExecutionLogChunks(ctx context.Context, arg ListExecutionLogChunksParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, listExecutionLogChunks, arg.AttemptID)
+	rows, err := q.db.Query(ctx, listExecutionLogChunks, arg.OrgID, arg.AttemptID)
 	if err != nil {
 		return nil, err
 	}

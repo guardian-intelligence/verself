@@ -193,6 +193,7 @@ CREATE INDEX idx_execution_billing_windows_state_attempt
 
 CREATE TABLE execution_logs (
     execution_id UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,
+    org_id       BIGINT      NOT NULL CHECK (org_id > 0),
     attempt_id   UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
     seq          INTEGER     NOT NULL,
     stream       TEXT        NOT NULL,
@@ -200,6 +201,9 @@ CREATE TABLE execution_logs (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (attempt_id, seq)
 );
+
+CREATE INDEX idx_execution_logs_org_attempt_seq
+    ON execution_logs (org_id, attempt_id, seq);
 
 -- ─── Runner-class filesystem composition and sticky disks ──────────────────
 -- runner_class_filesystem_mounts is the product/control-plane definition;

@@ -32,10 +32,16 @@ function forwardSetCookie(headers: Headers): void {
   }
 }
 
-async function identityAuthFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function identityAuthFetch(
+  path: string,
+  init: RequestInit = {},
+  options: { cookieHeader?: string | undefined; forwardCookies?: boolean } = {},
+): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  const cookie = currentCookieHeader();
+  const cookie = Object.prototype.hasOwnProperty.call(options, "cookieHeader")
+    ? options.cookieHeader
+    : currentCookieHeader();
   if (cookie) {
     headers.set("Cookie", cookie);
   }
@@ -43,12 +49,28 @@ async function identityAuthFetch(path: string, init: RequestInit = {}): Promise<
     ...init,
     headers,
   });
-  forwardSetCookie(response.headers);
+  if (options.forwardCookies !== false) {
+    forwardSetCookie(response.headers);
+  }
   return response;
 }
 
 export async function readAuthSnapshot(): Promise<AuthSnapshot> {
   const response = await identityAuthFetch("session");
+  if (!response.ok) {
+    throw new Error(`identity auth session failed: ${response.status} ${await response.text()}`);
+  }
+  return parseAuthSnapshot(await response.json());
+}
+
+export async function readAuthSnapshotFromCookie(
+  cookieHeader: string | undefined,
+): Promise<AuthSnapshot> {
+  const response = await identityAuthFetch(
+    "session",
+    {},
+    { cookieHeader, forwardCookies: false },
+  );
   if (!response.ok) {
     throw new Error(`identity auth session failed: ${response.status} ${await response.text()}`);
   }

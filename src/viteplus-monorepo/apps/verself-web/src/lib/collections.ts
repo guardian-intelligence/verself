@@ -1,13 +1,9 @@
 import * as v from "valibot";
 import { authCollectionId, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import {
-  electricAndWhere,
   createElectricShapeCollection,
-  electricEqualsWhere,
   electricStringifiedBooleanSchema,
   electricStringifiedIntegerSchema,
-  requireDecimalID,
-  requireElectricOpaqueID,
   requireUUID,
 } from "@verself/web-env";
 
@@ -40,24 +36,9 @@ function cachedElectricCollection<T>(id: string, factory: () => T): T {
 
 const electricExecutionRowSchema = v.object({
   execution_id: v.string(),
-  org_id: v.string(),
-  actor_id: v.string(),
-  kind: v.string(),
-  source_kind: v.string(),
-  workload_kind: v.string(),
   source_ref: v.string(),
-  runner_class: v.string(),
-  external_provider: v.string(),
-  external_task_id: v.string(),
-  provider: v.string(),
-  product_id: v.string(),
   state: v.string(),
-  correlation_id: v.string(),
-  idempotency_key: v.string(),
-  run_command: v.string(),
-  max_wall_seconds: electricStringifiedIntegerSchema,
   created_at: v.string(),
-  updated_at: v.string(),
 });
 
 // TanStack DB does not apply Valibot transforms to synced data — the schema
@@ -67,15 +48,13 @@ const electricExecutionRowSchema = v.object({
 // directly and read `state` in components.
 export type ElectricExecution = v.InferOutput<typeof electricExecutionRowSchema>;
 
-export function createExecutionsCollection(auth: AuthenticatedAuth, orgId: string) {
-  const validatedOrgID = requireDecimalID(orgId, "org_id");
-  const id = authCollectionId(auth, `sync-executions-${orgId}`);
+export function createExecutionsCollection(auth: AuthenticatedAuth) {
+  const id = authCollectionId(auth, "sync-executions");
   return cachedElectricCollection(id, () =>
     createElectricShapeCollection({
       id,
       schema: electricExecutionRowSchema,
-      table: "executions",
-      where: electricEqualsWhere("org_id", validatedOrgID),
+      shapePath: "/api/sync/executions",
       getKey: (item) => item.execution_id,
     }),
   );
@@ -86,14 +65,9 @@ export function createExecutionsCollection(auth: AuthenticatedAuth, orgId: strin
 const electricRunnerProviderRepositorySchema = v.object({
   provider: v.string(),
   provider_repository_id: electricStringifiedIntegerSchema,
-  org_id: v.string(),
-  project_id: v.nullable(v.string()),
   source_repository_id: v.nullable(v.string()),
-  provider_owner: v.string(),
-  provider_repo: v.string(),
   repository_full_name: v.string(),
   active: electricStringifiedBooleanSchema,
-  created_at: v.string(),
   updated_at: v.string(),
 });
 
@@ -101,15 +75,13 @@ export type ElectricRunnerProviderRepository = v.InferOutput<
   typeof electricRunnerProviderRepositorySchema
 >;
 
-export function createRunnerProviderRepositoriesCollection(auth: AuthenticatedAuth, orgId: string) {
-  const validatedOrgID = requireDecimalID(orgId, "org_id");
-  const id = authCollectionId(auth, `sync-runner-provider-repositories-${orgId}`);
+export function createRunnerProviderRepositoriesCollection(auth: AuthenticatedAuth) {
+  const id = authCollectionId(auth, "sync-runner-provider-repositories");
   return cachedElectricCollection(id, () =>
     createElectricShapeCollection({
       id,
       schema: electricRunnerProviderRepositorySchema,
-      table: "runner_provider_repositories",
-      where: electricEqualsWhere("org_id", validatedOrgID),
+      shapePath: "/api/sync/runner-provider-repositories",
       getKey: (item) => `${item.provider}:${item.provider_repository_id}`,
     }),
   );
@@ -120,9 +92,7 @@ export function createRunnerProviderRepositoriesCollection(auth: AuthenticatedAu
 const electricExecutionLogSchema = v.object({
   attempt_id: v.string(),
   seq: electricStringifiedIntegerSchema,
-  stream: v.string(),
   chunk: v.string(),
-  created_at: v.string(),
 });
 
 export type ElectricExecutionLog = v.InferOutput<typeof electricExecutionLogSchema>;
@@ -134,8 +104,7 @@ export function createExecutionLogsCollection(auth: AuthenticatedAuth, attemptId
     createElectricShapeCollection({
       id,
       schema: electricExecutionLogSchema,
-      table: "execution_logs",
-      where: electricEqualsWhere("attempt_id", validatedAttemptID),
+      shapePath: `/api/sync/execution-logs/${encodeURIComponent(validatedAttemptID)}`,
       getKey: (item) => `${item.attempt_id}:${item.seq}`,
     }),
   );
@@ -144,11 +113,9 @@ export function createExecutionLogsCollection(auth: AuthenticatedAuth, attemptId
 // --- Notification inbox state (real-time badge signal via Electric) ---
 
 const electricNotificationInboxStateSchema = v.object({
-  org_id: v.string(),
-  recipient_subject_id: v.string(),
+  inbox_state_id: v.string(),
   next_sequence: electricStringifiedIntegerSchema,
   read_up_to_sequence: electricStringifiedIntegerSchema,
-  created_at: v.string(),
   updated_at: v.string(),
 });
 
@@ -156,25 +123,14 @@ export type ElectricNotificationInboxState = v.InferOutput<
   typeof electricNotificationInboxStateSchema
 >;
 
-export function createNotificationInboxStateCollection(
-  auth: AuthenticatedAuth,
-  orgId: string,
-  subjectId: string,
-) {
-  const validatedOrgID = requireElectricOpaqueID(orgId, "org_id");
-  const validatedSubjectID = requireElectricOpaqueID(subjectId, "recipient_subject_id");
-  const id = authCollectionId(auth, `sync-notification-inbox-state-${orgId}-${subjectId}`);
+export function createNotificationInboxStateCollection(auth: AuthenticatedAuth) {
+  const id = authCollectionId(auth, "sync-notification-inbox-state");
   return cachedElectricCollection(id, () =>
     createElectricShapeCollection({
       id,
       schema: electricNotificationInboxStateSchema,
-      table: "notification_inbox_state",
-      where: electricAndWhere([
-        { column: "org_id", value: validatedOrgID },
-        { column: "recipient_subject_id", value: validatedSubjectID },
-      ]),
-      shapePath: "/notifications/v1/shape",
-      getKey: (item) => `${item.org_id}:${item.recipient_subject_id}`,
+      shapePath: "/api/sync/notification-inbox-state",
+      getKey: (item) => item.inbox_state_id,
     }),
   );
 }

@@ -837,6 +837,7 @@ func (s *Service) loadEventForUpdate(ctx context.Context, q *notificationstore.Q
 
 func (s *Service) ensureInboxState(ctx context.Context, q *notificationstore.Queries, orgID string, subjectID string) error {
 	if err := q.EnsureInboxState(ctx, notificationstore.EnsureInboxStateParams{
+		InboxStateID:       uuid.New(),
 		OrgID:              orgID,
 		RecipientSubjectID: subjectID,
 		Now:                timestamptz(s.now()),

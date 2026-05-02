@@ -1046,7 +1046,10 @@ func (s *Service) GetExecutionLogs(ctx context.Context, orgID uint64, executionI
 	if err != nil {
 		return uuid.Nil, "", ErrExecutionMissing
 	}
-	chunks, err := s.storeQueries().ListExecutionLogChunks(ctx, store.ListExecutionLogChunksParams{AttemptID: attemptID})
+	chunks, err := s.storeQueries().ListExecutionLogChunks(ctx, store.ListExecutionLogChunksParams{
+		OrgID:     dbOrgID(orgID),
+		AttemptID: attemptID,
+	})
 	if err != nil {
 		return uuid.Nil, "", err
 	}
@@ -1091,6 +1094,7 @@ func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord
 	}
 	if err := s.storeQueries().InsertExecutionLog(ctx, store.InsertExecutionLogParams{
 		ExecutionID: record.ExecutionID,
+		OrgID:       dbOrgID(record.OrgID),
 		AttemptID:   record.LatestAttempt.AttemptID,
 		Chunk:       logs,
 		CreatedAt:   pgTime(time.Now().UTC()),

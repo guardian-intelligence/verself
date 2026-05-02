@@ -191,14 +191,15 @@ LIMIT 1;
 -- name: ListExecutionLogChunks :many
 SELECT chunk
 FROM execution_logs
-WHERE attempt_id = sqlc.arg(attempt_id)
+WHERE org_id = sqlc.arg(org_id)
+  AND attempt_id = sqlc.arg(attempt_id)
 ORDER BY seq ASC;
 
 -- name: InsertExecutionLog :exec
 INSERT INTO execution_logs (
-    execution_id, attempt_id, seq, stream, chunk, created_at
+    execution_id, org_id, attempt_id, seq, stream, chunk, created_at
 ) VALUES (
-    sqlc.arg(execution_id), sqlc.arg(attempt_id), 1, 'combined', sqlc.arg(chunk), sqlc.arg(created_at)
+    sqlc.arg(execution_id), sqlc.arg(org_id), sqlc.arg(attempt_id), 1, 'combined', sqlc.arg(chunk), sqlc.arg(created_at)
 );
 
 -- name: ListExecutionBillingWindows :many

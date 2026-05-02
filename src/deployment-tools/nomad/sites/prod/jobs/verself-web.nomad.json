@@ -40,6 +40,8 @@
             },
             "Driver": "raw_exec",
             "Env": {
+              "ELECTRIC_BASE_URL": "http://127.0.0.1:3010",
+              "ELECTRIC_NOTIFICATIONS_BASE_URL": "http://127.0.0.1:3012",
               "HOME": "/var/lib/verself-web",
               "HOST": "127.0.0.1",
               "IDENTITY_SERVICE_AUTH_AUDIENCE": "370200564807548260",
@@ -54,6 +56,8 @@
               "PROJECTS_SERVICE_AUTH_AUDIENCE": "370200564807548260",
               "SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE": "370200928688586084",
               "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "VERSELF_CRED_ELECTRIC_API_SECRET": "/etc/credstore/verself-web/electric-api-secret",
+              "VERSELF_CRED_ELECTRIC_NOTIFICATIONS_API_SECRET": "/etc/credstore/verself-web/electric-notifications-api-secret",
               "VERSELF_DOMAIN": "verself.sh",
               "VERSELF_SUPERVISOR": "nomad"
             },

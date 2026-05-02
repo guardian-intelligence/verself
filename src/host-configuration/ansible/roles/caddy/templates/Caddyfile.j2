@@ -525,18 +525,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		}
 	}
 
-	handle /v1/shape {
-		uri query -secret
-		uri query +secret {{ caddy_electric_api_secret }}
-		reverse_proxy {{ topology_endpoints.electric.endpoints.http.address }}
-	}
-
-	handle_path /notifications/* {
-		uri query -secret
-		uri query +secret {{ caddy_electric_notifications_api_secret }}
-		reverse_proxy {{ topology_endpoints.electric_notifications.endpoints.http.address }}
-	}
-
 	@identity_browser_auth {
 		path /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/logout
 	}

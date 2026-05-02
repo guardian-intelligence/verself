@@ -7,12 +7,9 @@ import {
   createRunnerProviderRepositoriesCollection,
 } from "~/lib/collections";
 
-export function useExecutionRows(orgId: string) {
+export function useExecutionRows() {
   const auth = useSignedInAuth();
-  const collection = useMemo(
-    () => createExecutionsCollection(auth, orgId),
-    [auth.cachePartition, orgId],
-  );
+  const collection = useMemo(() => createExecutionsCollection(auth), [auth.cachePartition]);
   const liveQuery = useLiveQuery(collection);
   const executions = useMemo(() => sortExecutions(liveQuery.data), [liveQuery.data]);
 
@@ -23,11 +20,11 @@ export function useExecutionRows(orgId: string) {
   };
 }
 
-export function useRunnerProviderRepositoryRows(orgId: string) {
+export function useRunnerProviderRepositoryRows() {
   const auth = useSignedInAuth();
   const collection = useMemo(
-    () => createRunnerProviderRepositoriesCollection(auth, orgId),
-    [auth.cachePartition, orgId],
+    () => createRunnerProviderRepositoriesCollection(auth),
+    [auth.cachePartition],
   );
   const liveQuery = useLiveQuery(collection);
   const repositories = useMemo(

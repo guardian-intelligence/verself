@@ -139,3 +139,15 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: "Apply pending Electric unit changes before publication reconcile"
+  ansible.builtin.meta: flush_handlers
+
+- name: "Reconcile PostgreSQL publication after {{ electric_service_name }} startup"
+  # Electric starts by restoring persisted shape filters; reconcile after restart
+  # so the curated publication is the final database state.
+  ansible.builtin.include_tasks:
+    file: pg_setup.yml
+    apply:
+      tags:
+        - always

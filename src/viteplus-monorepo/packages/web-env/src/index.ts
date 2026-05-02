@@ -163,10 +163,10 @@ export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acm
   return `${localPart}@${requireProductDomain("VERSELF_DOMAIN", env)}`;
 }
 
-// Electric requires an absolute shape URL. Keep the real sync path same-origin
-// in the browser, but return a harmless absolute fallback during SSR so the URL
-// parser never sees a bare relative path.
-export function electricShapeURL(path = "/v1/shape"): string {
+// Electric requires an absolute shape URL. The browser only receives named
+// same-origin resources; table, columns, and authorization predicates are
+// constructed by the server-side proxy.
+export function electricShapeURL(path: string): string {
   const location = (globalThis as { location?: LocationLike }).location;
   if (location?.origin) {
     return new URL(path, location.origin).toString();
@@ -237,30 +237,18 @@ export const electricStringifiedBooleanSchema = v.union([
   ),
 ]);
 
-export function electricEqualsWhere(column: string, validatedValue: string): string {
-  return `${column} = '${validatedValue}'`;
-}
-
-export function electricAndWhere(clauses: Array<{ column: string; value: string }>): string {
-  return clauses.map(({ column, value }) => electricEqualsWhere(column, value)).join(" AND ");
-}
-
 export function createElectricShapeCollection<
   TSchema extends StandardSchemaLike<Record<string, unknown>, Record<string, unknown>>,
 >({
   id,
-  table,
   schema,
-  where,
   getKey,
-  shapePath = "/v1/shape",
+  shapePath,
 }: {
   id: string;
-  table: string;
   schema: TSchema;
-  where?: string;
   getKey: (item: InferSchemaOutput<TSchema>) => string | number;
-  shapePath?: string;
+  shapePath: string;
 }): Collection<
   InferSchemaOutput<TSchema>,
   string | number,
@@ -272,7 +260,8 @@ export function createElectricShapeCollection<
     schema,
     shapeOptions: {
       url: electricShapeURL(shapePath),
-      params: where ? { table, where } : { table },
+      params: {},
+      subsetMethod: "POST",
     },
     getKey,
   });

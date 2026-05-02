@@ -277,19 +277,25 @@ func (q *Queries) EnqueueProjection(ctx context.Context, arg EnqueueProjectionPa
 }
 
 const ensureInboxState = `-- name: EnsureInboxState :exec
-INSERT INTO notification_inbox_state (org_id, recipient_subject_id, next_sequence, read_up_to_sequence, created_at, updated_at)
-VALUES ($1, $2, 1, 0, $3, $3)
+INSERT INTO notification_inbox_state (inbox_state_id, org_id, recipient_subject_id, next_sequence, read_up_to_sequence, created_at, updated_at)
+VALUES ($1, $2, $3, 1, 0, $4, $4)
 ON CONFLICT (org_id, recipient_subject_id) DO NOTHING
 `
 
 type EnsureInboxStateParams struct {
+	InboxStateID       uuid.UUID
 	OrgID              string
 	RecipientSubjectID string
 	Now                pgtype.Timestamptz
 }
 
 func (q *Queries) EnsureInboxState(ctx context.Context, arg EnsureInboxStateParams) error {
-	_, err := q.db.Exec(ctx, ensureInboxState, arg.OrgID, arg.RecipientSubjectID, arg.Now)
+	_, err := q.db.Exec(ctx, ensureInboxState,
+		arg.InboxStateID,
+		arg.OrgID,
+		arg.RecipientSubjectID,
+		arg.Now,
+	)
 	return err
 }
 

@@ -1,7 +1,8 @@
 ---
 # Wipe one managed PostgreSQL service database and recreate substrate state.
-# Application migrations run through nomad-deploy-all during the follow-up
-# Nomad deploy.
+# Application migrations run through nomad-deploy-all after this playbook.
+# For Electric-published databases, run substrate convergence after migrations
+# so the Electric role can bind publications to the recreated tables.
 #
 # Usage:
 #   verself-deploy ansible run --site=prod \
@@ -313,22 +314,23 @@
         mode: "0750"
       when: wipe_pg_db_name == 'sandbox_rental'
 
+    - name: Clear Electric Notifications shape storage after notifications_service PostgreSQL wipe
+      ansible.builtin.file:
+        path: /var/lib/electric-notifications
+        state: absent
+      when: wipe_pg_db_name == 'notifications_service'
+
+    - name: Recreate empty Electric Notifications shape storage after notifications_service PostgreSQL wipe
+      ansible.builtin.file:
+        path: /var/lib/electric-notifications
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      when: wipe_pg_db_name == 'notifications_service'
+
     - name: Configure selected service substrate after PostgreSQL wipe
       ansible.builtin.include_tasks:
         file: ../tasks/component_substrate.yml
       vars:
         component: "{{ wipe_pg_db_component }}"
-
-    - name: Include Electric after sandbox_rental PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: electric
-      vars:
-        electric_config: "{{ topology_electric_instances.default }}"
-      when: wipe_pg_db_name == 'sandbox_rental'
-
-    - name: Include Electric Notifications after notifications_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: electric
-      vars:
-        electric_config: "{{ topology_electric_instances.notifications }}"
-      when: wipe_pg_db_name == 'notifications_service'
