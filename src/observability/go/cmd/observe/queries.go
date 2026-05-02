@@ -74,6 +74,11 @@ func buildQueries(cfg config) ([]query, error) {
 			newQuery("deploy.tasks", deployTasksSQL, params),
 			newQuery("deploy.bazel_cache", deployBazelCacheSQL, params),
 		}, nil
+	case "supply-chain":
+		return []query{
+			newQuery("supply_chain.policy_summary", supplyChainPolicySummarySQL, params),
+			newQuery("supply_chain.policy_findings", supplyChainPolicyFindingsSQL, params),
+		}, nil
 	case "trace":
 		if cfg.traceID == "" {
 			return nil, errors.New("--what=trace requires --trace-id=<trace-id>")
@@ -867,6 +872,44 @@ WHERE ServiceName = 'bazel'
 GROUP BY service
 HAVING service != ''
 ORDER BY execution_spawns DESC, total_spawns DESC
+LIMIT {row_limit:UInt32}`
+
+const supplyChainPolicySummarySQL = `
+SELECT
+  deploy_run_key,
+  site,
+  surface,
+  source_kind,
+  policy_result,
+  admission_state,
+  count() AS findings,
+  countIf(digest = '') AS without_digest,
+  max(event_at) AS last_seen
+FROM verself.supply_chain_policy_events
+WHERE ({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({run_key:String} != '' AND deploy_run_key = {run_key:String})
+GROUP BY deploy_run_key, site, surface, source_kind, policy_result, admission_state
+ORDER BY last_seen DESC, surface, source_kind, policy_result
+LIMIT {row_limit:UInt32}`
+
+const supplyChainPolicyFindingsSQL = `
+SELECT
+  source_path,
+  line,
+  surface,
+  source_kind,
+  artifact,
+  policy_result,
+  admission_state,
+  policy_reason,
+  digest,
+  tuf_target_path,
+  storage_uri,
+  trace_id
+FROM verself.supply_chain_policy_events
+WHERE ({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({run_key:String} != '' AND deploy_run_key = {run_key:String})
+ORDER BY event_at DESC, policy_result DESC, surface, source_path, line
 LIMIT {row_limit:UInt32}`
 
 const traceDetailSQL = `
