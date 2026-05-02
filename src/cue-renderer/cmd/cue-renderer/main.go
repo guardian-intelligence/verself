@@ -26,12 +26,6 @@ import (
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
-	"github.com/verself/cue-renderer/internal/render/bazeldevtools"
-	"github.com/verself/cue-renderer/internal/render/bazeldevtoolsmodule"
-	"github.com/verself/cue-renderer/internal/render/bazelguestimages"
-	"github.com/verself/cue-renderer/internal/render/bazelmodule"
-	"github.com/verself/cue-renderer/internal/render/bazelservertools"
-	"github.com/verself/cue-renderer/internal/render/catalog"
 	"github.com/verself/cue-renderer/internal/render/clusters"
 	"github.com/verself/cue-renderer/internal/render/components"
 	"github.com/verself/cue-renderer/internal/render/dns"
@@ -55,12 +49,6 @@ const (
 // Go tool.
 func renderers() []render.Renderer {
 	return []render.Renderer{
-		bazeldevtools.Renderer{},
-		bazeldevtoolsmodule.Renderer{},
-		bazelguestimages.Renderer{},
-		bazelmodule.Renderer{},
-		bazelservertools.Renderer{},
-		catalog.Renderer{},
 		clusters.Renderer{},
 		components.Renderer{},
 		dns.Renderer{},

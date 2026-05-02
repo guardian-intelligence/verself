@@ -15,9 +15,8 @@ import (
 // Header is the canonical comment block every renderer prepends to its
 // output. Two lines: the universal "Code generated" warning and a Source
 // pointer back to the CUE file or directory that owns the truth for the
-// emitted artefact. Topology-driven renderers use Header directly;
-// catalog-driven renderers (bazelmodule, bazelservertools) and the
-// component-only clusters renderer use HeaderFor with their own source.
+// emitted artefact. Topology-driven renderers use Header directly; the
+// component-only clusters renderer uses HeaderFor with its own source.
 //
 // Header does not include a YAML document marker — YAMLDocument
 // appends `---\n` when the payload is YAML.

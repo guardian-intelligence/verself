@@ -4,7 +4,7 @@
   aspect operator refresh [--device=<name>]
   aspect operator enroll-workload [--slot=N] [--device=<tag>]
 
-The implementation lives in src/cue-renderer/cmd/aspect-operator. End-to-end
+The implementation lives in src/operator-tools/cmd/aspect-operator. End-to-end
 flow: docs/architecture/onboarding-device-or-vm.md.
 """
 
@@ -12,11 +12,11 @@ load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
 
 def _aspect_operator_bin(ctx):
     """Build aspect-operator into bazel-bin and return its path."""
-    target = "//src/cue-renderer/cmd/aspect-operator:aspect-operator"
+    target = "//src/operator-tools/cmd/aspect-operator:aspect-operator"
     rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
     if rc != 0:
         return ""
-    return ws_path(ctx, "bazel-bin/src/cue-renderer/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    return ws_path(ctx, "bazel-bin/src/operator-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _onboard_impl(ctx):
     bin = _aspect_operator_bin(ctx)

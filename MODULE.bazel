@@ -14,10 +14,9 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_zig", version = "0.13.0")
-bazel_dep(name = "yq.bzl", version = "0.3.2")
 
-include("//src/cue-renderer/binaries:server_tools.MODULE.bazel")
-include("//src/cue-renderer/binaries:dev_tools.MODULE.bazel")
+include("//src/substrate/binaries:server_tools.MODULE.bazel")
+include("//src/devtools/binaries:dev_tools.MODULE.bazel")
 include("//src/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")

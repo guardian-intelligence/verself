@@ -17,20 +17,7 @@ def _ansible_local(ctx, playbook, *extra_args):
     )
 
 def _install_impl(ctx):
-    cache_dir = ws_path(ctx, ".cache/setup-dev")
-    catalog = cache_dir + "/catalog.yml"
-    rc = checked_spawn(
-        ctx,
-        "bash",
-        [
-            "-c",
-            "set -eu; mkdir -p '" + cache_dir + "'; " +
-            "bazelisk run -- //src/cue-renderer/cmd/cue-renderer render catalog > '" + catalog + "'",
-        ],
-        label = "render catalog -> " + catalog,
-    )
-    if rc != 0:
-        return rc
+    catalog = ws_path(ctx, "src/devtools/catalog.yml")
     return _ansible_local(ctx, "playbooks/setup-dev.yml", "-e", "@" + catalog)
 
 def _sops_init_impl(ctx):

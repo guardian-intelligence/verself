@@ -611,7 +611,7 @@ package schema
 	nftables:    #NftablesConfig
 	firecracker: #FirecrackerConfig
 	spire:       #SpireConfig
-	ssh_ca:      #SSHCAConfig @go(SshCA)
+	ssh_ca:      #SSHCAConfig     @go(SshCA)
 	bare_metal:  #BareMetalConfig @go(BareMetal)
 	artifacts:   #ArtifactConfig
 

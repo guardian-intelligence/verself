@@ -17,7 +17,7 @@ set -euo pipefail
 #   vmlinux.config           Kernel config for VIRTIO_VSOCKETS / HW_RANDOM_VIRTIO assertions
 #   vm-bridge                PID 1 inside the guest (Bazel-built)
 #   vm-guest-telemetry       Telemetry agent (Bazel-built)
-#   versions.json            Pinned versions metadata (catalog.yml projection)
+#   versions.json            Pinned versions metadata
 #
 # Outputs (in OUTPUT_DIR, default ./guest/output):
 #   substrate.ext4           The slim boot image

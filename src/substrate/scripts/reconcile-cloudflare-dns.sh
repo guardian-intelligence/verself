@@ -36,8 +36,8 @@ repo_root="$(cd "${substrate_root}/../.." && pwd)"
 
 # bazel-bin is symlinked at the repo root after a build; the binary may not
 # exist there yet on a clean checkout, so build it lazily.
-target="//src/cue-renderer/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
-binary="${repo_root}/bazel-bin/src/cue-renderer/cmd/reconcile-cloudflare-dns/reconcile-cloudflare-dns_/reconcile-cloudflare-dns"
+target="//src/substrate/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
+binary="${repo_root}/bazel-bin/src/substrate/cmd/reconcile-cloudflare-dns/reconcile-cloudflare-dns_/reconcile-cloudflare-dns"
 if [[ ! -x "${binary}" ]]; then
   ( cd "${repo_root}" && bazelisk build "${target}" >/dev/null )
 fi

@@ -8,12 +8,6 @@ go_library(
     deps = [
         "//src/cue-renderer/internal/load",
         "//src/cue-renderer/internal/render",
-        "//src/cue-renderer/internal/render/bazeldevtools",
-        "//src/cue-renderer/internal/render/bazeldevtoolsmodule",
-        "//src/cue-renderer/internal/render/bazelguestimages",
-        "//src/cue-renderer/internal/render/bazelmodule",
-        "//src/cue-renderer/internal/render/bazelservertools",
-        "//src/cue-renderer/internal/render/catalog",
         "//src/cue-renderer/internal/render/clusters",
         "//src/cue-renderer/internal/render/components",
         "//src/cue-renderer/internal/render/dns",
@@ -43,6 +37,5 @@ go_test(
     deps = [
         "//src/cue-renderer/internal/load",
         "//src/cue-renderer/internal/render",
-        "//src/cue-renderer/internal/render/projection",
     ],
 )

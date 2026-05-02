@@ -14,12 +14,14 @@ use (
 	./src/mailbox-service
 	./src/notifications-service
 	./src/object-storage-service
+	./src/operator-tools
 	./src/otel
 	./src/profile-service
 	./src/projects-service
 	./src/sandbox-rental-service
 	./src/secrets-service
 	./src/source-code-hosting-service
+	./src/substrate
 	./src/temporal-platform
 	./src/vm-orchestrator
 )
