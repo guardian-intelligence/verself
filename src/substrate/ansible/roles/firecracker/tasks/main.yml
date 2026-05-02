@@ -13,7 +13,7 @@
       - topology_guest_versions.firecracker.version is defined
       - topology_guest_versions.firecracker.sha256 is defined
     fail_msg: >-
-      topology_guest_versions is missing from generated substrate vars; run aspect render before deploying firecracker.
+      topology_guest_versions is missing from generated substrate vars; check src/substrate/ansible/group_vars/all/generated/ops.yml.
 
 - name: Set Firecracker version pins
   ansible.builtin.set_fact:
@@ -194,12 +194,9 @@
     sysctl_file: /etc/sysctl.d/99-verself.conf
     reload: true
 
-# The verself_firecracker FORWARD + POSTROUTING chains are rendered
-# from src/cue-renderer/instances/prod/host_firewall.cue:
-# topology.nftables.firecracker. The renderer emits the .nft with a
-# literal __VERSELF_UPLINK__ placeholder; substitute it with the
-# resolved uplink interface before reload so a single source of truth
-# (CUE) owns the rule logic and Ansible owns just the runtime fact.
+# The source-owned Firecracker nftables file carries a literal
+# __VERSELF_UPLINK__ placeholder; substitute it with the resolved uplink
+# interface before reload. Ansible owns only this runtime host fact.
 - name: Stage rendered Firecracker nftables ruleset
   ansible.builtin.copy:
     src: "{{ platform_rendered_dir }}/etc/nftables.d/firecracker.nft"
@@ -321,7 +318,7 @@
 
 # --- Composable image seeding ---
 # vm-orchestrator-seed.service is a systemd oneshot that issues one
-# SeedImage RPC per entry in firecracker_seed_images (sourced from CUE
+# SeedImage RPC per entry in firecracker_seed_images (sourced from authored topology
 # config.firecracker.images). The daemon owns staging zvol creation,
 # dd/mkfs, snapshot, dependent-clone teardown, and idempotency via
 # vs:source_digest user properties on the @ready snapshot. Ansible

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # detect-intrusions — query verself.host_auth_events for recent
 # accepted SSH events whose cert_id is not in the trusted set
-# projected by the renderer into ops.yml's known_cert_id_suffixes.
+# authored in ops.yml's known_cert_id_suffixes.
 #
 # What this catches (the Blacksmith-CI class):
 #   1. outcome='accepted' AND auth_method != 'publickey-cert' — any
@@ -12,15 +12,13 @@
 #      a cert minted outside the conventions.
 #   3. outcome='accepted' AND a valid-shaped cert_id whose suffix is
 #      not in known_cert_id_suffixes — a device or slot that exists in
-#      OpenBao but not in CUE (or one that was deleted from CUE but
+#      OpenBao but not in authored topology (or one that was deleted but
 #      hasn't yet been revoked from the OpenBao role).
 #
-# The list of allowed suffixes is materialised by the cue-renderer
-# into the rendered cache at:
-#   .cache/render/<site>/inventory/group_vars/all/generated/ops.yml
+# The list of allowed suffixes is authored at:
+#   src/substrate/ansible/group_vars/all/generated/ops.yml
 # under `known_cert_id_suffixes`. This script slurps that list and
-# embeds it in the WHERE clause; running without a fresh render is a
-# loud failure.
+# embeds it in the WHERE clause.
 
 set -euo pipefail
 
@@ -47,9 +45,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-ops_yml="${repo_root}/.cache/render/${site}/inventory/group_vars/all/generated/ops.yml"
+ops_yml="${repo_root}/src/substrate/ansible/group_vars/all/generated/ops.yml"
 if [[ ! -f "${ops_yml}" ]]; then
-    echo "ERROR: rendered cache missing — run 'aspect render --site=${site}' first." >&2
+    echo "ERROR: authored topology ops.yml is missing." >&2
     echo "  expected: ${ops_yml}" >&2
     exit 1
 fi

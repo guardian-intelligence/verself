@@ -7,7 +7,7 @@ argument_specs:
       - "database and user, generates the masterkey, runs start-from-init"
       - "(idempotent first-run), and configures the systemd unit."
       - "Exports OTel traces to the collector on localhost:4317."
-      - "Service ports come from CUE-rendered topology, not from this role."
+      - "Service ports come from authored topology, not from this role."
     options:
       zitadel_config_dir:
         type: path

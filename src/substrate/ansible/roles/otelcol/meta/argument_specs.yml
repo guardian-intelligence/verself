@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys otelcol-contrib, configures OTLP"
       - "receivers plus host and Caddy scraping, and exports logs, traces,"
       - "and metrics into ClickHouse."
-      - "Service ports come from CUE-rendered topology, not from this role."
+      - "Service ports come from authored topology, not from this role."
     options:
       verself_bin:
         type: path

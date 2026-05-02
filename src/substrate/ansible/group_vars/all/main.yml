@@ -1,13 +1,10 @@
 ---
-# Global variables for all nodes. CUE-rendered topology defaults land in
-# inventory/group_vars/all/generated/ops.yml inside the per-site deploy
-# cache and are intentionally kept out of this file.
+# Global variables for all nodes. Authored topology defaults live in
+# group_vars/all/generated and are intentionally kept out of this file.
 
-# `aspect render --site=<site>` materialises the rendered tree alongside
-# the staged inventory under .cache/render/<site>/. inventory_dir resolves
-# to .cache/render/<site>/inventory/ at deploy time, putting rendered host
-# files exactly one level up.
-platform_rendered_dir: "{{ inventory_dir }}/../share/rendered"
+# Rendered host files are source-owned under src/substrate/ansible/rendered.
+# playbook_dir is <repo>/src/substrate/ansible/playbooks during convergence.
+platform_rendered_dir: "{{ playbook_dir }}/../rendered"
 postgresql_log_dir: /var/log/postgresql
 
 # Operator email forwarding — all mail to ceo@<domain> is copied here by the

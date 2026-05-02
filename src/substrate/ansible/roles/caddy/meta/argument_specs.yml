@@ -8,7 +8,7 @@ argument_specs:
       - "Service APIs live on <service>.api.<domain>; verself-web browser traffic stays same-origin."
       - "The billing webhook route is allowlisted to Stripe's published source IPs."
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
-      - "Service ports come from CUE-rendered topology, not from this role."
+      - "Service ports come from authored topology, not from this role."
     options:
       caddy_stripe_webhook_ips:
         type: list

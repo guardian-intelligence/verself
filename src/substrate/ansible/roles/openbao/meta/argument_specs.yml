@@ -5,7 +5,7 @@ argument_specs:
     description:
       - "Deploys OpenBao with a loopback TLS listener, integrated Raft storage,"
       - "declarative file audit device, manual Shamir unseal keys in credstore,"
-      - "and nftables confinement. Service ports come from CUE-rendered topology."
+      - "and nftables confinement. Service ports come from authored topology."
     options:
       openbao_config_dir:
         type: path

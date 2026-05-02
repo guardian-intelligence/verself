@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Cross-check declared topology endpoints against live listeners on the box.
 
-Declared source: .cache/render/<site>/inventory/group_vars/all/generated/endpoints.yml
+Declared source: src/substrate/ansible/group_vars/all/generated/endpoints.yml
 Live source: `sudo ss -Hltnp` on the inventory host (TCP listening sockets).
 
 Output modes (FORMAT env):
     table     - default, human-readable drift report + undeclared listener list
     json      - structured dump of declared, listeners, and drift
-    nftables  - suggested host-firewall rules derived from generated endpoints (not
-                authoritative; real rules live in CUE-rendered final files)
+    nftables  - suggested host-firewall rules derived from authored endpoints
 
 Exit codes:
     0 - no drift
@@ -33,7 +32,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SITE = os.environ.get("VERSELF_SITE", "prod")
-ENDPOINTS_YAML = REPO_ROOT / f".cache/render/{SITE}/inventory/group_vars/all/generated/endpoints.yml"
+ENDPOINTS_YAML = REPO_ROOT / "src/substrate/ansible/group_vars/all/generated/endpoints.yml"
 INVENTORY = REPO_ROOT / f"src/substrate/ansible/inventory/{SITE}.ini"
 
 # Ports in these ranges are "ours" — an undeclared listener here is drift.
@@ -372,10 +371,10 @@ def render_json(report: Report) -> str:
 
 
 def render_nftables(report: Report) -> str:
-    """Suggested rules derived from the generated topology endpoints.
+    """Suggested rules derived from the authored topology endpoints.
 
-    The real firewall is assembled from src/cue-renderer topology records into
-    .cache/render/<site>/share/rendered/etc/nftables.d/. This output is a debugging aid for
+    The real firewall lives under src/substrate/ansible/rendered/etc/nftables.d/.
+    This output is a debugging aid for
     answering 'what would a minimal ruleset for the declared topology look like?'
     """
     loopback: list[Declared] = []
@@ -393,8 +392,8 @@ def render_nftables(report: Report) -> str:
 
     lines: list[str] = []
     lines.append("#!/usr/sbin/nft -f")
-    lines.append("# Derived from .cache/render/<site>/inventory/group_vars/all/generated/endpoints.yml")
-    lines.append("# SUGGESTION ONLY - authoritative rules live in CUE-rendered final files.")
+    lines.append("# Derived from src/substrate/ansible/group_vars/all/generated/endpoints.yml")
+    lines.append("# SUGGESTION ONLY - authoritative rules live in source-owned nftables files.")
     lines.append("")
     lines.append("table inet verself_services_suggested")
     lines.append("delete table inet verself_services_suggested")

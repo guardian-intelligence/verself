@@ -97,11 +97,10 @@ func runAnsibleRun(args []string) int {
 	return res.ExitCode
 }
 
-// resolveInventoryPath accepts either a directory (as `aspect render`
-// produces under .cache/render/<site>/inventory) or a hosts.ini file
+// resolveInventoryPath accepts either a directory or an inventory file
 // directly. Ansible itself accepts both, but the parser we hand to
-// runtime.Init expects an absolute path; mirror the existing bash
-// hosts.ini fallback for clarity in error messages.
+// runtime.Init expects an absolute path; keep the hosts.ini fallback for
+// one-shot callers that stage an inventory directory.
 func resolveInventoryPath(p string) string {
 	if !filepath.IsAbs(p) {
 		// Caller bug — surface with a clear message at the next step

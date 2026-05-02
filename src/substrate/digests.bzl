@@ -21,7 +21,6 @@ set -eu
             ;;
     esac
   done
-  cat "$(location :prod_rendered_substrate)"
 }} | LC_ALL=C sort | sha256sum | cut -d' ' -f1 > "$@"
 """
 
@@ -29,10 +28,7 @@ def layer_digest_genrule(name, output, patterns):
     case_patterns = " | \\\n          ".join(patterns)
     native.genrule(
         name = name,
-        srcs = [
-            ":substrate_sources",
-            ":prod_rendered_substrate",
-        ],
+        srcs = [":substrate_sources"],
         outs = [output],
         cmd = _LAYER_DIGEST_CMD.format(patterns = case_patterns),
     )

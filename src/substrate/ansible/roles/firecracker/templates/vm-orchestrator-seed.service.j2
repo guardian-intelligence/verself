@@ -4,7 +4,7 @@ Description=Seed Firecracker composable image zvols via vm-orchestrator
 # SeedImage RPC; the daemon owns staging zvol, dd/mkfs, snapshot, and
 # dependent-clone teardown. ExecStart= entries are emitted in tier order (substrate →
 # platform_toolchain → customer_uploaded) so dependents land after
-# their bases — Jinja iterates the CUE-authored list directly because
+# their bases — Jinja iterates the authored list directly because
 # config.cue declares the catalog in that order.
 After=vm-orchestrator.service
 Requires=vm-orchestrator.service

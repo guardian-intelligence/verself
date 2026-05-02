@@ -51,7 +51,7 @@
     content: |
       # Managed by Ansible — ssh_ca role.
       # Principals authorised to log in as {{ topology_ssh_ca.default_user }}.
-      # Source: src/cue-renderer/instances/prod/config.cue:ssh_ca.principals
+      # Source: topology_ssh_ca.principals
       {% for name, principal in (topology_ssh_ca.principals | dictsort) %}
       {{ principal.name }}
       {% endfor %}
@@ -123,4 +123,4 @@
       # /etc/ssh/sshd_config.d/60-ssh-ca.conf. Static keys do not grant
       # access. The only path is OpenBao-issued certs trusted by
       # /etc/ssh/verself-ssh-ca.pub.
-      # Source: src/cue-renderer/instances/prod/config.cue:ssh_ca
+      # Source: topology_ssh_ca

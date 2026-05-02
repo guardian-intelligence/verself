@@ -95,9 +95,9 @@ func runSubstrateConverge(args []string) int {
 	)
 	defer span.End()
 
-	inventoryDir := filepath.Join(rr, ".cache", "render", *site, "inventory")
-	if _, err := os.Stat(inventoryDir); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate converge: rendered inventory missing at %s: %v\n", inventoryDir, err)
+	inventoryPath := authoredInventoryPath(rr, *site)
+	if _, err := os.Stat(inventoryPath); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy substrate converge: inventory missing at %s: %v\n", inventoryPath, err)
 		span.SetStatus(codes.Error, "missing inventory")
 		return 1
 	}
@@ -107,7 +107,7 @@ func runSubstrateConverge(args []string) int {
 		Site:             *site,
 		RepoRoot:         rr,
 		AnsibleDir:       ansibleDir,
-		Inventory:        inventoryDir,
+		Inventory:        inventoryPath,
 		Force:            *force,
 		OTLPEndpoint:     rt.OTLPEndpoint(),
 		ChWriter:         rt.ClickHouse,

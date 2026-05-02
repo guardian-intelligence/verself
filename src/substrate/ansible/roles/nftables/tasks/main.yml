@@ -19,7 +19,7 @@
         else ansible_facts.default_ipv4.interface | default('')
       }}
 
-# firecracker.nft is rendered from CUE but has one host runtime fact: the
+# firecracker.nft is rendered from topology but has one host runtime fact: the
 # uplink interface. Repair any prior generic copy before this role reloads.
 - name: Substitute uplink placeholder in existing Firecracker ruleset
   ansible.builtin.replace:

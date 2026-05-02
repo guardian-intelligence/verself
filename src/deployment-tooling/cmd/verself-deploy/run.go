@@ -31,7 +31,6 @@ import (
 // AXL-side responsibilities preserved (because they sit outside the
 // SSH/agent surface this binary owns):
 //   - aspect-operator refresh (re-mints the operator's SSH cert)
-//   - cue-renderer materialisation of .cache/render/<site>/
 func runRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")
@@ -147,10 +146,10 @@ func runDeployBody(
 	startedAt time.Time,
 	snap identity.Snapshot,
 ) int {
-	inventoryDir := filepath.Join(repoRoot, ".cache", "render", site, "inventory")
-	if _, err := os.Stat(inventoryDir); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: rendered inventory missing at %s: %v (run `aspect render` first)\n", inventoryDir, err)
-		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, nil, "rendered inventory missing")
+	inventoryPath := authoredInventoryPath(repoRoot, site)
+	if _, err := os.Stat(inventoryPath); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: inventory missing at %s: %v\n", inventoryPath, err)
+		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, nil, "inventory missing")
 		return 1
 	}
 	ansibleDir := filepath.Join(repoRoot, "src", "substrate", "ansible")
@@ -160,7 +159,7 @@ func runDeployBody(
 		Site:         site,
 		RepoRoot:     repoRoot,
 		AnsibleDir:   ansibleDir,
-		Inventory:    inventoryDir,
+		Inventory:    inventoryPath,
 		Force:        substrateMode == "always",
 		OTLPEndpoint: rt.OTLPEndpoint(),
 		ChWriter:     rt.ClickHouse,

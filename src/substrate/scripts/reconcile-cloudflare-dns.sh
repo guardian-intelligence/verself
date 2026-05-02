@@ -2,8 +2,8 @@
 # Run the reconcile-cloudflare-dns Go binary and record one row per invocation
 # to verself.reconciler_runs.
 #
-# The binary parses --site, reads the rendered desired state from
-# .cache/render/<site>/inventory/group_vars/all/generated/{dns,ops}.yml,
+# The binary parses --site, reads the authored desired state from
+# src/substrate/ansible/group_vars/all/generated/{dns,ops}.yml,
 # decrypts cloudflare_api_token from the SOPS-encrypted secrets file via
 # `sops -d`, and applies any drift in parallel against Cloudflare's API.
 #
@@ -78,10 +78,7 @@ SQL
 write_row "started" 0 0 0 0 ""
 
 start_ns="$(date +%s%N)"
-# The binary's default --render-root is .cache/render/<site>/inventory,
-# resolved relative to its CWD. This wrapper runs from the substrate root
-# but the rendered cache lives at the repo root, so pass it explicitly.
-render_root="${repo_root}/.cache/render/${site}/inventory"
+render_root="${repo_root}/src/substrate/ansible"
 set +e
 output="$( "${binary}" --site="${site}" --render-root="${render_root}" 2>&1 )"
 rc=$?

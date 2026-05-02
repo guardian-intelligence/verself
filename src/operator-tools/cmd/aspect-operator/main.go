@@ -22,7 +22,7 @@
 //	    into a Devin / Cursor / CI VM.
 //
 // Source of truth for principals, slot count, and well-known paths:
-// src/cue-renderer/instances/prod/{config,operators}.cue.
+// src/substrate/ansible/group_vars/all/generated/ops.yml.
 package main
 
 import (

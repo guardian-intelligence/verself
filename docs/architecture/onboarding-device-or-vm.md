@@ -6,7 +6,7 @@ the public internet.
 
 ## Trust model
 
-- CUE declares trusted devices (`operators.<name>.devices.<device>`)
+- Authored topology declares trusted devices (`operators.<name>.devices.<device>`)
   and the workload-pool capacity (`workloads.pool.slot_count`). All
   WireGuard peers in `wg-ops` are projected from this set; nothing
   writes peers to the kernel outside of the convergence loop.
@@ -42,7 +42,7 @@ pinned sha256 or the operation aborts.
 
 ## Operator-device onboarding (laptops)
 
-A trusted operator owns merge access to the CUE topology. Onboarding a
+A trusted operator owns merge access to the authored topology. Onboarding a
 new device is a two-actor flow: the new device generates its keys, the
 trusted operator opens the PR.
 
@@ -55,7 +55,7 @@ aspect operator onboard --device=<name> --wg-address=<ipv4>
   ├─ generate WireGuard keypair
   │  at ~/.config/verself/wg/<name>{,.pub}
   ├─ fetch /.well-known/verself-* (TLS, pin sha256)
-  └─ print CUE diff for the device entry  ─►  open PR with diff
+  └─ print topology YAML snippet for the device entry  ─►  open PR with diff
                                               merge → deploy
                                               wg-ops peer list reconciles
                                               ssh principals reconcile
@@ -120,7 +120,7 @@ Hard-fail conditions (loud, no silent fallbacks):
 ## Workload onboarding (Devin, Cursor, CI runners)
 
 The pool model. `workloads.pool.slot_count` (default 4) is declared in
-CUE. Each slot has a permanent `(wg_pubkey, wg_addr)` pair generated on
+Authored topology. Each slot has a permanent `(wg_pubkey, wg_addr)` pair generated on
 first deploy and stored in OpenBao KV at
 `kv/workload-pool/slots/<n>/{wg-private-key,wg-public-key}`. Slot
 pubkeys are projected into `wg-ops` peers alongside operator devices,
@@ -192,7 +192,7 @@ WHERE event_date >= today() - 1
   AND (
     NOT match(cert_id, '^verself-(operator|workload|breakglass)-[a-z0-9-]+$')
     OR splitByChar('-', cert_id)[3] NOT IN (
-      -- the current trusted set, projected from CUE at query time
+      -- the current trusted set, read from authored topology at query time
       <known device + slot suffix list>
     )
   )
@@ -200,8 +200,7 @@ ORDER BY recorded_at DESC;
 ```
 
 The "known set" is materialised on the controller from the rendered
-CUE, written next to the deploy artifacts as
-`.cache/render/<site>/known_cert_id_suffixes.txt`, and shipped into the
+authored topology and shipped into the
 ClickHouse query body. A Grafana panel on the host-auth dashboard runs
 the same query as an alert with a 5-minute evaluation window.
 
@@ -225,7 +224,7 @@ the same query as an alert with a 5-minute evaluation window.
 - Lifecycle audit table (`verself.operator_lifecycle_events`), status
   MV, governance audit events. The cert-id-stamped `host_auth_events`
   is the single observability surface until that proves insufficient.
-- CUE-projected `RevokedKeys` and a future `aspect substrate rotate-ssh-ca`
+- topology-projected `RevokedKeys` and a future `aspect substrate rotate-ssh-ca`
   playbook. Rotation policy: delete the CA in OpenBao, redeploy, every
   device re-onboards. Acceptable while pre-release.
 - SPIRE node-attestation path for headless workloads. The AppRole

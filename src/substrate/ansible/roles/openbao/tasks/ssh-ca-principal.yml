@@ -1,7 +1,7 @@
 ---
 # Per-principal OpenBao SSH role configuration. Loop variable `item` is
 # a dict2items entry: `item.key` is the principal name, `item.value`
-# is the SSHPrincipal CUE projection.
+# is the SSHPrincipal topology projection.
 
 - name: "Compute default_extensions for SSH principal {{ item.key }}"
   ansible.builtin.set_fact:

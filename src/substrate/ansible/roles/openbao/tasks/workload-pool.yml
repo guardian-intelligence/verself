@@ -11,7 +11,7 @@
 #   3. Write a credstore JSON file (/etc/credstore/workload-pool/slots.json)
 #      with {index, wg_public_key, wg_address} per slot — the wireguard
 #      role consumes this at template render time to add the slots as
-#      wg-ops peers without putting runtime state into CUE.
+#      wg-ops peers without putting runtime state into authored topology.
 #   4. Mint an ACL policy `ssh-ca-workload` (sign workload SSH cert + read
 #      slot priv keys + read workload AppRole role-id by ID).
 #   5. Enable the AppRole auth method at auth/approle and create role

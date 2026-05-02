@@ -7,6 +7,7 @@ go_library(
         "main.go",
         "nomad_deploy_all.go",
         "nomad_submit.go",
+        "paths.go",
         "run.go",
         "substrate.go",
         "with_otel.go",

@@ -57,12 +57,12 @@ type Options struct {
 	Site string
 
 	// RepoRoot is the absolute path to the verself-sh checkout. Used
-	// only to find the rendered inventory at .cache/render/<site>/.
+	// to find the authored substrate inventory.
 	// When empty, the process cwd is used.
 	RepoRoot string
 
 	// InfraHost overrides inventory resolution. Useful for one-shot
-	// invocations that don't sit on top of a cue-renderer cache.
+	// invocations that don't run against the authored repo inventory.
 	InfraHost string
 	InfraUser string
 
@@ -242,14 +242,7 @@ func (rt *Runtime) OTLPEndpoint() string {
 	return rt.otlpForward.ListenAddr
 }
 
-// resolveInfraHost prefers .cache/render/<site>/inventory/hosts.ini
-// (the rendered, deploy-ready inventory) and falls back to the
-// authored src/substrate/ansible/inventory/<site>.ini for one-shot
-// invocations not preceded by `aspect render`.
+// resolveInfraHost reads the authored per-site substrate inventory.
 func resolveInfraHost(repoRoot, site string) (*inventory.Host, error) {
-	cachePath := filepath.Join(repoRoot, ".cache", "render", site, "inventory", "hosts.ini")
-	if _, err := os.Stat(cachePath); err == nil {
-		return inventory.LoadInfra(cachePath)
-	}
 	return inventory.LoadInfra(filepath.Join(repoRoot, "src", "substrate", "ansible", "inventory", site+".ini"))
 }

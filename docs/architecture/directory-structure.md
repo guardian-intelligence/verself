@@ -14,7 +14,6 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 
 - `vm-orchestrator/` — privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket).
 - `vm-guest-telemetry/` — Zig guest agent streaming 60Hz health over vsock.
-- `cue-renderer/` — CUE topology/catalog source plus the Go renderer for generated platform artifacts.
 - `sandbox-rental-service/` — compute product control plane (executions, checkpoint refs, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `identity-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
@@ -47,10 +46,10 @@ not converge host packages or deploy services.
 - `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
   persona, billing, mail, database access, observability, and substrate
   evidence.
-Per-deploy generated files materialise under `.cache/render/<site>/` when
-`aspect render --site=<site>` runs. The deploy path consumes rendered
-inventory, generated group_vars projections, host firewall files, and rendered
-Nomad jobs from that cache.
+Topology vars are authored under `src/substrate/ansible/group_vars/all/generated/`.
+Host firewall files are source-owned under `src/substrate/ansible/rendered/`.
+Nomad base jobs live under `src/deployment-tooling/nomad/sites/<site>/jobs/`
+and are resolved by Bazel with the service-owned artifact and rollout inputs.
 
 ## Service- and substrate-local docs
 
