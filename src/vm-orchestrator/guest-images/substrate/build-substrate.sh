@@ -84,6 +84,11 @@ grep -q '^CONFIG_HW_RANDOM_VIRTIO=y$' "$VMLINUX_CONFIG_SRC" || {
   echo "ERROR: guest kernel is missing CONFIG_HW_RANDOM_VIRTIO=y" >&2
   exit 1
 }
+# CVE-2026-31431 (Copy Fail) is reachable through AF_ALG AEAD; guests do not need that user API.
+grep -q '^# CONFIG_CRYPTO_USER_API_AEAD is not set$' "$VMLINUX_CONFIG_SRC" || {
+  echo "ERROR: guest kernel exposes CONFIG_CRYPTO_USER_API_AEAD affected by CVE-2026-31431" >&2
+  exit 1
+}
 
 WORKDIR=$(mktemp -d)
 ROOTFS="$WORKDIR/rootfs"

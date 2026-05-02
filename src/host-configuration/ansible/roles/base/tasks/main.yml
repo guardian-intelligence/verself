@@ -10,6 +10,30 @@
       - e2fsprogs
     state: present
     update_cache: true
+    cache_valid_time: 3600
+
+- name: Block algif_aead autoload for Copy Fail
+  ansible.builtin.copy:
+    content: |
+      # Managed by Verself host-configuration.
+      # CVE-2026-31431 (Copy Fail): block AF_ALG AEAD autoload until the host kernel carries the upstream fix.
+      blacklist algif_aead
+      install algif_aead /bin/false
+    dest: /etc/modprobe.d/cve-2026-31431-copy-fail.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Unload algif_aead if already loaded
+  community.general.modprobe:
+    name: algif_aead
+    state: absent
+
+- name: Check Copy Fail algif_aead autoload hardening
+  ansible.builtin.command: modprobe -n -v algif_aead
+  register: base_copy_fail_algif_aead_modprobe
+  changed_when: false
+  failed_when: base_copy_fail_algif_aead_modprobe.stdout is not search('/bin/false')
 
 - name: Create credstore parent directory
   ansible.builtin.file:
