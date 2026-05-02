@@ -5,8 +5,8 @@
 # substrate daemon (postgresql, clickhouse, zitadel, openbao, nats, temporal,
 # stalwart, electric, otelcol, grafana, verdaccio, caddy, forgejo, garage,
 # spire, ssh_ca, bazel_remote, nomad, tigerbeetle), plus the wireguard ops
-# re-converge}, src/cue-renderer/catalog/versions.cue, all rendered substrate
-# inputs. Skipped by aspect deploy when the input hash matches.
+# re-converge}, substrate/devtools catalogs, and authored topology inputs.
+# Skipped by aspect deploy when the input hash matches.
 #
 # Order constraints:
 #   - SPIRE first: every workload that follows asks SPIRE for an SVID.

@@ -8,7 +8,6 @@ filegroup(
     name = "converge_sources",
     srcs = [
         ":substrate_sources",
-        "//src/cue-renderer:topology_srcs",
         "//src/substrate/binaries:server_tools_archive",
         "//src/substrate/binaries:substrate_go_tools",
     ],
@@ -49,6 +48,7 @@ _SHARED_ANSIBLE_PATTERNS = [
     "src/substrate/ansible/callback_plugins/*",
     "src/substrate/ansible/plugins/*",
     "src/substrate/ansible/group_vars/*",
+    "src/substrate/ansible/rendered/*",
 ]
 
 _L1_OS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
@@ -103,27 +103,6 @@ _L4A_COMPONENTS_ANSIBLE_PATTERNS = _SHARED_ANSIBLE_PATTERNS + [
     "src/substrate/ansible/roles/zitadel_oauth_app/*",
     "src/substrate/ansible/roles/zitadel_project_roles/*",
 ]
-
-# Render the substrate inputs once. Bazel's action cache makes this a no-op
-# for subsequent layer digests within the same converge_sources state.
-# Layer digests consume only this listing — they never re-render.
-genrule(
-    name = "prod_rendered_substrate",
-    srcs = ["//src/cue-renderer:topology_srcs"],
-    outs = ["prod-rendered-substrate-listing.txt"],
-    cmd = """
-set -eu
-render_dir="$(@D)/prod-rendered-substrate"
-rm -rf "$$render_dir"
-mkdir -p "$$render_dir"
-$(location //src/cue-renderer/cmd/cue-renderer) generate --instance=prod --output-dir="$$render_dir" >/dev/null
-# Deterministic listing of every rendered substrate file with its content
-# hash. Downstream layer digests mix this in; if the rendered tree changes,
-# every layer's digest changes.
-( cd "$$render_dir" && find inventory share/rendered -type f -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 sha256sum ) > "$@"
-""",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-)
 
 layer_digest_genrule(
     name = "prod_l1_os_digest",

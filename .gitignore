@@ -16,13 +16,8 @@ src/substrate/ansible/.cache/
 src/substrate/ansible/inventory/*.ini
 !src/substrate/ansible/inventory/*.example
 
-# Renderer cache: aspect render --site=<site> writes everything Ansible
-# discovers under .cache/render/<site>/ (inventory, group_vars, share/rendered).
-# Tracked generated files used to live under src/substrate/ansible/; they are
-# intentionally absent now so PR review surfaces only authored CUE/Ansible.
+# Legacy renderer cache.
 .cache/
-src/substrate/ansible/group_vars/all/generated/
-src/substrate/ansible/share/rendered/
 
 # Age private keys (NEVER commit)
 **/keys.txt

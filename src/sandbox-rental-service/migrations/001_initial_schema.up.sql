@@ -225,7 +225,7 @@ CREATE INDEX idx_runner_class_filesystem_mounts_active
 -- Runner-class baseline mounts: every verself runner class boots from
 -- the substrate image and composes the gh-actions-runner toolchain
 -- image read-only at /opt/actions-runner. source_ref values match the
--- composable image catalog in src/cue-renderer/instances/local/config.cue:
+-- composable image catalog in authored substrate topology:
 -- firecracker.images, which the daemon resolves to ZFS snapshots at
 -- lease boot. Sticky-disk mounts (caches, persistent workspace) are
 -- per-execution and arrive via StartExecRequest, not this table.

@@ -1,4 +1,4 @@
-"""Reject `*_port` variables defined outside CUE-rendered topology."""
+"""Reject ad-hoc `*_port` variables outside the authored topology contract."""
 
 from __future__ import annotations
 
@@ -13,14 +13,13 @@ PORT_KEY_RE = re.compile(r"^(\s*\w*_port)\s*:")
 
 
 class NoDefaultPortsRule(AnsibleLintRule):
-    """Port variables must be defined in CUE topology, not in role defaults or hand-written group_vars."""
+    """Port variables must be defined in topology, not role defaults."""
 
     id = "no-default-ports"
     description = (
-        "All service port numbers belong in CUE topology and are projected via "
-        "`aspect render --site=<site>` into the per-site deploy cache. Defining "
+        "All service port numbers belong in the authored topology contract. Defining "
         "`*_port` variables in role `defaults/` or hand-written `group_vars/` "
-        "files re-introduces the scattered-port problem CUE was adopted to fix."
+        "files re-introduces scattered port ownership."
     )
     severity = "HIGH"
     tags = ["custom", "services"]
@@ -36,9 +35,8 @@ class NoDefaultPortsRule(AnsibleLintRule):
         if file.kind not in self._var_kinds:
             return results
 
-        # Cache-rendered files live outside ansible-lint's cwd (.cache/render/<site>/)
-        # so they are never visited here; the rule's domain is the authored
-        # tree only.
+        # The rule's domain is role/default variable files; topology-owned
+        # generated group_vars are allowed to carry concrete ports.
         content = file.content
         for lineno, line in enumerate(content.splitlines(), start=1):
             m = PORT_KEY_RE.match(line)
@@ -47,8 +45,8 @@ class NoDefaultPortsRule(AnsibleLintRule):
                     self.create_matcherror(
                         message=(
                             f"Port variable '{m.group(1).strip()}' defined outside "
-                            "CUE-rendered topology — declare it in src/cue-renderer/ "
-                            "instead so the renderer projects it into the deploy cache."
+                            "the topology contract — declare it in "
+                            "src/substrate/ansible/group_vars/all/generated/ instead."
                         ),
                         lineno=lineno,
                         filename=file,

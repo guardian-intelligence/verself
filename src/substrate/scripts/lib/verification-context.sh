@@ -9,9 +9,8 @@ verification_context_init() {
   VERIFICATION_SMOKE_ARTIFACT_ROOT="${VERIFICATION_SMOKE_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/smoke-artifacts}"
   VERIFICATION_DEPLOY_ARTIFACT_ROOT="${VERIFICATION_DEPLOY_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/deploy}"
 
-  # The cache is the per-site rendered deploy surface — generated group_vars
-  # plus a staged hosts.ini. Source the helper so canaries see the same
-  # inventory + generated vars layout that `aspect deploy` consumes.
+  # Source the helper so canaries see the same authored inventory and topology
+  # vars that `verself-deploy run` consumes.
   # shellcheck source=src/substrate/scripts/lib/site-cache.sh
   source "${VERIFICATION_SCRIPT_DIR}/lib/site-cache.sh"
   site_cache_init
@@ -19,9 +18,9 @@ verification_context_init() {
   VERIFICATION_SITE="${VERSELF_SITE}"
   VERIFICATION_CACHE_DIR="${VERSELF_RENDER_CACHE_DIR}"
   VERIFICATION_INVENTORY_DIR="${VERSELF_ANSIBLE_INVENTORY}"
-  VERIFICATION_INVENTORY="${VERIFICATION_INVENTORY_DIR}/hosts.ini"
+  VERIFICATION_INVENTORY="${VERSELF_ANSIBLE_HOSTS_INI}"
   VERIFICATION_VARS_FILE="${VERIFICATION_SUBSTRATE_ROOT}/ansible/group_vars/all/main.yml"
-  VERIFICATION_GENERATED_VARS_FILE="${VERIFICATION_INVENTORY_DIR}/group_vars/all/generated/ops.yml"
+  VERIFICATION_GENERATED_VARS_FILE="${VERIFICATION_SUBSTRATE_ROOT}/ansible/group_vars/all/generated/ops.yml"
   VERIFICATION_DOMAIN="$(
     awk '
       /^[[:space:]]*verself_domain:[[:space:]]*/ {

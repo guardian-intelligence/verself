@@ -3,8 +3,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 package(default_visibility = ["//visibility:public"])
 
 # Guest-image build infrastructure for vm-orchestrator. The split
-# substrate / toolchain catalog declared in
-# src/cue-renderer/instances/prod/config.cue:firecracker.images is
+# substrate / toolchain catalog authored in substrate topology is
 # materialised here:
 #
 #   guest_image.bzl    — Starlark macro `toolchain_ext4_image` for

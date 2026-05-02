@@ -3,10 +3,9 @@
 # delivery channel can run. Today that is Bazelisk, the Aspect CLI, and
 # Vite+ (which owns vp/vite/rolldown/vitest invocation for the JS workspace).
 #
-# CUE owns the version-of-record (src/cue-renderer/catalog/versions.cue:
-# devTools.{bazelisk,aspect,viteplus}, all tier=bootstrap_pivot). The
-# constants here are hand-mirrored: this script cannot evaluate CUE because
-# CUE evaluation requires Bazel which requires Bazelisk.
+# The devtools catalog owns the version-of-record for controller tools. The
+# constants here are hand-mirrored because this script bootstraps Bazelisk
+# before Bazel-owned catalog checks can run.
 #
 # After install, /usr/local/bin/bazel is symlinked to bazelisk so the Aspect
 # CLI's ctx.bazel.{build,test,run,query} APIs (which spawn `bazel` directly)

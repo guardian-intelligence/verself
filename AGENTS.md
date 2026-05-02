@@ -27,8 +27,8 @@ Tech Stack:
 
 Invariant patterns:
 
-* CUE and the cue-renderer is considered deprecated.
-* Efficient rebuilding: Bazel's job is to cache and schedule, not transform. Bazel decides when to run a unit's build pipeline (CUE -> codegen is a unit, for example). Nomad orchestrates deploys. Ansible's job is to run playbooks to ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main and CI runs Bazel and Nomad. Let each language/package decide how to build itself. We finetune our build process per unit, not through Bazel.
+* Topology is source-owned by substrate/service files. Do not reintroduce CUE or a central renderer pipeline.
+* Efficient rebuilding: Bazel's job is to cache and schedule, not transform platform policy. Bazel decides when to run a unit's build pipeline. Nomad orchestrates deploys. Ansible's job is to run playbooks to ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main and CI runs Bazel and Nomad. Let each language/package decide how to build itself. We finetune our build process per unit, not through Bazel.
 
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
@@ -101,7 +101,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
-- **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/cue-renderer/` (deprecated)
+- **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/substrate/ansible/group_vars/all/generated/` plus service-owned Nomad metadata.
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 

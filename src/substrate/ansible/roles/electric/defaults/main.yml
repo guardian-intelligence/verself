@@ -1,6 +1,6 @@
 ---
 # Shared across instances. Instance-specific topology is passed as
-# electric_config from generated CUE vars.
+# electric_config from generated topology vars.
 electric_version: "1.5.0"
 electric_image: "docker.io/electricsql/electric:{{ electric_version }}"
 

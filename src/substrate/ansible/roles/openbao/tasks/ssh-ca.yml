@@ -6,10 +6,10 @@
 #      first run; idempotent thereafter).
 #   2. OpenBao OIDC auth method bound to the Zitadel issuer with the
 #      SSH-CA app's client_id/secret. Mounted at /v1/auth/oidc-ssh-ca/.
-#   3. One Vault policy per CUE-declared SSH principal granting exactly
+#   3. One Vault policy per topology-declared SSH principal granting exactly
 #      `<mount>/sign/<principal>`.
-#   4. SSH secrets engine at /v1/<mount>/, one signing role per CUE
-#      principal with TTL/CIDR/force-command stamped from the schema.
+#   4. SSH secrets engine at /v1/<mount>/, one signing role per topology
+#      principal with TTL/CIDR/force-command stamped from topology_ssh_ca.
 #   5. OIDC role on the auth method only for `role: operator` principals
 #      (humans). Automation roles use SPIFFE workload identity (not
 #      wired in this commit). Breakglass uses a separate path that
@@ -19,9 +19,8 @@
 #   6. CA public key persisted to {{ openbao_credstore_dir }}/ssh-ca.pub
 #      for the ssh_ca role to consume on the next play.
 #
-# Schema source of truth: src/cue-renderer/schema/schema.cue (#SSHCAConfig,
-# #SSHPrincipal). Instance values land in `topology_ssh_ca` via
-# src/cue-renderer/instances/prod/config.cue's ansible_vars projection.
+# Source of truth: topology_ssh_ca in
+# src/substrate/ansible/group_vars/all/generated/ops.yml.
 
 - name: Reconcile Zitadel OIDC app for SSH CA
   ansible.builtin.include_role:

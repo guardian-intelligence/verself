@@ -1,0 +1,267 @@
+# Authored substrate topology contract.
+# Source: src/substrate/ansible/group_vars/all/generated
+---
+topology_gateways:
+  direct_smtp:
+    host: 0.0.0.0
+    kind: direct
+  firecracker_host:
+    host: 10.255.0.1
+    kind: firecracker_host
+  public_caddy:
+    host: 0.0.0.0
+    kind: caddy
+topology_routes:
+  - browser_cors: same_origin
+    gateway: public_caddy
+    host: '@'
+    kind: browser_origin
+    max_body_bytes: 65536
+    path_prefix: ""
+    paths:
+      - /api/v1/auth/login
+      - /api/v1/auth/callback
+      - /api/v1/auth/session
+      - /api/v1/auth/organization
+      - /api/v1/auth/logout
+    to:
+      component: identity_service
+      interface: public_api
+    waf: detection
+    zone: product
+  - browser_cors: same_origin
+    gateway: public_caddy
+    host: '@'
+    kind: browser_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: verself_web
+      interface: frontend
+    waf: detection
+    zone: product
+  - browser_cors: same_origin
+    gateway: public_caddy
+    host: '@'
+    kind: browser_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: company
+      interface: frontend
+    waf: detection
+    zone: company
+  - browser_cors: none
+    gateway: public_caddy
+    host: billing.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: billing
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: sandbox.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: sandbox_rental
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: identity.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: identity_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: profile.api
+    kind: public_api_origin
+    max_body_bytes: 16384
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: profile_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: notifications.api
+    kind: public_api_origin
+    max_body_bytes: 16384
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: notifications_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: projects.api
+    kind: public_api_origin
+    max_body_bytes: 65536
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: projects_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: source.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: source_code_hosting_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: governance.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: governance_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: secrets.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: secrets_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: none
+    gateway: public_caddy
+    host: mail.api
+    kind: public_api_origin
+    max_body_bytes: 1048576
+    path_prefix: /api/v1
+    paths: []
+    to:
+      component: mailbox_service
+      interface: public_api
+    waf: blocking
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: public_caddy
+    host: dashboard
+    kind: operator_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: grafana
+      interface: operator_ui
+    waf: detection
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: public_caddy
+    host: git
+    kind: protocol_origin
+    max_body_bytes: 1048576
+    path_prefix: ""
+    paths: []
+    to:
+      component: source_code_hosting_service
+      interface: git_smart_http
+    waf: detection
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: public_caddy
+    host: auth
+    kind: protocol_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: zitadel
+      interface: oidc
+    waf: detection
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: public_caddy
+    host: mail
+    kind: protocol_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: stalwart
+      interface: jmap
+    waf: detection
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: direct_smtp
+    host: mail
+    kind: protocol_origin
+    max_body_bytes: 0
+    path_prefix: ""
+    paths: []
+    to:
+      component: stalwart
+      interface: smtp
+    waf: "off"
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: firecracker_host
+    host: 10.255.0.1
+    kind: guest_host_route
+    max_body_bytes: 0
+    path_prefix: ""
+    paths:
+      - /internal/sandbox/v1/github-runner-jit
+      - /internal/sandbox/v1/runner-bootstrap
+      - /internal/sandbox/v1/stickydisk/*
+      - /internal/sandbox/v1/github-checkout/bundle
+    to:
+      component: sandbox_rental
+      interface: public_api
+    waf: "off"
+    zone: product
+  - browser_cors: not_browser_reachable
+    gateway: firecracker_host
+    host: 10.255.0.1
+    kind: guest_host_route
+    max_body_bytes: 0
+    path_prefix: ""
+    paths:
+      - /api/actions
+      - /api/actions/*
+      - /{owner}/{repo}.git/info/refs
+      - /{owner}/{repo}.git/git-upload-pack
+    to:
+      component: forgejo
+      interface: forgejo_http
+    waf: "off"
+    zone: product

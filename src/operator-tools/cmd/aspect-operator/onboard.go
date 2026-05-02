@@ -72,7 +72,7 @@ func cmdOnboard(args []string) error {
 			return errors.New(
 				"--wg-address is required for fresh onboarding. Pick an unused IPv4 in the wg-ops /24 " +
 					"(operators: 10.66.66.2..99; workload-pool slots: 10.66.66.100..163). " +
-					"Existing operator addresses live in src/cue-renderer/instances/prod/operators.cue.")
+					"Existing operator addresses live in src/substrate/ansible/group_vars/all/generated/ops.yml.")
 		}
 	}
 	if err := validateOperatorWGAddress(*wgAddress); err != nil {
@@ -107,16 +107,16 @@ func cmdOnboard(args []string) error {
 	fmt.Fprintf(os.Stderr, "wg-ops endpoint: %s:%d (server pubkey %s)\n",
 		anchors.Wireguard.EndpointHost, anchors.Wireguard.EndpointPort, anchors.Wireguard.ServerPubkey)
 
-	// 3. Print the CUE diff for the trusted operator to PR. Skipped
+	// 3. Print the YAML entry for the trusted operator to PR. Skipped
 	//    when adopting an existing wg-ops interface — its pubkey is
-	//    already registered in CUE by definition (we'd be unable to
-	//    handshake otherwise).
+	//    already registered by definition (we'd be unable to handshake
+	//    otherwise).
 	if !externallyManagedWG {
 		wgPub, err := os.ReadFile(wgPubPath)
 		if err != nil {
 			return err
 		}
-		emitCUEDiff(*device, strings.TrimSpace(string(wgPub)), *wgAddress)
+		emitTopologyEntry(*device, strings.TrimSpace(string(wgPub)), *wgAddress)
 	}
 
 	// 4. Local wg-ops bring-up. Skipped when the system already runs
@@ -147,8 +147,8 @@ func cmdOnboard(args []string) error {
 		return err
 	}
 
-	// 7. Sign the first cert. Mount + role are CUE-side constants
-	//    (config.ssh_ca.mount=ssh-ca, principal=operator).
+	// 7. Sign the first cert. Mount + role are topology constants
+	//    (topology_ssh_ca.mount=ssh-ca, principal=operator).
 	tokenBytes, err := os.ReadFile(tokenPath)
 	if err != nil {
 		return fmt.Errorf("read vault token at %s: %w", tokenPath, err)
@@ -258,7 +258,7 @@ func hostnameOrUnknown() string {
 // the wg-ops gateway (.1), the workload-pool range (.100..163), or
 // anything outside the 10.66.66.0/24 mesh. Collision with an existing
 // operator device is detected at PR-review time — the binary cannot
-// enumerate operators.cue from a fresh device.
+// enumerate the private topology before the device is trusted.
 func validateOperatorWGAddress(addr string) error {
 	parts := strings.Split(addr, ".")
 	if len(parts) != 4 {
@@ -285,17 +285,23 @@ func validateOperatorWGAddress(addr string) error {
 	return nil
 }
 
-// emitCUEDiff prints the operator-device CUE entry the PR reviewer
+// emitTopologyEntry prints the operator-device topology entry the PR reviewer
 // needs to add. Stdout so it is easy to pipe into `pbcopy` /
 // `xclip -selection clipboard`.
-func emitCUEDiff(device, wgPubkey, wgAddress string) {
-	fmt.Println("# Add the following entry under config.operators.<operator>.devices in")
-	fmt.Println("# src/cue-renderer/instances/prod/operators.cue, then open a PR.")
-	fmt.Printf("\"%s\": {\n", device)
-	fmt.Printf("\tname:       %q\n", device)
-	fmt.Printf("\twg_pubkey:  %q\n", wgPubkey)
-	fmt.Printf("\twg_address: %q\n", wgAddress)
-	fmt.Println("}")
+func emitTopologyEntry(device, wgPubkey, wgAddress string) {
+	fmt.Println("# Add the following entry under topology_operators.<operator>.devices in")
+	fmt.Println("# src/substrate/ansible/group_vars/all/generated/ops.yml, then open a PR.")
+	fmt.Printf("%s:\n", device)
+	fmt.Printf("  name: %q\n", device)
+	fmt.Printf("  wg_pubkey: %q\n", wgPubkey)
+	fmt.Printf("  wg_address: %q\n", wgAddress)
+	fmt.Println()
+	fmt.Println("# Also append this peer under topology_wireguard.tunnels.ops.peers:")
+	fmt.Printf("- public_key: %q\n", wgPubkey)
+	fmt.Printf("  allowed_ips: %q\n", wgAddress+"/32")
+	fmt.Println()
+	fmt.Println("# Also append this device name under known_cert_id_suffixes:")
+	fmt.Printf("- %s\n", device)
 	fmt.Println()
 }
 
@@ -373,7 +379,7 @@ func writeSSHConfigDropIn(alias, hostAddress, keyPath, certPath string) error {
 	// Publishing the host's SSH host key under /.well-known/ so this
 	// becomes pinned-on-first-fetch is a documented future hardening.
 	dropIn := fmt.Sprintf(`# Managed by aspect-operator; safe to overwrite. Source of truth:
-# src/cue-renderer/instances/prod/{config,operators}.cue.
+# src/substrate/ansible/group_vars/all/generated/ops.yml.
 Host %s %s
     HostName %s
     User ubuntu

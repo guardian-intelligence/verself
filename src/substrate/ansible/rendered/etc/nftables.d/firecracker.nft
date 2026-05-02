@@ -1,0 +1,27 @@
+# Authored substrate rendered file.
+# Source: src/substrate/ansible/rendered
+#!/usr/sbin/nft -f
+# Firecracker guest networking: NAT + forwarding for the guest pool.
+# The uplink interface placeholder below is substituted by the firecracker
+# Ansible role at deploy time.
+
+table ip verself_firecracker
+delete table ip verself_firecracker
+
+table ip verself_firecracker {
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        ip saddr 172.16.0.0/16 ip daddr 172.16.0.0/16 drop
+        ip saddr 172.16.0.0/16 tcp dport 25 limit rate 10/minute log prefix "fc-smtp-block: "
+        ip saddr 172.16.0.0/16 tcp dport 25 counter drop
+        ip saddr 172.16.0.0/16 oifname "__VERSELF_UPLINK__" accept
+        ip daddr 172.16.0.0/16 iifname "__VERSELF_UPLINK__" ct state established,related accept
+        ip daddr 172.16.0.0/16 drop
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ip saddr 172.16.0.0/16 oifname "__VERSELF_UPLINK__" masquerade
+    }
+}

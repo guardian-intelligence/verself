@@ -1,7 +1,7 @@
 ---
 # Install apt-managed system packages declared in topology_system_packages.
 # These intentionally bypass content pinning — each entry's
-# `risk_acknowledgement` (in CUE) documents why we accept upstream Ubuntu's
+# `risk_acknowledgement` (in topology) documents why we accept upstream Ubuntu's
 # archive integrity instead of sha256-pinning the binary.
 #
 # This is the only Ansible-side delivery channel for unpinned packages;

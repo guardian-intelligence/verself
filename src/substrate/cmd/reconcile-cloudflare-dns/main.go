@@ -1,5 +1,5 @@
 // Command reconcile-cloudflare-dns drives Cloudflare zone state to match the
-// rendered substrate topology.
+// authored substrate topology.
 //
 // Replaces the cloudflare_dns Ansible role, which sequentially called
 // community.general.cloudflare_dns once per record (~870ms each, ~40s total
@@ -46,8 +46,8 @@ type config struct {
 func run(args []string) error {
 	fs := flag.NewFlagSet("reconcile-cloudflare-dns", flag.ContinueOnError)
 	cfg := config{}
-	fs.StringVar(&cfg.site, "site", "prod", "Deployment site (selects .cache/render/<site>/).")
-	fs.StringVar(&cfg.renderRoot, "render-root", "", "Path to rendered substrate inventory (defaults to .cache/render/<site>/inventory).")
+	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
+	fs.StringVar(&cfg.renderRoot, "render-root", "", "Path to substrate Ansible root (defaults to src/substrate/ansible).")
 	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted secrets.yml (defaults to <render-root>/group_vars/all/secrets.sops.yml).")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
@@ -56,7 +56,7 @@ func run(args []string) error {
 		return err
 	}
 	if cfg.renderRoot == "" {
-		cfg.renderRoot = fmt.Sprintf(".cache/render/%s/inventory", cfg.site)
+		cfg.renderRoot = "src/substrate/ansible"
 	}
 	if cfg.secretsPath == "" {
 		cfg.secretsPath = cfg.renderRoot + "/group_vars/all/secrets.sops.yml"

@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys TigerBeetle. Formats the data file"
       - "(idempotent), configures the systemd unit with CAP_IPC_LOCK,"
       - "and verifies health via a transaction smoke test."
-      - "Service ports come from CUE-rendered topology, not from this role."
+      - "Service ports come from authored topology, not from this role."
     options:
       tigerbeetle_data_dir:
         type: path
