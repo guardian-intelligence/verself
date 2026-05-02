@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -100,10 +101,9 @@ func run() error {
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	vmOrchestratorSocket := cfg.String("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
-	githubAppEnabled := cfg.Bool("SANDBOX_GITHUB_APP_ENABLED", false)
-	githubAppID := cfg.Int64("SANDBOX_GITHUB_APP_ID", 0)
-	githubAppSlug := cfg.String("SANDBOX_GITHUB_APP_SLUG", "")
-	githubAppClientID := cfg.String("SANDBOX_GITHUB_APP_CLIENT_ID", "")
+	githubAppIDRaw := cfg.RequireString("SANDBOX_GITHUB_APP_ID")
+	githubAppSlug := cfg.RequireString("SANDBOX_GITHUB_APP_SLUG")
+	githubAppClientID := cfg.RequireString("SANDBOX_GITHUB_APP_CLIENT_ID")
 	githubAPIBaseURL := cfg.URL("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
 	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := cfg.Int64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
@@ -124,6 +124,10 @@ func run() error {
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	if err := cfg.Err(); err != nil {
 		return err
+	}
+	githubAppID, err := strconv.ParseInt(githubAppIDRaw, 10, 64)
+	if err != nil || githubAppID <= 0 {
+		return fmt.Errorf("SANDBOX_GITHUB_APP_ID must be a positive int64")
 	}
 	billingReturnOrigins, err := sandboxapi.ParseBillingReturnOrigins(billingReturnOriginsRaw)
 	if err != nil {
@@ -248,22 +252,17 @@ func run() error {
 	}
 	defer temporalClient.Close()
 
-	var githubAppPrivateKey string
-	var githubAppWebhookSecret string
-	var githubAppClientSecret string
-	if githubAppEnabled || githubAppID > 0 || githubAppSlug != "" || githubAppClientID != "" {
-		githubSecrets, err := readRuntimeSecrets(ctx, secretsClient,
-			secretsclient.SandboxGitHubPrivateKeyName,
-			secretsclient.SandboxGitHubWebhookSecretName,
-			secretsclient.SandboxGitHubClientSecretName,
-		)
-		if err != nil {
-			return fmt.Errorf("sandbox-rental github provider secret: %w", err)
-		}
-		githubAppPrivateKey = requireSecretField(githubSecrets, secretsclient.SandboxGitHubPrivateKeyName, "sandbox-rental github provider secret")
-		githubAppWebhookSecret = requireSecretField(githubSecrets, secretsclient.SandboxGitHubWebhookSecretName, "sandbox-rental github provider secret")
-		githubAppClientSecret = requireSecretField(githubSecrets, secretsclient.SandboxGitHubClientSecretName, "sandbox-rental github provider secret")
+	githubSecrets, err := readRuntimeSecrets(ctx, secretsClient,
+		secretsclient.SandboxGitHubPrivateKeyName,
+		secretsclient.SandboxGitHubWebhookSecretName,
+		secretsclient.SandboxGitHubClientSecretName,
+	)
+	if err != nil {
+		return fmt.Errorf("sandbox-rental github provider secret: %w", err)
 	}
+	githubAppPrivateKey := requireSecretField(githubSecrets, secretsclient.SandboxGitHubPrivateKeyName, "sandbox-rental github provider secret")
+	githubAppWebhookSecret := requireSecretField(githubSecrets, secretsclient.SandboxGitHubWebhookSecretName, "sandbox-rental github provider secret")
+	githubAppClientSecret := requireSecretField(githubSecrets, secretsclient.SandboxGitHubClientSecretName, "sandbox-rental github provider secret")
 
 	// --- job service ---
 

@@ -7,6 +7,10 @@
 platform_rendered_dir: "{{ playbook_dir }}/../rendered"
 postgresql_log_dir: /var/log/postgresql
 
+# Platform-owned organization ID used for first-party runtime secrets that
+# services fetch through secrets-service over SPIFFE mTLS.
+secrets_service_platform_org_id: "370200542594579812"
+
 # Operator email forwarding — all mail to ceo@<domain> is copied here by the
 # mailbox-service internal forwarder. Required for turnkey operator
 # notifications.
@@ -14,9 +18,8 @@ stalwart_operator_forward_to: ""
 
 # GitHub Actions runner integration. Create/update the customer-facing app at
 # https://github.com/settings/apps/new or the org-owned app settings URL below.
-# The private key, webhook secret, and client secret are stored as platform-org
-# secrets and are not committed.
-sandbox_rental_service_github_app_enabled: true
+# The private key, webhook secret, and client secret are required platform-org
+# runtime secrets and are not committed.
 sandbox_rental_service_github_app_id: 3370540
 sandbox_rental_service_github_app_slug: verself-ci
 sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"

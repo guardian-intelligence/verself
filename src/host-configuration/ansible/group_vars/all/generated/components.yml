@@ -1487,7 +1487,6 @@ topology_components:
           api_base_url: https://api.github.com
           app_id: "3370540"
           client_id: Iv23liDpxGOmBSQwSJ5i
-          enabled: true
           slug: verself-ci
           web_base_url: https://github.com
       clickhouse:
