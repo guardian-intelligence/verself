@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS identity_organizations (
     CHECK (org_id ~ '^[0-9]+$'),
     CHECK (length(btrim(display_name)) > 0),
     CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
-    CHECK (NOT slug ~ '^org-[0-9]+$'),
     CHECK (state IN ('active')),
     CHECK (version > 0),
     CHECK (length(btrim(created_by)) > 0),
