@@ -8,9 +8,11 @@ Host configuration owns host and daemon convergence inputs:
   reconcilers.
 - `migrations/clickhouse/` contains host convergence ClickHouse schema.
 - `scripts/` contains maintenance helpers that operate on the controller
-  directly: `clickhouse.sh` / `pg.sh` / `tigerbeetle.sh` for ssh-tunneled
-  DB shells, `wipe-server.sh` for fleet teardown, and
-  `reconcile-cloudflare-dns.sh` for the Cloudflare DNS reconciler.
+  directly: `wipe-server.sh` for fleet teardown,
+  `reconcile-cloudflare-dns.sh` for the Cloudflare DNS reconciler, and
+  legacy helpers still used by maintenance scripts. Operator database access
+  goes through `aspect db pg|ch|tb`, backed by `aspect-operator` and
+  `src/operator-runtime/go`.
 
 `aspect deploy --site=<site>` refreshes the operator SSH certificate, stages
 reviewable render output, runs `verself-deploy run`, and then lets the Go

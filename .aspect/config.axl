@@ -45,7 +45,8 @@ load(
     db_ch_query = "ch_query",
     db_ch_schemas = "ch_schemas",
     db_tb_shell = "tb_shell",
-    db_tb_command = "tb_command",
+    db_tb_query_accounts = "tb_query_accounts",
+    db_tb_lookup_account = "tb_lookup_account",
 )
 load(".aspect/tasks/check.axl", "check")
 load(
@@ -122,7 +123,8 @@ def config(ctx):
     ctx.tasks.add(db_ch_query)
     ctx.tasks.add(db_ch_schemas)
     ctx.tasks.add(db_tb_shell)
-    ctx.tasks.add(db_tb_command)
+    ctx.tasks.add(db_tb_query_accounts)
+    ctx.tasks.add(db_tb_lookup_account)
 
     # aspect dev ...
     ctx.tasks.add(dev_install)
