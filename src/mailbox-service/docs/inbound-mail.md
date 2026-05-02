@@ -6,7 +6,7 @@ Stalwart still serves two purposes: internal infrastructure (`agents@` for 2FA, 
 
 ## Network topology
 
-Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, Caddy for the public HTTP surface, and `mailbox-service` for repo-owned mailbox behavior:
+Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, HAProxy for the public HTTP surface, and `mailbox-service` for repo-owned mailbox behavior:
 
 ```
                     Internet
@@ -16,8 +16,8 @@ Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, Caddy fo
           (STARTTLS)│      │ (TLS)
                     │      │
                     ▼      ▼
-              Stalwart    Caddy
-              SMTP        (TLS + WAF)
+              Stalwart    HAProxy
+              SMTP        (TLS + edge policy)
                 │          │
                 │          │ mail.<domain>
                 │          ├── /api/*  ──────────────────────► mailbox-service
@@ -33,13 +33,13 @@ Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, Caddy fo
                                  (sync + write API + forwarder)  and Resend HTTPS
 ```
 
-**SMTP (port 25):** Stalwart binds `0.0.0.0:25` directly on the public interface. Caddy is an HTTP reverse proxy — it cannot proxy raw SMTP. Stalwart handles its own STARTTLS using certs synced from Caddy's ACME storage.
+**SMTP (port 25):** Stalwart binds `0.0.0.0:25` directly on the public interface. HAProxy is an HTTP reverse proxy — it cannot proxy raw SMTP. Stalwart handles its own STARTTLS using `cert.pem`/`key.pem` written by `haproxy-lego-renew` from the lego-managed product wildcard.
 
-**JMAP (port 443):** Stalwart's HTTP listener binds `127.0.0.1:8090` (loopback only, not internet-accessible). Caddy reverse proxies `mail.<domain>` to it, applying TLS termination, and access logging — same as every other HTTP service. The only exception is `GET /jmap/session`, which is proxied through `mailbox-service` so the public session document advertises the external `https://` / `wss://` origin rather than Stalwart's internal loopback listener.
+**JMAP (port 443):** Stalwart's HTTP listener binds `127.0.0.1:8090` (loopback only, not internet-accessible). HAProxy terminates TLS for `mail.<domain>` and reverse-proxies to it, applying the same body-size, security-header, and access-log policy used for every other public HTTP service. The only exception is `GET /jmap/session`, which is proxied through `mailbox-service` so the public session document advertises the external `https://` / `wss://` origin rather than Stalwart's internal loopback listener.
 
-**Management API:** Same HTTP listener (`127.0.0.1:8090`), `/api/` path prefix. It is intentionally blocked from the public edge: Caddy returns `404` for `/api/*`, and Stalwart's local `http.allowed-endpoint` rules also reject non-loopback `/api` requests. Operational access stays box-local.
+**Management API:** Same HTTP listener (`127.0.0.1:8090`), `/api/` path prefix. It is intentionally blocked from the public edge: HAProxy routes `/api/*` on `mail.<domain>` to `mailbox-service` (never to Stalwart), and Stalwart's local `http.allowed-endpoint` rules also reject non-loopback `/api` requests. Operational access stays box-local.
 
-**Mailbox service:** `mailbox-service` binds `127.0.0.1:4246` and is not internet-accessible directly. Caddy only exposes the repo-owned mailbox API under `/api/v1/mail/*` on the webmail surface and the narrow `/jmap/session` rewrite on `mail.<domain>`.
+**Mailbox service:** `mailbox-service` binds `127.0.0.1:4246` and is not internet-accessible directly. HAProxy only exposes the repo-owned mailbox API under `/api/v1/mail/*` on the webmail surface and the narrow `/jmap/session` rewrite on `mail.<domain>`.
 
 ## Security model
 
@@ -51,7 +51,7 @@ Four layers:
 
 **3. systemd hardening:** Stalwart runs with `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`. `mailbox-service` runs as a separate unprivileged service with its own credstore and nftables profile.
 
-**4. Public HTTP boundary at Caddy:** The JMAP API is not directly internet-accessible; external access routes through Caddy, which applies WAF rules and access logging. Stalwart's Management API remains loopback-only because `/api/*` on `mail.<domain>` is routed to `mailbox-service`, not to Stalwart. Repo-owned HTTP behavior on that host is the authenticated `/api/v1/mail/*` API, Electric sync shape proxying, and the JMAP session rewrite handled by `mailbox-service`.
+**4. Public HTTP boundary at HAProxy:** The JMAP API is not directly internet-accessible; external access routes through HAProxy, which enforces body-size limits, security-header policy, and structured access logging. Stalwart's Management API remains loopback-only because `/api/*` on `mail.<domain>` is routed to `mailbox-service`, not to Stalwart. Repo-owned HTTP behavior on that host is the authenticated `/api/v1/mail/*` API, Electric sync shape proxying, and the JMAP session rewrite handled by `mailbox-service`.
 
 ## Storage
 

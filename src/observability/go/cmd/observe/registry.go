@@ -433,7 +433,7 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"aspect observe --what=errors",
-			"aspect observe --what=errors --service=caddy",
+			"aspect observe --what=errors --service=haproxy",
 		},
 		Next: []string{
 			"aspect observe --what=service --service=<service> --errors",

@@ -113,9 +113,9 @@ immutable actor id recorded for the audit event.
   Verself-owned API credential metadata. Human OAuth scopes are not product
   permissions.
 - Request network fields are captured at the service boundary from trusted edge
-  headers only. `X-Forwarded-For` is accepted only from Caddy or a configured
-  trusted proxy path; untrusted client-supplied chains are retained only as
-  untrusted evidence.
+  headers only. `X-Forwarded-For` is accepted only from the HAProxy edge or a
+  configured trusted proxy path; untrusted client-supplied chains are retained
+  only as untrusted evidence.
 - Geolocation and ASN are enriched locally from a pinned database version after
   request handling. No request-path callout to an external geolocation service.
 - Store `geo_country` and `geo_region` by default. `geo_city` is allowed but

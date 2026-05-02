@@ -78,7 +78,7 @@ Firecracker guests live on a TAP network (`172.16.0.0/16`, one `/30` per lease).
 
 1. **nftables FORWARD chain** (`verself_firecracker`): allows guest egress to the internet via the uplink interface and blocks guest-to-guest lateral movement.
 
-2. **Host-service plane** (`verself-host0`, default `10.255.0.1/32`): a dummy interface exposes selected platform endpoints to guests without routing packets to `127.0.0.1`. Caddy listens on `10.255.0.1:18080`.
+2. **Host-service plane** (`verself-host0`, default `10.255.0.1/32`): a dummy interface exposes selected platform endpoints to guests without routing packets to `127.0.0.1`. HAProxy's `fe_firecracker_host_http` frontend listens on `10.255.0.1:18080`.
 
 3. **nftables INPUT chain** (`verself_host`): default-deny on the host. Guest traffic is accepted only from `fc-tap-*`, only from `nftables_firecracker_guest_cidr`, only to `nftables_firecracker_host_service_ip`, and only on `nftables_firecracker_guest_tcp_ports`.
 
