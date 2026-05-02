@@ -408,9 +408,24 @@
 - name: Probe for expected tables (fingerprint can survive a wipe if /opt/verself is recreated before deploy)
   ansible.builtin.shell: >
     {{ clickhouse_operator_client_command }}
-    --query "SELECT count() FROM system.tables
-             WHERE (database = 'default' AND name = 'otel_metrics_sum')
-                OR (database = 'verself' AND name IN ('metering', 'billing_events', 'audit_events', 'notification_events', 'domain_update_ledger', 'operator_command_runs', 'supply_chain_policy_events'))"
+    --query "
+      SELECT count()
+      FROM system.tables
+      WHERE (database = 'default' AND name = 'otel_metrics_sum')
+         OR (
+           database = 'verself'
+           AND name IN (
+             'metering',
+             'billing_events',
+             'audit_events',
+             'notification_events',
+             'domain_update_ledger',
+             'operator_command_runs',
+             'supply_chain_policy_events',
+             'artifact_admission_events',
+             'artifact_install_verification_events'
+           )
+         )"
   register: clickhouse_expected_table_probe
   changed_when: false
 
@@ -422,7 +437,7 @@
         or (clickhouse_migrations_remote_hash is failed)
         or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
            != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
-        or ((clickhouse_expected_table_probe.stdout | trim) != '8')
+        or ((clickhouse_expected_table_probe.stdout | trim) != '10')
       }}
 
 - name: Apply ClickHouse migrations

@@ -47,17 +47,29 @@ type Requirements struct {
 }
 
 type AdmissionMetadata struct {
-	State            string `json:"state"`
-	UpstreamURL      string `json:"upstream_url"`
-	Digest           string `json:"digest"`
-	ReleasedAt       string `json:"released_at"`
-	ObservedAt       string `json:"observed_at"`
-	MinimumAgeResult string `json:"minimum_age_result"`
-	ScannerResults   string `json:"scanner_results"`
-	SBOMURI          string `json:"sbom_uri"`
-	ProvenanceURI    string `json:"provenance_uri"`
-	TUFTargetPath    string `json:"tuf_target_path"`
-	StorageURI       string `json:"storage_uri"`
+	State                 string `json:"state"`
+	UpstreamURL           string `json:"upstream_url"`
+	Digest                string `json:"digest"`
+	ReleasedAt            string `json:"released_at"`
+	ObservedAt            string `json:"observed_at"`
+	MinimumAgeResult      string `json:"minimum_age_result"`
+	ScannerResults        string `json:"scanner_results"`
+	ScannerName           string `json:"scanner_name"`
+	ScannerVersion        string `json:"scanner_version"`
+	ScannerDatabaseDigest string `json:"scanner_database_digest"`
+	SBOMURI               string `json:"sbom_uri"`
+	SBOMDigest            string `json:"sbom_digest"`
+	ProvenanceURI         string `json:"provenance_uri"`
+	ProvenanceDigest      string `json:"provenance_digest"`
+	OCIRepository         string `json:"oci_repository"`
+	OCIManifestDigest     string `json:"oci_manifest_digest"`
+	OCIMediaType          string `json:"oci_media_type"`
+	SignatureDigest       string `json:"signature_digest"`
+	AttestationDigest     string `json:"attestation_digest"`
+	ScannerResultDigest   string `json:"scanner_result_digest"`
+	GUACSubject           string `json:"guac_subject"`
+	TUFTargetPath         string `json:"tuf_target_path"`
+	StorageURI            string `json:"storage_uri"`
 }
 
 type PolicyArtifact struct {
@@ -76,12 +88,26 @@ type Policy struct {
 }
 
 type FindingResult struct {
-	Finding        Finding
-	PolicyResult   string
-	PolicyReason   string
-	AdmissionState string
-	TUFTargetPath  string
-	StorageURI     string
+	Finding               Finding
+	PolicyResult          string
+	PolicyReason          string
+	AdmissionState        string
+	MinimumAgeResult      string
+	ScannerResults        string
+	OCIRepository         string
+	OCIManifestDigest     string
+	OCIMediaType          string
+	SignatureDigest       string
+	AttestationDigest     string
+	SBOMDigest            string
+	ProvenanceDigest      string
+	ScannerResultDigest   string
+	ScannerName           string
+	ScannerVersion        string
+	ScannerDatabaseDigest string
+	GUACSubject           string
+	TUFTargetPath         string
+	StorageURI            string
 }
 
 type Evaluation struct {
@@ -137,8 +163,13 @@ func NewPolicyFromReport(report Report) Policy {
 				ObservedAt:       "",
 				MinimumAgeResult: "not_evaluated",
 				ScannerResults:   "not_evaluated",
+				ScannerName:      "",
+				ScannerVersion:   "",
 				SBOMURI:          "",
+				SBOMDigest:       "",
 				ProvenanceURI:    "",
+				ProvenanceDigest: "",
+				OCIRepository:    "",
 				TUFTargetPath:    "",
 				StorageURI:       "",
 			},
