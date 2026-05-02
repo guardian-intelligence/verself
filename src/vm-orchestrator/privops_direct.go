@@ -224,7 +224,7 @@ func (DirectPrivOps) ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sou
 	if err != nil {
 		return 0, fmt.Errorf("open source %s: %w", sourcePath, err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	info, err := src.Stat()
 	if err != nil {
 		return 0, fmt.Errorf("stat source %s: %w", sourcePath, err)
@@ -236,18 +236,22 @@ func (DirectPrivOps) ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sou
 	if err != nil {
 		return 0, fmt.Errorf("open device %s: %w", devicePath, err)
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 	bytesWritten, copyErr := io.Copy(dst, src)
+	copiedBytes, copiedErr := uint64FromNonNegativeInt64(bytesWritten, "bytes written")
+	if copiedErr != nil {
+		return 0, copiedErr
+	}
 	if copyErr != nil {
-		return uint64(bytesWritten), fmt.Errorf("copy %s -> %s: %w", sourcePath, devicePath, copyErr)
+		return copiedBytes, fmt.Errorf("copy %s -> %s: %w", sourcePath, devicePath, copyErr)
 	}
 	if err := dst.Sync(); err != nil {
-		return uint64(bytesWritten), fmt.Errorf("fsync %s: %w", devicePath, err)
+		return copiedBytes, fmt.Errorf("fsync %s: %w", devicePath, err)
 	}
 	if err := ctx.Err(); err != nil {
-		return uint64(bytesWritten), err
+		return copiedBytes, err
 	}
-	return uint64(bytesWritten), nil
+	return copiedBytes, nil
 }
 
 // ZFSMkfs runs mkfs on a zvol device. fsType currently must be "ext4"; other
@@ -369,11 +373,19 @@ func (DirectPrivOps) TapCreate(ctx context.Context, tapName, hostCIDR string, ow
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	uid, uidErr := uint32FromInt(ownerUID, "tap owner uid")
+	if uidErr != nil {
+		return uidErr
+	}
+	gid, gidErr := uint32FromInt(ownerGID, "tap owner gid")
+	if gidErr != nil {
+		return gidErr
+	}
 	tap := &netlink.Tuntap{
 		LinkAttrs: netlink.LinkAttrs{Name: tapName},
 		Mode:      netlink.TUNTAP_MODE_TAP,
-		Owner:     uint32(max(ownerUID, 0)),
-		Group:     uint32(max(ownerGID, 0)),
+		Owner:     uid,
+		Group:     gid,
 	}
 	if err := netlink.LinkAdd(tap); err != nil {
 		return fmt.Errorf("create tap %s: %w", tapName, err)
@@ -542,12 +554,12 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	d, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dst, err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if _, err := io.Copy(d, s); err != nil {
 		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
 	}

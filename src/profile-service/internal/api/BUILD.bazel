@@ -15,7 +15,7 @@ go_library(
     importpath = "github.com/verself/profile-service/internal/api",
     visibility = ["//src/profile-service:__subpackages__"],
     deps = [
-        "//src/apiwire",
+        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
         "//src/governance-service/internalclient",

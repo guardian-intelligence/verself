@@ -1,10 +1,10 @@
 package vmorchestrator
 
 import (
-	"strings"
+	"fmt"
 	"time"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 )
 
@@ -64,19 +64,19 @@ func filesystemMountsToProto(mounts []FilesystemMount) []*vmrpc.FilesystemMount 
 	return out
 }
 
-func vmResourcesFromProto(r *vmrpc.VMResources) apiwire.VMResources {
+func vmResourcesFromProto(r *vmrpc.VMResources) dto.VMResources {
 	if r == nil {
-		return apiwire.VMResources{}
+		return dto.VMResources{}
 	}
-	return apiwire.VMResources{
+	return dto.VMResources{
 		VCPUs:       r.GetVcpus(),
 		MemoryMiB:   r.GetMemoryMib(),
 		RootDiskGiB: r.GetRootDiskGib(),
-		KernelImage: apiwire.KernelImageRef(r.GetKernelImage()),
+		KernelImage: dto.KernelImageRef(r.GetKernelImage()),
 	}
 }
 
-func vmResourcesToProto(r apiwire.VMResources) *vmrpc.VMResources {
+func vmResourcesToProto(r dto.VMResources) *vmrpc.VMResources {
 	return &vmrpc.VMResources{
 		Vcpus:       r.VCPUs,
 		MemoryMib:   r.MemoryMiB,
@@ -123,16 +123,20 @@ func leaseSnapshotToProto(snap leaseSnapshot) *vmrpc.LeaseRecord {
 	}
 }
 
-func execSnapshotToProto(snap execSnapshot, includeOutput bool) *vmrpc.ExecRecord {
+func execSnapshotToProto(snap execSnapshot, includeOutput bool) (*vmrpc.ExecRecord, error) {
 	output := ""
 	if includeOutput {
 		output = snap.Output
+	}
+	exitCode, err := int32FromInt(snap.ExitCode, "exec exit_code")
+	if err != nil {
+		return nil, fmt.Errorf("convert exec snapshot to proto: %w", err)
 	}
 	return &vmrpc.ExecRecord{
 		LeaseId:                snap.LeaseID,
 		ExecId:                 snap.ExecID,
 		State:                  execStateToProto(snap.State),
-		ExitCode:               int32(snap.ExitCode),
+		ExitCode:               exitCode,
 		TerminalReason:         snap.TerminalReason,
 		QueuedAtUnixNs:         unixNs(snap.QueuedAt),
 		StartedAtUnixNs:        unixNs(snap.StartedAt),
@@ -145,7 +149,7 @@ func execSnapshotToProto(snap execSnapshot, includeOutput bool) *vmrpc.ExecRecor
 		Metrics:                vmMetricsToProto(snap.Metrics),
 		ZfsWritten:             snap.ZFSWritten,
 		RootfsProvisionedBytes: snap.RootfsProvisionedBytes,
-	}
+	}, nil
 }
 
 func leaseEventToProto(leaseID string, event leaseEventRecord) *vmrpc.LeaseEvent {
@@ -344,17 +348,8 @@ func timeFromUnixNs(value uint64) time.Time {
 	if value == 0 {
 		return time.Time{}
 	}
-	return time.Unix(0, int64(value)).UTC()
-}
-
-func trimStringMap(values map[string]string) map[string]string {
-	out := make(map[string]string, len(values))
-	for key, value := range values {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		out[key] = value
+	if value > maxInt64AsUint64 {
+		panic(fmt.Sprintf("unix nanoseconds exceed int64 range: %d", value))
 	}
-	return out
+	return time.Unix(0, int64(value)).UTC() // #nosec G115 -- value is checked against MaxInt64 above.
 }

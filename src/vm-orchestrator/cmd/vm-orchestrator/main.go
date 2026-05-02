@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -51,7 +51,7 @@ func run() error {
 	flag.StringVar(&cfg.JailerRoot, "jailer-root", cfg.JailerRoot, "Jailer chroot root directory")
 	flag.IntVar(&cfg.JailerUID, "jailer-uid", cfg.JailerUID, "UID used for the jailer process")
 	flag.IntVar(&cfg.JailerGID, "jailer-gid", cfg.JailerGID, "GID used for the jailer process")
-	// Per-VM shape is now a request-time parameter via apiwire.VMResources;
+	// Per-VM shape is now a request-time parameter via dto.VMResources;
 	// flag-level --vcpus / --memory-mib have been removed. Operators tune
 	// per-org ceilings via the VMResourceBounds table in sandbox-rental-service.
 	flag.StringVar(&cfg.HostInterface, "host-interface", cfg.HostInterface, "Default uplink interface for guest egress")
@@ -79,7 +79,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 	slog.SetDefault(logger)
 
 	listener, err := net.Listen("unix", listenUnix)
@@ -108,7 +108,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer vmService.Close()
+	defer func() { _ = vmService.Close() }()
 	vmrpc.RegisterVMServiceServer(server, vmService)
 
 	startupCtx, startupSpan := otel.Tracer("vm-orchestrator").Start(ctx, "daemon.startup")

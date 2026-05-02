@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/app"
 	"github.com/verself/mailbox-service/internal/mailstore"
 )
@@ -33,39 +33,39 @@ type mailboxServiceEmptyInput struct{}
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.API, http.Handler) {
 	publicConfig := huma.DefaultConfig("Mailbox Service", version)
-	publicConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
+	publicConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	publicAPI := humago.New(mux, publicConfig)
 	registerPublicRoutes(publicAPI, svc)
 	registerOperatorRoutes(publicAPI, svc)
-	apiwire.ApplyOpenAPIWireDefaults(publicAPI)
+	dto.ApplyOpenAPIWireDefaults(publicAPI)
 
 	privateMux := http.NewServeMux()
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
-	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
+	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(privateMux, privateConfig)
 	registerMailRoutes(privateAPI, svc)
-	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
+	dto.ApplyOpenAPIWireDefaults(privateAPI)
 
 	return publicAPI, privateMux
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
-	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
+	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	registerMailRoutes(privateAPI, nil)
 	registerOperatorRoutes(privateAPI, nil)
-	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
+	dto.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
-	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
+	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	registerMailRoutes(privateAPI, nil)
 	registerOperatorRoutes(privateAPI, nil)
-	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
+	dto.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().YAML()
 }
 

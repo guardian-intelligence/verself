@@ -17,9 +17,12 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `sandbox-rental-service/` — compute product control plane (executions, checkpoint refs, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `identity-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
-- `apiwire/` — shared Huma DTOs and wire-language types.
+- `domain-transfer-objects/` — shared DTOs, protobuf schemas, OpenAPI-compatible wire-language types, and generated contract conventions.
+- `service-runtime/` — shared service startup/runtime packages such as Go env loading and HTTP listener policy.
+- `observability/` — shared telemetry packages and operational query tools.
 - `auth-middleware/` — local JWT validation against Zitadel JWKS plus shared SPIFFE workload identity helpers.
-- `otel/` — shared OpenTelemetry wiring.
+- `deployment-tools/` — typed deploy orchestration binary and Nomad job resolution rules.
+- `dev-tools/` — controller development tool catalog plus operator/bootstrap command binaries.
 
 ## Frontend (`src/viteplus-monorepo/`)
 
@@ -48,7 +51,7 @@ not converge host packages or deploy services.
   evidence.
 Topology vars are authored under `src/substrate/ansible/group_vars/all/generated/`.
 Host firewall files are source-owned under `src/substrate/ansible/rendered/`.
-Nomad base jobs live under `src/deployment-tooling/nomad/sites/<site>/jobs/`
+Nomad base jobs live under `src/deployment-tools/nomad/sites/<site>/jobs/`
 and are resolved by Bazel with the service-owned artifact and rollout inputs.
 
 ## Service- and substrate-local docs
@@ -58,7 +61,7 @@ Host convergence, OpenTofu provisioning, and deploy wrappers live in
 
 Bazel-owned package definitions live with their owners:
 `src/substrate/binaries/` for server and substrate host tools,
-`src/devtools/binaries/` for controller dev tools, and
+`src/dev-tools/binaries/` for controller dev tools, and
 `src/vm-orchestrator/guest-images/` for guest-image inputs.
 
 Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.

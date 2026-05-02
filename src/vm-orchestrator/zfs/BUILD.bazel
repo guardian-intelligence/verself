@@ -10,6 +10,7 @@ go_library(
         "names.go",
         "props.go",
         "refs.go",
+        "safeconv.go",
         "seed.go",
     ],
     importpath = "github.com/verself/vm-orchestrator/zfs",

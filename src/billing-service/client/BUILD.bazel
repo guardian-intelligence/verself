@@ -1,9 +1,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-# The Go OpenAPI client lives only in bazel-out — see .gitignore. The
-# action graph rebuilds client.gen.go when the spec changes, and any
-# downstream service that imports github.com/verself/billing-service/client
-# rebuilds in turn. There is no on-disk source of truth.
+# Bazel rebuilds client.gen.go from the generated OpenAPI spec so downstream
+# targets track the API shape. The checked-in copy keeps plain Go tooling able
+# to load github.com/verself/billing-service/client outside Bazel.
 # oapi-codegen formats through x/tools/imports, which consults the Go toolchain;
 # strict action env requires an explicit controller tool path.
 genrule(

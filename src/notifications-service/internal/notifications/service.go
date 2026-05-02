@@ -151,7 +151,7 @@ func (s *Service) List(ctx context.Context, principal Principal, input ListReque
 	rows, err := s.q().ListNotifications(ctx, notificationstore.ListNotificationsParams{
 		OrgID:              principal.OrgID,
 		RecipientSubjectID: principal.Subject,
-		LimitCount:         int32(input.Limit),
+		LimitCount:         int32FromInt(input.Limit, "notification list limit"),
 	})
 	if err != nil {
 		return ListResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)

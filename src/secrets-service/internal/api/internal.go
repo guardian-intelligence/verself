@@ -170,7 +170,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var request injectionResolveRequest
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, injectionRequestMaxBytes))
 		decoder.DisallowUnknownFields()
@@ -210,7 +210,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var request internalCreateCredentialRequest
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, injectionRequestMaxBytes))
 		decoder.DisallowUnknownFields()
@@ -241,7 +241,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var request internalVerifyCredentialRequest
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, injectionRequestMaxBytes))
 		decoder.DisallowUnknownFields()
@@ -297,7 +297,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			var body putSecretBody
 			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyLimitSmallJSON))
 			decoder.DisallowUnknownFields()

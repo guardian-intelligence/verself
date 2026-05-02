@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -505,9 +504,4 @@ func stickyDiskAttributes(identity StickyDiskIdentity, key string) []attribute.K
 func stickyDiskKeyHash(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
-}
-
-func parseStickyDiskGeneration(value string) int64 {
-	parsed, _ := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
-	return parsed
 }

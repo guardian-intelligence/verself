@@ -121,7 +121,7 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 		)
 		if _, err := io.WriteString(conn, fmt.Sprintf("CONNECT %d\n", port)); err != nil {
 			endGuestBridgeSpan(writeSpan, err)
-			conn.Close()
+			_ = conn.Close()
 			lastErr = err
 			lastRetryErr = err
 			attemptSpan.SetAttributes(
@@ -158,7 +158,7 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 		// The vsock proxy can accept the Unix socket before the guest port is listening, so ACK reads must be bounded.
 		if err := conn.SetReadDeadline(time.Now().Add(guestBridgeAckTimeout)); err != nil {
 			endGuestBridgeSpan(ackSpan, err)
-			conn.Close()
+			_ = conn.Close()
 			lastErr = err
 			lastRetryErr = err
 			attemptSpan.SetAttributes(
@@ -184,7 +184,7 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			endGuestBridgeSpan(ackSpan, err)
-			conn.Close()
+			_ = conn.Close()
 			lastErr = err
 			lastRetryErr = err
 			attemptSpan.SetAttributes(
@@ -209,7 +209,7 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 		}
 		endGuestBridgeSpan(ackSpan, nil)
 		if err := conn.SetReadDeadline(time.Time{}); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			lastErr = err
 			lastRetryErr = err
 			attemptSpan.SetAttributes(
@@ -234,7 +234,7 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 		}
 		ack := strings.TrimSpace(line)
 		if !strings.HasPrefix(ack, "OK ") {
-			conn.Close()
+			_ = conn.Close()
 			err := fmt.Errorf("unexpected guest bridge ack %q", ack)
 			lastErr = err
 			attemptSpan.SetAttributes(

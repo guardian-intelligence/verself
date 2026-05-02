@@ -158,7 +158,7 @@ func (c *OpenBaoClient) ReadKVV2(ctx context.Context, path string) (map[string]s
 			return nil, err
 		}
 		body, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			break
 		}
@@ -251,7 +251,7 @@ func (c *OpenBaoClient) clientToken(ctx context.Context) (string, error) {
 			return "", err
 		}
 		respBody, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			break
 		}

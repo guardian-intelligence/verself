@@ -12,9 +12,9 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/billing-service/internal/billing"
+	"github.com/verself/domain-transfer-objects"
 )
 
 const (
@@ -71,12 +71,12 @@ type ContractPath struct {
 
 type CreateContractChangeInput struct {
 	ContractPath
-	Body apiwire.BillingCreateContractChangeRequest `required:"true"`
+	Body dto.BillingCreateContractChangeRequest `required:"true"`
 }
 
 type CancelContractInput struct {
 	ContractPath
-	Body apiwire.BillingCancelContractRequest `required:"true"`
+	Body dto.BillingCancelContractRequest `required:"true"`
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -86,11 +86,11 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	config := huma.DefaultConfig("Billing Service", version)
 	if cfg.ListenAddr != "" {
-		config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
+		config.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
 	RegisterRoutes(api, cfg)
-	apiwire.ApplyOpenAPIWireDefaults(api)
+	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
@@ -140,7 +140,7 @@ func op(id, summary string, errors ...int) func(*huma.Operation) {
 	}
 }
 
-func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[apiwire.BillingEntitlementsView], error) {
+func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[dto.BillingEntitlementsView], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
@@ -149,10 +149,10 @@ func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[ap
 	if err != nil {
 		return nil, h.internalError(ctx, "get entitlements", err)
 	}
-	return &body[apiwire.BillingEntitlementsView]{Body: entitlementsResponse(view)}, nil
+	return &body[dto.BillingEntitlementsView]{Body: entitlementsResponse(view)}, nil
 }
 
-func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[apiwire.BillingGrants], error) {
+func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[dto.BillingGrants], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
@@ -161,14 +161,14 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[api
 	if err != nil {
 		return nil, h.internalError(ctx, "list grants", err)
 	}
-	out := make([]apiwire.BillingGrant, 0, len(grants))
+	out := make([]dto.BillingGrant, 0, len(grants))
 	for _, grant := range grants {
-		out = append(out, apiwire.BillingGrant{GrantID: grant.GrantID, ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, ScopeSKUID: grant.ScopeSKUID, Source: grant.Source, SourceReferenceID: grant.SourceReferenceID, EntitlementPeriodID: grant.EntitlementPeriodID, PolicyVersion: grant.PolicyVersion, StartsAt: grant.StartsAt, PeriodStart: grant.PeriodStart, PeriodEnd: grant.PeriodEnd, Available: apiwire.Uint64(grant.Available), Pending: apiwire.Uint64(grant.Pending), ExpiresAt: grant.ExpiresAt})
+		out = append(out, dto.BillingGrant{GrantID: grant.GrantID, ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, ScopeSKUID: grant.ScopeSKUID, Source: grant.Source, SourceReferenceID: grant.SourceReferenceID, EntitlementPeriodID: grant.EntitlementPeriodID, PolicyVersion: grant.PolicyVersion, StartsAt: grant.StartsAt, PeriodStart: grant.PeriodStart, PeriodEnd: grant.PeriodEnd, Available: dto.Uint64(grant.Available), Pending: dto.Uint64(grant.Pending), ExpiresAt: grant.ExpiresAt})
 	}
-	return &body[apiwire.BillingGrants]{Body: apiwire.BillingGrants{Grants: out}}, nil
+	return &body[dto.BillingGrants]{Body: dto.BillingGrants{Grants: out}}, nil
 }
 
-func (h *Handler) listDocuments(ctx context.Context, input *DocumentsInput) (*body[apiwire.BillingDocuments], error) {
+func (h *Handler) listDocuments(ctx context.Context, input *DocumentsInput) (*body[dto.BillingDocuments], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
@@ -177,14 +177,14 @@ func (h *Handler) listDocuments(ctx context.Context, input *DocumentsInput) (*bo
 	if err != nil {
 		return nil, h.internalError(ctx, "list documents", err)
 	}
-	out := make([]apiwire.BillingDocument, 0, len(documents))
+	out := make([]dto.BillingDocument, 0, len(documents))
 	for _, document := range documents {
 		out = append(out, documentResponse(document))
 	}
-	return &body[apiwire.BillingDocuments]{Body: apiwire.BillingDocuments{Documents: out}}, nil
+	return &body[dto.BillingDocuments]{Body: dto.BillingDocuments{Documents: out}}, nil
 }
 
-func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[apiwire.BillingStatement], error) {
+func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[dto.BillingStatement], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
@@ -193,10 +193,10 @@ func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*bod
 	if err != nil {
 		return nil, h.internalError(ctx, "get statement", err)
 	}
-	return &body[apiwire.BillingStatement]{Body: statementResponse(statement)}, nil
+	return &body[dto.BillingStatement]{Body: statementResponse(statement)}, nil
 }
 
-func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[apiwire.BillingContracts], error) {
+func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[dto.BillingContracts], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
@@ -205,26 +205,26 @@ func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[apiw
 	if err != nil {
 		return nil, h.internalError(ctx, "list contracts", err)
 	}
-	out := make([]apiwire.BillingContract, 0, len(contracts))
+	out := make([]dto.BillingContract, 0, len(contracts))
 	for _, contract := range contracts {
 		out = append(out, contractResponse(contract))
 	}
-	return &body[apiwire.BillingContracts]{Body: apiwire.BillingContracts{Contracts: out}}, nil
+	return &body[dto.BillingContracts]{Body: dto.BillingContracts{Contracts: out}}, nil
 }
 
-func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[apiwire.BillingPlans], error) {
+func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[dto.BillingPlans], error) {
 	plans, err := h.client.ListPlans(ctx, input.ProductID)
 	if err != nil {
 		return nil, h.internalError(ctx, "list plans", err)
 	}
-	out := make([]apiwire.BillingPlan, 0, len(plans))
+	out := make([]dto.BillingPlan, 0, len(plans))
 	for _, plan := range plans {
-		out = append(out, apiwire.BillingPlan{PlanID: plan.PlanID, ProductID: plan.ProductID, DisplayName: plan.DisplayName, BillingMode: plan.BillingMode, Tier: plan.Tier, Currency: plan.Currency, MonthlyAmountCents: apiwire.Uint64(plan.MonthlyAmountCents), AnnualAmountCents: apiwire.Uint64(plan.AnnualAmountCents), Active: plan.Active, IsDefault: plan.IsDefault})
+		out = append(out, dto.BillingPlan{PlanID: plan.PlanID, ProductID: plan.ProductID, DisplayName: plan.DisplayName, BillingMode: plan.BillingMode, Tier: plan.Tier, Currency: plan.Currency, MonthlyAmountCents: dto.Uint64(plan.MonthlyAmountCents), AnnualAmountCents: dto.Uint64(plan.AnnualAmountCents), Active: plan.Active, IsDefault: plan.IsDefault})
 	}
-	return &body[apiwire.BillingPlans]{Body: apiwire.BillingPlans{Plans: out}}, nil
+	return &body[dto.BillingPlans]{Body: dto.BillingPlans{Plans: out}}, nil
 }
 
-func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.BillingCreateCheckoutRequest]) (*body[apiwire.BillingURLResponse], error) {
+func (h *Handler) createCheckout(ctx context.Context, input *body[dto.BillingCreateCheckoutRequest]) (*body[dto.BillingURLResponse], error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
@@ -233,10 +233,10 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.Billin
 	if err != nil {
 		return nil, h.internalError(ctx, "create checkout", err)
 	}
-	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+	return &body[dto.BillingURLResponse]{Body: dto.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) createContract(ctx context.Context, input *body[apiwire.BillingCreateContractRequest]) (*body[apiwire.BillingURLResponse], error) {
+func (h *Handler) createContract(ctx context.Context, input *body[dto.BillingCreateContractRequest]) (*body[dto.BillingURLResponse], error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
@@ -248,10 +248,10 @@ func (h *Handler) createContract(ctx context.Context, input *body[apiwire.Billin
 		}
 		return nil, h.internalError(ctx, "create contract", err)
 	}
-	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+	return &body[dto.BillingURLResponse]{Body: dto.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) createContractChange(ctx context.Context, input *CreateContractChangeInput) (*body[apiwire.BillingContractChangeResponse], error) {
+func (h *Handler) createContractChange(ctx context.Context, input *CreateContractChangeInput) (*body[dto.BillingContractChangeResponse], error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
@@ -266,10 +266,10 @@ func (h *Handler) createContractChange(ctx context.Context, input *CreateContrac
 		}
 		return nil, h.internalError(ctx, "create contract change", err)
 	}
-	return &body[apiwire.BillingContractChangeResponse]{Body: apiwire.BillingContractChangeResponse{URL: result.URL, ChangeID: result.ChangeID, FinalizationID: result.FinalizationID, DocumentID: result.DocumentID, Status: result.Status, PriceDelta: apiwire.Uint64(result.PriceDeltaUnits)}}, nil
+	return &body[dto.BillingContractChangeResponse]{Body: dto.BillingContractChangeResponse{URL: result.URL, ChangeID: result.ChangeID, FinalizationID: result.FinalizationID, DocumentID: result.DocumentID, Status: result.Status, PriceDelta: dto.Uint64(result.PriceDeltaUnits)}}, nil
 }
 
-func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[apiwire.BillingCancelContractResponse], error) {
+func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[dto.BillingCancelContractResponse], error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
@@ -281,10 +281,10 @@ func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput
 		}
 		return nil, h.internalError(ctx, "cancel contract", err)
 	}
-	return &body[apiwire.BillingCancelContractResponse]{Body: apiwire.BillingCancelContractResponse{Contract: contractResponse(contract)}}, nil
+	return &body[dto.BillingCancelContractResponse]{Body: dto.BillingCancelContractResponse{Contract: contractResponse(contract)}}, nil
 }
 
-func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingCreatePortalSessionRequest]) (*body[apiwire.BillingURLResponse], error) {
+func (h *Handler) createPortal(ctx context.Context, input *body[dto.BillingCreatePortalSessionRequest]) (*body[dto.BillingURLResponse], error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
@@ -300,10 +300,10 @@ func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingC
 		}
 		return nil, h.internalError(ctx, "create portal", err)
 	}
-	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+	return &body[dto.BillingURLResponse]{Body: dto.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.BillingReserveWindowRequest]) (*body[apiwire.BillingReserveWindowResult], error) {
+func (h *Handler) reserveWindow(ctx context.Context, input *body[dto.BillingReserveWindowRequest]) (*body[dto.BillingReserveWindowResult], error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
@@ -312,30 +312,30 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.Billing
 	if err != nil {
 		return nil, h.windowError(ctx, "reserve", err)
 	}
-	return &body[apiwire.BillingReserveWindowResult]{Body: apiwire.BillingReserveWindowResult{Reservation: reservationResponse(reservation)}}, nil
+	return &body[dto.BillingReserveWindowResult]{Body: dto.BillingReserveWindowResult{Reservation: reservationResponse(reservation)}}, nil
 }
 
-func (h *Handler) activateWindow(ctx context.Context, input *body[apiwire.BillingActivateWindowRequest]) (*body[apiwire.BillingActivateWindowResult], error) {
+func (h *Handler) activateWindow(ctx context.Context, input *body[dto.BillingActivateWindowRequest]) (*body[dto.BillingActivateWindowResult], error) {
 	reservation, err := h.client.ActivateWindow(ctx, input.Body.WindowID, input.Body.ActivatedAt)
 	if err != nil {
 		return nil, h.windowError(ctx, "activate", err)
 	}
-	return &body[apiwire.BillingActivateWindowResult]{Body: apiwire.BillingActivateWindowResult{Reservation: reservationResponse(reservation)}}, nil
+	return &body[dto.BillingActivateWindowResult]{Body: dto.BillingActivateWindowResult{Reservation: reservationResponse(reservation)}}, nil
 }
 
-func (h *Handler) settleWindow(ctx context.Context, input *body[apiwire.BillingSettleWindowRequest]) (*body[apiwire.BillingSettleResult], error) {
+func (h *Handler) settleWindow(ctx context.Context, input *body[dto.BillingSettleWindowRequest]) (*body[dto.BillingSettleResult], error) {
 	result, err := h.client.SettleWindow(ctx, input.Body.WindowID, input.Body.ActualQuantity, input.Body.UsageSummary)
 	if err != nil {
 		return nil, h.windowError(ctx, "settle", err)
 	}
-	return &body[apiwire.BillingSettleResult]{Body: apiwire.BillingSettleResult{WindowID: result.WindowID, ActualQuantity: result.ActualQuantity, BillableQuantity: result.BillableQuantity, WriteoffQuantity: result.WriteoffQuantity, BilledChargeUnits: apiwire.Uint64(result.BilledChargeUnits), WriteoffChargeUnits: apiwire.Uint64(result.WriteoffChargeUnits), SettledAt: result.SettledAt}}, nil
+	return &body[dto.BillingSettleResult]{Body: dto.BillingSettleResult{WindowID: result.WindowID, ActualQuantity: result.ActualQuantity, BillableQuantity: result.BillableQuantity, WriteoffQuantity: result.WriteoffQuantity, BilledChargeUnits: dto.Uint64(result.BilledChargeUnits), WriteoffChargeUnits: dto.Uint64(result.WriteoffChargeUnits), SettledAt: result.SettledAt}}, nil
 }
 
-func (h *Handler) voidWindow(ctx context.Context, input *body[apiwire.BillingVoidWindowRequest]) (*body[apiwire.BillingVoidWindowResult], error) {
+func (h *Handler) voidWindow(ctx context.Context, input *body[dto.BillingVoidWindowRequest]) (*body[dto.BillingVoidWindowResult], error) {
 	if err := h.client.VoidWindow(ctx, input.Body.WindowID); err != nil {
 		return nil, h.windowError(ctx, "void", err)
 	}
-	return &body[apiwire.BillingVoidWindowResult]{Body: apiwire.BillingVoidWindowResult{WindowID: input.Body.WindowID}}, nil
+	return &body[dto.BillingVoidWindowResult]{Body: dto.BillingVoidWindowResult{WindowID: input.Body.WindowID}}, nil
 }
 
 func (h *Handler) stripeWebhook(ctx huma.Context) {
@@ -376,20 +376,20 @@ func (h *Handler) windowError(ctx context.Context, op string, err error) error {
 	}
 }
 
-func statementResponse(statement billing.Statement) apiwire.BillingStatement {
-	items := make([]apiwire.BillingStatementLineItem, 0, len(statement.LineItems))
+func statementResponse(statement billing.Statement) dto.BillingStatement {
+	items := make([]dto.BillingStatementLineItem, 0, len(statement.LineItems))
 	for _, line := range statement.LineItems {
-		items = append(items, apiwire.BillingStatementLineItem{ProductID: line.ProductID, PlanID: line.PlanID, BucketID: line.BucketID, BucketDisplayName: line.BucketDisplayName, SKUID: line.SKUID, SKUDisplayName: line.SKUDisplayName, QuantityUnit: line.QuantityUnit, PricingPhase: line.PricingPhase, Quantity: line.Quantity, UnitRate: apiwire.Uint64(line.UnitRate), ChargeUnits: apiwire.Uint64(line.ChargeUnits), FreeTierUnits: apiwire.Uint64(line.FreeTierUnits), ContractUnits: apiwire.Uint64(line.ContractUnits), PurchaseUnits: apiwire.Uint64(line.PurchaseUnits), PromoUnits: apiwire.Uint64(line.PromoUnits), RefundUnits: apiwire.Uint64(line.RefundUnits), ReceivableUnits: apiwire.Uint64(line.ReceivableUnits), ReservedUnits: apiwire.Uint64(line.ReservedUnits)})
+		items = append(items, dto.BillingStatementLineItem{ProductID: line.ProductID, PlanID: line.PlanID, BucketID: line.BucketID, BucketDisplayName: line.BucketDisplayName, SKUID: line.SKUID, SKUDisplayName: line.SKUDisplayName, QuantityUnit: line.QuantityUnit, PricingPhase: line.PricingPhase, Quantity: line.Quantity, UnitRate: dto.Uint64(line.UnitRate), ChargeUnits: dto.Uint64(line.ChargeUnits), FreeTierUnits: dto.Uint64(line.FreeTierUnits), ContractUnits: dto.Uint64(line.ContractUnits), PurchaseUnits: dto.Uint64(line.PurchaseUnits), PromoUnits: dto.Uint64(line.PromoUnits), RefundUnits: dto.Uint64(line.RefundUnits), ReceivableUnits: dto.Uint64(line.ReceivableUnits), ReservedUnits: dto.Uint64(line.ReservedUnits)})
 	}
-	summaries := make([]apiwire.BillingStatementGrantSummary, 0, len(statement.GrantSummaries))
+	summaries := make([]dto.BillingStatementGrantSummary, 0, len(statement.GrantSummaries))
 	for _, summary := range statement.GrantSummaries {
-		summaries = append(summaries, apiwire.BillingStatementGrantSummary{ScopeType: summary.ScopeType, ScopeProductID: summary.ScopeProductID, ScopeBucketID: summary.ScopeBucketID, Source: summary.Source, Available: apiwire.Uint64(summary.Available), Pending: apiwire.Uint64(summary.Pending)})
+		summaries = append(summaries, dto.BillingStatementGrantSummary{ScopeType: summary.ScopeType, ScopeProductID: summary.ScopeProductID, ScopeBucketID: summary.ScopeBucketID, Source: summary.Source, Available: dto.Uint64(summary.Available), Pending: dto.Uint64(summary.Pending)})
 	}
-	return apiwire.BillingStatement{OrgID: apiwire.Uint64(uint64(statement.OrgID)), ProductID: statement.ProductID, PeriodStart: statement.PeriodStart, PeriodEnd: statement.PeriodEnd, PeriodSource: statement.PeriodSource, GeneratedAt: statement.GeneratedAt, Currency: statement.Currency, UnitLabel: statement.UnitLabel, LineItems: items, GrantSummaries: summaries, Totals: apiwire.BillingStatementTotals{ChargeUnits: apiwire.Uint64(statement.Totals.ChargeUnits), FreeTierUnits: apiwire.Uint64(statement.Totals.FreeTierUnits), ContractUnits: apiwire.Uint64(statement.Totals.ContractUnits), PurchaseUnits: apiwire.Uint64(statement.Totals.PurchaseUnits), PromoUnits: apiwire.Uint64(statement.Totals.PromoUnits), RefundUnits: apiwire.Uint64(statement.Totals.RefundUnits), ReceivableUnits: apiwire.Uint64(statement.Totals.ReceivableUnits), ReservedUnits: apiwire.Uint64(statement.Totals.ReservedUnits), TotalDueUnits: apiwire.Uint64(statement.Totals.TotalDueUnits)}}
+	return dto.BillingStatement{OrgID: dto.Uint64(uint64(statement.OrgID)), ProductID: statement.ProductID, PeriodStart: statement.PeriodStart, PeriodEnd: statement.PeriodEnd, PeriodSource: statement.PeriodSource, GeneratedAt: statement.GeneratedAt, Currency: statement.Currency, UnitLabel: statement.UnitLabel, LineItems: items, GrantSummaries: summaries, Totals: dto.BillingStatementTotals{ChargeUnits: dto.Uint64(statement.Totals.ChargeUnits), FreeTierUnits: dto.Uint64(statement.Totals.FreeTierUnits), ContractUnits: dto.Uint64(statement.Totals.ContractUnits), PurchaseUnits: dto.Uint64(statement.Totals.PurchaseUnits), PromoUnits: dto.Uint64(statement.Totals.PromoUnits), RefundUnits: dto.Uint64(statement.Totals.RefundUnits), ReceivableUnits: dto.Uint64(statement.Totals.ReceivableUnits), ReservedUnits: dto.Uint64(statement.Totals.ReservedUnits), TotalDueUnits: dto.Uint64(statement.Totals.TotalDueUnits)}}
 }
 
-func documentResponse(document billing.DocumentRecord) apiwire.BillingDocument {
-	return apiwire.BillingDocument{
+func documentResponse(document billing.DocumentRecord) dto.BillingDocument {
+	return dto.BillingDocument{
 		DocumentID:             document.DocumentID,
 		DocumentNumber:         document.DocumentNumber,
 		DocumentKind:           document.DocumentKind,
@@ -402,33 +402,33 @@ func documentResponse(document billing.DocumentRecord) apiwire.BillingDocument {
 		PeriodEnd:              document.PeriodEnd,
 		IssuedAt:               document.IssuedAt,
 		Currency:               document.Currency,
-		SubtotalUnits:          apiwire.Uint64(document.SubtotalUnits),
-		AdjustmentUnits:        apiwire.Int64(document.AdjustmentUnits),
-		TaxUnits:               apiwire.Uint64(document.TaxUnits),
-		TotalDueUnits:          apiwire.Uint64(document.TotalDueUnits),
+		SubtotalUnits:          dto.Uint64(document.SubtotalUnits),
+		AdjustmentUnits:        dto.Int64(document.AdjustmentUnits),
+		TaxUnits:               dto.Uint64(document.TaxUnits),
+		TotalDueUnits:          dto.Uint64(document.TotalDueUnits),
 		StripeHostedInvoiceURL: document.StripeHostedInvoiceURL,
 		StripeInvoicePDFURL:    document.StripeInvoicePDFURL,
 		StripePaymentIntentID:  document.StripePaymentIntentID,
 	}
 }
 
-func entitlementsResponse(view billing.EntitlementsView) apiwire.BillingEntitlementsView {
-	products := make([]apiwire.BillingEntitlementProductSection, 0, len(view.Products))
+func entitlementsResponse(view billing.EntitlementsView) dto.BillingEntitlementsView {
+	products := make([]dto.BillingEntitlementProductSection, 0, len(view.Products))
 	for _, product := range view.Products {
-		buckets := make([]apiwire.BillingEntitlementBucketSection, 0, len(product.Buckets))
+		buckets := make([]dto.BillingEntitlementBucketSection, 0, len(product.Buckets))
 		for _, bucket := range product.Buckets {
-			skus := make([]apiwire.BillingEntitlementSlot, 0, len(bucket.SKUSlots))
+			skus := make([]dto.BillingEntitlementSlot, 0, len(bucket.SKUSlots))
 			for _, slot := range bucket.SKUSlots {
 				skus = append(skus, entitlementSlot(slot))
 			}
-			buckets = append(buckets, apiwire.BillingEntitlementBucketSection{BucketID: bucket.BucketID, DisplayName: bucket.DisplayName, BucketSlot: entitlementSlotPtr(bucket.BucketSlot), SKUSlots: skus})
+			buckets = append(buckets, dto.BillingEntitlementBucketSection{BucketID: bucket.BucketID, DisplayName: bucket.DisplayName, BucketSlot: entitlementSlotPtr(bucket.BucketSlot), SKUSlots: skus})
 		}
-		products = append(products, apiwire.BillingEntitlementProductSection{ProductID: product.ProductID, DisplayName: product.DisplayName, ProductSlot: entitlementSlotPtr(product.ProductSlot), Buckets: buckets})
+		products = append(products, dto.BillingEntitlementProductSection{ProductID: product.ProductID, DisplayName: product.DisplayName, ProductSlot: entitlementSlotPtr(product.ProductSlot), Buckets: buckets})
 	}
-	return apiwire.BillingEntitlementsView{OrgID: apiwire.Uint64(uint64(view.OrgID)), Universal: entitlementSlot(view.Universal), Products: products}
+	return dto.BillingEntitlementsView{OrgID: dto.Uint64(uint64(view.OrgID)), Universal: entitlementSlot(view.Universal), Products: products}
 }
 
-func entitlementSlotPtr(slot *billing.EntitlementSlot) *apiwire.BillingEntitlementSlot {
+func entitlementSlotPtr(slot *billing.EntitlementSlot) *dto.BillingEntitlementSlot {
 	if slot == nil {
 		return nil
 	}
@@ -436,24 +436,24 @@ func entitlementSlotPtr(slot *billing.EntitlementSlot) *apiwire.BillingEntitleme
 	return &out
 }
 
-func entitlementSlot(slot billing.EntitlementSlot) apiwire.BillingEntitlementSlot {
-	sources := make([]apiwire.BillingEntitlementSourceTotal, 0, len(slot.Sources))
+func entitlementSlot(slot billing.EntitlementSlot) dto.BillingEntitlementSlot {
+	sources := make([]dto.BillingEntitlementSourceTotal, 0, len(slot.Sources))
 	for _, source := range slot.Sources {
-		sources = append(sources, apiwire.BillingEntitlementSourceTotal{Source: source.Source, PlanID: source.PlanID, Label: source.Label, PeriodStartUnits: apiwire.Uint64(source.PeriodStartUnits), AvailableUnits: apiwire.Uint64(source.AvailableUnits), PendingUnits: apiwire.Uint64(source.PendingUnits), InlineExpiresAt: source.InlineExpiresAt})
+		sources = append(sources, dto.BillingEntitlementSourceTotal{Source: source.Source, PlanID: source.PlanID, Label: source.Label, PeriodStartUnits: dto.Uint64(source.PeriodStartUnits), AvailableUnits: dto.Uint64(source.AvailableUnits), PendingUnits: dto.Uint64(source.PendingUnits), InlineExpiresAt: source.InlineExpiresAt})
 	}
-	return apiwire.BillingEntitlementSlot{ScopeType: slot.ScopeType, ProductID: slot.ProductID, ProductDisplay: slot.ProductDisplay, BucketID: slot.BucketID, BucketDisplay: slot.BucketDisplay, SKUID: slot.SKUID, SKUDisplay: slot.SKUDisplay, CoverageLabel: slot.CoverageLabel, PeriodStartUnits: apiwire.Uint64(slot.PeriodStartUnits), SpentUnits: apiwire.Uint64(slot.SpentUnits), PendingUnits: apiwire.Uint64(slot.PendingUnits), AvailableUnits: apiwire.Uint64(slot.AvailableUnits), Sources: sources}
+	return dto.BillingEntitlementSlot{ScopeType: slot.ScopeType, ProductID: slot.ProductID, ProductDisplay: slot.ProductDisplay, BucketID: slot.BucketID, BucketDisplay: slot.BucketDisplay, SKUID: slot.SKUID, SKUDisplay: slot.SKUDisplay, CoverageLabel: slot.CoverageLabel, PeriodStartUnits: dto.Uint64(slot.PeriodStartUnits), SpentUnits: dto.Uint64(slot.SpentUnits), PendingUnits: dto.Uint64(slot.PendingUnits), AvailableUnits: dto.Uint64(slot.AvailableUnits), Sources: sources}
 }
 
-func contractResponse(contract billing.ContractRecord) apiwire.BillingContract {
-	return apiwire.BillingContract{ContractID: contract.ContractID, ProductID: contract.ProductID, PlanID: contract.PlanID, PhaseID: contract.PhaseID, CadenceKind: contract.CadenceKind, Status: contract.Status, PaymentState: contract.PaymentState, EntitlementState: contract.EntitlementState, PendingChangeID: contract.PendingChangeID, PendingChangeType: contract.PendingChangeType, PendingChangeTargetPlanID: contract.PendingChangeTargetPlanID, PendingChangeEffectiveAt: contract.PendingChangeEffectiveAt, StartsAt: contract.StartsAt, EndsAt: contract.EndsAt, PhaseStart: contract.PhaseStart, PhaseEnd: contract.PhaseEnd}
+func contractResponse(contract billing.ContractRecord) dto.BillingContract {
+	return dto.BillingContract{ContractID: contract.ContractID, ProductID: contract.ProductID, PlanID: contract.PlanID, PhaseID: contract.PhaseID, CadenceKind: contract.CadenceKind, Status: contract.Status, PaymentState: contract.PaymentState, EntitlementState: contract.EntitlementState, PendingChangeID: contract.PendingChangeID, PendingChangeType: contract.PendingChangeType, PendingChangeTargetPlanID: contract.PendingChangeTargetPlanID, PendingChangeEffectiveAt: contract.PendingChangeEffectiveAt, StartsAt: contract.StartsAt, EndsAt: contract.EndsAt, PhaseStart: contract.PhaseStart, PhaseEnd: contract.PhaseEnd}
 }
 
-func reservationResponse(reservation billing.WindowReservation) apiwire.BillingWindowReservation {
-	rates := map[string]apiwire.DecimalUint64{}
+func reservationResponse(reservation billing.WindowReservation) dto.BillingWindowReservation {
+	rates := map[string]dto.DecimalUint64{}
 	for sku, rate := range reservation.SKURates {
-		rates[sku] = apiwire.Uint64(rate)
+		rates[sku] = dto.Uint64(rate)
 	}
-	return apiwire.BillingWindowReservation{WindowID: reservation.WindowID, OrgID: apiwire.Uint64(uint64(reservation.OrgID)), ProductID: reservation.ProductID, PlanID: reservation.PlanID, ActorID: reservation.ActorID, SourceType: reservation.SourceType, SourceRef: reservation.SourceRef, WindowSeq: reservation.WindowSeq, ReservationShape: reservation.ReservationShape, ReservedQuantity: reservation.ReservedQuantity, ReservedChargeUnits: apiwire.Uint64(reservation.ReservedChargeUnits), PricingPhase: reservation.PricingPhase, Allocation: reservation.Allocation, SKURates: rates, CostPerUnit: apiwire.Uint64(reservation.CostPerUnit), WindowStart: reservation.WindowStart, ActivatedAt: reservation.ActivatedAt, ExpiresAt: reservation.ExpiresAt, RenewBy: reservation.RenewBy}
+	return dto.BillingWindowReservation{WindowID: reservation.WindowID, OrgID: dto.Uint64(uint64(reservation.OrgID)), ProductID: reservation.ProductID, PlanID: reservation.PlanID, ActorID: reservation.ActorID, SourceType: reservation.SourceType, SourceRef: reservation.SourceRef, WindowSeq: reservation.WindowSeq, ReservationShape: reservation.ReservationShape, ReservedQuantity: reservation.ReservedQuantity, ReservedChargeUnits: dto.Uint64(reservation.ReservedChargeUnits), PricingPhase: reservation.PricingPhase, Allocation: reservation.Allocation, SKURates: rates, CostPerUnit: dto.Uint64(reservation.CostPerUnit), WindowStart: reservation.WindowStart, ActivatedAt: reservation.ActivatedAt, ExpiresAt: reservation.ExpiresAt, RenewBy: reservation.RenewBy}
 }
 
 func billingOrgID(id string) (billing.OrgID, error) {
@@ -464,7 +464,7 @@ func billingOrgID(id string) (billing.OrgID, error) {
 	return billing.OrgID(parsed), nil
 }
 
-func billingOrgIDFromWire(id apiwire.DecimalUint64) (billing.OrgID, error) {
+func billingOrgIDFromWire(id dto.DecimalUint64) (billing.OrgID, error) {
 	if id.Uint64() == 0 {
 		return 0, huma.Error400BadRequest("org_id must be positive")
 	}
@@ -488,13 +488,13 @@ func requireInternalPeerMiddleware(api huma.API, peers []spiffeid.ID) func(huma.
 	return func(ctx huma.Context, next func(huma.Context)) {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx.Context())
 		if !ok {
-			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing spiffe peer")
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing spiffe peer")
 			return
 		}
 		if _, ok := allowed[peerID]; ok {
 			next(ctx)
 			return
 		}
-		huma.WriteErr(api, ctx, http.StatusForbidden, "unexpected spiffe peer")
+		_ = huma.WriteErr(api, ctx, http.StatusForbidden, "unexpected spiffe peer")
 	}
 }

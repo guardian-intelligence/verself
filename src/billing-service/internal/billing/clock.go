@@ -30,7 +30,7 @@ func (c *Client) GetBusinessClock(ctx context.Context, orgID OrgID, productID st
 	}
 	state.BusinessNow = row.BusinessNow.Time.UTC()
 	state.HasOverride = true
-	state.Generation = uint64(row.Generation)
+	state.Generation = checkedUint64FromInt64(row.Generation, "business clock generation")
 	return state, nil
 }
 

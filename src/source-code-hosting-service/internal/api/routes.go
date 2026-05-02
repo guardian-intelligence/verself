@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/source-code-hosting-service/internal/source"
 )
@@ -667,8 +666,4 @@ func verifyWebhookSignature(secret, signature string, body []byte) bool {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write(body)
 	return hmac.Equal(got, mac.Sum(nil))
-}
-
-func annotateRepoSpan(ctx context.Context, repoID uuid.UUID) {
-	trace.SpanFromContext(ctx).SetAttributes(attribute.String("source.repo_id", repoID.String()))
 }

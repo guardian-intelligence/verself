@@ -102,12 +102,12 @@ func runInit() error {
 	if err != nil {
 		return fmt.Errorf("listen vsock: %w", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	readyAt := time.Now()
 	bootTimings.VSockListenDoneMS = readyAt.Sub(bootStart).Milliseconds()
 	bootTimings.KernelBootToVSockListenDoneMS = kernelUptimeMS()
-	fmt.Fprintf(os.Stdout, "%s vsock listener ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
+	_, _ = fmt.Fprintf(os.Stdout, "%s vsock listener ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
 
 	bootTimings.VSockAcceptStartMS = elapsedBootMS(bootStart)
 	conn, err := listener.Accept()
@@ -116,7 +116,7 @@ func runInit() error {
 	}
 	bootTimings.VSockAcceptDoneMS = elapsedBootMS(bootStart)
 	bootTimings.KernelBootToVSockAcceptDoneMS = kernelUptimeMS()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	// Telemetry agent fork+exec happens after accept so the post-hello
 	// latency covers it instead of the pre-hello critical path.
 	maybeStartGuestTelemetry()
@@ -305,7 +305,7 @@ func maybeStartGuestTelemetry() {
 		fmt.Fprintf(os.Stderr, "%s warning: start vm-guest-telemetry: %v\n", logPrefix, err)
 		return
 	}
-	fmt.Fprintf(os.Stdout, "%s vm-guest-telemetry started (pid=%d port=%d)\n", logPrefix, cmd.Process.Pid, vmGuestTelemetryPort)
+	_, _ = fmt.Fprintf(os.Stdout, "%s vm-guest-telemetry started (pid=%d port=%d)\n", logPrefix, cmd.Process.Pid, vmGuestTelemetryPort)
 	go func() {
 		if err := cmd.Wait(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s warning: vm-guest-telemetry exited: %v\n", logPrefix, err)

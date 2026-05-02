@@ -10,11 +10,12 @@ go_library(
         "openapi.go",
         "policy.go",
         "routes.go",
+        "safeconv.go",
     ],
     importpath = "github.com/verself/governance-service/internal/api",
     visibility = ["//src/governance-service:__subpackages__"],
     deps = [
-        "//src/apiwire",
+        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
         "//src/governance-service/internal/governance",

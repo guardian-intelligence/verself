@@ -41,10 +41,6 @@ func forbidden(ctx context.Context, code, detail string) error {
 	return problem(ctx, http.StatusForbidden, code, detail, nil)
 }
 
-func paymentRequired(ctx context.Context, detail string) error {
-	return problem(ctx, http.StatusPaymentRequired, "payment-required", detail, nil)
-}
-
 func unprocessableEntity(ctx context.Context, code, detail string, cause error) error {
 	return problem(ctx, http.StatusUnprocessableEntity, code, detail, cause)
 }

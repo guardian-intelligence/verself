@@ -22,14 +22,14 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
 	billingclient "github.com/verself/billing-service/client"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
-	verselfotel "github.com/verself/otel"
+	"github.com/verself/domain-transfer-objects"
+	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 
 	sandboxapi "github.com/verself/sandbox-rental-service/internal/api"
@@ -77,7 +77,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
@@ -151,8 +151,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgxConfig.MaxConns = int32(pgMaxConns)
-	pgxConfig.MinConns = int32(pgMinConns)
+	pgxConfig.MaxConns = int32FromInt(pgMaxConns, "SANDBOX_PG_MAX_CONNS")
+	pgxConfig.MinConns = int32FromInt(pgMinConns, "SANDBOX_PG_MIN_CONNS")
 	pgxConfig.MaxConnLifetime = time.Duration(pgConnMaxLifetime) * time.Second
 	pgxConfig.MaxConnIdleTime = time.Duration(pgConnMaxIdle) * time.Second
 	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
@@ -195,11 +195,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("connect vm-orchestrator: %w", err)
 	}
-	defer orchestrator.Close()
+	defer func() { _ = orchestrator.Close() }()
 
 	// Probe the host pool ceilings once at startup. The pool ceiling is the
 	// default VMResourceBounds applied to intake when an org has no explicit
-	// row — apiwire.DefaultBounds clamped to what the host can actually
+	// row — dto.DefaultBounds clamped to what the host can actually
 	// schedule. Org-specific overrides live in the vm_resource_bounds table.
 	capacityCtx, cancelCapacity := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelCapacity()
@@ -207,7 +207,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("query vm-orchestrator capacity: %w", err)
 	}
-	hostBounds := apiwire.DefaultBounds
+	hostBounds := dto.DefaultBounds
 	if capacity.MaxVCPUsPerLease > 0 {
 		hostBounds.MaxVCPUs = capacity.MaxVCPUsPerLease
 	}
@@ -428,6 +428,17 @@ func run() error {
 	}()
 
 	return httpserver.RunPair(ctx, logger, srv, internalSrv)
+}
+
+func int32FromInt(value int, field string) int32 {
+	const (
+		minInt32 = -1 << 31
+		maxInt32 = 1<<31 - 1
+	)
+	if value < minInt32 || value > maxInt32 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
 func requireSecretField(values map[string]string, field string, label string) string {

@@ -120,7 +120,7 @@ func finishOperationSpan(span trace.Span, principal source.Principal, policy ope
 		return
 	}
 	if principal.OrgID != 0 {
-		span.SetAttributes(attribute.Int64("verself.org_id", int64(principal.OrgID)))
+		span.SetAttributes(attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")))
 	}
 	if principal.Subject != "" {
 		span.SetAttributes(attribute.String("verself.subject_id", principal.Subject))

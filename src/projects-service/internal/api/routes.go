@@ -7,7 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/projects-service/internal/projects"
 )
 
@@ -22,17 +22,17 @@ type listProjectsInput struct {
 }
 
 type createProjectInput struct {
-	Body apiwire.CreateProjectRequest
+	Body dto.CreateProjectRequest
 }
 
 type updateProjectInput struct {
 	ProjectID string `path:"project_id" format:"uuid"`
-	Body      apiwire.UpdateProjectRequest
+	Body      dto.UpdateProjectRequest
 }
 
 type projectLifecycleInput struct {
 	ProjectID string `path:"project_id" format:"uuid"`
-	Body      apiwire.ProjectLifecycleRequest
+	Body      dto.ProjectLifecycleRequest
 }
 
 type listEnvironmentsInput struct {
@@ -41,35 +41,35 @@ type listEnvironmentsInput struct {
 
 type createEnvironmentInput struct {
 	ProjectID string `path:"project_id" format:"uuid"`
-	Body      apiwire.CreateProjectEnvironmentRequest
+	Body      dto.CreateProjectEnvironmentRequest
 }
 
 type updateEnvironmentInput struct {
 	ProjectID     string `path:"project_id" format:"uuid"`
 	EnvironmentID string `path:"environment_id" format:"uuid"`
-	Body          apiwire.UpdateProjectEnvironmentRequest
+	Body          dto.UpdateProjectEnvironmentRequest
 }
 
 type environmentLifecycleInput struct {
 	ProjectID     string `path:"project_id" format:"uuid"`
 	EnvironmentID string `path:"environment_id" format:"uuid"`
-	Body          apiwire.ProjectLifecycleRequest
+	Body          dto.ProjectLifecycleRequest
 }
 
 type projectOutput struct {
-	Body apiwire.Project
+	Body dto.Project
 }
 
 type projectListOutput struct {
-	Body apiwire.ProjectList
+	Body dto.ProjectList
 }
 
 type environmentOutput struct {
-	Body apiwire.ProjectEnvironment
+	Body dto.ProjectEnvironment
 }
 
 type environmentListOutput struct {
-	Body apiwire.ProjectEnvironmentList
+	Body dto.ProjectEnvironmentList
 }
 
 func RegisterRoutes(api huma.API, svc *projects.Service) {
@@ -290,7 +290,7 @@ func listProjects(svc *projects.Service) func(context.Context, projects.Principa
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectListOutput{Body: apiwire.ProjectList{Projects: projectDTOs(records), NextCursor: nextCursor}}, nil
+		return &projectListOutput{Body: dto.ProjectList{Projects: projectDTOs(records), NextCursor: nextCursor}}, nil
 	}
 }
 
@@ -375,7 +375,7 @@ func listEnvironments(svc *projects.Service) func(context.Context, projects.Prin
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &environmentListOutput{Body: apiwire.ProjectEnvironmentList{Environments: environmentDTOs(envs)}}, nil
+		return &environmentListOutput{Body: dto.ProjectEnvironmentList{Environments: environmentDTOs(envs)}}, nil
 	}
 }
 
@@ -456,16 +456,16 @@ func parseUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func projectDTO(project projects.Project) apiwire.Project {
-	return apiwire.Project{
+func projectDTO(project projects.Project) dto.Project {
+	return dto.Project{
 		ProjectID:          project.ID.String(),
-		OrgID:              apiwire.Uint64(project.OrgID),
+		OrgID:              dto.Uint64(project.OrgID),
 		Slug:               project.Slug,
 		RedirectedFromSlug: project.RedirectedFromSlug,
 		DisplayName:        project.DisplayName,
 		Description:        project.Description,
-		State:              apiwire.ProjectState(project.State),
-		Version:            apiwire.Int64(project.Version),
+		State:              dto.ProjectState(project.State),
+		Version:            dto.Int64(project.Version),
 		CreatedBy:          project.CreatedBy,
 		UpdatedBy:          project.UpdatedBy,
 		CreatedAt:          project.CreatedAt,
@@ -474,25 +474,25 @@ func projectDTO(project projects.Project) apiwire.Project {
 	}
 }
 
-func projectDTOs(records []projects.Project) []apiwire.Project {
-	out := make([]apiwire.Project, 0, len(records))
+func projectDTOs(records []projects.Project) []dto.Project {
+	out := make([]dto.Project, 0, len(records))
 	for _, record := range records {
 		out = append(out, projectDTO(record))
 	}
 	return out
 }
 
-func environmentDTO(env projects.Environment) apiwire.ProjectEnvironment {
-	return apiwire.ProjectEnvironment{
+func environmentDTO(env projects.Environment) dto.ProjectEnvironment {
+	return dto.ProjectEnvironment{
 		EnvironmentID:    env.ID.String(),
 		ProjectID:        env.ProjectID.String(),
-		OrgID:            apiwire.Uint64(env.OrgID),
+		OrgID:            dto.Uint64(env.OrgID),
 		Slug:             env.Slug,
 		DisplayName:      env.DisplayName,
-		Kind:             apiwire.ProjectEnvironmentKind(env.Kind),
-		State:            apiwire.ProjectEnvironmentState(env.State),
+		Kind:             dto.ProjectEnvironmentKind(env.Kind),
+		State:            dto.ProjectEnvironmentState(env.State),
 		ProtectionPolicy: env.ProtectionPolicy,
-		Version:          apiwire.Int64(env.Version),
+		Version:          dto.Int64(env.Version),
 		CreatedBy:        env.CreatedBy,
 		UpdatedBy:        env.UpdatedBy,
 		CreatedAt:        env.CreatedAt,
@@ -501,8 +501,8 @@ func environmentDTO(env projects.Environment) apiwire.ProjectEnvironment {
 	}
 }
 
-func environmentDTOs(records []projects.Environment) []apiwire.ProjectEnvironment {
-	out := make([]apiwire.ProjectEnvironment, 0, len(records))
+func environmentDTOs(records []projects.Environment) []dto.ProjectEnvironment {
+	out := make([]dto.ProjectEnvironment, 0, len(records))
 	for _, record := range records {
 		out = append(out, environmentDTO(record))
 	}

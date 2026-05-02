@@ -10,7 +10,7 @@ go_library(
     importpath = "github.com/verself/notifications-service/internal/api",
     visibility = ["//src/notifications-service:__subpackages__"],
     deps = [
-        "//src/apiwire",
+        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/notifications-service/internal/notifications",
         "@com_github_danielgtaylor_huma_v2//:huma",

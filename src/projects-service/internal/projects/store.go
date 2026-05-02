@@ -223,13 +223,13 @@ func (s SQLStore) ListProjects(ctx context.Context, principal Principal, input L
 					State:         input.State,
 					CreatedBefore: timestamptz(createdBefore),
 					IDBefore:      idBefore,
-					LimitCount:    int32(limit + 1),
+					LimitCount:    int32FromInt(limit+1, "project list limit"),
 				})
 			} else {
 				rows, err = q.ListProjectsByState(ctx, projectstore.ListProjectsByStateParams{
 					OrgID: orgID,
 					State: input.State,
-					Limit: int32(limit + 1),
+					Limit: int32FromInt(limit+1, "project list limit"),
 				})
 			}
 		default:
@@ -240,12 +240,12 @@ func (s SQLStore) ListProjects(ctx context.Context, principal Principal, input L
 			OrgID:         orgID,
 			CreatedBefore: timestamptz(createdBefore),
 			IDBefore:      idBefore,
-			LimitCount:    int32(limit + 1),
+			LimitCount:    int32FromInt(limit+1, "project list limit"),
 		})
 	} else {
 		rows, err = q.ListProjects(ctx, projectstore.ListProjectsParams{
 			OrgID: orgID,
-			Limit: int32(limit + 1),
+			Limit: int32FromInt(limit+1, "project list limit"),
 		})
 	}
 	if err != nil {
@@ -351,7 +351,7 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	now := s.now()
 	nextVersion := old.Version + 1
 	rowsAffected, err := q.UpdateProject(ctx, projectstore.UpdateProjectParams{
-		OrgID:       int64(old.OrgID),
+		OrgID:       int64FromUint64(old.OrgID, "org id"),
 		ProjectID:   old.ID,
 		Slug:        slug,
 		DisplayName: displayName,
@@ -508,7 +508,7 @@ func (s SQLStore) ListEnvironments(ctx context.Context, principal Principal, pro
 		return nil, err
 	}
 	rows, err := q.ListEnvironments(ctx, projectstore.ListEnvironmentsParams{
-		OrgID:     int64(project.OrgID),
+		OrgID:     int64FromUint64(project.OrgID, "org id"),
 		ProjectID: project.ID,
 	})
 	if err != nil {
@@ -589,7 +589,7 @@ func (s SQLStore) UpdateEnvironment(ctx context.Context, principal Principal, in
 		return Environment{}, fmt.Errorf("%w: invalid protection policy", ErrInvalid)
 	}
 	rowsAffected, err := q.UpdateEnvironment(ctx, projectstore.UpdateEnvironmentParams{
-		OrgID:            int64(old.OrgID),
+		OrgID:            int64FromUint64(old.OrgID, "org id"),
 		ProjectID:        old.ProjectID,
 		EnvironmentID:    old.ID,
 		DisplayName:      input.DisplayName,
@@ -637,7 +637,7 @@ func (s SQLStore) ResolveProject(ctx context.Context, input ResolveProjectReques
 	ctx, span := storeTracer.Start(ctx, "projects.pg.project.resolve")
 	defer endSpan(span, err)
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(input.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(input.OrgID, "org id")),
 		attribute.String("projects.slug.requested", input.Slug),
 		attribute.String("verself.project_id", input.ProjectID.String()),
 	)
@@ -716,12 +716,12 @@ func (s SQLStore) ListEvents(ctx context.Context, orgID uint64, cursor string, l
 			OrgID:         pgOrg,
 			CreatedBefore: timestamptz(createdBefore),
 			IDBefore:      idBefore,
-			LimitCount:    int32(limit + 1),
+			LimitCount:    int32FromInt(limit+1, "event list limit"),
 		})
 	} else {
 		rows, err = q.ListEvents(ctx, projectstore.ListEventsParams{
 			OrgID: pgOrg,
-			Limit: int32(limit + 1),
+			Limit: int32FromInt(limit+1, "event list limit"),
 		})
 	}
 	if err != nil {
@@ -794,7 +794,7 @@ func (s SQLStore) setProjectState(ctx context.Context, principal Principal, inpu
 		archivedAt = timestamptz(now)
 	}
 	rowsAffected, err := q.SetProjectState(ctx, projectstore.SetProjectStateParams{
-		OrgID:      int64(old.OrgID),
+		OrgID:      int64FromUint64(old.OrgID, "org id"),
 		ProjectID:  old.ID,
 		State:      state,
 		UpdatedBy:  principal.Subject,
@@ -885,7 +885,7 @@ func (s SQLStore) setEnvironmentState(ctx context.Context, principal Principal, 
 		archivedAt = timestamptz(now)
 	}
 	rowsAffected, err := q.SetEnvironmentState(ctx, projectstore.SetEnvironmentStateParams{
-		OrgID:         int64(old.OrgID),
+		OrgID:         int64FromUint64(old.OrgID, "org id"),
 		ProjectID:     old.ProjectID,
 		EnvironmentID: old.ID,
 		State:         state,
@@ -933,7 +933,7 @@ func (s SQLStore) insertEnvironment(ctx context.Context, q *projectstore.Queries
 	if err := q.InsertEnvironment(ctx, projectstore.InsertEnvironmentParams{
 		EnvironmentID:    env.ID,
 		ProjectID:        env.ProjectID,
-		OrgID:            int64(env.OrgID),
+		OrgID:            int64FromUint64(env.OrgID, "org id"),
 		Slug:             env.Slug,
 		DisplayName:      env.DisplayName,
 		Kind:             env.Kind,
@@ -1265,7 +1265,7 @@ func uint64FromPGOrg(value int64) (uint64, error) {
 	if value <= 0 {
 		return 0, fmt.Errorf("%w: org_id is out of range", ErrStoreUnavailable)
 	}
-	return uint64(value), nil
+	return uint64(value), nil // #nosec G115 -- value is checked as positive above.
 }
 
 func requiredTime(value pgtype.Timestamptz) time.Time {
@@ -1318,7 +1318,7 @@ func pgOrgID(orgID uint64) (int64, error) {
 	if orgID == 0 || orgID > math.MaxInt64 {
 		return 0, fmt.Errorf("%w: org_id is out of range", ErrInvalid)
 	}
-	return int64(orgID), nil
+	return int64(orgID), nil // #nosec G115 -- orgID is checked against MaxInt64 above.
 }
 
 func normalizeLimit(limit int) int {

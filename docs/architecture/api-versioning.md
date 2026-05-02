@@ -1,6 +1,6 @@
 # API Versioning Library Specification
 
-A Go library that ports [Cadwyn](https://github.com/zmievsa/cadwyn)'s Stripe-style API versioning pattern onto Huma v2 + `apiwire`. Handlers always see the latest ("HEAD") request/response shape; a chain of dated, declarative `VersionChange`s ferries old wire payloads forward and new wire payloads backward at the edge.
+A Go library that ports [Cadwyn](https://github.com/zmievsa/cadwyn)'s Stripe-style API versioning pattern onto Huma v2 + `dto`. Handlers always see the latest ("HEAD") request/response shape; a chain of dated, declarative `VersionChange`s ferries old wire payloads forward and new wire payloads backward at the edge.
 
 This document specifies the library's surface area and internals. Cadwyn is the reference implementation; we deviate where Go semantics or our existing toolchain demand it.
 
@@ -345,12 +345,12 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
     api := humago.New(mux, config)
     if err := apiversion.Apply(api, billing.Bundle); err != nil { /* fatal */ }
     RegisterRoutes(api, cfg)
-    apiwire.ApplyOpenAPIWireDefaults(api)
+    dto.ApplyOpenAPIWireDefaults(api)
     return api
 }
 ```
 
-The service owns its own `Bundle` (e.g. `src/billing-service/internal/billing/versions.go`). Cross-service shared changes — when a DTO in `apiwire` evolves and multiple services consume it — live in `apiwire/versions/<dto-area>.go` and are imported into each service's bundle. `apiwire-openapi-check` (existing) gains awareness of the per-version specs to keep the wire-contract gate honest.
+The service owns its own `Bundle` (e.g. `src/billing-service/internal/billing/versions.go`). Cross-service shared changes — when a DTO in `domain-transfer-objects` evolves and multiple services consume it — live in `src/domain-transfer-objects/go/versions/<dto-area>.go` and are imported into each service's bundle. The generated contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
 
 ## 14. Generated Client Implications
 

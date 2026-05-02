@@ -27,7 +27,7 @@ func NewImage(roots Roots, sourceRef string) (Image, error) {
 	return Image{roots: roots, ref: sourceRef}, nil
 }
 
-func (i Image) Dataset() string  { return i.roots.Pool + "/" + i.roots.ImageDataset + "/" + i.ref }
+func (i Image) Dataset() string { return i.roots.Pool + "/" + i.roots.ImageDataset + "/" + i.ref }
 func (i Image) Snapshot() Snapshot {
 	return Snapshot{dataset: i.Dataset(), name: "ready"}
 }

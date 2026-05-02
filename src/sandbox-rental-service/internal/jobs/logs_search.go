@@ -146,7 +146,7 @@ func (s *Service) SearchRunLogs(ctx context.Context, orgID uint64, filters RunLo
 	if err != nil {
 		return RunLogSearchPage{}, fmt.Errorf("search run logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	results := make([]RunLogSearchResult, 0, limit)
 	for rows.Next() {

@@ -3,7 +3,7 @@ package vmorchestrator
 import (
 	"time"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 )
 
 const DefaultSocketPath = "/run/vm-orchestrator/api.sock"
@@ -17,7 +17,7 @@ type LeaseRecord struct {
 	TerminalAt     time.Time
 	TerminalReason string
 	VMIP           string
-	Resources      apiwire.VMResources
+	Resources      dto.VMResources
 	TrustClass     string
 }
 

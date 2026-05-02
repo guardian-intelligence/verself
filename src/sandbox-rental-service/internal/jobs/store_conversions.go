@@ -13,14 +13,14 @@ func (s *Service) storeQueries() *store.Queries {
 }
 
 func dbOrgID(orgID uint64) int64 {
-	return int64(orgID)
+	return mustInt64FromUint64(orgID, "org id")
 }
 
 func orgIDFromDB(orgID int64) uint64 {
 	if orgID <= 0 {
 		return 0
 	}
-	return uint64(orgID)
+	return uint64(orgID) // #nosec G115 -- orgID is checked as positive above.
 }
 
 func pgTime(value time.Time) pgtype.Timestamptz {

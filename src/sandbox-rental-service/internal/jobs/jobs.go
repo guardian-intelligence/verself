@@ -16,8 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/verself/apiwire"
 	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel"
@@ -112,7 +112,7 @@ type SubmitRequest struct {
 	ExternalTaskID         string                           `json:"external_task_id,omitempty"`
 	RunCommand             string                           `json:"run_command,omitempty"`
 	MaxWallSeconds         uint64                           `json:"max_wall_seconds,omitempty"`
-	Resources              apiwire.VMResources              `json:"resources"`
+	Resources              dto.VMResources                  `json:"resources"`
 	FilesystemMounts       []vmorchestrator.FilesystemMount `json:"-"`
 	StickyDiskMounts       []StickyDiskMountSpec            `json:"-"`
 	AttemptID              uuid.UUID                        `json:"-"`
@@ -200,7 +200,7 @@ type Service struct {
 	CHDatabase       string
 	Orchestrator     Runner
 	Billing          *billingclient.ClientWithResponses
-	Bounds           apiwire.VMResourceBounds
+	Bounds           dto.VMResourceBounds
 	GitHubRunner     *GitHubRunner
 	ForgejoRunner    *ForgejoRunner
 	Scheduler        SchedulerRuntime
@@ -228,7 +228,7 @@ type executionWorkItem struct {
 	LeaseID          string
 	ExecID           string
 	CorrelationID    string
-	Resources        apiwire.VMResources
+	Resources        dto.VMResources
 	FilesystemMounts []vmorchestrator.FilesystemMount
 }
 
@@ -382,10 +382,10 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		CorrelationID:        correlationID,
 		IdempotencyKey:       req.IdempotencyKey,
 		RunCommand:           req.RunCommand,
-		MaxWallSeconds:       int64(req.MaxWallSeconds),
-		RequestedVcpus:       int32(req.Resources.VCPUs),
-		RequestedMemoryMib:   int32(req.Resources.MemoryMiB),
-		RequestedRootDiskGib: int32(req.Resources.RootDiskGiB),
+		MaxWallSeconds:       mustInt64FromUint64(req.MaxWallSeconds, "max wall seconds"),
+		RequestedVcpus:       int32FromUint32(req.Resources.VCPUs, "requested vcpus"),
+		RequestedMemoryMib:   int32FromUint32(req.Resources.MemoryMiB, "requested memory mib"),
+		RequestedRootDiskGib: int32FromUint32(req.Resources.RootDiskGiB, "requested root disk gib"),
 		RequestedKernelImage: string(req.Resources.KernelImage),
 		CreatedAt:            pgTime(now),
 	}); err != nil {
@@ -465,19 +465,19 @@ func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempote
 	return row.ExecutionID, row.AttemptID, nil
 }
 
-func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (apiwire.VMResources, string, bool, error) {
+func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (dto.VMResources, string, bool, error) {
 	row, err := s.storeQueries().GetRunnerClassResources(ctx, store.GetRunnerClassResourcesParams{RunnerClass: runnerClass})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apiwire.VMResources{}, "", false, nil
+		return dto.VMResources{}, "", false, nil
 	}
 	if err != nil {
-		return apiwire.VMResources{}, "", false, fmt.Errorf("load runner class resources: %w", err)
+		return dto.VMResources{}, "", false, fmt.Errorf("load runner class resources: %w", err)
 	}
-	return apiwire.VMResources{
-		VCPUs:       uint32(row.Vcpus),
-		MemoryMiB:   uint32(row.MemoryMib),
-		RootDiskGiB: uint32(row.RootfsGib),
-		KernelImage: apiwire.KernelImageDefault,
+	return dto.VMResources{
+		VCPUs:       uint32FromInt32(row.Vcpus, "runner class vcpus"),
+		MemoryMiB:   uint32FromInt32(row.MemoryMib, "runner class memory mib"),
+		RootDiskGiB: uint32FromInt32(row.RootfsGib, "runner class root disk gib"),
+		KernelImage: dto.KernelImageDefault,
 	}, row.ProductID, true, nil
 }
 
@@ -586,7 +586,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
-		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, apiwire.BillingSettleResult{})
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
 	item.LeaseID = lease.LeaseID
@@ -633,7 +633,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		terminalCtx := detachedContext(ctx)
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
-		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, apiwire.BillingSettleResult{})
+		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	if item.WorkloadKind == WorkloadKindRunner && s.GitHubRunner != nil && item.SourceKind == SourceKindGitHubAction {
@@ -709,15 +709,15 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		Provider:         row.Provider,
 		ProductID:        row.ProductID,
 		RunCommand:       row.RunCommand,
-		MaxWallSeconds:   uint64(row.MaxWallSeconds),
+		MaxWallSeconds:   uint64FromInt64(row.MaxWallSeconds, "max wall seconds"),
 		LeaseID:          row.LeaseID,
 		ExecID:           row.ExecID,
 		CorrelationID:    row.CorrelationID,
-		Resources: apiwire.VMResources{
-			VCPUs:       uint32(row.RequestedVcpus),
-			MemoryMiB:   uint32(row.RequestedMemoryMib),
-			RootDiskGiB: uint32(row.RequestedRootDiskGib),
-			KernelImage: apiwire.KernelImageRef(row.RequestedKernelImage),
+		Resources: dto.VMResources{
+			VCPUs:       uint32FromInt32(row.RequestedVcpus, "requested vcpus"),
+			MemoryMiB:   uint32FromInt32(row.RequestedMemoryMib, "requested memory mib"),
+			RootDiskGiB: uint32FromInt32(row.RequestedRootDiskGib, "requested root disk gib"),
+			KernelImage: dto.KernelImageRef(row.RequestedKernelImage),
 		},
 	}
 	mounts, err := s.loadExecutionFilesystemMounts(ctx, executionID)
@@ -757,7 +757,7 @@ func billingJobIDForAttempt(attemptID uuid.UUID) int64 {
 	return int64(raw)
 }
 
-func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (apiwire.BillingWindowReservation, error) {
+func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (dto.BillingWindowReservation, error) {
 	// Billing rates are SKU-ms rates; the customer's requested shape is
 	// what we charge for — not the host capacity headroom. Each SKU's
 	// advertised unit translates directly from VMResources: vCPUs into
@@ -770,8 +770,8 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 		billingSKUMemoryGiBMs:               float64(res.MemoryMiB) / billingMiBPerGiB,
 		billingSKUExecutionRootStorageGiBMs: float64(res.RootDiskGiB),
 	}
-	return s.reserveBillingWindow(ctx, apiwire.BillingReserveWindowRequest{
-		OrgID:            apiwire.Uint64(item.OrgID),
+	return s.reserveBillingWindow(ctx, dto.BillingReserveWindowRequest{
+		OrgID:            dto.Uint64(item.OrgID),
 		ProductID:        item.ProductID,
 		ActorID:          item.ActorID,
 		ConcurrentCount:  1,
@@ -785,16 +785,16 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 	})
 }
 
-func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation apiwire.BillingWindowReservation) error {
+func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation dto.BillingWindowReservation) error {
 	payload, _ := json.Marshal(reservation)
 	if err := s.storeQueries().InsertExecutionBillingWindow(ctx, store.InsertExecutionBillingWindowParams{
 		AttemptID:           attemptID,
-		WindowSeq:           int32(reservation.WindowSeq),
+		WindowSeq:           int32FromUint32(reservation.WindowSeq, "billing window seq"),
 		BillingWindowID:     reservation.WindowID,
 		ReservationShape:    reservation.ReservationShape,
-		ReservedQuantity:    int32(reservation.ReservedQuantity),
-		ReservedChargeUnits: int64(reservation.ReservedChargeUnits.Uint64()),
-		CostPerUnit:         int64(reservation.CostPerUnit.Uint64()),
+		ReservedQuantity:    int32FromUint32(reservation.ReservedQuantity, "reserved quantity"),
+		ReservedChargeUnits: mustInt64FromUint64(reservation.ReservedChargeUnits.Uint64(), "reserved charge units"),
+		CostPerUnit:         mustInt64FromUint64(reservation.CostPerUnit.Uint64(), "cost per unit"),
 		PricingPhase:        reservation.PricingPhase,
 		WindowStart:         pgTime(reservation.WindowStart),
 		CreatedAt:           pgTime(time.Now().UTC()),
@@ -805,12 +805,12 @@ func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, 
 	return nil
 }
 
-func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int, settled apiwire.BillingSettleResult) error {
+func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int, settled dto.BillingSettleResult) error {
 	return s.storeQueries().MarkExecutionBillingWindow(ctx, store.MarkExecutionBillingWindowParams{
 		State:               state,
-		ActualQuantity:      int32(actual),
-		BilledChargeUnits:   int64(settled.BilledChargeUnits.Uint64()),
-		WriteoffChargeUnits: int64(settled.WriteoffChargeUnits.Uint64()),
+		ActualQuantity:      int32FromInt(actual, "actual quantity"),
+		BilledChargeUnits:   mustInt64FromUint64(settled.BilledChargeUnits.Uint64(), "billed charge units"),
+		WriteoffChargeUnits: mustInt64FromUint64(settled.WriteoffChargeUnits.Uint64(), "writeoff charge units"),
 		SettledAt:           pgTime(time.Now().UTC()),
 		AttemptID:           attemptID,
 		BillingWindowID:     windowID,
@@ -922,12 +922,12 @@ func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, s
 	rows, err := qtx.CompleteAttemptCAS(ctx, store.CompleteAttemptCASParams{
 		State:                  state,
 		FailureReason:          reason,
-		ExitCode:               int32(exec.ExitCode),
+		ExitCode:               int32FromInt(exec.ExitCode, "exec exit code"),
 		DurationMs:             durationMs,
-		ZfsWritten:             int64(exec.ZFSWritten),
-		StdoutBytes:            int64(exec.StdoutBytes),
-		StderrBytes:            int64(exec.StderrBytes),
-		RootfsProvisionedBytes: int64(exec.RootfsProvisionedBytes),
+		ZfsWritten:             mustInt64FromUint64(exec.ZFSWritten, "zfs written"),
+		StdoutBytes:            mustInt64FromUint64(exec.StdoutBytes, "stdout bytes"),
+		StderrBytes:            mustInt64FromUint64(exec.StderrBytes, "stderr bytes"),
+		RootfsProvisionedBytes: mustInt64FromUint64(exec.RootfsProvisionedBytes, "rootfs provisioned bytes"),
 		BootTimeUs:             vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BootTimeUs }),
 		BlockReadBytes:         vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockReadBytes }),
 		BlockWriteBytes:        vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockWriteBytes }),
@@ -1007,7 +1007,7 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 	return err
 }
 
-func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation apiwire.BillingWindowReservation) {
+func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation dto.BillingWindowReservation) {
 	cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 	defer cancel()
 	if leaseID != "" {
@@ -1071,10 +1071,10 @@ func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) (
 			ReservationShape:    row.ReservationShape,
 			ReservedQuantity:    int(row.ReservedQuantity),
 			ActualQuantity:      int(row.ActualQuantity),
-			ReservedChargeUnits: uint64(row.ReservedChargeUnits),
-			BilledChargeUnits:   uint64(row.BilledChargeUnits),
-			WriteoffChargeUnits: uint64(row.WriteoffChargeUnits),
-			CostPerUnit:         uint64(row.CostPerUnit),
+			ReservedChargeUnits: uint64FromInt64(row.ReservedChargeUnits, "reserved charge units"),
+			BilledChargeUnits:   uint64FromInt64(row.BilledChargeUnits, "billed charge units"),
+			WriteoffChargeUnits: uint64FromInt64(row.WriteoffChargeUnits, "writeoff charge units"),
+			CostPerUnit:         uint64FromInt64(row.CostPerUnit, "cost per unit"),
 			PricingPhase:        row.PricingPhase,
 			State:               row.State,
 			WindowStart:         timeFromPG(row.WindowStart),
@@ -1183,7 +1183,7 @@ func jobEventRowForRun(record ExecutionRecord) jobEventRow {
 		TemporalRunID:          record.Schedule.TemporalRunID,
 		RunCommand:             record.RunCommand,
 		Status:                 record.Status,
-		ExitCode:               int32(record.LatestAttempt.ExitCode),
+		ExitCode:               int32FromInt(record.LatestAttempt.ExitCode, "exit code"),
 		DurationMs:             record.LatestAttempt.DurationMs,
 		ZFSWritten:             int64ToUint64(record.LatestAttempt.ZFSWritten),
 		StdoutBytes:            int64ToUint64(record.LatestAttempt.StdoutBytes),
@@ -1267,8 +1267,8 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	// before bounds validation so billing, traces, and VM admission agree.
 	req.Resources = vmResourcesWithDefaults(req.Resources, classResources)
 	bounds := s.Bounds
-	if bounds == (apiwire.VMResourceBounds{}) {
-		bounds = apiwire.DefaultBounds
+	if bounds == (dto.VMResourceBounds{}) {
+		bounds = dto.DefaultBounds
 	}
 	if err := req.Resources.Validate(bounds); err != nil {
 		return SubmitRequest{}, err
@@ -1276,7 +1276,7 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	return req, nil
 }
 
-func vmResourcesWithDefaults(resources, defaults apiwire.VMResources) apiwire.VMResources {
+func vmResourcesWithDefaults(resources, defaults dto.VMResources) dto.VMResources {
 	if resources.VCPUs == 0 {
 		resources.VCPUs = defaults.VCPUs
 	}
@@ -1323,12 +1323,12 @@ func vmMetricUint64(metrics *vmorchestrator.VMMetrics, pick func(*vmorchestrator
 	if metrics == nil || pick == nil {
 		return 0
 	}
-	return int64(pick(metrics))
+	return mustInt64FromUint64(pick(metrics), "vm metric")
 }
 
 func workloadTimeout(item executionWorkItem, configured time.Duration) time.Duration {
 	if item.MaxWallSeconds > 0 {
-		return time.Duration(item.MaxWallSeconds) * time.Second
+		return durationFromSeconds(item.MaxWallSeconds, "max wall seconds")
 	}
 	if configured > 0 {
 		return configured
@@ -1375,18 +1375,18 @@ func detachedContext(ctx context.Context) context.Context {
 	return trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
 }
 
-func (s *Service) reserveBillingWindow(ctx context.Context, request apiwire.BillingReserveWindowRequest) (apiwire.BillingWindowReservation, error) {
+func (s *Service) reserveBillingWindow(ctx context.Context, request dto.BillingReserveWindowRequest) (dto.BillingWindowReservation, error) {
 	windowSeq, err := billingInt32("window_seq", request.WindowSeq)
 	if err != nil {
-		return apiwire.BillingWindowReservation{}, err
+		return dto.BillingWindowReservation{}, err
 	}
 	reservedQuantity, err := billingInt32("reserved_quantity", request.ReservedQuantity)
 	if err != nil {
-		return apiwire.BillingWindowReservation{}, err
+		return dto.BillingWindowReservation{}, err
 	}
 	concurrentCount, err := int64FromUint64("concurrent_count", request.ConcurrentCount)
 	if err != nil {
-		return apiwire.BillingWindowReservation{}, err
+		return dto.BillingWindowReservation{}, err
 	}
 	billingJobID := request.BillingJobID
 	resp, err := s.Billing.ReserveWindowWithResponse(ctx, billingclient.BillingReserveWindowRequest{
@@ -1403,48 +1403,48 @@ func (s *Service) reserveBillingWindow(ctx context.Context, request apiwire.Bill
 		WindowSeq:        windowSeq,
 	})
 	if err != nil {
-		return apiwire.BillingWindowReservation{}, fmt.Errorf("reserve billing window: %w", err)
+		return dto.BillingWindowReservation{}, fmt.Errorf("reserve billing window: %w", err)
 	}
 	switch resp.StatusCode() {
 	case http.StatusOK:
-		out, err := decodeBillingResponseBody[apiwire.BillingReserveWindowResult]("decode reserve billing window response", resp.Body)
+		out, err := decodeBillingResponseBody[dto.BillingReserveWindowResult]("decode reserve billing window response", resp.Body)
 		if err != nil {
-			return apiwire.BillingWindowReservation{}, err
+			return dto.BillingWindowReservation{}, err
 		}
 		return out.Reservation, nil
 	case http.StatusPaymentRequired:
-		return apiwire.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON402, ErrBillingPaymentRequired)
+		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON402, ErrBillingPaymentRequired)
 	case http.StatusForbidden:
-		return apiwire.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON403, ErrBillingForbidden)
+		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON403, ErrBillingForbidden)
 	default:
-		return apiwire.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
 	}
 }
 
-func (s *Service) activateBillingWindow(ctx context.Context, reservation apiwire.BillingWindowReservation, activatedAt time.Time) (apiwire.BillingWindowReservation, error) {
+func (s *Service) activateBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation, activatedAt time.Time) (dto.BillingWindowReservation, error) {
 	resp, err := s.Billing.ActivateWindowWithResponse(ctx, billingclient.BillingActivateWindowRequest{
 		ActivatedAt: activatedAt.UTC(),
 		WindowId:    reservation.WindowID,
 	})
 	if err != nil {
-		return apiwire.BillingWindowReservation{}, fmt.Errorf("activate billing window: %w", err)
+		return dto.BillingWindowReservation{}, fmt.Errorf("activate billing window: %w", err)
 	}
 	switch resp.StatusCode() {
 	case http.StatusOK:
-		out, err := decodeBillingResponseBody[apiwire.BillingActivateWindowResult]("decode activate billing window response", resp.Body)
+		out, err := decodeBillingResponseBody[dto.BillingActivateWindowResult]("decode activate billing window response", resp.Body)
 		if err != nil {
-			return apiwire.BillingWindowReservation{}, err
+			return dto.BillingWindowReservation{}, err
 		}
 		return out.Reservation, nil
 	default:
-		return apiwire.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return dto.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
 	}
 }
 
-func (s *Service) settleBillingWindow(ctx context.Context, reservation apiwire.BillingWindowReservation, actualQuantity uint32, usageSummary map[string]any) (apiwire.BillingSettleResult, error) {
+func (s *Service) settleBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation, actualQuantity uint32, usageSummary map[string]any) (dto.BillingSettleResult, error) {
 	actualQuantityInt, err := billingInt32("actual_quantity", actualQuantity)
 	if err != nil {
-		return apiwire.BillingSettleResult{}, err
+		return dto.BillingSettleResult{}, err
 	}
 	req := billingclient.BillingSettleWindowRequest{
 		ActualQuantity: actualQuantityInt,
@@ -1455,17 +1455,17 @@ func (s *Service) settleBillingWindow(ctx context.Context, reservation apiwire.B
 	}
 	resp, err := s.Billing.SettleWindowWithResponse(ctx, req)
 	if err != nil {
-		return apiwire.BillingSettleResult{}, fmt.Errorf("settle billing window: %w", err)
+		return dto.BillingSettleResult{}, fmt.Errorf("settle billing window: %w", err)
 	}
 	switch resp.StatusCode() {
 	case http.StatusOK:
-		return decodeBillingResponseBody[apiwire.BillingSettleResult]("decode settle billing window response", resp.Body)
+		return decodeBillingResponseBody[dto.BillingSettleResult]("decode settle billing window response", resp.Body)
 	default:
-		return apiwire.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return dto.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
 	}
 }
 
-func (s *Service) voidBillingWindow(ctx context.Context, reservation apiwire.BillingWindowReservation) error {
+func (s *Service) voidBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation) error {
 	resp, err := s.Billing.VoidWindowWithResponse(ctx, billingclient.BillingVoidWindowRequest{
 		WindowId: reservation.WindowID,
 	})
@@ -1523,5 +1523,5 @@ func int64FromUint64(field string, value uint64) (int64, error) {
 	if value > math.MaxInt64 {
 		return 0, fmt.Errorf("%s exceeds int64 range", field)
 	}
-	return int64(value), nil
+	return int64(value), nil // #nosec G115 -- value is checked against MaxInt64 above.
 }

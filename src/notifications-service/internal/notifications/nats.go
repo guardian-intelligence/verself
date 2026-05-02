@@ -80,7 +80,7 @@ func NewNATSBus(ctx context.Context, url string, source *workloadapi.X509Source,
 }
 
 func (b *NATSBus) EnsureStream(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "notifications.nats.ensure_stream")
+	_, span := tracer.Start(ctx, "notifications.nats.ensure_stream")
 	defer span.End()
 	span.SetAttributes(attribute.String("messaging.system", "nats"), attribute.String("messaging.destination.name", EventsStreamName))
 	config := &nats.StreamConfig{
@@ -192,7 +192,7 @@ func (b *NATSBus) Close() {
 	if b == nil || b.conn == nil {
 		return
 	}
-	b.conn.Drain()
+	_ = b.conn.Drain()
 	b.conn.Close()
 }
 

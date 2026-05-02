@@ -29,7 +29,7 @@ func streamGuestTelemetry(ctx context.Context, udsPath, leaseID string, observer
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	return consumeGuestTelemetryStream(ctx, reader, leaseID, observer, logger, faultProfile)
 }

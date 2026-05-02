@@ -66,8 +66,8 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 			PlanTier:            row.PlanTier,
 			PlanDisplayName:     row.PlanDisplayName,
 			StartsAt:            row.StartsAt.Time.UTC(),
-			OriginalAmount:      uint64(row.Amount),
-			Amount:              uint64(row.Amount),
+			OriginalAmount:      checkedUint64FromInt64(row.Amount, "grant original amount"),
+			Amount:              checkedUint64FromInt64(row.Amount, "grant amount"),
 			PeriodStart:         timePtr(row.PeriodStart),
 			PeriodEnd:           timePtr(row.PeriodEnd),
 			ExpiresAt:           timePtr(row.ExpiresAt),
@@ -136,7 +136,7 @@ func (c *Client) grantAuthorizedUsage(ctx context.Context, orgID OrgID) (map[str
 	authorized := map[string]uint64{}
 	for _, row := range rows {
 		if row.GrantID.Valid && row.Amount > 0 {
-			authorized[row.GrantID.String] = uint64(row.Amount)
+			authorized[row.GrantID.String] = checkedUint64FromInt64(row.Amount, "authorized grant amount")
 		}
 	}
 	return authorized, nil

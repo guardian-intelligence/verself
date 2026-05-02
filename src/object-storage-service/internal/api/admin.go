@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/object-storage-service/internal/objectstorage"
 )
 
@@ -28,11 +28,11 @@ type bucketOutput struct {
 
 type createBucketInput struct {
 	Body struct {
-		OrgID        string                 `json:"org_id"`
-		BucketName   string                 `json:"bucket_name"`
-		QuotaBytes   *apiwire.DecimalUint64 `json:"quota_bytes,omitempty"`
-		QuotaObjects *apiwire.DecimalUint64 `json:"quota_objects,omitempty"`
-		Lifecycle    json.RawMessage        `json:"lifecycle_rules,omitempty"`
+		OrgID        string             `json:"org_id"`
+		BucketName   string             `json:"bucket_name"`
+		QuotaBytes   *dto.DecimalUint64 `json:"quota_bytes,omitempty"`
+		QuotaObjects *dto.DecimalUint64 `json:"quota_objects,omitempty"`
+		Lifecycle    json.RawMessage    `json:"lifecycle_rules,omitempty"`
 	}
 }
 
@@ -43,9 +43,9 @@ type bucketPath struct {
 type updateBucketInput struct {
 	BucketID string `path:"bucket_id"`
 	Body     struct {
-		QuotaBytes   *apiwire.DecimalUint64 `json:"quota_bytes,omitempty"`
-		QuotaObjects *apiwire.DecimalUint64 `json:"quota_objects,omitempty"`
-		Lifecycle    json.RawMessage        `json:"lifecycle_rules,omitempty"`
+		QuotaBytes   *dto.DecimalUint64 `json:"quota_bytes,omitempty"`
+		QuotaObjects *dto.DecimalUint64 `json:"quota_objects,omitempty"`
+		Lifecycle    json.RawMessage    `json:"lifecycle_rules,omitempty"`
 	}
 }
 
@@ -112,15 +112,15 @@ type credentialSecretView struct {
 }
 
 type bucketView struct {
-	BucketID       string                 `json:"bucket_id"`
-	OrgID          string                 `json:"org_id"`
-	BucketName     string                 `json:"bucket_name"`
-	GarageBucketID string                 `json:"garage_bucket_id"`
-	QuotaBytes     *apiwire.DecimalUint64 `json:"quota_bytes,omitempty"`
-	QuotaObjects   *apiwire.DecimalUint64 `json:"quota_objects,omitempty"`
-	Lifecycle      json.RawMessage        `json:"lifecycle_rules"`
-	CreatedAt      string                 `json:"created_at"`
-	UpdatedAt      string                 `json:"updated_at"`
+	BucketID       string             `json:"bucket_id"`
+	OrgID          string             `json:"org_id"`
+	BucketName     string             `json:"bucket_name"`
+	GarageBucketID string             `json:"garage_bucket_id"`
+	QuotaBytes     *dto.DecimalUint64 `json:"quota_bytes,omitempty"`
+	QuotaObjects   *dto.DecimalUint64 `json:"quota_objects,omitempty"`
+	Lifecycle      json.RawMessage    `json:"lifecycle_rules"`
+	CreatedAt      string             `json:"created_at"`
+	UpdatedAt      string             `json:"updated_at"`
 }
 
 type aliasView struct {
@@ -447,22 +447,22 @@ func toCredentialView(credential objectstorage.Credential) credentialView {
 	return out
 }
 
-func quotaFromWire(value *apiwire.DecimalUint64) (*int64, error) {
+func quotaFromWire(value *dto.DecimalUint64) (*int64, error) {
 	if value == nil {
 		return nil, nil
 	}
 	if value.Uint64() > math.MaxInt64 {
 		return nil, errors.New("quota exceeds int64 storage range")
 	}
-	parsed := int64(value.Uint64())
+	parsed := int64FromUint64(value.Uint64(), "quota")
 	return &parsed, nil
 }
 
-func quotaToWire(value *int64) *apiwire.DecimalUint64 {
+func quotaToWire(value *int64) *dto.DecimalUint64 {
 	if value == nil {
 		return nil
 	}
-	wire := apiwire.Uint64(uint64(*value))
+	wire := dto.Uint64(uint64FromInt64(*value, "quota"))
 	return &wire
 }
 

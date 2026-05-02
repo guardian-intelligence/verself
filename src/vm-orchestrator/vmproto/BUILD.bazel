@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "vmproto",
-    srcs = ["protocol.go"],
+    srcs = [
+        "protocol.go",
+        "safeconv.go",
+    ],
     importpath = "github.com/verself/vm-orchestrator/vmproto",
     visibility = ["//visibility:public"],
 )

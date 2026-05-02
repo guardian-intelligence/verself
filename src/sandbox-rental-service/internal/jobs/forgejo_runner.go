@@ -19,7 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
@@ -90,7 +90,7 @@ type forgejoAllocation struct {
 	ProviderOwner        string
 	ProviderRepo         string
 	RepositoryFullName   string
-	Resources            apiwire.VMResources
+	Resources            dto.VMResources
 	ProductID            string
 }
 
@@ -673,7 +673,7 @@ func (r *ForgejoRunner) loadQueuedJob(ctx context.Context, providerJobID int64) 
 	return job, nil
 }
 
-func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []string) (string, apiwire.VMResources, string, error) {
+func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []string) (string, dto.VMResources, string, error) {
 	for _, label := range labels {
 		label = strings.TrimSpace(label)
 		if label == "" {
@@ -681,13 +681,13 @@ func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []strin
 		}
 		resources, productID, ok, err := r.service.runnerClassResources(ctx, label)
 		if err != nil {
-			return "", apiwire.VMResources{}, "", err
+			return "", dto.VMResources{}, "", err
 		}
 		if ok {
 			return label, resources, productID, nil
 		}
 	}
-	return "", apiwire.VMResources{}, "", nil
+	return "", dto.VMResources{}, "", nil
 }
 
 func (r *ForgejoRunner) activeAllocationForJob(ctx context.Context, providerJobID int64) (uuid.UUID, error) {
@@ -724,7 +724,7 @@ func (r *ForgejoRunner) loadAllocation(ctx context.Context, allocationID uuid.UU
 		ProviderRepo:         row.ProviderRepo,
 		RepositoryFullName:   row.RepositoryFullName,
 		ProductID:            row.ProductID,
-		Resources:            apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+		Resources:            vmResourcesFromDB(row.Vcpus, row.MemoryMib, row.RootfsGib),
 	}
 	if row.ExecutionID != nil {
 		out.ExecutionID = *row.ExecutionID
@@ -809,7 +809,7 @@ func (r *ForgejoRunner) forgejoJSON(ctx context.Context, method, path string, bo
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	for _, status := range expected {
 		if resp.StatusCode == status {
 			if out != nil && resp.Body != nil && resp.StatusCode != http.StatusNoContent {

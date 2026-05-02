@@ -122,13 +122,13 @@ func (w *Worker) Run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				reconcileTicker.Stop()
-				stream.Close()
+				_ = stream.Close()
 				w.setConnected(time.Time{}, false)
 				return
 			case event, ok := <-eventCh:
 				if !ok {
 					reconcileTicker.Stop()
-					stream.Close()
+					_ = stream.Close()
 					w.setConnected(time.Time{}, false)
 					break loop
 				}
@@ -138,7 +138,7 @@ func (w *Worker) Run(ctx context.Context) {
 				}
 			case err := <-errCh:
 				reconcileTicker.Stop()
-				stream.Close()
+				_ = stream.Close()
 				w.setConnected(time.Time{}, false)
 				if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
 					w.setError(err)

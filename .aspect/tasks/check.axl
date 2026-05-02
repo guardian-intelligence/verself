@@ -7,7 +7,6 @@ fast-failure order: scripts → ansible → voice → conversions → vet → li
 load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "checked_spawn", "render_site", "ws_path")
 
 _GO_DIRS = [
-    "src/apiwire",
     "src/vm-orchestrator",
     "src/billing-service",
     "src/governance-service",
@@ -21,11 +20,12 @@ _GO_DIRS = [
     "src/profile-service",
     "src/notifications-service",
     "src/projects-service",
-    "src/otel",
-    "src/pgmigrate",
+    "src/observability/go",
     "src/temporal-platform",
-    "src/envconfig",
-    "src/httpserver",
+    "src/domain-transfer-objects/go",
+    "src/service-runtime/go",
+    "src/deployment-tools",
+    "src/dev-tools",
 ]
 
 def _go_each(ctx, args, label_prefix):

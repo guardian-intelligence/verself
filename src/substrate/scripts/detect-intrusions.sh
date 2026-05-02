@@ -45,6 +45,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+export VERSELF_SITE="${site}"
+
 ops_yml="${repo_root}/src/substrate/ansible/group_vars/all/generated/ops.yml"
 if [[ ! -f "${ops_yml}" ]]; then
     echo "ERROR: authored topology ops.yml is missing." >&2

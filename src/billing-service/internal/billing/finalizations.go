@@ -72,7 +72,7 @@ func (c *Client) FinalizePendingBillingFinalizations(ctx context.Context, limit 
 	if limit <= 0 {
 		limit = 100
 	}
-	ids, err := c.queries.ListPendingBillingFinalizations(ctx, store.ListPendingBillingFinalizationsParams{Limit: int32(limit)})
+	ids, err := c.queries.ListPendingBillingFinalizations(ctx, store.ListPendingBillingFinalizationsParams{Limit: checkedInt32FromInt(limit, "pending billing finalizations limit")})
 	if err != nil {
 		return 0, fmt.Errorf("query pending finalizations: %w", err)
 	}
@@ -231,8 +231,8 @@ func (c *Client) issueFinalizationDocument(ctx context.Context, finalization bil
 				PeriodEnd:            timestamptz(cycle.EndsAt),
 				IssuedAt:             timestamptz(completedAt),
 				Currency:             statement.Currency,
-				SubtotalUnits:        int64(statement.Totals.ChargeUnits),
-				TotalDueUnits:        int64(statement.Totals.TotalDueUnits),
+				SubtotalUnits:        checkedInt64FromUint64(statement.Totals.ChargeUnits, "statement charge units"),
+				TotalDueUnits:        checkedInt64FromUint64(statement.Totals.TotalDueUnits, "statement total due units"),
 				DocumentSnapshotJson: snapshot,
 				RenderedHtml:         renderDocumentHTML(statement),
 				ContentHash:          textID("document_snapshot", string(snapshot)),
@@ -287,14 +287,14 @@ func insertDocumentLineItemsTx(ctx context.Context, q *store.Queries, documentID
 			Description:     line.SKUDisplayName,
 			Column7:         line.Quantity,
 			QuantityUnit:    line.QuantityUnit,
-			UnitRateUnits:   int64(line.UnitRate),
-			ChargeUnits:     int64(line.ChargeUnits),
-			FreeTierUnits:   int64(line.FreeTierUnits),
-			ContractUnits:   int64(line.ContractUnits),
-			PurchaseUnits:   int64(line.PurchaseUnits),
-			PromoUnits:      int64(line.PromoUnits),
-			RefundUnits:     int64(line.RefundUnits),
-			ReceivableUnits: int64(line.ReceivableUnits),
+			UnitRateUnits:   checkedInt64FromUint64(line.UnitRate, "line unit rate"),
+			ChargeUnits:     checkedInt64FromUint64(line.ChargeUnits, "line charge units"),
+			FreeTierUnits:   checkedInt64FromUint64(line.FreeTierUnits, "line free tier units"),
+			ContractUnits:   checkedInt64FromUint64(line.ContractUnits, "line contract units"),
+			PurchaseUnits:   checkedInt64FromUint64(line.PurchaseUnits, "line purchase units"),
+			PromoUnits:      checkedInt64FromUint64(line.PromoUnits, "line promo units"),
+			RefundUnits:     checkedInt64FromUint64(line.RefundUnits, "line refund units"),
+			ReceivableUnits: checkedInt64FromUint64(line.ReceivableUnits, "line receivable units"),
 		}); err != nil {
 			return fmt.Errorf("insert document line item: %w", err)
 		}

@@ -18,12 +18,12 @@ import (
 
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
 	notificationsapi "github.com/verself/notifications-service/internal/api"
 	"github.com/verself/notifications-service/internal/notifications"
 	"github.com/verself/notifications-service/migrations"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 )
 
 const (
@@ -202,8 +202,8 @@ func openPool(ctx context.Context, dsn string, maxConns, minConns, maxLifetimeSe
 	if err != nil {
 		return nil, err
 	}
-	config.MaxConns = int32(maxConns)
-	config.MinConns = int32(minConns)
+	config.MaxConns = int32FromInt(maxConns, "NOTIFICATIONS_PG_MAX_CONNS")
+	config.MinConns = int32FromInt(minConns, "NOTIFICATIONS_PG_MIN_CONNS")
 	config.MaxConnLifetime = time.Duration(maxLifetimeSeconds) * time.Second
 	config.MaxConnIdleTime = time.Duration(maxIdleSeconds) * time.Second
 	pool, err := pgxpool.NewWithConfig(ctx, config)
@@ -217,6 +217,17 @@ func openPool(ctx context.Context, dsn string, maxConns, minConns, maxLifetimeSe
 		return nil, err
 	}
 	return pool, nil
+}
+
+func int32FromInt(value int, field string) int32 {
+	const (
+		minInt32 = -1 << 31
+		maxInt32 = 1<<31 - 1
+	)
+	if value < minInt32 || value > maxInt32 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
 func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *notifications.Runtime) {

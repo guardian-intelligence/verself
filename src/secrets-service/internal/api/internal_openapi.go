@@ -8,8 +8,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"gopkg.in/yaml.v3"
 
-	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
 )
 
@@ -39,11 +39,11 @@ type verifyInternalCredentialOpenAPIOutput struct {
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service) huma.API {
 	config := huma.DefaultConfig("Verself Secrets Service Internal API", version)
-	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL}}
+	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)
 	registerInternalOpenAPIRoutes(api, svc)
-	apiwire.ApplyOpenAPIWireDefaults(api)
+	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

@@ -103,7 +103,7 @@ func (c *Client) ProjectPendingBillingEventDeliveries(ctx context.Context, limit
 		LeasedBy:      "billing-service",
 		AttemptID:     attemptID,
 		PSink:         clickHouseBillingEventsSink,
-		LimitCount:    int32(limit),
+		LimitCount:    checkedInt32FromInt(limit, "pending billing events limit"),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("claim billing event deliveries: %w", err)
@@ -135,7 +135,7 @@ func (c *Client) projectBillingEventDelivery(ctx context.Context, eventID string
 	row := billingEventProjectionRow{
 		EventID:           event.EventID,
 		EventType:         event.EventType,
-		EventVersion:      uint16(event.EventVersion),
+		EventVersion:      checkedUint16FromInt32(event.EventVersion, "billing event version"),
 		AggregateType:     event.AggregateType,
 		AggregateID:       event.AggregateID,
 		ContractID:        stringPayload(payload, "contract_id"),

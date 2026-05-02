@@ -495,7 +495,7 @@ func (s *Store) withTx(ctx context.Context, fn func(*dbstore.Queries) error) err
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if err := fn(s.queries.WithTx(tx)); err != nil {
 		return err
 	}

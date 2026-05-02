@@ -12,7 +12,7 @@ Substrate owns host and daemon convergence inputs:
   `reconcile-cloudflare-dns.sh` for the Cloudflare DNS reconciler.
   The deploy critical path — identity, ledger writes, layered
   convergence, OTLP transport, and the Ansible streaming parser —
-  lives in `src/deployment-tooling/`. `aspect deploy` shells out to
+  lives in `src/deployment-tools/`. `aspect deploy` shells out to
   `verself-deploy run`, which owns the entire flow inside one
   process sharing one SSH session.
 

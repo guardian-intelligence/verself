@@ -261,7 +261,7 @@ func (c ForgejoClient) doStatus(ctx context.Context, method, path string, body a
 	if err != nil {
 		return fmt.Errorf("%w: forgejo %s %s: %v", ErrForgejo, method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	for _, status := range expected {
 		if resp.StatusCode == status {
 			return nil
@@ -290,7 +290,7 @@ func (c ForgejoClient) doBytes(ctx context.Context, method, path string, body io
 	if err != nil {
 		return nil, fmt.Errorf("%w: forgejo %s %s: %v", ErrForgejo, method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("%w: forgejo %s %s status %d: %s", ErrForgejo, method, path, resp.StatusCode, string(data))

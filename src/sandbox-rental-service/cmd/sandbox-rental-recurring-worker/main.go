@@ -13,10 +13,10 @@ import (
 	"go.temporal.io/sdk/worker"
 
 	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/envconfig"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 	"github.com/verself/sandbox-rental-service/internal/sourceworkflow"
+	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/temporal-platform/sdkclient"
 )
 
@@ -74,8 +74,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgxConfig.MaxConns = int32(pgMaxConns)
-	pgxConfig.MinConns = int32(pgMinConns)
+	pgxConfig.MaxConns = int32FromInt(pgMaxConns, "SANDBOX_RECURRING_PG_MAX_CONNS")
+	pgxConfig.MinConns = int32FromInt(pgMinConns, "SANDBOX_RECURRING_PG_MIN_CONNS")
 	pgxConfig.MaxConnLifetime = time.Duration(pgConnMaxLifetime) * time.Second
 	pgxConfig.MaxConnIdleTime = time.Duration(pgConnMaxIdle) * time.Second
 	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
@@ -128,4 +128,15 @@ func run() error {
 	logger.Info("sandbox-rental recurring worker started", "namespace", temporalNamespace, "task_queue", temporalRecurringTaskQueue)
 	<-ctx.Done()
 	return nil
+}
+
+func int32FromInt(value int, field string) int32 {
+	const (
+		minInt32 = -1 << 31
+		maxInt32 = 1<<31 - 1
+	)
+	if value < minInt32 || value > maxInt32 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }

@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/verself/temporal-platform/cmd/temporal-schema",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/otel",
+        "//src/observability/go/otel",
         "//src/temporal-platform/internal/pgsocket",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",

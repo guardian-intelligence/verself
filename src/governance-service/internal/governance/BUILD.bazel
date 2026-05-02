@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "audit.go",
         "export.go",
+        "safeconv.go",
         "service.go",
     ],
     importpath = "github.com/verself/governance-service/internal/governance",

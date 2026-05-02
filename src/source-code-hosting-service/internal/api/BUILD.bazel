@@ -10,11 +10,12 @@ go_library(
         "openapi.go",
         "policy.go",
         "routes.go",
+        "safeconv.go",
     ],
     importpath = "github.com/verself/source-code-hosting-service/internal/api",
     visibility = ["//src/source-code-hosting-service:__subpackages__"],
     deps = [
-        "//src/apiwire",
+        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
         "//src/source-code-hosting-service/internal/source",

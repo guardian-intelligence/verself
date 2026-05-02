@@ -30,12 +30,12 @@ def _refresh_operator_cert(ctx):
     Skipped silently when the binary cannot be built (which happens
     inside a temp worktree on a partial checkout — the inner deploy
     runs pre-flight again from the worktree root)."""
-    target = "//src/operator-tools/cmd/aspect-operator:aspect-operator"
+    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
     rc = checked_spawn(ctx, "bazelisk", ["build", target], label = "bazelisk build " + target)
     if rc != 0:
         ctx.std.io.stderr.write("WARN: skipping operator-cert refresh; aspect-operator build failed\n")
         return 0
-    bin = ws_path(ctx, "bazel-bin/src/operator-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    bin = ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
     return checked_spawn(ctx, bin, ["refresh"], label = "aspect-operator refresh")
 
 def _deploy_one(ctx, site, sha, scope, substrate_mode):

@@ -2,10 +2,8 @@ package billing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,25 +12,6 @@ import (
 	"github.com/verself/billing-service/internal/billing/ledger"
 	"github.com/verself/billing-service/internal/store"
 )
-
-type grantRow struct {
-	GrantID             string
-	ScopeType           string
-	ScopeProductID      string
-	ScopeBucketID       string
-	ScopeSKUID          string
-	Amount              uint64
-	Source              string
-	SourceReferenceID   string
-	EntitlementPeriodID string
-	PolicyVersion       string
-	StartsAt            time.Time
-	PeriodStart         *time.Time
-	PeriodEnd           *time.Time
-	ExpiresAt           *time.Time
-	PlanID              string
-	PlanDisplayName     string
-}
 
 func (c *Client) EnsureCurrentEntitlements(ctx context.Context, orgID OrgID, productID string) error {
 	if _, err := c.ApplyDueBillingWork(ctx, orgID, productID); err != nil {
@@ -80,7 +59,7 @@ func (c *Client) materializeFreeTierTx(ctx context.Context, tx pgx.Tx, q *store.
 		inserts = append(inserts, entitlementInsert{
 			PeriodID: periodID, OrgID: orgID, ProductID: productID, CycleID: cycle.CycleID, Source: "free_tier", PolicyID: row.PolicyID,
 			ScopeType: row.ScopeType, ScopeProductID: row.ScopeProductID, ScopeBucketID: row.ScopeBucketID, ScopeSKUID: row.ScopeSkuID,
-			Amount: uint64(row.AmountUnits), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: row.PolicyVersion,
+			Amount: checkedUint64FromInt64(row.AmountUnits, "free tier amount units"), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: row.PolicyVersion,
 			EntitlementState: "active", PaymentState: "not_required", CalculationKind: "recurrence", SourceReferenceID: sourceRef,
 			GrantID: grantID(orgID, "free_tier", row.ScopeType, row.ScopeProductID, row.ScopeBucketID, row.ScopeSkuID, sourceRef),
 		})
@@ -110,7 +89,7 @@ func (c *Client) materializeActiveContractTx(ctx context.Context, tx pgx.Tx, q *
 			PeriodID: periodID, OrgID: orgID, ProductID: productID, CycleID: cycle.CycleID, Source: "contract", PolicyID: row.PolicyID.String,
 			ContractID: row.ContractID, PhaseID: row.PhaseID, LineID: row.LineID, ScopeType: row.ScopeType, ScopeProductID: row.ScopeProductID, ScopeBucketID: row.ScopeBucketID, ScopeSKUID: row.ScopeSkuID,
 			PlanID: row.PlanID,
-			Amount: uint64(row.AmountUnits), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: row.PolicyVersion,
+			Amount: checkedUint64FromInt64(row.AmountUnits, "contract amount units"), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: row.PolicyVersion,
 			EntitlementState: "active", PaymentState: "paid", CalculationKind: "recurrence", SourceReferenceID: sourceRef,
 			GrantID: grantID(orgID, "contract", row.ScopeType, row.ScopeProductID, row.ScopeBucketID, row.ScopeSkuID, sourceRef),
 		})
@@ -151,7 +130,7 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, q *
 		ScopeProductID:    in.ScopeProductID,
 		ScopeBucketID:     in.ScopeBucketID,
 		ScopeSkuID:        in.ScopeSKUID,
-		AmountUnits:       int64(in.Amount),
+		AmountUnits:       checkedInt64FromUint64(in.Amount, "entitlement amount units"),
 		PeriodStart:       timestamptz(in.PeriodStart),
 		PeriodEnd:         timestamptz(in.PeriodEnd),
 		PolicyVersion:     in.PolicyVersion,
@@ -169,7 +148,7 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, q *
 		ScopeProductID:      in.ScopeProductID,
 		ScopeBucketID:       in.ScopeBucketID,
 		ScopeSkuID:          in.ScopeSKUID,
-		Amount:              int64(in.Amount),
+		Amount:              checkedInt64FromUint64(in.Amount, "credit grant amount"),
 		Source:              in.Source,
 		SourceReferenceID:   in.SourceReferenceID,
 		EntitlementPeriodID: pgTextValue(in.PeriodID),
@@ -213,7 +192,7 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, q *
 func (c *Client) reopenMaterializedEntitlementAndGrantTx(ctx context.Context, q *store.Queries, in entitlementInsert) error {
 	if err := q.ReopenMaterializedEntitlementPeriod(ctx, store.ReopenMaterializedEntitlementPeriodParams{
 		CycleID:           pgTextValue(in.CycleID),
-		AmountUnits:       int64(in.Amount),
+		AmountUnits:       checkedInt64FromUint64(in.Amount, "entitlement amount units"),
 		PeriodStart:       timestamptz(in.PeriodStart),
 		PeriodEnd:         timestamptz(in.PeriodEnd),
 		PolicyVersion:     in.PolicyVersion,
@@ -277,7 +256,7 @@ func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantB
 			ScopeProductID:      grant.ScopeProductID,
 			ScopeBucketID:       grant.ScopeBucketID,
 			ScopeSkuID:          grant.ScopeSKUID,
-			Amount:              int64(firstUint64(grant.OriginalAmount, grant.Amount)),
+			Amount:              checkedInt64FromUint64(firstUint64(grant.OriginalAmount, grant.Amount), "manual grant amount"),
 			Source:              grant.Source,
 			SourceReferenceID:   grant.SourceReferenceID,
 			EntitlementPeriodID: grant.EntitlementPeriodID,
@@ -311,18 +290,4 @@ func prorateUnits(full uint64, numerator, denominator int64) uint64 {
 		return 0
 	}
 	return uint64(math.Ceil(float64(full) * float64(numerator) / float64(denominator)))
-}
-
-func sortedKeys[T any](m map[string]T) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func jsonMap(v any) []byte {
-	b, _ := json.Marshal(v)
-	return b
 }

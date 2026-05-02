@@ -51,7 +51,7 @@ func (c IdentityClient) resolve(ctx context.Context, orgID uint64, slug string) 
 	if orgID == 0 && slug == "" {
 		return OrganizationReference{}, ErrInvalid
 	}
-	span.SetAttributes(attribute.Int64("verself.org_id", int64(orgID)), attribute.String("source.org_slug.requested", slug))
+	span.SetAttributes(attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")), attribute.String("source.org_slug.requested", slug))
 	body := identityclient.ResolveOrganizationJSONRequestBody{
 		RequireActive: true,
 	}
@@ -96,7 +96,7 @@ func (c IdentityClient) resolve(ctx context.Context, orgID uint64, slug string) 
 		return OrganizationReference{}, ErrStoreUnavailable
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(ref.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(ref.OrgID, "org id")),
 		attribute.String("source.org_slug", ref.Slug),
 		attribute.String("source.org_slug.redirected_from", ref.RedirectedFrom),
 	)

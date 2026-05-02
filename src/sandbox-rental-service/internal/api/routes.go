@@ -13,9 +13,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
 	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/domain-transfer-objects"
 
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
@@ -437,11 +437,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 }
 
 type GitHubInstallationConnectOutput struct {
-	Body apiwire.SandboxGitHubInstallationConnectResponse
+	Body dto.SandboxGitHubInstallationConnectResponse
 }
 
 type ListGitHubInstallationsOutput struct {
-	Body []apiwire.SandboxGitHubInstallationRecord
+	Body []dto.SandboxGitHubInstallationRecord
 }
 
 type ExecutionIDPath struct {
@@ -449,11 +449,11 @@ type ExecutionIDPath struct {
 }
 
 type GetExecutionOutput struct {
-	Body apiwire.SandboxExecutionRecord
+	Body dto.SandboxExecutionRecord
 }
 
 type GetExecutionLogsOutput struct {
-	Body apiwire.SandboxExecutionLogs
+	Body dto.SandboxExecutionLogs
 }
 
 type RunIDPath struct {
@@ -472,11 +472,11 @@ type RunsInput struct {
 }
 
 type RunsOutput struct {
-	Body apiwire.SandboxRunsPage
+	Body dto.SandboxRunsPage
 }
 
 type RunOutput struct {
-	Body apiwire.SandboxExecutionRecord
+	Body dto.SandboxExecutionRecord
 }
 
 type RunLogSearchInput struct {
@@ -493,7 +493,7 @@ type RunLogSearchInput struct {
 }
 
 type RunLogSearchOutput struct {
-	Body apiwire.SandboxRunLogSearchPage
+	Body dto.SandboxRunLogSearchPage
 }
 
 type AnalyticsWindowInput struct {
@@ -502,19 +502,19 @@ type AnalyticsWindowInput struct {
 }
 
 type JobsAnalyticsOutput struct {
-	Body apiwire.SandboxJobsAnalytics
+	Body dto.SandboxJobsAnalytics
 }
 
 type CostsAnalyticsOutput struct {
-	Body apiwire.SandboxCostsAnalytics
+	Body dto.SandboxCostsAnalytics
 }
 
 type CachesAnalyticsOutput struct {
-	Body apiwire.SandboxCachesAnalytics
+	Body dto.SandboxCachesAnalytics
 }
 
 type RunnerSizingAnalyticsOutput struct {
-	Body apiwire.SandboxRunnerSizingAnalytics
+	Body dto.SandboxRunnerSizingAnalytics
 }
 
 type StickyDisksInput struct {
@@ -524,7 +524,7 @@ type StickyDisksInput struct {
 }
 
 type StickyDisksOutput struct {
-	Body apiwire.SandboxStickyDisksPage
+	Body dto.SandboxStickyDisksPage
 }
 
 type StickyDiskResetRequest struct {
@@ -538,7 +538,7 @@ type ResetStickyDiskInput struct {
 }
 
 type ResetStickyDiskOutput struct {
-	Body apiwire.SandboxStickyDiskResetResult
+	Body dto.SandboxStickyDiskResetResult
 }
 
 type ExecutionScheduleIDPath struct {
@@ -546,29 +546,29 @@ type ExecutionScheduleIDPath struct {
 }
 
 type CreateExecutionScheduleInput struct {
-	Body apiwire.SandboxExecutionScheduleCreateRequest
+	Body dto.SandboxExecutionScheduleCreateRequest
 }
 
 type ExecutionScheduleOutput struct {
-	Body apiwire.SandboxExecutionScheduleRecord
+	Body dto.SandboxExecutionScheduleRecord
 }
 
 type ListExecutionSchedulesOutput struct {
-	Body []apiwire.SandboxExecutionScheduleRecord
+	Body []dto.SandboxExecutionScheduleRecord
 }
 
 type EmptyInput struct{}
 
 type EntitlementsOutput struct {
-	Body apiwire.BillingEntitlementsView
+	Body dto.BillingEntitlementsView
 }
 
 type ContractsOutput struct {
-	Body apiwire.BillingContracts
+	Body dto.BillingContracts
 }
 
 type PlansOutput struct {
-	Body apiwire.BillingPlans
+	Body dto.BillingPlans
 }
 
 type GrantsInput struct {
@@ -577,7 +577,7 @@ type GrantsInput struct {
 }
 
 type GrantsOutput struct {
-	Body apiwire.BillingGrants
+	Body dto.BillingGrants
 }
 
 type StatementInput struct {
@@ -585,24 +585,24 @@ type StatementInput struct {
 }
 
 type StatementOutput struct {
-	Body apiwire.BillingStatement
+	Body dto.BillingStatement
 }
 
 type CheckoutInput struct {
-	Body apiwire.SandboxBillingCheckoutRequest
+	Body dto.SandboxBillingCheckoutRequest
 }
 
 type URLOutput struct {
-	Body apiwire.BillingURLResponse
+	Body dto.BillingURLResponse
 }
 
 type ContractInput struct {
-	Body apiwire.SandboxBillingContractRequest
+	Body dto.SandboxBillingContractRequest
 }
 
 type ContractChangeInput struct {
 	ContractID string `path:"contract_id" minLength:"1" maxLength:"255"`
-	Body       apiwire.SandboxBillingContractChangeRequest
+	Body       dto.SandboxBillingContractChangeRequest
 }
 
 type ContractIDPath struct {
@@ -610,11 +610,11 @@ type ContractIDPath struct {
 }
 
 type CancelContractOutput struct {
-	Body apiwire.BillingCancelContractResponse
+	Body dto.BillingCancelContractResponse
 }
 
 type PortalInput struct {
-	Body apiwire.SandboxBillingPortalRequest
+	Body dto.SandboxBillingPortalRequest
 }
 
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {
@@ -630,7 +630,7 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	orgID, err := apiwire.ParseUint64(identity.OrgID)
+	orgID, err := dto.ParseUint64(identity.OrgID)
 	if err != nil {
 		return 0, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
 	}
@@ -726,7 +726,7 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 		}
 
 		out := &GetExecutionLogsOutput{}
-		out.Body = apiwire.SandboxExecutionLogs{
+		out.Body = dto.SandboxExecutionLogs{
 			ExecutionID: executionID.String(),
 			AttemptID:   attemptID.String(),
 			Logs:        logs,
@@ -922,11 +922,11 @@ func resetStickyDisk(svc *jobs.Service) func(context.Context, *ResetStickyDiskIn
 		if err != nil {
 			return nil, err
 		}
-		installationID, err := apiwire.ParseInt64(input.Body.InstallationID)
+		installationID, err := dto.ParseInt64(input.Body.InstallationID)
 		if err != nil || installationID <= 0 {
 			return nil, badRequest(ctx, "invalid-installation-id", "installation_id must be a positive decimal string", err)
 		}
-		repositoryID, err := apiwire.ParseInt64(input.Body.RepositoryID)
+		repositoryID, err := dto.ParseInt64(input.Body.RepositoryID)
 		if err != nil || repositoryID <= 0 {
 			return nil, badRequest(ctx, "invalid-repository-id", "repository_id must be a positive decimal string", err)
 		}
@@ -979,7 +979,7 @@ func listExecutionSchedules(recurringSvc *recurring.Service) func(context.Contex
 		if err != nil {
 			return nil, internalFailure(ctx, "list-execution-schedules-failed", "list execution schedules failed", err)
 		}
-		out := make([]apiwire.SandboxExecutionScheduleRecord, 0, len(records))
+		out := make([]dto.SandboxExecutionScheduleRecord, 0, len(records))
 		for _, record := range records {
 			out = append(out, executionScheduleRecord(record))
 		}
@@ -1063,7 +1063,7 @@ func getBillingEntitlements(billing *billingclient.ClientWithResponses) func(con
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		view, err := decodeBillingProxyResponse[apiwire.BillingEntitlementsView](ctx, "decode billing entitlements", resp.Body)
+		view, err := decodeBillingProxyResponse[dto.BillingEntitlementsView](ctx, "decode billing entitlements", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1084,7 +1084,7 @@ func listBillingContracts(billing *billingclient.ClientWithResponses) func(conte
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		contracts, err := decodeBillingProxyResponse[apiwire.BillingContracts](ctx, "decode billing contracts", resp.Body)
+		contracts, err := decodeBillingProxyResponse[dto.BillingContracts](ctx, "decode billing contracts", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1104,7 +1104,7 @@ func listBillingPlans(billing *billingclient.ClientWithResponses) func(context.C
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		plans, err := decodeBillingProxyResponse[apiwire.BillingPlans](ctx, "decode billing plans", resp.Body)
+		plans, err := decodeBillingProxyResponse[dto.BillingPlans](ctx, "decode billing plans", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1125,7 +1125,7 @@ func getBillingStatement(billing *billingclient.ClientWithResponses) func(contex
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		statement, err := decodeBillingProxyResponse[apiwire.BillingStatement](ctx, "decode billing statement", resp.Body)
+		statement, err := decodeBillingProxyResponse[dto.BillingStatement](ctx, "decode billing statement", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1158,7 +1158,7 @@ func createBillingCheckout(billing *billingclient.ClientWithResponses, billingRe
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		url, err := decodeBillingProxyResponse[apiwire.BillingURLResponse](ctx, "decode billing checkout response", resp.Body)
+		url, err := decodeBillingProxyResponse[dto.BillingURLResponse](ctx, "decode billing checkout response", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1197,7 +1197,7 @@ func createBillingContract(billing *billingclient.ClientWithResponses, billingRe
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		url, err := decodeBillingProxyResponse[apiwire.BillingURLResponse](ctx, "decode billing contract response", resp.Body)
+		url, err := decodeBillingProxyResponse[dto.BillingURLResponse](ctx, "decode billing contract response", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1234,12 +1234,12 @@ func createBillingContractChange(billing *billingclient.ClientWithResponses, bil
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingContractProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		result, err := decodeBillingProxyResponse[apiwire.BillingContractChangeResponse](ctx, "decode billing contract change response", resp.Body)
+		result, err := decodeBillingProxyResponse[dto.BillingContractChangeResponse](ctx, "decode billing contract change response", resp.Body)
 		if err != nil {
 			return nil, err
 		}
 		out := &URLOutput{}
-		out.Body = apiwire.BillingURLResponse{URL: result.URL}
+		out.Body = dto.BillingURLResponse{URL: result.URL}
 		return out, nil
 	}
 }
@@ -1262,7 +1262,7 @@ func cancelBillingContract(billing *billingclient.ClientWithResponses) func(cont
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingContractProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		contract, err := decodeBillingProxyResponse[apiwire.BillingCancelContractResponse](ctx, "decode billing cancel response", resp.Body)
+		contract, err := decodeBillingProxyResponse[dto.BillingCancelContractResponse](ctx, "decode billing cancel response", resp.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1291,7 +1291,7 @@ func createBillingPortal(billing *billingclient.ClientWithResponses, billingRetu
 		if resp.StatusCode() != http.StatusOK {
 			return nil, billingPortalProxyResponseError(ctx, resp.StatusCode(), resp.Body)
 		}
-		url, err := decodeBillingProxyResponse[apiwire.BillingURLResponse](ctx, "decode billing portal response", resp.Body)
+		url, err := decodeBillingProxyResponse[dto.BillingURLResponse](ctx, "decode billing portal response", resp.Body)
 		if err != nil {
 			return nil, err
 		}

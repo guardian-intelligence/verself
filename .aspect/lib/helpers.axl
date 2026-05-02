@@ -19,8 +19,8 @@ SUBSTRATE_DIR = "src/substrate"
 PROVISION_DIR = "src/provision"
 DEFAULT_SITE = "prod"
 
-VERSELF_DEPLOY_TARGET = "//src/deployment-tooling/cmd/verself-deploy:verself-deploy"
-VERSELF_DEPLOY_BIN = "bazel-bin/src/deployment-tooling/cmd/verself-deploy/verself-deploy_/verself-deploy"
+VERSELF_DEPLOY_TARGET = "//src/deployment-tools/cmd/verself-deploy:verself-deploy"
+VERSELF_DEPLOY_BIN = "bazel-bin/src/deployment-tools/cmd/verself-deploy/verself-deploy_/verself-deploy"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -115,7 +115,7 @@ def render_site(ctx, site = DEFAULT_SITE):
         ctx, "bash", [
             "-c",
             "set -eu; " +
-            "src='" + ws_path(ctx, "src/deployment-tooling/nomad/sites/" + site + "/jobs") + "'; " +
+            "src='" + ws_path(ctx, "src/deployment-tools/nomad/sites/" + site + "/jobs") + "'; " +
             "dst='" + cache_abs + "/jobs'; " +
             "cp -R \"${src}/.\" \"${dst}/\";",
         ],

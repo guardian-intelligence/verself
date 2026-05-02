@@ -7,7 +7,7 @@ per request:
     deterministic SHA-256 derived from the task identity so repeated runs
     of the same task share a probe parent span-id.
   - baggage:      W3C Baggage. Carries verself.* members that downstream
-    services project onto every span they create (see src/otel/otel.go,
+    services project onto every span they create (see src/observability/go/otel/otel.go,
     baggageSpanProcessor). The product correlation header
     X-Verself-Correlation-Id is unrelated to this plane.
 

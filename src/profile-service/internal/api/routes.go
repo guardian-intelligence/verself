@@ -7,26 +7,26 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
 )
 
 type emptyInput struct{}
 
 type profileOutput struct {
-	Body apiwire.ProfileSnapshot
+	Body dto.ProfileSnapshot
 }
 
 type updateIdentityInput struct {
-	Body apiwire.ProfileUpdateIdentityRequest
+	Body dto.ProfileUpdateIdentityRequest
 }
 
 type putPreferencesInput struct {
-	Body apiwire.ProfilePutPreferencesRequest
+	Body dto.ProfilePutPreferencesRequest
 }
 
 type mutationOutput struct {
-	Body          apiwire.ProfileSnapshot
+	Body          dto.ProfileSnapshot
 	changedFields []string
 	beforeHash    string
 	afterHash     string
@@ -169,8 +169,8 @@ func putPreferences(svc *profile.Service) func(context.Context, *putPreferencesI
 	}
 }
 
-func snapshotDTO(snapshot profile.Snapshot) apiwire.ProfileSnapshot {
-	return apiwire.ProfileSnapshot{
+func snapshotDTO(snapshot profile.Snapshot) dto.ProfileSnapshot {
+	return dto.ProfileSnapshot{
 		SubjectID:   snapshot.SubjectID,
 		OrgID:       snapshot.OrgID,
 		Identity:    identityDTO(snapshot.Identity),
@@ -178,8 +178,8 @@ func snapshotDTO(snapshot profile.Snapshot) apiwire.ProfileSnapshot {
 	}
 }
 
-func identityDTO(identity profile.IdentitySummary) apiwire.ProfileIdentity {
-	return apiwire.ProfileIdentity{
+func identityDTO(identity profile.IdentitySummary) dto.ProfileIdentity {
+	return dto.ProfileIdentity{
 		Version:     identity.Version,
 		Email:       identity.Email,
 		GivenName:   identity.GivenName,
@@ -189,8 +189,8 @@ func identityDTO(identity profile.IdentitySummary) apiwire.ProfileIdentity {
 	}
 }
 
-func preferencesDTO(preferences profile.Preferences) apiwire.ProfilePreferences {
-	return apiwire.ProfilePreferences{
+func preferencesDTO(preferences profile.Preferences) dto.ProfilePreferences {
+	return dto.ProfilePreferences{
 		Version:        preferences.Version,
 		Locale:         preferences.Locale,
 		Timezone:       preferences.Timezone,
@@ -202,7 +202,7 @@ func preferencesDTO(preferences profile.Preferences) apiwire.ProfilePreferences 
 	}
 }
 
-func artifactBytes(artifacts []apiwire.ProfileDataRightsArtifact) uint64 {
+func artifactBytes(artifacts []dto.ProfileDataRightsArtifact) uint64 {
 	var total uint64
 	for _, artifact := range artifacts {
 		bytes, err := strconv.ParseUint(artifact.Bytes, 10, 64)

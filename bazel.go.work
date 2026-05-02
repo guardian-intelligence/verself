@@ -1,25 +1,23 @@
 go 1.25.8
 
 use (
-	./src/apiwire
+	./src/domain-transfer-objects/go
 	./src/auth-middleware
 	./src/billing-service
-	./src/deployment-tooling
-	./src/devtools
-	./src/envconfig
+	./src/deployment-tools
+	./src/dev-tools
 	./src/governance-service
-	./src/httpserver
 	./src/identity-service
 	./src/mailbox-service
 	./src/notifications-service
 	./src/object-storage-service
-	./src/operator-tools
-	./src/otel
+	./src/observability/go
 	./src/profile-service
 	./src/projects-service
 	./src/sandbox-rental-service
 	./src/secrets-service
 	./src/source-code-hosting-service
+	./src/service-runtime/go
 	./src/substrate
 	./src/temporal-platform
 	./src/vm-orchestrator

@@ -48,7 +48,7 @@ func (c *GarageAdminClient) Health(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("garage health: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 			return &garageRequestError{
@@ -137,7 +137,7 @@ func (c *GarageAdminClient) forEachEndpoint(ctx context.Context, fn func(baseURL
 			}
 			continue
 		}
-		c.next.Store(uint32((index + 1) % len(c.baseURLs)))
+		c.next.Store(uint32FromIndex((index+1)%len(c.baseURLs), "garage endpoint index"))
 		return nil
 	}
 	if lastErr == nil {
@@ -181,7 +181,7 @@ func (c *GarageAdminClient) doJSON(req *http.Request, out any) error {
 	if err != nil {
 		return fmt.Errorf("garage request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return &garageRequestError{

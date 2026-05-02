@@ -9,12 +9,9 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.4.0
-	github.com/verself/apiwire v0.0.0
 	github.com/verself/auth-middleware v0.0.0
-	github.com/verself/envconfig v0.0.0
-	github.com/verself/httpserver v0.0.0
+	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/identity-service v0.0.0
-	github.com/verself/otel v0.0.0
 	github.com/verself/projects-service v0.0.0
 	github.com/verself/sandbox-rental-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
@@ -39,6 +36,8 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
+	github.com/verself/observability v0.0.0
+	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
@@ -61,13 +60,15 @@ require (
 )
 
 replace (
-	github.com/verself/apiwire => ../apiwire
 	github.com/verself/auth-middleware => ../auth-middleware
-	github.com/verself/envconfig => ../envconfig
-	github.com/verself/httpserver => ../httpserver
 	github.com/verself/identity-service => ../identity-service
-	github.com/verself/otel => ../otel
 	github.com/verself/projects-service => ../projects-service
 	github.com/verself/sandbox-rental-service => ../sandbox-rental-service
 	github.com/verself/secrets-service => ../secrets-service
 )
+
+replace github.com/verself/domain-transfer-objects => ../domain-transfer-objects/go
+
+replace github.com/verself/service-runtime => ../service-runtime/go
+
+replace github.com/verself/observability => ../observability/go

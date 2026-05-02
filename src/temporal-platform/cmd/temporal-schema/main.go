@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/temporal-platform/internal/pgsocket"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"

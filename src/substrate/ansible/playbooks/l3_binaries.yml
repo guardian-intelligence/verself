@@ -5,7 +5,7 @@
 # substrate daemon (postgresql, clickhouse, zitadel, openbao, nats, temporal,
 # stalwart, electric, otelcol, grafana, verdaccio, caddy, forgejo, garage,
 # spire, ssh_ca, bazel_remote, nomad, tigerbeetle), plus the wireguard ops
-# re-converge}, substrate/devtools catalogs, and authored topology inputs.
+# re-converge}, substrate/dev-tools catalogs, and authored topology inputs.
 # Skipped by aspect deploy when the input hash matches.
 #
 # Order constraints:

@@ -137,7 +137,7 @@ func (c *Client) collectUpgradeInvoice(ctx context.Context, quote contractChange
 	if err != nil {
 		return "", "", false, fmt.Errorf("create stripe upgrade invoice: %w", err)
 	}
-	itemParams := &stripe.InvoiceItemCreateParams{Amount: stripe.Int64(int64(quote.PriceDeltaCents)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID), Invoice: stripe.String(invoice.ID), Metadata: metadata, Period: &stripe.InvoiceItemCreatePeriodParams{Start: stripe.Int64(quote.EffectiveAt.Unix()), End: stripe.Int64(quote.CycleEnd.Unix())}}
+	itemParams := &stripe.InvoiceItemCreateParams{Amount: stripe.Int64(checkedInt64FromUint64(quote.PriceDeltaCents, "stripe price delta cents")), Currency: stripe.String("usd"), Customer: stripe.String(customerID), Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID), Invoice: stripe.String(invoice.ID), Metadata: metadata, Period: &stripe.InvoiceItemCreatePeriodParams{Start: stripe.Int64(quote.EffectiveAt.Unix()), End: stripe.Int64(quote.CycleEnd.Unix())}}
 	itemParams.SetIdempotencyKey("verself:upgrade:" + stripeID + ":item")
 	if _, err := c.stripe.V1InvoiceItems.Create(ctx, itemParams); err != nil {
 		return "", invoice.ID, false, fmt.Errorf("create stripe upgrade invoice item: %w", err)
@@ -250,7 +250,7 @@ func (c *Client) ApplyPendingProviderEvents(ctx context.Context, limit int) (int
 	if limit <= 0 {
 		limit = 100
 	}
-	ids, err := c.queries.ListPendingStripeProviderEventIDs(ctx, store.ListPendingStripeProviderEventIDsParams{LimitCount: int32(limit)})
+	ids, err := c.queries.ListPendingStripeProviderEventIDs(ctx, store.ListPendingStripeProviderEventIDsParams{LimitCount: checkedInt32FromInt(limit, "pending stripe provider events limit")})
 	if err != nil {
 		return 0, fmt.Errorf("query pending provider events: %w", err)
 	}
@@ -588,5 +588,5 @@ func nullableInt4(value int) pgtype.Int4 {
 	if value == 0 {
 		return pgtype.Int4{}
 	}
-	return pgtype.Int4{Int32: int32(value), Valid: true}
+	return pgtype.Int4{Int32: checkedInt32FromInt(value, "nullable int4"), Valid: true}
 }

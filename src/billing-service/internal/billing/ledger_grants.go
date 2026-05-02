@@ -108,7 +108,7 @@ func (c *Client) loadGrantLedgerRowTx(ctx context.Context, q *store.Queries, gra
 		ScopeProductID:    stored.ScopeProductID,
 		ScopeBucketID:     stored.ScopeBucketID,
 		ScopeSKUID:        stored.ScopeSkuID,
-		Amount:            uint64(stored.Amount),
+		Amount:            checkedUint64FromInt64(stored.Amount, "stored grant amount"),
 		Source:            stored.Source,
 		SourceReferenceID: stored.SourceReferenceID,
 		AccountID:         accountID,

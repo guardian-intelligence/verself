@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 	"go.opentelemetry.io/otel"
@@ -94,13 +94,13 @@ func runSeedImage(args []string) int {
 		fmt.Fprintf(os.Stderr, "otel init: %v\n", err)
 		return 1
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 
 	tracer := otel.Tracer("vm-orchestrator-cli")
 	ctx, span := tracer.Start(rootCtx, "vmorchestrator.cli.seed_image", trace.WithAttributes(
 		attribute.String("image.ref", cfg.ref),
 		attribute.String("seed.strategy", cfg.strategy),
-		attribute.Int64("seed.size_bytes", int64(cfg.sizeBytes)),
+		attribute.Int64("seed.size_bytes", int64FromUint64(cfg.sizeBytes, "seed size bytes")),
 		attribute.String("source.path", cfg.sourcePath),
 	))
 	defer span.End()
@@ -117,7 +117,7 @@ func runSeedImage(args []string) int {
 		fmt.Fprintf(os.Stderr, "dial %s: %v\n", cfg.socket, err)
 		return 1
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	rpcCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
 	defer cancel()
@@ -141,7 +141,7 @@ func runSeedImage(args []string) int {
 		attribute.String("seed.dataset", resp.GetDataset()),
 		attribute.String("seed.snapshot", resp.GetSnapshot()),
 		attribute.String("seed.source_digest", resp.GetSourceDigest()),
-		attribute.Int64("seed.seeded_bytes", int64(resp.GetSeededBytes())),
+		attribute.Int64("seed.seeded_bytes", int64FromUint64(resp.GetSeededBytes(), "seeded bytes")),
 		attribute.Int("seed.dependents_torn", int(resp.GetDependentsTorn())),
 	)
 	fmt.Printf("seed: ref=%s outcome=%s dataset=%s snapshot=%s digest=%s seeded_bytes=%d dependents_torn=%d\n",

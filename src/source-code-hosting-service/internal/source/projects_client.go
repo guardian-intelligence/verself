@@ -53,7 +53,7 @@ func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uui
 		return ProjectReference{}, ErrInvalid
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(orgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
 		attribute.String("verself.project_id", projectID.String()),
 		attribute.String("source.project_slug", slug),
 	)

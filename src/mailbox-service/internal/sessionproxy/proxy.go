@@ -62,7 +62,7 @@ func (h *Handler) Ready(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("stalwart jmap session request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
@@ -84,7 +84,7 @@ func (h *Handler) proxySession(ctx context.Context, w http.ResponseWriter, r *ht
 	if err != nil {
 		return fmt.Errorf("backend request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

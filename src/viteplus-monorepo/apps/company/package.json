@@ -9,6 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mjs ./.output/server/index.mjs",
+    "lint:voice": "node --experimental-strip-types scripts/lint-voice.ts",
     "typecheck": "vp exec tsc -p tsconfig.json",
     "test:e2e": "vp exec playwright test",
     "test:e2e:headed": "vp exec playwright test --headed"

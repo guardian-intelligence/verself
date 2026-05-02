@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//src/deployment-tooling/nomad:artifact.bzl", "nomad_binary_artifact")
+load("//src/deployment-tools/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "billing-service_lib",
@@ -13,9 +13,9 @@ go_library(
         "//src/billing-service/internal/billing/ledger",
         "//src/billing-service/internal/billingapi",
         "//src/billing-service/migrations",
-        "//src/envconfig",
-        "//src/httpserver",
-        "//src/otel",
+        "//src/service-runtime/go/envconfig",
+        "//src/service-runtime/go/httpserver",
+        "//src/observability/go/otel",
         "//src/secrets-service/client",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_jackc_pgx_v5//pgxpool",

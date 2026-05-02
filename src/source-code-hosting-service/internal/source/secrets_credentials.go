@@ -76,7 +76,7 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 		return GitCredential{}, err
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(principal.OrgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
 		attribute.String("source.git_credential_id", credential.CredentialID.String()),
 		attribute.String("secrets.credential_kind", GitCredentialKind),
 	)
@@ -124,7 +124,7 @@ func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, 
 		return GitCredential{}, false, err
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64(orgID)),
+		attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
 		attribute.String("source.git_credential_id", credential.CredentialID.String()),
 		attribute.Bool("secrets.credential_active", true),
 	)

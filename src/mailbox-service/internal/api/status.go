@@ -6,17 +6,17 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/apiwire"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/app"
 	mailboxsync "github.com/verself/mailbox-service/internal/sync"
 )
 
 type mailboxServiceHealthOutput struct {
-	Body apiwire.MailboxHealth
+	Body dto.MailboxHealth
 }
 
 type mailboxServiceStatusOutput struct {
-	Body apiwire.MailboxServiceStatusResponse
+	Body dto.MailboxServiceStatusResponse
 }
 
 func registerPublicRoutes(api huma.API, svc provider) {
@@ -45,7 +45,7 @@ func registerPublicRoutes(api huma.API, svc provider) {
 func healthz() func(context.Context, *mailboxServiceEmptyInput) (*mailboxServiceHealthOutput, error) {
 	return func(context.Context, *mailboxServiceEmptyInput) (*mailboxServiceHealthOutput, error) {
 		out := &mailboxServiceHealthOutput{}
-		out.Body = apiwire.MailboxHealth{Status: "ok"}
+		out.Body = dto.MailboxHealth{Status: "ok"}
 		return out, nil
 	}
 }
@@ -56,7 +56,7 @@ func readyz(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mai
 			return nil, huma.Error503ServiceUnavailable("mailbox service not ready: " + err.Error())
 		}
 		out := &mailboxServiceHealthOutput{}
-		out.Body = apiwire.MailboxHealth{Status: "ok"}
+		out.Body = dto.MailboxHealth{Status: "ok"}
 		return out, nil
 	}
 }
@@ -69,12 +69,12 @@ func status(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mai
 	}
 }
 
-func serviceStatus(status app.ServiceStatus) apiwire.MailboxServiceStatus {
-	return apiwire.MailboxServiceStatus{
+func serviceStatus(status app.ServiceStatus) dto.MailboxServiceStatus {
+	return dto.MailboxServiceStatus{
 		StartedAt:       status.StartedAt,
 		StalwartBaseURL: status.StalwartBaseURL,
 		PublicBaseURL:   status.PublicBaseURL,
-		Forwarder: apiwire.MailboxForwarder{
+		Forwarder: dto.MailboxForwarder{
 			Enabled:                 status.Forwarder.Enabled,
 			Running:                 status.Forwarder.Running,
 			Mailbox:                 status.Forwarder.Mailbox,
@@ -84,7 +84,7 @@ func serviceStatus(status app.ServiceStatus) apiwire.MailboxServiceStatus {
 			LastForwardedAt:         status.Forwarder.LastForwardedAt,
 			LastForwardedEmailID:    status.Forwarder.LastForwardedEmailID,
 		},
-		MailboxSync: apiwire.MailboxSync{
+		MailboxSync: dto.MailboxSync{
 			Running:         status.MailboxSync.Running,
 			LastDiscoveryAt: status.MailboxSync.LastDiscoveryAt,
 			LastError:       status.MailboxSync.LastError,
@@ -93,13 +93,13 @@ func serviceStatus(status app.ServiceStatus) apiwire.MailboxServiceStatus {
 	}
 }
 
-func mailboxSyncAccounts(accounts map[string]mailboxsync.AccountStatus) map[string]apiwire.MailboxSyncAccountStatus {
+func mailboxSyncAccounts(accounts map[string]mailboxsync.AccountStatus) map[string]dto.MailboxSyncAccountStatus {
 	if len(accounts) == 0 {
-		return map[string]apiwire.MailboxSyncAccountStatus{}
+		return map[string]dto.MailboxSyncAccountStatus{}
 	}
-	out := make(map[string]apiwire.MailboxSyncAccountStatus, len(accounts))
+	out := make(map[string]dto.MailboxSyncAccountStatus, len(accounts))
 	for key, account := range accounts {
-		out[key] = apiwire.MailboxSyncAccountStatus{
+		out[key] = dto.MailboxSyncAccountStatus{
 			AccountID:       account.AccountID,
 			Running:         account.Running,
 			Connected:       account.Connected,

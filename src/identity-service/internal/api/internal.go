@@ -12,9 +12,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/identity-service/internal/identity"
 )
 
@@ -22,19 +22,19 @@ var internalAPITracer = otel.Tracer("identity-service/internal/api/internal")
 
 type updateHumanProfileInput struct {
 	SubjectID string `path:"subject_id" doc:"Zitadel human subject ID"`
-	Body      apiwire.IdentityUpdateHumanProfileRequest
+	Body      dto.IdentityUpdateHumanProfileRequest
 }
 
 type updateHumanProfileOutput struct {
-	Body apiwire.IdentityUpdateHumanProfileResponse
+	Body dto.IdentityUpdateHumanProfileResponse
 }
 
 type resolveOrganizationInput struct {
-	Body apiwire.IdentityResolveOrganizationRequest
+	Body dto.IdentityResolveOrganizationRequest
 }
 
 type resolveOrganizationOutput struct {
-	Body apiwire.IdentityResolveOrganizationResponse
+	Body dto.IdentityResolveOrganizationResponse
 }
 
 func RegisterInternalRoutes(api huma.API, svc *identity.Service) {
@@ -133,7 +133,7 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOr
 			attribute.String("identity.org_slug", profile.Slug),
 			attribute.String("identity.org_slug.redirected_from", profile.RedirectedFrom),
 		)
-		return &resolveOrganizationOutput{Body: apiwire.IdentityResolveOrganizationResponse{Organization: organizationProfileDTO(profile)}}, nil
+		return &resolveOrganizationOutput{Body: dto.IdentityResolveOrganizationResponse{Organization: organizationProfileDTO(profile)}}, nil
 	}
 }
 
@@ -192,8 +192,8 @@ func hasHumanTokenMarker(claims map[string]any) bool {
 	return ok && len(roles) > 0
 }
 
-func humanProfileDTO(profile identity.HumanProfile) apiwire.IdentityUpdateHumanProfileResponse {
-	return apiwire.IdentityUpdateHumanProfileResponse{
+func humanProfileDTO(profile identity.HumanProfile) dto.IdentityUpdateHumanProfileResponse {
+	return dto.IdentityUpdateHumanProfileResponse{
 		SubjectID:   profile.SubjectID,
 		Email:       profile.Email,
 		GivenName:   profile.GivenName,

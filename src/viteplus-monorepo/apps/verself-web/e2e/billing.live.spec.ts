@@ -321,7 +321,7 @@ test.describe("Console Billing", () => {
       await expect(hero).toHaveAttribute("data-plan-id", "sandbox-pro");
 
       // Why: a regression here covers three different classes of bug at
-      // once — BillingPlan.display_name dropped at the apiwire boundary,
+      // once — BillingPlan.display_name dropped at the dto boundary,
       // the "active" branch of deriveBillingAccount misrouting to
       // no_contract, or the hero template flipping to the free variant
       // for an account that holds a contract. All three would land a
@@ -336,7 +336,7 @@ test.describe("Console Billing", () => {
 
       // Why: this is the assertion that would have caught the bug we
       // shipped today. If phase_end is NULL in contract_phases, or the
-      // apiwire boundary drops the field, or the parser fails to hydrate
+      // dto boundary drops the field, or the parser fails to hydrate
       // it, renewalLineFor() falls through to its placeholder branch
       // ("at the end of this cycle"). The customer then reads a card
       // that promises a renewal date and doesn't name one — worse than

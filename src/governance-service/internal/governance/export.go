@@ -644,7 +644,7 @@ func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportA
 	if err != nil {
 		return nil, fmt.Errorf("%w: query audit export: %v", ErrStore, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var body bytes.Buffer
 	var count int64
 	for rows.Next() {
@@ -907,7 +907,7 @@ func sha256File(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, f); err != nil {
 		return "", err

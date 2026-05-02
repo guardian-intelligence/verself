@@ -7,35 +7,35 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/projects-service/internal/projects"
 )
 
 type resolveProjectInput struct {
-	Body apiwire.ResolveProjectRequest
+	Body dto.ResolveProjectRequest
 }
 
 type resolveEnvironmentInput struct {
-	Body apiwire.ResolveProjectEnvironmentRequest
+	Body dto.ResolveProjectEnvironmentRequest
 }
 
 type projectEventsInput struct {
-	OrgID  apiwire.OrgID `query:"org_id" required:"true"`
-	Cursor string        `query:"cursor,omitempty" maxLength:"256"`
-	Limit  int           `query:"limit,omitempty" minimum:"1" maximum:"100"`
+	OrgID  dto.OrgID `query:"org_id" required:"true"`
+	Cursor string    `query:"cursor,omitempty" maxLength:"256"`
+	Limit  int       `query:"limit,omitempty" minimum:"1" maximum:"100"`
 }
 
 type resolveProjectOutput struct {
-	Body apiwire.ResolveProjectResponse
+	Body dto.ResolveProjectResponse
 }
 
 type resolveEnvironmentOutput struct {
-	Body apiwire.ResolveProjectEnvironmentResponse
+	Body dto.ResolveProjectEnvironmentResponse
 }
 
 type projectEventsOutput struct {
-	Body apiwire.ProjectEventList
+	Body dto.ProjectEventList
 }
 
 func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
@@ -122,7 +122,7 @@ func resolveProject(svc *projects.Service) func(context.Context, projects.Princi
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &resolveProjectOutput{Body: apiwire.ResolveProjectResponse{Project: projectDTO(project)}}, nil
+		return &resolveProjectOutput{Body: dto.ResolveProjectResponse{Project: projectDTO(project)}}, nil
 	}
 }
 
@@ -146,7 +146,7 @@ func resolveEnvironment(svc *projects.Service) func(context.Context, projects.Pr
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &resolveEnvironmentOutput{Body: apiwire.ResolveProjectEnvironmentResponse{Environment: environmentDTO(env)}}, nil
+		return &resolveEnvironmentOutput{Body: dto.ResolveProjectEnvironmentResponse{Environment: environmentDTO(env)}}, nil
 	}
 }
 
@@ -156,7 +156,7 @@ func listEvents(svc *projects.Service) func(context.Context, projects.Principal,
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectEventsOutput{Body: apiwire.ProjectEventList{Events: eventDTOs(events), NextCursor: nextCursor}}, nil
+		return &projectEventsOutput{Body: dto.ProjectEventList{Events: eventDTOs(events), NextCursor: nextCursor}}, nil
 	}
 }
 
@@ -167,14 +167,14 @@ func optionalUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
 	return parseUUID(ctx, value, field)
 }
 
-func eventDTO(event projects.Event) apiwire.ProjectEvent {
+func eventDTO(event projects.Event) dto.ProjectEvent {
 	environmentID := ""
 	if event.EnvironmentID != uuid.Nil {
 		environmentID = event.EnvironmentID.String()
 	}
-	return apiwire.ProjectEvent{
+	return dto.ProjectEvent{
 		EventID:       event.ID.String(),
-		OrgID:         apiwire.Uint64(event.OrgID),
+		OrgID:         dto.Uint64(event.OrgID),
 		ProjectID:     event.ProjectID.String(),
 		EnvironmentID: environmentID,
 		EventType:     event.EventType,
@@ -185,8 +185,8 @@ func eventDTO(event projects.Event) apiwire.ProjectEvent {
 	}
 }
 
-func eventDTOs(records []projects.Event) []apiwire.ProjectEvent {
-	out := make([]apiwire.ProjectEvent, 0, len(records))
+func eventDTOs(records []projects.Event) []dto.ProjectEvent {
+	out := make([]dto.ProjectEvent, 0, len(records))
 	for _, record := range records {
 		out = append(out, eventDTO(record))
 	}

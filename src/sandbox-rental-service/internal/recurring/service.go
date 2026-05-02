@@ -530,7 +530,7 @@ func (s *Service) insertScheduleRow(ctx context.Context, record ScheduleRecord) 
 		TemporalNamespace:  record.TemporalNamespace,
 		TaskQueue:          record.TaskQueue,
 		State:              record.State,
-		IntervalSeconds:    int32(record.IntervalSeconds),
+		IntervalSeconds:    int32FromUint32(record.IntervalSeconds, "schedule interval seconds"),
 		ProjectID:          record.ProjectID,
 		SourceRepositoryID: record.SourceRepositoryID,
 		WorkflowPath:       record.WorkflowPath,

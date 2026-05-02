@@ -25,10 +25,10 @@ import (
 	"github.com/verself/billing-service/internal/billing/ledger"
 	"github.com/verself/billing-service/internal/billingapi"
 	"github.com/verself/billing-service/migrations"
-	"github.com/verself/envconfig"
-	"github.com/verself/httpserver"
-	verselfotel "github.com/verself/otel"
+	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
+	"github.com/verself/service-runtime/envconfig"
+	"github.com/verself/service-runtime/httpserver"
 )
 
 const serviceVersion = "2.0.0"
@@ -83,7 +83,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
-	defer otelShutdown(context.Background())
+	defer func() { _ = otelShutdown(context.Background()) }()
 	slog.SetDefault(logger)
 	logger.InfoContext(ctx, "billing-service deploy timing probe", "service_version", serviceVersion)
 
@@ -120,8 +120,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgConfig.MaxConns = int32(pgMaxConns)
-	pgConfig.MinConns = int32(pgMinConns)
+	pgConfig.MaxConns = int32FromInt(pgMaxConns, "BILLING_PG_MAX_CONNS")
+	pgConfig.MinConns = int32FromInt(pgMinConns, "BILLING_PG_MIN_CONNS")
 	pgConfig.MaxConnLifetime = time.Duration(pgMaxLifetime) * time.Second
 	pgConfig.MaxConnIdleTime = time.Duration(pgMaxIdle) * time.Second
 	pgPool, err := pgxpool.NewWithConfig(ctx, pgConfig)
@@ -223,6 +223,17 @@ func run() error {
 	internal.TLSConfig = internalTLSConfig
 
 	return httpserver.RunPair(ctx, logger, public, internal)
+}
+
+func int32FromInt(value int, field string) int32 {
+	const (
+		minInt32 = -1 << 31
+		maxInt32 = 1<<31 - 1
+	)
+	if value < minInt32 || value > maxInt32 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
 func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *billing.Runtime, cfg billing.Config) {

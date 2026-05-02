@@ -7,13 +7,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
 )
 
 type dataRightsInput struct {
-	Body apiwire.ProfileDataRightsRequest
+	Body dto.ProfileDataRightsRequest
 }
 
 type dataRightsStatusInput struct {
@@ -21,7 +21,7 @@ type dataRightsStatusInput struct {
 }
 
 type dataRightsOutput struct {
-	Body apiwire.ProfileDataRightsManifest
+	Body dto.ProfileDataRightsManifest
 }
 
 func (o *dataRightsOutput) auditDetails() auditDetails {
@@ -170,7 +170,7 @@ func requireGovernancePeer(ctx context.Context) error {
 	return nil
 }
 
-func dataRightsRequest(dto apiwire.ProfileDataRightsRequest) profile.DataRightsRequest {
+func dataRightsRequest(dto dto.ProfileDataRightsRequest) profile.DataRightsRequest {
 	return profile.DataRightsRequest{
 		RequestID:   dto.RequestID,
 		RequestedAt: dto.RequestedAt,
@@ -181,8 +181,8 @@ func dataRightsRequest(dto apiwire.ProfileDataRightsRequest) profile.DataRightsR
 	}
 }
 
-func dataRightsManifestDTO(manifest profile.DataRightsManifest) apiwire.ProfileDataRightsManifest {
-	return apiwire.ProfileDataRightsManifest{
+func dataRightsManifestDTO(manifest profile.DataRightsManifest) dto.ProfileDataRightsManifest {
+	return dto.ProfileDataRightsManifest{
 		RequestID:          manifest.RequestID,
 		RequestType:        manifest.RequestType,
 		Status:             manifest.Status,
@@ -196,10 +196,10 @@ func dataRightsManifestDTO(manifest profile.DataRightsManifest) apiwire.ProfileD
 	}
 }
 
-func artifactDTOs(artifacts []profile.DataRightsArtifact) []apiwire.ProfileDataRightsArtifact {
-	out := make([]apiwire.ProfileDataRightsArtifact, 0, len(artifacts))
+func artifactDTOs(artifacts []profile.DataRightsArtifact) []dto.ProfileDataRightsArtifact {
+	out := make([]dto.ProfileDataRightsArtifact, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		out = append(out, apiwire.ProfileDataRightsArtifact{
+		out = append(out, dto.ProfileDataRightsArtifact{
 			Path:        artifact.Path,
 			ContentType: artifact.ContentType,
 			Rows:        artifact.Rows,
@@ -210,10 +210,10 @@ func artifactDTOs(artifacts []profile.DataRightsArtifact) []apiwire.ProfileDataR
 	return out
 }
 
-func erasureActionDTOs(actions []profile.DataRightsErasureAction) []apiwire.ProfileDataRightsErasureAction {
-	out := make([]apiwire.ProfileDataRightsErasureAction, 0, len(actions))
+func erasureActionDTOs(actions []profile.DataRightsErasureAction) []dto.ProfileDataRightsErasureAction {
+	out := make([]dto.ProfileDataRightsErasureAction, 0, len(actions))
 	for _, action := range actions {
-		out = append(out, apiwire.ProfileDataRightsErasureAction{
+		out = append(out, dto.ProfileDataRightsErasureAction{
 			Name:        action.Name,
 			Rows:        action.Rows,
 			Description: action.Description,
@@ -222,10 +222,10 @@ func erasureActionDTOs(actions []profile.DataRightsErasureAction) []apiwire.Prof
 	return out
 }
 
-func retainedCategoryDTOs(categories []profile.DataRightsRetainedCategory) []apiwire.ProfileDataRightsRetainedCategory {
-	out := make([]apiwire.ProfileDataRightsRetainedCategory, 0, len(categories))
+func retainedCategoryDTOs(categories []profile.DataRightsRetainedCategory) []dto.ProfileDataRightsRetainedCategory {
+	out := make([]dto.ProfileDataRightsRetainedCategory, 0, len(categories))
 	for _, category := range categories {
-		out = append(out, apiwire.ProfileDataRightsRetainedCategory{
+		out = append(out, dto.ProfileDataRightsRetainedCategory{
 			Category: category.Category,
 			Reason:   category.Reason,
 		})
@@ -233,7 +233,7 @@ func retainedCategoryDTOs(categories []profile.DataRightsRetainedCategory) []api
 	return out
 }
 
-func firstArtifactHash(artifacts []apiwire.ProfileDataRightsArtifact) string {
+func firstArtifactHash(artifacts []dto.ProfileDataRightsArtifact) string {
 	if len(artifacts) == 0 {
 		return ""
 	}

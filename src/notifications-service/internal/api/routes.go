@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/verself/apiwire"
 	auth "github.com/verself/auth-middleware"
+	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/notifications-service/internal/notifications"
 )
 
@@ -31,21 +31,21 @@ type listInput struct {
 }
 
 type summaryOutput struct {
-	Body apiwire.NotificationSummary
+	Body dto.NotificationSummary
 }
 
 type listOutput struct {
-	Body apiwire.NotificationList
+	Body dto.NotificationList
 }
 
 type putPreferencesInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           apiwire.NotificationPutPreferencesRequest
+	Body           dto.NotificationPutPreferencesRequest
 }
 
 type markReadInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           apiwire.NotificationMarkReadRequest
+	Body           dto.NotificationMarkReadRequest
 }
 
 type dismissInput struct {
@@ -64,11 +64,11 @@ type clearInput struct {
 
 type testInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           apiwire.NotificationTestRequest
+	Body           dto.NotificationTestRequest
 }
 
 type acceptedOutput struct {
-	Body apiwire.NotificationAccepted
+	Body dto.NotificationAccepted
 }
 
 func RegisterRoutes(api huma.API, svc *notifications.Service) {
@@ -234,7 +234,7 @@ func markRead(svc *notifications.Service) func(context.Context, *markReadInput) 
 		if err != nil {
 			return nil, err
 		}
-		readUpTo, err := apiwire.ParseInt64(input.Body.ReadUpToSequence)
+		readUpTo, err := dto.ParseInt64(input.Body.ReadUpToSequence)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-read-cursor", "read cursor must be a decimal int64", err)
 		}
@@ -322,7 +322,7 @@ func publishTestNotification(svc *notifications.Service) func(context.Context, *
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &acceptedOutput{Body: apiwire.NotificationAccepted{
+		return &acceptedOutput{Body: dto.NotificationAccepted{
 			EventID:     accepted.EventID.String(),
 			Traceparent: accepted.Traceparent,
 		}}, nil
@@ -355,10 +355,10 @@ func validateIdempotencyKey(ctx context.Context, value string) error {
 	return nil
 }
 
-func listDTO(result notifications.ListResult) apiwire.NotificationList {
-	out := apiwire.NotificationList{
+func listDTO(result notifications.ListResult) dto.NotificationList {
+	out := dto.NotificationList{
 		Summary:       summaryDTO(result.Summary),
-		Notifications: make([]apiwire.Notification, 0, len(result.Notifications)),
+		Notifications: make([]dto.Notification, 0, len(result.Notifications)),
 	}
 	for _, notification := range result.Notifications {
 		out.Notifications = append(out.Notifications, notificationDTO(notification))
@@ -366,8 +366,8 @@ func listDTO(result notifications.ListResult) apiwire.NotificationList {
 	return out
 }
 
-func summaryDTO(summary notifications.Summary) apiwire.NotificationSummary {
-	return apiwire.NotificationSummary{
+func summaryDTO(summary notifications.Summary) dto.NotificationSummary {
+	return dto.NotificationSummary{
 		OrgID:              summary.OrgID,
 		SubjectID:          summary.SubjectID,
 		UnreadCount:        summary.UnreadCount,
@@ -378,8 +378,8 @@ func summaryDTO(summary notifications.Summary) apiwire.NotificationSummary {
 	}
 }
 
-func preferencesDTO(preferences notifications.Preferences) apiwire.NotificationPreferences {
-	return apiwire.NotificationPreferences{
+func preferencesDTO(preferences notifications.Preferences) dto.NotificationPreferences {
+	return dto.NotificationPreferences{
 		Enabled:   preferences.Enabled,
 		Version:   preferences.Version,
 		UpdatedAt: preferences.UpdatedAt,
@@ -387,7 +387,7 @@ func preferencesDTO(preferences notifications.Preferences) apiwire.NotificationP
 	}
 }
 
-func notificationPtrDTO(notification *notifications.Notification) *apiwire.Notification {
+func notificationPtrDTO(notification *notifications.Notification) *dto.Notification {
 	if notification == nil {
 		return nil
 	}
@@ -395,8 +395,8 @@ func notificationPtrDTO(notification *notifications.Notification) *apiwire.Notif
 	return &out
 }
 
-func notificationDTO(notification notifications.Notification) apiwire.Notification {
-	return apiwire.Notification{
+func notificationDTO(notification notifications.Notification) dto.Notification {
+	return dto.Notification{
 		NotificationID:     notification.NotificationID.String(),
 		OrgID:              notification.OrgID,
 		RecipientSubjectID: notification.RecipientSubjectID,
