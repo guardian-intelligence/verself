@@ -43,6 +43,7 @@ var families = []family{
 	{Name: "logs", Purpose: "Discover or query structured log attributes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events."},
 	{Name: "deploy", Purpose: "Inspect Ansible deploy traces and deploy_run_key-correlated tasks."},
+	{Name: "supply-chain", Purpose: "Inspect artifact policy results recorded during deploy runs."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
 	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
 	{Name: "temporal", Purpose: "Inspect Temporal Web requests, Temporal auth decisions, smoke-test workflow activity, service logs, and live Temporal metric inventory."},
@@ -581,6 +582,44 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
+		ID:      "supply_chain.policy_summary",
+		Family:  "supply-chain",
+		Title:   "Supply-Chain Policy Summary",
+		Purpose: "Group deploy-time artifact policy evidence by surface, source kind, policy result, and admission state.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=supply-chain --run-key=<deploy-run-key>",
+			"aspect observe --what=supply-chain --minutes=1440",
+		},
+		Next: []string{
+			"aspect artifacts inventory --format=json",
+			"aspect observe --what=trace --trace-id=<trace-id>",
+		},
+	},
+	{
+		ID:      "supply_chain.policy_findings",
+		Family:  "supply-chain",
+		Title:   "Supply-Chain Policy Findings",
+		Purpose: "Show the per-source deploy evidence rows written by verself-deploy for the supply-chain policy gate.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=supply-chain --run-key=<deploy-run-key>",
+		},
+		Next: []string{
+			"aspect observe --what=supply-chain --run-key=<deploy-run-key> --format=json",
+		},
+	},
+	{
 		ID:      "mail.events",
 		Family:  "mail",
 		Title:   "Mail Events",
@@ -694,6 +733,7 @@ func printIndex(cfg config) error {
 			"aspect observe --what=workload-identity",
 			"aspect observe --what=temporal",
 			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=supply-chain --run-key=<deploy-run-key>",
 		},
 	}
 	switch cfg.format {
