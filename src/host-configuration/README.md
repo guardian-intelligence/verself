@@ -20,9 +20,9 @@ orchestrator execute the Ansible site playbook before Nomad fan-out. The
 deploy succeeds when the site playbook, local reconcilers, Nomad fan-out, and
 the typed ClickHouse `deploy_events` succeeded row all return cleanly.
 
-Use explicit substrate commands when touching this package:
+Use explicit host-configuration commands when touching this package:
 
 ```bash
-aspect substrate converge --site=prod   # run playbooks/site.yml without Nomad
-aspect substrate verify   --site=prod   # syntax-check playbooks/site.yml
+aspect host-configuration converge --site=prod   # run playbooks/site.yml without Nomad
+aspect host-configuration verify   --site=prod   # syntax-check playbooks/site.yml
 ```

@@ -39,8 +39,8 @@ func main() {
 		os.Exit(runNomad(os.Args[2:]))
 	case "ansible":
 		os.Exit(runAnsible(os.Args[2:]))
-	case "substrate":
-		os.Exit(runSubstrate(os.Args[2:]))
+	case "host-configuration":
+		os.Exit(runHostConfiguration(os.Args[2:]))
 	case "with-otel":
 		os.Exit(runWithOTel(os.Args[2:]))
 	case "-h", "--help", "help":
@@ -61,8 +61,8 @@ usage:
   verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
   verself-deploy nomad deploy-all     --site=<site> [--repo-root=<path>]
   verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
-  verself-deploy substrate converge   --site=<site>
-  verself-deploy substrate verify     --site=<site>
+  verself-deploy host-configuration converge --site=<site>
+  verself-deploy host-configuration verify   --site=<site>
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+

@@ -1,13 +1,13 @@
-"""aspect substrate <action> — host/substrate convergence entry points.
+"""aspect host-configuration <action> — host convergence entry points.
 
 Substrate owns machine convergence: host packages, trust roots, stateful
 daemons, operator daemons, and per-component prerequisites. Nomad owns product
 application rollout.
 
 Convergence is the canonical Ansible site playbook at `playbooks/site.yml`.
-`aspect deploy` runs that playbook before Nomad fan-out. `aspect substrate
-converge` runs the same playbook without Nomad so identity and the streaming
-Ansible parser are exercised on every path.
+`aspect deploy` runs that playbook before Nomad fan-out. `aspect
+host-configuration converge` runs the same playbook without Nomad so identity
+and the streaming Ansible parser are exercised on every path.
 """
 
 load(
@@ -24,8 +24,8 @@ load(
 def _run_ansible(ctx, site, env, playbook, *extra_args):
     """Run a single ad-hoc playbook (security-patch, guest-rootfs, reset/wipe).
 
-    Full convergence goes through `verself-deploy substrate converge`; this
-    entry point exists for one-shot maintenance playbooks.
+    Full convergence goes through `verself-deploy host-configuration converge`;
+    this entry point exists for one-shot maintenance playbooks.
     """
     bin = build_verself_deploy(ctx)
     if bin == "":
@@ -61,12 +61,12 @@ def _converge_impl(ctx):
     return checked_spawn(
         ctx, bin,
         [
-            "substrate", "converge",
+            "host-configuration", "converge",
             "--site=" + site,
             "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
-        label = "verself-deploy substrate converge --site=" + site,
+        label = "verself-deploy host-configuration converge --site=" + site,
     )
 
 def _verify_impl(ctx):
@@ -81,12 +81,12 @@ def _verify_impl(ctx):
     return checked_spawn(
         ctx, bin,
         [
-            "substrate", "verify",
+            "host-configuration", "verify",
             "--site=" + site,
             "--repo-root=" + ws_path(ctx),
         ],
         cwd = ws_path(ctx),
-        label = "verself-deploy substrate verify --site=" + site,
+        label = "verself-deploy host-configuration verify --site=" + site,
     )
 
 def _security_patch_impl(ctx):
@@ -124,7 +124,7 @@ def _edit_secrets_impl(ctx):
         ctx,
         "sops",
         [ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/secrets.sops.yml")],
-        label = "sops edit substrate secrets",
+        label = "sops edit host-configuration secrets",
     )
 
 def _wipe_server_impl(ctx):
@@ -141,7 +141,7 @@ def _wipe_server_impl(ctx):
 
 def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_ansible_args):
     """Wipe a per-service slice via its reset playbook, then run the
-    canonical substrate site playbook and resubmit Nomad apps.
+    canonical host configuration site playbook and resubmit Nomad apps.
     """
     rc = render_site(ctx, site)
     if rc != 0:
@@ -153,7 +153,7 @@ def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_ansible_args):
     if bin == "":
         return 1
     converge_args = [
-        "substrate", "converge",
+        "host-configuration", "converge",
         "--site=" + site,
         "--repo-root=" + ws_path(ctx),
     ]
@@ -162,7 +162,7 @@ def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_ansible_args):
     rc = checked_spawn(
         ctx, bin, converge_args,
         cwd = ws_path(ctx),
-        label = "verself-deploy substrate converge (reset)",
+        label = "verself-deploy host-configuration converge (reset)",
     )
     if rc != 0:
         return rc
@@ -189,8 +189,8 @@ def _reset_verification_impl(ctx):
 converge = task(
     implementation = _converge_impl,
     name = "converge",
-    group = ["substrate"],
-    summary = "Run the canonical substrate Ansible site playbook.",
+    group = ["host-configuration"],
+    summary = "Run the canonical host configuration Ansible site playbook.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -199,8 +199,8 @@ converge = task(
 verify = task(
     implementation = _verify_impl,
     name = "verify",
-    group = ["substrate"],
-    summary = "Syntax-check the canonical substrate Ansible site playbook.",
+    group = ["host-configuration"],
+    summary = "Syntax-check the canonical host configuration Ansible site playbook.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -209,8 +209,8 @@ verify = task(
 security_patch = task(
     implementation = _security_patch_impl,
     name = "security-patch",
-    group = ["substrate"],
-    summary = "Apply OS security updates through the substrate runner.",
+    group = ["host-configuration"],
+    summary = "Apply OS security updates through the host configuration runner.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -219,7 +219,7 @@ security_patch = task(
 guest_rootfs = task(
     implementation = _guest_rootfs_impl,
     name = "guest-rootfs",
-    group = ["substrate"],
+    group = ["host-configuration"],
     summary = "Build the Firecracker substrate rootfs and stage guest images.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
@@ -229,14 +229,14 @@ guest_rootfs = task(
 edit_secrets = task(
     implementation = _edit_secrets_impl,
     name = "edit-secrets",
-    group = ["substrate"],
-    summary = "Open encrypted substrate secrets in $EDITOR via sops.",
+    group = ["host-configuration"],
+    summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
 )
 
 wipe_server = task(
     implementation = _wipe_server_impl,
     name = "wipe-server",
-    group = ["substrate"],
+    group = ["host-configuration"],
     summary = "Wipe all verself state from the provisioned server (requires --confirm).",
     args = {
         "confirm": args.boolean(default = False, description = "Required gate; pass --confirm to proceed."),
@@ -246,8 +246,8 @@ wipe_server = task(
 reset_identity = task(
     implementation = _reset_identity_impl,
     name = "identity",
-    group = ["substrate", "reset"],
-    summary = "Wipe identity-service PostgreSQL state, reconverge substrate, then resubmit Nomad apps.",
+    group = ["host-configuration", "reset"],
+    summary = "Wipe identity-service PostgreSQL state, reconverge host configuration, then resubmit Nomad apps.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -256,8 +256,8 @@ reset_identity = task(
 reset_billing = task(
     implementation = _reset_billing_impl,
     name = "billing",
-    group = ["substrate", "reset"],
-    summary = "Wipe billing state, reconverge substrate, then resubmit Nomad apps.",
+    group = ["host-configuration", "reset"],
+    summary = "Wipe billing state, reconverge host configuration, then resubmit Nomad apps.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
@@ -266,8 +266,8 @@ reset_billing = task(
 reset_verification = task(
     implementation = _reset_verification_impl,
     name = "verification",
-    group = ["substrate", "reset"],
-    summary = "Wipe verification state, reconverge substrate with schema reset flags, then resubmit Nomad apps.",
+    group = ["host-configuration", "reset"],
+    summary = "Wipe verification state, reconverge host configuration with schema reset flags, then resubmit Nomad apps.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },

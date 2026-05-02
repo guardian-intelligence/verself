@@ -71,5 +71,5 @@ echo "=== Done — server is wiped ==="
 EOF
 
 echo "Server wiped. Next steps:"
-echo "  aspect substrate guest-rootfs"
+echo "  aspect host-configuration guest-rootfs"
 echo "  aspect deploy"

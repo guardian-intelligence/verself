@@ -1,7 +1,7 @@
 # host-configuration
 
 Host configuration owns host and daemon convergence. Ansible is the private
-runner here, and the public entry points are `aspect substrate ...` and
+runner here, and the public entry points are `aspect host-configuration ...` and
 `aspect deploy`.
 
 ## Boundaries
@@ -28,8 +28,8 @@ invoked outside the site graph.
 `verself-deploy run` (under `src/deployment-tools/`) is the deploy-flow
 process: it derives identity, runs `playbooks/site.yml`, fans out to Nomad,
 and writes `verself.deploy_events` through a typed ClickHouse writer.
-`verself-deploy substrate converge|verify` exposes the same site playbook as
-standalone verbs.
+`verself-deploy host-configuration converge|verify` exposes the same site
+playbook as standalone verbs.
 
 `verself-deploy ansible run` wraps Ansible with the in-process OTel SDK; spans
 go through `internal/runtime`'s SSH-forwarded OTLP channel to the bare-metal
