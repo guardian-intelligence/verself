@@ -1,5 +1,5 @@
 ---
-# Wipe-only: aspect substrate reset identity invokes this playbook first,
+# Wipe-only: aspect host-configuration reset identity invokes this playbook first,
 # then runs the site playbook to rebuild per-component state.
 
 - name: Wipe identity-service PostgreSQL state

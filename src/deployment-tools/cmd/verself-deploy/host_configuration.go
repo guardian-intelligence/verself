@@ -16,27 +16,27 @@ import (
 	"github.com/verself/deployment-tools/internal/runtime"
 )
 
-// runSubstrate is the `verself-deploy substrate <subcommand>` dispatcher.
-// Substrate operations are direct executions of the canonical Ansible site
-// playbook; deploy orchestration still goes through `run`.
-func runSubstrate(args []string) int {
+// runHostConfiguration is the `verself-deploy host-configuration <subcommand>` dispatcher.
+// Host configuration operations are direct executions of the canonical Ansible
+// site playbook; deploy orchestration still goes through `run`.
+func runHostConfiguration(args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "verself-deploy substrate: missing subcommand (try `converge` or `verify`)")
+		fmt.Fprintln(os.Stderr, "verself-deploy host-configuration: missing subcommand (try `converge` or `verify`)")
 		return 2
 	}
 	switch args[0] {
 	case "converge":
-		return runSubstrateConverge(args[1:])
+		return runHostConfigurationConverge(args[1:])
 	case "verify":
-		return runSubstrateVerify(args[1:])
+		return runHostConfigurationVerify(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate: unknown subcommand: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration: unknown subcommand: %s\n", args[0])
 		return 2
 	}
 }
 
-func runSubstrateConverge(args []string) int {
-	fs := flag.NewFlagSet("substrate converge", flag.ContinueOnError)
+func runHostConfigurationConverge(args []string) int {
+	fs := flag.NewFlagSet("host-configuration converge", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	var extraArgs stringSliceFlag
@@ -44,17 +44,17 @@ func runSubstrateConverge(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	rr, ok := resolveRepoRoot("verself-deploy substrate converge", *repoRoot)
+	rr, ok := resolveRepoRoot("verself-deploy host-configuration converge", *repoRoot)
 	if !ok {
 		return 1
 	}
 
 	snap, err := identity.Generate(identity.GenerateOptions{
 		Site:  *site,
-		Scope: "substrate",
+		Scope: "host-configuration",
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate converge: derive identity: %v\n", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration converge: derive identity: %v\n", err)
 		return 1
 	}
 	snap.ApplyEnv()
@@ -69,12 +69,12 @@ func runSubstrateConverge(args []string) int {
 		RepoRoot:       rr,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate converge: %v\n", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration converge: %v\n", err)
 		return 1
 	}
 	defer rt.Close()
 
-	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.substrate.converge",
+	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.host_configuration.converge",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(attribute.String("verself.site", *site)),
 	)
@@ -83,7 +83,7 @@ func runSubstrateConverge(args []string) int {
 	res, err := runSubstrateSitePlaybook(ctx, rt, *site, rr, extraArgs)
 	if err != nil || res == nil || res.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, res, err)
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate converge: %s\n", msg)
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration converge: %s\n", msg)
 		span.SetStatus(codes.Error, msg)
 		return 1
 	}
@@ -96,24 +96,24 @@ func runSubstrateConverge(args []string) int {
 	return 0
 }
 
-func runSubstrateVerify(args []string) int {
-	fs := flag.NewFlagSet("substrate verify", flag.ContinueOnError)
+func runHostConfigurationVerify(args []string) int {
+	fs := flag.NewFlagSet("host-configuration verify", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	rr, ok := resolveRepoRoot("verself-deploy substrate verify", *repoRoot)
+	rr, ok := resolveRepoRoot("verself-deploy host-configuration verify", *repoRoot)
 	if !ok {
 		return 1
 	}
 
 	snap, err := identity.Generate(identity.GenerateOptions{
 		Site:  *site,
-		Scope: "substrate-verify",
+		Scope: "host-configuration-verify",
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate verify: derive identity: %v\n", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration verify: derive identity: %v\n", err)
 		return 1
 	}
 	snap.ApplyEnv()
@@ -128,12 +128,12 @@ func runSubstrateVerify(args []string) int {
 		RepoRoot:       rr,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate verify: %v\n", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration verify: %v\n", err)
 		return 1
 	}
 	defer rt.Close()
 
-	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.substrate.verify",
+	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.host_configuration.verify",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(attribute.String("verself.site", *site)),
 	)
@@ -142,7 +142,7 @@ func runSubstrateVerify(args []string) int {
 	res, err := runSubstrateSitePlaybook(ctx, rt, *site, rr, []string{"--syntax-check"})
 	if err != nil || res == nil || res.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, res, err)
-		fmt.Fprintf(os.Stderr, "verself-deploy substrate verify: %s\n", msg)
+		fmt.Fprintf(os.Stderr, "verself-deploy host-configuration verify: %s\n", msg)
 		span.SetStatus(codes.Error, msg)
 		return 1
 	}

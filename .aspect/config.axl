@@ -23,16 +23,16 @@ load(
     provision_destroy = "destroy",
 )
 load(
-    ".aspect/tasks/substrate.axl",
-    substrate_converge = "converge",
-    substrate_edit_secrets = "edit_secrets",
-    substrate_verify = "verify",
-    substrate_security_patch = "security_patch",
-    substrate_guest_rootfs = "guest_rootfs",
-    substrate_wipe_server = "wipe_server",
-    substrate_reset_identity = "reset_identity",
-    substrate_reset_billing = "reset_billing",
-    substrate_reset_verification = "reset_verification",
+    ".aspect/tasks/host_configuration.axl",
+    host_configuration_converge = "converge",
+    host_configuration_edit_secrets = "edit_secrets",
+    host_configuration_verify = "verify",
+    host_configuration_security_patch = "security_patch",
+    host_configuration_guest_rootfs = "guest_rootfs",
+    host_configuration_wipe_server = "wipe_server",
+    host_configuration_reset_identity = "reset_identity",
+    host_configuration_reset_billing = "reset_billing",
+    host_configuration_reset_verification = "reset_verification",
 )
 load(".aspect/tasks/deploy.axl", "deploy")
 load(".aspect/tasks/artifacts.axl", artifacts_publish = "publish")
@@ -106,16 +106,16 @@ def config(ctx):
     ctx.tasks.add(provision_apply)
     ctx.tasks.add(provision_destroy)
 
-    # aspect substrate ...
-    ctx.tasks.add(substrate_converge)
-    ctx.tasks.add(substrate_edit_secrets)
-    ctx.tasks.add(substrate_verify)
-    ctx.tasks.add(substrate_security_patch)
-    ctx.tasks.add(substrate_guest_rootfs)
-    ctx.tasks.add(substrate_wipe_server)
-    ctx.tasks.add(substrate_reset_identity)
-    ctx.tasks.add(substrate_reset_billing)
-    ctx.tasks.add(substrate_reset_verification)
+    # aspect host-configuration ...
+    ctx.tasks.add(host_configuration_converge)
+    ctx.tasks.add(host_configuration_edit_secrets)
+    ctx.tasks.add(host_configuration_verify)
+    ctx.tasks.add(host_configuration_security_patch)
+    ctx.tasks.add(host_configuration_guest_rootfs)
+    ctx.tasks.add(host_configuration_wipe_server)
+    ctx.tasks.add(host_configuration_reset_identity)
+    ctx.tasks.add(host_configuration_reset_billing)
+    ctx.tasks.add(host_configuration_reset_verification)
 
     # aspect db pg|ch|tb ...
     ctx.tasks.add(db_pg_list)

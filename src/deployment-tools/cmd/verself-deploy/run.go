@@ -134,26 +134,26 @@ func runDeployBody(
 	startedAt time.Time,
 	snap identity.Snapshot,
 ) int {
-	// 1. Substrate convergence. Ansible owns ordering via play order and
-	// role order inside the canonical site playbook.
-	substrateRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
-	if err != nil || substrateRes == nil || substrateRes.ExitCode != 0 {
-		msg := ansibleFailureMessage(substrateSitePlaybook, substrateRes, err)
-		fmt.Fprintf(os.Stderr, "verself-deploy run: substrate failed: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"substrate"}, msg)
+	// 1. Host configuration convergence. Ansible owns ordering via play order
+	// and role order inside the canonical site playbook.
+	hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
+	if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
+		msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"host-configuration"}, msg)
 		return 1
 	}
 	span.SetAttributes(
-		attribute.Int("ansible.task_count", substrateRes.TaskCount),
-		attribute.Int("ansible.changed_total", substrateRes.ChangedCount),
-		attribute.Int("ansible.failed_count", substrateRes.FailedCount),
+		attribute.Int("ansible.task_count", hostConfigurationRes.TaskCount),
+		attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
+		attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
 	)
 
 	// 2. Nomad fan-out — same in-process function as standalone
 	// `verself-deploy nomad deploy-all`, no subprocess.
 	if err := deployAll(ctx, rt, span, site, repoRoot, false); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-all failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"substrate"},
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{"nomad"},
 			"nomad deploy-all: "+err.Error())
 		return 1
 	}
@@ -166,7 +166,7 @@ func runDeployBody(
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
-		AffectedComponents: []string{"substrate", "nomad"},
+		AffectedComponents: []string{"host-configuration", "nomad"},
 		Kind:               deploydb.EventSucceeded,
 		DurationMs:         durationMs,
 	}
