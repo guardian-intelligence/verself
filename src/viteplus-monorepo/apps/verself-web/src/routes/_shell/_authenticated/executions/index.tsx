@@ -34,7 +34,7 @@ function ExecutionsPage() {
       <PageSections>
         <PageSection>
           {auth.orgId ? (
-            <ExecutionListPanel orgId={auth.orgId} />
+            <ExecutionListPanel />
           ) : (
             <Callout tone="destructive" title="Missing organization">
               Your session is missing organization context. Try signing out and back in.

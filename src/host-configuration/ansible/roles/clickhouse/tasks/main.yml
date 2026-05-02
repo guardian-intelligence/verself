@@ -57,11 +57,23 @@
     - /var/log/clickhouse-server
 
 - name: Detect ClickHouse runtime paths with stale ownership
-  ansible.builtin.command:
-    cmd: >-
-      find {{ item }}
-      \( ! -user {{ clickhouse_system_user }} -o ! -group {{ clickhouse_system_group }} \)
-      -print -quit
+  # ClickHouse removes tmp_merge_* directories during compaction, so the scan tolerates only disappeared paths.
+  ansible.builtin.shell:
+    cmd: |
+      err_file="$(mktemp)"
+      trap 'rm -f "$err_file"' EXIT
+      if find {{ item | quote }} \( ! -user {{ clickhouse_system_user | quote }} -o ! -group {{ clickhouse_system_group | quote }} \) -print -quit 2>"$err_file"; then
+        exit 0
+      fi
+
+      rc="$?"
+      non_disappeared_errors="$(grep -v 'No such file or directory' "$err_file" || true)"
+      if [ -n "$non_disappeared_errors" ]; then
+        printf '%s\n' "$non_disappeared_errors" >&2
+        exit "$rc"
+      fi
+      exit 0
+    executable: /bin/bash
   register: clickhouse_runtime_ownership_probe
   changed_when: false
   loop:

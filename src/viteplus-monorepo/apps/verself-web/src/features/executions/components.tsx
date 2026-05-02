@@ -42,16 +42,16 @@ import { useExecutionLogs, useExecutionRows } from "./live";
 import { executionQuery } from "./queries";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "./status";
 
-export function ExecutionListPanel({ orgId }: { orgId: string }) {
+export function ExecutionListPanel() {
   return (
     <ClientOnly fallback={<ExecutionListLoading />}>
-      <ExecutionListPanelContent orgId={orgId} />
+      <ExecutionListPanelContent />
     </ClientOnly>
   );
 }
 
-function ExecutionListPanelContent({ orgId }: { orgId: string }) {
-  const rows = useExecutionRows(orgId);
+function ExecutionListPanelContent() {
+  const rows = useExecutionRows();
 
   if (rows.isLoading || rows.isIdle) {
     return <ExecutionListLoading />;

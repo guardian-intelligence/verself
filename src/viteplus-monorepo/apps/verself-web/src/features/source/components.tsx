@@ -35,7 +35,7 @@ export function BuildRepositoriesPanel() {
 
   return (
     <ClientOnly fallback={<BuildsLiveLoading />}>
-      <BuildRepositoryRowsLive orgId={auth.orgId} repositories={repositories} />
+      <BuildRepositoryRowsLive repositories={repositories} />
     </ClientOnly>
   );
 }
@@ -53,7 +53,7 @@ export function BuildRepositoryActiveBuildsPanel({ repo }: { repo: SourceReposit
 
   return (
     <ClientOnly fallback={<BuildsLiveLoading />}>
-      <BuildRepositoryActiveBuildsLive orgId={auth.orgId} repo={repo} />
+      <BuildRepositoryActiveBuildsLive repo={repo} />
     </ClientOnly>
   );
 }
@@ -62,15 +62,9 @@ export function buildRepositorySlug(repo: SourceRepository) {
   return `${repo.org_slug}/${repo.project_slug}`;
 }
 
-function BuildRepositoryRowsLive({
-  orgId,
-  repositories,
-}: {
-  orgId: string;
-  repositories: SourceRepository[];
-}) {
-  const executionRows = useExecutionRows(orgId);
-  const providerRepositoryRows = useRunnerProviderRepositoryRows(orgId);
+function BuildRepositoryRowsLive({ repositories }: { repositories: SourceRepository[] }) {
+  const executionRows = useExecutionRows();
+  const providerRepositoryRows = useRunnerProviderRepositoryRows();
 
   if (
     executionRows.isLoading ||
@@ -175,15 +169,9 @@ function ActiveBuildCountLink({
   );
 }
 
-function BuildRepositoryActiveBuildsLive({
-  orgId,
-  repo,
-}: {
-  orgId: string;
-  repo: SourceRepository;
-}) {
-  const executionRows = useExecutionRows(orgId);
-  const providerRepositoryRows = useRunnerProviderRepositoryRows(orgId);
+function BuildRepositoryActiveBuildsLive({ repo }: { repo: SourceRepository }) {
+  const executionRows = useExecutionRows();
+  const providerRepositoryRows = useRunnerProviderRepositoryRows();
 
   if (
     executionRows.isLoading ||

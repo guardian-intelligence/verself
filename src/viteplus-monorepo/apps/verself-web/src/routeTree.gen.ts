@@ -19,6 +19,9 @@ import { Route as WorkshopDocsRouteRouteImport } from './routes/_workshop/docs/r
 import { Route as ShellAuthenticatedRouteRouteImport } from './routes/_shell/_authenticated/route'
 import { Route as WorkshopPolicyIndexRouteImport } from './routes/_workshop/policy/index'
 import { Route as WorkshopDocsIndexRouteImport } from './routes/_workshop/docs/index'
+import { Route as ApiSyncRunnerProviderRepositoriesRouteImport } from './routes/api/sync/runner-provider-repositories'
+import { Route as ApiSyncNotificationInboxStateRouteImport } from './routes/api/sync/notification-inbox-state'
+import { Route as ApiSyncExecutionsRouteImport } from './routes/api/sync/executions'
 import { Route as WorkshopPolicyTermsRouteImport } from './routes/_workshop/policy/terms'
 import { Route as WorkshopPolicySubprocessorsRouteImport } from './routes/_workshop/policy/subprocessors'
 import { Route as WorkshopPolicySlaRouteImport } from './routes/_workshop/policy/sla'
@@ -37,6 +40,7 @@ import { Route as ShellAuthenticatedSettingsIndexRouteImport } from './routes/_s
 import { Route as ShellAuthenticatedSchedulesIndexRouteImport } from './routes/_shell/_authenticated/schedules/index'
 import { Route as ShellAuthenticatedExecutionsIndexRouteImport } from './routes/_shell/_authenticated/executions/index'
 import { Route as ShellAuthenticatedBuildsIndexRouteImport } from './routes/_shell/_authenticated/builds/index'
+import { Route as ApiSyncExecutionLogsAttemptIdRouteImport } from './routes/api/sync/execution-logs/$attemptId'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 import { Route as ShellAuthenticatedSettingsProfileRouteImport } from './routes/_shell/_authenticated/settings/profile'
 import { Route as ShellAuthenticatedSettingsOrganizationRouteImport } from './routes/_shell/_authenticated/settings/organization'
@@ -96,6 +100,23 @@ const WorkshopDocsIndexRoute = WorkshopDocsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WorkshopDocsRouteRoute,
+} as any)
+const ApiSyncRunnerProviderRepositoriesRoute =
+  ApiSyncRunnerProviderRepositoriesRouteImport.update({
+    id: '/api/sync/runner-provider-repositories',
+    path: '/api/sync/runner-provider-repositories',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSyncNotificationInboxStateRoute =
+  ApiSyncNotificationInboxStateRouteImport.update({
+    id: '/api/sync/notification-inbox-state',
+    path: '/api/sync/notification-inbox-state',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSyncExecutionsRoute = ApiSyncExecutionsRouteImport.update({
+  id: '/api/sync/executions',
+  path: '/api/sync/executions',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WorkshopPolicyTermsRoute = WorkshopPolicyTermsRouteImport.update({
   id: '/terms',
@@ -196,6 +217,12 @@ const ShellAuthenticatedBuildsIndexRoute =
     path: '/builds/',
     getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
+const ApiSyncExecutionLogsAttemptIdRoute =
+  ApiSyncExecutionLogsAttemptIdRouteImport.update({
+    id: '/api/sync/execution-logs/$attemptId',
+    path: '/api/sync/execution-logs/$attemptId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
   id: '/api/otel/v1/traces',
   path: '/api/otel/v1/traces',
@@ -288,6 +315,9 @@ export interface FileRoutesByFullPath {
   '/policy/sla': typeof WorkshopPolicySlaRoute
   '/policy/subprocessors': typeof WorkshopPolicySubprocessorsRoute
   '/policy/terms': typeof WorkshopPolicyTermsRoute
+  '/api/sync/executions': typeof ApiSyncExecutionsRoute
+  '/api/sync/notification-inbox-state': typeof ApiSyncNotificationInboxStateRoute
+  '/api/sync/runner-provider-repositories': typeof ApiSyncRunnerProviderRepositoriesRoute
   '/docs/': typeof WorkshopDocsIndexRoute
   '/policy/': typeof WorkshopPolicyIndexRoute
   '/builds/$repoId': typeof ShellAuthenticatedBuildsRepoIdRoute
@@ -299,6 +329,7 @@ export interface FileRoutesByFullPath {
   '/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
   '/settings/profile': typeof ShellAuthenticatedSettingsProfileRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
+  '/api/sync/execution-logs/$attemptId': typeof ApiSyncExecutionLogsAttemptIdRoute
   '/builds/': typeof ShellAuthenticatedBuildsIndexRoute
   '/executions/': typeof ShellAuthenticatedExecutionsIndexRoute
   '/schedules/': typeof ShellAuthenticatedSchedulesIndexRoute
@@ -324,6 +355,9 @@ export interface FileRoutesByTo {
   '/policy/sla': typeof WorkshopPolicySlaRoute
   '/policy/subprocessors': typeof WorkshopPolicySubprocessorsRoute
   '/policy/terms': typeof WorkshopPolicyTermsRoute
+  '/api/sync/executions': typeof ApiSyncExecutionsRoute
+  '/api/sync/notification-inbox-state': typeof ApiSyncNotificationInboxStateRoute
+  '/api/sync/runner-provider-repositories': typeof ApiSyncRunnerProviderRepositoriesRoute
   '/docs': typeof WorkshopDocsIndexRoute
   '/policy': typeof WorkshopPolicyIndexRoute
   '/builds/$repoId': typeof ShellAuthenticatedBuildsRepoIdRoute
@@ -335,6 +369,7 @@ export interface FileRoutesByTo {
   '/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
   '/settings/profile': typeof ShellAuthenticatedSettingsProfileRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
+  '/api/sync/execution-logs/$attemptId': typeof ApiSyncExecutionLogsAttemptIdRoute
   '/builds': typeof ShellAuthenticatedBuildsIndexRoute
   '/executions': typeof ShellAuthenticatedExecutionsIndexRoute
   '/schedules': typeof ShellAuthenticatedSchedulesIndexRoute
@@ -367,6 +402,9 @@ export interface FileRoutesById {
   '/_workshop/policy/sla': typeof WorkshopPolicySlaRoute
   '/_workshop/policy/subprocessors': typeof WorkshopPolicySubprocessorsRoute
   '/_workshop/policy/terms': typeof WorkshopPolicyTermsRoute
+  '/api/sync/executions': typeof ApiSyncExecutionsRoute
+  '/api/sync/notification-inbox-state': typeof ApiSyncNotificationInboxStateRoute
+  '/api/sync/runner-provider-repositories': typeof ApiSyncRunnerProviderRepositoriesRoute
   '/_workshop/docs/': typeof WorkshopDocsIndexRoute
   '/_workshop/policy/': typeof WorkshopPolicyIndexRoute
   '/_shell/_authenticated/builds/$repoId': typeof ShellAuthenticatedBuildsRepoIdRoute
@@ -378,6 +416,7 @@ export interface FileRoutesById {
   '/_shell/_authenticated/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
   '/_shell/_authenticated/settings/profile': typeof ShellAuthenticatedSettingsProfileRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
+  '/api/sync/execution-logs/$attemptId': typeof ApiSyncExecutionLogsAttemptIdRoute
   '/_shell/_authenticated/builds/': typeof ShellAuthenticatedBuildsIndexRoute
   '/_shell/_authenticated/executions/': typeof ShellAuthenticatedExecutionsIndexRoute
   '/_shell/_authenticated/schedules/': typeof ShellAuthenticatedSchedulesIndexRoute
@@ -408,6 +447,9 @@ export interface FileRouteTypes {
     | '/policy/sla'
     | '/policy/subprocessors'
     | '/policy/terms'
+    | '/api/sync/executions'
+    | '/api/sync/notification-inbox-state'
+    | '/api/sync/runner-provider-repositories'
     | '/docs/'
     | '/policy/'
     | '/builds/$repoId'
@@ -419,6 +461,7 @@ export interface FileRouteTypes {
     | '/settings/organization'
     | '/settings/profile'
     | '/api/otel/v1/traces'
+    | '/api/sync/execution-logs/$attemptId'
     | '/builds/'
     | '/executions/'
     | '/schedules/'
@@ -444,6 +487,9 @@ export interface FileRouteTypes {
     | '/policy/sla'
     | '/policy/subprocessors'
     | '/policy/terms'
+    | '/api/sync/executions'
+    | '/api/sync/notification-inbox-state'
+    | '/api/sync/runner-provider-repositories'
     | '/docs'
     | '/policy'
     | '/builds/$repoId'
@@ -455,6 +501,7 @@ export interface FileRouteTypes {
     | '/settings/organization'
     | '/settings/profile'
     | '/api/otel/v1/traces'
+    | '/api/sync/execution-logs/$attemptId'
     | '/builds'
     | '/executions'
     | '/schedules'
@@ -486,6 +533,9 @@ export interface FileRouteTypes {
     | '/_workshop/policy/sla'
     | '/_workshop/policy/subprocessors'
     | '/_workshop/policy/terms'
+    | '/api/sync/executions'
+    | '/api/sync/notification-inbox-state'
+    | '/api/sync/runner-provider-repositories'
     | '/_workshop/docs/'
     | '/_workshop/policy/'
     | '/_shell/_authenticated/builds/$repoId'
@@ -497,6 +547,7 @@ export interface FileRouteTypes {
     | '/_shell/_authenticated/settings/organization'
     | '/_shell/_authenticated/settings/profile'
     | '/api/otel/v1/traces'
+    | '/api/sync/execution-logs/$attemptId'
     | '/_shell/_authenticated/builds/'
     | '/_shell/_authenticated/executions/'
     | '/_shell/_authenticated/schedules/'
@@ -511,7 +562,11 @@ export interface RootRouteChildren {
   WorkshopRoute: typeof WorkshopRouteWithChildren
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
+  ApiSyncExecutionsRoute: typeof ApiSyncExecutionsRoute
+  ApiSyncNotificationInboxStateRoute: typeof ApiSyncNotificationInboxStateRoute
+  ApiSyncRunnerProviderRepositoriesRoute: typeof ApiSyncRunnerProviderRepositoriesRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
+  ApiSyncExecutionLogsAttemptIdRoute: typeof ApiSyncExecutionLogsAttemptIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -585,6 +640,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/docs/'
       preLoaderRoute: typeof WorkshopDocsIndexRouteImport
       parentRoute: typeof WorkshopDocsRouteRoute
+    }
+    '/api/sync/runner-provider-repositories': {
+      id: '/api/sync/runner-provider-repositories'
+      path: '/api/sync/runner-provider-repositories'
+      fullPath: '/api/sync/runner-provider-repositories'
+      preLoaderRoute: typeof ApiSyncRunnerProviderRepositoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/notification-inbox-state': {
+      id: '/api/sync/notification-inbox-state'
+      path: '/api/sync/notification-inbox-state'
+      fullPath: '/api/sync/notification-inbox-state'
+      preLoaderRoute: typeof ApiSyncNotificationInboxStateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/executions': {
+      id: '/api/sync/executions'
+      path: '/api/sync/executions'
+      fullPath: '/api/sync/executions'
+      preLoaderRoute: typeof ApiSyncExecutionsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_workshop/policy/terms': {
       id: '/_workshop/policy/terms'
@@ -711,6 +787,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/builds/'
       preLoaderRoute: typeof ShellAuthenticatedBuildsIndexRouteImport
       parentRoute: typeof ShellAuthenticatedRouteRoute
+    }
+    '/api/sync/execution-logs/$attemptId': {
+      id: '/api/sync/execution-logs/$attemptId'
+      path: '/api/sync/execution-logs/$attemptId'
+      fullPath: '/api/sync/execution-logs/$attemptId'
+      preLoaderRoute: typeof ApiSyncExecutionLogsAttemptIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/otel/v1/traces': {
       id: '/api/otel/v1/traces'
@@ -947,7 +1030,12 @@ const rootRouteChildren: RootRouteChildren = {
   WorkshopRoute: WorkshopRouteWithChildren,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
+  ApiSyncExecutionsRoute: ApiSyncExecutionsRoute,
+  ApiSyncNotificationInboxStateRoute: ApiSyncNotificationInboxStateRoute,
+  ApiSyncRunnerProviderRepositoriesRoute:
+    ApiSyncRunnerProviderRepositoriesRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
+  ApiSyncExecutionLogsAttemptIdRoute: ApiSyncExecutionLogsAttemptIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2,8 +2,8 @@
 SELECT 1::int AS one;
 
 -- name: EnsureInboxState :exec
-INSERT INTO notification_inbox_state (org_id, recipient_subject_id, next_sequence, read_up_to_sequence, created_at, updated_at)
-VALUES (sqlc.arg(org_id), sqlc.arg(recipient_subject_id), 1, 0, sqlc.arg(now), sqlc.arg(now))
+INSERT INTO notification_inbox_state (inbox_state_id, org_id, recipient_subject_id, next_sequence, read_up_to_sequence, created_at, updated_at)
+VALUES (sqlc.arg(inbox_state_id), sqlc.arg(org_id), sqlc.arg(recipient_subject_id), 1, 0, sqlc.arg(now), sqlc.arg(now))
 ON CONFLICT (org_id, recipient_subject_id) DO NOTHING;
 
 -- name: GetPreferences :one

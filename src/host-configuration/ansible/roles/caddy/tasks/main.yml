@@ -231,28 +231,6 @@
     mode: "0644"
   notify: update ca certificates
 
-- name: Read Electric API secret for shape proxy auth
-  ansible.builtin.slurp:
-    src: /etc/credstore/electric/api-secret
-  register: caddy_electric_secret_raw
-  no_log: true
-
-- name: Set Electric secret fact
-  ansible.builtin.set_fact:
-    caddy_electric_api_secret: "{{ caddy_electric_secret_raw.content | b64decode | trim }}"
-  no_log: true
-
-- name: Read Electric Notifications API secret for shape proxy auth
-  ansible.builtin.slurp:
-    src: /etc/credstore/electric-notifications/api-secret
-  register: caddy_electric_notifications_secret_raw
-  no_log: true
-
-- name: Set Electric Notifications secret fact
-  ansible.builtin.set_fact:
-    caddy_electric_notifications_api_secret: "{{ caddy_electric_notifications_secret_raw.content | b64decode | trim }}"
-  no_log: true
-
 - name: Require billing webhook DNS to remain DNS-only
   ansible.builtin.assert:
     that: not (cloudflare_proxied | default(false) | bool)

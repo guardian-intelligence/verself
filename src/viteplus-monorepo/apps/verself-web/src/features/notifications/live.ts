@@ -5,10 +5,9 @@ import { createNotificationInboxStateCollection } from "~/lib/collections";
 
 export function useNotificationInboxState() {
   const auth = useSignedInAuth();
-  const orgId = auth.orgId ?? "no-org";
   const collection = useMemo(
-    () => createNotificationInboxStateCollection(auth, orgId, auth.userId),
-    [auth.cachePartition, auth.userId, orgId],
+    () => createNotificationInboxStateCollection(auth),
+    [auth.cachePartition],
   );
   const liveQuery = useLiveQuery(collection);
   const inboxState = liveQuery.data[0] ?? null;

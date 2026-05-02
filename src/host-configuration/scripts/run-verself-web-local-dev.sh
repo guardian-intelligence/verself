@@ -73,6 +73,19 @@ wait_for_local_tcp_port() {
   return 1
 }
 
+read_remote_secret() {
+  local env_name="$1"
+  local remote_path="$2"
+  local existing="${!env_name:-}"
+  if [[ -n "${existing}" ]]; then
+    printf '%s\n' "${existing}"
+    return 0
+  fi
+  ssh -o IPQoS=none -o StrictHostKeyChecking=no \
+    "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}" \
+    "sudo cat '${remote_path}'"
+}
+
 job_env_value() {
   local key="$1"
   jq -er --arg key "${key}" '
@@ -116,8 +129,12 @@ local_notifications_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_NOTIFICATIONS
 local_projects_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_PROJECTS_PORT:-}" 14264 24264 34264 44264 54264)"
 local_source_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_SOURCE_PORT:-}" 14261 24261 34261 44261 54261)"
 local_electric_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_ELECTRIC_PORT:-}" 13010 23010 33010 43010 53010)"
+local_electric_notifications_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_ELECTRIC_NOTIFICATIONS_PORT:-}" 13012 23012 33012 43012 53012)"
 local_otel_http_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_OTEL_HTTP_PORT:-}" 14318 24318 34318 44318 54318)"
 local_app_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_APP_PORT:-}" 4244 5244 6244 7244 8244)"
+
+electric_api_secret="$(read_remote_secret ELECTRIC_API_SECRET /etc/credstore/electric/api-secret)"
+electric_notifications_api_secret="$(read_remote_secret ELECTRIC_NOTIFICATIONS_API_SECRET /etc/credstore/electric-notifications/api-secret)"
 
 if [[ "${print_env_only}" != "1" ]]; then
   ssh -fN -M -S "${control_socket}" \
@@ -132,6 +149,7 @@ if [[ "${print_env_only}" != "1" ]]; then
     -L "${local_projects_port}:127.0.0.1:4264" \
     -L "${local_source_port}:127.0.0.1:4261" \
     -L "${local_electric_port}:127.0.0.1:3010" \
+    -L "${local_electric_notifications_port}:127.0.0.1:3012" \
     -L "${local_otel_http_port}:127.0.0.1:4318" \
     "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}"
 
@@ -143,6 +161,7 @@ if [[ "${print_env_only}" != "1" ]]; then
   wait_for_local_tcp_port "projects-service" "${local_projects_port}"
   wait_for_local_tcp_port "source-code-hosting-service" "${local_source_port}"
   wait_for_local_tcp_port "Electric" "${local_electric_port}"
+  wait_for_local_tcp_port "Electric notifications" "${local_electric_notifications_port}"
   wait_for_local_tcp_port "OTLP HTTP" "${local_otel_http_port}"
 fi
 
@@ -161,7 +180,10 @@ export GOVERNANCE_SERVICE_BASE_URL="${GOVERNANCE_SERVICE_BASE_URL:-http://127.0.
 export NOTIFICATIONS_SERVICE_BASE_URL="${NOTIFICATIONS_SERVICE_BASE_URL:-http://127.0.0.1:${local_notifications_port}}"
 export PROJECTS_SERVICE_BASE_URL="${PROJECTS_SERVICE_BASE_URL:-http://127.0.0.1:${local_projects_port}}"
 export SOURCE_CODE_HOSTING_SERVICE_BASE_URL="${SOURCE_CODE_HOSTING_SERVICE_BASE_URL:-http://127.0.0.1:${local_source_port}}"
-export ELECTRIC_URL="${ELECTRIC_URL:-http://127.0.0.1:${local_electric_port}}"
+export ELECTRIC_BASE_URL="${ELECTRIC_BASE_URL:-http://127.0.0.1:${local_electric_port}}"
+export ELECTRIC_NOTIFICATIONS_BASE_URL="${ELECTRIC_NOTIFICATIONS_BASE_URL:-http://127.0.0.1:${local_electric_notifications_port}}"
+export ELECTRIC_API_SECRET="${ELECTRIC_API_SECRET:-${electric_api_secret}}"
+export ELECTRIC_NOTIFICATIONS_API_SECRET="${ELECTRIC_NOTIFICATIONS_API_SECRET:-${electric_notifications_api_secret}}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:${local_otel_http_port}}"
 export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-verself-web}"
 export VERSELF_WEB_DEV_LOCAL_APP_PORT="${local_app_port}"
@@ -183,7 +205,10 @@ export GOVERNANCE_SERVICE_BASE_URL=${GOVERNANCE_SERVICE_BASE_URL}
 export NOTIFICATIONS_SERVICE_BASE_URL=${NOTIFICATIONS_SERVICE_BASE_URL}
 export PROJECTS_SERVICE_BASE_URL=${PROJECTS_SERVICE_BASE_URL}
 export SOURCE_CODE_HOSTING_SERVICE_BASE_URL=${SOURCE_CODE_HOSTING_SERVICE_BASE_URL}
-export ELECTRIC_URL=${ELECTRIC_URL}
+export ELECTRIC_BASE_URL=${ELECTRIC_BASE_URL}
+export ELECTRIC_NOTIFICATIONS_BASE_URL=${ELECTRIC_NOTIFICATIONS_BASE_URL}
+export ELECTRIC_API_SECRET=${ELECTRIC_API_SECRET}
+export ELECTRIC_NOTIFICATIONS_API_SECRET=${ELECTRIC_NOTIFICATIONS_API_SECRET}
 export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
 export OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
 export CONSOLE_DEV_LOCAL_APP_PORT=${local_app_port}
@@ -206,7 +231,8 @@ verself-web local dev
   notifications: ${NOTIFICATIONS_SERVICE_BASE_URL}
   projects:  ${PROJECTS_SERVICE_BASE_URL}
   source:    ${SOURCE_CODE_HOSTING_SERVICE_BASE_URL}
-  electric:  ${ELECTRIC_URL}
+  electric:  ${ELECTRIC_BASE_URL}
+  electric notifications: ${ELECTRIC_NOTIFICATIONS_BASE_URL}
   otlp:      ${OTEL_EXPORTER_OTLP_ENDPOINT}
   state:     ${state_file}
 EOF
