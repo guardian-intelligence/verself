@@ -36,7 +36,7 @@ class NoDefaultPortsRule(AnsibleLintRule):
             return results
 
         # The rule's domain is role/default variable files; topology-owned
-        # generated group_vars are allowed to carry concrete ports.
+        # group_vars are allowed to carry concrete ports.
         content = file.content
         for lineno, line in enumerate(content.splitlines(), start=1):
             m = PORT_KEY_RE.match(line)

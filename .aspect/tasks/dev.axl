@@ -17,7 +17,7 @@ def _ansible_local(ctx, playbook, *extra_args):
     )
 
 def _install_impl(ctx):
-    catalog = ws_path(ctx, "src/devtools/catalog.yml")
+    catalog = ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/catalog.yml")
     return _ansible_local(ctx, "playbooks/setup-dev.yml", "-e", "@" + catalog)
 
 def _sops_init_impl(ctx):

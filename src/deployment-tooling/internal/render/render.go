@@ -3,11 +3,10 @@
 //
 //	publish.json — every Garage artifact to upload, with sha256 + key
 //	submit.tsv  — (job_id, spec_file) pairs, one per line
-//	*.nomad.json — rendered Nomad job specs referenced by submit.tsv
+//	*.nomad.json — resolved Nomad job specs referenced by submit.tsv
 //
 // The structs here parse those files; they intentionally cover the
-// fields verself-deploy reads and stop short of mirroring everything
-// the renderer might emit.
+// fields verself-deploy reads and stop short of mirroring the full Nomad spec.
 package render
 
 import (
@@ -81,8 +80,7 @@ func LoadManifest(path string) (*Manifest, error) {
 }
 
 // LoadSubmit parses submit.tsv and returns its rows in file order.
-// Empty lines (the existing renderer can emit a trailing blank) are
-// dropped quietly; malformed rows fail loud.
+// Empty lines are dropped quietly; malformed rows fail loud.
 func LoadSubmit(path string) ([]SubmitEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -115,7 +113,7 @@ func LoadSubmit(path string) ([]SubmitEntry, error) {
 
 // ResolveLocalPath returns the absolute path to an artifact's source
 // file on disk. LocalPath in the manifest is repo-relative; an absolute
-// value is honoured as-is (the renderer occasionally produces those).
+// value is honoured as-is.
 func (a Artifact) ResolveLocalPath(repoRoot string) string {
 	if filepath.IsAbs(a.LocalPath) {
 		return a.LocalPath

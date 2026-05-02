@@ -97,7 +97,7 @@ require_job_env() {
 }
 
 if [[ ! -f "${job_spec_path}" ]]; then
-  echo "missing rendered Nomad job spec: ${job_spec_path}" >&2
+  echo "missing resolved Nomad job spec: ${job_spec_path}" >&2
   exit 1
 fi
 

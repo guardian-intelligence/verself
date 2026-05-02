@@ -1,3 +1,1 @@
 # gazelle:prefix github.com/verself/devtools
-
-exports_files(["catalog.yml"])

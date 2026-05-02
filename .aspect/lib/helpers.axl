@@ -57,9 +57,10 @@ def inventory_check(ctx, site = DEFAULT_SITE):
     return 0
 
 def render_site(ctx, site = DEFAULT_SITE):
-    """Materialise .cache/render/<site>/ — generated group_vars, rendered
-    Nomad jobs and host files, staged inventory. The deploy flow consumes
-    this cache; callers must run this before invoking verself-deploy.
+    """Materialise .cache/render/<site>/ from authored deploy inputs.
+
+    The cache exists for operator review and tools that still expect an
+    inventory directory. Runtime deploys read the authored inventory directly.
     """
     if inventory_check(ctx, site) != 0:
         return 1
@@ -69,16 +70,9 @@ def render_site(ctx, site = DEFAULT_SITE):
     if rc != 0:
         return rc
     rc = checked_spawn(
-        ctx, "bazelisk",
-        [
-            "run",
-            "//src/cue-renderer/cmd/cue-renderer",
-            "--",
-            "generate",
-            "--instance=" + site,
-            "--output-dir=" + cache_rel,
-        ],
-        label = "cue-renderer generate --instance=" + site,
+        ctx, "mkdir",
+        ["-p", cache_abs + "/inventory", cache_abs + "/share/rendered", cache_abs + "/jobs"],
+        label = "create " + cache_rel,
     )
     if rc != 0:
         return rc
@@ -89,12 +83,9 @@ def render_site(ctx, site = DEFAULT_SITE):
     )
     if rc != 0:
         return rc
-    # Stage the hand-written group_vars tree (all + per-group main.yml, the
-    # encrypted secrets.sops.yml, spire.yml, and any future host_vars groups)
-    # alongside the renderer's generated/ subtree. inventory_dir is the only
-    # place community.sops.sops scans for *.sops.yml files when -i points at
-    # the cache, so without this copy cloudflare_api_token and friends
-    # silently disappear from the deploy.
+    # Stage the authored group_vars tree. inventory_dir is the only place
+    # community.sops.sops scans for *.sops.yml files when -i points at the
+    # cache, so without this copy cloudflare_api_token and friends disappear.
     rc = checked_spawn(
         ctx, "bash", [
             "-c",
@@ -102,16 +93,33 @@ def render_site(ctx, site = DEFAULT_SITE):
             "src='" + ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars") + "'; " +
             "dst='" + cache_abs + "/inventory/group_vars'; " +
             "mkdir -p \"${dst}\"; " +
-            "cp -R \"${src}/.\" \"${dst}/\";",
+            "cp -RL \"${src}/.\" \"${dst}/\";",
         ],
-        label = "stage hand-written group_vars",
+        label = "stage authored group_vars",
     )
     if rc != 0:
         return rc
     rc = checked_spawn(
-        ctx, "cp",
-        [ws_path(ctx, "src/devtools/catalog.yml"), cache_abs + "/inventory/group_vars/all/catalog.yml"],
-        label = "stage authored tool catalog",
+        ctx, "bash", [
+            "-c",
+            "set -eu; " +
+            "src='" + ws_path(ctx, SUBSTRATE_DIR, "ansible/rendered") + "'; " +
+            "dst='" + cache_abs + "/share/rendered'; " +
+            "cp -R \"${src}/.\" \"${dst}/\";",
+        ],
+        label = "stage authored rendered files",
+    )
+    if rc != 0:
+        return rc
+    rc = checked_spawn(
+        ctx, "bash", [
+            "-c",
+            "set -eu; " +
+            "src='" + ws_path(ctx, "src/deployment-tooling/nomad/sites/" + site + "/jobs") + "'; " +
+            "dst='" + cache_abs + "/jobs'; " +
+            "cp -R \"${src}/.\" \"${dst}/\";",
+        ],
+        label = "stage authored Nomad jobs",
     )
     if rc != 0:
         return rc

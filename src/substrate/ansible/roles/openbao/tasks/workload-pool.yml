@@ -126,10 +126,8 @@
       data:
         wg_private_key: "{{ (openbao_workload_pool_slot_genkey.results[item].stdout | default('')) | trim }}"
         wg_public_key: "{{ (openbao_workload_pool_slot_pubkey.results[item].stdout | default('')) | trim }}"
-        # Slot N → slot_address_base with the last octet incremented by
-        # N. Mirrors the Go renderer's view of the same mapping; drift
-        # would surface as a wg AllowedIPs mismatch on first slot
-        # connect.
+        # Slot N maps to slot_address_base with the last octet incremented by
+        # N. Drift surfaces as a wg AllowedIPs mismatch on first slot connect.
         wg_address: >-
           {{
             (topology_workload_pool.slot_address_base.split('.')[0:3] | join('.'))

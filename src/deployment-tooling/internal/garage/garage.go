@@ -366,8 +366,8 @@ func sha256File(path string) (string, error) {
 
 // ParseEnvFile reads a sourceable shell env file (KEY=VALUE per
 // line, # comments) and returns the extracted access key + secret.
-// The renderer-described env-var names guide which keys are pulled;
-// missing keys are an error.
+// The manifest-described env-var names guide which keys are pulled; missing
+// keys are an error.
 func ParseEnvFile(body []byte, accessKeyEnv, secretKeyEnv string) (string, string, error) {
 	access, secret := "", ""
 	for _, line := range bytes.Split(body, []byte("\n")) {

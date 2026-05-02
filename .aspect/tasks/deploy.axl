@@ -1,9 +1,9 @@
 """aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--substrate=auto|always]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
-worktree when non-HEAD), refreshes the operator's SSH cert, renders
-.cache/render/<site>/, and shells out to `verself-deploy run`. The
-binary owns identity derivation, deploy_events writes, layered
+worktree when non-HEAD), refreshes the operator's SSH cert, stages
+.cache/render/<site>/ for review, and shells out to `verself-deploy run`.
+The binary owns identity derivation, deploy_events writes, layered
 substrate convergence, external reconcilers, and Nomad fan-out — all
 inside one process sharing one SSH session and one SSH-forwarded
 OTLP channel to the bare-metal otelcol.
@@ -106,9 +106,9 @@ def _deploy_impl(ctx):
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Render the deploy cache, refresh operator cert, then run verself-deploy run end-to-end.",
+    summary = "Stage deploy inputs, refresh operator cert, then run verself-deploy end-to-end.",
     args = {
-        "site": args.string(default = "prod", description = "Deployment site (selects instances/<site>/ and inventory/<site>.ini)."),
+        "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
         "scope": args.string(default = "all", description = "all | affected. The affected machinery is a future follow-up; same behavior as `all` for now."),
         "substrate": args.string(default = "auto", description = "auto | always. auto skips layers whose hash matches last-applied; always re-runs every layer regardless."),

@@ -135,10 +135,10 @@ def build_update_block(update: object) -> dict:
 
 
 def apply_override(spec: dict, override: dict) -> None:
-    """Splice per-component health checks and rollout policy onto the renderer's base spec.
+    """Splice per-component health checks and rollout policy onto an authored base spec.
 
     spec.Job.TaskGroups[*].Update is replaced with a normalized update
-    block. The renderer pre-registers one Nomad service per port label
+    block. Authored specs pre-register one Nomad service per port label
     (Provider=nomad, AddressMode=auto) so any consumer can resolve the
     alloc address via `nomadService` template lookups; this routine
     attaches the override's health checks to the existing service entry
@@ -204,7 +204,7 @@ def apply_override(spec: dict, override: dict) -> None:
     extras = sorted(set(tasks_override) - seen_tasks)
     if extras:
         raise ValueError(
-            f"override declares tasks that are not present in the rendered spec: {', '.join(extras)}"
+            f"override declares tasks that are not present in the authored spec: {', '.join(extras)}"
         )
 
 

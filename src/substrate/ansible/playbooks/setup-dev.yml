@@ -1,9 +1,8 @@
 ---
-# Install dev tools from authored catalog vars.
+# Install dev tools from authored substrate catalog vars.
 # Usage: aspect dev install
-# (passes src/devtools/catalog.yml via -e @<path>; the playbook itself takes
-# no inventory and no vars_files because it runs pre-provision on a fresh
-# controller).
+# (passes group_vars/all/catalog.yml via -e @<path>; the playbook itself takes
+# no inventory because it runs pre-provision on a fresh controller).
 - name: Set up verself development environment
   hosts: localhost
   connection: local
@@ -17,7 +16,7 @@
         that: topology_versions is defined
         fail_msg: >-
           topology_versions is not set. Run: aspect dev install
-          (which passes src/devtools/catalog.yml via -e @<path>).
+          (which passes group_vars/all/catalog.yml via -e @<path>).
   roles:
     - role: dev_tools
       tags: [dev_tools]

@@ -2,11 +2,10 @@
 // github.com/hashicorp/nomad/api: parse → plan → CAS-safe register →
 // blocking-query monitor. Each step is a span.
 //
-// The contract with the renderer is `{"Job": {...}}` JSON envelopes
-// (the same shape Nomad's HTTP API consumes for POST /v1/jobs). The
-// nomad/api Job struct unmarshals directly from the inner object; we
-// strip the envelope here so callers work with *api.Job everywhere
-// downstream.
+// Authored and resolved specs use `{"Job": {...}}` JSON envelopes, the same
+// shape Nomad's HTTP API consumes for POST /v1/jobs. The nomad/api Job struct
+// unmarshals directly from the inner object; we strip the envelope here so
+// callers work with *api.Job everywhere downstream.
 package nomadclient
 
 import (
@@ -17,8 +16,8 @@ import (
 	"github.com/hashicorp/nomad/api"
 )
 
-// Spec is a rendered Nomad job spec plus the digests the renderer
-// stamps into Job.Meta. The digests participate in the no-op decision:
+// Spec is a resolved Nomad job spec plus the digests stamped into Job.Meta.
+// The digests participate in the no-op decision:
 // if the currently registered job already matches both, we skip the
 // submit entirely rather than burn an evaluation on an identical spec.
 type Spec struct {
@@ -27,9 +26,8 @@ type Spec struct {
 	SpecDigest     string
 }
 
-// LoadSpec reads a rendered .nomad.json file and validates the
-// renderer-stamped metadata. Errors here surface the contract between
-// renderer and submitter — they are operator-facing.
+// LoadSpec reads a resolved .nomad.json file and validates stamped metadata.
+// Errors here surface the contract between resolver and submitter.
 func LoadSpec(path string) (*Spec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

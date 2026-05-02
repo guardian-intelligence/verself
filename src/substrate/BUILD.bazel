@@ -29,7 +29,7 @@ filegroup(
             "scripts/.venv/**",
             "scripts/**/__pycache__/**",
         ],
-    ) + ["//src/devtools:catalog.yml"],
+    ),
 )
 
 # Path patterns scoping each layer's Ansible source subset. The L1 hash only
@@ -43,7 +43,7 @@ filegroup(
 # under that directory. The patterns are unquoted in the rendered cmd so
 # bash treats them as globs.
 _SHARED_ANSIBLE_PATTERNS = [
-    "src/devtools/catalog.yml",
+    "src/substrate/ansible/group_vars/all/catalog.yml",
     "src/substrate/ansible/ansible.cfg",
     "src/substrate/ansible/callback_plugins/*",
     "src/substrate/ansible/plugins/*",

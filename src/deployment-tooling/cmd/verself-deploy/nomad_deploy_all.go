@@ -228,9 +228,9 @@ func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclien
 
 // commonParentDir returns the longest path that is a directory
 // prefix of every input. Empty input or paths with disjoint roots
-// returns the empty string. The renderer guarantees one parent per
-// TreeArtifact, so this is a safe substitute for declaring a
-// directory output in BEP terms.
+// returns the empty string. The resolver emits one TreeArtifact, so
+// this is a safe substitute for declaring a directory output in BEP
+// terms.
 func commonParentDir(paths []string) string {
 	if len(paths) == 0 {
 		return ""
