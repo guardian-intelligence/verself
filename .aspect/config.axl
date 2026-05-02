@@ -37,6 +37,7 @@ load(
 load(".aspect/tasks/deploy.axl", "deploy")
 load(
     ".aspect/tasks/artifacts.axl",
+    artifacts_evidence = "evidence",
     artifacts_inventory = "inventory",
     artifacts_publish = "publish",
 )
@@ -100,6 +101,7 @@ def config(ctx):
     ctx.tasks.add(deploy)
     ctx.tasks.add(artifacts_publish)
     ctx.tasks.add(artifacts_inventory)
+    ctx.tasks.add(artifacts_evidence)
     ctx.tasks.add(render)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)

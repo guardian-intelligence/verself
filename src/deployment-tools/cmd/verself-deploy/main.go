@@ -9,6 +9,7 @@
 //	verself-deploy nomad deploy-all --site=<site> [--repo-root=<path>]
 //	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
 //	verself-deploy supply-chain check --repo-root=<path>
+//	verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
 //
 // Every subcommand routes through internal/runtime.Init, which owns
 // the start ordering: SSH dial -> OTLP forward channel -> OTel SDK
@@ -68,6 +69,7 @@ usage:
   verself-deploy host-configuration verify   --site=<site>
   verself-deploy supply-chain check   [--repo-root=<path>] [--policy=<path>]
   verself-deploy supply-chain record  --site=<site> [--repo-root=<path>]
+  verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+

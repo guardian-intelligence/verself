@@ -1,5 +1,6 @@
 """aspect artifacts publish --site=prod
 aspect artifacts inventory
+aspect artifacts evidence --run-key=<deploy-run-key>
 
 Builds the resolved Nomad artifact set and uploads every content-addressed
 tarball to the private Garage artifact origin. Deployment calls the same
@@ -58,5 +59,43 @@ inventory = task(
     args = {
         "format": args.string(default = "json", description = "json | policy."),
         "write_policy": args.string(default = "", description = "Write generated policy JSON to a repo-relative path."),
+    },
+)
+
+def _evidence_impl(ctx):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    run_key = ctx.args.run_key or ""
+    if run_key == "":
+        ctx.std.io.stderr.write("ERROR: --run-key is required\n")
+        return 2
+    evidence_args = [
+        "supply-chain",
+        "assert-evidence",
+        "--repo-root",
+        ws_path(ctx),
+        "--site=" + (ctx.args.site or DEFAULT_SITE),
+        "--run-key=" + run_key,
+    ]
+    if ctx.args.wait:
+        evidence_args = evidence_args + ["--wait=" + ctx.args.wait]
+    return checked_spawn(
+        ctx,
+        bin,
+        evidence_args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy supply-chain assert-evidence",
+    )
+
+evidence = task(
+    implementation = _evidence_impl,
+    name = "evidence",
+    group = ["artifacts"],
+    summary = "Assert deploy-time supply-chain rows and spans exist in ClickHouse.",
+    args = {
+        "run_key": args.string(default = "", description = "Deploy run key to assert."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "wait": args.string(default = "5s", description = "Wait for ClickHouse evidence, maximum 5s."),
     },
 )

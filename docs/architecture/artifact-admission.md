@@ -68,6 +68,13 @@ GROUP BY deploy_run_key, site, surface, source_kind, policy_result, admission_st
 ORDER BY surface, source_kind, policy_result;
 ```
 
+`aspect artifacts evidence --run-key=<deploy-run-key>` is the post-deploy
+assertion gate. It recomputes the local policy evaluation, then verifies that
+ClickHouse contains exactly the expected number of policy rows for the deploy
+run, zero rejected rows, non-empty trace IDs, one supply-chain trace ID, OK
+`policy_check` and `policy_record` spans, and a succeeded deploy event without a
+failed deploy event.
+
 ## Node Policy
 
 pnpm hardening is configured in the workspace so agents and CI resolve the same
