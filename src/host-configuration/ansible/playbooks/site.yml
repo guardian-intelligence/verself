@@ -144,6 +144,11 @@
       tags:
         - garage
         - object-storage
+    - role: zot
+      tags:
+        - zot
+        - artifacts
+        - oci-registry
     - role: bazel_remote
       tags:
         - bazel-remote

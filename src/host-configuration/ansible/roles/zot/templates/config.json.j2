@@ -1,0 +1,47 @@
+{
+  "distSpecVersion": "1.1.1",
+  "storage": {
+    "rootDirectory": "{{ zot_storage_dir }}",
+    "commit": true,
+    "dedupe": true,
+    "gc": true,
+    "gcDelay": "1h",
+    "gcInterval": "24h"
+  },
+  "http": {
+    "address": "{{ zot_endpoint.host }}",
+    "port": "{{ zot_endpoint.port }}",
+    "realm": "{{ zot_realm }}",
+    "auth": {
+      "htpasswd": {
+        "path": "{{ zot_htpasswd_path }}"
+      },
+      "failDelay": 1
+    },
+    "accessControl": {
+      "repositories": {
+        "admitted/**": {
+          "anonymousPolicy": ["read"],
+          "policies": [
+            {
+              "users": ["{{ zot_publisher_user }}"],
+              "actions": ["read", "create", "update", "delete"]
+            }
+          ]
+        },
+        "**": {
+          "anonymousPolicy": ["read"]
+        }
+      }
+    }
+  },
+  "log": {
+    "level": "{{ zot_log_level }}"
+  },
+  "extensions": {
+    "scrub": {
+      "enable": true,
+      "interval": "24h"
+    }
+  }
+}

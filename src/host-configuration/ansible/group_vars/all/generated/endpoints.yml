@@ -1195,6 +1195,25 @@ topology_endpoints:
         path: /healthz
       readyz:
         path: /readyz
+  zot:
+    endpoints:
+      http:
+        address: "127.0.0.1:5080"
+        bind_address: "127.0.0.1:5080"
+        exposure: loopback
+        host: 127.0.0.1
+        listen_host: ""
+        port: 5080
+        protocol: http
+    host: 127.0.0.1
+    interfaces:
+      registry:
+        auth: anonymous_read_admission_publisher
+        endpoint: http
+        kind: oci_registry
+        openapi: ""
+        path_prefix: /v2
+    probes: {}
   zitadel:
     endpoints:
       http:

@@ -160,3 +160,10 @@ http_file(
     sha256 = "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
     url = "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
 )
+
+http_file(
+    name = "server_tool_zot",
+    downloaded_file_path = "zot-linux-amd64",
+    sha256 = "f9b7e805056db94c97d34bcff4eab77ec8e7cdc2cb76fd6db3d7ad7143605dba",
+    url = "https://github.com/project-zot/zot/releases/download/v2.1.16/zot-linux-amd64",
+)

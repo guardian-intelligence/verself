@@ -1,0 +1,36 @@
+[Unit]
+Description=zot internal OCI artifact registry
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
+
+[Service]
+Type=simple
+User={{ zot_user }}
+Group={{ zot_group }}
+Environment=OTEL_SERVICE_NAME=zot
+ExecStart={{ verself_bin }}/zot serve {{ zot_config_path }}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+ReadWritePaths={{ zot_storage_dir }}
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
