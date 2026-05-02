@@ -859,6 +859,11 @@ func dynamicPortsWithHostNetwork(dynamic []map[string]any, hostNetwork string) [
 // `nomadService` template lookups resolve from any other Nomad job.
 // AddressMode "auto" picks the host_network address (127.0.0.1) on
 // the loopback host_network this renderer pins via dynamicPorts.
+//
+// Service.Name is RFC 1123-shaped (`<jobid>-<endpoint-with-dashes>`)
+// because Nomad rejects underscores in service names. PortLabel
+// keeps the CUE-style endpoint label since it is not RFC 1123-bound
+// and matches the entry the network stanza emits.
 func taskServices(jobID string, ports []map[string]any) []map[string]any {
 	if len(ports) == 0 {
 		return nil
@@ -867,7 +872,7 @@ func taskServices(jobID string, ports []map[string]any) []map[string]any {
 	for _, p := range ports {
 		label, _ := p["Label"].(string)
 		services = append(services, map[string]any{
-			"Name":        jobID + "-" + label,
+			"Name":        jobID + "-" + strings.ReplaceAll(label, "_", "-"),
 			"PortLabel":   label,
 			"Provider":    "nomad",
 			"AddressMode": "auto",
@@ -1029,12 +1034,22 @@ const nomadServicePrefix = "__VERSELF_NSRV__"
 // nomadServiceMarker forms one sentinel for the named cross-Nomad
 // reference. The kind is "addr" or "port".
 func nomadServiceMarker(component, endpoint, kind string) string {
-	return nomadServicePrefix + jobID(component) + "-" + endpoint + "__" + kind + "__"
+	return nomadServicePrefix + nomadServiceName(component, endpoint) + "__" + kind + "__"
 }
 
-// nomadServiceMarkerRE captures the (jobID-endpoint, kind) pair from
-// any sentinel embedded in a resolved env value.
-var nomadServiceMarkerRE = regexp.MustCompile(`__VERSELF_NSRV__([a-z0-9_-]+?)__(addr|port)__`)
+// nomadServiceName builds the catalog name a Nomad service registers
+// under: `<jobid>-<endpoint-with-dashes>`. Nomad enforces RFC 1123
+// (alphanumeric + dash only, ≤63 chars) on service names, so the
+// endpoint's CUE-style underscores are normalised here. Port labels
+// keep their original form since they are not RFC 1123-bound.
+func nomadServiceName(component, endpoint string) string {
+	return jobID(component) + "-" + strings.ReplaceAll(endpoint, "_", "-")
+}
+
+// nomadServiceMarkerRE captures the (service-name, kind) pair from
+// any sentinel embedded in a resolved env value. The captured name
+// is RFC 1123-shaped — letters, digits, dashes only.
+var nomadServiceMarkerRE = regexp.MustCompile(`__VERSELF_NSRV__([a-z0-9-]+?)__(addr|port)__`)
 
 func newResolver(loaded load.Loaded) (*resolver, error) {
 	nomadSet := map[string]bool{}

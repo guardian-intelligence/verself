@@ -286,10 +286,10 @@ func TestRender_SandboxRentalMultiUnitShape(t *testing.T) {
 	}
 	body, _ := tmpl["EmbeddedTmpl"].(string)
 	for _, want := range []string{
-		`SANDBOX_BILLING_URL=https://{{ range nomadService "billing-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
-		`SANDBOX_GOVERNANCE_AUDIT_URL=https://{{ range nomadService "governance-service-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
-		`SANDBOX_SECRETS_URL=https://{{ range nomadService "secrets-service-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
-		`SANDBOX_SOURCE_INTERNAL_URL=https://{{ range nomadService "source-code-hosting-service-internal_https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_BILLING_URL=https://{{ range nomadService "billing-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_GOVERNANCE_AUDIT_URL=https://{{ range nomadService "governance-service-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_SECRETS_URL=https://{{ range nomadService "secrets-service-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
+		`SANDBOX_SOURCE_INTERNAL_URL=https://{{ range nomadService "source-code-hosting-service-internal-https" }}{{ .Address }}:{{ .Port }}{{ end }}`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("primary upstreams template missing %q", want)
@@ -331,21 +331,27 @@ func TestRender_NomadServiceRegistration(t *testing.T) {
 		name, _ := svc["Name"].(string)
 		byName[name] = svc
 	}
-	for _, want := range []string{"billing-public_http", "billing-internal_https"} {
-		svc := byName[want]
+	// Service.Name normalises endpoint underscores to dashes for
+	// RFC 1123 compliance; PortLabel keeps the CUE-style endpoint
+	// label so it matches the network stanza.
+	wantSvcs := map[string]string{
+		"billing-public-http":    "public_http",
+		"billing-internal-https": "internal_https",
+	}
+	for serviceName, wantPortLabel := range wantSvcs {
+		svc := byName[serviceName]
 		if svc == nil {
-			t.Errorf("Services missing %q; got %v", want, keysAnyMap(byName))
+			t.Errorf("Services missing %q; got %v", serviceName, keysAnyMap(byName))
 			continue
 		}
 		if got, _ := svc["Provider"].(string); got != "nomad" {
-			t.Errorf("Service %q Provider: got %q, want nomad", want, got)
+			t.Errorf("Service %q Provider: got %q, want nomad", serviceName, got)
 		}
 		if got, _ := svc["AddressMode"].(string); got != "auto" {
-			t.Errorf("Service %q AddressMode: got %q, want auto", want, got)
+			t.Errorf("Service %q AddressMode: got %q, want auto", serviceName, got)
 		}
-		expectedLabel := strings.TrimPrefix(want, "billing-")
-		if got, _ := svc["PortLabel"].(string); got != expectedLabel {
-			t.Errorf("Service %q PortLabel: got %q, want %q", want, got, expectedLabel)
+		if got, _ := svc["PortLabel"].(string); got != wantPortLabel {
+			t.Errorf("Service %q PortLabel: got %q, want %q", serviceName, got, wantPortLabel)
 		}
 	}
 }
