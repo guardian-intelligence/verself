@@ -1,6 +1,5 @@
-// Package render is the typed contract with the cue-renderer's
-// per-site output directory. The renderer materialises three files
-// the deploy flow depends on:
+// Package render is the typed contract with the resolved per-site Nomad job
+// directory. The resolver materialises three files the deploy flow depends on:
 //
 //	publish.json — every Garage artifact to upload, with sha256 + key
 //	submit.tsv  — (job_id, spec_file) pairs, one per line

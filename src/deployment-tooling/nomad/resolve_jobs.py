@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Resolve renderer-produced Nomad specs into Bazel deploy artifacts."""
+"""Resolve authored Nomad specs into Bazel deploy artifacts."""
 
 import argparse
 import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 
@@ -17,10 +15,8 @@ ARTIFACT_PREFIX = "verself-artifact://"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cue-renderer", required=True)
+    parser.add_argument("--jobs-index", required=True)
     parser.add_argument("--out-dir", required=True)
-    parser.add_argument("--topology-dir", default="src/cue-renderer")
-    parser.add_argument("--instance", default="prod")
     parser.add_argument("--artifact", action="append", default=[], help="output=path")
     parser.add_argument(
         "--override",
@@ -189,7 +185,7 @@ def apply_override(spec: dict, override: dict) -> None:
             if not isinstance(services, list) or not services:
                 raise ValueError(
                     f"override tasks[{task_name}]: task has no Services to attach checks to; "
-                    "ensure the component declares at least one endpoint in CUE topology"
+                    "ensure the component declares at least one endpoint in authored topology"
                 )
             services_by_port = {s.get("PortLabel"): s for s in services if isinstance(s, dict)}
             for check in checks:
@@ -329,127 +325,108 @@ def main() -> int:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        render_dir = Path(tmp) / "render"
-        subprocess.run(
+    index_path = Path(args.jobs_index)
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    components = index.get("components", [])
+    if not isinstance(components, list):
+        raise ValueError("jobs/index.json components must be a list")
+    ordered = ordered_components(components)
+    delivery = artifact_delivery(index)
+
+    rendered_job_ids = {component["job_id"] for component in components}
+    missing_overrides = sorted(rendered_job_ids - set(overrides_by_job))
+    if missing_overrides:
+        raise ValueError(
+            "Nomad-supervised jobs are missing nomad-overrides.json registration: "
+            f"{', '.join(missing_overrides)}. Add the file in each service directory and "
+            "register it via the overrides={...} attribute on nomad_resolved_jobs."
+        )
+    extra_overrides = sorted(set(overrides_by_job) - rendered_job_ids)
+    if extra_overrides:
+        raise ValueError(
+            "nomad-overrides.json registered for jobs that the authored index does not include: "
+            f"{', '.join(extra_overrides)}"
+        )
+
+    artifact_bindings = {}
+    publish_artifacts_by_key = {}
+    for component in components:
+        for artifact in component.get("artifacts", []):
+            output = artifact.get("output", "")
+            path = artifacts_by_output.get(output)
+            if path is None:
+                raise ValueError(f"jobs/index.json references artifact {output!r}, but Bazel rule did not provide it")
+            digest = sha256_file(path)
+            key = f"{delivery['key_prefix']}/{digest}/{output}.tar"
+            url = f"{delivery['source_prefix']}/{key}"
+            checksum = f"{delivery['checksum_algorithm']}:{digest}"
+            artifact_bindings[output] = {
+                "path": str(path),
+                "sha256": digest,
+                "url": url,
+                "key": key,
+                "bucket": delivery["bucket"],
+                "checksum": checksum,
+                "getter_options": delivery["getter_options"],
+            }
+            publish_artifacts_by_key[(delivery["bucket"], key)] = {
+                "output": output,
+                "local_path": str(path),
+                "sha256": digest,
+                "bucket": delivery["bucket"],
+                "key": key,
+                "getter_source": url,
+            }
+
+    authored_jobs_dir = index_path.parent
+    referenced = set()
+    submit_rows = []
+    for component in ordered:
+        job_id = component["job_id"]
+        spec_path = authored_jobs_dir / f"{job_id}.nomad.json"
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        seen = resolve_artifacts(spec, artifact_bindings)
+        referenced.update(seen)
+        override_path = overrides_by_job[job_id]
+        try:
+            override = json.loads(override_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"override file {override_path} is not valid JSON: {exc}") from exc
+        try:
+            apply_override(spec, override)
+        except ValueError as exc:
+            raise ValueError(f"applying override for job_id={job_id!r}: {exc}") from exc
+        artifact_digest = canonical_digest(
             [
-                args.cue_renderer,
-                "generate",
-                "--topology-dir",
-                args.topology_dir,
-                "--instance",
-                args.instance,
-                "--output-dir",
-                str(render_dir),
-            ],
-            check=True,
-        )
-
-        index_path = render_dir / "jobs" / "index.json"
-        if not index_path.exists():
-            (out_dir / "publish.json").write_text('{"artifacts":[]}\n', encoding="utf-8")
-            (out_dir / "submit.tsv").write_text("", encoding="utf-8")
-            return 0
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-        components = index.get("components", [])
-        if not isinstance(components, list):
-            raise ValueError("jobs/index.json components must be a list")
-        ordered = ordered_components(components)
-        delivery = artifact_delivery(index)
-
-        rendered_job_ids = {component["job_id"] for component in components}
-        missing_overrides = sorted(rendered_job_ids - set(overrides_by_job))
-        if missing_overrides:
-            raise ValueError(
-                "Nomad-supervised jobs are missing nomad-overrides.json registration: "
-                f"{', '.join(missing_overrides)}. Add the file in each service directory and "
-                "register it via the overrides={...} attribute on nomad_resolved_jobs."
-            )
-        extra_overrides = sorted(set(overrides_by_job) - rendered_job_ids)
-        if extra_overrides:
-            raise ValueError(
-                "nomad-overrides.json registered for jobs that the renderer does not produce: "
-                f"{', '.join(extra_overrides)}"
-            )
-
-        artifact_bindings = {}
-        publish_artifacts_by_key = {}
-        for component in components:
-            for artifact in component.get("artifacts", []):
-                output = artifact.get("output", "")
-                path = artifacts_by_output.get(output)
-                if path is None:
-                    raise ValueError(f"jobs/index.json references artifact {output!r}, but Bazel rule did not provide it")
-                digest = sha256_file(path)
-                key = f"{delivery['key_prefix']}/{digest}/{output}.tar"
-                url = f"{delivery['source_prefix']}/{key}"
-                checksum = f"{delivery['checksum_algorithm']}:{digest}"
-                artifact_bindings[output] = {
-                    "path": str(path),
-                    "sha256": digest,
-                    "url": url,
-                    "key": key,
-                    "bucket": delivery["bucket"],
-                    "checksum": checksum,
-                    "getter_options": delivery["getter_options"],
-                }
-                publish_artifacts_by_key[(delivery["bucket"], key)] = {
+                {
                     "output": output,
-                    "local_path": str(path),
-                    "sha256": digest,
-                    "bucket": delivery["bucket"],
-                    "key": key,
-                    "getter_source": url,
+                    "sha256": artifact_bindings[output]["sha256"],
+                    "url": artifact_bindings[output]["url"],
                 }
-
-        referenced = set()
-        submit_rows = []
-        for component in ordered:
-            job_id = component["job_id"]
-            spec_path = render_dir / "jobs" / f"{job_id}.nomad.json"
-            spec = json.loads(spec_path.read_text(encoding="utf-8"))
-            seen = resolve_artifacts(spec, artifact_bindings)
-            referenced.update(seen)
-            override_path = overrides_by_job[job_id]
-            try:
-                override = json.loads(override_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"override file {override_path} is not valid JSON: {exc}") from exc
-            try:
-                apply_override(spec, override)
-            except ValueError as exc:
-                raise ValueError(f"applying override for job_id={job_id!r}: {exc}") from exc
-            artifact_digest = canonical_digest(
-                [
-                    {
-                        "output": output,
-                        "sha256": artifact_bindings[output]["sha256"],
-                        "url": artifact_bindings[output]["url"],
-                    }
-                    for output in sorted(seen)
-                ]
-            )
-            stamp_meta(spec, artifact_digest)
-            resolved_path = out_dir / f"{job_id}.nomad.json"
-            resolved_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            submit_rows.append((job_id, resolved_path.name))
-
-        extras = sorted(set(artifact_bindings) - referenced)
-        if extras:
-            raise ValueError(f"artifacts were provided but not referenced by rendered jobs: {', '.join(extras)}")
-
-        publish_manifest = {
-            "artifact_delivery": index["artifact_delivery"],
-            "artifacts": sorted(publish_artifacts_by_key.values(), key=lambda row: (row["bucket"], row["key"], row["output"])),
-        }
-        (out_dir / "publish.json").write_text(
-            json.dumps(publish_manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+                for output in sorted(seen)
+            ]
         )
-        (out_dir / "submit.tsv").write_text(
-            "".join("\t".join(row) + "\n" for row in submit_rows),
-            encoding="utf-8",
-        )
+        stamp_meta(spec, artifact_digest)
+        resolved_path = out_dir / f"{job_id}.nomad.json"
+        resolved_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        submit_rows.append((job_id, resolved_path.name))
+
+    extras = sorted(set(artifact_bindings) - referenced)
+    if extras:
+        raise ValueError(f"artifacts were provided but not referenced by authored jobs: {', '.join(extras)}")
+
+    publish_manifest = {
+        "artifact_delivery": index["artifact_delivery"],
+        "artifacts": sorted(publish_artifacts_by_key.values(), key=lambda row: (row["bucket"], row["key"], row["output"])),
+    }
+    (out_dir / "publish.json").write_text(
+        json.dumps(publish_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out_dir / "submit.tsv").write_text(
+        "".join("\t".join(row) + "\n" for row in submit_rows),
+        encoding="utf-8",
+    )
     return 0
 
 

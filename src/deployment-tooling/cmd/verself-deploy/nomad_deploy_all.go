@@ -36,7 +36,7 @@ const (
 
 func runNomadDeployAll(args []string) int {
 	fs := flag.NewFlagSet("nomad deploy-all", flag.ContinueOnError)
-	site := fs.String("site", "prod", "site whose .cache/render/<site>/jobs/ holds publish.json + submit.tsv")
+	site := fs.String("site", "prod", "site whose authored Nomad job target should be resolved")
 	repoRoot := fs.String("repo-root", "", "path to the verself-sh repo root (defaults to cwd)")
 	publishOnly := fs.Bool("publish-only", false, "publish artifacts and exit before Nomad submit")
 	if err := fs.Parse(args); err != nil {
@@ -87,10 +87,10 @@ func runNomadDeployAll(args []string) int {
 }
 
 func deployAll(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot string, publishOnly bool) error {
-	jobsTarget := fmt.Sprintf("//src/cue-renderer:%s_nomad_jobs", site)
-	// The renderer's nomad-jobs target depends transitively on every
-	// per-component artifact tarball; building it materialises every
-	// publishable file the manifest references.
+	jobsTarget := fmt.Sprintf("//src/deployment-tooling/nomad:%s_nomad_jobs", site)
+	// The Nomad jobs target depends transitively on every per-component
+	// artifact tarball; building it materialises every publishable file
+	// the manifest references.
 	build, err := bazelbuild.Build(ctx, repoRoot, []string{jobsTarget}, "--config=remote-writer")
 	if err != nil {
 		return err
@@ -101,8 +101,8 @@ func deployAll(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, 
 	}
 	// prod_nomad_jobs declares a TreeArtifact directory; BEP enumerates
 	// each leaf file inside, so we recover the directory by taking the
-	// common parent. The renderer's contract is "all rendered specs live
-	// in one directory" — anything else is a renderer regression.
+	// common parent. The resolver's contract is "all resolved specs live
+	// in one directory".
 	nomadJobsDir := commonParentDir(files)
 	if nomadJobsDir == "" {
 		return fmt.Errorf("%s outputs have no common parent: %v", jobsTarget, files)

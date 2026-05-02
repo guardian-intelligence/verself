@@ -1,0 +1,97 @@
+{
+  "Job": {
+    "Datacenters": [
+      "dc1"
+    ],
+    "ID": "verself-web",
+    "Meta": {},
+    "Name": "verself-web",
+    "TaskGroups": [
+      {
+        "Count": 1,
+        "Name": "verself-web",
+        "Networks": [
+          {
+            "DynamicPorts": [
+              {
+                "HostNetwork": "loopback",
+                "Label": "http"
+              }
+            ],
+            "Mode": "host"
+          }
+        ],
+        "Tasks": [
+          {
+            "Artifacts": [
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://verself-web",
+                "RelativeDest": "local"
+              },
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://nodejs-runtime",
+                "RelativeDest": "local"
+              }
+            ],
+            "Config": {
+              "command": "local/bin/verself-web"
+            },
+            "Driver": "raw_exec",
+            "Env": {
+              "HOME": "/var/lib/verself-web",
+              "HOST": "127.0.0.1",
+              "IDENTITY_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "NODE_ENV": "production",
+              "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+              "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
+              "OTEL_SERVICE_NAME": "verself-web",
+              "PORT": "${NOMAD_PORT_http}",
+              "PRODUCT_BASE_URL": "https://verself.sh",
+              "PROFILE_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "PROJECTS_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE": "370200928688586084",
+              "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "VERSELF_DOMAIN": "verself.sh",
+              "VERSELF_SUPERVISOR": "nomad"
+            },
+            "KillSignal": "SIGTERM",
+            "KillTimeout": 30000000000,
+            "Name": "verself-web",
+            "Resources": {
+              "CPU": 500,
+              "MemoryMB": 512
+            },
+            "RestartPolicy": {
+              "Attempts": 3,
+              "Delay": 15000000000,
+              "Interval": 300000000000,
+              "Mode": "delay"
+            },
+            "Services": [
+              {
+                "AddressMode": "auto",
+                "Name": "verself-web-http",
+                "PortLabel": "http",
+                "Provider": "nomad"
+              }
+            ],
+            "Templates": [
+              {
+                "ChangeMode": "restart",
+                "DestPath": "secrets/upstreams.env",
+                "EmbeddedTmpl": "GOVERNANCE_SERVICE_BASE_URL=http://{{- with nomadService \"governance-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nIDENTITY_SERVICE_BASE_URL=http://{{- with nomadService \"identity-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nNOTIFICATIONS_SERVICE_BASE_URL=http://{{- with nomadService \"notifications-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROFILE_SERVICE_BASE_URL=http://{{- with nomadService \"profile-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROJECTS_SERVICE_BASE_URL=http://{{- with nomadService \"projects-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_RENTAL_SERVICE_BASE_URL=http://{{- with nomadService \"sandbox-rental-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSOURCE_CODE_HOSTING_SERVICE_BASE_URL=http://{{- with nomadService \"source-code-hosting-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "Envvars": true
+              }
+            ],
+            "User": "verself-web"
+          }
+        ],
+        "Update": null
+      }
+    ],
+    "Type": "service"
+  }
+}

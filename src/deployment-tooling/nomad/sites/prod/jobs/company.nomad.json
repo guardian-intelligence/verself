@@ -1,0 +1,87 @@
+{
+  "Job": {
+    "Datacenters": [
+      "dc1"
+    ],
+    "ID": "company",
+    "Meta": {},
+    "Name": "company",
+    "TaskGroups": [
+      {
+        "Count": 1,
+        "Name": "company",
+        "Networks": [
+          {
+            "DynamicPorts": [
+              {
+                "HostNetwork": "loopback",
+                "Label": "http"
+              }
+            ],
+            "Mode": "host"
+          }
+        ],
+        "Tasks": [
+          {
+            "Artifacts": [
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://company",
+                "RelativeDest": "local"
+              },
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://nodejs-runtime",
+                "RelativeDest": "local"
+              }
+            ],
+            "Config": {
+              "command": "local/bin/company"
+            },
+            "Driver": "raw_exec",
+            "Env": {
+              "BASE_URL": "https://guardianintelligence.org",
+              "COMPANY_DOMAIN": "guardianintelligence.org",
+              "HOME": "/var/lib/company",
+              "HOST": "127.0.0.1",
+              "NODE_ENV": "production",
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+              "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
+              "OTEL_SERVICE_NAME": "company",
+              "PORT": "${NOMAD_PORT_http}",
+              "PRODUCT_BASE_URL": "https://verself.sh",
+              "SITE_ORIGIN": "https://guardianintelligence.org",
+              "VERSELF_DOMAIN": "verself.sh",
+              "VERSELF_SUPERVISOR": "nomad"
+            },
+            "KillSignal": "SIGTERM",
+            "KillTimeout": 30000000000,
+            "Name": "company",
+            "Resources": {
+              "CPU": 500,
+              "MemoryMB": 256
+            },
+            "RestartPolicy": {
+              "Attempts": 3,
+              "Delay": 15000000000,
+              "Interval": 300000000000,
+              "Mode": "delay"
+            },
+            "Services": [
+              {
+                "AddressMode": "auto",
+                "Name": "company-http",
+                "PortLabel": "http",
+                "Provider": "nomad"
+              }
+            ],
+            "Templates": null,
+            "User": "company"
+          }
+        ],
+        "Update": null
+      }
+    ],
+    "Type": "service"
+  }
+}
