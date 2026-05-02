@@ -1,5 +1,5 @@
 """aspect detect-intrusions — scan verself.host_auth_events for SSH
-events that escaped the trust set projected by the renderer.
+events that escaped the authored trust set.
 
   aspect detect-intrusions [--site=prod] [--hours=24] [--format=table]
 
@@ -9,12 +9,11 @@ What this catches (the Blacksmith-CI-runner class of incident):
   2. cert_id shape doesn't match
      `^verself-(operator|workload|breakglass)-[a-z0-9-]+\$`.
   3. cert_id shape is valid, but the suffix is not in the current
-     known_cert_id_suffixes set rendered into ops.yml.
+     known_cert_id_suffixes set authored in ops.yml.
 
 The trusted suffix set lives in
-.cache/render/<site>/inventory/group_vars/all/generated/ops.yml under
-`known_cert_id_suffixes`; running this without a fresh render fails
-loudly. Pair with `aspect render --site=<site>` when in doubt.
+src/substrate/ansible/group_vars/all/generated/ops.yml under
+`known_cert_id_suffixes`.
 """
 
 load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
@@ -40,9 +39,9 @@ def _impl(ctx):
 detect_intrusions = task(
     implementation = _impl,
     name = "detect-intrusions",
-    summary = "Scan verself.host_auth_events for SSH events outside the rendered trust set (Blacksmith-CI-class detection).",
+    summary = "Scan verself.host_auth_events for SSH events outside the authored trust set (Blacksmith-CI-class detection).",
     args = {
-        "site": args.string(default = "prod", description = "Site whose rendered ops.yml supplies the trusted suffix list."),
+        "site": args.string(default = "prod", description = "Deployment site."),
         "hours": args.string(default = "24", description = "Lookback window."),
         "format": args.string(default = "", description = "ClickHouse format (PrettyCompactMonoBlock | JSON | TSVRaw | ...)."),
     },

@@ -20,7 +20,7 @@ import (
 
 func runNomadSubmit(args []string) int {
 	fs := flag.NewFlagSet("nomad submit", flag.ContinueOnError)
-	specPath := fs.String("spec", "", "path to a rendered Nomad job spec (.nomad.json)")
+	specPath := fs.String("spec", "", "path to a resolved Nomad job spec (.nomad.json)")
 	nomadAddr := fs.String("nomad-addr", "", "Nomad agent HTTP address; if empty, the binary opens an SSH-forwarded tunnel to the controller")
 	site := fs.String("site", "prod", "site label (selects inventory and agent queue dir)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")

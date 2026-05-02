@@ -62,7 +62,7 @@ with open(os.environ["KNOWN_OPS_YML"], "r") as f:
 
 suffixes = payload.get("known_cert_id_suffixes") or []
 if not suffixes:
-    sys.stderr.write("known_cert_id_suffixes is empty in the rendered ops.yml — cannot detect anomalies\n")
+    sys.stderr.write("known_cert_id_suffixes is empty in authored ops.yml; cannot detect anomalies\n")
     sys.exit(1)
 
 # CSV-safe single-quoted SQL literal list.

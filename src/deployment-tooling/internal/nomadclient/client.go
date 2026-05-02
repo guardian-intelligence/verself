@@ -55,7 +55,7 @@ type Decision struct {
 }
 
 // Decide reads the currently-registered job (if any) and compares its
-// renderer-stamped digests against the spec's. The CAS fence is the
+// resolver-stamped digests against the spec's. The CAS fence is the
 // PriorJobModifyIndex; passing 0 to EnforceRegister tells Nomad "this
 // job is new" which is what we want for the never-registered case.
 func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {

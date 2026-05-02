@@ -53,7 +53,7 @@ nomad_resolved_jobs = rule(
         ),
         "overrides": attr.label_keyed_string_dict(
             allow_files = True,
-            doc = "Map of per-component nomad-overrides.json file labels to Nomad job_id. The resolver merges each file's checks/update blocks into the rendered spec before stamping spec_sha256 so the digest reflects the final state.",
+            doc = "Map of per-component nomad-overrides.json file labels to Nomad job_id. The resolver merges each file's checks/update blocks into the authored spec before stamping spec_sha256 so the digest reflects the final state.",
         ),
         "index": attr.label(
             allow_single_file = True,

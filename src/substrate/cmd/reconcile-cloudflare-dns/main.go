@@ -222,7 +222,7 @@ func (d *desiredState) byZone(zone string) []desiredRecord {
 	return out
 }
 
-// loadDesired reads the renderer projections that drive Cloudflare DNS shape:
+// loadDesired reads authored substrate vars that drive Cloudflare DNS shape:
 // generated/dns.yml (topology_dns_records) and generated/ops.yml
 // (verself_domain, company_domain, bare_metal_public_ipv4).
 func loadDesired(renderRoot string) (*desiredState, error) {

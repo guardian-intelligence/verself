@@ -9,7 +9,6 @@
 // The mapping rule is mechanical: a Nomad service named
 // `<jobid>-<endpoint>` becomes the env var
 // `VERSELF_UPSTREAM_<UPPER(jobid_with_dashes_to_underscores)_<UPPER(endpoint)>`.
-// The renderer (`internal/render/nomad`) is the matching writer.
 package caddyupstreams
 
 import (
@@ -103,9 +102,8 @@ func buildEnvFile(addresses []nomadclient.ServiceAddress) string {
 
 // envVarName converts a Nomad service name (`<jobid>-<endpoint>`) to
 // the matching VERSELF_UPSTREAM_* env var Caddy expects. Service
-// names from non-renderer providers won't satisfy the
-// [a-z0-9_-]+ shape and return an empty string so the caller skips
-// them.
+// names outside the authored job naming contract return an empty
+// string so the caller skips them.
 func envVarName(serviceName string) string {
 	if serviceName == "" {
 		return ""
@@ -126,9 +124,8 @@ func writeUpstreamFile(ctx context.Context, ssh *sshtun.Client, body string) err
 	// Heredoc keeps the quoted content out of the shell's word
 	// expansion path entirely. The leading `'EOF'` (single-quoted
 	// terminator) tells bash not to interpolate $-variables in the
-	// body; the renderer emits literal `${NOMAD_PORT_*}` strings
-	// elsewhere, but this file is plain `KEY=VALUE` pairs so the
-	// safety has no functional cost.
+	// body. This file is plain `KEY=VALUE` pairs, so the safety has no
+	// functional cost.
 	cmd := fmt.Sprintf(
 		"sudo tee %s >/dev/null <<'VERSELFCADDY_UPSTREAMS_EOF'\n%sVERSELFCADDY_UPSTREAMS_EOF\n"+
 			"sudo chmod 0640 %s && sudo chown root:caddy %s",
