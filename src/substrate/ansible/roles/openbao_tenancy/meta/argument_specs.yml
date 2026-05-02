@@ -13,8 +13,6 @@ argument_specs:
         type: str
       openbao_tenancy_spiffe_jwt_mount:
         type: str
-      openbao_tenancy_rebootstrap_stage_dir:
-        type: str
       openbao_tenancy_oidc_discovery_url:
         type: str
       openbao_tenancy_bound_issuer:

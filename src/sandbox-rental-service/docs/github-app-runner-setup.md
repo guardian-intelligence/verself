@@ -66,10 +66,9 @@ sandbox-rental-service.github.webhook_secret
 sandbox-rental-service.github.client_secret
 ```
 
-The first cutover deploy can migrate an existing
-`/etc/credstore/sandbox-rental/github-app-*` set or the legacy `platform`
-OpenBao mount into those platform-org secrets. After the cutover, the service
-reads only from `secrets-service` via SPIFFE-authenticated startup code.
+The deploy reads these values only from the platform-org OpenBao mount. The
+service reads them through `secrets-service` via SPIFFE-authenticated startup
+code.
 
 Then redeploy:
 
@@ -80,8 +79,7 @@ aspect deploy --site=prod
 
 The sandbox-rental-service role fails before restarting the service when any
 required GitHub App public setting is missing, or when the deploy cannot find a
-complete platform-org GitHub credential set, a migratable legacy OpenBao
-credential set, or a complete legacy credstore set to migrate.
+complete platform-org GitHub credential set.
 
 ## Connect a GitHub Organization
 

@@ -7,11 +7,9 @@ openbao_raft_dir: /var/lib/openbao/raft
 openbao_log_dir: /var/log/openbao
 openbao_audit_log: /var/log/openbao/audit.log
 openbao_credstore_dir: /etc/credstore/openbao
-openbao_rebootstrap_stage_dir: "{{ openbao_credstore_dir }}/rebootstrap"
 openbao_node_id: verself-single-node
 openbao_rebootstrap: false
 openbao_rebootstrap_confirm: ""
-openbao_rebootstrap_github_source_org_id: ""
 openbao_key_shares: 3
 openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:

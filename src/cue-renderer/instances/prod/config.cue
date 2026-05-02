@@ -312,7 +312,6 @@ config: s.#InstanceConfig & {
 		openbao_tenancy_credstore_dir:         "/etc/credstore/openbao"
 		openbao_tenancy_tls_dir:               "/etc/openbao/tls"
 		openbao_tenancy_spiffe_jwt_mount:      "spiffe-jwt"
-		openbao_tenancy_rebootstrap_stage_dir: "{{ openbao_tenancy_credstore_dir }}/rebootstrap"
 		openbao_tenancy_oidc_discovery_url:    "https://auth.{{ verself_domain }}"
 		openbao_tenancy_bound_issuer:          "https://auth.{{ verself_domain }}"
 		openbao_tenancy_secrets_project_name:  "secrets-service"
