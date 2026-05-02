@@ -1,0 +1,153 @@
+{
+  "Job": {
+    "Datacenters": [
+      "dc1"
+    ],
+    "ID": "source-code-hosting-service",
+    "Meta": {},
+    "Name": "source-code-hosting-service",
+    "TaskGroups": [
+      {
+        "Count": 1,
+        "Name": "source-code-hosting-service",
+        "Networks": [
+          {
+            "DynamicPorts": [
+              {
+                "HostNetwork": "loopback",
+                "Label": "internal_https"
+              },
+              {
+                "HostNetwork": "loopback",
+                "Label": "public_http"
+              }
+            ],
+            "Mode": "host"
+          }
+        ],
+        "Tasks": [
+          {
+            "Artifacts": [
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://source-code-hosting-service",
+                "RelativeDest": "local"
+              }
+            ],
+            "Config": {
+              "args": [
+                "migrate",
+                "up"
+              ],
+              "command": "local/bin/source-code-hosting-service"
+            },
+            "Driver": "raw_exec",
+            "Env": {
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+              "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
+              "OTEL_SERVICE_NAME": "source-code-hosting-service-migration",
+              "SOURCE_FORGEJO_BASE_URL": "http://127.0.0.1:3000",
+              "SOURCE_FORGEJO_OWNER": "forgejo-automation",
+              "SOURCE_PUBLIC_BASE_URL": "https://git.verself.sh",
+              "SPIFFE_ENDPOINT_SOCKET": "unix:///run/spire-agent/sockets/agent.sock",
+              "VERSELF_AUTH_AUDIENCE": "370200564807548260",
+              "VERSELF_AUTH_ISSUER_URL": "https://auth.verself.sh",
+              "VERSELF_CRED_FORGEJO_TOKEN": "/etc/credstore/source-code-hosting-service/forgejo-token",
+              "VERSELF_CRED_WEBHOOK_SECRET": "/etc/credstore/source-code-hosting-service/webhook-secret",
+              "VERSELF_INTERNAL_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_internal_https}",
+              "VERSELF_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_public_http}",
+              "VERSELF_PG_CONN_MAX_IDLE_SECONDS": "300",
+              "VERSELF_PG_CONN_MAX_LIFETIME_SECONDS": "1800",
+              "VERSELF_PG_DSN": "postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql\u0026sslmode=disable",
+              "VERSELF_PG_MAX_CONNS": "8",
+              "VERSELF_PG_MIN_CONNS": "1",
+              "VERSELF_SUPERVISOR": "nomad"
+            },
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": false
+            },
+            "Name": "source-code-hosting-service-migrate",
+            "Resources": {
+              "CPU": 100,
+              "MemoryMB": 128
+            },
+            "User": "source_code_hosting_service"
+          },
+          {
+            "Artifacts": [
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://source-code-hosting-service",
+                "RelativeDest": "local"
+              }
+            ],
+            "Config": {
+              "command": "local/bin/source-code-hosting-service"
+            },
+            "Driver": "raw_exec",
+            "Env": {
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+              "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
+              "OTEL_SERVICE_NAME": "source-code-hosting-service",
+              "SOURCE_FORGEJO_BASE_URL": "http://127.0.0.1:3000",
+              "SOURCE_FORGEJO_OWNER": "forgejo-automation",
+              "SOURCE_PUBLIC_BASE_URL": "https://git.verself.sh",
+              "SPIFFE_ENDPOINT_SOCKET": "unix:///run/spire-agent/sockets/agent.sock",
+              "VERSELF_AUTH_AUDIENCE": "370200564807548260",
+              "VERSELF_AUTH_ISSUER_URL": "https://auth.verself.sh",
+              "VERSELF_CRED_FORGEJO_TOKEN": "/etc/credstore/source-code-hosting-service/forgejo-token",
+              "VERSELF_CRED_WEBHOOK_SECRET": "/etc/credstore/source-code-hosting-service/webhook-secret",
+              "VERSELF_INTERNAL_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_internal_https}",
+              "VERSELF_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_public_http}",
+              "VERSELF_PG_CONN_MAX_IDLE_SECONDS": "300",
+              "VERSELF_PG_CONN_MAX_LIFETIME_SECONDS": "1800",
+              "VERSELF_PG_DSN": "postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql\u0026sslmode=disable",
+              "VERSELF_PG_MAX_CONNS": "8",
+              "VERSELF_PG_MIN_CONNS": "1",
+              "VERSELF_SUPERVISOR": "nomad"
+            },
+            "KillSignal": "SIGTERM",
+            "KillTimeout": 30000000000,
+            "Name": "source-code-hosting-service",
+            "Resources": {
+              "CPU": 500,
+              "MemoryMB": 256
+            },
+            "RestartPolicy": {
+              "Attempts": 3,
+              "Delay": 15000000000,
+              "Interval": 300000000000,
+              "Mode": "delay"
+            },
+            "Services": [
+              {
+                "AddressMode": "auto",
+                "Name": "source-code-hosting-service-internal-https",
+                "PortLabel": "internal_https",
+                "Provider": "nomad"
+              },
+              {
+                "AddressMode": "auto",
+                "Name": "source-code-hosting-service-public-http",
+                "PortLabel": "public_http",
+                "Provider": "nomad"
+              }
+            ],
+            "Templates": [
+              {
+                "ChangeMode": "restart",
+                "DestPath": "secrets/upstreams.env",
+                "EmbeddedTmpl": "SOURCE_IDENTITY_INTERNAL_URL=https://{{- with nomadService \"identity-service-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSOURCE_PROJECTS_INTERNAL_URL=https://{{- with nomadService \"projects-service-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSOURCE_SANDBOX_INTERNAL_URL=https://{{- with nomadService \"sandbox-rental-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSOURCE_SECRETS_INTERNAL_URL=https://{{- with nomadService \"secrets-service-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "Envvars": true
+              }
+            ],
+            "User": "source_code_hosting_service"
+          }
+        ],
+        "Update": null
+      }
+    ],
+    "Type": "service"
+  }
+}

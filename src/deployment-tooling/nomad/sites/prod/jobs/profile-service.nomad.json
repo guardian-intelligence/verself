@@ -1,0 +1,143 @@
+{
+  "Job": {
+    "Datacenters": [
+      "dc1"
+    ],
+    "ID": "profile-service",
+    "Meta": {},
+    "Name": "profile-service",
+    "TaskGroups": [
+      {
+        "Count": 1,
+        "Name": "profile-service",
+        "Networks": [
+          {
+            "DynamicPorts": [
+              {
+                "HostNetwork": "loopback",
+                "Label": "internal_https"
+              },
+              {
+                "HostNetwork": "loopback",
+                "Label": "public_http"
+              }
+            ],
+            "Mode": "host"
+          }
+        ],
+        "Tasks": [
+          {
+            "Artifacts": [
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://profile-service",
+                "RelativeDest": "local"
+              }
+            ],
+            "Config": {
+              "args": [
+                "migrate",
+                "up"
+              ],
+              "command": "local/bin/profile-service"
+            },
+            "Driver": "raw_exec",
+            "Env": {
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+              "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
+              "OTEL_SERVICE_NAME": "profile-service-migration",
+              "SPIFFE_ENDPOINT_SOCKET": "unix:///run/spire-agent/sockets/agent.sock",
+              "VERSELF_AUTH_AUDIENCE": "370200564807548260",
+              "VERSELF_AUTH_ISSUER_URL": "https://auth.verself.sh",
+              "VERSELF_INTERNAL_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_internal_https}",
+              "VERSELF_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_public_http}",
+              "VERSELF_PG_CONN_MAX_IDLE_SECONDS": "300",
+              "VERSELF_PG_CONN_MAX_LIFETIME_SECONDS": "1800",
+              "VERSELF_PG_DSN": "postgres://profile_service@/profile?host=/var/run/postgresql\u0026sslmode=disable",
+              "VERSELF_PG_MAX_CONNS": "8",
+              "VERSELF_PG_MIN_CONNS": "1",
+              "VERSELF_SUPERVISOR": "nomad"
+            },
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": false
+            },
+            "Name": "profile-service-migrate",
+            "Resources": {
+              "CPU": 100,
+              "MemoryMB": 128
+            },
+            "User": "profile_service"
+          },
+          {
+            "Artifacts": [
+              {
+                "Chown": true,
+                "GetterSource": "verself-artifact://profile-service",
+                "RelativeDest": "local"
+              }
+            ],
+            "Config": {
+              "command": "local/bin/profile-service"
+            },
+            "Driver": "raw_exec",
+            "Env": {
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+              "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
+              "OTEL_SERVICE_NAME": "profile-service",
+              "SPIFFE_ENDPOINT_SOCKET": "unix:///run/spire-agent/sockets/agent.sock",
+              "VERSELF_AUTH_AUDIENCE": "370200564807548260",
+              "VERSELF_AUTH_ISSUER_URL": "https://auth.verself.sh",
+              "VERSELF_INTERNAL_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_internal_https}",
+              "VERSELF_LISTEN_ADDR": "127.0.0.1:${NOMAD_PORT_public_http}",
+              "VERSELF_PG_CONN_MAX_IDLE_SECONDS": "300",
+              "VERSELF_PG_CONN_MAX_LIFETIME_SECONDS": "1800",
+              "VERSELF_PG_DSN": "postgres://profile_service@/profile?host=/var/run/postgresql\u0026sslmode=disable",
+              "VERSELF_PG_MAX_CONNS": "8",
+              "VERSELF_PG_MIN_CONNS": "1",
+              "VERSELF_SUPERVISOR": "nomad"
+            },
+            "KillSignal": "SIGTERM",
+            "KillTimeout": 30000000000,
+            "Name": "profile-service",
+            "Resources": {
+              "CPU": 500,
+              "MemoryMB": 256
+            },
+            "RestartPolicy": {
+              "Attempts": 3,
+              "Delay": 15000000000,
+              "Interval": 300000000000,
+              "Mode": "delay"
+            },
+            "Services": [
+              {
+                "AddressMode": "auto",
+                "Name": "profile-service-internal-https",
+                "PortLabel": "internal_https",
+                "Provider": "nomad"
+              },
+              {
+                "AddressMode": "auto",
+                "Name": "profile-service-public-http",
+                "PortLabel": "public_http",
+                "Provider": "nomad"
+              }
+            ],
+            "Templates": [
+              {
+                "ChangeMode": "restart",
+                "DestPath": "secrets/upstreams.env",
+                "EmbeddedTmpl": "PROFILE_GOVERNANCE_AUDIT_URL=https://{{- with nomadService \"governance-service-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROFILE_IDENTITY_INTERNAL_URL=https://{{- with nomadService \"identity-service-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "Envvars": true
+              }
+            ],
+            "User": "profile_service"
+          }
+        ],
+        "Update": null
+      }
+    ],
+    "Type": "service"
+  }
+}

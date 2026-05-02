@@ -23,14 +23,9 @@ correctness invariants for this binary to encode.
 
 ## Phase boundaries
 
-This module is rolled out in four phases (see top-level plan).
-Phase 1: replace `src/cue-renderer/cmd/nomad-deploy` with the typed
-client (this directory).
-Phase 2: BEP-driven artifact resolution; fold `cmd/artifact-publish` here;
-delete `nomad-deploy-all.sh`.
-Phase 3: streaming Ansible parser; OTLP transport (since simplified
-to a direct SSH-forwarded SDK→bare-metal otelcol channel).
-Phase 4: identity + ledger; AXL deploy task collapses to one shell-out.
+This module owns deploy orchestration: BEP-driven artifact resolution,
+Nomad submit/monitor, streaming Ansible event capture, identity propagation,
+and ClickHouse ledger rows.
 
 ## Conventions
 
