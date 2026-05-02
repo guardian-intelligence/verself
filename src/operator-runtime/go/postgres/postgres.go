@@ -83,7 +83,11 @@ func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.C
 }
 
 func QueryTable(ctx context.Context, conn *pgx.Conn, query string) (opruntime.Table, string, error) {
-	rows, err := conn.Query(ctx, query)
+	return QueryTableArgs(ctx, conn, query)
+}
+
+func QueryTableArgs(ctx context.Context, conn *pgx.Conn, query string, args ...any) (opruntime.Table, string, error) {
+	rows, err := conn.Query(ctx, query, args...)
 	if err != nil {
 		return opruntime.Table{}, "", err
 	}

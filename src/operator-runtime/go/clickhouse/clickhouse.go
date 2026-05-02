@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -113,7 +114,12 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) QueryTable(ctx context.Context, query string) (opruntime.Table, error) {
-	rows, err := c.Conn.Query(ctx, query)
+	return c.QueryTableParams(ctx, query, nil)
+}
+
+func (c *Client) QueryTableParams(ctx context.Context, query string, params map[string]string) (opruntime.Table, error) {
+	args := namedArgs(params)
+	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {
 		return opruntime.Table{}, err
 	}
@@ -147,7 +153,12 @@ func (c *Client) QueryTable(ctx context.Context, query string) (opruntime.Table,
 }
 
 func (c *Client) QuerySingleStringColumn(ctx context.Context, query string) ([]string, error) {
-	rows, err := c.Conn.Query(ctx, query)
+	return c.QuerySingleStringColumnParams(ctx, query, nil)
+}
+
+func (c *Client) QuerySingleStringColumnParams(ctx context.Context, query string, params map[string]string) ([]string, error) {
+	args := namedArgs(params)
+	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +175,24 @@ func (c *Client) QuerySingleStringColumn(ctx context.Context, query string) ([]s
 		return nil, err
 	}
 	return out, nil
+}
+
+func namedArgs(params map[string]string) []any {
+	if len(params) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	args := make([]any, 0, len(keys))
+	for _, key := range keys {
+		// clickhouse-go v2.40 requires string values for native
+		// {name:Type} query parameters; ClickHouse performs the target cast.
+		args = append(args, ch.Named(key, params[key]))
+	}
+	return args
 }
 
 type operatorConfig struct {

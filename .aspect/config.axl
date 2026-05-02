@@ -63,6 +63,7 @@ load(
 )
 load(
     ".aspect/tasks/billing.axl",
+    billing_seed = "seed",
     billing_clock = "clock",
     billing_state = "state",
     billing_documents = "documents",
@@ -137,6 +138,7 @@ def config(ctx):
     ctx.tasks.add(persona_user_state)
 
     # aspect billing ...
+    ctx.tasks.add(billing_seed)
     ctx.tasks.add(billing_clock)
     ctx.tasks.add(billing_state)
     ctx.tasks.add(billing_documents)

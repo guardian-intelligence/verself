@@ -6,7 +6,6 @@ not preserved; use `aspect mail send --to=ceo` / `--to=agents`.
 
 load(
     ".aspect/lib/helpers.axl",
-    "SUBSTRATE_DIR",
     "checked_spawn",
     "inventory_check",
     "require_arg",
@@ -16,6 +15,13 @@ load(
 
 _MS = "src/mailbox-service"
 _SITE = "prod"
+
+def _aspect_operator_bin(ctx):
+    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
+    if rc != 0:
+        return ""
+    return ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _mailbox_tool(ctx, *args):
     if inventory_check(ctx, _SITE) != 0:
@@ -70,43 +76,30 @@ def _send_impl(ctx):
         return 1
     if not require_arg(ctx, "body", ctx.args.body):
         return 1
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
+        return 1
     return checked_spawn(
         ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/mail-send.sh"),
-        ["-t", ctx.args.to, "-s", ctx.args.subject, "-b", ctx.args.body],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "mail-send.sh",
+        bin,
+        ["mail", "send", "--repo-root", ws_path(ctx), "--to", ctx.args.to, "--subject", ctx.args.subject, "--body", ctx.args.body],
+        cwd = ws_path(ctx),
+        label = "aspect-operator mail send",
     )
 
 def _passwords_impl(ctx):
     if inventory_check(ctx, _SITE) != 0:
         return 1
-    main_yml = ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/main.yml")
-    secrets = ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/secrets.sops.yml")
-    domain_r = (ctx.std.process.command("python3")
-                .args([
-                    "-c",
-                    "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['verself_domain'])",
-                    main_yml,
-                ])
-                .stdout("piped").stderr("piped")
-                .spawn().wait_with_output())
-    if domain_r.status.code != 0:
-        ctx.std.io.stderr.write("ERROR: could not read verself_domain from " + main_yml + "\n")
+    bin = _aspect_operator_bin(ctx)
+    if bin == "":
         return 1
-    domain = domain_r.stdout.strip()
-    for label in ["ceo", "agents"]:
-        ctx.std.io.stdout.write(label + "@" + domain + ":\n")
-        rc = checked_spawn(
-            ctx,
-            "sops",
-            ["-d", "--extract", "[\"stalwart_" + label + "_password\"]", secrets],
-            label = "sops --extract stalwart_" + label + "_password",
-        )
-        if rc != 0:
-            return rc
-        ctx.std.io.stdout.write("\n")
-    return 0
+    return checked_spawn(
+        ctx,
+        bin,
+        ["mail", "passwords", "--repo-root", ws_path(ctx)],
+        cwd = ws_path(ctx),
+        label = "aspect-operator mail passwords",
+    )
 
 list_task = task(
     implementation = _list_impl,

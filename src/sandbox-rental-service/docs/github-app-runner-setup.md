@@ -86,7 +86,7 @@ complete platform-org GitHub credential set.
 Start the Verself side of the install flow as a sandbox org admin:
 
 ```bash
-source <(src/host-configuration/scripts/assume-persona.sh platform-admin --print)
+source <(aspect persona assume platform-admin --print)
 
 curl -sS -X POST "https://sandbox.api.<domain>/api/v1/github/installations/connect" \
   -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \
