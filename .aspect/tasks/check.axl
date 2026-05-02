@@ -120,10 +120,10 @@ def _ansible_lint(ctx):
 def _voice(ctx):
     return checked_spawn(
         ctx,
-        "corepack",
-        ["pnpm", "--filter", "@verself/company", "run", "lint:voice"],
+        "vp",
+        ["run", "@verself/company#lint:voice"],
         cwd = ws_path(ctx, "src/viteplus-monorepo"),
-        label = "pnpm lint:voice",
+        label = "vp run @verself/company#lint:voice",
     )
 
 def _supply_chain(ctx):

@@ -30,16 +30,20 @@ def viteplus_source_package(npm_name, srcs):
     )
 
 def viteplus_app(npm_name, srcs):
-    """Bazel surface for a viteplus app — deliberately narrow.
+    """Bazel surface for a viteplus app.
 
-    `:node_app_nomad_artifact` runs `vp build` as a local, unsandboxed action.
-    Putting Vite/Rolldown inside a
-    Bazel action sandbox breaks TanStack Start's route-level code splitting:
-    the compiler plugin computes route filenames via `import.meta.url`, and
-    the `node_modules/.aspect_rules_js/...` layout in the sandbox produces a
-    12-level-deep relative path that the plugin's chunk-split heuristic
-    rejects, collapsing every route into a single 1.6 MB monolithic main
-    bundle (vs. ~148 route-split chunks the source-tree build produces).
+    `:node_app_nomad_artifact` runs `vp build` from the source tree as a local,
+    unsandboxed action. Deploy preflights materialize the Vite+ workspace with
+    `vp install --frozen-lockfile`; Bazel declares the app/workspace input set
+    and decides when the packaging action reruns.
+
+    Putting Vite/Rolldown inside a Bazel action sandbox breaks TanStack Start's
+    route-level code splitting: the compiler plugin computes route filenames
+    via `import.meta.url`, and the `node_modules/.aspect_rules_js/...` layout
+    in the sandbox produces a 12-level-deep relative path that the plugin's
+    chunk-split heuristic rejects, collapsing every route into a single 1.6 MB
+    monolithic main bundle (vs. ~148 route-split chunks the source-tree build
+    produces).
 
     The base app macro builds the small hermetic OTel preload bundle
     (`:instrumentation_bundle`) — `instrumentation.mts` plus its
@@ -113,6 +117,7 @@ def viteplus_node_app_artifact(name, output, migration_entry = None, migration_d
     srcs = [
         ":instrumentation_bundle",
         ":sources",
+        "//src/viteplus-monorepo:workspace_sources",
     ]
     migration_cmds = ""
     if migration_entry:
@@ -165,12 +170,16 @@ chmod 0755 "$$tmp/bin/{output}-migrate"
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
+home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
+test -n "$$home"
+vp="$$home/.vite-plus/bin/vp"
+test -x "$$vp"
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 
 cd "{package_dir}"
 rm -rf .output
-../../node_modules/.bin/vp build
+"$$vp" build
 
 mkdir -p "$$tmp/app" "$$tmp/bin"
 cp -a .output "$$tmp/app/.output"
