@@ -8,6 +8,7 @@ go_library(
         "billing.go",
         "detect_intrusions.go",
         "dev.go",
+        "edge.go",
         "db_ch.go",
         "db_common.go",
         "db.go",

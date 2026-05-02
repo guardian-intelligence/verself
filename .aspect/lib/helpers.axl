@@ -21,6 +21,8 @@ DEFAULT_SITE = "prod"
 
 VERSELF_DEPLOY_TARGET = "//src/deployment-tools/cmd/verself-deploy:verself-deploy"
 VERSELF_DEPLOY_BIN = "bazel-bin/src/deployment-tools/cmd/verself-deploy/verself-deploy_/verself-deploy"
+ASPECT_OPERATOR_TARGET = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+ASPECT_OPERATOR_BIN = "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -201,6 +203,20 @@ def build_verself_deploy(ctx):
     if rc != 0:
         return ""
     return ws_path(ctx, VERSELF_DEPLOY_BIN)
+
+def build_aspect_operator(ctx):
+    """Build the aspect-operator binary and return its absolute path, or
+    empty string on failure.
+    """
+    rc = checked_spawn(
+        ctx, "bazelisk",
+        ["build", ASPECT_OPERATOR_TARGET],
+        cwd = ws_path(ctx),
+        label = "bazelisk build " + ASPECT_OPERATOR_TARGET,
+    )
+    if rc != 0:
+        return ""
+    return ws_path(ctx, ASPECT_OPERATOR_BIN)
 
 def tool_version(ctx, program, *args):
     """Run `<program> <args...>` and return the first stdout line, or None."""

@@ -39,6 +39,10 @@
 //	aspect-operator dev verself-web
 //	    Operator local-development tunnel helpers.
 //
+//	aspect-operator edge check|manifest
+//	    Operator-side public edge contract checker derived from topology,
+//	    authored Nomad jobs, and HAProxy template references.
+//
 // Source of truth for principals, slot count, and well-known paths:
 // src/host-configuration/ansible/group_vars/all/generated/ops.yml.
 package main
@@ -91,6 +95,8 @@ func run(args []string) error {
 		return cmdMail(rest)
 	case "dev":
 		return cmdDev(rest)
+	case "edge":
+		return cmdEdge(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -113,6 +119,7 @@ Subcommands:
   persona           Persona credential and fixture tooling
   mail              Mail operator helpers
   dev               Local development helpers
+  edge              Public edge contract checker
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)

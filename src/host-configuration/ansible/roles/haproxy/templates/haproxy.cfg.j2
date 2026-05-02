@@ -34,15 +34,18 @@ VERSELF_UPSTREAM_{{ route.to.component | upper }}_{{ topology_endpoints[route.to
   http-request wait-for-body time 1s at-least {{ limit + 1 }} if has_transfer_encoding
   http-request deny deny_status 413 if { req.body_size gt {{ limit }} }
 {%- endmacro %}
-{% macro dynamic_nomad_backend(route, proto) -%}
+{% macro nomad_upstream_backend(upstream, proto, server_guid) -%}
   # Dynamic set-dst backends disable reuse so pooled connections cannot cross Nomad allocations.
   http-reuse never
-  http-request set-var(txn.upstream_addr) str({{ upstream_key(route) }}),map({{ haproxy_map_dir }}/upstreams.map)
+  http-request set-var(txn.upstream_addr) str({{ upstream }}),map({{ haproxy_map_dir }}/upstreams.map)
   acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
   http-request deny deny_status 502 unless valid_nomad_upstream
   http-request set-dst var(txn.upstream_addr),field(1,:)
   http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0{% if proto == 'h2c' %} proto h2{% endif %}
+  server dyn 0.0.0.0:0{% if proto == 'h2c' %} proto h2{% endif %} guid {{ server_guid }}
+{%- endmacro %}
+{% macro dynamic_nomad_backend(route, proto) -%}
+{{ nomad_upstream_backend(upstream_key(route), proto, backend_name(route) ~ '_srv_dyn') }}
 {%- endmacro %}
 
 global
@@ -50,6 +53,8 @@ global
   stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
   crt-base {{ haproxy_cert_dir }}
   hard-stop-after 5s
+  expose-experimental-directives
+  shm-stats-file /haproxy-edge-stats
   ssl-default-bind-options ssl-min-ver TLSv1.3 no-tls-tickets
   ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
 
@@ -66,11 +71,13 @@ defaults
   log-format "client_ip=%ci client_port=%cp method=%HM host=%[var(txn.host)] path=%HP status=%ST bytes=%B duration_ms=%Ta frontend=%ft backend=%b server=%s"
 
 frontend fe_http
+  guid fe_http
   bind {{ topology_gateways.public_haproxy.host }}:80
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   http-request redirect scheme https code 308
 
 frontend fe_https
+  guid fe_https
   bind {{ topology_gateways.public_haproxy.host }}:443 ssl crt {{ haproxy_cert_dir }} alpn h2,http/1.1
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   acl from_cloudflare src {{ haproxy_cloudflare_trusted_proxies | join(' ') }}
@@ -122,6 +129,7 @@ frontend fe_https
   use_backend %[var(txn.host),map({{ haproxy_map_dir }}/public-hosts.map,be_not_found)]
 
 frontend fe_firecracker_host_http
+  guid fe_firecracker_host_http
   bind {{ haproxy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker_host_service.endpoints.host_http.port }}
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   http-request set-header X-Forwarded-Proto http
@@ -143,133 +151,99 @@ frontend fe_firecracker_host_http
   default_backend be_forbidden
 
 frontend fe_nomad_artifacts
+  guid fe_nomad_artifacts
   bind {{ topology_artifacts.nomad.origin.listen_host }}:{{ topology_artifacts.nomad.origin.port }} ssl crt /etc/verself/pki/nomad-artifacts-server-haproxy.pem alpn h2,http/1.1
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   default_backend be_garage_nomad_artifacts
 
 backend be_not_found
+  guid be_not_found
   http-request return status 404
 
 backend be_forbidden
+  guid be_forbidden
   http-request return status 403
 
 backend be_billing_stripe_webhook
+  guid be_billing_stripe_webhook
 {{ api_security_headers() }}
 {{ body_limit_rules(65536) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP', 'h2c', 'be_billing_stripe_webhook_srv_dyn') }}
 
 backend be_sandbox_github_actions_webhook
+  guid be_sandbox_github_actions_webhook
 {{ api_security_headers() }}
 {{ body_limit_rules(1048576) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_sandbox_github_actions_webhook_srv_dyn') }}
 
 backend be_sandbox_forgejo_actions_webhook
+  guid be_sandbox_forgejo_actions_webhook
 {{ api_security_headers() }}
 {{ body_limit_rules(1048576) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_sandbox_forgejo_actions_webhook_srv_dyn') }}
 
 backend be_sandbox_github_installation_callback
+  guid be_sandbox_github_installation_callback
 {{ api_security_headers() }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_sandbox_github_installation_callback_srv_dyn') }}
 
 backend be_sandbox_small_json_mutation
+  guid be_sandbox_small_json_mutation
 {{ api_security_headers() }}
 {{ body_limit_rules(8192) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_sandbox_small_json_mutation_srv_dyn') }}
 
 backend be_sandbox_execution_submit
+  guid be_sandbox_execution_submit
 {{ api_security_headers() }}
 {{ body_limit_rules(65536) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_sandbox_execution_submit_srv_dyn') }}
 
 backend be_sandbox_execution_schedule_create
+  guid be_sandbox_execution_schedule_create
 {{ api_security_headers() }}
 {{ body_limit_rules(65536) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_sandbox_execution_schedule_create_srv_dyn') }}
 
 backend be_source_forgejo_webhook
+  guid be_source_forgejo_webhook
 {{ api_security_headers() }}
 {{ body_limit_rules(1048576) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP', 'h2c', 'be_source_forgejo_webhook_srv_dyn') }}
 
 backend be_zitadel_action_api_credentials
+  guid be_zitadel_action_api_credentials
 {{ api_security_headers() }}
 {{ body_limit_rules(65536) }}
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_IDENTITY_SERVICE_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_IDENTITY_SERVICE_PUBLIC_HTTP', 'h2c', 'be_zitadel_action_api_credentials_srv_dyn') }}
 
 backend be_firecracker_sandbox_h2c
-  http-request set-var(txn.upstream_addr) str(VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP),map({{ haproxy_map_dir }}/upstreams.map)
-  acl valid_nomad_upstream var(txn.upstream_addr) -m reg ^127\.0\.0\.1:[0-9]+$
-  http-request deny deny_status 502 unless valid_nomad_upstream
-  http-request set-dst var(txn.upstream_addr),field(1,:)
-  http-request set-dst-port var(txn.upstream_addr),field(2,:)
-  server dyn 0.0.0.0:0 proto h2
+  guid be_firecracker_sandbox_h2c
+{{ nomad_upstream_backend('VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP', 'h2c', 'be_firecracker_sandbox_h2c_srv_dyn') }}
 
 backend be_firecracker_forgejo
+  guid be_firecracker_forgejo
   http-request set-header Host {{ forgejo_domain }}
   http-request set-header X-Forwarded-Host {{ forgejo_domain }}
-  server forgejo {{ topology_endpoints.forgejo.endpoints.http.address }}
+  server forgejo {{ topology_endpoints.forgejo.endpoints.http.address }} guid be_firecracker_forgejo_srv_forgejo
 
 backend be_garage_nomad_artifacts
+  guid be_garage_nomad_artifacts
   balance random
 {% for garage_node in topology_clusters.garage.nodes %}
-  server garage_{{ loop.index0 }} {{ topology_clusters.garage.host }}:{{ garage_node.s3_port }}
+  server garage_{{ loop.index0 }} {{ topology_clusters.garage.host }}:{{ garage_node.s3_port }} guid be_garage_nomad_artifacts_srv_garage_{{ loop.index0 }}
 {% endfor %}
 
 {% for route in topology_routes | selectattr('gateway', 'equalto', 'public_haproxy') %}
 backend {{ backend_name(route) }}
+  guid {{ backend_name(route) }}
 {% if route.kind == 'operator_origin' %}
   http-request set-header Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Proto https
-  server pomerium {{ topology_endpoints.pomerium.endpoints.http.address }}
+  server pomerium {{ topology_endpoints.pomerium.endpoints.http.address }} guid {{ backend_name(route) }}_srv_pomerium
 {% elif route.to.component == 'zitadel' %}
-  server zitadel {{ topology_endpoints.zitadel.endpoints.http.address }} proto h2
+  server zitadel {{ topology_endpoints.zitadel.endpoints.http.address }} proto h2 guid {{ backend_name(route) }}_srv_zitadel
 {% elif route.to.component == 'stalwart' %}
   acl jmap_session path -i /jmap/session
   acl stalwart_direct path -i /.well-known/jmap
@@ -284,8 +258,8 @@ backend {{ backend_name(route) }}
   http-request return status 404 unless mail_allowed
   use-server mailbox if jmap_session
   use-server stalwart if stalwart_direct !jmap_session
-  server mailbox 0.0.0.0:0 proto h2
-  server stalwart {{ topology_endpoints.stalwart.endpoints.http.address }}
+  server mailbox 0.0.0.0:0 proto h2 guid {{ backend_name(route) }}_srv_mailbox
+  server stalwart {{ topology_endpoints.stalwart.endpoints.http.address }} guid {{ backend_name(route) }}_srv_stalwart
 {% elif route.to.component == 'source_code_hosting_service' and route.to.interface == 'git_smart_http' %}
   acl source_git method GET POST
   acl source_git_path path_reg ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack|git-receive-pack)$

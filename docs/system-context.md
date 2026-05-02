@@ -4,7 +4,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/host-configuration/ansible/group_vars/all/generated/` and service-owned Nomad metadata under each deployable package. Host firewall files are source-owned under `src/host-configuration/ansible/rendered/`. Bazel-input artefacts are authored in their owner packages: `src/host-configuration/binaries/`, `src/dev-tools/binaries/`, and `src/vm-orchestrator/guest-images/`. Run `python3 src/host-configuration/scripts/services-doctor.py` to cross-check topology endpoints against live listeners on the box (supports `--format=json|nftables`).
+High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/host-configuration/ansible/group_vars/all/generated/` and service-owned Nomad metadata under each deployable package. Host firewall files are source-owned under `src/host-configuration/ansible/rendered/`. Bazel-input artefacts are authored in their owner packages: `src/host-configuration/binaries/`, `src/dev-tools/binaries/`, and `src/vm-orchestrator/guest-images/`. Run `aspect operator edge --action=check` to validate public edge topology, Nomad service registrations, HAProxy upstream references, and HAProxy GUID stability. Run `python3 src/host-configuration/scripts/services-doctor.py` to cross-check topology endpoints against live listeners on the box (supports `--format=json|nftables`).
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
@@ -18,6 +18,14 @@ live at `<service>.api.<domain>` such as `billing.api.<domain>`,
 `sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code does not
 call service API origins directly; TanStack Start server functions preserve
 the same-origin CSP and attach service credentials server-side.
+
+HAProxy 3.3 with AWS-LC terminates public TLS. Ansible renders `haproxy.cfg`
+from authored routes, and deployment reconciles `/etc/haproxy/maps/upstreams.map`
+from Nomad's native service catalog after Nomad allocations become healthy.
+Nomad-supervised public origins are therefore keyed by topology route/backend
+identity and Nomad service name, not by committed static ports. HAProxy GUIDs
+use those stable frontend, backend, and server identities so reload-persistent
+statistics can match objects across reloads via `shm-stats-file`.
 
 ## Topology and Replication
 
