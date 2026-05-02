@@ -57,10 +57,9 @@ Nomad jobs from that cache.
 Host convergence, OpenTofu provisioning, and deploy wrappers live in
 `src/substrate/`, `src/provision/`, and `.aspect/`.
 
-The Bazel-owned third-party server-tool package definitions, including
-`//src/cue-renderer/binaries:server_tools.tar.zst`, live under
-`src/cue-renderer/binaries/` because the tarball's contents are
-catalog-driven (the catalog declares both the version pins and the
-target label).
+Bazel-owned package definitions live with their owners:
+`src/substrate/binaries/` for server and substrate host tools,
+`src/devtools/binaries/` for controller dev tools, and
+`src/vm-orchestrator/guest-images/` for guest-image inputs.
 
 Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.

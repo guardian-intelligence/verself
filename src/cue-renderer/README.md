@@ -26,9 +26,8 @@ with `--output-dir=.cache/render/<site>/`, producing:
 - `jobs/<component>.nomad.json`, `jobs/index.json` — Nomad job specs and
   the controller-side submit/build enumeration for application components.
 
-Bazel-input artefacts (`binaries/{server,dev,substrate}_tools.MODULE.bazel`,
-`binaries/{server,dev,substrate}_tools.bzl`, `vm-orchestrator/guest-images/guest_images.MODULE.bazel`)
-are still tracked in git via `write_source_files` because Bazel evaluates them at load time.
+Bazel-input artefacts are authored in their owning packages rather than
+rendered from CUE.
 
 The renderer also emits OTel pipeline spans (`cue_renderer.run`,
 `topology.cue.export_*`, `topology.generated.render_artifact`) into
@@ -67,9 +66,8 @@ renderers get more typed access for free.
 `generate` materialises every registered renderer under `--output-dir`;
 the operator entry point is `aspect render --site=<site>` which sets it
 to `.cache/render/<site>/` and stages the inventory + hand-written
-group_vars alongside. `bazelisk run //src/cue-renderer:dev_update` refreshes
-the Bazel-input artefacts via `write_source_files`; `bazelisk test
-//src/cue-renderer:dev_check` fails on drift.
+group_vars alongside. `bazelisk test //src/cue-renderer:dev_check`
+exercises the renderer registry and committed prod topology.
 
 ## Adding a renderer
 
@@ -86,13 +84,9 @@ the Bazel-input artefacts via `write_source_files`; `bazelisk test
    field there and the matching `Decode` call in `internal/load/`.
 4. Implement `render.Renderer` in `internal/render/<artefact>/`.
 5. Register it in `cmd/cue-renderer/main.go`'s `renderers()`.
-6. If the renderer's output is a Bazel input (a `*.MODULE.bazel`,
-   `*.bzl`, or other file Bazel evaluates at load time), add a genrule
-   in `src/cue-renderer/BUILD.bazel` and register it in `_RENDERED_FILES`
-   under `write_source_files(name = "freshness")`. Per-component
-   nftables fragments and Nomad job specs are not tracked through
-   write_source_files; they flow through `aspect render --site=<site>`
-   into `.cache/render/<site>/` along with the rest of the deploy cache.
+6. Renderers write deploy-cache artifacts only. Files Bazel evaluates at
+   load time belong in authored Bazel/Starlark files under the owning
+   package.
 
 ## Boundaries that intentionally stay outside CUE
 

@@ -73,56 +73,21 @@ intentionally not content-pinned; each entry carries a
 `risk_acknowledgement` string explaining why upstream archive integrity
 is acceptable for that package.
 
-## Canonical pattern: CUE → http_file → pkg_tar → Ansible-untar
+## Tool Catalog Boundary
 
-Worked example for server tools — the dev-tools side mirrors this
-exactly. Read these files together:
+Bazel-input tool catalog files are authored outside cue-renderer:
 
-1. `catalog/versions.cue` declares the truth: `serverToolDownloads` (one
-   entry per binary with name/url/sha256/downloaded_file_path) and
-   `serverToolPackaging` (the layout: tar_single, zip_single, raw,
-   archive_dir, symlinks).
-2. `internal/render/bazelmodule/bazelmodule.go` reads `serverToolDownloads`
-   and emits `binaries/server_tools.MODULE.bazel` (one `http_file()` per
-   entry).
-3. `internal/render/bazelservertools/bazelservertools.go` reads
-   `serverToolPackaging` and emits `binaries/server_tools.bzl` (data
-   constants plus a Starlark `server_tools_archive()` macro).
-4. Root `MODULE.bazel` includes `server_tools.MODULE.bazel`. Root
-   `binaries/BUILD.bazel` calls `server_tools_archive()`. Bazel
-   produces `:server_tools.tar.zst`.
-5. `roles/substrate_profile/tasks/static_binaries.yml` runs
-   `bazelisk build`, cqueries the output path, stats the sha256,
-   uploads, and untars to `/`.
+- `src/substrate/binaries/` owns server and first-party substrate host
+  tool archives.
+- `src/devtools/binaries/` and `src/devtools/catalog.yml` own controller
+  dev-tool archives and setup-dev inputs.
+- `src/vm-orchestrator/guest-images/` owns guest-image upstream downloads
+  and guest substrate version metadata.
 
-The dev-tools mirror uses `devToolDownloads` + `devToolPackaging`,
-emits `dev_tools.MODULE.bazel` + `dev_tools.bzl`, and produces
-`:dev_tools.tar.zst`. `devToolsArchive: { bazel_label, version }`
-exposes the consumer surface (parallel to `serverTools`); Ansible's
-`roles/dev_tools/tasks/dev_tools_archive.yml` reads those two fields
-to request the artefact, marker-gates the re-unpack, and emits
-`dev_tools.artifact.publish` + per-tool `dev_tool.version_check`
-spans (one per tool tagged `tier: pinned_http_file`).
-
-Adding a new pinned_http_file tool is now exactly:
-1. Add a `versions.development.<name>` pin.
-2. Add a `devTools.<name>: { tier: "pinned_http_file", version, sha256, url, install_path, version_cmd }` entry.
-3. Add a matching `devToolDownloads.<name>` entry referencing the
-   above (sha/url come from `devTools.<name>` to keep one source of
-   truth).
-4. Add the layout row in the appropriate `devToolPackaging` list
-   (`raw` for prebuilt single binaries, `tar_single` for one binary
-   from an archive, etc.).
-5. `bazelisk run //src/cue-renderer:dev_update`.
-
-`MODULE.bazel`, `dev_tools.bzl`, and `catalog.yml` regenerate; the
-`TestDevToolPinnedHTTPFileTriangle` invariant test keeps the three
-blocks coherent. No Go edits, no Ansible edits.
-
-A new packaging *shape* (e.g. dev tools want a `.deb` member install
-the way server tools do) is the rare case where the renderer extends
-— wire a new field through `bazeldevtools.go` and add a Starlark
-helper.
+Do not add new renderers for `*.MODULE.bazel`, `*.bzl`, or setup-dev
+catalog files. Those files are evaluated by Bazel or used before a
+render cache exists, so they belong as authored inputs in their owning
+packages.
 
 ## Renderer integration recipe
 
