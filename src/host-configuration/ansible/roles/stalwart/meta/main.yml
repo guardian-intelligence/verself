@@ -1,5 +1,2 @@
 ---
-# substrate_profile: provides stalwart binary at verself_bin.
-dependencies:
-  - role: substrate_profile
-  - role: nftables
+dependencies: []

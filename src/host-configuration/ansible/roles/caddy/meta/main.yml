@@ -1,4 +1,2 @@
 ---
-# substrate_profile: provides caddy at verself_bin.
-dependencies:
-  - role: substrate_profile
+dependencies: []
