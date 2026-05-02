@@ -194,21 +194,13 @@
     sysctl_file: /etc/sysctl.d/99-verself.conf
     reload: true
 
-# The source-owned Firecracker nftables file carries a literal
-# __VERSELF_UPLINK__ placeholder; substitute it with the resolved uplink
-# interface before reload. Ansible owns only this runtime host fact.
+# Keep placeholder substitution controller-side; copy-then-replace rewrites
+# the host file on every run and triggers needless network restarts.
 - name: Stage rendered Firecracker nftables ruleset
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/firecracker.nft"
+    content: "{{ lookup('ansible.builtin.file', platform_rendered_dir + '/etc/nftables.d/firecracker.nft', rstrip=False) | replace('__VERSELF_UPLINK__', firecracker_resolved_uplink) }}"
     dest: /etc/nftables.d/firecracker.nft
     mode: "0644"
-  notify: restart firecracker networking
-
-- name: Substitute resolved uplink interface into Firecracker ruleset
-  ansible.builtin.replace:
-    path: /etc/nftables.d/firecracker.nft
-    regexp: __VERSELF_UPLINK__
-    replace: "{{ firecracker_resolved_uplink }}"
   notify: restart firecracker networking
 
 - name: Install Firecracker host networking setup script

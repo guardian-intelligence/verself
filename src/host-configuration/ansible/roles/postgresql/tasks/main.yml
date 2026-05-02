@@ -290,18 +290,30 @@
         label: "{{ item.name }}"
       no_log: true
 
-    # Peer-auth-only roles must have no password at all — otherwise the 127.0.0.1
-    # SCRAM rule in pg_hba.conf would still accept a historical password from a
-    # previous cutover. postgresql_user won't clear a password by omission, so
-    # we clear it explicitly on every converge.
+    # postgresql_user will not clear omitted passwords; query first so a clean
+    # peer-auth-only role does not report changed forever.
+    - name: Read peer-auth-only PostgreSQL roles with lingering passwords
+      community.postgresql.postgresql_query:
+        query: >-
+          SELECT rolname
+          FROM pg_authid
+          WHERE rolname = ANY(%s)
+            AND rolpassword IS NOT NULL
+        positional_args:
+          - ["stalwart", "temporal"]
+      register: postgresql_peer_roles_with_password
+
     - name: Clear password on peer-auth-only PostgreSQL roles
       community.postgresql.postgresql_query:
-        query: "ALTER ROLE {{ item }} PASSWORD NULL"
-      loop:
-        - stalwart
-        - temporal
+        query: "ALTER ROLE {{ item.rolname }} PASSWORD NULL"
+      loop: >-
+        {{
+          postgresql_peer_roles_with_password.query_result
+          if (postgresql_peer_roles_with_password.rowcount | int) > 0
+          else []
+        }}
       loop_control:
-        label: "{{ item }}"
+        label: "{{ item.rolname }}"
 
     - name: Ensure application PostgreSQL databases exist
       community.postgresql.postgresql_db:
