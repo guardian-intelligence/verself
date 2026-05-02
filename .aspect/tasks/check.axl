@@ -1,10 +1,10 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|supply-chain|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: scripts → edge → ansible → voice → conversions → vet → lint → test.
+fast-failure order: supply-chain → scripts → edge → ansible → voice → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "build_aspect_operator", "checked_spawn", "render_site", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "render_site", "ws_path")
 
 _GO_DIRS = [
     "src/vm-orchestrator",
@@ -134,6 +134,18 @@ def _voice(ctx):
         label = "pnpm lint:voice",
     )
 
+def _supply_chain(ctx):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    return checked_spawn(
+        ctx,
+        bin,
+        ["supply-chain", "check", "--repo-root", ws_path(ctx)],
+        cwd = ws_path(ctx),
+        label = "verself-deploy supply-chain check",
+    )
+
 _CHECKERS = {
     "go-test": _go_test,
     "go-vet": _go_vet,
@@ -143,10 +155,11 @@ _CHECKERS = {
     "edge": _edge,
     "ansible": _ansible_lint,
     "voice": _voice,
+    "supply-chain": _supply_chain,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["scripts", "edge", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["supply-chain", "scripts", "edge", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -164,7 +177,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|supply-chain|all).",
     args = {
         "kind": args.string(
             default = "all",

@@ -2,6 +2,24 @@ packages:
   - apps/*
   - packages/*
 
+minimumReleaseAge: 4320
+strictDepBuilds: true
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+dangerouslyAllowAllBuilds: false
+verifyDepsBeforeRun: error
+packageManagerStrict: true
+packageManagerStrictVersion: true
+
+packageExtensions:
+  "@voidzero-dev/vite-plus-core@*":
+    dependencies:
+      picomatch: 4.0.4
+
+patchedDependencies:
+  srvx@0.11.15: patches/srvx@0.11.15.patch
+
 catalog:
   "@base-ui/react": ^1.4.0
   "@hey-api/openapi-ts": 0.95.0
