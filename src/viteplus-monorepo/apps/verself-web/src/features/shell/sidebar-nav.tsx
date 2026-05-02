@@ -6,7 +6,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@verself/ui/components/ui/sidebar";
-import { cn } from "@verself/ui";
+import { cn } from "@verself/ui/lib/utils";
 import { isPathActive, type NavEntry } from "./nav-config";
 
 export function SidebarNavGroup({

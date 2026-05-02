@@ -11,10 +11,6 @@
     "**/*.css"
   ],
   "exports": {
-    ".": {
-      "types": "./src/index.tsx",
-      "default": "./src/index.tsx"
-    },
     "./globals.css": "./src/styles/globals.css",
     "./lib/utils": {
       "types": "./src/lib/utils.ts",

@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
 } from "@verself/ui/components/ui/popover";
 import { Skeleton } from "@verself/ui/components/ui/skeleton";
-import { cn } from "@verself/ui";
+import { cn } from "@verself/ui/lib/utils";
 import {
   Page,
   PageActions,

@@ -1,6 +1,6 @@
 import { Link, type ErrorComponentProps, type NotFoundRouteProps } from "@tanstack/react-router";
-import { Skeleton } from "@verself/ui";
 import { Button } from "@verself/ui/components/ui/button";
+import { Skeleton } from "@verself/ui/components/ui/skeleton";
 import { EmptyState } from "./empty-state";
 import { ErrorCallout } from "./error-callout";
 

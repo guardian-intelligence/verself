@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { cn } from "./index.tsx";
+import { cn } from "./utils.ts";
 
 describe("cn", () => {
   it("merges class names", () => {

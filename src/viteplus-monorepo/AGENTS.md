@@ -115,7 +115,7 @@ Electric SQL delivers real-time data via `useLiveQuery`. This is not a React Que
 
 ## UI Components
 
-- `cn()` and `Skeleton` are in the shared `@verself/ui` package (`packages/ui/`). Import as `import { cn, Skeleton } from "@verself/ui"`.
+- `cn()` and `Skeleton` are in the shared `@verself/ui` package (`packages/ui/`). Import from canonical subpaths: `@verself/ui/lib/utils` and `@verself/ui/components/ui/skeleton`.
 - App-specific components live in `src/components/` (e.g. `error-callout.tsx`). Cross-feature panels live under `src/features/<feature>/` (e.g. `features/billing/entitlements/`).
 - shadcn-compatible theme tokens (OKLCH) are in `src/styles/app.css` via Tailwind v4's `@theme` directive.
 

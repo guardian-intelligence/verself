@@ -10,7 +10,7 @@ own sidebar shell until the planned workshop migration of the console.
 
 Read @src/viteplus-monorepo/packages/ui/src/components/ui/page.tsx for visual hierarchy rules.
 
-Lives at `src/viteplus-monorepo/apps/verself-web/` within a pnpm workspace managed by Vite+. Shared UI primitives (`cn`, `Skeleton`) come from `@verself/ui` (`packages/ui/`).
+Lives at `src/viteplus-monorepo/apps/verself-web/` within a pnpm workspace managed by Vite+. Shared UI primitives (`cn`, `Skeleton`) come from canonical `@verself/ui` subpath exports (`packages/ui/`).
 
 ## React Patterns
 
