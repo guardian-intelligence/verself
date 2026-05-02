@@ -25,10 +25,6 @@ export const shortTimeoutMS = 5_000;
 export const pollIntervalMS = 100;
 
 const routeBaseURL = normalizeBaseURL(env.baseURL);
-const allowedWarningPatterns = [
-  // The edge stack currently emits both legacy and modern policy headers.
-  /Feature-Policy header: Some features are specified in both Feature-Policy and Permissions-Policy header: payment/i,
-];
 
 type ConsoleEntry = {
   readonly locationUrl: string;
@@ -93,10 +89,6 @@ class BrowserMonitor {
 
     const unexpectedConsoleMessages = this.consoleMessages.filter((message) => {
       if (message.locationUrl && !message.locationUrl.startsWith(routeBaseURL)) {
-        return false;
-      }
-
-      if (allowedWarningPatterns.some((pattern) => pattern.test(message.text))) {
         return false;
       }
 
