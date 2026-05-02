@@ -3,6 +3,7 @@ haproxy_config_dir: /etc/haproxy
 haproxy_cert_dir: /etc/haproxy/certs
 haproxy_map_dir: /etc/haproxy/maps
 haproxy_log_dir: /var/log/haproxy
+haproxy_shm_stats_file: /var/lib/haproxy/edge-stats.shm
 haproxy_credstore_dir: /etc/credstore/haproxy
 haproxy_lego_path: /var/lib/lego
 haproxy_lego_email: "ceo@{{ verself_domain }}"

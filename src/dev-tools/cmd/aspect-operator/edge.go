@@ -27,7 +27,7 @@ var (
 	haproxyUpstreamKeyRe     = regexp.MustCompile(`str\((VERSELF_UPSTREAM_[A-Z0-9_]+)\),map\(`)
 	haproxyNomadBackendKeyRe = regexp.MustCompile(`nomad_upstream_backend\('(VERSELF_UPSTREAM_[A-Z0-9_]+)'`)
 	haproxyNomadBackendRe    = regexp.MustCompile(`nomad_upstream_backend\('VERSELF_UPSTREAM_[A-Z0-9_]+',\s*'[^']+',\s*'([A-Za-z0-9_.:-]+)'\)`)
-	haproxyShmStatsFileRe    = regexp.MustCompile(`(?m)^\s*shm-stats-file\s+\S+`)
+	haproxyShmStatsFileRe    = regexp.MustCompile(`(?m)^\s*shm-stats-file\s+(.+?)\s*$`)
 	haproxyExposeExpLineRe   = regexp.MustCompile(`(?m)^\s*expose-experimental-directives\s*$`)
 )
 
@@ -43,6 +43,8 @@ type edgeSources struct {
 	Ops             string `json:"ops" yaml:"ops"`
 	NomadIndex      string `json:"nomad_index" yaml:"nomad_index"`
 	NomadJobsDir    string `json:"nomad_jobs_dir" yaml:"nomad_jobs_dir"`
+	HAProxyDefaults string `json:"haproxy_defaults" yaml:"haproxy_defaults"`
+	HAProxyTasks    string `json:"haproxy_tasks" yaml:"haproxy_tasks"`
 	HAProxyTemplate string `json:"haproxy_template" yaml:"haproxy_template"`
 }
 
@@ -339,6 +341,16 @@ func buildEdgeManifest(cfg edgeConfig) (*edgeManifest, []string, error) {
 		return nil, nil, fmt.Errorf("read %s: %w", sources.HAProxyTemplate, err)
 	}
 	template := string(templateBytes)
+	defaultsBytes, err := os.ReadFile(sources.HAProxyDefaults)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", sources.HAProxyDefaults, err)
+	}
+	defaults := string(defaultsBytes)
+	tasksBytes, err := os.ReadFile(sources.HAProxyTasks)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", sources.HAProxyTasks, err)
+	}
+	tasks := string(tasksBytes)
 
 	issues := make([]string, 0)
 	componentJobs := collectComponentJobs(index, &issues)
@@ -355,7 +367,7 @@ func buildEdgeManifest(cfg edgeConfig) (*edgeManifest, []string, error) {
 		Summary:        map[string]int{},
 	}
 
-	validateHAProxyTemplate(sources.HAProxyTemplate, template, &issues)
+	validateHAProxyTemplate(sources, template, defaults, tasks, &issues)
 	manifest.TemplateUpstreamKeys = collectTemplateUpstreamKeys(template, serviceByKey, &issues)
 	manifest.SpecialBackendServerIDs = collectSpecialBackendServerGUIDs(template)
 	manifest.Frontends = collectTemplateObjects("frontend", template)
@@ -401,6 +413,8 @@ func (cfg edgeConfig) sources() edgeSources {
 		Ops:             filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/generated/ops.yml"),
 		NomadIndex:      filepath.Join(cfg.repoRoot, "src/deployment-tools/nomad/sites", cfg.site, "jobs/index.json"),
 		NomadJobsDir:    filepath.Join(cfg.repoRoot, "src/deployment-tools/nomad/sites", cfg.site, "jobs"),
+		HAProxyDefaults: filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
+		HAProxyTasks:    filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/roles/haproxy/tasks/main.yml"),
 		HAProxyTemplate: filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/roles/haproxy/templates/haproxy.cfg.j2"),
 	}
 }
@@ -779,24 +793,46 @@ func routeServerGUIDs(route edgeTopologyRoute, backend string) []string {
 	}
 }
 
-func validateHAProxyTemplate(path, template string, issues *[]string) {
+func validateHAProxyTemplate(sources edgeSources, template, defaults, tasks string, issues *[]string) {
 	if !haproxyExposeExpLineRe.MatchString(template) {
-		*issues = append(*issues, path+": global section must enable expose-experimental-directives for shm-stats-file")
+		*issues = append(*issues, sources.HAProxyTemplate+": global section must enable expose-experimental-directives for shm-stats-file")
 	}
 	if !haproxyShmStatsFileRe.MatchString(template) {
-		*issues = append(*issues, path+": global section must set shm-stats-file for reload-persistent counters")
+		*issues = append(*issues, sources.HAProxyTemplate+": global section must set shm-stats-file for reload-persistent counters")
+	} else if match := haproxyShmStatsFileRe.FindStringSubmatch(template); len(match) == 2 {
+		if strings.TrimSpace(match[1]) != "{{ haproxy_shm_stats_file }}" {
+			*issues = append(*issues, sources.HAProxyTemplate+": shm-stats-file must reference haproxy_shm_stats_file so ownership is converged before root validation")
+		}
+	}
+	if !strings.Contains(defaults, "haproxy_shm_stats_file: /var/lib/haproxy/") {
+		*issues = append(*issues, sources.HAProxyDefaults+": haproxy_shm_stats_file must live under /var/lib/haproxy because the HAProxy systemd unit runs as the haproxy user")
+	}
+	requiredTaskLines := []string{
+		`path: "{{ haproxy_shm_stats_file }}"`,
+		"state: touch",
+		"owner: haproxy",
+		"group: haproxy",
+		`mode: "0600"`,
+		"access_time: preserve",
+		"modification_time: preserve",
+	}
+	for _, line := range requiredTaskLines {
+		if !strings.Contains(tasks, line) {
+			*issues = append(*issues, sources.HAProxyTasks+": HAProxy shared-memory stats file must be precreated as haproxy:haproxy 0600 before config validation")
+			break
+		}
 	}
 	lines := strings.Split(template, "\n")
 	for i, line := range lines {
 		section := haproxySectionLineRe.FindStringSubmatch(line)
 		if len(section) == 3 {
 			if firstDirective := firstSectionDirective(lines, i+1); !strings.HasPrefix(firstDirective, "guid ") {
-				*issues = append(*issues, fmt.Sprintf("%s:%d: %s %s must set guid as its first directive", path, i+1, section[1], section[2]))
+				*issues = append(*issues, fmt.Sprintf("%s:%d: %s %s must set guid as its first directive", sources.HAProxyTemplate, i+1, section[1], section[2]))
 			}
 		}
 		trimmed := strings.TrimSpace(line)
 		if haproxyServerLineRe.MatchString(line) && !strings.Contains(" "+trimmed+" ", " guid ") {
-			*issues = append(*issues, fmt.Sprintf("%s:%d: server line must set guid", path, i+1))
+			*issues = append(*issues, fmt.Sprintf("%s:%d: server line must set guid", sources.HAProxyTemplate, i+1))
 		}
 	}
 }

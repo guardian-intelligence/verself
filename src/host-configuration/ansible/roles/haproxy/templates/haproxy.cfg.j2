@@ -54,7 +54,7 @@ global
   crt-base {{ haproxy_cert_dir }}
   hard-stop-after 5s
   expose-experimental-directives
-  shm-stats-file /haproxy-edge-stats
+  shm-stats-file {{ haproxy_shm_stats_file }}
   ssl-default-bind-options ssl-min-ver TLSv1.3 no-tls-tickets
   ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
 
