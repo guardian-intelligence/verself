@@ -152,7 +152,7 @@ func runDeployBody(
 		writeFailedDeployEvent(ctx, led, site, sha, scope, snap, startedAt, nil, "inventory missing")
 		return 1
 	}
-	ansibleDir := filepath.Join(repoRoot, "src", "substrate", "ansible")
+	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
 
 	// 1. Layered substrate convergence.
 	layerRes := layers.RunAll(ctx, layers.Options{
@@ -262,7 +262,7 @@ func truncateError(s string) string {
 }
 
 // runExternalReconcilers shells out to the per-reconciler scripts.
-// They live in src/substrate/scripts because they own their own
+// They live in src/host-configuration/scripts because they own their own
 // row schema (verself.reconciler_runs) and SSH lifetime; collapsing
 // them into the binary is a future cleanup, not a Phase 4 deliverable.
 func runExternalReconcilers(ctx context.Context, rt *runtime.Runtime, repoRoot, site string) error {
@@ -284,7 +284,7 @@ func runExternalReconcilers(ctx context.Context, rt *runtime.Runtime, repoRoot, 
 }
 
 func runOneReconciler(ctx context.Context, rt *runtime.Runtime, repoRoot, site, scriptName string) error {
-	scriptPath := filepath.Join(repoRoot, "src", "substrate", "scripts", scriptName)
+	scriptPath := filepath.Join(repoRoot, "src", "host-configuration", "scripts", scriptName)
 	if _, err := os.Stat(scriptPath); err != nil {
 		return fmt.Errorf("reconciler script missing at %s: %w", scriptPath, err)
 	}
@@ -295,7 +295,7 @@ func runOneReconciler(ctx context.Context, rt *runtime.Runtime, repoRoot, site, 
 		"OTEL_EXPORTER_OTLP_ENDPOINT=http://"+rt.OTLPEndpoint(),
 		"VERSELF_OTLP_ENDPOINT="+rt.OTLPEndpoint(),
 	)
-	cmd.Dir = filepath.Join(repoRoot, "src", "substrate")
+	cmd.Dir = filepath.Join(repoRoot, "src", "host-configuration")
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {

@@ -101,7 +101,7 @@ func runSubstrateConverge(args []string) int {
 		span.SetStatus(codes.Error, "missing inventory")
 		return 1
 	}
-	ansibleDir := filepath.Join(rr, "src", "substrate", "ansible")
+	ansibleDir := filepath.Join(rr, "src", "host-configuration", "ansible")
 
 	res := layers.RunAll(ctx, layers.Options{
 		Site:             *site,

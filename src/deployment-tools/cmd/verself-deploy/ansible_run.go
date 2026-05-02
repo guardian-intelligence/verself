@@ -36,7 +36,7 @@ func runAnsibleRun(args []string) int {
 	layer := fs.String("layer", "", "substrate layer label (l1_os|l2_userspace|l3_binaries|l4a_components|empty)")
 	playbook := fs.String("playbook", "", "playbook path relative to --ansible-dir")
 	inventory := fs.String("inventory", "", "absolute inventory path or directory")
-	ansibleDir := fs.String("ansible-dir", "", "working dir for ansible-playbook (defaults to <repo>/src/substrate/ansible)")
+	ansibleDir := fs.String("ansible-dir", "", "working dir for ansible-playbook (defaults to <repo>/src/host-configuration/ansible)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	var extraArgs stringSliceFlag
 	fs.Var(&extraArgs, "ansible-arg", "extra arg passed through to ansible-playbook (repeatable)")
@@ -62,7 +62,7 @@ func runAnsibleRun(args []string) int {
 	}
 	ad := *ansibleDir
 	if ad == "" {
-		ad = filepath.Join(rr, "src", "substrate", "ansible")
+		ad = filepath.Join(rr, "src", "host-configuration", "ansible")
 	}
 
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

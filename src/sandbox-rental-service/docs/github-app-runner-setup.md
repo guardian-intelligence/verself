@@ -73,7 +73,7 @@ code.
 Then redeploy:
 
 ```bash
-cd src/substrate/ansible
+cd src/host-configuration/ansible
 aspect deploy --site=prod
 ```
 
@@ -86,7 +86,7 @@ complete platform-org GitHub credential set.
 Start the Verself side of the install flow as a sandbox org admin:
 
 ```bash
-source <(src/substrate/scripts/assume-persona.sh platform-admin --print)
+source <(src/host-configuration/scripts/assume-persona.sh platform-admin --print)
 
 curl -sS -X POST "https://sandbox.api.<domain>/api/v1/github/installations/connect" \
   -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \

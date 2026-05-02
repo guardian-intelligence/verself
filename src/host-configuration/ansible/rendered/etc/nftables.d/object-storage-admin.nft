@@ -1,0 +1,24 @@
+# Authored substrate rendered file.
+# Source: src/host-configuration/ansible/rendered
+# nftables ruleset object_storage_admin.
+table inet verself_object_storage_admin
+delete table inet verself_object_storage_admin
+
+table inet verself_object_storage_admin {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != object_storage_admin accept
+        oifname "lo" tcp dport { 5432, 4317, 3900, 3910, 3920, 3903, 3913, 3923, 20000-32000 } accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

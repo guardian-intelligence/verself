@@ -7,7 +7,7 @@ Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clon
 
 Firecracker guests boot from a slim **substrate** ext4 and compose
 read-only **toolchain images** at lease boot. The catalog lives in
-`src/substrate/ansible/group_vars/all/generated/ops.yml:firecracker_seed_images`; each
+`src/host-configuration/ansible/group_vars/all/generated/ops.yml:firecracker_seed_images`; each
 entry declares a `tier` of `substrate`, `platform_toolchain`, or
 `customer_uploaded`, and the `vm-orchestrator-seed.service` oneshot
 materialises every entry via `vm-orchestrator-cli seed-image` (one

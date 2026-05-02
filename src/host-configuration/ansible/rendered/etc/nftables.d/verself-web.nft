@@ -1,0 +1,14 @@
+# Authored substrate rendered file.
+# Source: src/host-configuration/ansible/rendered
+# nftables ruleset verself_web.
+table inet verself_web
+delete table inet verself_web
+
+table inet verself_web {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+}

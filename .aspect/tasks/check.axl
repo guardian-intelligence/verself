@@ -75,10 +75,10 @@ def _conversions(ctx):
 
 def _scripts(ctx):
     sh_dirs = [
-        "src/substrate/scripts",
-        "src/substrate/scripts/lib",
-        "src/substrate/scripts/security",
-        "src/provision/scripts",
+        "src/host-configuration/scripts",
+        "src/host-configuration/scripts/lib",
+        "src/host-configuration/scripts/security",
+        "src/provisioning-tools/scripts",
     ]
     files = []
     for d in sh_dirs:

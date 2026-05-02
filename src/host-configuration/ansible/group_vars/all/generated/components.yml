@@ -1,0 +1,1729 @@
+# Authored substrate topology contract.
+# Source: src/host-configuration/ansible/group_vars/all/generated
+---
+topology_components:
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: bazel_remote
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities:
+      operator:
+        ansible_var: spire_clickhouse_operator_id
+        entry_id: verself-clickhouse-operator
+        group: clickhouse_operator
+        path: /svc/clickhouse-operator
+        restart_units:
+          - clickhouse-operator-spiffe-helper
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: clickhouse_operator
+        x509_svid_ttl_seconds: 3600
+      server:
+        ansible_var: spire_clickhouse_server_id
+        entry_id: verself-clickhouse-server
+        group: clickhouse
+        path: /svc/clickhouse-server
+        restart_units:
+          - clickhouse-server-spiffe-helper
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: clickhouse
+        x509_svid_ttl_seconds: 3600
+    kind: resource
+    name: clickhouse
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: electric
+    nftables_rulesets:
+      - name: electric
+        table: verself_electric
+        target: /etc/nftables.d/electric.nft
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: electric_notifications
+    nftables_rulesets:
+      - name: electric_notifications
+        table: verself_electric_notifications
+        target: /etc/nftables.d/electric-notifications.nft
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: privileged_daemon
+    name: firecracker_host_service
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: protocol_backend
+    name: forgejo
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: garage
+    nftables_rulesets:
+      - name: garage
+        table: verself_garage
+        target: /etc/nftables.d/garage.nft
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities:
+      default:
+        ansible_var: spire_grafana_id
+        entry_id: verself-grafana
+        group: grafana
+        path: /svc/grafana
+        restart_units:
+          - grafana-clickhouse-spiffe-helper
+          - grafana
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: grafana
+        x509_svid_ttl_seconds: 3600
+    kind: protocol_backend
+    name: grafana
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 10
+      database: grafana
+      owner: grafana
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities:
+      default:
+        ansible_var: spire_nats_id
+        entry_id: verself-nats
+        group: nats
+        path: /svc/nats
+        restart_units:
+          - nats-spiffe-helper
+          - nats
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: nats
+        x509_svid_ttl_seconds: 3600
+    kind: resource
+    name: nats
+    nftables_rulesets:
+      - name: nats
+        table: verself_nats
+        target: /etc/nftables.d/nats.nft
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: nomad
+    nftables_rulesets:
+      - name: nomad
+        table: verself_nomad
+        target: /etc/nftables.d/nomad.nft
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: openbao
+    nftables_rulesets:
+      - name: openbao
+        table: verself_openbao
+        target: /etc/nftables.d/openbao.nft
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities:
+      default:
+        ansible_var: spire_otelcol_id
+        entry_id: verself-otelcol
+        group: otelcol
+        path: /svc/otelcol
+        restart_units:
+          - otelcol-clickhouse-spiffe-helper
+          - otelcol
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: otelcol
+        x509_svid_ttl_seconds: 3600
+    kind: resource
+    name: otelcol
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: postgresql
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: spire_bundle_endpoint
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: spire_server
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: protocol_backend
+    name: stalwart
+    nftables_rulesets:
+      - name: stalwart
+        table: verself_stalwart
+        target: /etc/nftables.d/stalwart.nft
+    order: 0
+    postgres:
+      connection_limit: 10
+      database: stalwart
+      owner: stalwart
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities:
+      server:
+        ansible_var: spire_temporal_server_id
+        entry_id: verself-temporal-server
+        group: temporal_server
+        path: /svc/temporal-server
+        restart_units:
+          - temporal-server
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: temporal_server
+        x509_svid_ttl_seconds: 3600
+    kind: resource
+    name: temporal
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 80
+      database: temporal
+      owner: temporal
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: tigerbeetle
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
+    name: verdaccio
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: protocol_backend
+    name: zitadel
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 15
+      database: zitadel
+      owner: zitadel
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_identity_service_id
+        entry_id: verself-identity-service
+        group: identity_service
+        path: /svc/identity-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: identity_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: identity_service
+    nftables_rulesets:
+      - name: identity_service
+        table: verself_identity_service
+        target: /etc/nftables.d/identity-service.nft
+    order: 10
+    postgres:
+      connection_limit: 10
+      database: identity_service
+      owner: identity_service
+      password_ref:
+        kind: ansible_var
+        name: postgresql_identity_service_password
+        no_log: true
+    workload:
+      auth:
+        audience: "370200564807548260"
+        kind: owned_project
+        project_name: identity-service
+        project_role_assertion: true
+        project_role_check: true
+        roles:
+          - display_name: Owner
+            group: identity
+            key: owner
+          - display_name: Admin
+            group: identity
+            key: admin
+          - display_name: Member
+            group: identity
+            key: member
+      bootstrap:
+        - class: identity_provider
+          name: identity_zitadel_actions
+          reason: Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state.
+        - class: identity_provider
+          name: browser_oidc
+          reason: Reconciles the console OIDC application and persists runtime client credentials for identity-service browser auth.
+      bootstrap_config:
+        browser_oidc:
+          app_name: verself-web
+          credstore_dir: /etc/credstore/identity-service
+          credstore_group: identity_service
+          grant_types:
+            - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+            - OIDC_GRANT_TYPE_REFRESH_TOKEN
+            - OIDC_GRANT_TYPE_TOKEN_EXCHANGE
+          post_logout_redirect_uris:
+            - https://verself.sh
+          project_name: sandbox-rental
+          project_roles:
+            - display_name: Owner
+              group: sandbox
+              key: owner
+            - display_name: Admin
+              group: sandbox
+              key: admin
+            - display_name: Member
+              group: sandbox
+              key: member
+          redirect_uris:
+            - https://verself.sh/api/v1/auth/callback
+          role_assertions: true
+      clickhouse:
+        grants:
+          - action: INSERT
+            table: verself.domain_update_ledger
+          - action: SELECT
+            table: verself.domain_update_ledger
+        spiffe_identity: default
+        user: identity_service
+      directories:
+        - group: identity_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/identity-service
+      order: 10
+      secret_refs:
+        - group: identity_service
+          mode: "0640"
+          name: clickhouse-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/identity-service/clickhouse-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/clickhouse-server/tls/server-ca.pem
+      units:
+        - create_home: false
+          group: identity_service
+          home: ""
+          load_credentials: []
+          name: identity-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: identity_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_governance_service_id
+        entry_id: verself-governance-service
+        group: governance_service
+        path: /svc/governance-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: governance_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: governance_service
+    nftables_rulesets:
+      - name: governance_service
+        table: verself_governance_service
+        target: /etc/nftables.d/governance-service.nft
+    order: 20
+    postgres:
+      connection_limit: 15
+      database: governance_service
+      owner: governance_service
+      password_ref:
+        expose_as: postgres_password
+        kind: secret_ref
+        no_log: true
+    workload:
+      auth:
+        audience: "370200564807548260"
+        kind: identity_project_audience
+        project_name: identity-service
+      bootstrap: []
+      bootstrap_config: {}
+      clickhouse:
+        grants:
+          - action: INSERT
+            table: verself.audit_events
+          - action: SELECT
+            table: verself.audit_events
+        spiffe_identity: default
+        user: governance_service
+      directories:
+        - group: governance_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/governance-service
+        - group: governance_service
+          mode: "0750"
+          owner: governance_service
+          path: /var/lib/governance-service
+        - group: governance_service
+          mode: "0750"
+          owner: governance_service
+          path: /var/lib/governance-service/exports
+      order: 20
+      secret_refs:
+        - expose_as: postgres_password
+          group: governance_service
+          mode: "0640"
+          name: pg-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/governance-service/pg-password
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+        - group: governance_service
+          mode: "0640"
+          name: audit-hmac-key
+          no_log: true
+          owner: root
+          path: /etc/credstore/governance-service/audit-hmac-key
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+        - group: governance_service
+          mode: "0640"
+          name: clickhouse-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/governance-service/clickhouse-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/clickhouse-server/tls/server-ca.pem
+      units:
+        - create_home: false
+          group: governance_service
+          home: ""
+          load_credentials: []
+          name: governance-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: governance_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_profile_service_id
+        entry_id: verself-profile-service
+        group: profile_service
+        path: /svc/profile-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: profile_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: profile_service
+    nftables_rulesets:
+      - name: profile_service
+        table: verself_profile_service
+        target: /etc/nftables.d/profile-service.nft
+    order: 30
+    postgres:
+      connection_limit: 10
+      database: profile
+      owner: profile_service
+      password_ref:
+        expose_as: postgres_password
+        kind: secret_ref
+        no_log: true
+    workload:
+      auth:
+        audience: "370200564807548260"
+        kind: identity_project_audience
+        project_name: identity-service
+      bootstrap: []
+      bootstrap_config: {}
+      directories:
+        - group: profile_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/profile-service
+      order: 30
+      secret_refs:
+        - expose_as: postgres_password
+          group: profile_service
+          mode: "0640"
+          name: pg-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/profile-service/pg-password
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+      units:
+        - create_home: false
+          group: profile_service
+          home: ""
+          load_credentials: []
+          name: profile-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: profile_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_notifications_service_id
+        entry_id: verself-notifications-service
+        group: notifications_service
+        path: /svc/notifications-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: notifications_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: notifications_service
+    nftables_rulesets:
+      - name: notifications_service
+        table: verself_notifications_service
+        target: /etc/nftables.d/notifications-service.nft
+    order: 40
+    postgres:
+      connection_limit: 10
+      database: notifications_service
+      owner: notifications_service
+      password_ref:
+        expose_as: postgres_password
+        kind: secret_ref
+        no_log: true
+    workload:
+      auth:
+        audience: "370200564807548260"
+        kind: identity_project_audience
+        project_name: identity-service
+      bootstrap: []
+      bootstrap_config: {}
+      clickhouse:
+        grants:
+          - action: INSERT
+            table: verself.notification_events
+          - action: SELECT
+            table: verself.notification_events
+        spiffe_identity: default
+        user: notifications_service
+      directories:
+        - group: notifications_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/notifications-service
+      order: 40
+      secret_refs:
+        - expose_as: postgres_password
+          group: notifications_service
+          mode: "0640"
+          name: pg-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/notifications-service/pg-password
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+        - group: notifications_service
+          mode: "0640"
+          name: clickhouse-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/notifications-service/clickhouse-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/clickhouse-server/tls/server-ca.pem
+      units:
+        - create_home: false
+          group: notifications_service
+          home: ""
+          load_credentials: []
+          name: notifications-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: notifications_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_projects_service_id
+        entry_id: verself-projects-service
+        group: projects_service
+        path: /svc/projects-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: projects_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: projects_service
+    nftables_rulesets:
+      - name: projects_service
+        table: verself_projects_service
+        target: /etc/nftables.d/projects-service.nft
+    order: 50
+    postgres:
+      connection_limit: 10
+      database: projects_service
+      owner: projects_service
+      password_ref:
+        expose_as: postgres_password
+        kind: secret_ref
+        no_log: true
+    workload:
+      auth:
+        audience: "370200564807548260"
+        kind: identity_project_audience
+        project_name: identity-service
+      bootstrap: []
+      bootstrap_config: {}
+      directories:
+        - group: projects_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/projects-service
+      order: 50
+      secret_refs:
+        - expose_as: postgres_password
+          group: projects_service
+          mode: "0640"
+          name: pg-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/projects-service/pg-password
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+      units:
+        - create_home: false
+          group: projects_service
+          home: ""
+          load_credentials: []
+          name: projects-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: projects_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_secrets_service_id
+        entry_id: verself-secrets-service
+        group: secrets_service
+        path: /svc/secrets-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: secrets_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: secrets_service
+    nftables_rulesets:
+      - name: secrets_service
+        table: verself_secrets_service
+        target: /etc/nftables.d/secrets-service.nft
+    order: 60
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        audience: "370207425749368164"
+        kind: owned_project
+        project_name: secrets-service
+        project_role_assertion: true
+        project_role_check: true
+        roles:
+          - display_name: Owner
+            group: secrets
+            key: owner
+          - display_name: Admin
+            group: secrets
+            key: admin
+          - display_name: Member
+            group: secrets
+            key: member
+      bootstrap:
+        - class: secret_backend
+          name: openbao_tenancy
+          reason: Reconciles OpenBao mounts, auth backends, policies, and platform runtime secrets.
+      bootstrap_config: {}
+      directories:
+        - group: secrets_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/secrets-service
+      order: 60
+      secret_refs:
+        - group: secrets_service
+          mode: "0640"
+          name: openbao-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/secrets-service/openbao-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/openbao/tls/cert.pem
+      units:
+        - create_home: false
+          group: secrets_service
+          home: ""
+          load_credentials: []
+          name: secrets-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: secrets_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      admin:
+        ansible_var: spire_object_storage_admin_id
+        entry_id: verself-object-storage-admin
+        group: object_storage_admin
+        path: /svc/object-storage-admin
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: fixed
+          value: 961
+        user: object_storage_admin
+        x509_svid_ttl_seconds: 3600
+      service:
+        ansible_var: spire_object_storage_service_id
+        entry_id: verself-object-storage-service
+        group: object_storage_service
+        path: /svc/object-storage-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: fixed
+          value: 960
+        user: object_storage_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: object_storage_service
+    nftables_rulesets:
+      - name: object_storage_admin
+        table: verself_object_storage_admin
+        target: /etc/nftables.d/object-storage-admin.nft
+      - name: object_storage_service
+        table: verself_object_storage_service
+        target: /etc/nftables.d/object-storage-service.nft
+    order: 70
+    postgres:
+      connection_limit: 10
+      database: object_storage_service
+      owner: object_storage_service
+      password_ref:
+        expose_as: postgres_password
+        kind: secret_ref
+        no_log: true
+    workload:
+      auth:
+        kind: none
+      bootstrap:
+        - class: storage_provider
+          name: object_storage_tls
+          reason: Creates the local S3 TLS CA, server certificate, and operator CA bundle for Garage proxy traffic.
+        - class: storage_provider
+          name: object_storage_garage_proxy
+          reason: Creates Garage proxy credentials for object-storage-service S3 traffic.
+      bootstrap_config: {}
+      clickhouse:
+        grants:
+          - action: INSERT
+            table: verself.object_access_events
+          - action: SELECT
+            table: verself.object_access_events
+        spiffe_identity: service
+        user: object_storage_service
+      directories:
+        - group: object_storage_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/object-storage-service
+        - group: object_storage_service
+          mode: "0750"
+          owner: root
+          path: /etc/object-storage-service
+        - group: object_storage_service
+          mode: "0750"
+          owner: root
+          path: /etc/object-storage-service/tls
+        - group: root
+          mode: "0755"
+          owner: root
+          path: /etc/verself
+        - group: root
+          mode: "0755"
+          owner: root
+          path: /etc/verself/local-cas
+        - group: object_storage_service
+          mode: "0750"
+          owner: object_storage_service
+          path: /var/lib/object-storage-service
+        - group: object_storage_admin
+          mode: "0750"
+          owner: object_storage_admin
+          path: /var/lib/object-storage-admin
+      order: 70
+      secret_refs:
+        - expose_as: postgres_password
+          group: object_storage_service
+          mode: "0640"
+          name: pg-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/object-storage-service/pg-password
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+        - group: object_storage_service
+          mode: "0640"
+          name: credential-kek
+          no_log: true
+          owner: root
+          path: /etc/credstore/object-storage-service/credential-kek
+          restart_units: []
+          source:
+            generate:
+              chars: hexdigits
+              kind: password
+              length: 64
+            kind: generated
+        - group: object_storage_service
+          mode: "0640"
+          name: clickhouse-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/object-storage-service/clickhouse-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/clickhouse-server/tls/server-ca.pem
+        - group: object_storage_service
+          mode: "0640"
+          name: s3-tls-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/object-storage-service/s3-tls-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/object-storage-service/tls/server-cert.pem
+        - group: object_storage_service
+          mode: "0640"
+          name: s3-tls-key
+          no_log: true
+          owner: root
+          path: /etc/credstore/object-storage-service/s3-tls-key
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/object-storage-service/tls/server-key.pem
+        - group: object_storage_service
+          mode: "0640"
+          name: garage-admin-token
+          no_log: true
+          owner: root
+          path: /etc/credstore/object-storage-service/garage-admin-token
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/garage/admin-token
+      units:
+        - create_home: false
+          group: object_storage_service
+          home: /var/lib/object-storage-service
+          load_credentials: []
+          name: object-storage-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          uid: 960
+          user: object_storage_service
+        - create_home: false
+          group: object_storage_admin
+          home: /var/lib/object-storage-admin
+          load_credentials: []
+          name: object-storage-admin
+          supplementary_groups:
+            - object_storage_service
+            - '{{ spire_workload_group }}'
+          uid: 961
+          user: object_storage_admin
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_source_code_hosting_service_id
+        entry_id: verself-source-code-hosting-service
+        group: source_code_hosting_service
+        path: /svc/source-code-hosting-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: source_code_hosting_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: source_code_hosting_service
+    nftables_rulesets:
+      - name: source_code_hosting_service
+        table: verself_source_code_hosting_service
+        target: /etc/nftables.d/source-code-hosting-service.nft
+    order: 75
+    postgres:
+      connection_limit: 10
+      database: source_code_hosting
+      owner: source_code_hosting_service
+      password_ref:
+        expose_as: postgres_password
+        kind: secret_ref
+        no_log: true
+    workload:
+      auth:
+        audience: "370200564807548260"
+        kind: identity_project_audience
+        project_name: identity-service
+      bootstrap: []
+      bootstrap_config: {}
+      directories:
+        - group: source_code_hosting_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/source-code-hosting-service
+      order: 75
+      secret_refs:
+        - expose_as: postgres_password
+          group: source_code_hosting_service
+          mode: "0640"
+          name: pg-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/source-code-hosting-service/pg-password
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+        - group: source_code_hosting_service
+          mode: "0640"
+          name: forgejo-token
+          no_log: true
+          owner: root
+          path: /etc/credstore/source-code-hosting-service/forgejo-token
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/credstore/forgejo/automation-token
+        - group: source_code_hosting_service
+          mode: "0640"
+          name: webhook-secret
+          no_log: true
+          owner: root
+          path: /etc/credstore/source-code-hosting-service/webhook-secret
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+      units:
+        - create_home: false
+          group: source_code_hosting_service
+          home: ""
+          load_credentials: []
+          name: source-code-hosting-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: source_code_hosting_service
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_billing_service_id
+        entry_id: verself-billing-service
+        group: billing
+        path: /svc/billing-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: billing
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: billing
+    nftables_rulesets:
+      - name: billing
+        table: verself_billing
+        target: /etc/nftables.d/billing.nft
+    order: 80
+    postgres:
+      connection_limit: 30
+      database: billing
+      owner: billing
+      password_ref:
+        kind: ansible_var
+        name: postgresql_billing_password
+        no_log: true
+    workload:
+      auth:
+        audience: "370208441207143780"
+        kind: owned_project
+        project_name: billing
+        project_role_assertion: false
+        project_role_check: false
+        roles: []
+      bootstrap:
+        - class: external_provider
+          name: billing_stripe_webhook
+          reason: Reconciles the Stripe webhook endpoint and runtime provider secret outside the generic service shape.
+      bootstrap_config: {}
+      clickhouse:
+        grants:
+          - action: INSERT
+            table: verself.billing_events
+          - action: INSERT
+            table: verself.metering
+        spiffe_identity: default
+        user: billing_service
+      directories:
+        - group: billing
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/billing
+      order: 80
+      secret_refs:
+        - group: billing
+          mode: "0640"
+          name: clickhouse-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/billing/clickhouse-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/clickhouse-server/tls/server-ca.pem
+        - group: billing
+          mode: "0640"
+          name: stripe-test-publishable-key
+          no_log: true
+          owner: root
+          path: /etc/credstore/billing/stripe-test-publishable-key
+          restart_units: []
+          source:
+            ansible_var: stripe_publishable_key
+            kind: ansible_var
+        - group: billing
+          mode: "0640"
+          name: stripe-test-webhook-endpoint-id
+          no_log: true
+          owner: root
+          path: /etc/credstore/billing/stripe-test-webhook-endpoint-id
+          restart_units: []
+          source:
+            ansible_var: stripe_test_webhook_endpoint_id
+            kind: ansible_var
+      units:
+        - create_home: false
+          group: billing
+          home: ""
+          load_credentials: []
+          name: billing-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: billing
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_sandbox_rental_id
+        entry_id: verself-sandbox-rental-service
+        group: sandbox_rental
+        path: /svc/sandbox-rental-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: sandbox_rental
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: sandbox_rental
+    nftables_rulesets:
+      - name: sandbox_rental
+        table: verself_sandbox_rental
+        target: /etc/nftables.d/sandbox-rental.nft
+    order: 90
+    postgres:
+      connection_limit: 30
+      database: sandbox_rental
+      owner: sandbox_rental
+      password_ref:
+        kind: ansible_var
+        name: postgresql_sandbox_rental_password
+        no_log: true
+    workload:
+      auth:
+        audience: "370200928688586084"
+        kind: owned_project
+        project_name: sandbox-rental
+        project_role_assertion: true
+        project_role_check: true
+        roles:
+          - display_name: Owner
+            group: sandbox
+            key: owner
+          - display_name: Admin
+            group: sandbox
+            key: admin
+          - display_name: Member
+            group: sandbox
+            key: member
+      bootstrap:
+        - class: security_audit
+          name: sandbox_vm_socket_acl
+          reason: Asserts the vm-clients privileged group remains limited to the sandbox rental runtime.
+      bootstrap_config:
+        sandbox_github_app:
+          api_base_url: https://api.github.com
+          app_id: "3370540"
+          client_id: Iv23liDpxGOmBSQwSJ5i
+          enabled: true
+          slug: verself-ci
+          web_base_url: https://github.com
+      clickhouse:
+        grants:
+          - action: INSERT
+            table: verself.job_logs
+          - action: INSERT
+            table: verself.job_events
+          - action: SELECT
+            table: verself.job_logs
+          - action: SELECT
+            table: verself.job_events
+          - action: SELECT
+            table: verself.job_cache_events
+        spiffe_identity: default
+        user: sandbox_rental
+      directories:
+        - group: sandbox_rental
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/sandbox-rental
+        - group: sandbox_rental
+          mode: "0700"
+          owner: sandbox_rental
+          path: /var/lib/verself/sandbox-rental/github-checkout
+      order: 90
+      secret_refs:
+        - group: sandbox_rental
+          mode: "0640"
+          name: clickhouse-ca-cert
+          no_log: true
+          owner: root
+          path: /etc/credstore/sandbox-rental/clickhouse-ca-cert
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/clickhouse-server/tls/server-ca.pem
+        - group: sandbox_rental
+          mode: "0640"
+          name: forgejo-token
+          no_log: true
+          owner: root
+          path: /etc/credstore/sandbox-rental/forgejo-token
+          restart_units: []
+          source:
+            kind: remote_src
+            remote_src: /etc/credstore/forgejo/automation-token
+        - group: sandbox_rental
+          mode: "0640"
+          name: forgejo-webhook-secret
+          no_log: true
+          owner: root
+          path: /etc/credstore/sandbox-rental/forgejo-webhook-secret
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+        - group: sandbox_rental
+          mode: "0640"
+          name: forgejo-bootstrap-secret
+          no_log: true
+          owner: root
+          path: /etc/credstore/sandbox-rental/forgejo-bootstrap-secret
+          restart_units: []
+          source:
+            generate:
+              chars: ascii_letters,digits
+              kind: password
+              length: 64
+            kind: generated
+      units:
+        - create_home: false
+          group: sandbox_rental
+          home: ""
+          load_credentials: []
+          name: sandbox-rental-service
+          supplementary_groups:
+            - vm-clients
+            - '{{ spire_workload_group }}'
+          user: sandbox_rental
+        - create_home: false
+          group: sandbox_rental
+          home: ""
+          load_credentials: []
+          name: sandbox-rental-recurring-worker
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: sandbox_rental
+  - deployment:
+      supervisor: nomad
+    identities:
+      default:
+        ansible_var: spire_mailbox_service_id
+        entry_id: verself-mailbox-service
+        group: mailbox_service
+        path: /svc/mailbox-service
+        restart_units: []
+        selector: unix:uid
+        uid_policy:
+          kind: allocated
+        user: mailbox_service
+        x509_svid_ttl_seconds: 3600
+    kind: service
+    name: mailbox_service
+    nftables_rulesets:
+      - name: mailbox_service
+        table: verself_mailbox_service
+        target: /etc/nftables.d/mailbox-service.nft
+    order: 100
+    postgres:
+      connection_limit: 10
+      database: mailbox_service
+      owner: mailbox_service
+      password_ref:
+        kind: ansible_var
+        name: postgresql_mailbox_service_password
+        no_log: true
+    workload:
+      auth:
+        audience: "370208502947298660"
+        kind: owned_project
+        project_name: mailbox-service
+        project_role_assertion: true
+        project_role_check: true
+        roles:
+          - display_name: Mailbox User
+            group: mailbox
+            key: mailbox_user
+      bootstrap: []
+      bootstrap_config: {}
+      directories:
+        - group: mailbox_service
+          mode: "0750"
+          owner: root
+          path: /etc/credstore/mailbox-service
+        - group: mailbox_service
+          mode: "0750"
+          owner: mailbox_service
+          path: /var/lib/mailbox-service
+      order: 100
+      secret_refs:
+        - group: mailbox_service
+          mode: "0640"
+          name: stalwart-ceo-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/mailbox-service/stalwart-ceo-password
+          restart_units:
+            - mailbox-service
+          source:
+            ansible_var: stalwart_ceo_password
+            kind: ansible_var
+        - group: mailbox_service
+          mode: "0640"
+          name: stalwart-agents-password
+          no_log: true
+          owner: root
+          path: /etc/credstore/mailbox-service/stalwart-agents-password
+          restart_units:
+            - mailbox-service
+          source:
+            ansible_var: stalwart_agents_password
+            kind: ansible_var
+        - group: mailbox_service
+          mode: "0640"
+          name: forward-to
+          no_log: true
+          owner: root
+          path: /etc/credstore/mailbox-service/forward-to
+          restart_units:
+            - mailbox-service
+          source:
+            ansible_var: stalwart_operator_forward_to
+            kind: ansible_var
+      units:
+        - create_home: false
+          group: mailbox_service
+          home: ""
+          load_credentials: []
+          name: mailbox-service
+          supplementary_groups:
+            - '{{ spire_workload_group }}'
+          user: mailbox_service
+  - deployment:
+      supervisor: nomad
+    identities: {}
+    kind: frontend
+    name: verself_web
+    nftables_rulesets:
+      - name: verself_web
+        table: verself_web
+        target: /etc/nftables.d/verself-web.nft
+    order: 110
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories:
+        - group: verself-web
+          mode: "0700"
+          owner: verself-web
+          path: /var/lib/verself-web
+      order: 110
+      secret_refs: []
+      units:
+        - create_home: false
+          group: verself-web
+          home: /var/lib/verself-web
+          load_credentials: []
+          name: verself-web
+          supplementary_groups: []
+          user: verself-web
+  - deployment:
+      supervisor: nomad
+    identities: {}
+    kind: frontend
+    name: company
+    nftables_rulesets:
+      - name: company
+        table: verself_company
+        target: /etc/nftables.d/company.nft
+    order: 120
+    postgres:
+      connection_limit: 0
+      database: ""
+      owner: ""
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories:
+        - group: company
+          mode: "0700"
+          owner: company
+          path: /var/lib/company
+      order: 120
+      secret_refs: []
+      units:
+        - create_home: false
+          group: company
+          home: /var/lib/company
+          load_credentials: []
+          name: company
+          supplementary_groups: []
+          user: company

@@ -59,7 +59,7 @@ type Layer struct {
 // DigestTarget is the Bazel target whose output file holds the
 // layer's input_hash.
 func (l Layer) DigestTarget(site string) string {
-	return fmt.Sprintf("//src/substrate:%s_%s_digest", site, l.Name)
+	return fmt.Sprintf("//src/host-configuration:%s_%s_digest", site, l.Name)
 }
 
 // Options configure a Run. Site, RepoRoot, AnsibleDir, Inventory are

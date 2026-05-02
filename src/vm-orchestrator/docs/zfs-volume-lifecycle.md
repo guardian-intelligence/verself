@@ -327,7 +327,7 @@ The Grafana dashboard should show:
 - `src/sandbox-rental-service/migrations/` - current sticky-disk control-plane
   tables and any future volume-control-plane schema if a customer volume
   product returns.
-- `src/substrate/ansible/roles/grafana/` - provisioned dashboard target.
+- `src/host-configuration/ansible/roles/grafana/` - provisioned dashboard target.
 
 ## Primary References
 

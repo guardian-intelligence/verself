@@ -187,7 +187,7 @@ func parseConfig(args []string) (config, error) {
 	var format string
 	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/substrate")
+	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/host-configuration")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "query family to run")
 	flags.StringVar(&cfg.signal, "signal", strings.TrimSpace(os.Getenv("SIGNAL")), "signal catalog: metrics, traces, logs, http, deploys")
 	flags.StringVar(&cfg.service, "service", strings.TrimSpace(os.Getenv("SERVICE")), "service name")
@@ -240,7 +240,7 @@ func parseConfig(args []string) (config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("resolve working directory: %w", err)
 		}
-		cfg.substrateRoot = filepath.Join(wd, "src", "substrate")
+		cfg.substrateRoot = filepath.Join(wd, "src", "host-configuration")
 	}
 	if cfg.minutes == 0 {
 		return cfg, errors.New("--minutes must be greater than zero")
