@@ -52,7 +52,10 @@ global
   log stdout format raw local0
   stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
   crt-base {{ haproxy_cert_dir }}
+  maxconn {{ haproxy_global_maxconn }}
+  strict-limits
   hard-stop-after 5s
+  # Required for shm-stats-file. URI normalization remains disabled while HAProxy marks normalizers experimental.
   expose-experimental-directives
   shm-stats-file {{ haproxy_shm_stats_file }}
   ssl-default-bind-options ssl-min-ver TLSv1.3 no-tls-tickets
@@ -69,17 +72,21 @@ defaults
   timeout tunnel 4h
   timeout http-request 5s
   timeout http-keep-alive 10s
-  log-format "client_ip=%ci client_port=%cp method=%HM host=%[var(txn.host)] path=%HP status=%ST bytes=%B duration_ms=%Ta frontend=%ft backend=%b server=%s"
+  unique-id-format %[uuid()]
+  unique-id-header X-Request-ID
+  log-format "request_id=%ID client_ip=%ci client_port=%cp method=%HM host=%[var(txn.host)] path=%HP query=%HQ uri=%HU status=%ST bytes=%B duration_ms=%Ta t_request_ms=%TR t_queue_ms=%Tw t_connect_ms=%Tc t_response_ms=%Tr termination=%tsc active_conn=%ac frontend_conn=%fc backend_conn=%bc server_conn=%sc retries=%rc server_queue=%sq backend_queue=%bq frontend=%ft backend=%b server=%s tls_version=%[ssl_fc_protocol] tls_cipher=%[ssl_fc_cipher] tls_sni=%[ssl_fc_sni] alpn=%[ssl_fc_alpn]"
 
 frontend fe_http
   guid fe_http
+  maxconn {{ haproxy_public_frontend_maxconn }}
   bind {{ topology_gateways.public_haproxy.host }}:80
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   http-request redirect scheme https code 308
 
 frontend fe_https
   guid fe_https
-  bind {{ topology_gateways.public_haproxy.host }}:443 ssl crt {{ haproxy_cert_dir }} alpn h2,http/1.1
+  maxconn {{ haproxy_public_frontend_maxconn }}
+  bind {{ topology_gateways.public_haproxy.host }}:443 ssl crt {{ haproxy_cert_dir }} strict-sni alpn h2,http/1.1
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   acl from_cloudflare src {{ haproxy_cloudflare_trusted_proxies | join(' ') }}
   http-request set-src req.hdr(CF-Connecting-IP) if from_cloudflare { req.hdr(CF-Connecting-IP) -m found }
@@ -87,6 +94,7 @@ frontend fe_https
   http-request set-header X-Forwarded-For %[src]
   http-request set-header X-Forwarded-Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Proto https
+  http-response set-header Strict-Transport-Security "{{ haproxy_hsts_header }}"
 
   acl host_verself var(txn.host) -m str {{ verself_domain }}
   acl host_billing var(txn.host) -m str {{ billing_service_domain }}
@@ -97,6 +105,23 @@ frontend fe_https
   acl method_post method POST
   acl stripe_webhook path -i /webhooks/stripe
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
+  acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/logout
+  acl sandbox_actions_webhook path -i /webhooks/github/actions /webhooks/forgejo/actions
+  acl source_forgejo_webhook path -i /webhooks/forgejo
+  acl edge_public_rate_limited sc_http_req_rate(0,be_edge_public_rates) gt {{ haproxy_public_rate_limit }}
+  acl edge_auth_rate_limited sc_http_req_rate(1,be_edge_auth_rates) gt {{ haproxy_auth_rate_limit }}
+  acl edge_webhook_rate_limited sc_http_req_rate(2,be_edge_webhook_rates) gt {{ haproxy_webhook_rate_limit }}
+
+  http-request track-sc0 src table be_edge_public_rates
+  http-request track-sc1 src table be_edge_auth_rates if host_verself auth_path
+  http-request track-sc2 src table be_edge_webhook_rates if host_billing stripe_webhook
+  http-request track-sc2 src table be_edge_webhook_rates if host_sandbox sandbox_actions_webhook
+  http-request track-sc2 src table be_edge_webhook_rates if host_source source_forgejo_webhook
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if edge_public_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_path edge_auth_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_billing stripe_webhook edge_webhook_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_sandbox sandbox_actions_webhook edge_webhook_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_source source_forgejo_webhook edge_webhook_rate_limited
 
   http-request return status 403 if host_billing stripe_webhook method_post !stripe_source
   http-request return status 405 if host_billing stripe_webhook !method_post
@@ -125,8 +150,17 @@ frontend fe_https
 {% endfor %}
   use_backend %[var(txn.host),map({{ haproxy_map_dir }}/public-hosts.map,be_not_found)]
 
+frontend fe_haproxy_metrics
+  guid fe_haproxy_metrics
+  maxconn {{ haproxy_metrics_frontend_maxconn }}
+  bind {{ topology_endpoints.haproxy.endpoints.metrics.address }}
+  option socket-stats
+  http-request use-service prometheus-exporter if { path -i /metrics }
+  http-request return status 404
+
 frontend fe_firecracker_host_http
   guid fe_firecracker_host_http
+  maxconn {{ haproxy_internal_frontend_maxconn }}
   bind {{ haproxy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker_host_service.endpoints.host_http.port }}
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   http-request set-header X-Forwarded-Proto http
@@ -149,9 +183,22 @@ frontend fe_firecracker_host_http
 
 frontend fe_nomad_artifacts
   guid fe_nomad_artifacts
+  maxconn {{ haproxy_internal_frontend_maxconn }}
   bind {{ topology_artifacts.nomad.origin.listen_host }}:{{ topology_artifacts.nomad.origin.port }} ssl crt /etc/verself/pki/nomad-artifacts-server-haproxy.pem alpn h2,http/1.1
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   default_backend be_garage_nomad_artifacts
+
+backend be_edge_public_rates
+  guid be_edge_public_rates
+  stick-table type ip size {{ haproxy_stick_table_size }} expire {{ haproxy_stick_table_expire }} store http_req_rate({{ haproxy_public_rate_window }}),http_err_rate({{ haproxy_public_rate_window }})
+
+backend be_edge_auth_rates
+  guid be_edge_auth_rates
+  stick-table type ip size {{ haproxy_stick_table_size }} expire {{ haproxy_stick_table_expire }} store http_req_rate({{ haproxy_public_rate_window }}),http_err_rate({{ haproxy_public_rate_window }})
+
+backend be_edge_webhook_rates
+  guid be_edge_webhook_rates
+  stick-table type ip size {{ haproxy_stick_table_size }} expire {{ haproxy_stick_table_expire }} store http_req_rate({{ haproxy_public_rate_window }}),http_err_rate({{ haproxy_public_rate_window }})
 
 backend be_not_found
   guid be_not_found

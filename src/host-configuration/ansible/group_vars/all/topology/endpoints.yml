@@ -301,6 +301,25 @@ topology_endpoints:
         openapi: ""
         path_prefix: ""
     probes: {}
+  haproxy:
+    endpoints:
+      metrics:
+        address: "127.0.0.1:8404"
+        bind_address: "127.0.0.1:8404"
+        exposure: loopback
+        host: 127.0.0.1
+        listen_host: ""
+        port: 8404
+        protocol: http
+    host: 127.0.0.1
+    interfaces:
+      metrics:
+        auth: none
+        endpoint: metrics
+        kind: metrics
+        openapi: ""
+        path_prefix: /metrics
+    probes: {}
   governance_service:
     endpoints:
       internal_https:

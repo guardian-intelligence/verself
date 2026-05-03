@@ -15,7 +15,7 @@ receivers:
         to: body
       - type: regex_parser
         parse_from: body
-        regex: '^client_ip=(?P<client_ip>[^ ]+) client_port=(?P<client_port>[0-9]+) method=(?P<http_method>[^ ]+) host=(?P<http_host>[^ ]*) path=(?P<http_uri>[^ ]*) status=(?P<http_status>[0-9]+) bytes=(?P<resp_size_bytes>-|[0-9]+) duration_ms=(?P<duration_ms>-|[0-9]+) frontend=(?P<frontend>[^ ]+) backend=(?P<backend>[^ ]+) server=(?P<server>[^ ]+)$'
+        regex: '^request_id=(?P<request_id>[^ ]+) client_ip=(?P<client_ip>[^ ]+) client_port=(?P<client_port>[0-9]+) method=(?P<http_method>[^ ]+) host=(?P<http_host>[^ ]*) path=(?P<http_uri>[^ ]*) query=(?P<http_query>[^ ]*) uri=(?P<http_full_uri>[^ ]*) status=(?P<http_status>[0-9]+) bytes=(?P<resp_size_bytes>-|[0-9]+) duration_ms=(?P<duration_ms>-|[0-9]+) t_request_ms=(?P<t_request_ms>-|[0-9]+) t_queue_ms=(?P<t_queue_ms>-|[0-9]+) t_connect_ms=(?P<t_connect_ms>-|[0-9]+) t_response_ms=(?P<t_response_ms>-|[0-9]+) termination=(?P<termination_state>[^ ]+) active_conn=(?P<active_conn>[0-9]+) frontend_conn=(?P<frontend_conn>[0-9]+) backend_conn=(?P<backend_conn>[0-9]+) server_conn=(?P<server_conn>[0-9]+) retries=(?P<retries>[0-9]+) server_queue=(?P<server_queue>[0-9]+) backend_queue=(?P<backend_queue>[0-9]+) frontend=(?P<frontend>[^ ]+) backend=(?P<backend>[^ ]+) server=(?P<server>[^ ]+) tls_version=(?P<tls_version>[^ ]*) tls_cipher=(?P<tls_cipher>[^ ]*) tls_sni=(?P<tls_sni>[^ ]*) alpn=(?P<alpn>[^ ]*)$'
   journald/zitadel:
     units: [zitadel]
     resource:
@@ -441,6 +441,14 @@ receivers:
             format: [prometheus]
           static_configs:
             - targets: ["{{ topology_endpoints.nomad.endpoints.http.address }}"]
+  prometheus/haproxy:
+    config:
+      scrape_configs:
+        - job_name: haproxy
+          scrape_interval: 10s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["{{ topology_endpoints.haproxy.endpoints.metrics.address }}"]
 
 processors:
   batch:
@@ -508,6 +516,6 @@ service:
       processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal, prometheus/bazel-remote, prometheus/nomad]
+      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal, prometheus/bazel-remote, prometheus/nomad, prometheus/haproxy]
       processors: [batch]
       exporters: [clickhouse]
