@@ -1,0 +1,32 @@
+---
+- name: Check ZFS pool exists
+  ansible.builtin.command: "zpool status {{ firecracker_zfs_pool | default(zfs_pool) }}"
+  changed_when: false
+  failed_when: false
+  register: preflight_zpool
+
+- name: Check guest kernel exists
+  ansible.builtin.stat:
+    path: /var/lib/verself/guest-images/vmlinux
+    get_checksum: false
+  register: preflight_guest_kernel
+
+- name: Check substrate ext4 exists
+  ansible.builtin.stat:
+    path: /var/lib/verself/guest-images/substrate.ext4
+    get_checksum: false
+  register: preflight_substrate
+
+- name: Fail if ZFS pool is missing
+  ansible.builtin.fail:
+    msg: >-
+      ZFS pool '{{ firecracker_zfs_pool | default(zfs_pool) }}' not found on {{ inventory_hostname }}
+      after the zfs role completed.
+  when: preflight_zpool.rc != 0
+
+- name: Fail if guest images are missing
+  ansible.builtin.fail:
+    msg: >-
+      Guest images are missing after the guest_rootfs role. Inspect the
+      preceding guest_rootfs tasks in this aspect deploy run.
+  when: not preflight_guest_kernel.stat.exists or not preflight_substrate.stat.exists

@@ -1,0 +1,3 @@
+---
+- name: Materialise system users and groups for every component
+  ansible.builtin.import_tasks: ../../tasks/userspace_batch.yml

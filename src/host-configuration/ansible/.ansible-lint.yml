@@ -15,6 +15,7 @@ enable_list:
   - no-psql-object-state
   - no-secret-without-no-log
   - no-validate-certs-false
+  - site-orchestrates-only
   - services-registry-contract
 
 warn_list:

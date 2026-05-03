@@ -1,0 +1,214 @@
+---
+- name: Re-derive daemon facts consumed by per-component tasks
+  ansible.builtin.set_fact:
+    clickhouse_operator_client_command: >-
+      sudo -u {{ clickhouse_operator_system_user | default('clickhouse_operator') }}
+      {{ verself_bin }}/clickhouse-client
+      --config-file {{ clickhouse_operator_client_config_path | default('/etc/clickhouse-client/operator.xml') }}
+      --user {{ clickhouse_operator_db_user | default('clickhouse_operator') }}
+
+- name: Select Nomad application components for substrate configuration
+  ansible.builtin.set_fact:
+    application_components: >-
+      {{
+        topology_components
+        | selectattr('deployment.supervisor', 'equalto', 'nomad')
+        | selectattr('workload.units')
+        | sort(attribute='workload.order')
+        | list
+      }}
+
+- name: Select component substrate binding groups
+  ansible.builtin.set_fact:
+    component_secret_ansible_var_names: >-
+      {{
+        application_components
+        | map(attribute='workload.secret_refs')
+        | flatten
+        | selectattr('source.kind', 'equalto', 'ansible_var')
+        | map(attribute='source.ansible_var')
+        | unique
+        | list
+      }}
+    component_postgres_ansible_var_names: >-
+      {{
+        application_components
+        | selectattr('postgres.password_ref.kind', 'equalto', 'ansible_var')
+        | map(attribute='postgres.password_ref.name')
+        | unique
+        | list
+      }}
+    component_postgres_bindings: >-
+      {{
+        application_components
+        | selectattr('postgres.database')
+        | list
+      }}
+    component_clickhouse_bindings: >-
+      {{
+        application_components
+        | selectattr('workload.clickhouse', 'defined')
+        | list
+      }}
+    component_owned_auth_components: >-
+      {{
+        application_components
+        | selectattr('workload.auth.kind', 'equalto', 'owned_project')
+        | list
+      }}
+
+- name: Initialize component sensitive Ansible var map
+  ansible.builtin.set_fact:
+    component_sensitive_ansible_values: {}
+  no_log: true
+
+- name: Resolve component sensitive Ansible vars once
+  ansible.builtin.set_fact:
+    component_sensitive_ansible_values: >-
+      {{
+        component_sensitive_ansible_values
+        | combine({item: lookup('vars', item)})
+      }}
+  loop: "{{ (component_secret_ansible_var_names + component_postgres_ansible_var_names) | unique | list }}"
+  no_log: true
+
+- name: Probe component filesystem convergence once
+  ansible.builtin.script: "{{ playbook_dir }}/../files/component_filesystem_convergence.py"
+  environment:
+    COMPONENT_FILESYSTEM_DESIRED: "{{ application_components | to_json }}"
+    COMPONENT_FILESYSTEM_ANSIBLE_VARS: "{{ component_sensitive_ansible_values | to_json }}"
+  register: component_filesystem_convergence_raw
+  changed_when: false
+  no_log: true
+
+- name: Set component filesystem convergence plan
+  ansible.builtin.set_fact:
+    component_filesystem_convergence: "{{ component_filesystem_convergence_raw.stdout | from_json }}"
+  changed_when: false
+  no_log: true
+
+- name: Skip component filesystem reconciliation when already converged
+  ansible.builtin.debug:
+    msg: >-
+      Component directories and credentials already converged for {{
+      component_filesystem_convergence.directory_count }} directories and {{
+      component_filesystem_convergence.secret_count }} credential files; skipping per-file tasks.
+  when: component_filesystem_convergence.converged | bool
+
+- name: Probe component PostgreSQL convergence once
+  ansible.builtin.script: >-
+    {{ playbook_dir }}/../files/component_postgres_convergence.py
+    --host {{ topology_endpoints.postgresql.host }}
+    --port {{ topology_endpoints.postgresql.endpoints.postgres.port }}
+    --admin-user postgres
+  environment:
+    COMPONENT_POSTGRES_DESIRED: "{{ component_postgres_bindings | to_json }}"
+    COMPONENT_POSTGRES_ANSIBLE_VARS: "{{ component_sensitive_ansible_values | to_json }}"
+    COMPONENT_POSTGRES_EXPOSED_VALUES: "{{ component_filesystem_convergence.exposed_values | default({}) | to_json }}"
+    COMPONENT_POSTGRES_ADMIN_PASSWORD: "{{ postgresql_admin_password }}"
+  register: component_postgres_convergence_raw
+  changed_when: false
+  no_log: true
+  when: component_postgres_bindings | length > 0
+
+- name: Set component PostgreSQL convergence plan
+  ansible.builtin.set_fact:
+    component_postgres_convergence: >-
+      {{
+        component_postgres_convergence_raw.stdout | from_json
+        if (component_postgres_bindings | length > 0)
+        else {"converged": true, "binding_count": 0}
+      }}
+  changed_when: false
+  no_log: true
+
+- name: Skip component PostgreSQL reconciliation when already converged
+  ansible.builtin.debug:
+    msg: >-
+      Component PostgreSQL bindings already converged for {{
+      component_postgres_convergence.binding_count }} databases; skipping per-component PostgreSQL tasks.
+  when: component_postgres_convergence.converged | bool
+
+- name: Configure component ClickHouse bindings in one batch
+  ansible.builtin.command:
+    cmd: "{{ clickhouse_operator_client_command }} --multiquery"
+    stdin: |
+      {% for component in component_clickhouse_bindings %}
+      {% set spiffe_uri = lookup('vars', component.identities[component.workload.clickhouse.spiffe_identity].ansible_var) %}
+      CREATE USER IF NOT EXISTS {{ component.workload.clickhouse.user }}
+        IDENTIFIED WITH ssl_certificate
+        SAN 'URI:{{ spiffe_uri }}'
+        HOST LOCAL;
+      ALTER USER {{ component.workload.clickhouse.user }}
+        IDENTIFIED WITH ssl_certificate
+        SAN 'URI:{{ spiffe_uri }}'
+        HOST LOCAL;
+      {% for grant in component.workload.clickhouse.grants %}
+      GRANT {{ grant.action }} ON {{ grant.table }} TO {{ component.workload.clickhouse.user }};
+      {% endfor %}
+      {% endfor %}
+  changed_when: false
+  no_log: true
+  when: component_clickhouse_bindings | length > 0
+
+- name: Mark component ClickHouse bindings as batched
+  ansible.builtin.set_fact:
+    component_clickhouse_batched: true
+
+- name: Wait for Zitadel before owned component auth reconciliation
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
+    timeout: 60
+  when: component_owned_auth_components | length > 0
+
+- name: Read Zitadel admin PAT for owned component auth reconciliation
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: component_zitadel_admin_pat_raw
+  no_log: true
+  when: component_owned_auth_components | length > 0
+
+- name: Set Zitadel admin PAT fact for owned component auth reconciliation
+  ansible.builtin.set_fact:
+    component_zitadel_admin_pat: "{{ component_zitadel_admin_pat_raw.content | b64decode | trim }}"
+  no_log: true
+  when: component_owned_auth_components | length > 0
+
+- name: List Zitadel projects for owned component auth once
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ component_zitadel_admin_pat }}"
+      Host: "auth.{{ verself_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+  register: component_zitadel_projects_raw
+  no_log: true
+  when: component_owned_auth_components | length > 0
+
+- name: Initialize owned component Zitadel project index
+  ansible.builtin.set_fact:
+    component_zitadel_projects_by_name: {}
+  no_log: true
+  when: component_owned_auth_components | length > 0
+
+- name: Index owned component Zitadel projects by name
+  ansible.builtin.set_fact:
+    component_zitadel_projects_by_name: >-
+      {{
+        component_zitadel_projects_by_name
+        | combine({item.name: item})
+      }}
+  loop: "{{ component_zitadel_projects_raw.json.result | default([]) }}"
+  no_log: true
+  when: component_owned_auth_components | length > 0
+
+- name: Configure Nomad application substrate state
+  ansible.builtin.include_tasks: ../../tasks/component_substrate.yml
+  loop: "{{ application_components }}"
+  loop_control:
+    loop_var: component
+    label: "{{ component.name }}"
