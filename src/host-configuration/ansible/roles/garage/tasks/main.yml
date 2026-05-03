@@ -131,7 +131,7 @@
 
 - name: Deploy garage nftables ruleset
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/garage.nft"
+    src: "{{ platform_host_files_dir }}/etc/nftables.d/garage.nft"
     dest: /etc/nftables.d/garage.nft
     mode: "0644"
   notify: reload nftables

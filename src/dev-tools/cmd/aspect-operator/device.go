@@ -120,7 +120,7 @@ func configureOperatorDevice(opts deviceOptions) error {
 }
 
 func loadDeviceOps(repoRoot string) (deviceOpsVars, error) {
-	path := filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "generated", "ops.yml")
+	path := filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "topology", "ops.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return deviceOpsVars{}, fmt.Errorf("read %s: %w", path, err)

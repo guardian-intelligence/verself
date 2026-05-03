@@ -49,8 +49,8 @@ They do not converge host packages or deploy services.
 - `migrations/clickhouse/` — host convergence ClickHouse schema.
 - `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
   persona, billing, mail, database access, observability, and host evidence.
-Topology vars are authored under `src/host-configuration/ansible/group_vars/all/generated/`.
-Host firewall files are source-owned under `src/host-configuration/ansible/rendered/`.
+Topology vars are authored in `src/host-configuration/ansible/group_vars/all/topology/`.
+Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
 Nomad base jobs live under `src/deployment-tools/nomad/sites/<site>/jobs/`
 and are resolved by Bazel with the service-owned artifact and rollout inputs.
 

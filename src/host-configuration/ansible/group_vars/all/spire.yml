@@ -1,2 +1,2 @@
 ---
-# SPIRE topology vars are authored in group_vars/all/generated/spire.yml.
+# SPIRE topology vars are authored in group_vars/all/topology/spire.yml.

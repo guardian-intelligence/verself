@@ -128,7 +128,7 @@
 
 - name: "Deploy nftables rules for {{ electric_service_name }}"
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}{{ electric_nftables_file }}"
+    src: "{{ platform_host_files_dir }}{{ electric_nftables_file }}"
     dest: "{{ electric_nftables_file }}"
     mode: "0644"
   notify: reload nftables

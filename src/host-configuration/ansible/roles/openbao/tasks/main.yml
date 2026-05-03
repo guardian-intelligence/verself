@@ -157,7 +157,7 @@
 
 - name: Deploy OpenBao nftables ruleset
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/openbao.nft"
+    src: "{{ platform_host_files_dir }}/etc/nftables.d/openbao.nft"
     dest: /etc/nftables.d/openbao.nft
     mode: "0644"
   notify: reload nftables

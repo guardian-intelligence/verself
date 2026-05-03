@@ -1,0 +1,14 @@
+# Authored substrate host file.
+# Source: src/host-configuration/ansible/host-files
+# nftables ruleset company.
+table inet verself_company
+delete table inet verself_company
+
+table inet verself_company {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+}

@@ -46,7 +46,7 @@ class NoDefaultPortsRule(AnsibleLintRule):
                         message=(
                             f"Port variable '{m.group(1).strip()}' defined outside "
                             "the topology contract — declare it in "
-                            "src/host-configuration/ansible/group_vars/all/generated/ instead."
+                            "src/host-configuration/ansible/group_vars/all/topology/ instead."
                         ),
                         lineno=lineno,
                         filename=file,

@@ -408,9 +408,9 @@ func buildEdgeManifest(cfg edgeConfig) (*edgeManifest, []string, error) {
 
 func (cfg edgeConfig) sources() edgeSources {
 	return edgeSources{
-		Routes:          filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/generated/routes.yml"),
-		Endpoints:       filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/generated/endpoints.yml"),
-		Ops:             filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/generated/ops.yml"),
+		Routes:          filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/topology/routes.yml"),
+		Endpoints:       filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
+		Ops:             filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
 		NomadIndex:      filepath.Join(cfg.repoRoot, "src/deployment-tools/nomad/sites", cfg.site, "jobs/index.json"),
 		NomadJobsDir:    filepath.Join(cfg.repoRoot, "src/deployment-tools/nomad/sites", cfg.site, "jobs"),
 		HAProxyDefaults: filepath.Join(cfg.repoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),

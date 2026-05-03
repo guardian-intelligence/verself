@@ -1,6 +1,6 @@
 # Public Origins
 
-Public origins are declared in `src/host-configuration/ansible/group_vars/all/generated/routes.yml`. `public_haproxy` routes are rendered into HAProxy host/path dispatch rules by the host-configuration role.
+Public origins are declared in `src/host-configuration/ansible/group_vars/all/topology/routes.yml`. `public_haproxy` routes are rendered into HAProxy host/path dispatch rules by the host-configuration role.
 
 The product apex (`<domain>`) serves the authenticated console, docs, and policy from the TanStack Start app. Public service APIs use service subdomains under `<service>.api.<domain>`, including `billing.api.<domain>`, `sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code uses same-origin server functions for product workflows; server functions attach service credentials when calling public service APIs.
 

@@ -1,0 +1,14 @@
+# Authored substrate host file.
+# Source: src/host-configuration/ansible/host-files
+# verself-firewall.target is the host firewall readiness point.
+#
+# Network-facing verself services declare After= and Requires= on this target so
+# they cannot bind before nftables has installed the default-deny policy.
+
+[Unit]
+Description=verself host firewall ready
+Requires=nftables.service
+After=nftables.service
+
+[Install]
+WantedBy=multi-user.target

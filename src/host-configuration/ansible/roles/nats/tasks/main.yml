@@ -31,7 +31,7 @@
 
 - name: Deploy NATS nftables ruleset
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/nats.nft"
+    src: "{{ platform_host_files_dir }}/etc/nftables.d/nats.nft"
     dest: /etc/nftables.d/nats.nft
     mode: "0644"
   notify: reload nftables

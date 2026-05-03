@@ -1,0 +1,23 @@
+# Authored substrate host file.
+# Source: src/host-configuration/ansible/host-files
+# nftables ruleset nats.
+table inet verself_nats
+delete table inet verself_nats
+
+table inet verself_nats {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport { 4222, 8222 } iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != nats accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

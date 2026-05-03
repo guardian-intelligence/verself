@@ -26,7 +26,7 @@ except ModuleNotFoundError:
     AnsibleLintRule = object  # type: ignore[assignment,misc]
 
 
-REGISTRY_RELATIVE = Path("group_vars/all/generated/endpoints.yml")
+REGISTRY_RELATIVE = Path("group_vars/all/topology/endpoints.yml")
 CONTROL_PLANE_PORT_MIN = 4240
 CONTROL_PLANE_PORT_MAX = 4269
 PORT_KEY_RE = re.compile(r"^port$")
@@ -68,7 +68,7 @@ def resolve_registry_path(path: str | Path | None = None) -> Path:
 
     Order of preference:
       1. Explicit `path` argument (used by `main()` and direct test invocation).
-      2. CWD-relative `group_vars/all/generated/endpoints.yml`, used by
+      2. CWD-relative `group_vars/all/topology/endpoints.yml`, used by
          ansible-lint when it runs from the authored Ansible directory.
     """
     if path is not None:

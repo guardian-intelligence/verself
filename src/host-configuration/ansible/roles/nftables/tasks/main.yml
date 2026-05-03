@@ -12,7 +12,7 @@
 
 - name: Deploy main nftables config
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.conf"
+    src: "{{ platform_host_files_dir }}/etc/nftables.conf"
     dest: /etc/nftables.conf
     mode: "0644"
   notify: reload nftables
@@ -21,7 +21,7 @@
   ansible.builtin.set_fact:
     nftables_rendered_rulesets: >-
       {{
-        lookup('ansible.builtin.fileglob', platform_rendered_dir + '/etc/nftables.d/*.nft', wantlist=True)
+        lookup('ansible.builtin.fileglob', platform_host_files_dir + '/etc/nftables.d/*.nft', wantlist=True)
         | reject('search', '/firecracker\\.nft$')
         | sort
         | list
@@ -92,7 +92,7 @@
 
 - name: Deploy verself-firewall target
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/systemd/system/verself-firewall.target"
+    src: "{{ platform_host_files_dir }}/etc/systemd/system/verself-firewall.target"
     dest: /etc/systemd/system/verself-firewall.target
     mode: "0644"
 

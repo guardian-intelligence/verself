@@ -1,10 +1,10 @@
 ---
 # Global variables for all nodes. Authored topology defaults live in
-# group_vars/all/generated and are intentionally kept out of this file.
+# group_vars/all/topology and are intentionally kept out of this file.
 
-# Rendered host files are source-owned under src/host-configuration/ansible/rendered.
+# Host file contracts are authored under src/host-configuration/ansible/host-files.
 # playbook_dir is <repo>/src/host-configuration/ansible/playbooks during convergence.
-platform_rendered_dir: "{{ playbook_dir }}/../rendered"
+platform_host_files_dir: "{{ playbook_dir }}/../host-files"
 postgresql_log_dir: /var/log/postgresql
 
 # Platform-owned organization. This org is the first-party customer account the

@@ -1,0 +1,25 @@
+# Authored substrate host file.
+# Source: src/host-configuration/ansible/host-files
+# nftables ruleset profile_service.
+table inet verself_profile_service
+delete table inet verself_profile_service
+
+table inet verself_profile_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != profile_service accept
+        oifname "lo" tcp dport { 5432, 8085, 4317, 20000-32000 } accept
+        oifname "lo" tcp dport 443 accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

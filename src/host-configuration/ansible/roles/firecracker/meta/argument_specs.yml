@@ -3,7 +3,7 @@ argument_specs:
   main:
     short_description: "Firecracker host setup: KVM, jailer, vm-orchestrator daemon, image seeding"
     description:
-      - "Installs Firecracker + jailer from generated topology catalog vars, configures KVM,"
+      - "Installs Firecracker + jailer from topology catalog vars, configures KVM,"
       - "creates the jailer user/group, deploys the vm-orchestrator daemon, and runs the"
       - "vm-orchestrator-seed oneshot unit to materialize composable image zvols (including"
       - "the boot image) via the SeedImage RPC. The role does not issue zfs(8), dd, or"

@@ -223,11 +223,11 @@ func (d *desiredState) byZone(zone string) []desiredRecord {
 }
 
 // loadDesired reads authored substrate vars that drive Cloudflare DNS shape:
-// generated/dns.yml (topology_dns_records) and generated/ops.yml
+// topology/dns.yml (topology_dns_records) and topology/ops.yml
 // (verself_domain, company_domain, bare_metal_public_ipv4).
 func loadDesired(ansibleDir string) (*desiredState, error) {
-	dnsPath := ansibleDir + "/group_vars/all/generated/dns.yml"
-	opsPath := ansibleDir + "/group_vars/all/generated/ops.yml"
+	dnsPath := ansibleDir + "/group_vars/all/topology/dns.yml"
+	opsPath := ansibleDir + "/group_vars/all/topology/ops.yml"
 
 	var dnsDoc struct {
 		Records []struct {

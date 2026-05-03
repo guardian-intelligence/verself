@@ -3,6 +3,6 @@ argument_specs:
   main:
     short_description: "Host firewall via nftables (default-deny ingress)"
     description:
-      - "Copies source-owned final nftables files."
+      - "Copies authored host nftables files."
       - "The topology ruleset records are the topology contract; Ansible only installs them."
     options: {}

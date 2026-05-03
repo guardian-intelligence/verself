@@ -239,7 +239,7 @@ func loadPlatformConfig(repoRoot string) (platformConfig, error) {
 	if err := readYAMLFile(mainPath, &mainVars); err != nil {
 		return platformConfig{}, err
 	}
-	opsPath := filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "generated", "ops.yml")
+	opsPath := filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "topology", "ops.yml")
 	var ops platformOpsVars
 	if err := readYAMLFile(opsPath, &ops); err != nil {
 		return platformConfig{}, err

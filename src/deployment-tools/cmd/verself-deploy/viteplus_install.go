@@ -20,7 +20,7 @@ import (
 
 const (
 	viteplusWorkspaceRel     = "src/viteplus-monorepo"
-	topologyEndpointsYAMLRel = "src/host-configuration/ansible/group_vars/all/generated/endpoints.yml"
+	topologyEndpointsYAMLRel = "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"
 )
 
 type topologyEndpointsYAML struct {

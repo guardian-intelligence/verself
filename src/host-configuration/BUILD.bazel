@@ -22,6 +22,8 @@ filegroup(
         exclude = [
             "ansible/.ansible/**",
             "ansible/.cache/**",
+            "ansible/**/__generated/**",
+            "ansible/**/__rendered/**",
             "ansible/**/__pycache__/**",
             "ansible/inventory/*.ini",
             "scripts/.venv/**",

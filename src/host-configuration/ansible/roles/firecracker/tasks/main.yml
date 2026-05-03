@@ -198,7 +198,7 @@
 # the host file on every run and triggers needless network restarts.
 - name: Stage rendered Firecracker nftables ruleset
   ansible.builtin.copy:
-    content: "{{ lookup('ansible.builtin.file', platform_rendered_dir + '/etc/nftables.d/firecracker.nft', rstrip=False) | replace('__VERSELF_UPLINK__', firecracker_resolved_uplink) }}"
+    content: "{{ lookup('ansible.builtin.file', platform_host_files_dir + '/etc/nftables.d/firecracker.nft', rstrip=False) | replace('__VERSELF_UPLINK__', firecracker_resolved_uplink) }}"
     dest: /etc/nftables.d/firecracker.nft
     mode: "0644"
   notify: restart firecracker networking

@@ -68,6 +68,10 @@ node_modules
 # Materialized local build/deploy outputs
 artifacts/
 
+# Generated/rendered directories are materialized outputs.
+**/__generated/
+**/__rendered/
+
 # Bazel convenience symlinks
 /bazel-*
 

@@ -21,7 +21,7 @@
 
 - name: Deploy stalwart nftables ruleset
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/stalwart.nft"
+    src: "{{ platform_host_files_dir }}/etc/nftables.d/stalwart.nft"
     dest: /etc/nftables.d/stalwart.nft
     mode: "0644"
   notify: reload nftables
