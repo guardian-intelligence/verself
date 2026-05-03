@@ -5,20 +5,62 @@
 - name: Apply security patches
   hosts: all
   become: true
+  gather_facts: true
+  gather_subset:
+    - "!all"
+    - min
   serial: "10%"  # Conservative rolling update
+  vars:
+    security_patch_current_fact_schema: 1
+    security_patch_check_ttl_seconds: 86400
+    # ansible_date_time comes from cached setup facts, so use the controller clock for TTL math.
+    security_patch_now_epoch: "{{ now(utc=true).timestamp() | int }}"
+    security_patch_cached_epoch: "{{ ansible_facts.security_patch_checked_epoch | default(0) | int }}"
+    security_patch_cached_schema: "{{ ansible_facts.security_patch_fact_schema | default(0) | int }}"
+    security_patch_check_due: >-
+      {{
+        (security_patch_cached_schema | int) != security_patch_current_fact_schema
+        or (security_patch_cached_epoch | int) <= 0
+        or ((security_patch_now_epoch | int) - (security_patch_cached_epoch | int)) >= security_patch_check_ttl_seconds
+      }}
   tasks:
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: true
-        cache_valid_time: 3600
+    - name: Check whether a previous patch requires reboot
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: security_patch_initial_reboot_required
+      changed_when: false
 
-    - name: Upgrade security packages
-      ansible.builtin.apt:
-        upgrade: safe
-        policy_rc_d: 101
-      register: apt_result
-
-    - name: Reboot if required
+    - name: Reboot before package check if required
       ansible.builtin.reboot:
         reboot_timeout: 300
-      when: apt_result.changed and ansible_facts['os_family'] == 'Debian'
+      when: security_patch_initial_reboot_required.stat.exists
+
+    - name: Run apt security patch check when cache is stale
+      when: security_patch_check_due | bool
+      block:
+        - name: Update apt cache
+          ansible.builtin.apt:
+            update_cache: true
+            cache_valid_time: 3600
+
+        - name: Upgrade security packages
+          ansible.builtin.apt:
+            upgrade: safe
+            policy_rc_d: 101
+
+        - name: Check whether package upgrades require reboot
+          ansible.builtin.stat:
+            path: /var/run/reboot-required
+          register: security_patch_post_reboot_required
+          changed_when: false
+
+        - name: Reboot after package upgrades if required
+          ansible.builtin.reboot:
+            reboot_timeout: 300
+          when: security_patch_post_reboot_required.stat.exists
+
+        - name: Cache successful security patch check
+          ansible.builtin.set_fact:
+            security_patch_checked_epoch: "{{ security_patch_now_epoch | int }}"
+            security_patch_fact_schema: "{{ security_patch_current_fact_schema }}"
+            cacheable: true
