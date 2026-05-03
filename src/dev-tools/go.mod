@@ -38,11 +38,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1
+	github.com/verself/host-configuration v0.0.0
 	github.com/verself/operator-runtime v0.0.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/verself/host-configuration => ../host-configuration
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect

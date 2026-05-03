@@ -1,11 +1,12 @@
-{% set seen = [] -%}
-{% for route in topology_routes | selectattr('gateway', 'equalto', 'public_haproxy') -%}
-{% if route.to.component in topology_endpoints and route.to.interface in topology_endpoints[route.to.component].interfaces -%}
-{% set endpoint_name = topology_endpoints[route.to.component].interfaces[route.to.interface].endpoint -%}
-{% set key = 'VERSELF_UPSTREAM_' ~ route.to.component | upper ~ '_' ~ endpoint_name | upper -%}
-{% if key not in seen -%}
-{% set _ = seen.append(key) -%}
-{{ key }} 127.0.0.1:1
-{% endif -%}
-{% endif -%}
-{% endfor -%}
+VERSELF_UPSTREAM_BILLING_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_COMPANY_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_GOVERNANCE_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_IDENTITY_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_MAILBOX_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_NOTIFICATIONS_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_PROFILE_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_PROJECTS_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_SECRETS_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP 127.0.0.1:1
+VERSELF_UPSTREAM_VERSELF_WEB_HTTP 127.0.0.1:1

@@ -24,9 +24,9 @@
 //	aspect-operator device
 //	    Configure this checkout/device to reach the operator access plane.
 //
-//	aspect-operator edge check|manifest
+//	aspect-operator edge check|manifest|render
 //	    Operator-side public edge contract checker derived from topology,
-//	    authored Nomad jobs, and HAProxy template references.
+//	    authored Nomad jobs, and generated HAProxy artifacts.
 //
 //	aspect-operator platform --action=check|seed
 //	    Operator-side platform organization convergence for the dogfooded

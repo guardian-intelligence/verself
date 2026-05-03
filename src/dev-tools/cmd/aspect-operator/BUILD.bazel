@@ -8,6 +8,7 @@ go_library(
         "detect_intrusions.go",
         "dev.go",
         "edge.go",
+        "files.go",
         "db_ch.go",
         "db_common.go",
         "db.go",
@@ -25,6 +26,7 @@ go_library(
     importpath = "github.com/verself/dev-tools/cmd/aspect-operator",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/host-configuration/edgecontract",
         "//src/operator-runtime/go/clickhouse",
         "//src/operator-runtime/go/evidence",
         "//src/operator-runtime/go/postgres",

@@ -1,6 +1,6 @@
 """aspect operator — operator-side platform helpers.
 
-  aspect operator edge --action=check|manifest|runtime [--format=text|json|yaml|typed] [--show=info|stat|sni|errors|table]
+  aspect operator edge --action=check|manifest|render|runtime [--format=text|json|yaml|typed] [--show=info|stat|sni|errors|table]
   aspect operator platform --action=check|seed [--format=text|json]
   aspect operator device [--site=prod]
 
@@ -14,8 +14,8 @@ def _edge_impl(ctx):
     if bin == "":
         return 1
     action = ctx.args.action or "check"
-    if action != "check" and action != "manifest" and action != "runtime":
-        ctx.std.io.stderr.write("ERROR: --action must be check, manifest, or runtime\n")
+    if action != "check" and action != "manifest" and action != "render" and action != "runtime":
+        ctx.std.io.stderr.write("ERROR: --action must be check, manifest, render, or runtime\n")
         return 1
     if action == "runtime":
         cli_args = [

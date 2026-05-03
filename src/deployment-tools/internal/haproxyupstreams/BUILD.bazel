@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//src/deployment-tools/internal/nomadclient",
         "//src/deployment-tools/internal/sshtun",
+        "//src/host-configuration/edgecontract",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",

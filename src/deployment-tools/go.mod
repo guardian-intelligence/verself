@@ -9,6 +9,7 @@ require (
 	github.com/hashicorp/nomad/api v0.0.0-20260501195443-d922fcdd63e4
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/verself/host-configuration v0.0.0
 	github.com/verself/observability v0.0.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -62,5 +63,7 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/verself/host-configuration => ../host-configuration
 
 replace github.com/verself/observability => ../observability/go

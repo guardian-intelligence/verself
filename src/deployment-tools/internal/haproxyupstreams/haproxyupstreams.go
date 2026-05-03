@@ -25,6 +25,7 @@ import (
 
 	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/sshtun"
+	edgecontract "github.com/verself/host-configuration/edgecontract"
 )
 
 const tracerName = "github.com/verself/deployment-tools/internal/haproxyupstreams"
@@ -112,19 +113,7 @@ func buildMapFile(addresses []nomadclient.ServiceAddress) (string, error) {
 // names outside the authored job naming contract return an empty
 // string so the caller skips them.
 func mapKey(serviceName string) string {
-	if serviceName == "" {
-		return ""
-	}
-	for _, r := range serviceName {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= '0' && r <= '9':
-		case r == '-' || r == '_':
-		default:
-			return ""
-		}
-	}
-	return "VERSELF_UPSTREAM_" + strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+	return string(edgecontract.NomadServiceUpstreamKey(serviceName))
 }
 
 func validateLoopbackAddress(addr nomadclient.ServiceAddress) error {
