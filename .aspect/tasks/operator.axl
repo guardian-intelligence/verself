@@ -1,6 +1,6 @@
 """aspect operator — operator-side platform helpers.
 
-  aspect operator edge --action=check|manifest [--format=text|json|yaml]
+  aspect operator edge --action=check|manifest|runtime [--format=text|json|yaml|typed] [--show=info|stat|sni|errors|table]
   aspect operator platform --action=check|seed [--format=text|json]
   aspect operator device [--site=prod]
 
@@ -14,19 +14,35 @@ def _edge_impl(ctx):
     if bin == "":
         return 1
     action = ctx.args.action or "check"
-    if action != "check" and action != "manifest":
-        ctx.std.io.stderr.write("ERROR: --action must be check or manifest\n")
+    if action != "check" and action != "manifest" and action != "runtime":
+        ctx.std.io.stderr.write("ERROR: --action must be check, manifest, or runtime\n")
         return 1
-    cli_args = [
-        "edge",
-        action,
-        "--repo-root",
-        ws_path(ctx),
-        "--site",
-        ctx.args.site or "prod",
-        "--format",
-        ctx.args.format or "text",
-    ]
+    if action == "runtime":
+        cli_args = [
+            "edge",
+            "runtime",
+            "--repo-root",
+            ws_path(ctx),
+            "--site",
+            ctx.args.site or "prod",
+            "--show",
+            ctx.args.show or "info",
+            "--format",
+            ctx.args.format or "text",
+        ]
+        if ctx.args.table:
+            cli_args = cli_args + ["--table", ctx.args.table]
+    else:
+        cli_args = [
+            "edge",
+            action,
+            "--repo-root",
+            ws_path(ctx),
+            "--site",
+            ctx.args.site or "prod",
+            "--format",
+            ctx.args.format or "text",
+        ]
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator edge " + action)
 
 def _platform_impl(ctx):
@@ -82,11 +98,13 @@ edge = task(
     implementation = _edge_impl,
     name = "edge",
     group = ["operator"],
-    summary = "Validate or emit the derived public edge contract.",
+    summary = "Validate, emit, or inspect the HAProxy public edge.",
     args = {
-        "action": args.string(default = "check", description = "check | manifest."),
+        "action": args.string(default = "check", description = "check | manifest | runtime."),
         "site": args.string(default = "prod", description = "Deployment site."),
-        "format": args.string(default = "text", description = "Manifest output format: text | json | yaml."),
+        "format": args.string(default = "text", description = "Manifest output format: text | json | yaml. Runtime info/stat output: text | typed | json."),
+        "show": args.string(default = "info", description = "Runtime view for --action=runtime: info | stat | sni | errors | table."),
+        "table": args.string(default = "", description = "Stick table name for --action=runtime --show=table."),
     },
 )
 

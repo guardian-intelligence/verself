@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "aspect-operator_lib",
@@ -44,4 +44,10 @@ go_binary(
     name = "aspect-operator",
     embed = [":aspect-operator_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "aspect-operator_test",
+    srcs = ["edge_test.go"],
+    embed = [":aspect-operator_lib"],
 )

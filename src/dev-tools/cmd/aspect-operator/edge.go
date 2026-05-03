@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	opch "github.com/verself/operator-runtime/clickhouse"
+	opruntime "github.com/verself/operator-runtime/runtime"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,12 +31,22 @@ var (
 	haproxyNomadBackendRe    = regexp.MustCompile(`nomad_upstream_backend\('VERSELF_UPSTREAM_[A-Z0-9_]+',\s*'[^']+',\s*'([A-Za-z0-9_.:-]+)'\)`)
 	haproxyShmStatsFileRe    = regexp.MustCompile(`(?m)^\s*shm-stats-file\s+(.+?)\s*$`)
 	haproxyExposeExpLineRe   = regexp.MustCompile(`(?m)^\s*expose-experimental-directives\s*$`)
+	haproxyStrictSNIBindRe   = regexp.MustCompile(`(?m)^\s*bind\s+\{\{\s*topology_gateways\.public_haproxy\.host\s*\}\}:443\s+.*\bstrict-sni\b`)
+	haproxyMetricFrontendRe  = regexp.MustCompile(`(?m)^\s*frontend\s+fe_haproxy_metrics\s*$`)
+	haproxyRuntimeTableRe    = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,127}$`)
 )
 
 type edgeConfig struct {
 	repoRoot string
 	site     string
 	format   string
+}
+
+type edgeRuntimeOptions struct {
+	operatorRuntimeOptions
+	show   string
+	format string
+	table  string
 }
 
 type edgeSources struct {
@@ -213,6 +225,8 @@ func cmdEdge(args []string) error {
 		return cmdEdgeCheck(args[1:])
 	case "manifest":
 		return cmdEdgeManifest(args[1:])
+	case "runtime":
+		return cmdEdgeRuntime(args[1:])
 	case "-h", "--help", "help":
 		printEdgeUsage(os.Stdout)
 		return nil
@@ -310,12 +324,125 @@ func printEdgeUsage(w *os.File) {
 Subcommands:
   check      Validate topology routes, Nomad services, HAProxy upstream keys, and GUIDs
   manifest   Emit the derived edge contract manifest
+  runtime    Read HAProxy runtime API state through the operator SSH path
 
 Common flags:
   --repo-root <path>  verself-sh checkout root
   --site <site>       deployment site (default: prod)
   --format <format>   manifest format: text, json, yaml
+
+Runtime flags:
+  --show <info|stat|sni|errors|table>
+  --format <text|typed|json>  applies to info and stat
+  --table <name>              optional for --show=table
 `)
+}
+
+func cmdEdgeRuntime(args []string) error {
+	opts := edgeRuntimeOptions{
+		show:   "info",
+		format: "text",
+	}
+	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
+	fs := flagSet("edge runtime")
+	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
+	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
+	fs.StringVar(&opts.show, "show", opts.show, "Runtime view: info, stat, sni, errors, or table")
+	fs.StringVar(&opts.format, "format", opts.format, "Runtime output format for info/stat: text, typed, or json")
+	fs.StringVar(&opts.table, "table", "", "Stick table name for --show=table")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("edge runtime: unexpected positional args: %s", strings.Join(fs.Args(), " "))
+	}
+	command, err := edgeRuntimeCommand(opts)
+	if err != nil {
+		return err
+	}
+	return runOperatorRuntime("edge.runtime."+opts.show, opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+		out, err := runHAProxyRuntimeCommand(rt, command)
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(out)
+		return err
+	})
+}
+
+func edgeRuntimeCommand(opts edgeRuntimeOptions) (string, error) {
+	show := strings.ToLower(strings.TrimSpace(opts.show))
+	format := strings.ToLower(strings.TrimSpace(opts.format))
+	if format == "" {
+		format = "text"
+	}
+	if format != "text" && format != "typed" && format != "json" {
+		return "", fmt.Errorf("edge runtime: --format must be text, typed, or json")
+	}
+	formatSuffix := ""
+	if format != "text" {
+		formatSuffix = " " + format
+	}
+	switch show {
+	case "info":
+		return "show info" + formatSuffix, nil
+	case "stat":
+		return "show stat" + formatSuffix, nil
+	case "sni":
+		if format != "text" {
+			return "", fmt.Errorf("edge runtime: --show=sni only supports --format=text")
+		}
+		return "show ssl sni", nil
+	case "errors":
+		if format != "text" {
+			return "", fmt.Errorf("edge runtime: --show=errors only supports --format=text")
+		}
+		return "show errors", nil
+	case "table":
+		if format != "text" {
+			return "", fmt.Errorf("edge runtime: --show=table only supports --format=text")
+		}
+		table := strings.TrimSpace(opts.table)
+		if table == "" {
+			return "show table", nil
+		}
+		if !haproxyRuntimeTableRe.MatchString(table) {
+			return "", fmt.Errorf("edge runtime: invalid --table %q", table)
+		}
+		return "show table " + table, nil
+	default:
+		return "", fmt.Errorf("edge runtime: --show must be info, stat, sni, errors, or table")
+	}
+}
+
+func runHAProxyRuntimeCommand(rt *opruntime.Runtime, command string) ([]byte, error) {
+	if rt == nil || rt.SSH == nil {
+		return nil, fmt.Errorf("edge runtime: operator SSH runtime is required")
+	}
+	script := `import socket
+import sys
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.connect("/run/haproxy/admin.sock")
+sock.sendall((sys.argv[1] + "\n").encode("utf-8"))
+sock.shutdown(socket.SHUT_WR)
+chunks = []
+while True:
+    chunk = sock.recv(65536)
+    if not chunk:
+        break
+    chunks.append(chunk)
+sys.stdout.buffer.write(b"".join(chunks))
+`
+	scriptWord, err := opruntime.ShellWord(script)
+	if err != nil {
+		return nil, err
+	}
+	commandWord, err := opruntime.ShellWord(command)
+	if err != nil {
+		return nil, err
+	}
+	return rt.SSH.Exec(rt.Ctx, "sudo /usr/bin/python3 -c "+scriptWord+" "+commandWord)
 }
 
 func buildEdgeManifest(cfg edgeConfig) (*edgeManifest, []string, error) {
@@ -796,6 +923,35 @@ func routeServerGUIDs(route edgeTopologyRoute, backend string) []string {
 func validateHAProxyTemplate(sources edgeSources, template, defaults, tasks string, issues *[]string) {
 	if !haproxyExposeExpLineRe.MatchString(template) {
 		*issues = append(*issues, sources.HAProxyTemplate+": global section must enable expose-experimental-directives for shm-stats-file")
+	}
+	if strings.Contains(template, "normalize-uri") {
+		*issues = append(*issues, sources.HAProxyTemplate+": URI normalization is still an HAProxy experimental preview and must stay disabled")
+	}
+	if !strings.Contains(template, "strict-limits") {
+		*issues = append(*issues, sources.HAProxyTemplate+": global section must set strict-limits explicitly")
+	}
+	if !strings.Contains(template, "maxconn {{ haproxy_global_maxconn }}") {
+		*issues = append(*issues, sources.HAProxyTemplate+": global section must declare haproxy_global_maxconn")
+	}
+	if !strings.Contains(template, "unique-id-format %[uuid()]") || !strings.Contains(template, "unique-id-header X-Request-ID") {
+		*issues = append(*issues, sources.HAProxyTemplate+": defaults must generate and forward X-Request-ID")
+	}
+	if !haproxyStrictSNIBindRe.MatchString(template) {
+		*issues = append(*issues, sources.HAProxyTemplate+": public HTTPS bind must use strict-sni")
+	}
+	if !strings.Contains(template, "Strict-Transport-Security") {
+		*issues = append(*issues, sources.HAProxyTemplate+": public HTTPS frontend must set Strict-Transport-Security")
+	}
+	if !haproxyMetricFrontendRe.MatchString(template) ||
+		!strings.Contains(template, "use-service prometheus-exporter") ||
+		!strings.Contains(template, "option socket-stats") {
+		*issues = append(*issues, sources.HAProxyTemplate+": must expose loopback HAProxy Prometheus metrics with option socket-stats")
+	}
+	for _, required := range []string{"be_edge_public_rates", "be_edge_auth_rates", "be_edge_webhook_rates", "stick-table type ip"} {
+		if !strings.Contains(template, required) {
+			*issues = append(*issues, sources.HAProxyTemplate+": must define public/auth/webhook stick-table traffic budgets")
+			break
+		}
 	}
 	if !haproxyShmStatsFileRe.MatchString(template) {
 		*issues = append(*issues, sources.HAProxyTemplate+": global section must set shm-stats-file for reload-persistent counters")
