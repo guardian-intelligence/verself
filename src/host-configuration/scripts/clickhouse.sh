@@ -6,7 +6,15 @@ remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/verself/profile/bin/clickhouse-clien
 remote_config_path="${CLICKHOUSE_CLIENT_CONFIG_PATH:-/etc/clickhouse-client/operator.xml}"
 remote_run_as_user="${CLICKHOUSE_RUN_AS_USER:-clickhouse_operator}"
 remote_db_user="${CLICKHOUSE_DB_USER:-clickhouse_operator}"
-ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5)
+ssh_opts=(
+  -o IPQoS=none
+  -o StrictHostKeyChecking=no
+  -o BatchMode=yes
+  -o ConnectTimeout=5
+  -o IdentitiesOnly=yes
+  -o PreferredAuthentications=publickey
+  -o PubkeyAuthentication=yes
+)
 
 if [[ -n "${SSH_OPTS:-}" ]]; then
   read -r -a ssh_opts <<<"${SSH_OPTS}"
