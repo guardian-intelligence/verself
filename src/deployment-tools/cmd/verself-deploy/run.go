@@ -25,23 +25,8 @@ import (
 const (
 	substrateSitePlaybook = "playbooks/site.yml"
 	substratePhase        = "substrate_site"
+	canonicalDeployScope  = "all"
 )
-
-type hostConfigurationScopePlan struct {
-	extraArgs   []string
-	skippedTags []string
-}
-
-var affectedScopeSkippedAnsibleTags = []string{
-	"preflight",
-	"foundation",
-	"worker",
-	"infra",
-	"userspace",
-	"daemons",
-	"components",
-	"external-dns",
-}
 
 // runRun is the `verself-deploy run` entry point. It owns identity,
 // deploy evidence writes, substrate convergence through the canonical
@@ -53,8 +38,8 @@ func runRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	site := fs.String("site", "prod", "deploy site")
 	sha := fs.String("sha", "", "git SHA being deployed (empty = HEAD)")
-	scope := fs.String("scope", "all", "all | affected (affected skips host-only Ansible concerns)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
+	breakglassPath := fs.String("breakglass", "", "path to an expiring breakglass exception")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -69,12 +54,6 @@ func runRun(args []string) int {
 		rr = cwd
 	}
 
-	hostConfigurationPlan, err := hostConfigurationScopePlanFor(*scope)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: %v\n", err)
-		return 2
-	}
-
 	// Identity is derived once at process start. Generate is
 	// idempotent on a pre-populated VERSELF_DEPLOY_RUN_KEY /
 	// VERSELF_DEPLOY_ID, so a parent that has its own correlation
@@ -82,7 +61,7 @@ func runRun(args []string) int {
 	snap, err := identity.Generate(identity.GenerateOptions{
 		Site:  *site,
 		Sha:   *sha,
-		Scope: *scope,
+		Scope: canonicalDeployScope,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: derive identity: %v\n", err)
@@ -97,6 +76,15 @@ func runRun(args []string) int {
 		// detached-HEAD harness invocation.
 		resolvedSha = snap.Get("VERSELF_COMMIT_SHA")
 	}
+	var breakglass *loadedBreakglass
+	if *breakglassPath != "" {
+		loaded, err := loadBreakglassException(*breakglassPath, *site, resolvedSha, time.Now())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy run: breakglass rejected: %v\n", err)
+			return 2
+		}
+		breakglass = &loaded
+	}
 
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -105,7 +93,7 @@ func runRun(args []string) int {
 	if !securityPatchOK(securityPatchRes) {
 		msg := securityPatchFailureMessage(securityPatchRes)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: security patch preflight failed: %s\n", msg)
-		recordSecurityPatchFailureBestEffort(parentCtx, *site, rr, resolvedSha, *scope, snap, securityPatchRes)
+		recordSecurityPatchFailureBestEffort(parentCtx, *site, rr, resolvedSha, canonicalDeployScope, snap, securityPatchRes)
 		return 1
 	}
 
@@ -125,20 +113,20 @@ func runRun(args []string) int {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("verself.site", *site),
-			attribute.String("verself.deploy_scope", *scope),
-			attribute.String("verself.host_configuration_scope", *scope),
+			attribute.String("verself.deploy_scope", canonicalDeployScope),
+			attribute.String("verself.host_configuration_scope", "site"),
 		),
 	)
 	defer span.End()
-	if len(hostConfigurationPlan.skippedTags) > 0 {
-		span.SetAttributes(attribute.StringSlice("ansible.skip_tags", hostConfigurationPlan.skippedTags))
-	}
 	span.SetAttributes(
 		attribute.Int("security_patch.task_count", securityPatchRes.Result.TaskCount),
 		attribute.Int("security_patch.changed_total", securityPatchRes.Result.ChangedCount),
 		attribute.Int("security_patch.failed_count", securityPatchRes.Result.FailedCount),
 		attribute.Int64("security_patch.duration_ms", securityPatchRes.EndedAt.Sub(securityPatchRes.StartedAt).Milliseconds()),
 	)
+	if breakglass != nil {
+		span.SetAttributes(attribute.String("breakglass.exception_id", breakglass.Exception.ID))
+	}
 	if err := runSecurityPostPreflight(ctx, rt, *site, securityPatchRes); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -152,7 +140,7 @@ func runRun(args []string) int {
 		Site:   *site,
 		Sha:    resolvedSha,
 		Actor:  snap.Get("VERSELF_AUTHOR"),
-		Scope:  *scope,
+		Scope:  canonicalDeployScope,
 		Kind:   deploydb.EventStarted,
 	}
 	if err := rt.DeployDB.RecordDeployEvent(ctx, startedEvent); err != nil {
@@ -162,7 +150,7 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, *scope, rr, span, startedAt, snap, hostConfigurationPlan)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, breakglass)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -180,23 +168,31 @@ func runDeployBody(
 	span trace.Span,
 	startedAt time.Time,
 	snap identity.Snapshot,
-	hostConfigurationPlan hostConfigurationScopePlan,
+	breakglass *loadedBreakglass,
 ) int {
 	// 1. Supply-chain policy gate. The gate is intentionally before host
 	// convergence so install-source drift fails before Ansible mutates the box.
-	_, supplyChainEval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, supplychain.DefaultPolicyPath, false)
+	_, supplyChainEval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, supplychain.DefaultPolicyPath, true)
+	supplyChainBreakglassAccepted := false
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain policy failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, err.Error())
-		return 1
+		if breakglass == nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain policy failed: %v\n", err)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, err.Error())
+			return 1
+		}
+		if bgErr := validateBreakglassForSupplyChain(*breakglass, supplyChainEval); bgErr != nil {
+			msg := fmt.Sprintf("supply-chain policy failed and breakglass was rejected: %v", bgErr)
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, msg)
+			return 1
+		}
+		supplyChainBreakglassAccepted = true
+		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain breakglass accepted for %d rejected artifact source(s)\n", supplyChainEval.Rejected)
 	}
 
 	// 2. Host configuration convergence. Ansible owns ordering via play order
 	// and role order inside the canonical site playbook.
-	if len(hostConfigurationPlan.skippedTags) > 0 {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: scope=%s skips Ansible tags: %s\n", scope, strings.Join(hostConfigurationPlan.skippedTags, ","))
-	}
-	hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, hostConfigurationPlan.extraArgs)
+	hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
 	if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
 		msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
@@ -208,6 +204,14 @@ func runDeployBody(
 		attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
 		attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
 	)
+	if supplyChainBreakglassAccepted {
+		if bgErr := recordSupplyChainBreakglass(ctx, rt, site, sha, snap, *breakglass, supplyChainEval); bgErr != nil {
+			msg := fmt.Sprintf("supply-chain breakglass evidence insert failed: %v", bgErr)
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, msg)
+			return 1
+		}
+	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, err.Error())
@@ -242,21 +246,6 @@ func runDeployBody(
 		return 1
 	}
 	return 0
-}
-
-func hostConfigurationScopePlanFor(scope string) (hostConfigurationScopePlan, error) {
-	switch scope {
-	case "", "all":
-		return hostConfigurationScopePlan{}, nil
-	case "affected":
-		skippedTags := append([]string{}, affectedScopeSkippedAnsibleTags...)
-		return hostConfigurationScopePlan{
-			extraArgs:   []string{"--skip-tags", strings.Join(skippedTags, ",")},
-			skippedTags: skippedTags,
-		}, nil
-	default:
-		return hostConfigurationScopePlan{}, fmt.Errorf("unsupported scope %q; expected all or affected", scope)
-	}
 }
 
 func runSubstrateSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {

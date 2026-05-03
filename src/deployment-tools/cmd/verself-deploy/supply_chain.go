@@ -46,7 +46,7 @@ func runSupplyChain(args []string) int {
 func runSupplyChainInventory(args []string) int {
 	fs := flag.NewFlagSet("supply-chain inventory", flag.ContinueOnError)
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	format := fs.String("format", "json", "json | policy")
+	format := fs.String("format", "json", "json | policy | catalog")
 	writePolicy := fs.String("write-policy", "", "write generated policy JSON to path")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -61,7 +61,8 @@ func runSupplyChainInventory(args []string) int {
 		return 1
 	}
 	var payload any = report
-	if *format == "policy" {
+	switch *format {
+	case "policy":
 		policy := supplychain.NewPolicyFromReport(report)
 		payload = policy
 		if *writePolicy != "" {
@@ -76,7 +77,15 @@ func runSupplyChainInventory(args []string) int {
 			fmt.Fprintf(os.Stderr, "wrote %s with %d tracked artifact sources\n", path, len(policy.Artifacts))
 			return 0
 		}
-	} else if *format != "json" {
+	case "catalog":
+		policy, err := supplychain.LoadPolicy(rr, supplychain.DefaultPolicyPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy supply-chain inventory: %v\n", err)
+			return 1
+		}
+		payload = supplychain.CatalogFromPolicy(policy)
+	case "json":
+	default:
 		fmt.Fprintf(os.Stderr, "verself-deploy supply-chain inventory: unsupported --format=%s\n", *format)
 		return 2
 	}

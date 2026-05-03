@@ -31,7 +31,7 @@ listen: {{ topology_endpoints.verdaccio.endpoints.http.listen_host }}:{{ topolog
 
 # Supply-chain gating via @verdaccio/package-filter (bundled with Verdaccio
 # >= 6.4.0). The plugin rewrites uplink manifests before they reach clients:
-# filtered versions disappear from `npm install` / `npm view` resolution.
+# filtered versions disappear from package metadata resolution.
 #
 # Supported rules: age quarantine (minAgeDays), date freeze (dateThreshold),
 # and block/allow lists keyed by scope, package, or semver range. License

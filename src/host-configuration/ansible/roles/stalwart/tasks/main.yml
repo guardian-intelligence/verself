@@ -44,22 +44,32 @@
 
 # --- Bootstrap resources ---
 # Stalwart v0.15.5 blocks startup while fetching these resources if they are
-# missing from local storage. Pin and stage them at deploy time so the service
-# never tries to reach GitHub during boot.
+# missing from local storage. substrate_profile stages them from the Bazel
+# server-tools archive so the service never reaches GitHub during boot.
 
-- name: Download Stalwart webadmin bundle
-  ansible.builtin.get_url:
-    url: "{{ stalwart_webadmin_url }}"
-    dest: "{{ stalwart_webadmin_local_path }}"
-    checksum: "sha256:{{ stalwart_webadmin_sha256 }}"
-    mode: "0644"
+- name: Check Stalwart webadmin bundle
+  ansible.builtin.stat:
+    path: "{{ stalwart_webadmin_local_path }}"
+    checksum_algorithm: sha256
+  register: stalwart_webadmin_resource
 
-- name: Download Stalwart spam filter rules
-  ansible.builtin.get_url:
-    url: "{{ stalwart_spam_filter_url }}"
-    dest: "{{ stalwart_spam_filter_local_path }}"
-    checksum: "sha256:{{ stalwart_spam_filter_sha256 }}"
-    mode: "0644"
+- name: Check Stalwart spam filter rules
+  ansible.builtin.stat:
+    path: "{{ stalwart_spam_filter_local_path }}"
+    checksum_algorithm: sha256
+  register: stalwart_spam_filter_resource
+
+- name: Assert Stalwart resources were staged by substrate_profile
+  ansible.builtin.assert:
+    that:
+      - stalwart_webadmin_resource.stat.exists
+      - stalwart_webadmin_resource.stat.checksum == stalwart_webadmin_sha256
+      - stalwart_spam_filter_resource.stat.exists
+      - stalwart_spam_filter_resource.stat.checksum == stalwart_spam_filter_sha256
+    fail_msg: >-
+      Stalwart bootstrap resources are missing or stale. Run substrate_profile
+      so the admitted server-tools archive stages webadmin.zip and
+      spam-filter.toml.
 
 # --- Self-signed TLS placeholder ---
 # Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one

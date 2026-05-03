@@ -95,7 +95,6 @@ type artifactAdmissionMetadata struct {
 	SBOMDigest            string `json:"sbom_digest"`
 	ProvenanceURI         string `json:"provenance_uri"`
 	ProvenanceDigest      string `json:"provenance_digest"`
-	TUFTargetPath         string `json:"tuf_target_path"`
 	StorageURI            string `json:"storage_uri"`
 	OCIRepository         string `json:"oci_repository"`
 	OCIManifestDigest     string `json:"oci_manifest_digest"`
@@ -154,7 +153,6 @@ func runArtifactsAdmitURL(args []string) int {
 	zotRepository := fs.String("zot-repository", "", "zot repository path (defaults to admitted/<artifact>)")
 	zotUsername := fs.String("zot-username", "artifact-publisher", "zot publisher username")
 	zotPasswordFile := fs.String("zot-password-file", "/etc/zot/publisher-password", "zot publisher password file")
-	tufTargetPath := fs.String("tuf-target-path", "", "logical TUF target path")
 	guacSubject := fs.String("guac-subject", "", "GUAC subject identifier")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	if err := fs.Parse(args); err != nil {
@@ -185,7 +183,6 @@ func runArtifactsAdmitURL(args []string) int {
 		ZotRepository:         *zotRepository,
 		ZotUsername:           *zotUsername,
 		ZotPasswordFile:       *zotPasswordFile,
-		TUFTargetPath:         *tufTargetPath,
 		GUACSubject:           *guacSubject,
 	}
 	if err := req.validate(); err != nil {
@@ -252,7 +249,6 @@ type artifactAdmissionRequest struct {
 	ZotRepository         string
 	ZotUsername           string
 	ZotPasswordFile       string
-	TUFTargetPath         string
 	GUACSubject           string
 }
 
@@ -348,9 +344,6 @@ func admitArtifactURL(ctx context.Context, rt *runtime.Runtime, runKey string, r
 	attestationDigest := provenanceDigest
 	if req.ZotRepository == "" {
 		req.ZotRepository = "admitted/" + sanitizeArtifactPath(req.Artifact)
-	}
-	if req.TUFTargetPath == "" {
-		req.TUFTargetPath = path.Join("admitted", sanitizeArtifactPath(req.Artifact), strings.TrimPrefix(req.ExpectedDigest, "sha256:"))
 	}
 	if req.GUACSubject == "" {
 		req.GUACSubject = "pkg:generic/verself/" + sanitizeArtifactPath(req.Artifact) + "@" + req.ExpectedDigest
@@ -452,7 +445,6 @@ func admitArtifactURL(ctx context.Context, rt *runtime.Runtime, runKey string, r
 		SBOMDigest:            sbomDigest,
 		ProvenanceURI:         provenanceURI,
 		ProvenanceDigest:      provenanceDigest,
-		TUFTargetPath:         req.TUFTargetPath,
 		StorageURI:            storageURI,
 		OCIRepository:         req.ZotRepository,
 		OCIManifestDigest:     manifestDigest,
@@ -486,7 +478,6 @@ func admitArtifactURL(ctx context.Context, rt *runtime.Runtime, runKey string, r
 		ScannerName:           req.ScannerName,
 		ScannerVersion:        req.ScannerVersion,
 		ScannerDatabaseDigest: req.ScannerDatabaseDigest,
-		TUFTargetPath:         req.TUFTargetPath,
 		StorageURI:            storageURI,
 		PolicyResult:          "accepted",
 		PolicyReason:          "digest, minimum age, scanner evidence, signature/provenance evidence, and zot publication satisfied",

@@ -49,6 +49,7 @@ type Requirements struct {
 type AdmissionMetadata struct {
 	State                 string `json:"state"`
 	UpstreamURL           string `json:"upstream_url"`
+	InstallURL            string `json:"install_url"`
 	Digest                string `json:"digest"`
 	ReleasedAt            string `json:"released_at"`
 	ObservedAt            string `json:"observed_at"`
@@ -92,6 +93,7 @@ type FindingResult struct {
 	PolicyResult          string
 	PolicyReason          string
 	AdmissionState        string
+	InstallURL            string
 	MinimumAgeResult      string
 	ScannerResults        string
 	OCIRepository         string
@@ -158,6 +160,7 @@ func NewPolicyFromReport(report Report) Policy {
 			Admission: AdmissionMetadata{
 				State:            AdmissionProvisional,
 				UpstreamURL:      f.UpstreamURL,
+				InstallURL:       "",
 				Digest:           f.Digest,
 				ReleasedAt:       "",
 				ObservedAt:       "",

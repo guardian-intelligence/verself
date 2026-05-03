@@ -1,4 +1,4 @@
-"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected]
+"""aspect deploy [--site=prod] [--sha=<rev>] [--breakglass=<path>]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD), shells out to `verself-deploy run`, and
@@ -6,9 +6,6 @@ converges the dogfooded platform org/repo after Nomad services are up.
 The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and Nomad fan-out inside one process sharing one SSH session
 and one SSH-forwarded OTLP channel to the bare-metal otelcol.
-When --scope=affected, the binary still records the host-configuration
-phase but asks Ansible to skip the host-only concern tags so app-only
-deploys pay the Nomad path instead of the full substrate convergence tax.
 
 Correlation: rows in verself.deploy_events, verself.ansible_task_events,
 verself.reconciler_runs, and the ansible.* / verself_deploy.* span families
@@ -50,7 +47,15 @@ def _platform_seed(ctx, site):
         label = "aspect-operator platform seed",
     )
 
-def _deploy_one(ctx, site, sha, scope):
+def _deploy_one(ctx, site, sha, breakglass):
+    deploy_args = [
+        "run",
+        "--site=" + site,
+        "--sha=" + sha,
+        "--repo-root=" + ws_path(ctx),
+    ]
+    if breakglass:
+        deploy_args = deploy_args + ["--breakglass=" + breakglass]
     if _edge_preflight(ctx, site) != 0:
         return 1
     bin = build_verself_deploy(ctx)
@@ -58,21 +63,15 @@ def _deploy_one(ctx, site, sha, scope):
         return 1
     deploy_rc = checked_spawn(
         ctx, bin,
-        [
-            "run",
-            "--site=" + site,
-            "--sha=" + sha,
-            "--scope=" + scope,
-            "--repo-root=" + ws_path(ctx),
-        ],
+        deploy_args,
         cwd = ws_path(ctx),
-        label = "verself-deploy run --site=" + site + " --scope=" + scope,
+        label = "verself-deploy run --site=" + site,
     )
     if deploy_rc != 0:
         return deploy_rc
     return _platform_seed(ctx, site)
 
-def _deploy_in_worktree(ctx, site, sha, scope):
+def _deploy_in_worktree(ctx, site, sha, breakglass):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
     and clean up. Inside the worktree HEAD == sha, so the inner invocation
     falls through to the in-tree path with no further branching."""
@@ -85,7 +84,9 @@ def _deploy_in_worktree(ctx, site, sha, scope):
     )
     if rc != 0:
         return rc
-    inner_args = ["deploy", "--site=" + site, "--scope=" + scope]
+    inner_args = ["deploy", "--site=" + site]
+    if breakglass:
+        inner_args = inner_args + ["--breakglass=" + breakglass]
     deploy_rc = checked_spawn(
         ctx, "aspect",
         inner_args,
@@ -101,14 +102,14 @@ def _deploy_in_worktree(ctx, site, sha, scope):
 
 def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
-    scope = ctx.args.scope or "all"
     sha = resolve_sha(ctx, ctx.args.sha or "")
+    breakglass = ctx.args.breakglass or ""
     if sha == "":
         return 1
     head = git_head(ctx)
     if sha != head:
-        return _deploy_in_worktree(ctx, site, sha, scope)
-    return _deploy_one(ctx, site, sha, scope)
+        return _deploy_in_worktree(ctx, site, sha, breakglass)
+    return _deploy_one(ctx, site, sha, breakglass)
 
 deploy = task(
     implementation = _deploy_impl,
@@ -117,6 +118,6 @@ deploy = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
-        "scope": args.string(default = "all", description = "all | affected. affected skips host-only Ansible concern tags before Nomad fan-out."),
+        "breakglass": args.string(default = "", description = "Expiring breakglass exception JSON consumed by the canonical deploy path."),
     },
 )
