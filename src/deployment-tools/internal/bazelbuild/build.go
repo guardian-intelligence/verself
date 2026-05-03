@@ -62,20 +62,44 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 	_ = bepFile.Close()
 	defer func() { _ = os.Remove(bepPath) }()
 
-	args := append([]string{"build"}, extraFlags...)
-	args = append(args, "--build_event_json_file="+bepPath)
-	args = append(args, targets...)
 	span.SetAttributes(attribute.String("bazel.bep_path", bepPath))
 
-	cmd := exec.CommandContext(ctx, "bazelisk", args...)
-	cmd.Dir = cwd
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("bazelisk build: %w", err)
+	run := func(flags []string) error {
+		args := make([]string, 0, len(flags)+len(targets)+2)
+		args = append(args, "build")
+		args = append(args, flags...)
+		args = append(args, "--build_event_json_file="+bepPath)
+		args = append(args, targets...)
+
+		cmd := exec.CommandContext(ctx, "bazelisk", args...)
+		cmd.Dir = cwd
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	}
+
+	effectiveFlags := extraFlags
+	if err := run(extraFlags); err != nil {
+		if !hasRemoteWriterConfig(extraFlags) {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, fmt.Errorf("bazelisk build: %w", err)
+		}
+		fallbackFlags := withoutRemoteWriterConfig(extraFlags)
+		span.AddEvent("verself_deploy.bazel.remote_writer_fallback")
+		if removeErr := os.Remove(bepPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			span.RecordError(removeErr)
+			span.SetStatus(codes.Error, removeErr.Error())
+			return nil, fmt.Errorf("remove stale bep before local fallback: %w", removeErr)
+		}
+		if fallbackErr := run(fallbackFlags); fallbackErr != nil {
+			span.RecordError(fallbackErr)
+			span.SetStatus(codes.Error, fallbackErr.Error())
+			return nil, fmt.Errorf("bazelisk build local fallback: %w", fallbackErr)
+		}
+		effectiveFlags = fallbackFlags
+	}
+	span.SetAttributes(attribute.StringSlice("bazel.effective_flags", effectiveFlags))
 
 	parseCtx, parseSpan := tracer.Start(ctx, "verself_deploy.bazel.bep.parse",
 		trace.WithAttributes(attribute.String("bazel.bep_path", bepPath)),
@@ -113,4 +137,24 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 	)
 	span.SetStatus(codes.Ok, "")
 	return &Result{Stream: stream, BEPath: bepPath}, nil
+}
+
+func hasRemoteWriterConfig(flags []string) bool {
+	for _, flag := range flags {
+		if flag == "--config=remote-writer" {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutRemoteWriterConfig(flags []string) []string {
+	out := make([]string, 0, len(flags))
+	for _, flag := range flags {
+		if flag == "--config=remote-writer" {
+			continue
+		}
+		out = append(out, flag)
+	}
+	return out
 }
