@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useRef } from "react";
 import { WingsArgent } from "@verself/brand";
 import { FilmGrain } from "~/components/film-grain";
-import { NewsroomStrip } from "~/components/newsroom-strip";
 import { RevealSpan } from "~/components/reveal-span";
 import { landing } from "~/content/landing";
+import { FirstLight } from "~/features/first-light";
 import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/_workshop/")({
@@ -18,31 +19,37 @@ export const Route = createFileRoute("/_workshop/")({
   }),
 });
 
+const FIRST_LIGHT_TRAIL_WORD = "succeed";
+
 function LandingPage() {
-  return (
-    <>
-      <LandingHero />
-      <NewsroomStrip />
-    </>
-  );
+  return <LandingHero />;
 }
 
 function LandingHero() {
-  return (
-    <div className="relative mx-auto w-full max-w-6xl px-4 py-16 md:px-6 md:py-24">
-      {/* FilmGrain wraps the container in a warm vintage overlay blended with
-          the Iron ground beneath. The hero wings + text sit above it because
-          <FilmGrain> is position:absolute and does not capture pointer events.
-          Intensity 0.22 is pitched quiet enough that text remains legible at
-          every ground density. */}
-      <FilmGrain intensity={0.22} />
+  const trailTargetRef = useRef<HTMLSpanElement>(null);
+  const wingsAnchorRef = useRef<HTMLDivElement>(null);
+  const heroCopy = useMemo(() => splitTrailWord(landing.hero, FIRST_LIGHT_TRAIL_WORD), []);
 
-      <RevealSpan spanName="company.landing.hero_view" attrs={{ "hero.variant": "iron" }}>
-        {/* Argent wings at hero scale, on the fold. Honors /design §09 Iron
-            spec. */}
-        <div style={{ marginBottom: "40px", position: "relative" }}>
+  return (
+    <section className="relative isolate min-h-[calc(100svh-var(--header-h))] overflow-hidden">
+      <div className="absolute inset-0 bg-[var(--treatment-ground)]" />
+      <FilmGrain intensity={0.22} />
+      <FirstLight trailTargetRef={trailTargetRef} wingsAnchorRef={wingsAnchorRef} />
+
+      <RevealSpan
+        spanName="company.landing.hero_view"
+        attrs={{ "hero.variant": "first-light" }}
+        className="relative z-10 mx-auto flex min-h-[calc(100svh-var(--header-h))] w-full max-w-6xl flex-col justify-center px-4 pb-20 pt-12 md:px-6 md:pb-24 md:pt-16"
+      >
+        <div ref={wingsAnchorRef} className="mb-10 w-fit md:mb-12">
           <WingsArgent
-            style={{ width: "clamp(96px, 14vw, 160px)", height: "auto", display: "block" }}
+            viewBoxMode="cropped"
+            style={{
+              width: "clamp(96px, 13vw, 154px)",
+              height: "auto",
+              display: "block",
+              filter: "brightness(1.04)",
+            }}
           />
         </div>
 
@@ -53,70 +60,32 @@ function LandingHero() {
           {landing.kicker}
         </p>
 
-        <h1
-          className="mt-5"
-          style={{
-            // Workshop voice is Geist-only — Fraunces is reserved for Letters.
-            // The landing sits under Workshop chrome so the hero sets in Geist
-            // at display scale; letterspacing tightens to -0.028em to hold the
-            // display-type rhythm without the optical-size axis Fraunces would
-            // otherwise provide.
-            fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
-            fontWeight: 500,
-            fontSize: "clamp(38px, 6.8vw, 72px)",
-            lineHeight: 1.02,
-            letterSpacing: "-0.028em",
-            color: "var(--color-type-iron)",
-            maxWidth: "22ch",
-            margin: 0,
-          }}
-        >
-          {landing.hero}
+        <h1 className="firstlight-headline mt-5" aria-label={landing.hero}>
+          {heroCopy.before}
+          <span ref={trailTargetRef} className="firstlight-target">
+            {heroCopy.word}
+          </span>
+          {heroCopy.after}
         </h1>
       </RevealSpan>
-
-      <div className="mt-12 flex flex-col gap-5" style={{ maxWidth: "62ch" }}>
-        {landing.mission.map((paragraph, idx) => (
-          <RevealSpan
-            key={idx}
-            as="p"
-            spanName="company.landing.section_view"
-            attrs={{ "section.id": `mission-${idx}`, "section.index": String(idx) }}
-            style={{
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 400,
-              fontSize: "clamp(16px, 1.7vw, 18px)",
-              lineHeight: 1.55,
-              color: "var(--treatment-muted-strong)",
-              margin: 0,
-            }}
-          >
-            {paragraph}
-          </RevealSpan>
-        ))}
-
-        <RevealSpan
-          as="p"
-          spanName="company.landing.section_view"
-          attrs={{ "section.id": "closer", "section.index": String(landing.mission.length) }}
-          style={{
-            // Workshop declines Fraunces — the closer still gets to sit at
-            // larger-than-body scale to signal it's the landing's closing beat,
-            // but it sets in Geist at semibold italic rather than Fraunces.
-            fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
-            fontWeight: 500,
-            fontStyle: "italic",
-            fontSize: "clamp(20px, 2.4vw, 26px)",
-            lineHeight: 1.3,
-            letterSpacing: "-0.012em",
-            color: "var(--color-type-iron)",
-            maxWidth: "34ch",
-            margin: "4px 0 0",
-          }}
-        >
-          {landing.closer}
-        </RevealSpan>
-      </div>
-    </div>
+    </section>
   );
+}
+
+interface HeroCopyParts {
+  readonly before: string;
+  readonly word: string;
+  readonly after: string;
+}
+
+function splitTrailWord(copy: string, word: string): HeroCopyParts {
+  const index = copy.indexOf(word);
+  if (index < 0) {
+    throw new Error(`Landing hero copy must contain First Light trail word "${word}".`);
+  }
+  return {
+    before: copy.slice(0, index),
+    word,
+    after: copy.slice(index + word.length),
+  };
 }

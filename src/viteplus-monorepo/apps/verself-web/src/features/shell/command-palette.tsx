@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useClerk } from "@verself/auth-web/react";
 import { cn } from "@verself/ui/lib/utils";
 import { EVERGREEN_NAV, PRIMARY_NAV, SETTINGS_NAV } from "./nav-config";
@@ -282,5 +282,6 @@ export function useCommandPaletteHotkey(onToggle: () => void) {
 // Re-export so the shell can subscribe to route changes (used to close the
 // palette on programmatic navigation when the route actually moves).
 export function useRoutePath(): string {
-  return useRouterState({ select: (s) => s.location.pathname });
+  const location = useLocation();
+  return location.pathname;
 }

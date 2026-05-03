@@ -659,9 +659,9 @@ function ColumnsPopover({ visibleColumns }: { visibleColumns: ReadonlyArray<Audi
     void navigate({
       to: GOVERNANCE_ROUTE,
       search: (prev) => {
-        const current = prev.cols ?? visibleColumns;
+        const current: ReadonlyArray<AuditColumnId> = prev.cols ?? visibleColumns;
         const nextSet = visible
-          ? Array.from(new Set([...current, id]))
+          ? Array.from(new Set<AuditColumnId>([...current, id]))
           : current.filter((col) => col !== id);
         // Re-sort to canonical column order so the URL is stable regardless
         // of which order the user toggled in.

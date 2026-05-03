@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
 import { TopNav } from "~/components/top-nav";
@@ -14,6 +14,9 @@ export const Route = createFileRoute("/_workshop")({
 });
 
 function WorkshopLayout() {
+  const location = useLocation();
+  const isLandingRoute = location.pathname === "/";
+
   return (
     <div
       data-treatment="workshop"
@@ -27,7 +30,7 @@ function WorkshopLayout() {
       <main id="main" className="flex-1">
         <Outlet />
       </main>
-      <WorkshopFooter />
+      {isLandingRoute ? null : <WorkshopFooter />}
     </div>
   );
 }

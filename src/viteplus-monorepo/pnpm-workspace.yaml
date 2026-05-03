@@ -1,28 +1,9 @@
 packages:
   - apps/*
   - packages/*
-
-minimumReleaseAge: 4320
-strictDepBuilds: true
 allowBuilds:
   esbuild: true
   protobufjs: true
-# rules_js 3.0.3 still reads this allowlist when generating lifecycle hooks.
-onlyBuiltDependencies:
-  - esbuild
-  - protobufjs
-dangerouslyAllowAllBuilds: false
-verifyDepsBeforeRun: error
-packageManagerStrict: true
-packageManagerStrictVersion: true
-
-packageExtensions:
-  "@voidzero-dev/vite-plus-core@*":
-    dependencies:
-      picomatch: 4.0.4
-
-patchedDependencies:
-  srvx@0.11.15: patches/srvx@0.11.15.patch
 
 catalog:
   "@base-ui/react": ^1.4.0
@@ -62,6 +43,7 @@ catalog:
   "@types/node": ^22.19.17
   "@types/react": ^19
   "@types/react-dom": ^19
+  "@types/three": ^0.184.0
   "@vitejs/plugin-react": ^6.0.1
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
@@ -78,6 +60,7 @@ catalog:
   sonner: ^1.7.0
   tailwind-merge: ^3.0.2
   tailwindcss: ^4
+  three: ^0.184.0
   typescript: ^5.9.3
   use-stick-to-bottom: ^1.1.3
   valibot: ^1.3.1
@@ -90,6 +73,13 @@ catalog:
   zod: ^4.3.6
 
 catalogMode: prefer
+dangerouslyAllowAllBuilds: false
+
+minimumReleaseAge: 4320
+# rules_js 3.0.3 still reads this allowlist when generating lifecycle hooks.
+onlyBuiltDependencies:
+  - esbuild
+  - protobufjs
 
 overrides:
   "@opentelemetry/context-zone": 2.6.1
@@ -100,6 +90,16 @@ overrides:
   vite: "catalog:"
   vitest: "catalog:"
 
+packageExtensions:
+  "@voidzero-dev/vite-plus-core@*":
+    dependencies:
+      picomatch: 4.0.4
+packageManagerStrict: true
+packageManagerStrictVersion: true
+
+patchedDependencies:
+  srvx@0.11.15: patches/srvx@0.11.15.patch
+
 peerDependencyRules:
   allowAny:
     - vite
@@ -107,3 +107,5 @@ peerDependencyRules:
   allowedVersions:
     vite: "*"
     vitest: "*"
+strictDepBuilds: true
+verifyDepsBeforeRun: error

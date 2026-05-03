@@ -118,7 +118,8 @@ def viteplus_node_runtime_artifact(name):
         cmd = """
 set -euo pipefail
 tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tmp"' EXIT
+members="$@.members"
+trap 'rm -rf "$$tmp"; rm -f "$$members"' EXIT
 mkdir -p "$$tmp/runtime/nodejs"
 tar -tf "$(location {nodejs_archive})" > "$$tmp/nodejs-members.txt"
 node_member="$$(awk '/\\/bin\\/node$$/ {{ print; exit }}' "$$tmp/nodejs-members.txt")"
@@ -129,7 +130,12 @@ mv "$$tmp/$$node_member" "$$tmp/runtime/nodejs/bin/node"
 rm -rf "$$tmp/$${{node_member%%/*}}"
 rm -f "$$tmp/nodejs-members.txt"
 chmod 0755 "$$tmp/runtime/nodejs/bin/node"
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+if tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" . 2>/dev/null; then
+  :
+else
+  (cd "$$tmp" && find . '(' -type f -o -type l ')' -print | LC_ALL=C sort > "$$members")
+  COPYFILE_DISABLE=1 tar -cf "$@" -C "$$tmp" -T "$$members"
+fi
 """.format(nodejs_archive = _NODEJS_ARCHIVE),
     )
 
@@ -281,12 +287,19 @@ done
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
+home="$${{HOME:-}}"
+if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
+  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
+fi
+if [ -z "$$home" ] && command -v dscl >/dev/null 2>&1; then
+  home="$$(dscl . -read "/Users/$$(id -un)" NFSHomeDirectory | awk '{{ print $$2 }}')"
+fi
 test -n "$$home"
 vp="$$home/.vite-plus/bin/vp"
 test -x "$$vp"
 tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tmp"' EXIT
+members="$$out.members"
+trap 'rm -rf "$$tmp"; rm -f "$$members"' EXIT
 
 {generated_sync_cmds}
 cd "{package_dir}"
@@ -306,7 +319,12 @@ EOF
 chmod 0755 "$$tmp/bin/{output}"
 {migration_cmds}
 
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$$out" -C "$$tmp" .
+if tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$$out" -C "$$tmp" . 2>/dev/null; then
+  :
+else
+  (cd "$$tmp" && find . '(' -type f -o -type l ')' -print | LC_ALL=C sort > "$$members")
+  COPYFILE_DISABLE=1 tar -cf "$$out" -C "$$tmp" -T "$$members"
+fi
 """.format(
             output = output,
             package_dir = package_dir,
@@ -378,13 +396,13 @@ env -i \\
     )
 
 def viteplus_route_tree(name):
-    """Generate and materialize a TanStack Router route tree under src/__generated.
+    """Generate and materialize TanStack Router's route tree at its default path.
 
     Args:
       name: target name for the `write_source_files` projection. `<name>_gen` is the
         sibling generator target.
     """
-    source_tree_out = "src/__generated/routeTree.gen.ts"
+    source_tree_out = "src/routeTree.gen.ts"
     out = "__generated_sources/" + source_tree_out
     gen_target = name + "_gen"
 

@@ -51,6 +51,43 @@ These commands map to their corresponding tools. For example, `vp dev --port 300
 - [ ] Run `vp check` and `vp test` to validate changes.
 <!--VITE PLUS END-->
 
+## Quickstart After Pull
+
+Run the frontend setup from a clean checkout before trusting TypeScript output:
+
+```bash
+# repo root
+git pull --ff-only
+aspect dev install
+
+# Vite+ workspace
+cd src/viteplus-monorepo
+vp install
+
+# repo root again
+cd ../..
+bazelisk run //src/viteplus-monorepo/apps/company:dev_update
+bazelisk run //src/viteplus-monorepo/apps/verself-web:dev_update
+```
+
+The generated files under `apps/*/src/__generated` and
+`apps/*/src/routeTree.gen.ts` are ignored source projections.
+`company:dev_update` materializes the company route tree at TanStack's default
+path. `verself-web:dev_update` materializes its route tree plus OpenAPI clients
+and copied specs from service-owned Bazel targets. Run the verself-web generator
+even when working on `apps/company` if `vp check` reports missing generated
+clients; workspace checks type both apps.
+
+On a local laptop without the hosted Verdaccio mirror, temporarily set
+`src/viteplus-monorepo/.npmrc` to:
+
+```ini
+registry=https://registry.npmjs.org/
+```
+
+Restore the registry to `http://127.0.0.1:4873/` before committing unless the
+registry change is the intended patch.
+
 ## Local Frontend Development
 
 Frontend apps (TanStack Start) run locally via `vp dev` with HMR. They talk to remote services over SSH tunnels. Auth goes through real Zitadel (HTTPS, external).

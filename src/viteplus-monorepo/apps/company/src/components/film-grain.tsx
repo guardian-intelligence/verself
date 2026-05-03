@@ -10,18 +10,27 @@
 // an IntersectionObserver (so SSR and print don't pay the cost). No dep beyond
 // React + DOM.
 
-import { type CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 
 export interface FilmGrainProps {
   readonly intensity?: number;
   readonly style?: CSSProperties;
 }
 
+function grainSeed(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) % 9999;
+  }
+  return hash + 1;
+}
+
 export function FilmGrain({ intensity = 0.35, style }: FilmGrainProps) {
-  // Turbulence seed is randomised per mount so two adjacent instances don't
-  // obviously tile. The result is cached by the browser's SVG rasteriser per
-  // filter instance, so we only pay the generation cost once per render.
-  const seed = typeof window === "undefined" ? 17 : Math.floor(Math.random() * 9999);
+  // React's SSR-stable id keeps the SVG filter and turbulence seed identical
+  // across hydration while still de-correlating adjacent FilmGrain instances.
+  const stableId = useId().replaceAll(":", "");
+  const seed = grainSeed(stableId);
+  const filterId = `filmgrain-${stableId}`;
 
   return (
     <div
@@ -36,7 +45,7 @@ export function FilmGrain({ intensity = 0.35, style }: FilmGrainProps) {
       }}
     >
       <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-        <filter id={`filmgrain-${seed}`}>
+        <filter id={filterId}>
           <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed={seed} />
           {/* Warm tint: shift the grey grain into sepia before it multiplies
               with the ground. Lower-right matrix value drops blue so the
@@ -51,7 +60,7 @@ export function FilmGrain({ intensity = 0.35, style }: FilmGrainProps) {
           />
           <feComposite in2="SourceGraphic" operator="in" />
         </filter>
-        <rect width="100%" height="100%" filter={`url(#filmgrain-${seed})`} />
+        <rect width="100%" height="100%" filter={`url(#${filterId})`} />
       </svg>
     </div>
   );

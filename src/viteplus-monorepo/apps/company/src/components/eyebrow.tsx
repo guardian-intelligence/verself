@@ -1,4 +1,4 @@
-import type { CSSProperties, ElementType, ReactNode } from "react";
+import { createElement, type CSSProperties, type ElementType, type ReactNode } from "react";
 
 // Eyebrow — the small all-caps mono label that precedes a headline, numbers a
 // specimen, or badges a status. Centralised here because the recipe is easy to
@@ -44,11 +44,12 @@ export function Eyebrow({
   readonly ariaHidden?: boolean;
 }) {
   const Tag = as ?? "p";
-  return (
-    <Tag
-      aria-hidden={ariaHidden}
-      className={className}
-      style={{
+  return createElement(
+    Tag,
+    {
+      "aria-hidden": ariaHidden,
+      className,
+      style: {
         fontFamily: "'Geist Mono', ui-monospace, SFMono-Regular, monospace",
         fontSize: `${size}px`,
         lineHeight: 1.4,
@@ -59,9 +60,8 @@ export function Eyebrow({
         color: color ?? TONE_VAR[tone],
         margin: 0,
         ...style,
-      }}
-    >
-      {children}
-    </Tag>
+      },
+    },
+    children,
   );
 }

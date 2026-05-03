@@ -127,3 +127,27 @@
   white-space: nowrap;
   border: 0;
 }
+
+.firstlight-headline {
+  max-width: 18ch;
+  margin: 0;
+  color: var(--color-type-iron);
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(42px, 8vw, 92px);
+  font-weight: 500;
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.firstlight-target {
+  --firstlight-luminance: 0;
+  color: color-mix(
+    in oklch,
+    var(--color-type-iron) calc(100% - (var(--firstlight-luminance) * 24%)),
+    #fffaf0 calc(var(--firstlight-luminance) * 24%)
+  );
+  filter: brightness(calc(1 + var(--firstlight-luminance) * 0.32));
+  text-shadow: 0 0 calc(var(--firstlight-luminance) * 22px)
+    rgba(255, 250, 240, calc(var(--firstlight-luminance) * 0.52));
+  transform: translateZ(0);
+}
