@@ -6,7 +6,7 @@ go_library(
         "ansible_run.go",
         "artifacts.go",
         "main.go",
-        "nomad_deploy_all.go",
+        "nomad_deploy_affected.go",
         "nomad_submit.go",
         "paths.go",
         "run.go",

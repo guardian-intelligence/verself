@@ -30,12 +30,12 @@ const (
 	// defaultNomadRemotePort matches the loopback Nomad agent port the
 	// substrate role binds; the artifact origin's port is read from
 	// the manifest's artifact_delivery.origin.port.
-	defaultNomadRemotePort = 4646
-	deployAllSubmitTimeout = 5 * time.Minute
+	defaultNomadRemotePort      = 4646
+	deployAffectedSubmitTimeout = 5 * time.Minute
 )
 
-func runNomadDeployAll(args []string) int {
-	fs := flag.NewFlagSet("nomad deploy-all", flag.ContinueOnError)
+func runNomadDeployAffected(args []string) int {
+	fs := flag.NewFlagSet("nomad deploy-affected", flag.ContinueOnError)
 	site := fs.String("site", "prod", "site whose authored Nomad job target should be resolved")
 	repoRoot := fs.String("repo-root", "", "path to the verself-sh repo root (defaults to cwd)")
 	publishOnly := fs.Bool("publish-only", false, "publish artifacts and exit before Nomad submit")
@@ -45,7 +45,7 @@ func runNomadDeployAll(args []string) int {
 	if *repoRoot == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-all: cwd: %v\n", err)
+			fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-affected: cwd: %v\n", err)
 			return 1
 		}
 		*repoRoot = cwd
@@ -62,12 +62,12 @@ func runNomadDeployAll(args []string) int {
 		SkipClickHouse: true,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-all: %v\n", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-affected: %v\n", err)
 		return 1
 	}
 	defer rt.Close()
 
-	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.nomad.deploy_all",
+	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.nomad.deploy_affected",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("verself.site", *site),
@@ -77,17 +77,17 @@ func runNomadDeployAll(args []string) int {
 	)
 	defer span.End()
 
-	if err := deployAll(ctx, rt, span, *site, *repoRoot, *publishOnly); err != nil {
+	if err := deployAffected(ctx, rt, span, *site, *repoRoot, *publishOnly); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-all: %v\n", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy nomad deploy-affected: %v\n", err)
 		return 1
 	}
 	span.SetStatus(codes.Ok, "")
 	return 0
 }
 
-func deployAll(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot string, publishOnly bool) error {
+func deployAffected(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot string, publishOnly bool) error {
 	closeViteplusRegistry, err := prepareViteplusWorkspace(ctx, rt, repoRoot)
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func deployAll(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, 
 	if len(submitEntries) == 0 {
 		return nil
 	}
-	return submitAll(ctx, rt, nomadJobsDir, submitEntries)
+	return submitResolvedEntries(ctx, rt, nomadJobsDir, submitEntries)
 }
 
 func publishArtifacts(ctx context.Context, sshClient *sshtun.Client, manifest *render.Manifest, repoRoot string) error {
@@ -184,7 +184,7 @@ func publishArtifacts(ctx context.Context, sshClient *sshtun.Client, manifest *r
 	return pub.PublishAll(ctx, manifest, repoRoot)
 }
 
-func submitAll(ctx context.Context, rt *runtime.Runtime, jobsDir string, entries []render.SubmitEntry) error {
+func submitResolvedEntries(ctx context.Context, rt *runtime.Runtime, jobsDir string, entries []render.SubmitEntry) error {
 	forward, err := rt.SSH.Forward(ctx, "nomad", defaultNomadRemotePort)
 	if err != nil {
 		return err
@@ -221,7 +221,7 @@ func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclien
 	defer span.End()
 
 	specPath := filepath.Join(jobsDir, entry.SpecFile)
-	timeoutCtx, cancel := context.WithTimeout(ctx, deployAllSubmitTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, deployAffectedSubmitTimeout)
 	defer cancel()
 
 	if err := submitOnce(timeoutCtx, span, client, specPath); err != nil {

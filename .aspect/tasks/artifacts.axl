@@ -21,9 +21,9 @@ def _publish_impl(ctx):
     return checked_spawn(
         ctx,
         bin,
-        ["nomad", "deploy-all", "--site=" + site, "--repo-root=" + ws_path(ctx), "--publish-only"],
+        ["nomad", "deploy-affected", "--site=" + site, "--repo-root=" + ws_path(ctx), "--publish-only"],
         cwd = ws_path(ctx),
-        label = "verself-deploy nomad deploy-all --publish-only --site=" + site,
+        label = "verself-deploy nomad deploy-affected --publish-only --site=" + site,
     )
 
 publish = task(

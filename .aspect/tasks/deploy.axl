@@ -4,8 +4,8 @@ The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD), shells out to `verself-deploy run`, and
 converges the dogfooded platform org/repo after Nomad services are up.
 The binary owns identity derivation, deploy_events writes, Ansible site
-convergence, and Nomad fan-out inside one process sharing one SSH session
-and one SSH-forwarded OTLP channel to the bare-metal otelcol.
+convergence, and affected Nomad fan-out inside one process sharing one SSH
+session and one SSH-forwarded OTLP channel to the bare-metal otelcol.
 
 Correlation: rows in verself.deploy_events, verself.ansible_task_events, and
 the ansible.* / verself_deploy.* span families in default.otel_traces all join on

@@ -25,12 +25,12 @@ import (
 const (
 	substrateSitePlaybook = "playbooks/site.yml"
 	substratePhase        = "substrate_site"
-	canonicalDeployScope  = "all"
+	canonicalDeployScope  = "affected"
 )
 
 // runRun is the `verself-deploy run` entry point. It owns identity,
 // deploy evidence writes, substrate convergence through the canonical
-// Ansible site playbook, and Nomad submits.
+// Ansible site playbook, and affected Nomad submits.
 //
 // AXL-side responsibilities preserved because they sit outside the deploy
 // binary's SSH, evidence, and Nomad orchestration surface.
@@ -104,7 +104,6 @@ func runRun(args []string) int {
 		trace.WithAttributes(
 			attribute.String("verself.site", *site),
 			attribute.String("verself.deploy_scope", canonicalDeployScope),
-			attribute.String("verself.host_configuration_scope", "site"),
 		),
 	)
 	defer span.End()
@@ -185,12 +184,12 @@ func runDeployBody(
 		return 1
 	}
 
-	// 3. Nomad fan-out — same in-process function as standalone
-	// `verself-deploy nomad deploy-all`, no subprocess.
-	if err := deployAll(ctx, rt, span, site, repoRoot, false); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-all failed: %v\n", err)
+	// 3. Nomad fan-out: Bazel resolves the whole graph, and Nomad submit
+	// skips jobs whose resolver-stamped spec/artifact digests are current.
+	if err := deployAffected(ctx, rt, span, site, repoRoot, false); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-affected failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration", "nomad"},
-			"nomad deploy-all: "+err.Error())
+			"nomad deploy-affected: "+err.Error())
 		return 1
 	}
 

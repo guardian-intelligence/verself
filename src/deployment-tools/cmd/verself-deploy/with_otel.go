@@ -21,7 +21,7 @@ import (
 //
 // This is the generic verb for "run something controller-side and
 // keep its OTel traces on the same path." Subcommand-specific OTel
-// wiring (ansible run, nomad deploy-all) goes through runtime.Init
+// wiring (ansible run, nomad deploy-affected) goes through runtime.Init
 // directly.
 //
 // Usage:

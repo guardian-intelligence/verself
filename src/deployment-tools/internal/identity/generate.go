@@ -37,8 +37,7 @@ type GenerateOptions struct {
 	// verself.deploy_sha resource attribute.
 	Sha string
 
-	// Scope is the deploy-scope label (all|affected|substrate|...).
-	// Empty defaults to "all".
+	// Scope is the deploy-scope label. Empty defaults to "affected".
 	Scope string
 
 	// Kind labels the deploy invocation type. Empty defaults to
@@ -73,7 +72,7 @@ func Generate(opts GenerateOptions) (Snapshot, error) {
 	}
 	scope := opts.Scope
 	if scope == "" {
-		scope = "all"
+		scope = "affected"
 	}
 	kind := envOr("VERSELF_DEPLOY_KIND", opts.Kind, "ansible-playbook")
 
