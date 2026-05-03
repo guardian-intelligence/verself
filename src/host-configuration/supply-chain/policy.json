@@ -15,6 +15,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64",
+        "install_url": "",
         "digest": "sha256:22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8",
         "released_at": "",
         "observed_at": "",
@@ -47,6 +48,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl",
+        "install_url": "",
         "digest": "sha256:db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0",
         "released_at": "",
         "observed_at": "",
@@ -79,6 +81,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://vite.plus",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",
@@ -111,6 +114,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
         "released_at": "",
         "observed_at": "",
@@ -143,6 +147,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz",
+        "install_url": "",
         "digest": "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239",
         "released_at": "",
         "observed_at": "",
@@ -175,6 +180,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip",
+        "install_url": "",
         "digest": "sha256:901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13",
         "released_at": "",
         "observed_at": "",
@@ -207,6 +213,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/protocolbuffers/protobuf/releases/download/v34.0/protoc-34.0-linux-x86_64.zip",
+        "install_url": "",
         "digest": "sha256:e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab",
         "released_at": "",
         "observed_at": "",
@@ -239,6 +246,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64",
+        "install_url": "",
         "digest": "sha256:ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be",
         "released_at": "",
         "observed_at": "",
@@ -271,6 +279,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
+        "install_url": "",
         "digest": "sha256:887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",
         "released_at": "",
         "observed_at": "",
@@ -303,6 +312,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz",
+        "install_url": "",
         "digest": "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
         "released_at": "",
         "observed_at": "",
@@ -335,6 +345,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
+        "install_url": "",
         "digest": "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
         "released_at": "",
         "observed_at": "",
@@ -367,6 +378,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
+        "install_url": "",
         "digest": "sha256:14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
         "released_at": "",
         "observed_at": "",
@@ -399,6 +411,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
         "released_at": "",
         "observed_at": "",
@@ -431,6 +444,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "install_url": "",
         "digest": "sha256:c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
         "released_at": "",
         "observed_at": "",
@@ -463,6 +477,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "install_url": "",
         "digest": "sha256:2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
         "released_at": "",
         "observed_at": "",
@@ -495,6 +510,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64",
+        "install_url": "",
         "digest": "sha256:bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
         "released_at": "",
         "observed_at": "",
@@ -527,6 +543,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz",
+        "install_url": "",
         "digest": "sha256:a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f",
         "released_at": "",
         "observed_at": "",
@@ -559,6 +576,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64",
+        "install_url": "",
         "digest": "sha256:02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472",
         "released_at": "",
         "observed_at": "",
@@ -591,6 +609,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
         "released_at": "",
         "observed_at": "",
@@ -623,6 +642,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64",
+        "install_url": "",
         "digest": "sha256:02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472",
         "released_at": "",
         "observed_at": "",
@@ -655,6 +675,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.17.17/aspect-cli-x86_64-unknown-linux-musl",
+        "install_url": "",
         "digest": "sha256:db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0",
         "released_at": "",
         "observed_at": "",
@@ -687,6 +708,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.28.1/bazelisk-linux-amd64",
+        "install_url": "",
         "digest": "sha256:22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8",
         "released_at": "",
         "observed_at": "",
@@ -719,6 +741,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64",
+        "install_url": "",
         "digest": "sha256:ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be",
         "released_at": "",
         "observed_at": "",
@@ -751,6 +774,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
+        "install_url": "",
         "digest": "sha256:887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",
         "released_at": "",
         "observed_at": "",
@@ -783,6 +807,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "install_url": "",
         "digest": "sha256:2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
         "released_at": "",
         "observed_at": "",
@@ -815,6 +840,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
         "released_at": "",
         "observed_at": "",
@@ -847,6 +873,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
+        "install_url": "",
         "digest": "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
         "released_at": "",
         "observed_at": "",
@@ -879,6 +906,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64",
+        "install_url": "",
         "digest": "sha256:bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
         "released_at": "",
         "observed_at": "",
@@ -911,6 +939,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/protocolbuffers/protobuf/releases/download/v34.0/protoc-34.0-linux-x86_64.zip",
+        "install_url": "",
         "digest": "sha256:e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab",
         "released_at": "",
         "observed_at": "",
@@ -943,6 +972,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz",
+        "install_url": "",
         "digest": "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
         "released_at": "",
         "observed_at": "",
@@ -975,6 +1005,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
+        "install_url": "",
         "digest": "sha256:14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
         "released_at": "",
         "observed_at": "",
@@ -1007,6 +1038,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz",
+        "install_url": "",
         "digest": "sha256:a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f",
         "released_at": "",
         "observed_at": "",
@@ -1039,6 +1071,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip",
+        "install_url": "",
         "digest": "sha256:901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13",
         "released_at": "",
         "observed_at": "",
@@ -1071,6 +1104,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "install_url": "",
         "digest": "sha256:c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
         "released_at": "",
         "observed_at": "",
@@ -1103,6 +1137,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://vite.plus",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",
@@ -1135,6 +1170,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz",
+        "install_url": "",
         "digest": "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239",
         "released_at": "",
         "observed_at": "",
@@ -1167,6 +1203,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.0/firecracker-v1.15.0-x86_64.tgz",
+        "install_url": "",
         "digest": "sha256:00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4",
         "released_at": "",
         "observed_at": "",
@@ -1199,6 +1236,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
+        "install_url": "",
         "digest": "sha256:41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
         "released_at": "",
         "observed_at": "",
@@ -1231,6 +1269,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz",
+        "install_url": "",
         "digest": "sha256:18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74",
         "released_at": "",
         "observed_at": "",
@@ -1263,6 +1302,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
         "released_at": "",
         "observed_at": "",
@@ -1295,6 +1335,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155.config",
+        "install_url": "",
         "digest": "sha256:024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3",
         "released_at": "",
         "observed_at": "",
@@ -1327,6 +1368,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155",
+        "install_url": "",
         "digest": "sha256:e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2",
         "released_at": "",
         "observed_at": "",
@@ -1359,6 +1401,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz",
+        "install_url": "",
         "digest": "sha256:472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6",
         "released_at": "",
         "observed_at": "",
@@ -1391,135 +1434,8 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58",
-        "released_at": "",
-        "observed_at": "",
-        "minimum_age_result": "not_evaluated",
-        "scanner_results": "not_evaluated",
-        "scanner_name": "",
-        "scanner_version": "",
-        "scanner_database_digest": "",
-        "sbom_uri": "",
-        "sbom_digest": "",
-        "provenance_uri": "",
-        "provenance_digest": "",
-        "oci_repository": "",
-        "oci_manifest_digest": "",
-        "oci_media_type": "",
-        "signature_digest": "",
-        "attestation_digest": "",
-        "scanner_result_digest": "",
-        "guac_subject": "",
-        "tuf_target_path": "",
-        "storage_uri": ""
-      }
-    },
-    {
-      "id": "main-yml-direct-release-url-webadmin-b6985954e776",
-      "source_path": "src/host-configuration/ansible/roles/stalwart/defaults/main.yml",
-      "source_kind": "direct_release_url",
-      "surface": "host-bootstrap",
-      "artifact": "webadmin",
-      "admission": {
-        "state": "provisional",
-        "upstream_url": "https://github.com/stalwartlabs/webadmin/releases/download/v0.1.37/webadmin.zip",
-        "digest": "",
-        "released_at": "",
-        "observed_at": "",
-        "minimum_age_result": "not_evaluated",
-        "scanner_results": "not_evaluated",
-        "scanner_name": "",
-        "scanner_version": "",
-        "scanner_database_digest": "",
-        "sbom_uri": "",
-        "sbom_digest": "",
-        "provenance_uri": "",
-        "provenance_digest": "",
-        "oci_repository": "",
-        "oci_manifest_digest": "",
-        "oci_media_type": "",
-        "signature_digest": "",
-        "attestation_digest": "",
-        "scanner_result_digest": "",
-        "guac_subject": "",
-        "tuf_target_path": "",
-        "storage_uri": ""
-      }
-    },
-    {
-      "id": "main-yml-direct-release-url-spam-filter-1680d293417f",
-      "source_path": "src/host-configuration/ansible/roles/stalwart/defaults/main.yml",
-      "source_kind": "direct_release_url",
-      "surface": "host-bootstrap",
-      "artifact": "spam-filter",
-      "admission": {
-        "state": "provisional",
-        "upstream_url": "https://github.com/stalwartlabs/spam-filter/releases/download/v2.0.5/spam-filter.toml",
-        "digest": "",
-        "released_at": "",
-        "observed_at": "",
-        "minimum_age_result": "not_evaluated",
-        "scanner_results": "not_evaluated",
-        "scanner_name": "",
-        "scanner_version": "",
-        "scanner_database_digest": "",
-        "sbom_uri": "",
-        "sbom_digest": "",
-        "provenance_uri": "",
-        "provenance_digest": "",
-        "oci_repository": "",
-        "oci_manifest_digest": "",
-        "oci_media_type": "",
-        "signature_digest": "",
-        "attestation_digest": "",
-        "scanner_result_digest": "",
-        "guac_subject": "",
-        "tuf_target_path": "",
-        "storage_uri": ""
-      }
-    },
-    {
-      "id": "main-yml-npm-install-npm-install-2b758d8f1246",
-      "source_path": "src/host-configuration/ansible/roles/verdaccio/tasks/main.yml",
-      "source_kind": "npm_install",
-      "surface": "host-bootstrap",
-      "artifact": "npm-install",
-      "admission": {
-        "state": "provisional",
-        "upstream_url": "",
-        "digest": "",
-        "released_at": "",
-        "observed_at": "",
-        "minimum_age_result": "not_evaluated",
-        "scanner_results": "not_evaluated",
-        "scanner_name": "",
-        "scanner_version": "",
-        "scanner_database_digest": "",
-        "sbom_uri": "",
-        "sbom_digest": "",
-        "provenance_uri": "",
-        "provenance_digest": "",
-        "oci_repository": "",
-        "oci_manifest_digest": "",
-        "oci_media_type": "",
-        "signature_digest": "",
-        "attestation_digest": "",
-        "scanner_result_digest": "",
-        "guac_subject": "",
-        "tuf_target_path": "",
-        "storage_uri": ""
-      }
-    },
-    {
-      "id": "main-yml-registry-url-npmjs-registry-50b7638e70ae",
-      "source_path": "src/host-configuration/ansible/roles/verdaccio/tasks/main.yml",
-      "source_kind": "registry_url",
-      "surface": "host-bootstrap",
-      "artifact": "npmjs-registry",
-      "admission": {
-        "state": "provisional",
-        "upstream_url": "https://registry.npmjs.org",
-        "digest": "",
         "released_at": "",
         "observed_at": "",
         "minimum_age_result": "not_evaluated",
@@ -1551,6 +1467,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "install_url": "",
         "digest": "sha256:2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
         "released_at": "",
         "observed_at": "",
@@ -1583,6 +1500,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/tigerbeetle/tigerbeetle/releases/download/0.17.1/tigerbeetle-x86_64-linux.zip",
+        "install_url": "",
         "digest": "sha256:0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19",
         "released_at": "",
         "observed_at": "",
@@ -1615,6 +1533,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/zitadel/zitadel/releases/download/v4.13.1/zitadel-linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:fe1f5231e5dcbdca63ae77adab0d2241daafeb9712e7d6cded3713e9ef50f1cb",
         "released_at": "",
         "observed_at": "",
@@ -1647,6 +1566,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/openbao/openbao/releases/download/v2.5.2/openbao_2.5.2_linux_amd64.deb",
+        "install_url": "",
         "digest": "sha256:5b915011ba8fa8137bd3309830aded0250b8fce42706bd6dcd2b91ac5560cde7",
         "released_at": "",
         "observed_at": "",
@@ -1679,6 +1599,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/pomerium/pomerium/releases/download/v0.32.6/pomerium-linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:817b4c13788800f1b3a79d4ad96aeb20ba97c55490690040dc9956150b8d1151",
         "released_at": "",
         "observed_at": "",
@@ -1711,6 +1632,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/spiffe/spire/releases/download/v1.14.5/spire-1.14.5-linux-amd64-musl.tar.gz",
+        "install_url": "",
         "digest": "sha256:cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb",
         "released_at": "",
         "observed_at": "",
@@ -1743,6 +1665,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/spiffe/spiffe-helper/releases/download/v0.11.0/spiffe-helper_v0.11.0_Linux-x86_64.tar.gz",
+        "install_url": "",
         "digest": "sha256:7fba909574320d6a656e2e7d7f0657890fefad08a2abecd86c7bafe62d6d9134",
         "released_at": "",
         "observed_at": "",
@@ -1775,6 +1698,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/nats-io/nats-server/releases/download/v2.12.7/nats-server-v2.12.7-linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:570d2d627db111e679cc1e6bc57ba78f373ed1769acd8dc9c21c8f62d15b3c52",
         "released_at": "",
         "observed_at": "",
@@ -1807,6 +1731,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://garagehq.deuxfleurs.fr/_releases/v2.3.0/x86_64-unknown-linux-musl/garage",
+        "install_url": "",
         "digest": "sha256:f98d317942bb341151a2775162016bb50cf86b865d0108de03eb5db16e2120cd",
         "released_at": "",
         "observed_at": "",
@@ -1839,6 +1764,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://codeberg.org/forgejo/forgejo/releases/download/v15.0.0/forgejo-15.0.0-linux-amd64",
+        "install_url": "",
         "digest": "sha256:3919f10a7845f3b71bacc2c7a3bfa2cd71aed58a0b8be6ab5e95f2e150b4ded7",
         "released_at": "",
         "observed_at": "",
@@ -1871,6 +1797,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/buchgr/bazel-remote/releases/download/v2.6.1/bazel-remote-2.6.1-linux-amd64",
+        "install_url": "",
         "digest": "sha256:025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784",
         "released_at": "",
         "observed_at": "",
@@ -1903,6 +1830,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.149.0/otelcol-contrib_0.149.0_linux_amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
         "released_at": "",
         "observed_at": "",
@@ -1935,6 +1863,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
         "released_at": "",
         "observed_at": "",
@@ -1967,6 +1896,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://dl.grafana.com/oss/release/grafana-12.4.2.linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f",
         "released_at": "",
         "observed_at": "",
@@ -1999,6 +1929,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/grafana/clickhouse-datasource/releases/download/v4.14.1/grafana-clickhouse-datasource-4.14.1.linux_amd64.zip",
+        "install_url": "",
         "digest": "sha256:11f569287a607043a9c60c4abca493784cc187b6bc4298270e5ef764719a22f1",
         "released_at": "",
         "observed_at": "",
@@ -2031,6 +1962,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-x86_64-unknown-linux-musl.tar.gz",
+        "install_url": "",
         "digest": "sha256:b2042dbcf0a110a4a756a5288de013649fd1f7ee84fa002bb3d2e6ec1e5f1f0b",
         "released_at": "",
         "observed_at": "",
@@ -2063,6 +1995,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-cli-x86_64-unknown-linux-musl.tar.gz",
+        "install_url": "",
         "digest": "sha256:8fbe74206bed46974c272623e184b11d6c8362eb606dddc155fdb6ae9df7b3e9",
         "released_at": "",
         "observed_at": "",
@@ -2087,7 +2020,73 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-containerd-941c5dfe1b1f",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-webadmin-e7a86f729b27",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_stalwart_webadmin",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stalwartlabs/webadmin/releases/download/v0.1.37/webadmin.zip",
+        "install_url": "",
+        "digest": "sha256:9c8245c4e147a0806dd7f947f7bb5f38761acbaa371b0b5bdc0a79036b3b5909",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "scanner_name": "",
+        "scanner_version": "",
+        "scanner_database_digest": "",
+        "sbom_uri": "",
+        "sbom_digest": "",
+        "provenance_uri": "",
+        "provenance_digest": "",
+        "oci_repository": "",
+        "oci_manifest_digest": "",
+        "oci_media_type": "",
+        "signature_digest": "",
+        "attestation_digest": "",
+        "scanner_result_digest": "",
+        "guac_subject": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-spam-filt-03c1eee240c0",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_stalwart_spam_filter",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/stalwartlabs/spam-filter/releases/download/v2.0.5/spam-filter.toml",
+        "install_url": "",
+        "digest": "sha256:4ac035283240e5772ad1e422ba68a9cbcb985b8de86dc4c88dbb60061b51bd07",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "scanner_name": "",
+        "scanner_version": "",
+        "scanner_database_digest": "",
+        "sbom_uri": "",
+        "sbom_digest": "",
+        "provenance_uri": "",
+        "provenance_digest": "",
+        "oci_repository": "",
+        "oci_manifest_digest": "",
+        "oci_media_type": "",
+        "signature_digest": "",
+        "attestation_digest": "",
+        "scanner_result_digest": "",
+        "guac_subject": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-containerd-8a56efe0ded7",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2095,6 +2094,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",
         "released_at": "",
         "observed_at": "",
@@ -2119,7 +2119,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nodejs-3c617a244493",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nodejs-c5003d7e9326",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2127,6 +2127,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
+        "install_url": "",
         "digest": "sha256:88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
         "released_at": "",
         "observed_at": "",
@@ -2151,7 +2152,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-haproxy-awslc-3b86c7b792d8",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-haproxy-awslc-12a3003d285f",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2159,6 +2160,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+        "install_url": "",
         "digest": "sha256:02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
         "released_at": "",
         "observed_at": "",
@@ -2183,7 +2185,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-libssl-awslc-b532e5eb6417",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-libssl-awslc-e87664974cab",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2191,6 +2193,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/a/awslc/libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+        "install_url": "",
         "digest": "sha256:e75ceefa692bb002ae76d2e04ad88c344e524f28aeabf8b165c7bab922474b5c",
         "released_at": "",
         "observed_at": "",
@@ -2215,7 +2218,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-lego-086a6a770911",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-lego-f570301ad23b",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2223,6 +2226,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/go-acme/lego/releases/download/v4.35.2/lego_v4.35.2_linux_amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:ee5be4bf457de8e3efa86a51651c75c87f0ee0e4e9f3ae14f6034d68365770f3",
         "released_at": "",
         "observed_at": "",
@@ -2247,7 +2251,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nomad-8d449a5f3c2f",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nomad-a4598a3229b5",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2255,6 +2259,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
+        "install_url": "",
         "digest": "sha256:19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
         "released_at": "",
         "observed_at": "",
@@ -2279,7 +2284,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zot-9fcdaa210ea2",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zot-393ce29acb39",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2287,6 +2292,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/project-zot/zot/releases/download/v2.1.16/zot-linux-amd64",
+        "install_url": "",
         "digest": "sha256:f9b7e805056db94c97d34bcff4eab77ec8e7cdc2cb76fd6db3d7ad7143605dba",
         "released_at": "",
         "observed_at": "",
@@ -2319,6 +2325,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://httpbin.org/get",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",
@@ -2351,6 +2358,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "http://127.0.0.1:4873/",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",
@@ -2383,6 +2391,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "http://127.0.0.1:4873/",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",
@@ -2415,6 +2424,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:4320",
         "released_at": "",
         "observed_at": "",
@@ -2447,6 +2457,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:true",
         "released_at": "",
         "observed_at": "",
@@ -2479,6 +2490,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:true",
         "released_at": "",
         "observed_at": "",
@@ -2511,6 +2523,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:true",
         "released_at": "",
         "observed_at": "",
@@ -2543,6 +2556,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "listed",
         "released_at": "",
         "observed_at": "",
@@ -2575,6 +2589,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "listed",
         "released_at": "",
         "observed_at": "",
@@ -2607,6 +2622,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:false",
         "released_at": "",
         "observed_at": "",
@@ -2639,6 +2655,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:error",
         "released_at": "",
         "observed_at": "",
@@ -2671,6 +2688,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:true",
         "released_at": "",
         "observed_at": "",
@@ -2703,6 +2721,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "value:true",
         "released_at": "",
         "observed_at": "",
@@ -2735,6 +2754,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz",
+        "install_url": "",
         "digest": "sha256:c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58",
         "released_at": "",
         "observed_at": "",
@@ -2767,6 +2787,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155",
+        "install_url": "",
         "digest": "sha256:e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2",
         "released_at": "",
         "observed_at": "",
@@ -2799,6 +2820,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155.config",
+        "install_url": "",
         "digest": "sha256:024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3",
         "released_at": "",
         "observed_at": "",
@@ -2831,6 +2853,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.0/firecracker-v1.15.0-x86_64.tgz",
+        "install_url": "",
         "digest": "sha256:00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4",
         "released_at": "",
         "observed_at": "",
@@ -2863,6 +2886,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz",
+        "install_url": "",
         "digest": "sha256:18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74",
         "released_at": "",
         "observed_at": "",
@@ -2895,6 +2919,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
+        "install_url": "",
         "digest": "sha256:41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
         "released_at": "",
         "observed_at": "",
@@ -2927,6 +2952,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",
@@ -2959,6 +2985,7 @@
       "admission": {
         "state": "provisional",
         "upstream_url": "",
+        "install_url": "",
         "digest": "",
         "released_at": "",
         "observed_at": "",

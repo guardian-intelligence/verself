@@ -120,6 +120,20 @@ http_file(
 )
 
 http_file(
+    name = "server_tool_stalwart_webadmin",
+    downloaded_file_path = "webadmin.zip",
+    sha256 = "9c8245c4e147a0806dd7f947f7bb5f38761acbaa371b0b5bdc0a79036b3b5909",
+    url = "https://github.com/stalwartlabs/webadmin/releases/download/v0.1.37/webadmin.zip",
+)
+
+http_file(
+    name = "server_tool_stalwart_spam_filter",
+    downloaded_file_path = "spam-filter.toml",
+    sha256 = "4ac035283240e5772ad1e422ba68a9cbcb985b8de86dc4c88dbb60061b51bd07",
+    url = "https://github.com/stalwartlabs/spam-filter/releases/download/v2.0.5/spam-filter.toml",
+)
+
+http_file(
     name = "server_tool_containerd",
     downloaded_file_path = "containerd-static-2.2.2-linux-amd64.tar.gz",
     sha256 = "5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",

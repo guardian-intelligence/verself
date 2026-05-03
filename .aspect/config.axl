@@ -38,11 +38,9 @@ load(".aspect/tasks/deploy.axl", "deploy")
 load(
     ".aspect/tasks/artifacts.axl",
     artifacts_admission_evidence = "admission_evidence",
-    artifacts_admit_url = "admit_url",
     artifacts_evidence = "evidence",
     artifacts_inventory = "inventory",
     artifacts_publish = "publish",
-    artifacts_verify_install = "verify_install",
 )
 load(
     ".aspect/tasks/db.axl",
@@ -102,8 +100,6 @@ def config(ctx):
     ctx.tasks.add(artifacts_publish)
     ctx.tasks.add(artifacts_inventory)
     ctx.tasks.add(artifacts_evidence)
-    ctx.tasks.add(artifacts_admit_url)
-    ctx.tasks.add(artifacts_verify_install)
     ctx.tasks.add(artifacts_admission_evidence)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)

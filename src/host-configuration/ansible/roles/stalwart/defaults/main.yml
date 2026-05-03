@@ -2,11 +2,9 @@
 # Data directory for Stalwart (config, blobs if local fallback needed)
 stalwart_data_dir: /var/lib/stalwart
 stalwart_webadmin_version: "0.1.37"
-stalwart_webadmin_url: "https://github.com/stalwartlabs/webadmin/releases/download/v0.1.37/webadmin.zip"
 stalwart_webadmin_sha256: "9c8245c4e147a0806dd7f947f7bb5f38761acbaa371b0b5bdc0a79036b3b5909"
 stalwart_webadmin_local_path: "{{ stalwart_data_dir }}/webadmin.zip"
 stalwart_spam_filter_version: "2.0.5"
-stalwart_spam_filter_url: "https://github.com/stalwartlabs/spam-filter/releases/download/v2.0.5/spam-filter.toml"
 stalwart_spam_filter_sha256: "4ac035283240e5772ad1e422ba68a9cbcb985b8de86dc4c88dbb60061b51bd07"
 stalwart_spam_filter_local_path: "{{ stalwart_data_dir }}/spam-filter.toml"
 

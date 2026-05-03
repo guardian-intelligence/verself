@@ -35,18 +35,13 @@
   changed_when: false
   failed_when: false
 
-- name: Install Verdaccio via npm
-  ansible.builtin.command: >
-    {{ verself_bin }}/npm install --global
-    --prefix {{ verdaccio_install_prefix }}
-    verdaccio@{{ verdaccio_version }}
-    --registry https://registry.npmjs.org
+- name: Refuse non-admitted Verdaccio installation
+  ansible.builtin.fail:
+    msg: >-
+      Verdaccio {{ verdaccio_version }} is not installed at {{ verdaccio_install_prefix }}.
+      Install it from an admitted artifact before host convergence; direct
+      registry installation is outside the deployment contract.
   when: verdaccio_installed_version.stdout | default('') | trim != verdaccio_version
-  changed_when: true
-  environment:
-    PATH: "{{ verself_bin }}:{{ ansible_facts['env']['PATH'] }}"
-    HOME: /root
-  notify: restart verdaccio
 
 - name: Create Verdaccio config directory
   ansible.builtin.file:
@@ -54,10 +49,9 @@
     state: directory
     mode: "0755"
 
-# npm resolves globalconfig as $PREFIX/etc/npmrc, where PREFIX is the
-# Node install root — not /etc/npmrc. With Node at /opt/verself/nodejs on
-# workers, /etc/npmrc is a file npm never reads, so writing the registry=
-# binding there leaves default `npm install` escaping to registry.npmjs.org.
+# Node package manager globalconfig resolves as $PREFIX/etc/npmrc, where PREFIX
+# is the Node install root. With Node at /opt/verself/nodejs on workers,
+# /etc/npmrc is not sufficient to bind package-manager resolution to Verdaccio.
 - name: Ensure npm globalconfig directory exists
   ansible.builtin.file:
     path: "{{ verdaccio_nodejs_install_dir }}/etc"

@@ -4,6 +4,7 @@ go_library(
     name = "deploydb",
     srcs = [
         "ansible_task_events.go",
+        "breakglass_events.go",
         "client.go",
         "deploy_events.go",
         "open_operator.go",

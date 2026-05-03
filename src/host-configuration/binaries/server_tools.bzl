@@ -43,6 +43,11 @@ RAW_BINARY_SPECS = [
     ("zot", "@server_tool_zot//file", "zot"),
 ]
 
+RAW_FILE_SPECS = [
+    ("stalwart_webadmin_resource", "@server_tool_stalwart_webadmin//file", "var/lib/stalwart/webadmin.zip"),
+    ("stalwart_spam_filter_resource", "@server_tool_stalwart_spam_filter//file", "var/lib/stalwart/spam-filter.toml"),
+]
+
 ARCHIVE_DIRECTORIES = [
     ("grafana", "@server_tool_grafana//file", "z", "opt/verself/grafana"),
     ("nodejs", "@server_tool_nodejs//file", "J", "opt/verself/nodejs"),
@@ -71,6 +76,8 @@ SERVER_TOOL_DEPS = [
     ":spire_server",
     ":stalwart",
     ":stalwart_cli",
+    ":stalwart_spam_filter_resource",
+    ":stalwart_webadmin_resource",
     ":tdbg",
     ":temporal_server",
     ":temporal_sql_tool",
@@ -197,6 +204,18 @@ install -D -m 0755 "$(location {src})" "$$tmp/{profile_bin}/{dest}"
         ),
     )
 
+def _package_data_file(name, src, dest):
+    _tar_fragment(
+        name = name,
+        src = src,
+        cmd = """
+install -D -m 0644 "$(location {src})" "$$tmp/{dest}"
+""".format(
+            dest = dest,
+            src = src,
+        ),
+    )
+
 def _archive_directory(name, src, tar_flag, dest, strip_components = 1):
     _tar_fragment(
         name = name,
@@ -276,6 +295,13 @@ def server_tools_archive():
 
     for name, src, dest in RAW_BINARY_SPECS:
         _package_raw_file(
+            name = name,
+            src = src,
+            dest = dest,
+        )
+
+    for name, src, dest in RAW_FILE_SPECS:
+        _package_data_file(
             name = name,
             src = src,
             dest = dest,

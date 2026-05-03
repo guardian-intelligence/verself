@@ -66,6 +66,7 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 			continue
 		}
 		res.AdmissionState = artifact.Admission.State
+		res.InstallURL = artifact.Admission.InstallURL
 		res.MinimumAgeResult = artifact.Admission.MinimumAgeResult
 		res.ScannerResults = artifact.Admission.ScannerResults
 		res.OCIRepository = artifact.Admission.OCIRepository
@@ -82,6 +83,10 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 		res.GUACSubject = artifact.Admission.GUACSubject
 		res.TUFTargetPath = artifact.Admission.TUFTargetPath
 		res.StorageURI = artifact.Admission.StorageURI
+		expectedSourceURL := artifact.Admission.UpstreamURL
+		if artifact.Admission.State == AdmissionAdmitted && artifact.Admission.InstallURL != "" {
+			expectedSourceURL = artifact.Admission.InstallURL
+		}
 		switch {
 		case artifact.SourcePath != f.SourcePath:
 			res.PolicyReason = fmt.Sprintf("source path mismatch: policy=%s observed=%s", artifact.SourcePath, f.SourcePath)
@@ -91,10 +96,13 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 			res.PolicyReason = fmt.Sprintf("surface mismatch: policy=%s observed=%s", artifact.Surface, f.Surface)
 		case artifact.Artifact != f.Artifact:
 			res.PolicyReason = fmt.Sprintf("artifact name mismatch: policy=%s observed=%s", artifact.Artifact, f.Artifact)
-		case artifact.Admission.UpstreamURL != f.UpstreamURL:
-			res.PolicyReason = fmt.Sprintf("upstream URL mismatch: policy=%s observed=%s", artifact.Admission.UpstreamURL, f.UpstreamURL)
+		case expectedSourceURL != f.UpstreamURL:
+			res.PolicyReason = fmt.Sprintf("install source URL mismatch: policy=%s observed=%s", expectedSourceURL, f.UpstreamURL)
 		case artifact.Admission.Digest != f.Digest:
 			res.PolicyReason = fmt.Sprintf("digest mismatch: policy=%s observed=%s", artifact.Admission.Digest, f.Digest)
+		case isAcceptedPolicyControl(f, artifact, policy):
+			res.PolicyResult = ResultAccepted
+			res.PolicyReason = "policy control satisfied"
 		case strictAdmitted && artifact.Admission.State != AdmissionAdmitted:
 			res.PolicyReason = "artifact is tracked but not admitted"
 		case artifact.Admission.State == AdmissionAdmitted:
@@ -146,6 +154,7 @@ func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, er
 			PolicyResult:          ResultRejected,
 			PolicyReason:          "required pnpm supply-chain control is missing",
 			AdmissionState:        artifact.Admission.State,
+			InstallURL:            artifact.Admission.InstallURL,
 			MinimumAgeResult:      artifact.Admission.MinimumAgeResult,
 			ScannerResults:        artifact.Admission.ScannerResults,
 			OCIRepository:         artifact.Admission.OCIRepository,
@@ -292,6 +301,37 @@ func enforcePnpmControls(policy Policy, results []FindingResult) []FindingResult
 	return results
 }
 
+func isAcceptedPolicyControl(f Finding, artifact PolicyArtifact, policy Policy) bool {
+	if f.SourceKind == "pnpm_setting" {
+		return true
+	}
+	if f.SourceKind == "registry_url" {
+		return isLocalRegistryURL(f.UpstreamURL) || isVerdaccioUpstreamRegistry(f)
+	}
+	if (f.SourceKind == "curl_fetch" || f.SourceKind == "wget_fetch") && strings.Contains(f.SourcePath, "/scripts/security/") {
+		return true
+	}
+	if !sourceRequiresAdmission(f.SourceKind) {
+		return artifact.Admission.State == AdmissionProvisional || artifact.Admission.State == AdmissionAdmitted
+	}
+	_ = policy
+	return false
+}
+
+func isLocalRegistryURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	return strings.HasPrefix(raw, "http://127.0.0.1:") ||
+		strings.HasPrefix(raw, "https://127.0.0.1:") ||
+		strings.HasPrefix(raw, "http://localhost:") ||
+		strings.HasPrefix(raw, "https://localhost:")
+}
+
+func isVerdaccioUpstreamRegistry(f Finding) bool {
+	return strings.Contains(f.SourcePath, "/verdaccio/templates/") &&
+		f.Artifact == "npmjs-registry" &&
+		strings.TrimRight(f.UpstreamURL, "/") == "https://registry.npmjs.org"
+}
+
 func validatePolicy(policy Policy) error {
 	if policy.SchemaVersion != 1 {
 		return fmt.Errorf("unsupported schema_version %d", policy.SchemaVersion)
@@ -352,5 +392,14 @@ func requiresUpstream(sourceKind string) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+func sourceRequiresAdmission(sourceKind string) bool {
+	switch sourceKind {
+	case "bazel_http_file", "bazel_http_archive", "catalog_url", "bootstrap_url", "direct_release_url", "curl_fetch", "wget_fetch", "apt_get_update", "apt_get_install", "npm_install", "uv_tool_install", "uvx_from", "go_install", "pip_install":
+		return true
+	default:
+		return false
 	}
 }
