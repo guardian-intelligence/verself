@@ -19,6 +19,12 @@ js_binary(
 )
 
 js_binary(
+    name = "generate_route_tree",
+    data = ["//src/viteplus-monorepo:node_modules/@tanstack/router-generator"],
+    entry_point = "generate-route-tree.ts",
+)
+
+js_binary(
     name = "write_supplychain_evidence",
     entry_point = "write-supplychain-evidence.ts",
 )

@@ -1,6 +1,6 @@
 import { createRouter } from "@tanstack/react-router";
 import { QueryClient } from "@tanstack/react-query";
-import { routeTree } from "./routeTree.gen";
+import { routeTree } from "./__generated/routeTree.gen";
 import { AppNotFound, AppPending, AppRouteError } from "./components/route-boundaries";
 import { anonymousAuth } from "@verself/auth-web/isomorphic";
 

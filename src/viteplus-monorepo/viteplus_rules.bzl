@@ -61,6 +61,7 @@ def viteplus_app(npm_name, srcs):
         srcs = native.glob(
             srcs,
             allow_empty = True,
+            exclude = ["**/__generated/**"],
         ),
     )
 
@@ -111,14 +112,16 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
 """.format(nodejs_archive = _NODEJS_ARCHIVE),
     )
 
-def viteplus_node_app_artifact(name, output, migration_entry = None, migration_data = {}):
+def viteplus_node_app_artifact(name, output, migration_entry = None, migration_data = {}, generated_srcs = None):
     package_dir = native.package_name()
     migration_bundle = "_" + name + "_migration_bundle"
+    if generated_srcs == None:
+        generated_srcs = []
     srcs = [
         ":instrumentation_bundle",
         ":sources",
         "//src/viteplus-monorepo:workspace_sources",
-    ]
+    ] + generated_srcs
     migration_cmds = ""
     if migration_entry:
         js_run_binary(
@@ -162,6 +165,29 @@ chmod 0755 "$$tmp/bin/{output}-migrate"
             migration_data_copies = "\n".join(migration_data_copies),
             output = output,
         )
+    generated_sync_cmds = ""
+    if generated_srcs:
+        generated_locations = " ".join(["$(locations %s)" % src for src in generated_srcs])
+        generated_sync_cmds = """
+for generated in {generated_locations}; do
+  case "$$generated" in
+    /*) generated_abs="$$generated" ;;
+    *) generated_abs="$$execroot/$$generated" ;;
+  esac
+  case "$$generated" in
+    *"{package_dir}/__generated_sources/"*) generated_rel="$${{generated#*{package_dir}/__generated_sources/}}" ;;
+    *"{package_dir}/"*) generated_rel="$${{generated#*{package_dir}/}}" ;;
+    *) echo "generated source $$generated is not under {package_dir}" >&2; exit 1 ;;
+  esac
+  generated_dest="$$execroot/{package_dir}/$$generated_rel"
+  rm -rf "$$generated_dest"
+  mkdir -p "$$(dirname "$$generated_dest")"
+  cp -a "$$generated_abs" "$$generated_dest"
+done
+""".format(
+            generated_locations = generated_locations,
+            package_dir = package_dir,
+        )
     native.genrule(
         name = name,
         srcs = srcs,
@@ -177,6 +203,7 @@ test -x "$$vp"
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 
+{generated_sync_cmds}
 cd "{package_dir}"
 rm -rf .output
 "$$vp" build
@@ -199,6 +226,7 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
             output = output,
             package_dir = package_dir,
             migration_cmds = migration_cmds,
+            generated_sync_cmds = generated_sync_cmds,
         ),
         local = True,
         tags = [
@@ -208,6 +236,46 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
         ],
     )
 
+def viteplus_route_tree(name):
+    """Generate and materialize a TanStack Router route tree under src/__generated.
+
+    Args:
+      name: target name for the `write_source_files` projection. `<name>_gen` is the
+        sibling generator target.
+    """
+    source_tree_out = "src/__generated/routeTree.gen.ts"
+    out = "__generated_sources/" + source_tree_out
+    gen_target = name + "_gen"
+
+    js_run_binary(
+        name = gen_target,
+        srcs = [
+            "//src/viteplus-monorepo:node_modules/@tanstack/router-generator",
+            ":sources",
+        ],
+        outs = [out],
+        args = [
+            "--routes-directory=./src/routes",
+            "--generated-route-tree=./" + out,
+        ],
+        chdir = native.package_name(),
+        tool = "//src/viteplus-monorepo/scripts:generate_route_tree",
+        mnemonic = "TanStackRouteTreeGen",
+        progress_message = "Generating TanStack route tree for %s" % native.package_name(),
+    )
+
+    native.filegroup(
+        name = name + "_generated_sources",
+        srcs = [":" + gen_target],
+    )
+
+    write_source_files(
+        name = name,
+        files = {
+            source_tree_out: ":" + gen_target,
+        },
+    )
+
 def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None):
     """Generates TypeScript SDKs from a set of OpenAPI specs via @hey-api/openapi-ts.
 
@@ -215,11 +283,10 @@ def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None
     subdirectory under `src/__generated/` (e.g. "sandbox-rental-api"); `spec_label`
     is the Bazel label of the openapi-3.1.yaml file owned by the service.
 
-    Outputs are emitted under bazel-out and then projected onto disk under
-    `src/__generated/<sdk_dir>/` via write_source_files. The on-disk copies are
-    the source of truth for IDE typecheck and the vite build glob; CI runs
-    `bazel test //src/viteplus-monorepo/apps/<app>:<name>_check` to enforce
-    that committed snapshots match the generator output.
+    Outputs are emitted under bazel-out and projected onto disk under
+    `src/__generated/<sdk_dir>/` via write_source_files for local tools. App
+    artifact builds should depend on `<name>_generated_sources` so generated
+    SDKs are materialized before `vp build` reads source-tree imports.
 
     `openapi_ts_bin` must be the `bin` struct loaded from the consuming
     package's `@npm//<pkg>:@hey-api/openapi-ts/package_json.bzl`. `plugin_packages`
@@ -231,11 +298,13 @@ def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None
         plugin_packages = []
 
     file_map = {}
+    generated_targets = []
     for sdk_dir, spec_label in specs:
         sdk_token = sdk_dir.replace("-", "_")
         raw_target = "%s_%s_raw" % (name, sdk_token)
         gen_target = "%s_%s_gen" % (name, sdk_token)
-        out_dir = "src/__generated/%s" % sdk_dir
+        source_tree_out_dir = "src/__generated/%s" % sdk_dir
+        out_dir = "__generated_sources/" + source_tree_out_dir
         raw_dir = "_openapi_raw/%s" % sdk_dir
 
         # js_binary chdir's to BAZEL_BINDIR at runtime, so the spec path must
@@ -275,7 +344,46 @@ def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None
             mnemonic = "OpenapiTsPostprocess",
             progress_message = "Stamping ts-nocheck on %s SDK" % sdk_dir,
         )
-        file_map[out_dir] = ":" + gen_target
+        file_map[source_tree_out_dir] = ":" + gen_target
+        generated_targets.append(":" + gen_target)
+
+    native.filegroup(
+        name = name + "_generated_sources",
+        srcs = generated_targets,
+    )
+
+    write_source_files(
+        name = name,
+        files = file_map,
+    )
+
+def viteplus_openapi_spec_copies(name, specs):
+    """Materialize OpenAPI YAML specs consumed directly by the frontend.
+
+    Args:
+      name: target name for the `write_source_files` projection.
+      specs: list of `(sdk_dir, spec_label)` pairs identifying each spec to copy.
+    """
+    file_map = {}
+    generated_targets = []
+    for sdk_dir, spec_label in specs:
+        sdk_token = sdk_dir.replace("-", "_")
+        target_name = "%s_%s_spec" % (name, sdk_token)
+        source_tree_out_path = "src/__generated/openapi-specs/%s/openapi-3.1.yaml" % sdk_dir
+        out_path = "__generated_sources/" + source_tree_out_path
+        native.genrule(
+            name = target_name,
+            srcs = [spec_label],
+            outs = [out_path],
+            cmd = "cp $(location %s) $@" % spec_label,
+        )
+        file_map[source_tree_out_path] = ":" + target_name
+        generated_targets.append(":" + target_name)
+
+    native.filegroup(
+        name = name + "_generated_sources",
+        srcs = generated_targets,
+    )
 
     write_source_files(
         name = name,

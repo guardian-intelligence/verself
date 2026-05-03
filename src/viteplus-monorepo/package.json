@@ -15,6 +15,7 @@
     "ready": "vp check && vp test run && vp run -r typecheck && vp run -w typecheck:scripts && vp run -r build"
   },
   "devDependencies": {
+    "@tanstack/router-generator": "catalog:",
     "@types/node": "catalog:",
     "rolldown": "catalog:",
     "typescript": "catalog:",

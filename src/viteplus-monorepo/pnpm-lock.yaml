@@ -63,6 +63,9 @@ catalogs:
     '@tanstack/react-start':
       specifier: ^1.166.0
       version: 1.167.16
+    '@tanstack/router-generator':
+      specifier: 1.166.24
+      version: 1.166.24
     '@types/node':
       specifier: ^22.19.17
       version: 22.19.17
@@ -150,6 +153,9 @@ importers:
 
   .:
     devDependencies:
+      '@tanstack/router-generator':
+        specifier: 'catalog:'
+        version: 1.166.24
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.17

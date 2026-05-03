@@ -71,6 +71,7 @@ artifacts/
 # Generated/rendered directories are materialized outputs.
 **/__generated/
 **/__rendered/
+**/routeTree.gen.ts
 
 # Bazel convenience symlinks
 /bazel-*

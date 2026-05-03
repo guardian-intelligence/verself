@@ -21,7 +21,12 @@ export default defineConfig({
   },
   plugins: [
     tailwindcss(),
-    tanstackStart({ srcDirectory: "src" }),
+    tanstackStart({
+      srcDirectory: "src",
+      router: {
+        generatedRouteTree: "__generated/routeTree.gen.ts",
+      },
+    }),
     viteReact(),
     nitro({ plugins: [observabilityPlugin] }),
   ],

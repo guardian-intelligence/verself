@@ -1,4 +1,4 @@
-load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact")
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_route_tree")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,7 +17,20 @@ viteplus_app(
 
 viteplus_node_app_artifact(
     name = "node_app_nomad_artifact",
+    generated_srcs = [":route_tree_generated_sources"],
     output = "company",
+)
+
+viteplus_route_tree(name = "route_tree")
+
+alias(
+    name = "dev_update",
+    actual = ":route_tree",
+)
+
+test_suite(
+    name = "dev_check",
+    tests = [":route_tree_tests"],
 )
 
 exports_files(["nomad-overrides.json"])
