@@ -73,7 +73,7 @@ Versions of record live as constants at the top of each `scripts/bootstrap-*` en
 | Task | Description |
 | --- | --- |
 | `aspect deploy` | Run the canonical deploy path from authored inputs (`--site`, `--sha`). |
-| `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|edge\|ansible\|voice\|supply-chain\|all`). |
+| `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|edge\|ansible\|supply-chain\|all`). |
 | `aspect observe` | Discover or query telemetry (`--what catalog\|queries\|describe\|metric\|trace\|logs\|http\|service\|errors\|mail\|deploy\|supply-chain\|workload-identity\|temporal`). |
 | `aspect detect-intrusions` | Scan `verself.host_auth_events` for accepted SSH sessions that bypassed Pomerium. |
 

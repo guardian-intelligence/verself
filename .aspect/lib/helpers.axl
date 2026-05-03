@@ -20,6 +20,29 @@ Conventions:
 SUBSTRATE_DIR = "src/host-configuration"
 PROVISION_DIR = "src/provisioning-tools"
 DEFAULT_SITE = "prod"
+GO_DIRS = [
+    "src/auth-middleware",
+    "src/billing-service",
+    "src/deployment-tools",
+    "src/dev-tools",
+    "src/domain-transfer-objects/go",
+    "src/governance-service",
+    "src/host-configuration",
+    "src/identity-service",
+    "src/mailbox-service",
+    "src/notifications-service",
+    "src/object-storage-service",
+    "src/observability/go",
+    "src/operator-runtime/go",
+    "src/profile-service",
+    "src/projects-service",
+    "src/sandbox-rental-service",
+    "src/secrets-service",
+    "src/service-runtime/go",
+    "src/source-code-hosting-service",
+    "src/temporal-platform",
+    "src/vm-orchestrator",
+]
 
 VERSELF_DEPLOY_TARGET = "//src/deployment-tools/cmd/verself-deploy:verself-deploy"
 VERSELF_DEPLOY_BIN = "bazel-bin/src/deployment-tools/cmd/verself-deploy/verself-deploy_/verself-deploy"

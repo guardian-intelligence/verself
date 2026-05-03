@@ -46,6 +46,7 @@ load(
     db_tb_lookup_account = "tb_lookup_account",
 )
 load(".aspect/tasks/check.axl", "check")
+load(".aspect/tasks/tidy.axl", "tidy")
 load(
     ".aspect/tasks/dev.axl",
     dev_install = "install",
@@ -95,6 +96,7 @@ def config(ctx):
     ctx.tasks.add(artifacts_admission_evidence)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
+    ctx.tasks.add(tidy)
 
     # aspect bazel ...
     ctx.tasks.add(bazel_gazelle)

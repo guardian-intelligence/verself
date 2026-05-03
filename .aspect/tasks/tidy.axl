@@ -1,0 +1,76 @@
+"""aspect tidy — mutate authored sources into the repo's canonical shape.
+
+This is the one-stop local hygiene command. It runs ecosystem-native formatters
+and metadata tidiers in a fixed order, then regenerates Bazel metadata.
+"""
+
+load(".aspect/lib/helpers.axl", "GO_DIRS", "checked_spawn", "ws_path")
+
+def _viteplus(ctx):
+    return checked_spawn(
+        ctx,
+        "vp",
+        ["check", "--fix"],
+        cwd = ws_path(ctx, "src/viteplus-monorepo"),
+        label = "vp check --fix",
+    )
+
+def _go(ctx):
+    for d in GO_DIRS:
+        rc = checked_spawn(
+            ctx,
+            "gofumpt",
+            ["-w", "."],
+            cwd = ws_path(ctx, d),
+            label = "gofumpt -w (" + d + ")",
+        )
+        if rc != 0:
+            return rc
+        rc = checked_spawn(
+            ctx,
+            "go",
+            ["mod", "tidy"],
+            cwd = ws_path(ctx, d),
+            label = "go mod tidy (" + d + ")",
+        )
+        if rc != 0:
+            return rc
+    return 0
+
+def _gazelle(ctx):
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        [
+            "run",
+            "//:gazelle",
+            "--",
+            "update",
+            "-go_naming_convention=import_alias",
+            "-go_naming_convention_external=import_alias",
+        ],
+        cwd = ws_path(ctx),
+        label = "bazelisk run //:gazelle -- update",
+    )
+
+def _bzlmod(ctx):
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        ["mod", "tidy", "--lockfile_mode=update"],
+        cwd = ws_path(ctx),
+        label = "bazelisk mod tidy",
+    )
+
+def _impl(ctx):
+    for step in [_viteplus, _go, _gazelle, _bzlmod]:
+        rc = step(ctx)
+        if rc != 0:
+            return rc
+    return 0
+
+tidy = task(
+    implementation = _impl,
+    name = "tidy",
+    summary = "Run repo-wide source formatting and metadata tidying.",
+)

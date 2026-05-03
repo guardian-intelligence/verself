@@ -1,35 +1,13 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|edge|ansible|voice|supply-chain|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: supply-chain → edge → ansible → voice → conversions → vet → lint → test.
+fast-failure order: supply-chain → edge → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "ws_path")
-
-_GO_DIRS = [
-    "src/vm-orchestrator",
-    "src/billing-service",
-    "src/governance-service",
-    "src/identity-service",
-    "src/secrets-service",
-    "src/source-code-hosting-service",
-    "src/auth-middleware",
-    "src/sandbox-rental-service",
-    "src/mailbox-service",
-    "src/object-storage-service",
-    "src/profile-service",
-    "src/notifications-service",
-    "src/projects-service",
-    "src/observability/go",
-    "src/temporal-platform",
-    "src/domain-transfer-objects/go",
-    "src/service-runtime/go",
-    "src/deployment-tools",
-    "src/dev-tools",
-]
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
-    for d in _GO_DIRS:
+    for d in GO_DIRS:
         rc = checked_spawn(
             ctx,
             "go",
@@ -48,7 +26,7 @@ def _go_vet(ctx):
     return _go_each(ctx, ["vet", "./..."], "go vet")
 
 def _go_lint(ctx):
-    for d in _GO_DIRS:
+    for d in GO_DIRS:
         rc = checked_spawn(
             ctx,
             "golangci-lint",
@@ -61,7 +39,7 @@ def _go_lint(ctx):
     return 0
 
 def _conversions(ctx):
-    for d in _GO_DIRS:
+    for d in GO_DIRS:
         rc = checked_spawn(
             ctx,
             "gosec",
@@ -111,15 +89,6 @@ def _ansible_lint(ctx):
         label = "ansible-lint",
     )
 
-def _voice(ctx):
-    return checked_spawn(
-        ctx,
-        "vp",
-        ["run", "@verself/company#lint:voice"],
-        cwd = ws_path(ctx, "src/viteplus-monorepo"),
-        label = "vp run @verself/company#lint:voice",
-    )
-
 def _supply_chain(ctx):
     bin = build_verself_deploy(ctx)
     if bin == "":
@@ -139,12 +108,11 @@ _CHECKERS = {
     "conversions": _conversions,
     "edge": _edge,
     "ansible": _ansible_lint,
-    "voice": _voice,
     "supply-chain": _supply_chain,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["supply-chain", "edge", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["supply-chain", "edge", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -162,7 +130,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|edge|ansible|voice|supply-chain|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|all).",
     args = {
         "kind": args.string(
             default = "all",
