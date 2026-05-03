@@ -173,6 +173,10 @@ Supply-chain admission and content-addressed artifact publishing.
 
 Artifact admission and install verification are deploy-flow internals. The
 operator-facing checks assert the ClickHouse evidence emitted by that flow.
+Regenerate the tracked supply-chain policy from the scanner with
+`aspect artifacts inventory --format=policy --write-policy=src/host-configuration/supply-chain/policy.json`;
+direct JSON edits should be limited to admission metadata that is not yet
+owned by the generator.
 
 ### `aspect bazel`
 
