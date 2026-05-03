@@ -17,6 +17,7 @@ type edgeConfig struct {
 	repoRoot string
 	site     string
 	format   string
+	artifact string
 }
 
 func cmdEdge(args []string) error {
@@ -27,6 +28,8 @@ func cmdEdge(args []string) error {
 	switch args[0] {
 	case "check":
 		return cmdEdgeCheck(args[1:])
+	case "artifact":
+		return cmdEdgeArtifact(args[1:])
 	case "manifest":
 		return cmdEdgeManifest(args[1:])
 	case "render":
@@ -87,6 +90,36 @@ func cmdEdgeManifest(args []string) error {
 	return writeEdgeManifest(os.Stdout, cfg.format, bundle.Manifest)
 }
 
+func cmdEdgeArtifact(args []string) error {
+	cfg, err := parseEdgeFlags("edge artifact", args)
+	if err != nil {
+		return err
+	}
+	bundle, err := edgecontract.Build(edgecontract.Config{RepoRoot: cfg.repoRoot, Site: cfg.site})
+	if err != nil {
+		return err
+	}
+	if len(bundle.Issues) > 0 {
+		for _, issue := range bundle.Issues {
+			fmt.Fprintln(os.Stderr, issue)
+		}
+		return exitError{code: 1}
+	}
+	var content string
+	switch cfg.artifact {
+	case "haproxy-template":
+		content = bundle.Artifacts.HAProxyTemplate
+	case "public-hosts-map":
+		content = bundle.Artifacts.PublicHostsMap
+	case "upstreams-map":
+		content = bundle.Artifacts.InitialUpstreamsMap
+	default:
+		return fmt.Errorf("edge artifact: --artifact must be haproxy-template, public-hosts-map, or upstreams-map")
+	}
+	_, err = io.WriteString(os.Stdout, content)
+	return err
+}
+
 func cmdEdgeRender(args []string) error {
 	cfg, err := parseEdgeFlags("edge render", args)
 	if err != nil {
@@ -122,6 +155,7 @@ func parseEdgeFlags(name string, args []string) (edgeConfig, error) {
 	fs.StringVar(&cfg.repoRoot, "repo-root", "", "Path to the verself-sh checkout root.")
 	fs.StringVar(&cfg.site, "site", edgecontract.DefaultSite, "Deployment site whose Nomad jobs should be checked.")
 	fs.StringVar(&cfg.format, "format", "text", "Manifest output format: text, json, or yaml.")
+	fs.StringVar(&cfg.artifact, "artifact", "", "Generated artifact to emit for the artifact subcommand.")
 	if err := fs.Parse(args); err != nil {
 		return edgeConfig{}, err
 	}
@@ -156,6 +190,7 @@ func printEdgeUsage(w *os.File) {
 
 Subcommands:
   check      Validate topology, Nomad service registrations, and generated HAProxy artifacts
+  artifact   Emit one generated HAProxy artifact to stdout
   manifest   Emit the derived edge contract manifest
   render     Rewrite HAProxy artifacts from the edge contract
 
@@ -163,6 +198,7 @@ Common flags:
   --repo-root <path>  verself-sh checkout root
   --site <site>       deployment site (default: prod)
   --format <format>   manifest format: text, json, yaml
+  --artifact <name>   artifact name for artifact: haproxy-template, public-hosts-map, upstreams-map
 `)
 }
 

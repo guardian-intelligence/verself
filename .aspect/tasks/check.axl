@@ -4,7 +4,7 @@ Cross-cutting verification gates used during PR review. `--kind=all` runs in
 fast-failure order: supply-chain → edge → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "update_edge_generated", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
     for d in GO_DIRS:
@@ -52,18 +52,12 @@ def _conversions(ctx):
     return 0
 
 def _edge(ctx):
+    render_rc = update_edge_generated(ctx)
+    if render_rc != 0:
+        return render_rc
     bin = build_aspect_operator(ctx)
     if bin == "":
         return 1
-    render_rc = checked_spawn(
-        ctx,
-        bin,
-        ["edge", "render", "--repo-root", ws_path(ctx), "--site", DEFAULT_SITE],
-        cwd = ws_path(ctx),
-        label = "aspect-operator edge render",
-    )
-    if render_rc != 0:
-        return render_rc
     return checked_spawn(
         ctx,
         bin,

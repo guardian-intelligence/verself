@@ -9,6 +9,7 @@ exports_files([
 filegroup(
     name = "prod_nomad_job_specs",
     srcs = glob(["sites/prod/jobs/*.nomad.json"]),
+    visibility = ["//src/host-configuration:__pkg__"],
 )
 
 exports_files(["sites/prod/jobs/index.json"])
