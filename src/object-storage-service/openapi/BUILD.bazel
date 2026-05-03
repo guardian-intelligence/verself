@@ -1,7 +1,5 @@
-exports_files(
-    [
-        "openapi-3.1.yaml",
-        "openapi-3.0.yaml",
-    ],
-    visibility = ["//visibility:public"],
+load("//bazel:openapi_codegen.bzl", "verself_openapi_specs")
+
+verself_openapi_specs(
+    public_tool = "//src/object-storage-service/cmd/object-storage-openapi",
 )

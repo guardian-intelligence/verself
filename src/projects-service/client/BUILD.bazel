@@ -1,13 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
 
-go_library(
+verself_oapi_go_client(
     name = "client",
-    srcs = [
-        "client.gen.go",
-        "generate.go",
-    ],
     importpath = "github.com/verself/projects-service/client",
-    visibility = ["//visibility:public"],
+    package = "projectsclient",
+    spec = "//src/projects-service/openapi:openapi-3.0.yaml",
     deps = [
         "@com_github_oapi_codegen_runtime//:runtime",
         "@com_github_oapi_codegen_runtime//types",

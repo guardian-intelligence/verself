@@ -1,23 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
 
-# Bazel rebuilds client.gen.go from the generated OpenAPI spec so downstream
-# targets track the API shape. The checked-in copy keeps plain Go tooling able
-# to load github.com/verself/billing-service/client outside Bazel.
-# oapi-codegen formats through x/tools/imports, which consults the Go toolchain;
-# strict action env requires an explicit controller tool path.
-genrule(
-    name = "client_gen",
-    srcs = ["//src/billing-service/openapi:spec_3_0"],
-    outs = ["client.gen.go"],
-    cmd = "PATH=/usr/local/go/bin:/usr/bin:/bin $(location @com_github_oapi_codegen_oapi_codegen_v2//cmd/oapi-codegen:oapi-codegen) -generate types,client -package billingclient -o $@ $(location //src/billing-service/openapi:spec_3_0)",
-    tools = ["@com_github_oapi_codegen_oapi_codegen_v2//cmd/oapi-codegen:oapi-codegen"],
-)
-
-go_library(
+verself_oapi_go_client(
     name = "client",
-    srcs = [":client_gen"],
     importpath = "github.com/verself/billing-service/client",
-    visibility = ["//visibility:public"],
+    package = "billingclient",
+    spec = "//src/billing-service/openapi:openapi-3.0.yaml",
     deps = ["@com_github_oapi_codegen_runtime//:runtime"],
 )
 

@@ -1,28 +1,5 @@
-load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("//bazel:openapi_codegen.bzl", "verself_openapi_specs")
 
-package(default_visibility = ["//visibility:public"])
-
-# Bazel-tracked OpenAPI specs. Outputs land in bazel-out/.../openapi/
-# and feed both the Go client codegen (//src/billing-service/client)
-# and the frontend openapi-ts pipeline. There is no on-disk source of
-# truth for these YAMLs — see .gitignore.
-genrule(
-    name = "spec_3_0",
-    outs = ["openapi-3.0.yaml"],
-    cmd = "$(location //src/billing-service/cmd/billing-openapi) --format 3.0 > $@",
-    tools = ["//src/billing-service/cmd/billing-openapi"],
-)
-
-genrule(
-    name = "spec_3_1",
-    outs = ["openapi-3.1.yaml"],
-    cmd = "$(location //src/billing-service/cmd/billing-openapi) --format 3.1 > $@",
-    tools = ["//src/billing-service/cmd/billing-openapi"],
-)
-
-# js_run_binary's input contract requires every spec the openapi-ts
-# pipeline reads to be staged under bazel-bin via copy_to_bin.
-copy_to_bin(
-    name = "openapi-3.1.yaml.bin",
-    srcs = [":spec_3_1"],
+verself_openapi_specs(
+    public_tool = "//src/billing-service/cmd/billing-openapi",
 )

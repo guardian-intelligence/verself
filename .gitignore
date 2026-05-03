@@ -81,12 +81,14 @@ Screenshot*.png
 Screenshot*.jpg
 
 # Generated OpenAPI artifacts. Authority is the Huma route source; the
-# action graph rebuilds these into bazel-out via verself_openapi_yaml +
-# verself_openapi_go_client. No on-disk source of truth.
+# action graph rebuilds these into bazel-out via verself_openapi_specs +
+# verself_oapi_go_client. No on-disk source of truth.
 src/*/openapi/openapi-*.yaml
 src/*/openapi/internal-openapi-*.yaml
 src/*/client/client.gen.go
 src/*/internalclient/client.gen.go
+*.pb.go
+*_grpc.pb.go
 
 # E2E smoke-test bundles, personas, Playwright traces, and query evidence
 smoke-artifacts/

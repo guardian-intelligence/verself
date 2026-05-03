@@ -1,13 +1,11 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
 
-go_library(
+verself_oapi_go_client(
     name = "internalclient",
-    srcs = [
-        "client.gen.go",
-        "generate.go",
-    ],
     importpath = "github.com/verself/identity-service/internalclient",
-    visibility = ["//visibility:public"],
+    package = "identityinternalclient",
+    response_type_suffix = "HTTPResponse",
+    spec = "//src/identity-service/openapi:internal-openapi-3.0.yaml",
     deps = ["@com_github_oapi_codegen_runtime//:runtime"],
 )
 
