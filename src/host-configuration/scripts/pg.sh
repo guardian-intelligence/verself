@@ -19,7 +19,13 @@ remote_path="${PSQL_PATH:-/opt/verself/profile/bin/psql}"
 pg_host="${PG_HOST:-127.0.0.1}"
 pg_port="${PG_PORT:-5432}"
 pg_user="${PG_USER:-postgres}"
-ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
+ssh_opts=(
+  -o IPQoS=none
+  -o StrictHostKeyChecking=no
+  -o IdentitiesOnly=yes
+  -o PreferredAuthentications=publickey
+  -o PubkeyAuthentication=yes
+)
 
 if [[ -n "${SSH_OPTS:-}" ]]; then
   read -r -a ssh_opts <<<"${SSH_OPTS}"
