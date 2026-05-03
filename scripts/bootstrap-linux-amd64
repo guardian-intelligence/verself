@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# Install the bootstrap_pivot dev tools that have to land before any other
+# delivery channel can run. Today that is Bazelisk, the Aspect CLI, and
+# Vite+ (which owns vp/vite/rolldown/vitest invocation for the JS workspace).
+#
+# The dev-tools catalog owns the version-of-record for controller tools. The
+# constants here are hand-mirrored because this script bootstraps Bazelisk
+# before Bazel-owned catalog checks can run.
+#
+# After install, bazel is symlinked next to bazelisk so the Aspect CLI's
+# ctx.bazel.{build,test,run,query} APIs (which spawn `bazel` directly) resolve
+# through Bazelisk's version-pinned download.
+set -euo pipefail
+
+bazelisk_version="1.28.1"
+bazelisk_sha256="22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
+bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64"
+
+aspect_version="2026.17.17"
+aspect_sha256="db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
+aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl"
+
+viteplus_version="0.1.19"
+viteplus_install_url="https://vite.plus"
+
+install_dir="${BOOTSTRAP_INSTALL_DIR:-/usr/local/bin}"
+last_installed_path=""
+
+if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+  echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
+  echo "scripts/bootstrap-linux-amd64 pins the Linux x86_64 bootstrap_pivot artifacts." >&2
+  exit 1
+fi
+
+hash_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${path}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+  else
+    echo "missing sha256sum, shasum, or python3 for checksum verification" >&2
+    exit 1
+  fi
+}
+
+download() {
+  local url="$1"
+  local output="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "${url}" -o "${output}"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "${output}" "${url}"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${url}" "${output}" <<'PY'
+import sys
+import urllib.request
+
+urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
+PY
+  else
+    echo "missing curl, wget, or python3 for downloading bootstrap binaries" >&2
+    exit 1
+  fi
+}
+
+# install_pivot <name> <version> <sha256> <url>
+#
+# Idempotent: short-circuits when the binary already exists on PATH with the
+# expected sha256. Falls back to ${HOME}/.local/bin if
+# install_dir is non-writable and sudo is unavailable, and warns when that
+# directory is not on PATH.
+install_pivot() {
+  local name="$1"
+  local version="$2"
+  local sha256="$3"
+  local url="$4"
+  last_installed_path=""
+
+  if command -v "${name}" >/dev/null 2>&1; then
+    local existing_path
+    existing_path="$(command -v "${name}")"
+    if [[ "$(hash_file "${existing_path}")" == "${sha256}" ]]; then
+      echo "${name} ${version} already installed at ${existing_path}"
+      last_installed_path="${existing_path}"
+      return 0
+    fi
+  fi
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "'"${tmp_dir}"'"' RETURN
+
+  download "${url}" "${tmp_dir}/${name}"
+  local actual_sha256
+  actual_sha256="$(hash_file "${tmp_dir}/${name}")"
+  if [[ "${actual_sha256}" != "${sha256}" ]]; then
+    echo "${name} checksum mismatch: expected ${sha256}, got ${actual_sha256}" >&2
+    return 1
+  fi
+  chmod 0755 "${tmp_dir}/${name}"
+
+  local installed_path
+  if [[ -d "${install_dir}" && -w "${install_dir}" ]]; then
+    install -m 0755 "${tmp_dir}/${name}" "${install_dir}/${name}"
+    installed_path="${install_dir}/${name}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "${install_dir}"
+    sudo install -m 0755 "${tmp_dir}/${name}" "${install_dir}/${name}"
+    installed_path="${install_dir}/${name}"
+  else
+    local fallback_dir="${HOME}/.local/bin"
+    mkdir -p "${fallback_dir}"
+    install -m 0755 "${tmp_dir}/${name}" "${fallback_dir}/${name}"
+    installed_path="${fallback_dir}/${name}"
+  fi
+
+  echo "installed ${name} ${version} at ${installed_path}"
+  last_installed_path="${installed_path}"
+  case ":${PATH}:" in
+    *":$(dirname "${installed_path}"):"*) ;;
+    *) echo "add $(dirname "${installed_path}") to PATH before running ${name}" >&2 ;;
+  esac
+}
+
+# bazelisk_path resolves to the exact binary this run accepted or installed.
+# We point bazel at that exact bazelisk so Aspect CLI's
+# ctx.bazel.{build,test,run,query} (which spawn `bazel` directly) flow
+# through Bazelisk's pinned-version downloader. Bazelisk officially supports
+# being invoked under the name `bazel`.
+ensure_bazel_symlink() {
+  local bazelisk_path="$1"
+  if [[ -z "${bazelisk_path}" || ! -x "${bazelisk_path}" ]]; then
+    echo "ensure_bazel_symlink: missing executable bazelisk path: ${bazelisk_path}" >&2
+    return 1
+  fi
+  local target_dir
+  target_dir="$(dirname "${bazelisk_path}")"
+  local link_path="${target_dir}/bazel"
+  if [[ -L "${link_path}" && "$(readlink "${link_path}")" == "${bazelisk_path}" ]]; then
+    return 0
+  fi
+  # Replacing a package-manager-owned bazel binary would hide the version pin.
+  if [[ -e "${link_path}" && ! -L "${link_path}" ]]; then
+    echo "cannot symlink ${link_path} -> ${bazelisk_path}: ${link_path} exists and is not a symlink" >&2
+    return 1
+  fi
+  if [[ -w "${target_dir}" ]]; then
+    ln -sf "${bazelisk_path}" "${link_path}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo ln -sf "${bazelisk_path}" "${link_path}"
+  else
+    echo "cannot symlink ${link_path} -> ${bazelisk_path}: ${target_dir} not writable and sudo unavailable" >&2
+    return 1
+  fi
+  echo "symlinked ${link_path} -> ${bazelisk_path}"
+}
+
+install_pivot bazelisk "${bazelisk_version}" "${bazelisk_sha256}" "${bazelisk_url}"
+bazelisk_path="${last_installed_path}"
+install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
+ensure_bazel_symlink "${bazelisk_path}"
+
+# Vite+ ships its own multi-version toolchain at ~/.vite-plus/, with `vp`
+# at ~/.vite-plus/bin/vp. The installer is a shell script (so no sha256 pin
+# at this layer); subsequent `vp upgrade <version>` pins the catalog
+# version. Idempotent: short-circuits when the catalog version is already
+# the active one.
+install_viteplus() {
+  local install_dir="${HOME}/.vite-plus"
+  local vp_bin="${install_dir}/bin/vp"
+
+  if [[ -x "${vp_bin}" ]]; then
+    local existing_version
+    existing_version="$("${vp_bin}" --version 2>/dev/null | awk '/^vp v/ {print $NF; exit}' | tr -d 'v')"
+    if [[ "${existing_version}" == "${viteplus_version}" ]]; then
+      echo "vite-plus ${viteplus_version} already installed at ${vp_bin}"
+      return 0
+    fi
+  fi
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "vite-plus install requires curl" >&2
+    return 1
+  fi
+
+  curl -fsSL "${viteplus_install_url}" | VP_NODE_MANAGER=yes bash
+  "${vp_bin}" upgrade "${viteplus_version}" >/dev/null
+  echo "installed vite-plus ${viteplus_version} at ${vp_bin}"
+
+  case ":${PATH}:" in
+    *":${install_dir}/bin:"*) ;;
+    *) echo "add ${install_dir}/bin to PATH before running vp" >&2 ;;
+  esac
+}
+
+install_viteplus

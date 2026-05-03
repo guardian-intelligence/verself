@@ -27,7 +27,7 @@ Tech Stack:
 
 Invariant patterns:
 
-* Do not add shell scripts. The only shell script allowed is in scripts/bootstrap. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
+* Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `scripts/bootstrap-*`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
 * Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host-configuration concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
@@ -94,9 +94,9 @@ ssh ubuntu@prod@access.verself.sh
 
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
-The repo started as a CI orchestrator; that history lives in `README.md`.
-
 ### High-signal Documents.
+
+@README.md -- mp
 
 Recommended that you read relevant ones directly. You can have a subagent summarize the ones that are not related to your task.
 

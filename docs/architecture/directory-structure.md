@@ -8,6 +8,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `docs/` — cross-service architecture docs and vendored references (`docs/references/` is read-only third-party material).
 - `artifacts/` — gitignored materialized build/deploy outputs.
 - `smoke-artifacts/` — gitignored live smoke-test bundles, personas, Playwright traces, and query evidence.
+- `scripts/` — platform bootstrap shell entrypoints only (`bootstrap-linux-amd64`, `bootstrap-darwin-arm64`).
 - `MODULE.aspect` + `.aspect/` — canonical task surface for founder/agent workflows. Run `aspect` (no args) for the full list; read before reaching for ad-hoc scripts.
 
 ## Go services (`src/`)

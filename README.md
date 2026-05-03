@@ -8,11 +8,27 @@ This README is a map. Per-task documentation lives in `aspect <task> --help`.
 
 ## Quickstart
 
+Choose the controller platform that is running the repo commands.
+
+### Linux x86_64 controller
+
 ```bash
 # 1. Toolchain (one time per controller).
-./scripts/bootstrap
+./scripts/bootstrap-linux-amd64
 bazelisk mod tidy
+```
 
+### macOS Apple Silicon controller
+
+```bash
+# 1. Toolchain (one time per controller).
+./scripts/bootstrap-darwin-arm64
+bazelisk mod tidy
+```
+
+### Continue from either platform
+
+```bash
 # 2. Tell OpenTofu where to provision (one time per environment).
 cp src/provisioning-tools/terraform/terraform.tfvars.example.json \
    src/provisioning-tools/terraform/terraform.tfvars.json
@@ -31,15 +47,22 @@ aspect persona assume platform-admin
 
 ## Bootstrap
 
-`scripts/bootstrap` is the only sanctioned shell script in the repo. Everything else routes through `aspect`. It pins the three bootstrap_pivot binaries that have to land before any Bazel- or Aspect-driven channel can run:
+The bootstrap scripts are platform-specific:
 
-- **bazelisk** — sha256-pinned download. Symlinked to `/usr/local/bin/bazel` so the Aspect CLI's `ctx.bazel.{build,test,run,query}` (which spawn `bazel` directly) resolve through bazelisk's version-pinned downloader.
+| Controller platform | Entrypoint |
+| --- | --- |
+| Linux x86_64 | `./scripts/bootstrap-linux-amd64` |
+| macOS Apple Silicon | `./scripts/bootstrap-darwin-arm64` |
+
+`scripts/bootstrap-linux-amd64` and `scripts/bootstrap-darwin-arm64` are the only sanctioned shell scripts in the repo. Everything else routes through `aspect`. They pin the three platform-specific bootstrap_pivot binaries that have to land before any Bazel- or Aspect-driven channel can run:
+
+- **bazelisk** — sha256-pinned download. Symlinked as `bazel` next to the installed `bazelisk` so the Aspect CLI's `ctx.bazel.{build,test,run,query}` (which spawn `bazel` directly) resolve through bazelisk's version-pinned downloader.
 - **aspect CLI** — sha256-pinned download. Hosts every task surface enumerated below.
 - **vp (Vite+)** — owns `vp` / `vite` / `rolldown` / `vitest` invocation in the JS workspace at `~/.vite-plus/`. Uses `vp upgrade <version>` for catalog pinning.
 
-Idempotent: short-circuits when the existing binary already matches the pinned sha256 / version. Falls back to `~/.local/bin` when `/usr/local/bin` is non-writable and `sudo` is unavailable, with a PATH warning.
+Idempotent: short-circuits when the existing binary already matches the pinned sha256 / version. Falls back to `~/.local/bin` when the install directory is non-writable and `sudo` is unavailable, with a PATH warning. Set `BOOTSTRAP_INSTALL_DIR` to override the default `/usr/local/bin`.
 
-Versions of record live as constants at the top of `scripts/bootstrap`. The dev-tools catalog under `src/dev-tools/` is the version-of-record for everything else; `aspect dev install` lays those down.
+Versions of record live as constants at the top of each `scripts/bootstrap-*` entrypoint. The dev-tools catalog under `src/dev-tools/` is the version-of-record for everything else; `aspect dev install` lays those down.
 
 ## Aspect command map
 

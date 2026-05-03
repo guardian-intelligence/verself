@@ -83,7 +83,10 @@ func shouldSkipDir(rel string) bool {
 
 func shouldScanFile(rel string) bool {
 	switch rel {
-	case "scripts/bootstrap", "MODULE.bazel", "MODULE.aspect":
+	case "MODULE.bazel", "MODULE.aspect":
+		return true
+	}
+	if isBootstrapScript(rel) {
 		return true
 	}
 	if strings.HasPrefix(rel, ".aspect/") {
@@ -128,7 +131,7 @@ func scanFile(path, rel string) ([]Finding, error) {
 	if strings.Contains(text, "http_file(") || strings.Contains(text, "http_archive(") {
 		findings = append(findings, scanBazelRepoRules(rel, text)...)
 	}
-	if rel == "scripts/bootstrap" {
+	if isBootstrapScript(rel) {
 		findings = append(findings, scanShellURLVars(rel, text)...)
 	}
 	if rel == "src/viteplus-monorepo/pnpm-workspace.yaml" {
@@ -541,7 +544,7 @@ func classifySurface(rel, kind, artifact string) string {
 		return "runtime"
 	case strings.Contains(rel, "dev-tools") || strings.Contains(rel, "uv_tools") || strings.Contains(artifact, "dev_tool"):
 		return "developer-only"
-	case rel == "scripts/bootstrap":
+	case isBootstrapScript(rel):
 		return "host-bootstrap"
 	case strings.Contains(rel, "host-configuration") || strings.Contains(artifact, "server_tool"):
 		return "host-bootstrap"
@@ -550,6 +553,10 @@ func classifySurface(rel, kind, artifact string) string {
 	default:
 		return "build-time"
 	}
+}
+
+func isBootstrapScript(rel string) bool {
+	return strings.HasPrefix(rel, "scripts/bootstrap-") && !strings.Contains(strings.TrimPrefix(rel, "scripts/"), "/")
 }
 
 func finding(rel string, line uint32, kind, surface, artifact, upstreamURL, digest, evidence string) Finding {
