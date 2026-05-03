@@ -21,7 +21,7 @@ Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.end
 Environment=OTEL_EXPORTER_OTLP_INSECURE=true
 Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
 Environment=VERSELF_TEMPORAL_CONFIG_PATH={{ temporal_config_path }}
-Environment=VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS={{ spire_temporal_server_id }}
+Environment=VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS={{ topology_spiffe_ids.temporal.server }}
 Environment=VERSELF_TEMPORAL_NAMESPACE_ROLES={{ namespace_roles_env }}
 WorkingDirectory={{ temporal_state_dir }}
 ExecStart={{ verself_bin }}/verself-temporal-server

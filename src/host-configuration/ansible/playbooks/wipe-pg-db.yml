@@ -39,6 +39,9 @@
       - projects_service
       - source_code_hosting
   pre_tasks:
+    - name: Normalize authored topology
+      ansible.builtin.import_tasks: tasks/topology-normalize.yml
+
     - name: Assert supported PostgreSQL wipe target
       ansible.builtin.assert:
         that:

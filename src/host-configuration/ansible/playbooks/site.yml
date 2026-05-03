@@ -10,6 +10,17 @@
     - name: Run controller preflight checks
       ansible.builtin.import_tasks: tasks/controller-preflight.yml
 
+- name: "Topology normalization"
+  hosts: all
+  gather_facts: false
+  tags:
+    - always
+  tasks:
+    - name: Normalize authored topology
+      ansible.builtin.import_tasks: tasks/topology-normalize.yml
+      tags:
+        - always
+
 - name: "Host foundation"
   hosts: all
   become: true

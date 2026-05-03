@@ -3,7 +3,7 @@
   ansible.builtin.command:
     cmd: "{{ clickhouse_operator_client_command }} --multiquery"
     stdin: |
-      {% set spiffe_uri = lookup('vars', component.identities[component.workload.clickhouse.spiffe_identity].ansible_var) %}
+      {% set spiffe_uri = component.identities[component.workload.clickhouse.spiffe_identity].spiffe_id %}
       CREATE USER IF NOT EXISTS {{ component.workload.clickhouse.user }}
         IDENTIFIED WITH ssl_certificate
         SAN 'URI:{{ spiffe_uri }}'
