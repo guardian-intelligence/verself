@@ -7,9 +7,8 @@ import (
 )
 
 const (
-	DefaultSite     = "prod"
-	PublicHAProxy   = "public_haproxy"
-	ManifestVersion = "verself.edge.v2"
+	DefaultSite   = "prod"
+	PublicHAProxy = "public_haproxy"
 )
 
 type Config struct {
@@ -17,17 +16,28 @@ type Config struct {
 	Site     string
 }
 
-type Sources struct {
-	Routes              string `json:"routes" yaml:"routes"`
-	Endpoints           string `json:"endpoints" yaml:"endpoints"`
-	Ops                 string `json:"ops" yaml:"ops"`
-	Clusters            string `json:"clusters" yaml:"clusters"`
-	NomadIndex          string `json:"nomad_index" yaml:"nomad_index"`
-	NomadJobsDir        string `json:"nomad_jobs_dir" yaml:"nomad_jobs_dir"`
-	HAProxyDefaults     string `json:"haproxy_defaults" yaml:"haproxy_defaults"`
+type Inputs struct {
+	Routes          string `json:"routes" yaml:"routes"`
+	Endpoints       string `json:"endpoints" yaml:"endpoints"`
+	Ops             string `json:"ops" yaml:"ops"`
+	Clusters        string `json:"clusters" yaml:"clusters"`
+	NomadIndex      string `json:"nomad_index" yaml:"nomad_index"`
+	NomadJobsDir    string `json:"nomad_jobs_dir" yaml:"nomad_jobs_dir"`
+	HAProxyDefaults string `json:"haproxy_defaults" yaml:"haproxy_defaults"`
+}
+
+type Outputs struct {
 	HAProxyTemplate     string `json:"haproxy_template" yaml:"haproxy_template"`
 	PublicHostsMap      string `json:"public_hosts_map" yaml:"public_hosts_map"`
 	InitialUpstreamsMap string `json:"initial_upstreams_map" yaml:"initial_upstreams_map"`
+}
+
+func (o Outputs) GeneratedArtifacts(artifacts Artifacts) []GeneratedArtifact {
+	return []GeneratedArtifact{
+		{Name: "HAProxy template", Path: o.HAProxyTemplate, Content: artifacts.HAProxyTemplate},
+		{Name: "public hosts map", Path: o.PublicHostsMap, Content: artifacts.PublicHostsMap},
+		{Name: "initial upstreams map", Path: o.InitialUpstreamsMap, Content: artifacts.InitialUpstreamsMap},
+	}
 }
 
 type BackendID string
@@ -55,7 +65,8 @@ const (
 )
 
 type Bundle struct {
-	Sources   Sources
+	Inputs    Inputs
+	Outputs   Outputs
 	Plan      Plan
 	Artifacts Artifacts
 	Manifest  Manifest
@@ -94,10 +105,16 @@ type Artifacts struct {
 	InitialUpstreamsMap string
 }
 
+type GeneratedArtifact struct {
+	Name    string
+	Path    string
+	Content string
+}
+
 type Manifest struct {
-	Version        string          `json:"version" yaml:"version"`
 	Site           string          `json:"site" yaml:"site"`
-	Sources        Sources         `json:"sources" yaml:"sources"`
+	Inputs         Inputs          `json:"inputs" yaml:"inputs"`
+	Outputs        Outputs         `json:"outputs" yaml:"outputs"`
 	Frontends      []HAProxyObject `json:"frontends" yaml:"frontends"`
 	Backends       []HAProxyObject `json:"backends" yaml:"backends"`
 	Servers        []HAProxyObject `json:"servers" yaml:"servers"`

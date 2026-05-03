@@ -26,6 +26,15 @@ def _edge_preflight(ctx, site):
     bin = build_aspect_operator(ctx)
     if bin == "":
         return 1
+    render_rc = checked_spawn(
+        ctx,
+        bin,
+        ["edge", "render", "--repo-root", ws_path(ctx), "--site", site],
+        cwd = ws_path(ctx),
+        label = "aspect-operator edge render",
+    )
+    if render_rc != 0:
+        return render_rc
     return checked_spawn(
         ctx,
         bin,

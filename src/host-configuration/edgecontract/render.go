@@ -44,25 +44,16 @@ func RenderInitialUpstreamsMap(plan Plan) string {
 	return strings.Join(rows, "\n") + "\n"
 }
 
-func artifactIssues(sources Sources, artifacts Artifacts) []string {
-	checks := []struct {
-		path string
-		want string
-		name string
-	}{
-		{path: sources.HAProxyTemplate, want: artifacts.HAProxyTemplate, name: "HAProxy template"},
-		{path: sources.PublicHostsMap, want: artifacts.PublicHostsMap, name: "public hosts map"},
-		{path: sources.InitialUpstreamsMap, want: artifacts.InitialUpstreamsMap, name: "initial upstreams map"},
-	}
+func artifactIssues(artifacts []GeneratedArtifact) []string {
 	var issues []string
-	for _, check := range checks {
-		got, err := os.ReadFile(check.path)
+	for _, artifact := range artifacts {
+		got, err := os.ReadFile(artifact.Path)
 		if err != nil {
-			issues = append(issues, fmt.Sprintf("read %s: %v", check.path, err))
+			issues = append(issues, fmt.Sprintf("read %s: %v", artifact.Path, err))
 			continue
 		}
-		if string(got) != check.want {
-			issues = append(issues, fmt.Sprintf("%s: %s is not generated from the edge contract; run aspect operator edge --action=render", check.path, check.name))
+		if string(got) != artifact.Content {
+			issues = append(issues, fmt.Sprintf("%s: %s is not generated from the edge contract; run aspect operator edge --action=render", artifact.Path, artifact.Name))
 		}
 	}
 	return issues

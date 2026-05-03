@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type inputs struct {
+type loadedInputs struct {
 	routes    RoutesFile
 	endpoints EndpointsFile
 	ops       OpsFile
@@ -20,28 +20,35 @@ type inputs struct {
 	index     NomadIndex
 }
 
-func DefaultSources(cfg Config) Sources {
-	return Sources{
-		Routes:              filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/routes.yml"),
-		Endpoints:           filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
-		Ops:                 filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
-		Clusters:            filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
-		NomadIndex:          filepath.Join(cfg.RepoRoot, "src/deployment-tools/nomad/sites", cfg.Site, "jobs/index.json"),
-		NomadJobsDir:        filepath.Join(cfg.RepoRoot, "src/deployment-tools/nomad/sites", cfg.Site, "jobs"),
-		HAProxyDefaults:     filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
-		HAProxyTemplate:     filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/haproxy.cfg.j2"),
-		PublicHostsMap:      filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/public-hosts.map.j2"),
-		InitialUpstreamsMap: filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/upstreams.map.j2"),
+func DefaultInputs(cfg Config) Inputs {
+	return Inputs{
+		Routes:          filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/routes.yml"),
+		Endpoints:       filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
+		Ops:             filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
+		Clusters:        filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
+		NomadIndex:      filepath.Join(cfg.RepoRoot, "src/deployment-tools/nomad/sites", cfg.Site, "jobs/index.json"),
+		NomadJobsDir:    filepath.Join(cfg.RepoRoot, "src/deployment-tools/nomad/sites", cfg.Site, "jobs"),
+		HAProxyDefaults: filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
+	}
+}
+
+func DefaultOutputs(cfg Config) Outputs {
+	generatedDir := filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/__generated")
+	return Outputs{
+		HAProxyTemplate:     filepath.Join(generatedDir, "haproxy.cfg.j2"),
+		PublicHostsMap:      filepath.Join(generatedDir, "public-hosts.map.j2"),
+		InitialUpstreamsMap: filepath.Join(generatedDir, "upstreams.map.j2"),
 	}
 }
 
 func Build(cfg Config) (*Bundle, error) {
-	sources := DefaultSources(cfg)
-	in, err := loadInputs(sources)
+	inputPaths := DefaultInputs(cfg)
+	outputPaths := DefaultOutputs(cfg)
+	in, err := loadInputs(inputPaths)
 	if err != nil {
 		return nil, err
 	}
-	plan, issues, err := compilePlan(cfg, sources, in)
+	plan, issues, err := compilePlan(cfg, inputPaths, in)
 	if err != nil {
 		return nil, err
 	}
@@ -50,10 +57,11 @@ func Build(cfg Config) (*Bundle, error) {
 		PublicHostsMap:      RenderPublicHostsMap(plan),
 		InitialUpstreamsMap: RenderInitialUpstreamsMap(plan),
 	}
-	manifest := BuildManifest(sources, plan)
+	manifest := BuildManifest(inputPaths, outputPaths, plan)
 	sort.Strings(issues)
 	return &Bundle{
-		Sources:   sources,
+		Inputs:    inputPaths,
+		Outputs:   outputPaths,
 		Plan:      plan,
 		Artifacts: artifacts,
 		Manifest:  manifest,
@@ -61,50 +69,53 @@ func Build(cfg Config) (*Bundle, error) {
 	}, nil
 }
 
+func (b *Bundle) GeneratedArtifacts() []GeneratedArtifact {
+	return b.Outputs.GeneratedArtifacts(b.Artifacts)
+}
+
 func (b *Bundle) ArtifactIssues() []string {
-	return artifactIssues(b.Sources, b.Artifacts)
+	return artifactIssues(b.GeneratedArtifacts())
 }
 
 func (b *Bundle) WriteArtifacts() error {
-	if err := os.WriteFile(b.Sources.HAProxyTemplate, []byte(b.Artifacts.HAProxyTemplate), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", b.Sources.HAProxyTemplate, err)
-	}
-	if err := os.WriteFile(b.Sources.PublicHostsMap, []byte(b.Artifacts.PublicHostsMap), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", b.Sources.PublicHostsMap, err)
-	}
-	if err := os.WriteFile(b.Sources.InitialUpstreamsMap, []byte(b.Artifacts.InitialUpstreamsMap), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", b.Sources.InitialUpstreamsMap, err)
+	for _, artifact := range b.GeneratedArtifacts() {
+		if err := os.MkdirAll(filepath.Dir(artifact.Path), 0o755); err != nil {
+			return fmt.Errorf("create generated artifact dir for %s: %w", artifact.Path, err)
+		}
+		if err := os.WriteFile(artifact.Path, []byte(artifact.Content), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", artifact.Path, err)
+		}
 	}
 	return nil
 }
 
-func loadInputs(sources Sources) (inputs, error) {
-	var in inputs
-	if err := readYAMLFile(sources.Routes, &in.routes); err != nil {
-		return inputs{}, err
+func loadInputs(inputPaths Inputs) (loadedInputs, error) {
+	var in loadedInputs
+	yamlFiles := []struct {
+		path string
+		into any
+	}{
+		{path: inputPaths.Routes, into: &in.routes},
+		{path: inputPaths.Endpoints, into: &in.endpoints},
+		{path: inputPaths.Ops, into: &in.ops},
+		{path: inputPaths.Clusters, into: &in.clusters},
+		{path: inputPaths.HAProxyDefaults, into: &in.defaults},
 	}
-	if err := readYAMLFile(sources.Endpoints, &in.endpoints); err != nil {
-		return inputs{}, err
+	for _, file := range yamlFiles {
+		if err := readYAMLFile(file.path, file.into); err != nil {
+			return loadedInputs{}, err
+		}
 	}
-	if err := readYAMLFile(sources.Ops, &in.ops); err != nil {
-		return inputs{}, err
-	}
-	if err := readYAMLFile(sources.Clusters, &in.clusters); err != nil {
-		return inputs{}, err
-	}
-	if err := readYAMLFile(sources.HAProxyDefaults, &in.defaults); err != nil {
-		return inputs{}, err
-	}
-	if err := readJSONFile(sources.NomadIndex, &in.index); err != nil {
-		return inputs{}, err
+	if err := readJSONFile(inputPaths.NomadIndex, &in.index); err != nil {
+		return loadedInputs{}, err
 	}
 	return in, nil
 }
 
-func compilePlan(cfg Config, sources Sources, in inputs) (Plan, []string, error) {
+func compilePlan(cfg Config, inputPaths Inputs, in loadedInputs) (Plan, []string, error) {
 	var issues []string
 	componentJobs := collectComponentJobs(in.index, &issues)
-	nomadUpstreams, serviceByKey, err := collectNomadUpstreams(sources.NomadJobsDir, componentJobs, &issues)
+	nomadUpstreams, serviceByKey, err := collectNomadUpstreams(inputPaths.NomadJobsDir, componentJobs, &issues)
 	if err != nil {
 		return Plan{}, nil, err
 	}

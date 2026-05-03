@@ -2,7 +2,7 @@ package edgecontract
 
 import "sort"
 
-func BuildManifest(sources Sources, plan Plan) Manifest {
+func BuildManifest(inputs Inputs, outputs Outputs, plan Plan) Manifest {
 	routes := make([]RouteManifest, 0, len(plan.Routes))
 	for _, route := range plan.Routes {
 		routes = append(routes, RouteManifest{
@@ -37,9 +37,9 @@ func BuildManifest(sources Sources, plan Plan) Manifest {
 		"upstream_keys":   len(upstreamKeys),
 	}
 	return Manifest{
-		Version:        ManifestVersion,
 		Site:           plan.Site,
-		Sources:        sources,
+		Inputs:         inputs,
+		Outputs:        outputs,
 		Frontends:      frontends,
 		Backends:       backends,
 		Servers:        servers,

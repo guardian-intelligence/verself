@@ -272,7 +272,7 @@
 
 - name: Deploy HAProxy public host map
   ansible.builtin.template:
-    src: public-hosts.map.j2
+    src: __generated/public-hosts.map.j2
     dest: "{{ haproxy_map_dir }}/public-hosts.map"
     owner: root
     group: haproxy
@@ -281,7 +281,7 @@
 
 - name: Initialise HAProxy Nomad upstream map
   ansible.builtin.template:
-    src: upstreams.map.j2
+    src: __generated/upstreams.map.j2
     dest: "{{ haproxy_map_dir }}/upstreams.map"
     owner: root
     group: haproxy
@@ -290,7 +290,7 @@
 
 - name: Deploy HAProxy configuration
   ansible.builtin.template:
-    src: haproxy.cfg.j2
+    src: __generated/haproxy.cfg.j2
     dest: "{{ haproxy_config_dir }}/haproxy.cfg"
     owner: root
     group: haproxy
@@ -337,12 +337,22 @@
 
 - name: Issue or renew HAProxy public certificates
   ansible.builtin.command:
-    argv: "{{ haproxy_lego_base_argv + haproxy_lego_wait_argv + haproxy_lego_disable_ans_argv + haproxy_lego_dns_resolver_argv + haproxy_lego_domain_argv + haproxy_lego_split_argv }}"
+    argv: "{{ haproxy_lego_argv }}"
   environment:
     CF_DNS_API_TOKEN_FILE: "{{ haproxy_cloudflare_token_path }}"
     CLOUDFLARE_PROPAGATION_TIMEOUT: "600"
     CLOUDFLARE_POLLING_INTERVAL: "5"
+  changed_when: true
   vars:
+    haproxy_lego_argv: >-
+      {{
+        haproxy_lego_base_argv
+        + haproxy_lego_wait_argv
+        + haproxy_lego_disable_ans_argv
+        + haproxy_lego_dns_resolver_argv
+        + haproxy_lego_domain_argv
+        + haproxy_lego_split_argv
+      }}
     haproxy_lego_base_argv:
       - "{{ verself_bin }}/haproxy-lego-renew"
       - --lego-bin
@@ -365,8 +375,19 @@
       - haproxy
       - --reload-unit
       - haproxy.service
-    haproxy_lego_wait_argv: "{{ ['--dns-propagation-wait', haproxy_lego_dns_propagation_wait] if haproxy_lego_dns_propagation_wait | default('0s') != '0s' else [] }}"
-    haproxy_lego_disable_ans_argv: "{{ ['--dns-propagation-disable-ans'] if haproxy_lego_dns_propagation_disable_ans and (haproxy_lego_dns_propagation_wait | default('0s')) == '0s' else [] }}"
+    haproxy_lego_wait_argv: >-
+      {{
+        ['--dns-propagation-wait', haproxy_lego_dns_propagation_wait]
+        if haproxy_lego_dns_propagation_wait | default('0s') != '0s'
+        else []
+      }}
+    haproxy_lego_disable_ans_argv: >-
+      {{
+        ['--dns-propagation-disable-ans']
+        if haproxy_lego_dns_propagation_disable_ans
+        and (haproxy_lego_dns_propagation_wait | default('0s')) == '0s'
+        else []
+      }}
     haproxy_lego_dns_resolver_argv: "{{ haproxy_lego_dns_resolvers | map('regex_replace', '^(.*)$', '--dns-resolver=\\1') | list }}"
     haproxy_lego_domain_argv: "{{ item.domains | map('regex_replace', '^(.*)$', '--domain=\\1') | list }}"
     haproxy_lego_split_argv: >-

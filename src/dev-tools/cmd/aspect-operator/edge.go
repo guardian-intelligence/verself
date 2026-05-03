@@ -120,9 +120,9 @@ func cmdEdgeRender(args []string) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "edge artifacts rendered: %s %s %s\n",
-		bundle.Sources.HAProxyTemplate,
-		bundle.Sources.PublicHostsMap,
-		bundle.Sources.InitialUpstreamsMap,
+		bundle.Outputs.HAProxyTemplate,
+		bundle.Outputs.PublicHostsMap,
+		bundle.Outputs.InitialUpstreamsMap,
 	)
 	return nil
 }
@@ -189,7 +189,7 @@ Runtime flags:
 func writeEdgeManifest(w io.Writer, format string, manifest edgecontract.Manifest) error {
 	switch format {
 	case "text":
-		if _, err := fmt.Fprintf(w, "version: %s\nsite: %s\n", manifest.Version, manifest.Site); err != nil {
+		if _, err := fmt.Fprintf(w, "site: %s\n", manifest.Site); err != nil {
 			return err
 		}
 		keys := make([]string, 0, len(manifest.Summary))
