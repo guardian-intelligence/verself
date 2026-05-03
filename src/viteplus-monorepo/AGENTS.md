@@ -73,10 +73,10 @@ bazelisk run //src/viteplus-monorepo/apps/verself-web:dev_update
 The generated files under `apps/*/src/__generated` and
 `apps/*/src/routeTree.gen.ts` are ignored source projections.
 `company:dev_update` materializes the company route tree at TanStack's default
-path. `verself-web:dev_update` materializes its route tree plus OpenAPI clients
-and copied specs from service-owned Bazel targets. Run the verself-web generator
-even when working on `apps/company` if `vp check` reports missing generated
-clients; workspace checks type both apps.
+path plus the generated First Light shader TypeScript module. `verself-web:dev_update`
+materializes its route tree plus OpenAPI clients and copied specs from service-owned
+Bazel targets. Run the verself-web generator even when working on `apps/company`
+if `vp check` reports missing generated clients; workspace checks type both apps.
 
 On a local laptop without the hosted Verdaccio mirror, temporarily set
 `src/viteplus-monorepo/.npmrc` to:

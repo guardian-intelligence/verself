@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   AdditiveBlending,
+  GLSL3,
   Mesh,
   OrthographicCamera,
   PlaneGeometry,
@@ -11,8 +12,12 @@ import {
   WebGLRenderer,
 } from "three";
 import { emitSpan } from "~/lib/telemetry/browser";
+import {
+  firstLightFragmentShader,
+  firstLightShaderSourceHash,
+  firstLightVertexShader,
+} from "../shader/first-light.generated";
 import { FIRST_LIGHT_TOTAL_MS } from "../shader/envelopes";
-import { firstLightFragmentShader, firstLightVertexShader } from "../shader/source";
 import type { DegradedReason, FirstLightGeometry } from "../types";
 import { arrivalFrameMetrics } from "./metrics";
 
@@ -79,6 +84,7 @@ export function FirstLightCanvas({ active, geometry, onDegraded }: FirstLightCan
       vertexShader: firstLightVertexShader,
       fragmentShader: firstLightFragmentShader,
       uniforms,
+      glslVersion: GLSL3,
       transparent: true,
       depthTest: false,
       depthWrite: false,
@@ -149,6 +155,7 @@ export function FirstLightCanvas({ active, geometry, onDegraded }: FirstLightCan
             "frame_time.p50": String(metrics.p50),
             "frame_time.p99": String(metrics.p99),
             "frame_time.samples": String(metrics.samples),
+            "shader.hash": firstLightShaderSourceHash,
           });
         }
       }

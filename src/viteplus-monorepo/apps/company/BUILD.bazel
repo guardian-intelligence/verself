@@ -1,6 +1,18 @@
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_route_tree")
 
 package(default_visibility = ["//visibility:public"])
+
+FIRST_LIGHT_SHADER_SRC_MAP = [
+    ("first-light.vert", "src/features/first-light/shader-src/first-light.vert"),
+    ("first-light.frag", "src/features/first-light/shader-src/first-light.frag"),
+    ("lib/color.glsl", "src/features/first-light/shader-src/lib/color.glsl"),
+    ("lib/easing.glsl", "src/features/first-light/shader-src/lib/easing.glsl"),
+    ("lib/geometry.glsl", "src/features/first-light/shader-src/lib/geometry.glsl"),
+    ("lib/motion.glsl", "src/features/first-light/shader-src/lib/motion.glsl"),
+    ("lib/noise.glsl", "src/features/first-light/shader-src/lib/noise.glsl"),
+]
 
 viteplus_app(
     srcs = [
@@ -17,20 +29,59 @@ viteplus_app(
 
 viteplus_node_app_artifact(
     name = "node_app_nomad_artifact",
-    generated_srcs = [":route_tree_generated_sources"],
+    generated_srcs = [
+        ":route_tree_generated_sources",
+        ":first_light_shader_generated_sources",
+    ],
     output = "company",
 )
 
 viteplus_route_tree(name = "route_tree")
 
-alias(
+js_run_binary(
+    name = "first_light_shader_gen",
+    srcs = [src for _, src in FIRST_LIGHT_SHADER_SRC_MAP],
+    outs = ["__generated_sources/src/features/first-light/shader/first-light.generated.ts"],
+    args = [
+        "--vertex=first-light.vert",
+        "--fragment=first-light.frag",
+        "--out=__generated_sources/src/features/first-light/shader/first-light.generated.ts",
+    ] + [
+        "--source=%s=$(location %s)" % (module, src)
+        for module, src in FIRST_LIGHT_SHADER_SRC_MAP
+    ],
+    chdir = package_name(),
+    mnemonic = "GlslModuleGen",
+    progress_message = "Generating First Light GLSL module",
+    tool = "//src/viteplus-monorepo/scripts:generate_glsl_module",
+)
+
+filegroup(
+    name = "first_light_shader_generated_sources",
+    srcs = [":first_light_shader_gen"],
+)
+
+write_source_files(
+    name = "first_light_shader",
+    files = {
+        "src/features/first-light/shader/first-light.generated.ts": ":first_light_shader_gen",
+    },
+)
+
+write_source_files(
     name = "dev_update",
-    actual = ":route_tree",
+    additional_update_targets = [
+        ":route_tree",
+        ":first_light_shader",
+    ],
 )
 
 test_suite(
     name = "dev_check",
-    tests = [":route_tree_tests"],
+    tests = [
+        ":first_light_shader_tests",
+        ":route_tree_tests",
+    ],
 )
 
 exports_files(["nomad-overrides.json"])

@@ -25,6 +25,11 @@ js_binary(
 )
 
 js_binary(
+    name = "generate_glsl_module",
+    entry_point = "generate-glsl-module.ts",
+)
+
+js_binary(
     name = "write_supplychain_evidence",
     entry_point = "write-supplychain-evidence.ts",
 )

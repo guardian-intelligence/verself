@@ -1,4 +1,3 @@
-export const glslNoise = /* glsl */ `
 float firstlight_hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -27,4 +26,3 @@ float firstlight_fbm(vec2 p) {
   }
   return value;
 }
-`;

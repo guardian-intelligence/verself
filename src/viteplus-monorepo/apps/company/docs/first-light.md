@@ -83,19 +83,20 @@ Easing:
 
 ## 6. Renderer choice
 
-**Direct Three.js WebGL2 with modular GLSL.**
+**Direct Three.js WebGL2 with generated GLSL3 modules.**
 
 ### Stack
 
 - `three` owns renderer setup, material lifecycle, geometry disposal, and the full-screen plane.
 - React owns capability gating, DOM measurement, pause/resume, reduced-motion fallback, and telemetry.
-- GLSL source is composed from TypeScript modules under `shader/`. Each module exports one visual primitive or envelope; `shader/source.ts` assembles the final vertex and fragment sources.
+- GLSL source lives as checked-in `.glsl` files under `shader-src/`. Bazel resolves `#include` composition and emits `shader/first-light.generated.ts`, which is the only TypeScript transport module imported by React/Three.
+- Three runs the material as GLSL3 (`glslVersion: GLSL3`). The source files intentionally omit `#version`; Three injects the version line before its built-in attribute/uniform prelude.
 
 The first implementation uses WebGL2 only. WebGPU and TSL remain plausible later upgrades, but the current goal is a stable editable shader surface with the smallest runtime surface area. The earlier r3f/TSL direction introduced runtime hook incompatibilities in this Vite+ Start app and pulled in scene abstractions before the visual grammar was settled.
 
 ### Architectural invariant
 
-One file per visual primitive. The composition file (`shader/source.ts`) imports the pieces and assembles the final material source. React never builds shader strings inline, and the Three scene wrapper never owns visual math.
+One file per visual primitive. The composition file (`shader-src/first-light.frag`) imports the pieces with `#include`; the Bazel generator performs the string assembly, validates the source for GLSL100 footguns, extracts uniform metadata, and writes the generated TypeScript module. React never builds shader strings inline, and the Three scene wrapper never owns visual math.
 
 ```
 apps/company/src/features/first-light/
@@ -105,10 +106,17 @@ apps/company/src/features/first-light/
     FirstLightCanvas.tsx             -- Three renderer, plane, uniforms, RAF, disposal
     metrics.ts                       -- arrival frame-time summary
   shader/
-    color.ts                         -- source color, spectral edge, tonemapping
-    envelopes.ts                     -- CPU and GLSL arrival/trail/draw-back/settle phases
-    noise.ts                         -- fbm and caustic grain primitives
-    source.ts                        -- final GLSL composition
+    envelopes.ts                     -- CPU timing constants and CSS luminance envelope
+    first-light.generated.ts         -- ignored generated TS transport module
+  shader-src/
+    first-light.vert                 -- fullscreen plane vertex shader
+    first-light.frag                 -- final GLSL3 composition
+    lib/
+      color.glsl                     -- source color, spectral edge, tonemapping
+      easing.glsl                    -- arrival/trail/draw-back easing
+      geometry.glsl                  -- rect and transform helpers
+      motion.glsl                    -- source path and intensity envelopes
+      noise.glsl                     -- fbm and caustic grain primitives
   types.ts                           -- renderer, geometry, and degradation contracts
 ```
 

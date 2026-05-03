@@ -1,4 +1,3 @@
-export const glslColor = /* glsl */ `
 vec3 firstlight_warm() {
   return vec3(1.0, 0.972, 0.9);
 }
@@ -17,4 +16,3 @@ vec3 firstlight_spectral(float edge, float caustic) {
   vec3 amberRim = mix(coolEdge, firstlight_amber(), 0.14 * caustic * edge);
   return amberRim;
 }
-`;
