@@ -111,7 +111,7 @@ are deploy internals of `aspect deploy`.
 | Task | Description |
 | --- | --- |
 | `device` | Configure this checkout/device for Pomerium operator SSH and aspect commands. |
-| `edge` | Validate or emit the derived public edge contract. |
+| `edge` | Validate, render, or emit the derived public edge contract. |
 | `platform` | Check or seed the dogfooded platform organization and source repository. |
 
 `aspect operator device` is the entry point for getting a checkout (laptop or new dev VM) onto the host access plane through Pomerium + Zitadel. If the device key is passphrase-protected, load it into `ssh-agent` before running operator commands:

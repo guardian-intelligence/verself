@@ -25,7 +25,7 @@
 //	    Configure this checkout/device to reach the operator access plane.
 //
 //	aspect-operator edge check|manifest|render
-//	    Operator-side public edge contract checker derived from topology,
+//	    Public edge contract checker and artifact renderer derived from topology,
 //	    authored Nomad jobs, and generated HAProxy artifacts.
 //
 //	aspect-operator platform --action=check|seed
@@ -101,7 +101,7 @@ Subcommands:
   mail              Mail operator helpers
   dev               Local development helpers
   device            Configure this device for operator access
-  edge              Public edge contract checker
+  edge              Public edge contract checker and artifact renderer
   platform          Platform org/project/source convergence
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
