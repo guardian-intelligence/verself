@@ -1,7 +1,6 @@
 ---
-# Rolling OS security updates across the fleet.
-# Usage: aspect host-configuration security-patch
-# (renders the per-site cache and invokes verself-deploy host-configuration security-patch).
+# Rolling OS security updates across the fleet. This playbook is invoked by
+# the canonical deploy preflight; it is not a standalone operator deploy path.
 
 - name: Apply security patches
   hosts: all

@@ -11,15 +11,14 @@ Host configuration owns host and daemon convergence inputs:
   DNS reconciler. Operator database access goes through `aspect db pg|ch|tb`,
   backed by `aspect-operator` and `src/operator-runtime/go`.
 
-`aspect deploy --site=<site>` refreshes the operator SSH certificate, stages
-reviewable render output, runs `verself-deploy run`, and then lets the Go
-orchestrator execute the Ansible site playbook before Nomad fan-out. The
-deploy succeeds when the site playbook, local reconcilers, Nomad fan-out, and
-the typed ClickHouse `deploy_events` succeeded row all return cleanly.
+`aspect deploy --site=<site>` refreshes the operator SSH certificate, runs
+`verself-deploy run`, and then lets the Go orchestrator execute the Ansible
+site playbook before Nomad fan-out. The deploy succeeds when the site playbook,
+guest-image staging, local reconcilers, Nomad fan-out, and the typed ClickHouse
+`deploy_events` succeeded row all return cleanly.
 
-Use explicit host-configuration commands when touching this package:
+The only public host-configuration maintenance task is secret editing:
 
 ```bash
-aspect host-configuration converge --site=prod   # run playbooks/site.yml without Nomad
-aspect host-configuration verify   --site=prod   # syntax-check playbooks/site.yml
+aspect host-configuration edit-secrets
 ```

@@ -49,8 +49,8 @@ Versions of record live as constants at the top of `scripts/bootstrap`. The dev-
 
 | Task | Description |
 | --- | --- |
-| `aspect deploy` | Run verself-deploy end-to-end from authored inputs (`--site`, `--sha`, `--scope=all\|affected`). |
-| `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|scripts\|edge\|ansible\|voice\|supply-chain\|all`). |
+| `aspect deploy` | Run the canonical deploy path from authored inputs (`--site`, `--sha`, optional `--breakglass`). |
+| `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|edge\|ansible\|voice\|supply-chain\|all`). |
 | `aspect observe` | Discover or query telemetry (`--what catalog\|queries\|describe\|metric\|trace\|logs\|http\|service\|errors\|mail\|deploy\|supply-chain\|workload-identity\|temporal`). |
 | `aspect detect-intrusions` | Scan `verself.host_auth_events` for accepted SSH sessions that bypassed Pomerium. |
 
@@ -65,15 +65,10 @@ Versions of record live as constants at the top of `scripts/bootstrap`. The dev-
 
 | Task | Description |
 | --- | --- |
-| `converge` | Run the canonical host configuration Ansible site playbook. |
-| `verify` | Syntax-check the canonical host configuration Ansible site playbook. |
 | `edit-secrets` | Open encrypted host configuration secrets in `$EDITOR` via sops. |
-| `security-patch` | Apply OS security updates through the host configuration runner. |
-| `guest-rootfs` | Build the Firecracker substrate rootfs and stage guest images. |
-| `wipe-server` | Wipe all verself state from the provisioned server (requires `--confirm`). |
-| `reset identity` | Wipe identity-service PostgreSQL state, reconverge, then resubmit Nomad apps. |
-| `reset billing` | Wipe billing state, reconverge, then resubmit Nomad apps. |
-| `reset verification` | Wipe verification state, reconverge with schema-reset flags, then resubmit Nomad apps. |
+
+Host convergence, OS security patching, guest-image staging, and Nomad fan-out
+are deploy internals of `aspect deploy`.
 
 ### `aspect db`
 
@@ -150,10 +145,11 @@ Supply-chain admission and content-addressed artifact publishing.
 | --- | --- |
 | `publish` | Build and publish content-addressed Nomad artifacts to private Garage. |
 | `inventory` | Inventory supply-chain install/fetch paths or render the artifact policy. |
-| `admit-url` | Admit an upstream URL into internal zot and record ClickHouse evidence. |
-| `verify-install` | Verify a digest-addressed admitted OCI artifact and record install evidence. |
 | `evidence` | Assert deploy-time supply-chain rows and spans exist in ClickHouse. |
 | `admission-evidence` | Assert artifact admission/install rows and spans exist in ClickHouse. |
+
+Artifact admission and install verification are deploy-flow internals. The
+operator-facing checks assert the ClickHouse evidence emitted by that flow.
 
 ### `aspect bazel`
 

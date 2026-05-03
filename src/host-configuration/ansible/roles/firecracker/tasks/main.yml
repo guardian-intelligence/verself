@@ -301,7 +301,8 @@
       Guest images not found at {{ firecracker_kernel_path }},
       {{ firecracker_substrate_path }}, {{ firecracker_substrate_manifest_path }},
       and/or one or more seed source paths.
-      Build + stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+      The guest_rootfs role in the canonical site playbook must stage them
+      before the firecracker role runs.
   when: >-
     not firecracker_guest_kernel.stat.exists
     or not firecracker_substrate.stat.exists

@@ -6,7 +6,6 @@ go_library(
         "ansible_run.go",
         "artifacts.go",
         "breakglass.go",
-        "host_configuration.go",
         "main.go",
         "nomad_deploy_all.go",
         "nomad_submit.go",
