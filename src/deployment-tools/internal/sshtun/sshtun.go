@@ -292,10 +292,12 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		labels  []string
 		conn    net.Conn
 	)
-	if signer, err := loadVerselfCertSigner(); err == nil {
+	// Some access proxies end auth negotiation after an invalid SSH cert,
+	// so offer ordinary identities before the legacy certificate path.
+	if signer, label, err := loadDefaultKeySigner(); err == nil {
 		methods = append(methods, ssh.PublicKeys(signer))
-		labels = append(labels, "verself-cert")
-	} else if !errors.Is(err, errNoVerselfCert) {
+		labels = append(labels, label)
+	} else if !errors.Is(err, errNoDefaultKey) {
 		return nil, nil, "", err
 	}
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
@@ -310,10 +312,10 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(agentConn).Signers))
 		labels = append(labels, "ssh-agent")
 	}
-	if signer, label, err := loadDefaultKeySigner(); err == nil {
+	if signer, err := loadVerselfCertSigner(); err == nil {
 		methods = append(methods, ssh.PublicKeys(signer))
-		labels = append(labels, label)
-	} else if !errors.Is(err, errNoDefaultKey) {
+		labels = append(labels, "verself-cert")
+	} else if !errors.Is(err, errNoVerselfCert) {
 		if conn != nil {
 			_ = conn.Close()
 		}
