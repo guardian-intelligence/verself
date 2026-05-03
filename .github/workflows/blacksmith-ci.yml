@@ -36,7 +36,7 @@ jobs:
           path: /home/runner/.cache/bazel-repo
 
       - name: Bootstrap toolchain
-        run: scripts/bootstrap
+        run: scripts/bootstrap-linux-amd64
 
       - name: bazelisk build //...
         run: bazelisk build //...
