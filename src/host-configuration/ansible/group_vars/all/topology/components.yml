@@ -1631,7 +1631,6 @@ topology_components:
         no_log: true
     workload:
       auth:
-        audience: "370208502947298660"
         kind: owned_project
         project_name: mailbox-service
         project_role_assertion: true

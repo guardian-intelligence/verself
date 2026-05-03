@@ -55,3 +55,12 @@
     zitadel_project_roles_definitions: "{{ component.workload.auth.roles }}"
   when: component.workload.auth.roles | length > 0
   no_log: true
+
+- name: Write owned component auth audience credential
+  ansible.builtin.copy:
+    content: "{{ component_auth_project_id }}\n"
+    dest: "/etc/credstore/{{ component.workload.auth.project_name }}/auth-audience"
+    owner: root
+    group: "{{ component.identities.default.group }}"
+    mode: "0640"
+  no_log: true

@@ -236,7 +236,7 @@ func loadConfig() (config, error) {
 		SyncDiscoveryInterval: l.Duration("MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),
 		SyncReconcileInterval: l.Duration("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
 		AuthIssuerURL:         l.RequireURL("VERSELF_AUTH_ISSUER_URL"),
-		AuthAudience:          l.RequireString("VERSELF_AUTH_AUDIENCE"),
+		AuthAudience:          l.RequireCredential("auth-audience"),
 		SecretsURL:            l.RequireURL("MAILBOX_SERVICE_SECRETS_URL"),
 		CEOPassword:           l.RequireCredential("stalwart-ceo-password"),
 		AgentsPassword:        l.RequireCredential("stalwart-agents-password"),
