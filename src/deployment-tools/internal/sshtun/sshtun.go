@@ -294,12 +294,6 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 	)
 	// Some access proxies end auth negotiation after an invalid SSH cert,
 	// so offer ordinary identities before the legacy certificate path.
-	if signer, label, err := loadDefaultKeySigner(); err == nil {
-		methods = append(methods, ssh.PublicKeys(signer))
-		labels = append(labels, label)
-	} else if !errors.Is(err, errNoDefaultKey) {
-		return nil, nil, "", err
-	}
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		agentConn, err := net.Dial("unix", sock)
 		if err != nil {
@@ -308,9 +302,27 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 			}
 			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
 		}
-		conn = agentConn
-		methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(agentConn).Signers))
-		labels = append(labels, "ssh-agent")
+		signers, err := agent.NewClient(agentConn).Signers()
+		if err != nil {
+			_ = agentConn.Close()
+			return nil, nil, "", fmt.Errorf("ssh agent signers: %w", err)
+		}
+		if len(signers) == 0 {
+			_ = agentConn.Close()
+		} else {
+			conn = agentConn
+			methods = append(methods, ssh.PublicKeys(signers...))
+			labels = append(labels, "ssh-agent")
+		}
+	}
+	if signer, label, err := loadDefaultKeySigner(len(methods) > 0); err == nil {
+		methods = append(methods, ssh.PublicKeys(signer))
+		labels = append(labels, label)
+	} else if !errors.Is(err, errNoDefaultKey) {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return nil, nil, "", err
 	}
 	if signer, err := loadVerselfCertSigner(); err == nil {
 		methods = append(methods, ssh.PublicKeys(signer))
@@ -322,14 +334,14 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		return nil, nil, "", err
 	}
 	if len(methods) == 0 {
-		return nil, nil, "", errors.New("sshtun: SSH_AUTH_SOCK is unset, no default private key exists in ~/.ssh, and no verself SSH cert was found")
+		return nil, nil, "", errors.New("sshtun: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
 	}
 	return methods, conn, strings.Join(labels, "+"), nil
 }
 
 var errNoDefaultKey = errors.New("no default ssh key found")
 
-func loadDefaultKeySigner() (ssh.Signer, string, error) {
+func loadDefaultKeySigner(skipEncrypted bool) (ssh.Signer, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, "", fmt.Errorf("home dir: %w", err)
@@ -345,6 +357,11 @@ func loadDefaultKeySigner() (ssh.Signer, string, error) {
 		}
 		signer, err := ssh.ParsePrivateKey(keyBytes)
 		if err != nil {
+			var passphraseMissing *ssh.PassphraseMissingError
+			// Passphrase-protected default keys are expected on laptops; use the agent signer instead.
+			if skipEncrypted && errors.As(err, &passphraseMissing) {
+				continue
+			}
 			return nil, "", fmt.Errorf("parse identity %s: %w", path, err)
 		}
 		return signer, name, nil

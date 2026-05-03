@@ -422,9 +422,18 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
 		}
-		methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
-		closers = append(closers, conn)
-		labels = append(labels, "ssh-agent")
+		signers, err := agent.NewClient(conn).Signers()
+		if err != nil {
+			_ = conn.Close()
+			return nil, nil, "", fmt.Errorf("ssh agent signers: %w", err)
+		}
+		if len(signers) == 0 {
+			_ = conn.Close()
+		} else {
+			methods = append(methods, ssh.PublicKeys(signers...))
+			closers = append(closers, conn)
+			labels = append(labels, "ssh-agent")
+		}
 	}
 
 	home, err := os.UserHomeDir()
@@ -442,6 +451,11 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 		}
 		signer, err := ssh.ParsePrivateKey(keyBytes)
 		if err != nil {
+			var passphraseMissing *ssh.PassphraseMissingError
+			// Passphrase-protected default keys are expected on laptops; use the agent signer instead.
+			if errors.As(err, &passphraseMissing) && len(methods) > 0 {
+				continue
+			}
 			return nil, nil, "", fmt.Errorf("parse SSH identity %s: %w", path, err)
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
@@ -449,7 +463,7 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 		break
 	}
 	if len(methods) == 0 {
-		return nil, nil, "", errors.New("operator ssh: SSH_AUTH_SOCK is unset and no default private key exists in ~/.ssh")
+		return nil, nil, "", errors.New("operator ssh: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
 	}
 	return methods, closers, strings.Join(labels, "+"), nil
 }
