@@ -1270,7 +1270,7 @@ GROUP BY ServiceName, MetricGroup, MetricName;
 -- Append-only ledger of every `aspect deploy` invocation. Two rows per run:
 -- one `started` row at the top of the deploy contract, one `succeeded` or
 -- `failed` row at the bottom. deploy_run_key correlates to ansible.task /
--- topology.generate spans on default.otel_traces via deploy_identity.sh.
+-- topology.generate spans on default.otel_traces via verself deploy identity.
 --
 -- ORDER BY puts the lowest-cardinality column first per the project's CH
 -- design rules: site has ~2 distinct values, event_at is the second-finest

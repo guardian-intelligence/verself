@@ -16,9 +16,9 @@ import (
 	"go.opentelemetry.io/otel/baggage"
 )
 
-// Field is a single (env var, baggage key) pair. The env var is the
-// upstream contract with deploy_identity.sh; the baggage key is the
-// downstream contract with the verselfotel SpanProcessor.
+// Field is a single (env var, baggage key) pair. The env var is the deploy
+// identity contract; the baggage key is the downstream contract with the
+// verselfotel SpanProcessor.
 type Field struct {
 	Env     string
 	Baggage string

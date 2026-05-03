@@ -18,10 +18,8 @@ import (
 )
 
 // urlNamespace is the UUID v5 namespace for URL-derived UUIDs (RFC 4122).
-// Matches python's uuid.NAMESPACE_URL — the value deploy_identity.sh used
-// when seeding VERSELF_DEPLOY_ID. Keeping the namespace identical means
-// the same run-key always derives the same deploy-id across the bash
-// → Go cutover.
+// Keeping the namespace stable means the same run key always derives the
+// same deploy id.
 var urlNamespace = uuid.MustParse("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
 
 // GenerateOptions configure a Generate call. Site, Sha, Scope are the
@@ -41,7 +39,7 @@ type GenerateOptions struct {
 	Scope string
 
 	// Kind labels the deploy invocation type. Empty defaults to
-	// "ansible-playbook" to match the bash script's default.
+	// "ansible-playbook".
 	Kind string
 
 	// CacheDir overrides the default $XDG_CACHE_HOME counter location.
@@ -52,16 +50,13 @@ type GenerateOptions struct {
 	Now func() time.Time
 }
 
-// Generate is the typed replacement for scripts/deploy_identity.sh.
-// It produces a Snapshot whose Env() projects every VERSELF_* and
-// OTEL_* variable the bash script used to export, derives a
-// counter-driven run key, mints a UUID5 deploy ID, and constructs a
-// W3C TRACEPARENT.
+// Generate produces a Snapshot whose Env() projects every VERSELF_* and
+// OTEL_* variable needed by deployment children, derives a counter-driven run
+// key, mints a UUID5 deploy ID, and constructs a W3C TRACEPARENT.
 //
 // Idempotency: when VERSELF_DEPLOY_ID or VERSELF_DEPLOY_RUN_KEY is
-// already in the environment, those values are preserved (the bash
-// script has the same property). Re-running Generate inside a child
-// process therefore keeps the run's correlation IDs stable.
+// already in the environment, those values are preserved. Re-running Generate
+// inside a child process therefore keeps the run's correlation IDs stable.
 func Generate(opts GenerateOptions) (Snapshot, error) {
 	now := opts.Now
 	if now == nil {
@@ -100,7 +95,7 @@ func Generate(opts GenerateOptions) (Snapshot, error) {
 
 	// Deploy ID: UUID5(URL, "verself:"+run_key). Deterministic on
 	// (run_key) so a re-run with the same run_key resolves to the same
-	// trace ID — useful when bash callers explicitly pin the run_key.
+	// trace ID.
 	deployID := os.Getenv("VERSELF_DEPLOY_ID")
 	if deployID == "" {
 		deployID = uuid.NewSHA1(urlNamespace, []byte("verself:"+runKey)).String()
@@ -232,7 +227,7 @@ func buildResourceAttributes(values map[string]string) string {
 	return strings.Join(out, ",")
 }
 
-// gitMetadata captures the git facts deploy_identity.sh exported.
+// gitMetadata captures the git facts projected into deploy identity.
 type gitMetadata struct {
 	commitSha     string
 	branch        string

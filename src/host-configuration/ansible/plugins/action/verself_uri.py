@@ -12,9 +12,10 @@ per request:
     X-Verself-Correlation-Id is unrelated to this plane.
 
 Deploy identity (VERSELF_DEPLOY_ID, VERSELF_DEPLOY_RUN_KEY) must be
-set in the environment before ansible-playbook runs — scripts/deploy_identity.sh
-is the single source of truth. The action fails fast if the identity is
-missing, because guessing it silently would break downstream trace joins.
+set in the environment before ansible-playbook runs. verself-deploy's typed
+identity generator is the single source of truth. The action fails fast if the
+identity is missing, because guessing it silently would break downstream trace
+joins.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ description:
 requirements:
   - ansible-core
   - VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY in the environment
-    (set by src/host-configuration/scripts/deploy_identity.sh).
+    (set by verself-deploy's typed identity generator).
 """
 
 
@@ -64,8 +65,8 @@ def _require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
         raise AnsibleActionFail(
-            f"verself_uri: {name} is not set. Source scripts/deploy_identity.sh "
-            f"before running ansible-playbook."
+            f"verself_uri: {name} is not set. Run ansible-playbook through "
+            f"verself-deploy so deploy identity is initialized."
         )
     return value
 

@@ -1,9 +1,8 @@
 # deployment-tools
 
-The typed Go orchestrator for verself deploys. Subsumes the bash + python
-plumbing under `src/host-configuration/scripts/` for the orchestration layer
-(Nomad submit/monitor, Bazel artifact resolution, Ansible run wrapping,
-deploy evidence writes). Operator database access is owned by
+The typed Go orchestrator for verself deploys. It owns the orchestration layer:
+Nomad submit/monitor, Bazel artifact resolution, Ansible run wrapping, and
+deploy evidence writes. Operator database access is owned by
 `src/dev-tools/cmd/aspect-operator` and the shared `src/operator-runtime/go`
 packages, not this deployment orchestrator.
 
@@ -12,10 +11,9 @@ packages, not this deployment orchestrator.
 - `cmd/verself-deploy/` — single binary, subcommands grouped under
   `verself-deploy <group> <action>` (mirrors the `aspect <group> <action>`
   surface).
-- `internal/identity/` — reads the verself deploy identity env (set by
-  `scripts/deploy_identity.sh`) and emits W3C baggage so every span this
-  binary creates carries `verself.deploy_run_key`, `verself.deploy_id`,
-  `verself.site`, `verself.author`.
+- `internal/identity/` — derives the verself deploy identity env and emits W3C
+  baggage so every span this binary creates carries `verself.deploy_run_key`,
+  `verself.deploy_id`, `verself.site`, `verself.author`.
 - `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
   Uses `Plan` → `EnforceRegister` for CAS-safe submit, then mirrors the
   upstream `nomad deployment status -monitor` blocking-query loop on

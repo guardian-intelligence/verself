@@ -17,7 +17,6 @@ filegroup(
         [
             "ansible/**",
             "migrations/**",
-            "scripts/**",
         ],
         exclude = [
             "ansible/.ansible/**",
@@ -26,8 +25,6 @@ filegroup(
             "ansible/**/__rendered/**",
             "ansible/**/__pycache__/**",
             "ansible/inventory/*.ini",
-            "scripts/.venv/**",
-            "scripts/**/__pycache__/**",
         ],
     ),
 )
