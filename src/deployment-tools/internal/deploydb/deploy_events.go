@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
+	ch "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 const (
@@ -45,6 +47,15 @@ type deployEventRow struct {
 	ErrorMessage       string    `ch:"error_message"`
 }
 
+// LastSucceededDeploy returns the most recent successful deploy for a
+// site/scope pair. The boolean is false when the site has not completed a
+// deploy through this scope yet.
+type LastSucceededDeploy struct {
+	RunKey  string
+	Sha     string
+	EventAt time.Time
+}
+
 func (c *Client) RecordDeployEvent(ctx context.Context, ev DeployEvent) error {
 	if err := validateDeployEvent(ev); err != nil {
 		return err
@@ -62,6 +73,39 @@ func (c *Client) RecordDeployEvent(ctx context.Context, ev DeployEvent) error {
 		ErrorMessage:       ev.ErrorMessage,
 	}
 	return insertStructs(ctx, c, deployEventsTable, []deployEventRow{row})
+}
+
+func (c *Client) LastSucceededDeploy(ctx context.Context, site, scope string) (LastSucceededDeploy, bool, error) {
+	if site == "" {
+		return LastSucceededDeploy{}, false, fmt.Errorf("deploydb: site is required")
+	}
+	if scope == "" {
+		return LastSucceededDeploy{}, false, fmt.Errorf("deploydb: scope is required")
+	}
+	var row LastSucceededDeploy
+	var count uint64
+	if err := c.conn.QueryRow(ctx, `
+SELECT
+  argMax(deploy_run_key, event_at) AS deploy_run_key,
+  argMax(sha, event_at) AS sha,
+  max(event_at) AS last_event_at,
+  count() AS rows
+FROM verself.deploy_events
+WHERE site = {site:String}
+  AND scope = {scope:String}
+  AND event_kind = 'succeeded'
+`, ch.Named("site", site), ch.Named("scope", scope)).Scan(
+		&row.RunKey,
+		&row.Sha,
+		&row.EventAt,
+		&count,
+	); err != nil {
+		return LastSucceededDeploy{}, false, fmt.Errorf("deploydb: query last succeeded deploy: %w", err)
+	}
+	if count == 0 {
+		return LastSucceededDeploy{}, false, nil
+	}
+	return row, true, nil
 }
 
 func validateDeployEvent(ev DeployEvent) error {

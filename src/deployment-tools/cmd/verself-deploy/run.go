@@ -166,22 +166,49 @@ func runDeployBody(
 	}
 
 	// 2. Host configuration convergence. Ansible owns ordering via play order
-	// and role order inside the canonical site playbook.
-	hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
-	if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
-		msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
-		fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, msg)
+	// and role order inside the canonical site playbook. The deploy controller
+	// skips this layer when the committed host inputs are unchanged since the
+	// previous successful deploy; out-of-band host mutation is handled by the
+	// explicit full host convergence path instead of every routine deploy.
+	components := []string{securityPatchComponent, supplyChainComponent}
+	hostDecision, err := decideHostConfigurationConvergence(ctx, rt, site, sha, scope, repoRoot)
+	if err != nil {
+		msg := fmt.Sprintf("host configuration change detection failed: %v", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
 		return 1
 	}
-	span.SetAttributes(
-		attribute.Int("ansible.task_count", hostConfigurationRes.TaskCount),
-		attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
-		attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
-	)
+	span.SetAttributes(attribute.String("host_configuration.decision", hostDecision.Reason))
+	if hostDecision.Run {
+		if len(hostDecision.ChangedPaths) > 0 {
+			fmt.Fprintf(os.Stderr, "verself-deploy: host configuration inputs changed since %s (%s); running %s\n",
+				hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), substrateSitePlaybook)
+		} else {
+			fmt.Fprintf(os.Stderr, "verself-deploy: no previous successful deploy for %s/%s; running %s\n",
+				site, scope, substrateSitePlaybook)
+		}
+		hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
+		if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
+			msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
+			fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+			return 1
+		}
+		components = append(components, hostConfigurationComponent)
+		span.SetAttributes(
+			attribute.Bool("host_configuration.skipped", false),
+			attribute.Int("ansible.task_count", hostConfigurationRes.TaskCount),
+			attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
+			attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
+		)
+	} else {
+		fmt.Fprintf(os.Stderr, "verself-deploy: host configuration unchanged since %s (%s); skipping %s\n",
+			hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), substrateSitePlaybook)
+		span.SetAttributes(attribute.Bool("host_configuration.skipped", true))
+	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, err.Error())
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
 		return 1
 	}
 
@@ -189,10 +216,11 @@ func runDeployBody(
 	// skips jobs whose resolver-stamped spec/artifact digests are current.
 	if err := deployAffected(ctx, rt, span, site, repoRoot, false); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-affected failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration", "nomad"},
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, "nomad"),
 			"nomad deploy-affected: "+err.Error())
 		return 1
 	}
+	components = append(components, "nomad")
 
 	// 4. Succeeded.
 	durationMs := durationMillis(time.Since(startedAt), "deploy duration")
@@ -202,7 +230,7 @@ func runDeployBody(
 		Sha:                sha,
 		Actor:              snap.Get("VERSELF_AUTHOR"),
 		Scope:              scope,
-		AffectedComponents: []string{securityPatchComponent, supplyChainComponent, "host-configuration", "nomad"},
+		AffectedComponents: components,
 		Kind:               deploydb.EventSucceeded,
 		DurationMs:         durationMs,
 	}

@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "ansible_run.go",
         "artifacts.go",
+        "host_configuration_inputs.go",
         "main.go",
         "nomad_deploy_affected.go",
         "nomad_submit.go",
