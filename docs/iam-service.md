@@ -22,7 +22,7 @@ consistency modes directly, or infer product authorization from browser state.
 | Product authorization graph | SpiceDB |
 | Product authorization API, schema lifecycle, relationship writes, audit, revocation epochs | `iam-service` |
 | Product resource state | Owning service PostgreSQL database |
-| Authorization evidence, canaries, audits, and operator inspection | ClickHouse plus `governance-service` |
+| Authorization evidence, audits, and operator inspection | ClickHouse plus `governance-service` |
 | Public TLS and routing | HAProxy plus lego |
 
 SpiceDB is private substrate. It has no public origin, no browser-facing route,
@@ -47,7 +47,7 @@ several SpiceDB processes.
 - Electric shape issuance is mediated by bounded capabilities with fixed
   route, columns, predicate template, freshness, expiry, and revocation epoch
   state.
-- SpiceDB Watch, IAM outbox rows, and ClickHouse canaries are part of the
+- SpiceDB Watch, IAM outbox rows, and ClickHouse evidence are part of the
   correctness model.
 
 ## Substrate
@@ -188,6 +188,19 @@ Repository layout:
 
 ```text
 src/iam-service/
+  cmd/
+    iam-service/
+    iam-openapi/
+    iam-internal-openapi/
+    iam-schema-gen/
+
+  openapi/
+
+  client/
+  internalclient/
+
+  migrations/
+
   schema/
     verself.zed
     assertions.yaml
@@ -195,6 +208,9 @@ src/iam-service/
 
   internal/model/
     generated object, relation, permission, caveat, and resource-ref types
+
+  internal/bootstrap/
+    runtime configuration, dependency wiring, worker startup
 
   internal/spicedb/
     only package allowed to import the AuthZed Go client
@@ -205,20 +221,153 @@ src/iam-service/
   internal/decision/
     Decision, ZedToken, Freshness, Epoch, and capability types
 
+  internal/orgs/
+    organization profile, organization lookup, available-org listing
+
+  internal/members/
+    directory-backed member listing, invite, and role binding commands
+
+  internal/roles/
+    customer-visible role catalog, role grants, capability replacement
+
+  internal/credentials/
+    customer API credential metadata, grants, roll, revoke, claim resolution
+
+  internal/browser/
+    OIDC login, callback, session, selected org, logout, resource tokens
+
+  internal/actions/
+    Zitadel action verification and claim response construction
+
+  internal/syncauth/
+    Electric shape capability issuance, epoch validation, active stream index
+
+  internal/resourceedges/
+    product service resource-parent relationship commands
+
   internal/commands/
-    product IAM commands such as grant, revoke, create role, bind role,
-    write resource edge, and issue sync capability
+    shared command envelope, idempotency, operation metadata, and outbox helpers
 
   internal/watch/
     SpiceDB Watch consumer, epoch invalidation, reconciliation checkpoints
 
+  internal/reconcile/
+    expected relationship scanners and repair plans
+
+  internal/audit/
+    governance audit writer and ClickHouse evidence helpers
+
+  internal/problems/
+    stable problem responses and tagged domain error mapping
+
+  internal/directory/
+    Zitadel adapter behind product-shaped interfaces
+
   internal/store/
     sqlc queries for IAM metadata, outbox, epochs, capability leases, and
-    canary state
+    reconciliation state
 
   internal/api/
-    public and internal Huma APIs
+    route registration and boundary DTO conversion only
 ```
+
+## Wire Contracts
+
+The first implementation uses Huma/OpenAPI for `iam-service` public and
+internal APIs. There is no repo-owned IAM gRPC service proto in the first cut.
+The service still consumes protobufs through the upstream AuthZed Go client;
+those SpiceDB request and response types remain third-party API types and are
+confined to `internal/spicedb`.
+
+Wire contract locations:
+
+| Contract | Location | Bazel owner |
+| --- | --- | --- |
+| Public IAM API OpenAPI 3.0/3.1 | `src/iam-service/openapi/openapi-3.0.yaml`, `src/iam-service/openapi/openapi-3.1.yaml` | `//src/iam-service/openapi` |
+| SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/iam-service/openapi/internal-openapi-3.0.yaml`, `src/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/iam-service/openapi` |
+| Generated public Go client | `src/iam-service/client/client.gen.go` | `//src/iam-service/client:client` |
+| Generated internal Go client | `src/iam-service/internalclient/client.gen.go` | `//src/iam-service/internalclient:internalclient` |
+| Browser TypeScript clients | `src/viteplus-monorepo/apps/verself-web/src/__generated/iam-api/` | frontend OpenAPI generation target |
+| SpiceDB schema | `src/iam-service/schema/verself.zed` | `//src/iam-service/schema:schema` |
+| SpiceDB schema assertions | `src/iam-service/schema/assertions.yaml`, `src/iam-service/schema/expected-relations.yaml` | `//src/iam-service/schema:schema_tests` |
+| Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
+| Future shared protobuf messages | `src/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
+| Future IAM-owned gRPC-only contract | `src/iam-service/proto/v1/*.proto` | `//src/iam-service/proto/v1:iam_proto` |
+
+Add a service-local protobuf directory only if the operation cannot be cleanly
+represented by the existing OpenAPI service pattern, for example a binary
+stream that should not become a public HTTP contract. If the message shape is
+consumed by more than `iam-service`, put the protobuf under
+`src/domain-transfer-objects/proto/` instead.
+
+OpenAPI remains the generated-client surface for product services. A missing
+service shape is fixed by adding the Huma route and regenerating the committed
+OpenAPI specs and clients, not by hand-writing HTTP or gRPC calls.
+
+## Bazel Targets
+
+The service should create these targets:
+
+```text
+//src/iam-service:go_default_library
+
+//src/iam-service/cmd/iam-service:iam-service
+//src/iam-service/cmd/iam-service:iam-service_nomad_artifact
+//src/iam-service/cmd/iam-openapi:iam-openapi
+//src/iam-service/cmd/iam-internal-openapi:iam-internal-openapi
+//src/iam-service/cmd/iam-schema-gen:iam-schema-gen
+
+//src/iam-service/openapi:openapi-3.0.yaml
+//src/iam-service/openapi:openapi-3.1.yaml
+//src/iam-service/openapi:internal-openapi-3.0.yaml
+//src/iam-service/openapi:internal-openapi-3.1.yaml
+
+//src/iam-service/client:client
+//src/iam-service/internalclient:internalclient
+//src/iam-service/migrations:migrations
+//src/iam-service/schema:schema
+//src/iam-service/schema:schema_tests
+
+//src/iam-service/internal/api:api
+//src/iam-service/internal/bootstrap:bootstrap
+//src/iam-service/internal/model:model
+//src/iam-service/internal/spicedb:spicedb
+//src/iam-service/internal/authz:authz
+//src/iam-service/internal/decision:decision
+//src/iam-service/internal/orgs:orgs
+//src/iam-service/internal/members:members
+//src/iam-service/internal/roles:roles
+//src/iam-service/internal/credentials:credentials
+//src/iam-service/internal/browser:browser
+//src/iam-service/internal/actions:actions
+//src/iam-service/internal/syncauth:syncauth
+//src/iam-service/internal/resourceedges:resourceedges
+//src/iam-service/internal/commands:commands
+//src/iam-service/internal/watch:watch
+//src/iam-service/internal/reconcile:reconcile
+//src/iam-service/internal/audit:audit
+//src/iam-service/internal/problems:problems
+//src/iam-service/internal/directory:directory
+//src/iam-service/internal/store:store
+```
+
+If a future service-local protobuf is added, use the existing repo pattern:
+
+```text
+//src/iam-service/proto/v1:iam_proto
+//src/iam-service/proto/v1:iam_go_proto
+//src/iam-service/proto/v1:proto
+```
+
+The root `BUILD.bazel` contains only the Gazelle prefix:
+
+```text
+# gazelle:prefix github.com/verself/iam-service
+```
+
+Package visibility should enforce the dependency rules below. Public visibility
+belongs only on generated clients, OpenAPI artifacts, and any explicit shared
+contract package.
 
 The generated model package is the only ergonomic way to refer to schema
 terms:
@@ -235,6 +384,288 @@ The unsafe form stays unavailable outside `internal/spicedb`:
 ```go
 Check("attempt", attemptID, "read_logs", "user", subjectID)
 ```
+
+## Feature Parity Surface
+
+The first implementation covers the complete product IAM and browser-auth
+surface:
+
+| Surface | Owning package | Notes |
+| --- | --- | --- |
+| Browser login, callback, logout, session read, selected org update | `internal/browser` | Owns cookie/session state and OIDC token exchange. Does not perform product authorization decisions directly. |
+| Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance requires a typed authorization plan and records token audience, org, scope, and freshness. |
+| Available organizations for the caller | `internal/orgs` | Uses token role assignments and directory-backed org metadata; returns only orgs the token proves. |
+| Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
+| Organization members | `internal/members` | Directory-backed read model; filters service accounts out of the member table and exposes them through credentials. |
+| Member invite and role update | `internal/members` plus `internal/roles` | Mutations write directory state and SpiceDB relationships through command envelopes. |
+| Member capability replacement | `internal/roles` | Represented as role grants and SpiceDB relationships; no customer-editable policy language in the first cut. |
+| API credential list/read/create/roll/revoke | `internal/credentials` | Secret material is returned only at create or roll. Metadata and grants are durable IAM state. |
+| API credential claim resolution | `internal/actions` plus `internal/credentials` | Zitadel action calls resolve non-secret credential metadata and exact allowed permissions. |
+| Human profile sync | `internal/orgs` or `internal/members` | Narrow internal operation for directory/profile propagation. |
+| Resolve organization by ID or slug | `internal/orgs` | Narrow internal operation for other services and frontend server functions. |
+| Authorization checks and list helpers | `internal/authz` | Typed `Check`, `CheckBulk`, `LookupResources`, and `LookupSubjects`. |
+| Product resource edge writes | `internal/resourceedges` | SPIFFE-only internal API used by resource-owning services after product state writes. |
+| Electric shape capability issuance | `internal/syncauth` | SPIFFE-only internal API used by the sync gateway. |
+
+Feature parity does not mean preserving old route names, database tables,
+package names, or implementation structure. The public and internal API shapes
+should be cut over cleanly through regenerated clients and frontend server
+functions.
+
+## Package Boundaries
+
+The service is organized by stable product responsibility. Shared packages
+provide vocabulary and infrastructure; vertical packages own use cases.
+
+```text
+cmd/iam-service
+  -> internal/bootstrap
+  -> internal/api
+
+internal/api
+  -> internal/{orgs,members,roles,credentials,browser,actions,syncauth,resourceedges}
+  -> internal/problems
+
+internal/{orgs,members,roles,credentials,browser,actions,syncauth,resourceedges}
+  -> internal/authz
+  -> internal/commands
+  -> internal/store
+  -> internal/directory
+  -> internal/audit
+
+internal/authz
+  -> internal/model
+  -> internal/decision
+  -> internal/spicedb
+
+internal/spicedb
+  -> AuthZed Go client
+
+internal/store
+  -> sqlc-generated queries
+```
+
+`cmd/iam-service` performs configuration loading, dependency construction,
+HTTP server startup, background worker startup, and signal handling. It does
+not contain request handlers, policy logic, OIDC flow logic, SpiceDB tuple
+construction, or SQL queries.
+
+`internal/api` owns Huma operation declarations, request/response DTO mapping,
+security metadata, body limits, idempotency metadata, audit metadata, and route
+registration. Handlers should normalize boundary DTOs and call one command
+method. They should not contain business logic.
+
+Vertical packages own command methods and domain validation for one product
+area. They may coordinate store transactions, directory calls, SpiceDB writes,
+audit emission, and outbox rows. They should not expose large "service" types
+that accumulate unrelated methods.
+
+`internal/authz` is the typed SpiceDB facade. It exposes product authorization
+operations such as `CanListExecutions`, `CanReadAttemptLogs`,
+`CanManageMembers`, `CheckBulkExecutionRows`, and `LookupReadableRepositories`.
+It returns typed decisions and never returns a bare `bool` to vertical command
+packages.
+
+`internal/spicedb` is a substrate adapter. It converts generated model refs to
+AuthZed protobuf requests, applies consistency policies, attaches request
+metadata, records low-level metrics, and translates substrate errors. No other
+package imports the AuthZed Go client.
+
+`internal/store` is persistence plumbing. It should expose narrow repository
+methods around sqlc queries rather than a catch-all store with every table on
+one interface. A package that owns a table also owns the repository wrapper for
+that table.
+
+`internal/directory` is the Zitadel adapter. It exposes product-shaped
+operations: list org members, invite member, set member role bindings, create
+service account credential, remove service account credential, deactivate
+service account, fetch user/org metadata. Raw Zitadel request construction stays
+inside this package.
+
+`internal/problems` maps tagged domain errors to stable public problem
+responses. Domain packages return typed errors; they do not know HTTP status
+codes or serialize problem documents.
+
+## Dependency Rules
+
+- `internal/spicedb` is the only package that imports AuthZed client packages.
+- `internal/directory` is the only package that builds raw Zitadel requests.
+- `internal/store` is the only package that imports sqlc-generated query
+  packages.
+- `internal/api` is the only package that imports Huma.
+- `internal/problems` is the only package that serializes public problem
+  responses.
+- `internal/browser` is the only package that writes browser cookies.
+- `internal/actions` is the only package that accepts Zitadel action webhook
+  payloads.
+- `internal/syncauth` is the only package that issues Electric shape
+  capabilities.
+- Vertical packages do not import each other. Cross-area behavior goes through
+  small interfaces declared by the caller or through `internal/commands`
+  envelopes.
+- No package imports from `cmd/`.
+- Generated clients are the only supported cross-service API surface.
+
+These rules should be enforced with Bazel package visibility or a static import
+check. A compile-time failure is preferable to a code review convention.
+
+## Command Structure
+
+Commands have one shape:
+
+```go
+type Command[I any, O any] struct {
+    OperationID    OperationID
+    IdempotencyKey IdempotencyKey
+    Actor          Principal
+    Origin         OriginSubject
+    Input          I
+}
+```
+
+Command execution follows one pipeline:
+
+```text
+boundary DTO
+  -> command input normalization
+  -> typed authorization decision
+  -> product invariant checks
+  -> PostgreSQL transaction and idempotency record
+  -> SpiceDB write when the command changes authorization
+  -> outbox/audit/capability state
+  -> response DTO
+```
+
+Commands that change both product metadata and authorization relationships
+record the command before external effects and finish by writing the resulting
+ZedToken, relationship operation metadata, and audit state. Retry observes the
+idempotency record and either returns the same result or a stable conflict.
+
+Directory-side effects that cannot share a PostgreSQL transaction are modeled
+explicitly:
+
+- prepare local command and requested external operation;
+- call directory adapter with an idempotency key when available;
+- persist resulting directory identifiers and credential fingerprints;
+- run compensating cleanup only for command-local failure before commit;
+- reconcile durable drift after commit through a loud repair queue.
+
+Silent best-effort cleanup is not a correctness mechanism.
+
+## Boundary-Specific Organization
+
+Browser auth is split into small files by concern:
+
+```text
+internal/browser/
+  api.go
+  config.go
+  cookie.go
+  csrf.go
+  login.go
+  callback.go
+  session.go
+  selected_org.go
+  resource_token.go
+  token_exchange.go
+  token_verify.go
+  userinfo.go
+  store.go
+  errors.go
+```
+
+OIDC token exchange, token verification, cookie serialization, session
+persistence, userinfo loading, and resource-token issuance are separate units.
+The browser package can call `internal/authz` for resource-token issuance; it
+does not reach into SpiceDB or directory internals.
+
+Public product APIs are split by resource:
+
+```text
+internal/api/
+  api.go
+  public_orgs.go
+  public_members.go
+  public_roles.go
+  public_credentials.go
+  public_browser.go
+  public_actions.go
+  internal_authz.go
+  internal_resource_edges.go
+  internal_syncauth.go
+  middleware.go
+  operation_policy.go
+```
+
+Each route file declares its Huma operations next to the policy metadata. A
+handler should be small enough that the operation declaration, DTO parsing, and
+command call fit on one screen.
+
+Authorization vocabulary is split by schema area:
+
+```text
+internal/model/
+  principal.go
+  org.go
+  role.go
+  repository.go
+  execution.go
+  attempt.go
+  project.go
+  secret.go
+  generated_schema.go
+```
+
+Generated files may be large. Hand-written files should stay narrow and should
+not accumulate unrelated operations.
+
+## Error Model
+
+Domain errors are data:
+
+```go
+type Code string
+
+const (
+    CodePermissionDenied      Code = "permission_denied"
+    CodeStaleCapability      Code = "stale_capability"
+    CodeFailedPrecondition   Code = "failed_precondition"
+    CodeIdempotencyConflict  Code = "idempotency_conflict"
+    CodeDirectoryUnavailable Code = "directory_unavailable"
+    CodeAuthzUnavailable     Code = "authz_unavailable"
+)
+
+type Error struct {
+    Code      Code
+    Operation OperationID
+    Resource  ResourceRef
+    Cause     error
+}
+```
+
+Domain packages return `Error` values. `internal/problems` maps them to public
+problem documents, redacts internal causes, and attaches trace-backed
+instances. Stable codes also feed audit rows, ClickHouse queries, and UI
+branching.
+
+## Size And Review Constraints
+
+Generated files are exempt. Hand-written source files should remain small:
+
+- no multi-concern files;
+- no route file with unrelated resources;
+- no browser-auth file that mixes OIDC, cookies, sessions, and resource-token
+  issuance;
+- no command method that performs several product operations;
+- no package-level `Service` that grows unrelated methods;
+- no raw SQL outside sqlc query files;
+- no raw tuple strings outside `internal/spicedb`;
+- no raw Zitadel requests outside `internal/directory`;
+- no hidden default consistency mode.
+
+A hand-written file approaching 400 lines should be split by responsibility
+before new behavior is added. The target is not an arbitrary line count; the
+target is that package boundaries keep invalid control flow difficult to write.
 
 ## Decision Evidence
 
@@ -291,8 +722,8 @@ type FullyConsistent struct{}
 
 `MinimizeLatency` is for non-security UI hints and low-risk affordance
 rendering. Security-sensitive checks use `AtLeastAsFresh` when a relevant
-ZedToken exists. `FullyConsistent` is reserved for narrow administrative paths,
-break-glass inspection, and canaries.
+ZedToken exists. `FullyConsistent` is reserved for narrow administrative paths
+and break-glass inspection.
 
 ZedTokens are stored wherever a later authorization read must be causally fresh:
 
@@ -482,7 +913,7 @@ SpiceDB Watch is consumed by `iam-service` for:
 - projection rebuild scheduling;
 - audit correlation;
 - reconciliation checkpoints;
-- canary verification.
+- operator inspection.
 
 Epochs are cache-invalidation metadata. They are not the authorization source of
 truth. A stale epoch forces a SpiceDB check with the relevant ZedToken.
@@ -570,8 +1001,7 @@ explicitly.
 - revocation epochs;
 - sync scope state;
 - Watch checkpoints;
-- reconciliation findings;
-- canary state.
+- reconciliation findings.
 
 SpiceDB remains the relationship graph. PostgreSQL rows may mirror or index
 authorization state for UX, audit, idempotency, and stream control, but product
@@ -631,8 +1061,7 @@ ClickHouse evidence should answer:
 - whether a stale epoch forced a recheck;
 - whether a revocation reached active streams;
 - whether a resource was exposed before its authorization edge existed;
-- whether Watch lag exceeded the sync revocation budget;
-- whether canary principals can or cannot access the expected resources.
+- whether Watch lag exceeded the sync revocation budget.
 
 `aspect observe --what=iam` should surface:
 
@@ -658,37 +1087,6 @@ Pre-deploy checks:
 - Static scan proving product services use generated IAM clients or the
   approved IAM client package.
 
-Live canaries:
-
-- schema read/write canary against SpiceDB;
-- relationship write, check, revoke, and stale-token recheck canary;
-- bad SpiceDB key denied canary;
-- product resource hidden until authorization edge acknowledged;
-- role grant revocation cancels active Electric execution-list stream;
-- revocation of one role preserves access through an independent role;
-- `CheckBulk` list canary with mixed allowed and denied candidates;
-- Watch checkpoint advances and writes ClickHouse evidence;
-- audit rows contain origin subject and caller SPIFFE ID for internal calls.
-
-Completion evidence is ClickHouse rows from the live path. Unit tests and local
-schema checks are guardrails, not deployment proof.
-
-## Load Testing
-
-Load tests exercise the actual schema and datastore:
-
-```text
-100, 500, 1k, 2k CheckPermission QPS
-1 percent WriteRelationships
-CheckBulk candidate pages for dashboard/list endpoints
-LookupResources for bounded admin surfaces
-role revocation with 1,000 active readers
-execution list with 1,000,000 candidate resources
-```
-
-Report p50, p95, p99, error rate, Watch lag, Postgres CPU, SpiceDB memory,
-dispatch depth, cache hit ratio, and active stream cancellation latency.
-
 The service should preserve the intended complexity bounds:
 
 ```text
@@ -708,7 +1106,7 @@ Schema changes use expand, backfill, verify, and contract:
 3. Deploy code that writes old and new relationships when needed.
 4. Backfill through `iam-service` relationship write commands.
 5. Verify with schema assertions, Watch checkpoints, reconciliation, and
-   ClickHouse canaries.
+   ClickHouse evidence.
 6. Remove old schema terms after no relationship data references them.
 
 Deleting or renaming schema terms before relationship data is removed is a
