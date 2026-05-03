@@ -232,8 +232,8 @@ contract.
 
 6. Enforce the canonical deploy boundary. `aspect deploy` is how deployment is
    done; `verself-deploy` subcommands remain implementation seams for the task
-   surface and e2e assertions. Breakglass is an audited exception consumed by
-   the same deploy path and recorded in ClickHouse.
+   surface and e2e assertions. Operational breakglass is founder-held root SSH
+   access to the host, outside the routine deploy surface.
 
 7. Ingest admission and installation evidence into GUAC. GUAC receives SBOMs,
    provenance, vulnerability findings, signatures, admission attestations, and
