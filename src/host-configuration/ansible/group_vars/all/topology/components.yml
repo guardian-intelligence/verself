@@ -373,6 +373,28 @@ topology_components:
       supervisor: systemd
     identities: {}
     kind: resource
+    name: spicedb
+    nftables_rulesets: []
+    order: 0
+    postgres:
+      connection_limit: 20
+      database: spicedb
+      owner: spicedb
+      password_ref:
+        kind: none
+    workload:
+      auth:
+        kind: none
+      bootstrap: []
+      bootstrap_config: {}
+      directories: []
+      order: 0
+      secret_refs: []
+      units: []
+  - deployment:
+      supervisor: systemd
+    identities: {}
+    kind: resource
     name: pomerium
     nftables_rulesets: []
     order: 0

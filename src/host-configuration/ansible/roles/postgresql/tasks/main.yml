@@ -214,6 +214,12 @@
       - name: temporal
         role_attr_flags: LOGIN
         conn_limit: "{{ postgresql_role_connection_limits.temporal }}"
+      # SpiceDB connects over the local Unix socket with peer auth only. The
+      # gRPC preshared key is the API credential; Postgres should not get a
+      # second loopback password credential for the same daemon.
+      - name: spicedb
+        role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.spicedb }}"
     postgresql_managed_databases:
       - name: "{{ billing_service_pg_database | default('billing') }}"
         owner: billing
@@ -227,6 +233,8 @@
         owner: temporal
       - name: temporal_visibility
         owner: temporal
+      - name: spicedb
+        owner: spicedb
   module_defaults:
     community.postgresql.postgresql_user:
       login_host: "{{ topology_endpoints.postgresql.host }}"
@@ -283,7 +291,7 @@
           WHERE rolname = ANY(%s)
             AND rolpassword IS NOT NULL
         positional_args:
-          - ["stalwart", "temporal"]
+          - ["stalwart", "temporal", "spicedb"]
       register: postgresql_peer_roles_with_password
 
     - name: Clear password on peer-auth-only PostgreSQL roles

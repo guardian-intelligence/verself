@@ -1,0 +1,51 @@
+[Unit]
+Description=SpiceDB Authorization Database
+After=verself-firewall.target network.target postgresql.service
+Requires=verself-firewall.target
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User={{ spicedb_system_user }}
+Group={{ spicedb_system_group }}
+EnvironmentFile={{ spicedb_env_file }}
+Environment=OTEL_SERVICE_NAME=spicedb
+WorkingDirectory={{ spicedb_state_dir }}
+ExecStart={{ verself_bin }}/spicedb serve \
+  --datastore-engine=postgres \
+  --datastore-conn-uri={{ spicedb_datastore_conn_uri }} \
+  --datastore-conn-pool-read-max-open={{ spicedb_datastore_read_max_open }} \
+  --datastore-conn-pool-read-min-open={{ spicedb_datastore_read_min_open }} \
+  --datastore-conn-pool-write-max-open={{ spicedb_datastore_write_max_open }} \
+  --datastore-conn-pool-write-min-open={{ spicedb_datastore_write_min_open }} \
+  --grpc-addr={{ topology_endpoints.spicedb.endpoints.grpc.address }} \
+  --metrics-addr={{ topology_endpoints.spicedb.endpoints.metrics.address }} \
+  --http-enabled=false \
+  --telemetry-endpoint= \
+  --skip-release-check \
+  --log-format=json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+MemoryMax={{ spicedb_memory_max }}
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+ReadWritePaths={{ spicedb_state_dir }}
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

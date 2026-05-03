@@ -1723,7 +1723,73 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spire-219a774d7631",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spicedb-0b45f16a23d3",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_spicedb",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/authzed/spicedb/releases/download/v1.51.1/spicedb_1.51.1_linux_amd64.tar.gz",
+        "install_url": "",
+        "digest": "sha256:b9c3d13e7861a321a3a00c846d4670889fe539551ac57c2ff61e5bfb837ccfe5",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "scanner_name": "",
+        "scanner_version": "",
+        "scanner_database_digest": "",
+        "sbom_uri": "",
+        "sbom_digest": "",
+        "provenance_uri": "",
+        "provenance_digest": "",
+        "oci_repository": "",
+        "oci_manifest_digest": "",
+        "oci_media_type": "",
+        "signature_digest": "",
+        "attestation_digest": "",
+        "scanner_result_digest": "",
+        "guac_subject": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zed-341263557514",
+      "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
+      "source_kind": "bazel_http_file",
+      "surface": "host-bootstrap",
+      "artifact": "server_tool_zed",
+      "admission": {
+        "state": "provisional",
+        "upstream_url": "https://github.com/authzed/zed/releases/download/v0.36.1/zed_0.36.1_linux_amd64_gnu.tar.gz",
+        "install_url": "",
+        "digest": "sha256:588d50910eead6917c4aad416850a8553f3b334060ef67c63d45efd0e06a174a",
+        "released_at": "",
+        "observed_at": "",
+        "minimum_age_result": "not_evaluated",
+        "scanner_results": "not_evaluated",
+        "scanner_name": "",
+        "scanner_version": "",
+        "scanner_database_digest": "",
+        "sbom_uri": "",
+        "sbom_digest": "",
+        "provenance_uri": "",
+        "provenance_digest": "",
+        "oci_repository": "",
+        "oci_manifest_digest": "",
+        "oci_media_type": "",
+        "signature_digest": "",
+        "attestation_digest": "",
+        "scanner_result_digest": "",
+        "guac_subject": "",
+        "tuf_target_path": "",
+        "storage_uri": ""
+      }
+    },
+    {
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spire-6bf873f1959f",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1756,7 +1822,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spiffe-helper-90926e38054d",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-spiffe-helper-dc0a1a2ebe95",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1789,7 +1855,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nats-server-6a6bb6cfb4e7",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nats-server-dff0f57fb9ea",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1822,7 +1888,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-garage-898c9f982338",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-garage-8225e7dcc9d1",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1855,7 +1921,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-forgejo-7289228635a8",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-forgejo-2b0d5a58a89e",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1888,7 +1954,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-bazel-remote-02a7ead3f6cd",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-bazel-remote-9b6c070ecba5",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1921,7 +1987,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-otelcol-contrib-4141c55896f5",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-otelcol-contrib-51236dab365d",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1954,7 +2020,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-temporal-4c3ada3c24ad",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-temporal-6ff570399aef",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -1987,7 +2053,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-grafana-f516b5420727",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-grafana-ead56db6ab85",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2020,7 +2086,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-grafana-clickhouse-5880b4243461",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-grafana-clickhouse-62231ba10eb5",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2053,7 +2119,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-47593fe88a2e",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-0a48734fb101",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2086,7 +2152,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-cli-7d359de41520",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-cli-a8248231a5bb",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2119,7 +2185,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-webadmin-e7a86f729b27",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-webadmin-c3630d61faf3",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2152,7 +2218,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-spam-filt-03c1eee240c0",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-stalwart-spam-filt-39ab4febe8ba",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2185,7 +2251,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-containerd-8a56efe0ded7",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-containerd-f2b689c367e6",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2218,7 +2284,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nodejs-c5003d7e9326",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nodejs-fe18c8354ff9",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2251,7 +2317,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-haproxy-awslc-12a3003d285f",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-haproxy-awslc-6edaaeaadcca",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2284,7 +2350,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-libssl-awslc-e87664974cab",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-libssl-awslc-a53ab362edcf",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2317,7 +2383,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-lego-f570301ad23b",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-lego-6568811b952e",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2350,7 +2416,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nomad-a4598a3229b5",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-nomad-f0fc41b2e4da",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",
@@ -2383,7 +2449,7 @@
       }
     },
     {
-      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zot-393ce29acb39",
+      "id": "server-tools-module-bazel-bazel-http-file-server-tool-zot-86a31bcf8cf6",
       "source_path": "src/host-configuration/binaries/server_tools.MODULE.bazel",
       "source_kind": "bazel_http_file",
       "surface": "host-bootstrap",

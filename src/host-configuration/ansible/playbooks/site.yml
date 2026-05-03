@@ -159,6 +159,11 @@
       tags:
         - postgresql
         - database
+    - role: spicedb
+      tags:
+        - spicedb
+        - authz
+        - database
     - role: zitadel
       tags:
         - zitadel

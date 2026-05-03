@@ -663,6 +663,39 @@ topology_endpoints:
         openapi: ""
         path_prefix: ""
     probes: {}
+  spicedb:
+    endpoints:
+      grpc:
+        address: "127.0.0.1:50051"
+        bind_address: "127.0.0.1:50051"
+        exposure: loopback
+        host: 127.0.0.1
+        listen_host: ""
+        port: 50051
+        protocol: grpc
+      metrics:
+        address: "127.0.0.1:9090"
+        bind_address: "127.0.0.1:9090"
+        exposure: loopback
+        host: 127.0.0.1
+        listen_host: ""
+        port: 9090
+        protocol: http
+    host: 127.0.0.1
+    interfaces:
+      authorization_api:
+        auth: shared_secret
+        endpoint: grpc
+        kind: resource_protocol
+        openapi: ""
+        path_prefix: ""
+      metrics:
+        auth: none
+        endpoint: metrics
+        kind: metrics
+        openapi: ""
+        path_prefix: ""
+    probes: {}
   pomerium:
     endpoints:
       http:

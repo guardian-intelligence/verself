@@ -36,6 +36,20 @@ http_file(
 )
 
 http_file(
+    name = "server_tool_spicedb",
+    downloaded_file_path = "spicedb_1.51.1_linux_amd64.tar.gz",
+    sha256 = "b9c3d13e7861a321a3a00c846d4670889fe539551ac57c2ff61e5bfb837ccfe5",
+    url = "https://github.com/authzed/spicedb/releases/download/v1.51.1/spicedb_1.51.1_linux_amd64.tar.gz",
+)
+
+http_file(
+    name = "server_tool_zed",
+    downloaded_file_path = "zed_0.36.1_linux_amd64_gnu.tar.gz",
+    sha256 = "588d50910eead6917c4aad416850a8553f3b334060ef67c63d45efd0e06a174a",
+    url = "https://github.com/authzed/zed/releases/download/v0.36.1/zed_0.36.1_linux_amd64_gnu.tar.gz",
+)
+
+http_file(
     name = "server_tool_spire",
     downloaded_file_path = "spire-1.14.5-linux-amd64-musl.tar.gz",
     sha256 = "cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb",

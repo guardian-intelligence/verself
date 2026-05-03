@@ -17,6 +17,7 @@ postgresql_role_connection_limits:
   projects_service: 10
   sandbox_rental: 30
   source_code_hosting_service: 10
+  spicedb: 20
   stalwart: 10
   temporal: 80
   zitadel: 15
@@ -62,6 +63,9 @@ topology_postgres:
     - component: source_code_hosting_service
       database: source_code_hosting
       owner: source_code_hosting_service
+    - component: spicedb
+      database: spicedb
+      owner: spicedb
     - component: stalwart
       database: stalwart
       owner: stalwart

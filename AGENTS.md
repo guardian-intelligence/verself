@@ -4,9 +4,8 @@ Set of services + console + marketing page for a software business, almost entir
 * `aspect` contains lots of helpful commands under .aspect/.
 * Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output)
 
-Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
-
 Polyglot monorepo structured as a modular monolith.
+
 Layers:
 
 1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, HAProxy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
@@ -30,6 +29,7 @@ Invariant patterns:
 * Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `scripts/bootstrap-*`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
 * Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host-configuration concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
+* New server tools such as SpiceDB enter through the host-configuration server-tools catalog and artifact admission flow, with policy/evidence recorded before Ansible installs them; see `docs/architecture/artifact-admission.md`.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. Despite having a notion of internal and external clients, the only difference is the auth method (SPIFFE mTLS for internal clients, Zitadel-based auth for public)
 * Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `auth-middleware/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
