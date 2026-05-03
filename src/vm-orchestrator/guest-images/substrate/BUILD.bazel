@@ -1,28 +1,33 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 package(default_visibility = ["//visibility:public"])
 
-# build-substrate.sh runs on the firecracker host (it shells out to
-# debootstrap+chroot+apt and needs root). The sh_binary alias lets an
-# operator `bazelisk run //src/vm-orchestrator/guest-images/substrate:build_substrate`
-# locally too — useful when iterating on the substrate package set.
-sh_binary(
+go_library(
+    name = "build_substrate_lib",
+    srcs = ["build_substrate.go"],
+    importpath = "github.com/verself/vm-orchestrator/guest-images/substrate",
+    visibility = ["//visibility:private"],
+)
+
+# The substrate builder runs on the Firecracker host as root because it mounts
+# chroot filesystems, installs the minimal apt package set, and materializes an
+# ext4 image from staged inputs.
+go_binary(
     name = "build_substrate",
-    srcs = ["build-substrate.sh"],
+    embed = [":build_substrate_lib"],
 )
 
 # Substrate-image build inputs bundled for the deploy host.
-# build-substrate.sh runs on the firecracker host (it shells out to
-# debootstrap+chroot+apt) and consumes the Bazel-vendored Ubuntu base +
-# kernel + Bazel-built vm-bridge + vm-guest-telemetry binaries staged
-# alongside it. The Ansible firecracker role builds this bundle on the
-# controller, scp's it to the host, and runs the script remotely.
+# build_substrate runs on the Firecracker host and consumes the Bazel-vendored
+# Ubuntu base + kernel + Bazel-built vm-bridge + vm-guest-telemetry binaries
+# staged alongside it. The Ansible guest_rootfs role builds this bundle on the
+# controller, copies it to the host, and runs the binary remotely.
 
 pkg_tar(
     name = "substrate_inputs_bundle",
     files = {
-        "build-substrate.sh": "build-substrate.sh",
+        ":build_substrate": "build-substrate",
         "//src/vm-guest-telemetry:vm-guest-telemetry": "vm-guest-telemetry",
         "//src/vm-orchestrator/cmd/vm-bridge:vm-bridge-linux-amd64": "vm-bridge",
         "@guest_image_ubuntu_base//file": "ubuntu-base.tar.gz",
@@ -31,7 +36,7 @@ pkg_tar(
         "versions.json": "versions.json",
     },
     modes = {
-        "build-substrate.sh": "0755",
+        "build-substrate": "0755",
         "vm-bridge": "0755",
         "vm-guest-telemetry": "0755",
         "ubuntu-base.tar.gz": "0644",

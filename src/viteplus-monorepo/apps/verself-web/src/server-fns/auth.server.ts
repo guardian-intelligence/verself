@@ -66,11 +66,7 @@ export async function readAuthSnapshot(): Promise<AuthSnapshot> {
 export async function readAuthSnapshotFromCookie(
   cookieHeader: string | undefined,
 ): Promise<AuthSnapshot> {
-  const response = await identityAuthFetch(
-    "session",
-    {},
-    { cookieHeader, forwardCookies: false },
-  );
+  const response = await identityAuthFetch("session", {}, { cookieHeader, forwardCookies: false });
   if (!response.ok) {
     throw new Error(`identity auth session failed: ${response.status} ${await response.text()}`);
   }

@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "zstd-compressor_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/dev-tools/cmd/zstd-compressor",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "zstd-compressor",
+    embed = [":zstd-compressor_lib"],
+    visibility = ["//visibility:public"],
+)

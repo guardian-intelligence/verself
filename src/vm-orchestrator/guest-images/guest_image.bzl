@@ -5,9 +5,8 @@ Two macros, one for each tier in the firecracker_seed_images catalog:
 * `toolchain_ext4_image` — read-only toolchain images mounted by
   vm-orchestrator at lease boot. Pure layout (extract one upstream
   tarball, drop in additional files), no chroot, fully hermetic.
-* (substrate uses build-substrate.sh; left intentionally outside Bazel
-  for now because it shells out to debootstrap+apt during the deploy
-  flow. See //src/vm-orchestrator/guest-images/substrate/.)
+* substrate image — built by the Go build_substrate operator from staged
+  inputs because the chroot and mount flow must run as root on the host.
 
 Each toolchain image exports two files:
   <name>.ext4            — the on-disk image staged onto the host at

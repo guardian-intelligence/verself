@@ -10,9 +10,8 @@ export const Route = createFileRoute("/api/sync/execution-logs/$attemptId")({
 });
 
 async function proxyExecutionLogsShape(request: Request): Promise<Response> {
-  const { electricShapeDefinitions, proxyElectricShape } = await import(
-    "~/server-fns/electric-proxy.server"
-  );
+  const { electricShapeDefinitions, proxyElectricShape } =
+    await import("~/server-fns/electric-proxy.server");
   const attemptID = new URL(request.url).pathname.split("/").pop() ?? "";
   return proxyElectricShape(request, (snapshot) =>
     electricShapeDefinitions.executionLogs(snapshot, attemptID),

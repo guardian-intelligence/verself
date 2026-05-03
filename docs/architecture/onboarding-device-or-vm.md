@@ -36,6 +36,14 @@ route. It derives the Pomerium access host from `ops.yml`, writes the ignored
 per-site Ansible inventory under `src/host-configuration/ansible/inventory/`,
 and ensures a default OpenSSH key exists at `~/.ssh/id_ed25519`.
 
+Passphrase-protected device keys are supported through `ssh-agent`. Load the
+key before running non-interactive operator commands:
+
+```bash
+ssh-add ~/.ssh/id_ed25519
+# macOS: ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+```
+
 Zitadel users are scoped to human operators. Development devices and agent VMs
 present separate SSH keys. Pomerium binds each key to the authenticated human
 subject on first use.

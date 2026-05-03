@@ -136,18 +136,6 @@ def _edit_secrets_impl(ctx):
         label = "sops edit host-configuration secrets",
     )
 
-def _wipe_server_impl(ctx):
-    if not ctx.args.confirm:
-        ctx.std.io.stderr.write("ERROR: --confirm is required to wipe-server\n")
-        return 1
-    return checked_spawn(
-        ctx,
-        ws_path(ctx, SUBSTRATE_DIR, "scripts/wipe-server.sh"),
-        [],
-        cwd = ws_path(ctx, SUBSTRATE_DIR),
-        label = "wipe-server.sh",
-    )
-
 def _reset_then_reconverge(ctx, site, wipe_playbook, *extra_ansible_args):
     """Wipe a per-service slice via its reset playbook, then run the
     canonical host configuration site playbook and resubmit Nomad apps.
@@ -237,16 +225,6 @@ edit_secrets = task(
     name = "edit-secrets",
     group = ["host-configuration"],
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
-)
-
-wipe_server = task(
-    implementation = _wipe_server_impl,
-    name = "wipe-server",
-    group = ["host-configuration"],
-    summary = "Wipe all verself state from the provisioned server (requires --confirm).",
-    args = {
-        "confirm": args.boolean(default = False, description = "Required gate; pass --confirm to proceed."),
-    },
 )
 
 reset_identity = task(

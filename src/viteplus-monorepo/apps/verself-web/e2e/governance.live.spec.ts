@@ -1,9 +1,12 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
-import { ensureTestUserExists, expect, shortTimeoutMS, test } from "./harness";
-
-const execFile = promisify(execFileCallback);
+import {
+  aspectDB,
+  ensureTestUserExists,
+  expect,
+  firstTableCell,
+  parseAspectTable,
+  shortTimeoutMS,
+  test,
+} from "./harness";
 
 test.describe("Console Governance", () => {
   test.beforeAll(async () => {
@@ -120,11 +123,12 @@ async function readGovernanceExportJobCount(): Promise<number> {
     WHERE state = 'completed'
       AND created_at >= now() - interval '15 minutes';
   `;
-  const stdout = await platformScript("pg.sh", [
+  const stdout = await aspectDB([
+    "db",
+    "pg",
+    "query",
+    "--db",
     "governance_service",
-    "--no-align",
-    "--tuples-only",
-    "--quiet",
     "--query",
     sql,
   ]);
@@ -140,16 +144,9 @@ async function readLatestCompletedGovernanceExportID(): Promise<string> {
     ORDER BY created_at DESC
     LIMIT 1;
   `;
-  const exportID = (
-    await platformScript("pg.sh", [
-      "governance_service",
-      "--no-align",
-      "--tuples-only",
-      "--quiet",
-      "--query",
-      sql,
-    ])
-  ).trim();
+  const exportID = firstTableCell(
+    await aspectDB(["db", "pg", "query", "--db", "governance_service", "--query", sql]),
+  );
   if (!/^[0-9a-f-]{36}$/.test(exportID)) {
     throw new Error(`latest governance export id was invalid: ${exportID}`);
   }
@@ -179,14 +176,7 @@ async function readGovernanceCreateAuditCount(): Promise<number> {
       AND length(hmac_key_id) > 0
       AND length(row_hmac) = 64;
   `;
-  const stdout = await platformScript("clickhouse.sh", [
-    "--database",
-    "verself",
-    "--format",
-    "TabSeparatedRaw",
-    "--query",
-    sql,
-  ]);
+  const stdout = await aspectDB(["db", "ch", "query", "--database", "verself", "--query", sql]);
   return parseCount(stdout, "governance create audit count");
 }
 
@@ -198,11 +188,12 @@ async function readGovernanceDownloadedExportJobCount(): Promise<number> {
       AND downloaded_at IS NOT NULL
       AND downloaded_at >= now() - interval '15 minutes';
   `;
-  const stdout = await platformScript("pg.sh", [
+  const stdout = await aspectDB([
+    "db",
+    "pg",
+    "query",
+    "--db",
     "governance_service",
-    "--no-align",
-    "--tuples-only",
-    "--quiet",
     "--query",
     sql,
   ]);
@@ -220,11 +211,12 @@ async function readGovernanceExportDownloaded(exportID: string): Promise<boolean
       AND state = 'completed'
       AND downloaded_at IS NOT NULL;
   `;
-  const stdout = await platformScript("pg.sh", [
+  const stdout = await aspectDB([
+    "db",
+    "pg",
+    "query",
+    "--db",
     "governance_service",
-    "--no-align",
-    "--tuples-only",
-    "--quiet",
     "--query",
     sql,
   ]);
@@ -254,14 +246,7 @@ async function readGovernanceDownloadAuditCount(): Promise<number> {
       AND length(hmac_key_id) > 0
       AND length(row_hmac) = 64;
   `;
-  const stdout = await platformScript("clickhouse.sh", [
-    "--database",
-    "verself",
-    "--format",
-    "TabSeparatedRaw",
-    "--query",
-    sql,
-  ]);
+  const stdout = await aspectDB(["db", "ch", "query", "--database", "verself", "--query", sql]);
   return parseCount(stdout, "governance download audit count");
 }
 
@@ -279,16 +264,9 @@ async function readLatestGovernanceAuditTraceID(
     ORDER BY recorded_at DESC
     LIMIT 1;
   `;
-  const traceID = (
-    await platformScript("clickhouse.sh", [
-      "--database",
-      "verself",
-      "--format",
-      "TabSeparatedRaw",
-      "--query",
-      sql,
-    ])
-  ).trim();
+  const traceID = firstTableCell(
+    await aspectDB(["db", "ch", "query", "--database", "verself", "--query", sql]),
+  );
   if (!/^[0-9a-f]{32}$/.test(traceID)) {
     throw new Error(`governance ${operationID} trace id was invalid: ${traceID}`);
   }
@@ -302,20 +280,13 @@ async function readTraceSpans(traceID: string): Promise<string[]> {
   const sql = `
     SELECT SpanName
     FROM otel_traces
-    WHERE TraceId = {trace_id:String}
+    WHERE TraceId = '${traceID}'
     ORDER BY Timestamp ASC;
   `;
-  const stdout = await platformScript("clickhouse.sh", [
-    "--database",
-    "default",
-    "--format",
-    "TabSeparatedRaw",
-    "--param_trace_id",
-    traceID,
-    "--query",
-    sql,
-  ]);
-  return stdout.trim().split(/\r?\n/).filter(Boolean);
+  const stdout = await aspectDB(["db", "ch", "query", "--database", "default", "--query", sql]);
+  return parseAspectTable(stdout)
+    .map((row) => row[0] ?? "")
+    .filter(Boolean);
 }
 
 function hasSpanSubsequence(spans: string[], expected: string[]): boolean {
@@ -331,17 +302,8 @@ function hasSpanSubsequence(spans: string[], expected: string[]): boolean {
   return false;
 }
 
-async function platformScript(scriptName: string, args: string[]): Promise<string> {
-  const platformDir = fileURLToPath(new URL("../../../../platform/", import.meta.url));
-  const scriptPath = fileURLToPath(
-    new URL(`scripts/${scriptName}`, new URL("../../../../platform/", import.meta.url)),
-  );
-  const { stdout } = await execFile(scriptPath, args, { cwd: platformDir, env: process.env });
-  return stdout;
-}
-
 function parseCount(stdout: string, label: string): number {
-  const value = Number.parseInt(stdout.trim(), 10);
+  const value = Number.parseInt(firstTableCell(stdout), 10);
   if (!Number.isFinite(value)) {
     throw new Error(`${label} was not numeric: ${stdout}`);
   }

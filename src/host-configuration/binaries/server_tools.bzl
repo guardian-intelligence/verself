@@ -1,5 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 PROFILE_BIN = "opt/verself/profile/bin"
 GRAFANA_CLICKHOUSE_DATASOURCE_VERSION = "4.14.1"
@@ -255,11 +254,6 @@ printf '{version}\\n' > "$$tmp/var/lib/grafana/plugins/.grafana-clickhouse-datas
     )
 
 def server_tools_archive():
-    sh_binary(
-        name = "zstd_compressor",
-        srcs = ["//bazel/tools:zstd-compressor.sh"],
-    )
-
     for name, src, tar_flag, binary, dest in TAR_SINGLE_BINARIES:
         _tar_single_binary(
             name = name,
@@ -325,7 +319,7 @@ def server_tools_archive():
     pkg_tar(
         name = "server_tools_archive",
         out = "server_tools.tar.zst",
-        compressor = ":zstd_compressor",
+        compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
         deps = SERVER_TOOL_DEPS,
         extension = "tar.zst",
         symlinks = SERVER_TOOL_SYMLINKS,
@@ -342,7 +336,7 @@ def substrate_go_tools_archive():
     pkg_tar(
         name = "substrate_go_tools",
         out = "substrate_go_tools.tar.zst",
-        compressor = ":zstd_compressor",
+        compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
         extension = "tar.zst",
         files = files,
         modes = modes,

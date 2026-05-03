@@ -47,4 +47,4 @@ qualified `default.*` tables remain valid for OTel exporter tables.
 |-------------------------------|-------------------------------------|---------|
 | `verself.deploy_events`       | `verself-deploy run` (internal/ledger) | observability dashboards |
 | `verself.ansible_task_events` | `verself-deploy ansible run` (internal/ansible streaming parser) | live deploy views, drift triage |
-| `verself.reconciler_runs`     | host-configuration reconciler scripts | live deploy views, external API drift triage |
+| `verself.reconciler_runs`     | retired host-configuration script ledger | legacy deploy views |

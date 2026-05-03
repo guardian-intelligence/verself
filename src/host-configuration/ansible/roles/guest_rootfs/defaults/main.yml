@@ -1,11 +1,10 @@
 ---
-# guest_rootfs role builds + stages the firecracker substrate (which
-# runs the host-side build-substrate.sh in a chroot) and stages the
-# Bazel-built toolchain ext4s. Both flows consume bundles produced
+# guest_rootfs role builds + stages the firecracker substrate and stages
+# the Bazel-built toolchain ext4s. Both flows consume bundles produced
 # under //src/vm-orchestrator/guest-images/.
 guest_rootfs_monorepo_root: "{{ playbook_dir }}/../../../.."
 
-# Substrate inputs bundle: build-substrate.sh + ubuntu-base + vmlinux
+# Substrate inputs bundle: build-substrate + ubuntu-base + vmlinux
 # + vmlinux.config + vm-bridge + vm-guest-telemetry + versions.json.
 guest_rootfs_substrate_inputs_label: //src/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle
 guest_rootfs_substrate_inputs_path: "{{ guest_rootfs_monorepo_root }}/bazel-bin/src/vm-orchestrator/guest-images/substrate/substrate_inputs_bundle.tar"

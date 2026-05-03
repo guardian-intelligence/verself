@@ -12,8 +12,21 @@ import { readAuthSnapshotFromCookie } from "./auth.server";
 const ELECTRIC_BASE_URL = requireURLFromEnv("ELECTRIC_BASE_URL");
 const ELECTRIC_NOTIFICATIONS_BASE_URL = requireURLFromEnv("ELECTRIC_NOTIFICATIONS_BASE_URL");
 
-const ELECTRIC_PROTOCOL_QUERY_PARAMS = new Set(["offset", "handle", "live", "live_sse", "replica", "log"]);
-const ELECTRIC_SHAPE_DEFINITION_PARAMS = new Set(["table", "columns", "where", "secret", "api_secret"]);
+const ELECTRIC_PROTOCOL_QUERY_PARAMS = new Set([
+  "offset",
+  "handle",
+  "live",
+  "live_sse",
+  "replica",
+  "log",
+]);
+const ELECTRIC_SHAPE_DEFINITION_PARAMS = new Set([
+  "table",
+  "columns",
+  "where",
+  "secret",
+  "api_secret",
+]);
 const ELECTRIC_POST_SHAPE_DEFINITION_KEYS = new Set(["table", "columns", "secret", "api_secret"]);
 
 type ElectricStream = "sandbox" | "notifications";

@@ -1,7 +1,7 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|supply-chain|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|edge|ansible|voice|supply-chain|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: supply-chain → scripts → edge → ansible → voice → conversions → vet → lint → test.
+fast-failure order: supply-chain → edge → ansible → voice → conversions → vet → lint → test.
 """
 
 load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "ws_path")
@@ -73,21 +73,6 @@ def _conversions(ctx):
             return rc
     return 0
 
-def _scripts(ctx):
-    sh_dirs = [
-        "src/host-configuration/scripts",
-        "src/host-configuration/scripts/lib",
-        "src/host-configuration/scripts/security",
-        "src/provisioning-tools/scripts",
-    ]
-    files = []
-    for d in sh_dirs:
-        files.append(ws_path(ctx, d) + "/*.sh")
-    # shellcheck globs are expanded by the shell, not by checked_spawn; pass
-    # them through bash -c so the wildcards resolve.
-    cmd = "shellcheck -x -P . " + " ".join(files)
-    return checked_spawn(ctx, "bash", ["-c", cmd], label = "shellcheck substrate/provision scripts")
-
 def _edge(ctx):
     bin = build_aspect_operator(ctx)
     if bin == "":
@@ -143,7 +128,6 @@ _CHECKERS = {
     "go-vet": _go_vet,
     "go-lint": _go_lint,
     "conversions": _conversions,
-    "scripts": _scripts,
     "edge": _edge,
     "ansible": _ansible_lint,
     "voice": _voice,
@@ -151,7 +135,7 @@ _CHECKERS = {
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["supply-chain", "scripts", "edge", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["supply-chain", "edge", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -169,7 +153,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|scripts|edge|ansible|voice|supply-chain|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|edge|ansible|voice|supply-chain|all).",
     args = {
         "kind": args.string(
             default = "all",

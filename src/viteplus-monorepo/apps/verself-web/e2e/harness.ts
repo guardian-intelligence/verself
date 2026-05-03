@@ -1,4 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
@@ -18,7 +20,7 @@ import {
 } from "./verification-run";
 
 const execFile = promisify(execFileCallback);
-const repoRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
+export const workspaceRoot = findWorkspaceRoot(import.meta.url);
 
 export const shortTimeoutMS = 5_000;
 // Polling cadence for harness-owned waits. The bare-metal box responds in
@@ -118,16 +120,6 @@ class BrowserMonitor {
         .join(" | "),
     );
   }
-}
-
-export interface VerificationRepoMeta {
-  owner: string;
-  repo_name: string;
-  public_base_url: string;
-  loopback_repo_url: string;
-  browse_url: string;
-  ref: string;
-  commit_sha: string;
 }
 
 export interface BillingFixtureState {
@@ -431,19 +423,6 @@ export class SandboxHarness {
     return normalizeText(await locator.innerText().catch(() => ""));
   }
 
-  async pushVerificationRepoRevision(revision: string): Promise<VerificationRepoMeta> {
-    const scriptPath = fileURLToPath(
-      new URL("../../../../substrate/scripts/ensure-verification-repo.sh", import.meta.url),
-    );
-    const { stdout } = await execFile(scriptPath, [], {
-      env: {
-        ...process.env,
-        VERIFICATION_REPO_REVISION: revision,
-      },
-    });
-    return JSON.parse(stdout) as VerificationRepoMeta;
-  }
-
   async setBillingUserState({
     balanceCents,
     businessNow,
@@ -477,7 +456,7 @@ export class SandboxHarness {
       args.push("--business-now", businessNow);
     }
     const { stdout } = await execFile("aspect", ["persona", "user-state", ...args], {
-      cwd: repoRoot,
+      cwd: workspaceRoot,
       env: process.env,
       maxBuffer: 16 * 1024 * 1024,
     });
@@ -508,7 +487,7 @@ export class SandboxHarness {
       args.push("--clear");
     }
     const { stdout } = await execFile("aspect", ["billing", "clock", ...args], {
-      cwd: repoRoot,
+      cwd: workspaceRoot,
       env: process.env,
       maxBuffer: 16 * 1024 * 1024,
     });
@@ -522,10 +501,6 @@ export class SandboxHarness {
     orgID: number | string;
     productID?: string;
   }): Promise<BillingDocumentEvidence[]> {
-    const platformDir = fileURLToPath(new URL("../../../../platform/", import.meta.url));
-    const scriptPath = fileURLToPath(
-      new URL("scripts/pg.sh", new URL("../../../../platform/", import.meta.url)),
-    );
     const orgIDText = String(orgID).replaceAll("'", "''");
     const productIDText = productID.replaceAll("'", "''");
     const sql = `
@@ -546,12 +521,52 @@ export class SandboxHarness {
         AND product_id = '${productIDText}'
         AND status <> 'voided';
     `;
-    const { stdout } = await execFile(
-      scriptPath,
-      ["billing", "--no-align", "--tuples-only", "--quiet", "--query", sql],
-      { cwd: platformDir, env: process.env },
-    );
-    return JSON.parse(stdout.trim() || "[]") as BillingDocumentEvidence[];
+    const stdout = await aspectDB(["db", "pg", "query", "--db", "billing", "--query", sql]);
+    return JSON.parse(firstTableCell(stdout) || "[]") as BillingDocumentEvidence[];
+  }
+}
+
+export async function aspectDB(args: string[]): Promise<string> {
+  const { stdout } = await execFile("aspect", args, {
+    cwd: workspaceRoot,
+    env: process.env,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return stdout;
+}
+
+export function firstTableCell(stdout: string): string {
+  return parseAspectTable(stdout)[0]?.[0] ?? "";
+}
+
+export function parseAspectTable(stdout: string): string[][] {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  if (lines.length < 2) {
+    return [];
+  }
+  return lines
+    .slice(2)
+    .filter((line) => !/^\(\d+ rows\)$/.test(line.trim()))
+    .map((line) => line.split(" | ").map((cell) => cell.trim()));
+}
+
+function findWorkspaceRoot(anchorModuleURL: string): string {
+  let dir = path.dirname(fileURLToPath(anchorModuleURL));
+  for (;;) {
+    if (
+      fs.existsSync(path.join(dir, "MODULE.aspect")) &&
+      fs.existsSync(path.join(dir, "MODULE.bazel"))
+    ) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(`failed to locate workspace root from ${anchorModuleURL}`);
+    }
+    dir = parent;
   }
 }
 

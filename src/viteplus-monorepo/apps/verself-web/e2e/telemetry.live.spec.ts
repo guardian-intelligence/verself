@@ -1,12 +1,6 @@
-import { execFile as execFileCallback } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
+import { aspectDB } from "./harness";
 import { env } from "./env";
-
-const execFile = promisify(execFileCallback);
 
 // Phase-0 gate: a real browser visit to the app emits a `page_view` span
 // tagged with the route path, the span lands in default.otel_traces under
@@ -84,52 +78,38 @@ interface ClickhouseRow {
 }
 
 async function clickhouseQuery(query: string): Promise<ClickhouseRow[]> {
-  const trimmed = query.trim().replace(/;\s*$/, "");
-  const formatted = /\bFORMAT\b/i.test(trimmed)
-    ? trimmed
-    : `${trimmed} FORMAT TabSeparatedWithNames`;
-  const { stdout } = await execFile(
-    "bash",
-    [
-      "-lc",
-      `cd "${repoRootSync()}/src/platform" && ./scripts/clickhouse.sh --database default --query ${shellQuote(formatted)}`,
-    ],
-    { maxBuffer: 16 * 1024 * 1024, env: { ...process.env } },
-  );
-  return parseTabSeparatedWithNames(stdout);
+  const stdout = await aspectDB([
+    "db",
+    "ch",
+    "query",
+    "--database",
+    "default",
+    "--query",
+    query.trim().replace(/;\s*$/, ""),
+  ]);
+  return parseAspectTable(stdout);
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function parseTabSeparatedWithNames(stdout: string): ClickhouseRow[] {
-  const lines = stdout.split("\n").filter((line) => line.length > 0);
-  if (lines.length === 0) return [];
-  const header = lines[0]!.split("\t");
-  return lines.slice(1).map((line) => {
-    const cells = line.split("\t");
-    const row: Record<string, string> = {};
-    header.forEach((col, i) => {
-      row[col] = cells[i] ?? "";
+function parseAspectTable(stdout: string): ClickhouseRow[] {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  if (lines.length < 2) return [];
+  const header = splitTableLine(lines[0]!);
+  return lines
+    .slice(2)
+    .filter((line) => !/^\(\d+ rows\)$/.test(line.trim()))
+    .map((line) => {
+      const cells = splitTableLine(line);
+      const row: Record<string, string> = {};
+      header.forEach((col, i) => {
+        row[col] = cells[i] ?? "";
+      });
+      return row;
     });
-    return row;
-  });
 }
 
-let cachedRepoRoot: string | undefined;
-function repoRootSync(): string {
-  if (cachedRepoRoot) return cachedRepoRoot;
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 10; i++) {
-    if (
-      fs.existsSync(path.join(dir, "MODULE.aspect")) &&
-      fs.existsSync(path.join(dir, "MODULE.bazel"))
-    ) {
-      cachedRepoRoot = dir;
-      return dir;
-    }
-    dir = path.dirname(dir);
-  }
-  throw new Error("failed to locate repo root from e2e harness");
+function splitTableLine(line: string): string[] {
+  return line.split(" | ").map((cell) => cell.trim());
 }

@@ -1,5 +1,11 @@
 load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image")
 
+genrule(
+    name = "profile-actions-runner",
+    outs = ["profile-actions-runner.generated"],
+    cmd = "printf '%s\\n' 'export RUNNER_TOOL_CACHE=/opt/hostedtoolcache' 'export AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache' > $@",
+)
+
 # gh-actions-runner.ext4 — toolchain image mounted read-only at
 # /opt/actions-runner inside the guest. Carries the upstream GitHub
 # Actions runner tarball plus an etc-overlay/ tree that vm-bridge
@@ -28,7 +34,7 @@ toolchain_ext4_image(
         "etc-overlay/group": "//src/vm-orchestrator/guest-images/runner-overlay-common:group",
         "etc-overlay/shadow": "//src/vm-orchestrator/guest-images/runner-overlay-common:shadow",
         "etc-overlay/sudoers.d/runner-nopasswd": "//src/vm-orchestrator/guest-images/runner-overlay-common:sudoers-runner-nopasswd",
-        "etc-overlay/profile.d/verself-actions-runner.sh": ":profile-actions-runner.sh",
+        "etc-overlay/profile.d/verself-actions-runner.sh": ":profile-actions-runner",
         ".verself-writable-overlays": ":writable-overlays",
     },
     label = "ghactions",
@@ -37,6 +43,5 @@ toolchain_ext4_image(
 )
 
 exports_files([
-    "profile-actions-runner.sh",
     "writable-overlays",
 ])

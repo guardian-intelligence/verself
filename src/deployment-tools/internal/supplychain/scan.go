@@ -101,6 +101,9 @@ func shouldScanFile(rel string) bool {
 	if strings.HasPrefix(rel, "src/host-configuration/supply-chain/") {
 		return false
 	}
+	if rel == "src/vm-orchestrator/guest-images/substrate/build_substrate.go" {
+		return true
+	}
 	ext := filepath.Ext(rel)
 	switch ext {
 	case ".bazel", ".bzl", ".sh", ".yml", ".yaml", ".json", ".toml":
@@ -533,8 +536,6 @@ func classifySurface(rel, kind, artifact string) string {
 	case rel == "src/viteplus-monorepo/.npmrc":
 		return "build-time"
 	case strings.HasPrefix(rel, "src/vm-orchestrator/guest-images/"):
-		return "guest-rootfs"
-	case strings.Contains(rel, "build-substrate.sh"):
 		return "guest-rootfs"
 	case strings.Contains(rel, "verdaccio/templates/"):
 		return "runtime"

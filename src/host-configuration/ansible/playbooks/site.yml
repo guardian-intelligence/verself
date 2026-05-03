@@ -508,8 +508,14 @@
     - name: Reconcile Cloudflare DNS
       ansible.builtin.command:
         argv:
-          - "{{ playbook_dir }}/../../scripts/reconcile-cloudflare-dns.sh"
+          - bazelisk
+          - run
+          - --noshow_progress
+          - --ui_event_filters=-info
+          - //src/host-configuration/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns
+          - --
           - "--site={{ verself_site }}"
-        chdir: "{{ playbook_dir }}/../.."
+          - "--ansible-dir={{ playbook_dir }}/.."
+        chdir: "{{ playbook_dir }}/../../.."
       register: cloudflare_dns_reconcile
-      changed_when: cloudflare_dns_reconcile.stderr is search('applied=[1-9][0-9]*')
+      changed_when: cloudflare_dns_reconcile.stdout is search('applied=[1-9][0-9]*')

@@ -20,7 +20,7 @@ SeedImage RPC per image, idempotent via `vs:source_digest` on
   No Go, no Node.js, no GitHub Actions runner, no Forgejo runner, no
   `runner` user. Refreshes only when the kernel, vm-bridge,
   vm-guest-telemetry, or Ubuntu base move. Built by
-  `src/vm-orchestrator/guest-images/substrate/build-substrate.sh`,
+  `//src/vm-orchestrator/guest-images/substrate:build_substrate`,
   runs as root on the deploy host.
 - **Toolchain images** (`/var/lib/verself/guest-images/toolchains/<ref>.ext4`):
   Bazel-built ext4 artefacts under

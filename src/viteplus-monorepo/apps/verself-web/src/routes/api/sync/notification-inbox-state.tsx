@@ -10,8 +10,7 @@ export const Route = createFileRoute("/api/sync/notification-inbox-state")({
 });
 
 async function proxyNotificationInboxStateShape(request: Request): Promise<Response> {
-  const { electricShapeDefinitions, proxyElectricShape } = await import(
-    "~/server-fns/electric-proxy.server"
-  );
+  const { electricShapeDefinitions, proxyElectricShape } =
+    await import("~/server-fns/electric-proxy.server");
   return proxyElectricShape(request, electricShapeDefinitions.notificationInboxState);
 }

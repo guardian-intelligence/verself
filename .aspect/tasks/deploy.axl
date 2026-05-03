@@ -7,9 +7,8 @@ The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and Nomad fan-out inside one process sharing one SSH session
 and one SSH-forwarded OTLP channel to the bare-metal otelcol.
 
-Correlation: rows in verself.deploy_events, verself.ansible_task_events,
-verself.reconciler_runs, and the ansible.* / verself_deploy.* span families
-in default.otel_traces all join on
+Correlation: rows in verself.deploy_events, verself.ansible_task_events, and
+the ansible.* / verself_deploy.* span families in default.otel_traces all join on
 ResourceAttributes['verself.deploy_run_key'].
 """
 

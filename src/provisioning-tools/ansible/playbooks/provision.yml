@@ -11,7 +11,8 @@
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
     sops_secrets_file: "{{ playbook_dir }}/../../../substrate/ansible/group_vars/all/secrets.sops.yml"
-    inventory_script: "{{ playbook_dir }}/../../scripts/generate-inventory.sh"
+    provision_site: "{{ lookup('env', 'VERSELF_SITE') | default('prod', true) }}"
+    inventory_path: "{{ playbook_dir }}/../../../host-configuration/ansible/inventory/{{ provision_site }}.ini"
   tasks:
     - name: Verify terraform.tfvars.json exists
       ansible.builtin.stat:
@@ -46,7 +47,86 @@
       environment:
         LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
 
-    - name: Generate Ansible inventory from OpenTofu outputs
+    - name: Read worker IPs from OpenTofu outputs
       ansible.builtin.command:
-        cmd: "{{ inventory_script }}"
-      changed_when: true
+        argv:
+          - tofu
+          - "-chdir={{ terraform_project_path }}"
+          - output
+          - -json
+          - worker_ips
+      register: worker_ips_output
+      changed_when: false
+      failed_when: false
+
+    - name: Read infra IPs from OpenTofu outputs
+      ansible.builtin.command:
+        argv:
+          - tofu
+          - "-chdir={{ terraform_project_path }}"
+          - output
+          - -json
+          - infra_ips
+      register: infra_ips_output
+      changed_when: false
+      failed_when: false
+
+    - name: Parse OpenTofu inventory outputs
+      ansible.builtin.set_fact:
+        worker_ips: >-
+          {{
+            (worker_ips_output.stdout | default('[]') | from_json)
+            if worker_ips_output.rc == 0 and (worker_ips_output.stdout | default('') | length) > 0
+            else []
+          }}
+        infra_ips: >-
+          {{
+            (infra_ips_output.stdout | default('[]') | from_json)
+            if infra_ips_output.rc == 0 and (infra_ips_output.stdout | default('') | length) > 0
+            else []
+          }}
+
+    - name: Fail if OpenTofu produced no hosts
+      ansible.builtin.fail:
+        msg: "No IPs found in OpenTofu outputs. Is infrastructure provisioned?"
+      when: worker_ips | length == 0 and infra_ips | length == 0
+
+    - name: Read terraform.tfvars.json
+      ansible.builtin.slurp:
+        src: "{{ terraform_project_path }}/terraform.tfvars.json"
+      register: tfvars_content
+
+    - name: Resolve inventory cluster name
+      ansible.builtin.set_fact:
+        inventory_cluster_name: "{{ (tfvars_content.content | b64decode | from_json).cluster_name | default('dev') }}"
+
+    - name: Ensure generated inventory directory exists
+      ansible.builtin.file:
+        path: "{{ inventory_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write generated host inventory
+      ansible.builtin.copy:
+        dest: "{{ inventory_path }}"
+        mode: "0644"
+        content: |
+          [workers]
+          {% for ip in worker_ips %}
+          vs-{{ inventory_cluster_name }}-w{{ loop.index0 }} ansible_host={{ ip }}
+          {% endfor %}
+
+          [infra]
+          {% if infra_ips | length > 0 %}
+          {% for ip in infra_ips %}
+          vs-{{ inventory_cluster_name }}-i{{ loop.index0 }} ansible_host={{ ip }}
+          {% endfor %}
+          {% else %}
+          {% for ip in worker_ips %}
+          vs-{{ inventory_cluster_name }}-w{{ loop.index0 }} ansible_host={{ ip }}
+          {% endfor %}
+          {% endif %}
+
+          [all:vars]
+          ansible_user=ubuntu
+          ansible_python_interpreter=/usr/bin/python3

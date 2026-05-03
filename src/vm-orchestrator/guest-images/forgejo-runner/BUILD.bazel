@@ -1,5 +1,11 @@
 load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image")
 
+genrule(
+    name = "profile-forgejo-runner",
+    outs = ["profile-forgejo-runner.generated"],
+    cmd = "printf '%s\\n' 'export PATH=\"/opt/forgejo-runner/bin:$${PATH}\"' > $@",
+)
+
 # forgejo-runner.ext4 — toolchain image mounted read-only at
 # /opt/forgejo-runner inside the guest. Carries the upstream Forgejo
 # runner binary at /bin/forgejo-runner plus the runner@1000 user
@@ -19,12 +25,8 @@ toolchain_ext4_image(
         "etc-overlay/group": "//src/vm-orchestrator/guest-images/runner-overlay-common:group",
         "etc-overlay/shadow": "//src/vm-orchestrator/guest-images/runner-overlay-common:shadow",
         "etc-overlay/sudoers.d/runner-nopasswd": "//src/vm-orchestrator/guest-images/runner-overlay-common:sudoers-runner-nopasswd",
-        "etc-overlay/profile.d/verself-forgejo-runner.sh": ":profile-forgejo-runner.sh",
+        "etc-overlay/profile.d/verself-forgejo-runner.sh": ":profile-forgejo-runner",
     },
     label = "forgejorun",
     size_mib = 256,
 )
-
-exports_files([
-    "profile-forgejo-runner.sh",
-])

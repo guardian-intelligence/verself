@@ -6,7 +6,7 @@
 # to the host:
 #   //src/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle
 #     ubuntu-base + vmlinux + vm-bridge + vm-guest-telemetry + the
-#     build-substrate.sh script. Run on the host as root to produce
+#     build-substrate binary. Run on the host as root to produce
 #     substrate.ext4 + vmlinux.
 #   //src/vm-orchestrator/guest-images:toolchain_images_bundle
 #     gh-actions-runner.ext4 + forgejo-runner.ext4 + manifests.

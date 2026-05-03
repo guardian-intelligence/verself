@@ -4,11 +4,11 @@
 // Replaces the cloudflare_dns Ansible role, which sequentially called
 // community.general.cloudflare_dns once per record (~870ms each, ~40s total
 // for the prod record set). This binary makes one list call per zone, diffs,
-// and applies in parallel — typical wall time is under one second.
+// and applies in parallel; typical wall time is under one second.
 //
 // The reconciler is a fast idempotent diff/apply, so it has no input-hash
-// gate; aspect deploy invokes it on every converge. The ClickHouse ledger
-// row in verself.reconciler_runs is the verifiable artifact.
+// gate; aspect deploy invokes it on every converge and records the Ansible
+// task event emitted by the Go target invocation.
 package main
 
 import (

@@ -10,8 +10,7 @@ export const Route = createFileRoute("/api/sync/executions")({
 });
 
 async function proxyExecutionsShape(request: Request): Promise<Response> {
-  const { electricShapeDefinitions, proxyElectricShape } = await import(
-    "~/server-fns/electric-proxy.server"
-  );
+  const { electricShapeDefinitions, proxyElectricShape } =
+    await import("~/server-fns/electric-proxy.server");
   return proxyElectricShape(request, electricShapeDefinitions.executions);
 }

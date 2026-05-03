@@ -1,5 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 TAR_SINGLE_BINARIES = [
     ("shellcheck", "@dev_tool_shellcheck//file", "J", "shellcheck-v0.11.0/shellcheck", "usr/local/bin/shellcheck"),
@@ -209,12 +208,6 @@ install -D -m 0755 "$(location {src})" "$$tmp/{dest}"
     )
 
 def dev_tools_archive():
-    if not native.existing_rule("zstd_compressor"):
-        sh_binary(
-            name = "zstd_compressor",
-            srcs = ["//bazel/tools:zstd-compressor.sh"],
-        )
-
     for name, src, tar_flag, binary, dest in TAR_SINGLE_BINARIES:
         _tar_single_binary(
             name = name,
@@ -275,7 +268,7 @@ def dev_tools_archive():
     pkg_tar(
         name = "dev_tools_archive",
         out = "dev_tools.tar.zst",
-        compressor = ":zstd_compressor",
+        compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
         deps = DEV_TOOL_DEPS,
         extension = "tar.zst",
         symlinks = DEV_TOOL_SYMLINKS,

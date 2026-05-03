@@ -98,7 +98,7 @@
 
 - name: Run substrate builder
   ansible.builtin.command:
-    cmd: bash {{ guest_rootfs_remote_substrate_dir }}/build-substrate.sh
+    cmd: "{{ guest_rootfs_remote_substrate_dir }}/build-substrate"
     chdir: "{{ guest_rootfs_remote_substrate_dir }}"
   environment:
     PATH: "{{ guest_rootfs_remote_path }}"

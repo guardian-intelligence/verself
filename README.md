@@ -96,8 +96,17 @@ Versions of record live as constants at the top of `scripts/bootstrap`. The dev-
 | `edge` | Validate or emit the derived public edge contract. |
 | `platform` | Check or seed the dogfooded platform organization and source repository. |
 
-`aspect operator device` is the entry point for getting a checkout (laptop or new dev VM) onto the host access plane through Pomerium + Zitadel. End-to-end design and failure modes: [`docs/architecture/onboarding-device-or-vm.md`](docs/architecture/onboarding-device-or-vm.md).
+`aspect operator device` is the entry point for getting a checkout (laptop or new dev VM) onto the host access plane through Pomerium + Zitadel. If the device key is passphrase-protected, load it into `ssh-agent` before running operator commands:
+
+```bash
+ssh-add ~/.ssh/id_ed25519
+# macOS: ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+aspect db ch query --query="SELECT now()"
+```
+
 Use the existing founder/operator Zitadel login during the first Pomerium SSH sign-in; the device key is what becomes newly bound, not a separate human user.
+
+End-to-end design and failure modes: [`docs/architecture/onboarding-device-or-vm.md`](docs/architecture/onboarding-device-or-vm.md).
 
 ### `aspect persona`
 

@@ -4,9 +4,8 @@ Provisioning tools own the bare-metal allocation boundary:
 
 - `terraform/` contains the Latitude.sh OpenTofu project.
 - `ansible/` contains the local controller playbooks that apply or destroy
-  that OpenTofu state.
-- `scripts/generate-inventory.sh` writes the host inventory consumed by
-  render, substrate, and deploy commands.
+  that OpenTofu state and write the host inventory consumed by render,
+  substrate, and deploy commands.
 
 Use the explicit command surface:
 
