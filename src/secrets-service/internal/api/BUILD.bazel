@@ -15,10 +15,10 @@ go_library(
     importpath = "github.com/verself/secrets-service/internal/api",
     visibility = ["//src/secrets-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
         "//src/billing-service/client",
+        "//src/domain-transfer-objects/go:dto",
         "//src/governance-service/internalclient",
         "//src/secrets-service/internal/secrets",
         "@com_github_danielgtaylor_huma_v2//:huma",

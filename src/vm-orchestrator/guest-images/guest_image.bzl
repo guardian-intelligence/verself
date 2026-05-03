@@ -53,6 +53,7 @@ def toolchain_ext4_image(
       size_mib: ext4 image size in mebibytes. Set above the staged tree
         size with enough headroom for inodes and a few growth runs.
       label: ext4 filesystem label (defaults to `name`).
+      visibility: Bazel visibility forwarded to the produced rule targets.
     """
     if label == None:
         label = name

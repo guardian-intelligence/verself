@@ -9,8 +9,6 @@ go_library(
     deps = [
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
-        "//src/service-runtime/go/envconfig",
-        "//src/service-runtime/go/httpserver",
         "//src/mailbox-service/internal/api",
         "//src/mailbox-service/internal/app",
         "//src/mailbox-service/internal/forwarder",
@@ -20,6 +18,8 @@ go_library(
         "//src/mailbox-service/migrations",
         "//src/observability/go/otel",
         "//src/secrets-service/client",
+        "//src/service-runtime/go/envconfig",
+        "//src/service-runtime/go/httpserver",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
         "@io_opentelemetry_go_otel//:otel",

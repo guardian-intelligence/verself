@@ -1,3 +1,11 @@
+"""Catalog of server-tool binaries packaged into the bare-metal node archive.
+
+Each spec list maps an upstream artifact (`@server_tool_*//file`) to the
+install location under `opt/verself/profile/bin/`. `server_tools_archive()`
+fans the specs out into per-tool genrules and one `pkg_tar` that the host
+configuration playbook unpacks during convergence.
+"""
+
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 PROFILE_BIN = "opt/verself/profile/bin"
@@ -257,57 +265,62 @@ printf '{version}\\n' > "$$tmp/var/lib/grafana/plugins/.grafana-clickhouse-datas
 """.format(version = GRAFANA_CLICKHOUSE_DATASOURCE_VERSION),
     )
 
-def server_tools_archive():
-    for name, src, tar_flag, binary, dest in TAR_SINGLE_BINARIES:
+def server_tools_archive(name = "server_tools_archive"):
+    """Fan out the server-tool spec lists into per-tool genrules and the top-level pkg_tar.
+
+    Args:
+      name: name of the top-level `pkg_tar` target. Defaults to `server_tools_archive`.
+    """
+    for tool, src, tar_flag, binary, dest in TAR_SINGLE_BINARIES:
         _tar_single_binary(
-            name = name,
+            name = tool,
             src = src,
             tar_flag = tar_flag,
             binary = binary,
             dest = dest,
         )
 
-    for name, src, binary, dest in ZIP_SINGLE_BINARIES:
+    for tool, src, binary, dest in ZIP_SINGLE_BINARIES:
         _zip_single_binary(
-            name = name,
+            name = tool,
             src = src,
             binary = binary,
             dest = dest,
         )
 
-    for name, src, binary, dest in DEB_BINARY_SPECS:
+    for tool, src, binary, dest in DEB_BINARY_SPECS:
         _package_deb_member(
-            name = name,
+            name = tool,
             src = src,
             binary = binary,
             dest = dest,
         )
 
-    for name, src, source_dir, dest in DEB_DIRECTORY_SPECS:
+    for tool, src, source_dir, dest in DEB_DIRECTORY_SPECS:
         _package_deb_directory(
-            name = name,
+            name = tool,
             src = src,
             source_dir = source_dir,
             dest = dest,
         )
 
-    for name, src, dest in RAW_BINARY_SPECS:
+    for tool, src, dest in RAW_BINARY_SPECS:
         _package_raw_file(
-            name = name,
+            name = tool,
             src = src,
             dest = dest,
         )
 
-    for name, src, dest in RAW_FILE_SPECS:
+    for tool, src, dest in RAW_FILE_SPECS:
         _package_data_file(
-            name = name,
+            name = tool,
             src = src,
             dest = dest,
         )
 
-    for name, src, tar_flag, dest in ARCHIVE_DIRECTORIES:
+    for tool, src, tar_flag, dest in ARCHIVE_DIRECTORIES:
         _archive_directory(
-            name = name,
+            name = tool,
             src = src,
             tar_flag = tar_flag,
             dest = dest,
@@ -321,7 +334,7 @@ def server_tools_archive():
     _grafana_clickhouse_datasource_version()
 
     pkg_tar(
-        name = "server_tools_archive",
+        name = name,
         out = "server_tools.tar.zst",
         compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
         deps = SERVER_TOOL_DEPS,
@@ -329,7 +342,12 @@ def server_tools_archive():
         symlinks = SERVER_TOOL_SYMLINKS,
     )
 
-def substrate_go_tools_archive():
+def substrate_go_tools_archive(name = "substrate_go_tools"):
+    """Bundle the host-side Go binaries into a content-addressed tarball for Ansible installation.
+
+    Args:
+      name: name of the produced `pkg_tar` target. Defaults to `substrate_go_tools`.
+    """
     files = {}
     modes = {}
     for label, output in HOST_GO_TOOLS:
@@ -338,7 +356,7 @@ def substrate_go_tools_archive():
         modes[dest] = "0755"
 
     pkg_tar(
-        name = "substrate_go_tools",
+        name = name,
         out = "substrate_go_tools.tar.zst",
         compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
         extension = "tar.zst",

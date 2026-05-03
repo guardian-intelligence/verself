@@ -1,3 +1,5 @@
+"""Bazel macros for packaging single-binary Nomad artifact tarballs."""
+
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 def nomad_binary_artifact(name, binary, output, visibility = None):

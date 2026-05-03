@@ -181,6 +181,32 @@ def update_edge_generated(ctx):
         label = "bazelisk run " + EDGE_GENERATED_TARGET,
     )
 
+_BAZEL_FILE_BASENAMES = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"]
+
+def bazel_tracked_files(ctx):
+    """Return the list of git-tracked Bazel/Starlark source files (BUILD, MODULE.bazel, *.bzl).
+
+    Buildifier-style tools want exactly the authored Bazel surface; this excludes
+    generated trees (bazel-out, node_modules) by inheriting `git ls-files` semantics.
+    Returns None on git failure so callers can short-circuit.
+    """
+    r = (ctx.std.process.command("git")
+         .args(["ls-files", "-z"])
+         .current_dir(ws_path(ctx))
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: git ls-files failed\n")
+        return None
+    files = []
+    for path in r.stdout.split("\x00"):
+        if path == "":
+            continue
+        basename = path.rsplit("/", 1)[-1]
+        if basename in _BAZEL_FILE_BASENAMES or basename.endswith(".bzl"):
+            files.append(path)
+    return files
+
 def tool_version(ctx, program, *args):
     """Run `<program> <args...>` and return the first stdout line, or None."""
     r = (ctx.std.process.command(program)

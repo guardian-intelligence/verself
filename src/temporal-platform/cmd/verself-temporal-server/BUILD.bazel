@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/verself/temporal-platform/cmd/verself-temporal-server",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/service-runtime/go/envconfig",
         "//src/observability/go/otel",
+        "//src/service-runtime/go/envconfig",
         "//src/temporal-platform/internal/pgsocket",
         "//src/temporal-platform/internal/spiffeauth",
         "//src/temporal-platform/internal/tlsprovider",

@@ -1,10 +1,10 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|buildifier|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: supply-chain → edge → ansible → conversions → vet → lint → test.
+fast-failure order: buildifier → supply-chain → edge → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "SUBSTRATE_DIR", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "update_edge_generated", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "SUBSTRATE_DIR", "bazel_tracked_files", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "update_edge_generated", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
     for d in GO_DIRS:
@@ -83,6 +83,18 @@ def _ansible_lint(ctx):
         label = "ansible-lint",
     )
 
+def _buildifier(ctx):
+    files = bazel_tracked_files(ctx)
+    if files == None:
+        return 1
+    return checked_spawn(
+        ctx,
+        "buildifier",
+        ["-mode=check", "-lint=warn"] + files,
+        cwd = ws_path(ctx),
+        label = "buildifier -mode=check -lint=warn",
+    )
+
 def _supply_chain(ctx):
     bin = build_verself_deploy(ctx)
     if bin == "":
@@ -103,10 +115,11 @@ _CHECKERS = {
     "edge": _edge,
     "ansible": _ansible_lint,
     "supply-chain": _supply_chain,
+    "buildifier": _buildifier,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["supply-chain", "edge", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "supply-chain", "edge", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -124,7 +137,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|buildifier|all).",
     args = {
         "kind": args.string(
             default = "all",

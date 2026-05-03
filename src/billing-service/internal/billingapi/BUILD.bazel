@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/verself/billing-service/internal/billingapi",
     visibility = ["//src/billing-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware/workload",
         "//src/billing-service/internal/billing",
+        "//src/domain-transfer-objects/go:dto",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_spiffe_go_spiffe_v2//spiffeid",

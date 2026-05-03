@@ -17,9 +17,9 @@ go_library(
     importpath = "github.com/verself/identity-service/internal/api",
     visibility = ["//src/identity-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
+        "//src/domain-transfer-objects/go:dto",
         "//src/governance-service/internalclient",
         "//src/identity-service/internal/identity",
         "//src/identity-service/internal/store",

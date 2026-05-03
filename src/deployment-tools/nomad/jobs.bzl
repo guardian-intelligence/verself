@@ -1,3 +1,5 @@
+"""Rule that materializes site-resolved Nomad job specs from artifact label substitutions."""
+
 def _nomad_resolved_jobs_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name)
 

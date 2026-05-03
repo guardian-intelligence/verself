@@ -38,10 +38,10 @@ go_library(
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@land_oras_oras_go_v2//:oras-go",
-        "@land_oras_oras_go_v2//content:content",
-        "@land_oras_oras_go_v2//registry/remote:remote",
-        "@land_oras_oras_go_v2//registry/remote/auth:auth",
-        "@land_oras_oras_go_v2//registry/remote/retry:retry",
+        "@land_oras_oras_go_v2//content",
+        "@land_oras_oras_go_v2//registry/remote",
+        "@land_oras_oras_go_v2//registry/remote/auth",
+        "@land_oras_oras_go_v2//registry/remote/retry",
     ],
 )
 

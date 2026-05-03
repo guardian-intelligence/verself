@@ -17,10 +17,10 @@ go_library(
     importpath = "github.com/verself/sandbox-rental-service/internal/api",
     visibility = ["//src/sandbox-rental-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
         "//src/billing-service/client",
+        "//src/domain-transfer-objects/go:dto",
         "//src/governance-service/internalclient",
         "//src/sandbox-rental-service/internal/jobs",
         "//src/sandbox-rental-service/internal/recurring",

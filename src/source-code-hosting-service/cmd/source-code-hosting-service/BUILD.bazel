@@ -9,9 +9,9 @@ go_library(
     deps = [
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
+        "//src/observability/go/otel",
         "//src/service-runtime/go/envconfig",
         "//src/service-runtime/go/httpserver",
-        "//src/observability/go/otel",
         "//src/source-code-hosting-service/internal/api",
         "//src/source-code-hosting-service/internal/source",
         "//src/source-code-hosting-service/migrations",

@@ -1,3 +1,11 @@
+"""Bazel macros for packaging Vite+ apps, source packages, and OpenAPI clients.
+
+Apps consume workspace package source directly via TS path mappings, so these
+macros stake out the input set, drive `vp build` for runnable artifacts, and
+generate CycloneDX SBOMs alongside the SDK projection back into the source
+tree via `write_source_files`.
+"""
+
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
@@ -9,7 +17,7 @@ _JQ_BINARY = "@dev_tool_jq//file"
 _NODEJS_ARCHIVE = "@server_tool_nodejs//file"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
 
-def viteplus_source_package(npm_name, srcs):
+def viteplus_source_package(npm_name, srcs, name = "pkg"):
     """Source-only workspace package linked into the rules_js npm graph.
 
     Apps consume the package's `.ts` source directly (per `package.json#exports`
@@ -17,6 +25,11 @@ def viteplus_source_package(npm_name, srcs):
     pre-build step. The `npm_package` target exists so rules_js's
     `npm_link_all_packages()` can resolve `@verself/<name>` from any
     consumer's node_modules.
+
+    Args:
+      npm_name: npm package name to declare on the `npm_package` target.
+      srcs: filegroup-style globs over the package source tree.
+      name: name of the inner `npm_package` target. Defaults to `pkg`.
     """
     npm_link_all_packages()
 
@@ -26,13 +39,13 @@ def viteplus_source_package(npm_name, srcs):
     )
 
     npm_package(
-        name = "pkg",
+        name = name,
         srcs = [":sources"],
         package = npm_name,
         version = "0.0.0",
     )
 
-def viteplus_app(npm_name, srcs):
+def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
     """Bazel surface for a viteplus app.
 
     `:node_app_nomad_artifact` runs `vp build` from the source tree as a local,
@@ -56,6 +69,11 @@ def viteplus_app(npm_name, srcs):
     `srcs` is kept as a filegroup so a future Bazel target (e.g. a typecheck
     test, an e2e harness) can reference the app's input set without
     re-globbing.
+
+    Args:
+      npm_name: npm package name embedded in progress messages for the OTel preload bundle.
+      srcs: filegroup-style globs over the app source tree.
+      name: name of the inner `instrumentation_bundle` target. Defaults to `instrumentation_bundle`.
     """
     npm_link_all_packages()
 
@@ -75,7 +93,7 @@ def viteplus_app(npm_name, srcs):
     # inlining everything else. The Nomad launcher loads it via Node's
     # `--import` flag.
     js_run_binary(
-        name = "instrumentation_bundle",
+        name = name,
         srcs = [
             "//src/viteplus-monorepo:workspace_config",
             ":node_modules",
@@ -170,6 +188,16 @@ env -i PATH=/usr/bin:/bin HOME="$$tmp/home" "$$tmp/cdxgen" \\
     )
 
 def viteplus_node_app_artifact(name, output, migration_entry = None, migration_data = {}, generated_srcs = None):
+    """Drive `vp build` for a viteplus app and package the output tarball + Syft SBOM.
+
+    Args:
+      name: target name for the produced tarball genrule. `<name>_output_sbom` is a sibling target.
+      output: basename used for the tarball, launcher script, and migration entrypoint.
+      migration_entry: optional Bazel label for a migration entrypoint bundled alongside the app.
+      migration_data: mapping of label -> destination path for runtime data the migration script needs.
+      generated_srcs: extra Bazel-generated source labels to materialize into the package source tree
+        before `vp build` reads imports.
+    """
     package_dir = native.package_name()
     migration_bundle = "_" + name + "_migration_bundle"
     if generated_srcs == None:
@@ -406,6 +434,13 @@ def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None
     are extra `:node_modules/<pkg>` labels openapi-ts plugins resolve at runtime
     (e.g. valibot). @hey-api/typescript and @hey-api/sdk are openapi-ts internals,
     not separate npm packages.
+
+    Args:
+      name: target name for the `write_source_files` projection. `<name>_generated_sources`
+        is a sibling filegroup of every per-SDK generated target.
+      specs: list of `(sdk_dir, spec_label)` pairs.
+      openapi_ts_bin: `bin` struct loaded from the consumer's `@hey-api/openapi-ts/package_json.bzl`.
+      plugin_packages: optional list of `:node_modules/<pkg>` labels for openapi-ts plugins.
     """
     if plugin_packages == None:
         plugin_packages = []

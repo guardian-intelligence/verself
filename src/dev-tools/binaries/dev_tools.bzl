@@ -1,3 +1,11 @@
+"""Catalog of dev-tools binaries packaged into the controller dev_tools archive.
+
+Each spec list maps an upstream artifact (`@dev_tool_*//file`) to the install
+location inside the archive's tar layout. `dev_tools_archive()` fans these
+specs out into per-tool genrules and a single `pkg_tar` whose output gets
+unpacked into the controller image at provisioning time.
+"""
+
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 TAR_SINGLE_BINARIES = [
@@ -213,66 +221,71 @@ install -D -m 0755 "$(location {src})" "$$tmp/{dest}"
         ),
     )
 
-def dev_tools_archive():
-    for name, src, tar_flag, binary, dest in TAR_SINGLE_BINARIES:
+def dev_tools_archive(name = "dev_tools_archive"):
+    """Fan out the dev-tools spec lists into per-tool genrules and the top-level pkg_tar.
+
+    Args:
+      name: name of the top-level `pkg_tar` target. Defaults to `dev_tools_archive`.
+    """
+    for tool, src, tar_flag, binary, dest in TAR_SINGLE_BINARIES:
         _tar_single_binary(
-            name = name,
+            name = tool,
             src = src,
             tar_flag = tar_flag,
             binary = binary,
             dest = dest,
         )
 
-    for name, src, binary, dest in ZIP_SINGLE_BINARIES:
+    for tool, src, binary, dest in ZIP_SINGLE_BINARIES:
         _zip_single_binary(
-            name = name,
+            name = tool,
             src = src,
             binary = binary,
             dest = dest,
         )
 
-    for name, src, src_sub, dest in ZIP_DIRECTORY_INSTALLS:
+    for tool, src, src_sub, dest in ZIP_DIRECTORY_INSTALLS:
         _zip_directory_install(
-            name = name,
+            name = tool,
             src = src,
             src_sub = src_sub,
             dest = dest,
         )
 
-    for name, src, tar_flag, strip_components, binaries in TAR_MULTI_BINARIES:
+    for tool, src, tar_flag, strip_components, binaries in TAR_MULTI_BINARIES:
         _tar_multi_binary(
-            name = name,
+            name = tool,
             src = src,
             tar_flag = tar_flag,
             strip_components = strip_components,
             binaries = binaries,
         )
 
-    for name, src, tar_flag, dest, strip_components in ARCHIVE_DIRECTORIES:
+    for tool, src, tar_flag, dest, strip_components in ARCHIVE_DIRECTORIES:
         _archive_directory(
-            name = name,
+            name = tool,
             src = src,
             tar_flag = tar_flag,
             dest = dest,
             strip_components = strip_components,
         )
 
-    for name, src, dest in RAW_BINARY_SPECS:
+    for tool, src, dest in RAW_BINARY_SPECS:
         _raw_binary(
-            name = name,
+            name = tool,
             src = src,
             dest = dest,
         )
 
-    for name, src, dest in SOURCE_BUILT_GO_BINARIES:
+    for tool, src, dest in SOURCE_BUILT_GO_BINARIES:
         _source_built_go_binary(
-            name = name,
+            name = tool,
             src = src,
             dest = dest,
         )
 
     pkg_tar(
-        name = "dev_tools_archive",
+        name = name,
         out = "dev_tools.tar.zst",
         compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
         deps = DEV_TOOL_DEPS,

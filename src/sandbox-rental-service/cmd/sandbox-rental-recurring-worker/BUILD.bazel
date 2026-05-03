@@ -8,10 +8,10 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/auth-middleware/workload",
-        "//src/service-runtime/go/envconfig",
         "//src/observability/go/otel",
         "//src/sandbox-rental-service/internal/recurring",
         "//src/sandbox-rental-service/internal/sourceworkflow",
+        "//src/service-runtime/go/envconfig",
         "//src/temporal-platform/sdkclient",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@io_temporal_go_sdk//worker",

@@ -15,9 +15,9 @@ go_library(
     importpath = "github.com/verself/governance-service/internal/api",
     visibility = ["//src/governance-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
+        "//src/domain-transfer-objects/go:dto",
         "//src/governance-service/internal/governance",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
