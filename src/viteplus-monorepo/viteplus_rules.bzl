@@ -4,7 +4,10 @@ load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 _INSTRUMENTATION_BUNDLER = "//src/viteplus-monorepo/scripts:bundle_instrumentation"
+_CDXGEN_BINARY = "@dev_tool_cdxgen//file"
+_JQ_BINARY = "@dev_tool_jq//file"
 _NODEJS_ARCHIVE = "@server_tool_nodejs//file"
+_SYFT_ARCHIVE = "@dev_tool_syft//file"
 
 def viteplus_source_package(npm_name, srcs):
     """Source-only workspace package linked into the rules_js npm graph.
@@ -110,6 +113,60 @@ rm -f "$$tmp/nodejs-members.txt"
 chmod 0755 "$$tmp/runtime/nodejs/bin/node"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
 """.format(nodejs_archive = _NODEJS_ARCHIVE),
+    )
+
+def viteplus_input_sbom(name, srcs, output = None):
+    """Generate a normalized CycloneDX source/input SBOM for the Vite+ workspace.
+
+    Args:
+      name: target name for the genrule that produces the SBOM.
+      srcs: source labels under the workspace cdxgen scans.
+      output: optional explicit output filename; defaults to `<name>.cdx.json`.
+    """
+    if output == None:
+        output = name + ".cdx.json"
+    src_locations = " ".join(["$(locations %s)" % src for src in srcs])
+
+    native.genrule(
+        name = name,
+        srcs = srcs + [
+            _CDXGEN_BINARY,
+            _JQ_BINARY,
+        ],
+        outs = [output],
+        cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+tmp="$$execroot/_viteplus_input_sbom_work"
+rm -rf "$$tmp"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/home"
+cp "$(location {cdxgen})" "$$tmp/cdxgen"
+cp "$(location {jq})" "$$tmp/jq"
+chmod 0755 "$$tmp/cdxgen" "$$tmp/jq"
+
+for src in {src_locations}; do
+  dest="$$tmp/scan/$$src"
+  mkdir -p "$$(dirname "$$dest")"
+  cp -L "$$src" "$$dest"
+done
+
+cd "$$tmp/scan/{workspace_dir}"
+env -i PATH=/usr/bin:/bin HOME="$$tmp/home" "$$tmp/cdxgen" \\
+  --type js \\
+  --no-install-deps \\
+  --fail-on-error \\
+  --spec-version 1.6 \\
+  --output "$$tmp/raw.cdx.json" \\
+  .
+"$$tmp/jq" -S 'del(.serialNumber, .metadata.timestamp, .annotations)' "$$tmp/raw.cdx.json" > "$$out"
+""".format(
+            cdxgen = _CDXGEN_BINARY,
+            jq = _JQ_BINARY,
+            src_locations = src_locations,
+            workspace_dir = native.package_name(),
+        ),
     )
 
 def viteplus_node_app_artifact(name, output, migration_entry = None, migration_data = {}, generated_srcs = None):
@@ -234,6 +291,62 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
             "no-remote",
             "no-sandbox",
         ],
+    )
+
+    native.genrule(
+        name = name + "_output_sbom",
+        srcs = [
+            ":" + name,
+            _JQ_BINARY,
+            _SYFT_ARCHIVE,
+        ],
+        outs = [output + ".output.cdx.json"],
+        cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+tmp="$$execroot/_viteplus_output_sbom_work"
+rm -rf "$$tmp"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/bin" "$$tmp/home" "$$tmp/root" "$$tmp/syft-extract"
+cp "$(location {jq})" "$$tmp/bin/jq"
+chmod 0755 "$$tmp/bin/jq"
+tar -xzf "$(location {syft})" -C "$$tmp/syft-extract" syft
+install -m 0755 "$$tmp/syft-extract/syft" "$$tmp/bin/syft"
+tar -xf "$(location :{name})" -C "$$tmp/root"
+env -i \\
+  PATH=/usr/bin:/bin \\
+  HOME="$$tmp/home" \\
+  SYFT_CHECK_FOR_APP_UPDATE=false \\
+  SYFT_FILE_METADATA_SELECTION=all \\
+  SYFT_FILE_METADATA_DIGESTS=sha256 \\
+  "$$tmp/bin/syft" scan \\
+  "dir:$$tmp/root" \\
+  --base-path "$$tmp/root" \\
+  --source-name "{output}" \\
+  --output "cyclonedx-json=$$tmp/raw.cdx.json" \\
+  --quiet
+"$$tmp/bin/jq" -S --arg root "$$tmp/root/" '
+  del(.serialNumber, .metadata.timestamp)
+  | if .metadata.component? then
+      .metadata.component["bom-ref"] = .metadata.component.name
+    else
+      .
+    end
+  | (.components // []) |= map(
+      if .type == "file" and (.name | startswith($$root)) then
+        .name = (.name | ltrimstr($$root))
+      else
+        .
+      end
+    )
+' "$$tmp/raw.cdx.json" > "$$out"
+""".format(
+            jq = _JQ_BINARY,
+            name = name,
+            output = output,
+            syft = _SYFT_ARCHIVE,
+        ),
     )
 
 def viteplus_route_tree(name):

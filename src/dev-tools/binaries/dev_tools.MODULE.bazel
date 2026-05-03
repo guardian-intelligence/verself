@@ -43,6 +43,13 @@ http_file(
 )
 
 http_file(
+    name = "dev_tool_cdxgen",
+    downloaded_file_path = "cdxgen-linux-amd64",
+    sha256 = "958452e45f621a1f31f382e03445a8871ec3b897453b5188a2cfa107a768a771",
+    url = "https://github.com/cdxgen/cdxgen/releases/download/v12.2.0/cdxgen-linux-amd64",
+)
+
+http_file(
     name = "dev_tool_shellcheck",
     downloaded_file_path = "shellcheck-v0.11.0.linux.x86_64.tar.xz",
     sha256 = "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
@@ -85,10 +92,24 @@ http_file(
 )
 
 http_file(
+    name = "dev_tool_grype",
+    downloaded_file_path = "grype_0.111.1_linux_amd64.tar.gz",
+    sha256 = "2bc0bc60f1f4e10b0429f5e84517ec4cf0d769d2ef66875c64fc6640e136fd8f",
+    url = "https://github.com/anchore/grype/releases/download/v0.111.1/grype_0.111.1_linux_amd64.tar.gz",
+)
+
+http_file(
     name = "dev_tool_osv_scanner",
     downloaded_file_path = "osv-scanner_linux_amd64",
     sha256 = "bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
     url = "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64",
+)
+
+http_file(
+    name = "dev_tool_syft",
+    downloaded_file_path = "syft_1.43.0_linux_amd64.tar.gz",
+    sha256 = "7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a",
+    url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz",
 )
 
 http_file(

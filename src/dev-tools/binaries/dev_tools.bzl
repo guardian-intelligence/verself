@@ -4,6 +4,8 @@ TAR_SINGLE_BINARIES = [
     ("shellcheck", "@dev_tool_shellcheck//file", "J", "shellcheck-v0.11.0/shellcheck", "usr/local/bin/shellcheck"),
     ("stripe", "@dev_tool_stripe//file", "z", "stripe", "usr/local/bin/stripe"),
     ("clickhouse", "@dev_tool_clickhouse//file", "z", "clickhouse-common-static-26.3.2.3/usr/bin/clickhouse", "usr/local/bin/clickhouse"),
+    ("grype", "@dev_tool_grype//file", "z", "grype", "usr/local/bin/grype"),
+    ("syft", "@dev_tool_syft//file", "z", "syft", "usr/local/bin/syft"),
 ]
 
 ZIP_SINGLE_BINARIES = [
@@ -28,6 +30,7 @@ ARCHIVE_DIRECTORIES = [
 RAW_BINARY_SPECS = [
     ("buf", "@dev_tool_buf//file", "usr/local/bin/buf"),
     ("buildifier", "@dev_tool_buildifier//file", "usr/local/bin/buildifier"),
+    ("cdxgen", "@dev_tool_cdxgen//file", "usr/local/bin/cdxgen"),
     ("jq", "@dev_tool_jq//file", "usr/local/bin/jq"),
     ("sops", "@dev_tool_sops//file", "usr/local/bin/sops"),
     ("osv_scanner", "@dev_tool_osv_scanner//file", "usr/local/bin/osv-scanner"),
@@ -48,10 +51,12 @@ DEV_TOOL_DEPS = [
     ":dev_tools_agent_browser",
     ":dev_tools_buf",
     ":dev_tools_buildifier",
+    ":dev_tools_cdxgen",
     ":dev_tools_clickhouse",
     ":dev_tools_go_gofumpt",
     ":dev_tools_go_golangci_lint",
     ":dev_tools_go_gosec",
+    ":dev_tools_grype",
     ":dev_tools_go_install",
     ":dev_tools_go_protoc_gen_go",
     ":dev_tools_go_protoc_gen_go_grpc",
@@ -63,6 +68,7 @@ DEV_TOOL_DEPS = [
     ":dev_tools_shellcheck",
     ":dev_tools_sops",
     ":dev_tools_stripe",
+    ":dev_tools_syft",
     ":dev_tools_tofu",
     ":dev_tools_uv",
     ":dev_tools_zig_install",

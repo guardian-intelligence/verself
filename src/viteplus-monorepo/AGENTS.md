@@ -71,7 +71,7 @@ claim to validate against.
 
 ### Supply Chain Security
 
-start from clean build root
+We start from clean build root
 -> vp install --frozen-lockfile from hosted Verdaccio
 -> pnpm/store integrity checks
 -> cdxgen source SBOM from pnpm-lock.yaml
@@ -81,8 +81,6 @@ start from clean build root
 -> in-toto/SLSA-style attestation
 -> publish artifact + evidence to zot
 -> ClickHouse records digests and admission decision
-
-For fresh clones and non-self-hosted runners, update `registry=http://127.0.0.1:4873/`
 
 ### Running a frontend locally
 
