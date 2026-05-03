@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,9 +20,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
+	"oras.land/oras-go/v2/registry/remote"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/retry"
 
 	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
@@ -39,21 +45,6 @@ const (
 	artifactSBOMMediaType       = "application/vnd.cyclonedx+json"
 	artifactProvenanceMediaType = "application/vnd.in-toto+json"
 )
-
-type ociDescriptor struct {
-	MediaType   string            `json:"mediaType"`
-	Digest      string            `json:"digest"`
-	Size        int64             `json:"size"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type ociManifest struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	MediaType     string            `json:"mediaType"`
-	Config        ociDescriptor     `json:"config"`
-	Layers        []ociDescriptor   `json:"layers"`
-	Annotations   map[string]string `json:"annotations,omitempty"`
-}
 
 type artifactAdmissionConfig struct {
 	Artifact              string `json:"artifact"`
@@ -296,6 +287,9 @@ func (r artifactAdmissionRequest) validate() error {
 	base, err := url.Parse(r.ZotURL)
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return fmt.Errorf("--zot-url must be an absolute URL: %q", r.ZotURL)
+	}
+	if base.Scheme != "http" && base.Scheme != "https" {
+		return fmt.Errorf("--zot-url scheme must be http or https, got %q", base.Scheme)
 	}
 	return nil
 }
@@ -542,19 +536,19 @@ func fetchUpstreamArtifact(ctx context.Context, rawURL, expectedDigest string) (
 }
 
 func publishAdmittedOCIArtifact(ctx context.Context, base *url.URL, repo string, auth basicAuth, blobs []blobContent, req artifactAdmissionRequest, configDigest string) ([]byte, string, error) {
-	for _, blob := range blobs {
-		if err := uploadOCIBlob(ctx, base, repo, auth, blob); err != nil {
-			return nil, "", err
-		}
+	if len(blobs) == 0 {
+		return nil, "", errors.New("admitted artifact must contain a config blob")
 	}
-	layers := make([]ociDescriptor, 0, len(blobs)-1)
-	var config ociDescriptor
+	orasRepo, err := newORASRepository(base, repo, auth)
+	if err != nil {
+		return nil, "", err
+	}
+	layers := make([]ocispec.Descriptor, 0, len(blobs)-1)
+	var config ocispec.Descriptor
 	for i, blob := range blobs {
-		desc := ociDescriptor{
-			MediaType:   blob.MediaType,
-			Digest:      blob.Digest,
-			Size:        blob.Size,
-			Annotations: blob.Annotations,
+		desc, err := pushORASBlob(ctx, orasRepo, blob)
+		if err != nil {
+			return nil, "", err
 		}
 		if i == 0 {
 			config = desc
@@ -562,15 +556,13 @@ func publishAdmittedOCIArtifact(ctx context.Context, base *url.URL, repo string,
 		}
 		layers = append(layers, desc)
 	}
-	if config.Digest != configDigest {
+	if config.Digest.String() != configDigest {
 		return nil, "", errors.New("artifact config digest mismatch before manifest publication")
 	}
-	manifest := ociManifest{
-		SchemaVersion: 2,
-		MediaType:     ociImageManifestMediaType,
-		Config:        config,
-		Layers:        layers,
-		Annotations: map[string]string{
+	manifestDesc, err := oras.PackManifest(ctx, orasRepo, oras.PackManifestVersion1_1, artifactConfigMediaType, oras.PackManifestOptions{
+		ConfigDescriptor: &config,
+		Layers:           layers,
+		ManifestAnnotations: map[string]string{
 			"dev.verself.artifact.name":         req.Artifact,
 			"dev.verself.artifact.source":       req.SourcePath,
 			"dev.verself.artifact.sourceKind":   req.SourceKind,
@@ -578,78 +570,71 @@ func publishAdmittedOCIArtifact(ctx context.Context, base *url.URL, repo string,
 			"org.opencontainers.image.source":   req.UpstreamURL,
 			"org.opencontainers.image.ref.name": strings.ReplaceAll(req.ExpectedDigest, ":", "-"),
 		},
-	}
-	manifestBytes, err := json.Marshal(manifest)
+	})
 	if err != nil {
-		return nil, "", fmt.Errorf("marshal OCI manifest: %w", err)
+		return nil, "", fmt.Errorf("pack OCI artifact with ORAS: %w", err)
 	}
-	manifestDigest := digestBytes(manifestBytes)
 	ref := strings.ReplaceAll(req.ExpectedDigest, ":", "-")
-	target := registryEndpoint(base, "v2", repo, "manifests", ref)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(manifestBytes))
+	if err := orasRepo.Tag(ctx, manifestDesc, ref); err != nil {
+		return nil, "", fmt.Errorf("tag OCI artifact with ORAS: %w", err)
+	}
+	manifestBytes, err := content.FetchAll(ctx, orasRepo.Manifests(), manifestDesc)
 	if err != nil {
-		return nil, "", fmt.Errorf("build OCI manifest request: %w", err)
+		return nil, "", fmt.Errorf("fetch published OCI manifest with ORAS: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", ociImageManifestMediaType)
-	auth.apply(httpReq)
-	resp, err := http.DefaultClient.Do(httpReq)
-	if err != nil {
-		return nil, "", fmt.Errorf("publish OCI manifest: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		return nil, "", fmt.Errorf("publish OCI manifest: %s", resp.Status)
-	}
-	return manifestBytes, manifestDigest, nil
+	return manifestBytes, manifestDesc.Digest.String(), nil
 }
 
-func uploadOCIBlob(ctx context.Context, base *url.URL, repo string, auth basicAuth, blob blobContent) error {
-	postURL := registryEndpoint(base, "v2", repo, "blobs", "uploads") + "/"
-	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL, nil)
+func newORASRepository(base *url.URL, repoPath string, creds basicAuth) (*remote.Repository, error) {
+	if base.Scheme != "http" && base.Scheme != "https" {
+		return nil, fmt.Errorf("zot URL scheme must be http or https, got %q", base.Scheme)
+	}
+	repoPath = strings.Trim(repoPath, "/")
+	if repoPath == "" {
+		return nil, errors.New("zot repository path is required")
+	}
+	if basePath := strings.Trim(base.Path, "/"); basePath != "" {
+		repoPath = path.Join(basePath, repoPath)
+	}
+	repo, err := remote.NewRepository(base.Host + "/" + repoPath)
 	if err != nil {
-		return fmt.Errorf("build OCI blob upload request: %w", err)
+		return nil, fmt.Errorf("create ORAS repository: %w", err)
 	}
-	auth.apply(postReq)
-	postResp, err := http.DefaultClient.Do(postReq)
+	repo.PlainHTTP = base.Scheme == "http"
+	repo.Client = &auth.Client{
+		Client: retry.DefaultClient,
+		Cache:  auth.NewCache(),
+		Credential: auth.StaticCredential(base.Host, auth.Credential{
+			Username: creds.Username,
+			Password: creds.Password,
+		}),
+	}
+	return repo, nil
+}
+
+func pushORASBlob(ctx context.Context, repo *remote.Repository, blob blobContent) (ocispec.Descriptor, error) {
+	parsedDigest, err := digest.Parse(blob.Digest)
 	if err != nil {
-		return fmt.Errorf("start OCI blob upload: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("parse blob digest %q: %w", blob.Digest, err)
 	}
-	_ = postResp.Body.Close()
-	if postResp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("start OCI blob upload: %s", postResp.Status)
+	if blob.Size < 0 {
+		return ocispec.Descriptor{}, fmt.Errorf("blob %s has negative size %d", blob.Digest, blob.Size)
 	}
-	location := postResp.Header.Get("Location")
-	if location == "" {
-		return errors.New("start OCI blob upload: missing Location header")
+	desc := ocispec.Descriptor{
+		MediaType:   blob.MediaType,
+		Digest:      parsedDigest,
+		Size:        blob.Size,
+		Annotations: blob.Annotations,
 	}
-	uploadURL, err := resolveRegistryLocation(base, location)
-	if err != nil {
-		return err
-	}
-	query := uploadURL.Query()
-	query.Set("digest", blob.Digest)
-	uploadURL.RawQuery = query.Encode()
 	body, err := blob.Open()
 	if err != nil {
-		return fmt.Errorf("open OCI blob content: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("open OCI blob content: %w", err)
 	}
 	defer body.Close()
-	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL.String(), body)
-	if err != nil {
-		return fmt.Errorf("build OCI blob commit request: %w", err)
+	if err := repo.Push(ctx, desc, body); err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("push OCI blob with ORAS: digest=%s media_type=%s: %w", desc.Digest, desc.MediaType, err)
 	}
-	putReq.Header.Set("Content-Type", mediaTypeOrOctet(blob.MediaType))
-	putReq.ContentLength = blob.Size
-	auth.apply(putReq)
-	putResp, err := http.DefaultClient.Do(putReq)
-	if err != nil {
-		return fmt.Errorf("commit OCI blob: %w", err)
-	}
-	defer putResp.Body.Close()
-	if putResp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("commit OCI blob %s: %s", blob.Digest, putResp.Status)
-	}
-	return nil
+	return desc, nil
 }
 
 func runArtifactsVerifyInstall(args []string) int {
@@ -763,6 +748,9 @@ func (r artifactInstallVerificationRequest) validate() error {
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return fmt.Errorf("--zot-url must be an absolute URL: %q", r.ZotURL)
 	}
+	if base.Scheme != "http" && base.Scheme != "https" {
+		return fmt.Errorf("--zot-url scheme must be http or https, got %q", base.Scheme)
+	}
 	return nil
 }
 
@@ -783,23 +771,21 @@ func verifyArtifactInstall(ctx context.Context, rt *runtime.Runtime, runKey stri
 		return recordSpanError(span, err)
 	}
 	defer func() { _ = closeZot() }()
-	manifestURL := registryEndpoint(zotBase, "v2", req.OCIRepository, "manifests", req.OCIManifestDigest)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
+	orasRepo, err := newORASRepository(zotBase, req.OCIRepository, basicAuth{})
 	if err != nil {
-		return recordSpanError(span, fmt.Errorf("build OCI manifest fetch request: %w", err))
+		return recordSpanError(span, err)
 	}
-	httpReq.Header.Set("Accept", ociImageManifestMediaType)
-	resp, err := http.DefaultClient.Do(httpReq)
+	manifestDesc, rc, err := orasRepo.FetchReference(ctx, req.OCIManifestDigest)
 	if err != nil {
-		return recordSpanError(span, fmt.Errorf("fetch OCI manifest: %w", err))
+		return recordSpanError(span, fmt.Errorf("fetch OCI manifest with ORAS: %w", err))
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return recordSpanError(span, fmt.Errorf("fetch OCI manifest: %s", resp.Status))
+	payload, readErr := content.ReadAll(rc, manifestDesc)
+	closeErr := rc.Close()
+	if readErr != nil {
+		return recordSpanError(span, fmt.Errorf("read OCI manifest: %w", readErr))
 	}
-	payload, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return recordSpanError(span, fmt.Errorf("read OCI manifest: %w", err))
+	if closeErr != nil {
+		return recordSpanError(span, fmt.Errorf("close OCI manifest stream: %w", closeErr))
 	}
 	actualDigest := digestBytes(payload)
 	if actualDigest != req.OCIManifestDigest {
@@ -1124,48 +1110,6 @@ func openFileReadCloser(path string) func() (io.ReadCloser, error) {
 type basicAuth struct {
 	Username string
 	Password string
-}
-
-func (a basicAuth) apply(req *http.Request) {
-	if a.Username == "" && a.Password == "" {
-		return
-	}
-	req.SetBasicAuth(a.Username, a.Password)
-}
-
-func registryEndpoint(base *url.URL, parts ...string) string {
-	clone := *base
-	var escaped []string
-	for _, part := range parts {
-		for _, segment := range strings.Split(part, "/") {
-			if segment == "" {
-				continue
-			}
-			escaped = append(escaped, url.PathEscape(segment))
-		}
-	}
-	prefix := strings.TrimRight(clone.EscapedPath(), "/")
-	clone.Path = prefix + "/" + strings.Join(escaped, "/")
-	clone.RawPath = ""
-	return clone.String()
-}
-
-func resolveRegistryLocation(base *url.URL, location string) (*url.URL, error) {
-	parsed, err := url.Parse(location)
-	if err != nil {
-		return nil, fmt.Errorf("parse OCI upload location: %w", err)
-	}
-	return base.ResolveReference(parsed), nil
-}
-
-func mediaTypeOrOctet(value string) string {
-	if value == "" {
-		return "application/octet-stream"
-	}
-	if _, _, err := mime.ParseMediaType(value); err != nil {
-		return "application/octet-stream"
-	}
-	return value
 }
 
 func sanitizeArtifactPath(value string) string {
