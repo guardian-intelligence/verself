@@ -182,7 +182,7 @@ install_viteplus() {
     return 1
   fi
 
-  curl -fsSL "${viteplus_install_url}" | bash
+  curl -fsSL "${viteplus_install_url}" | VP_NODE_MANAGER=yes bash
   "${vp_bin}" upgrade "${viteplus_version}" >/dev/null
   echo "installed vite-plus ${viteplus_version} at ${vp_bin}"
 
