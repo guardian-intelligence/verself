@@ -7,7 +7,7 @@ import (
 )
 
 func authoredInventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", site+".ini")
+	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", "inventory", site+".ini")
 }
 
 func resolveRepoRoot(prefix, repoRoot string) (string, bool) {
