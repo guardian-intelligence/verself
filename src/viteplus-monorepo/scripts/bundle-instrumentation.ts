@@ -14,9 +14,9 @@ import process from "node:process";
 
 import { build } from "rolldown";
 
-function arg(name) {
+function arg(name: string): string {
   const prefix = `--${name}=`;
-  const hit = process.argv.find((a) => a.startsWith(prefix));
+  const hit = process.argv.find((candidate) => candidate.startsWith(prefix));
   if (!hit) {
     throw new Error(`bundle-node-entry: missing required arg --${name}=`);
   }

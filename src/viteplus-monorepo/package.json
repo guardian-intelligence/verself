@@ -7,14 +7,17 @@
     "dev": "vp run @verself/verself-web#dev",
     "generate": "vp run -r generate",
     "check": "vp check",
-    "typecheck": "vp run -r typecheck",
+    "node:temporal": "node --harmony-temporal",
+    "typecheck": "vp run -r typecheck && vp run -w typecheck:scripts",
+    "typecheck:scripts": "tsc -p tsconfig.json",
     "test": "vp test run",
     "build": "vp run -r build",
-    "ready": "vp check && vp test run && vp run -r typecheck && vp run -r build"
+    "ready": "vp check && vp test run && vp run -r typecheck && vp run -w typecheck:scripts && vp run -r build"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "rolldown": "catalog:",
+    "typescript": "catalog:",
     "vite-plus": "catalog:"
   },
   "engines": {

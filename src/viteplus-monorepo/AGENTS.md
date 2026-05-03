@@ -1,5 +1,3 @@
-<!--VITE PLUS START-->
-
 # Using Vite+, the Unified Toolchain for the Web
 
 This project is using Vite+, a unified toolchain built on top of Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task. Vite+ wraps runtime management, package management, and frontend tooling in a single global CLI called `vp`. Vite+ is distinct from Vite, but it invokes Vite through `vp dev` and `vp build`.
@@ -71,12 +69,20 @@ Other Go backend services validate JWTs that identity-service exchanged for
 their audience. A backend only needs the Zitadel **project ID** as the `audience`
 claim to validate against.
 
-| Zitadel Project   | Browser OIDC App | JWT Validators                          |
-| ----------------- | ---------------- | --------------------------------------- |
-| `sandbox-rental`  | verself-web      | sandbox-rental-service, billing-service |
-| `mailbox-service` | (pending)        | mailbox-service                         |
+### Supply Chain Security
 
-The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `verself-web`. The project stays because `mailbox-service` backend JWT validation still targets it.
+start from clean build root
+-> vp install --frozen-lockfile from hosted Verdaccio
+-> pnpm/store integrity checks
+-> cdxgen source SBOM from pnpm-lock.yaml
+-> vp check / test / typecheck / build
+-> Syft scan of final .output / release tar
+-> Grype scan of SBOMs
+-> in-toto/SLSA-style attestation
+-> publish artifact + evidence to zot
+-> ClickHouse records digests and admission decision
+
+For fresh clones and non-self-hosted runners, update `registry=http://127.0.0.1:4873/`
 
 ### Running a frontend locally
 

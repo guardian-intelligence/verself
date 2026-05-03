@@ -4,14 +4,14 @@
 // strict tsconfig; vite/rollup don't typecheck at build time, but
 // `vp run typecheck` does and would otherwise fail on generated code.
 //
-// Usage: node openapi-postprocess.mjs <input_dir> <output_dir>
+// Usage: node openapi-postprocess.ts <input_dir> <output_dir>
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const banner = "// @ts-nocheck\n";
 
-async function copyAndStamp(srcDir, dstDir) {
+async function copyAndStamp(srcDir: string, dstDir: string): Promise<void> {
   await mkdir(dstDir, { recursive: true });
   const entries = await readdir(srcDir);
   for (const entry of entries) {
@@ -33,9 +33,10 @@ async function copyAndStamp(srcDir, dstDir) {
   }
 }
 
-const [, , inputDir, outputDir] = process.argv;
+const inputDir = process.argv[2];
+const outputDir = process.argv[3];
 if (!inputDir || !outputDir) {
-  throw new Error("expected: node openapi-postprocess.mjs <input_dir> <output_dir>");
+  throw new Error("expected: node openapi-postprocess.ts <input_dir> <output_dir>");
 }
 
 await copyAndStamp(path.resolve(inputDir), path.resolve(outputDir));
