@@ -333,10 +333,30 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		}
 		return nil, nil, "", err
 	}
+	if len(methods) > 0 {
+		methods = append(methods, ssh.KeyboardInteractive(operatorKeyboardInteractiveChallenge))
+		labels = append(labels, "keyboard-interactive")
+	}
 	if len(methods) == 0 {
 		return nil, nil, "", errors.New("sshtun: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
 	}
 	return methods, conn, strings.Join(labels, "+"), nil
+}
+
+func operatorKeyboardInteractiveChallenge(name, instruction string, questions []string, _ []bool) ([]string, error) {
+	for _, line := range []string{name, instruction} {
+		if line = strings.TrimSpace(line); line != "" {
+			_, _ = fmt.Fprintln(os.Stderr, line)
+		}
+	}
+	for _, question := range questions {
+		if question = strings.TrimSpace(question); question != "" {
+			_, _ = fmt.Fprintln(os.Stderr, question)
+		}
+	}
+	// Pomerium native SSH uses keyboard-interactive to show a browser/device
+	// sign-in URL after public-key partial auth; answers are out-of-band.
+	return make([]string, len(questions)), nil
 }
 
 var errNoDefaultKey = errors.New("no default ssh key found")
