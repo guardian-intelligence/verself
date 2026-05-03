@@ -157,6 +157,7 @@ func runDeployBody(
 ) int {
 	// 1. Supply-chain policy gate. The gate is intentionally before host
 	// convergence so install-source drift fails before Ansible mutates the box.
+	// Admission rollout allows tracked provisional artifacts; untracked sources still fail closed.
 	_, supplyChainEval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, supplychain.DefaultPolicyPath, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain policy failed: %v\n", err)
