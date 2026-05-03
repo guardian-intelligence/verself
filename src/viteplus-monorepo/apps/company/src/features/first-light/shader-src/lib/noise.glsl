@@ -26,3 +26,8 @@ float firstlight_fbm(vec2 p) {
   }
   return value;
 }
+
+float firstlight_ridge(vec2 p) {
+  float n = firstlight_fbm(p);
+  return pow(1.0 - abs(n * 2.0 - 1.0), 3.2);
+}

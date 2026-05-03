@@ -1,35 +1,27 @@
 "use client";
 
-import { lazy, Suspense, useCallback, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useRef, useState } from "react";
 import { emitSpan } from "~/lib/telemetry/browser";
 import type { DegradedReason } from "./types";
-import {
-  useFirstLightActive,
-  useFirstLightGeometry,
-  useFirstLightRuntime,
-  useTrailLuminance,
-} from "./use-first-light";
+import { useFirstLightActive, useFirstLightFrame, useFirstLightRuntime } from "./use-first-light";
 
 const FirstLightCanvas = lazy(() =>
   import("./scene/FirstLightCanvas").then((module) => ({ default: module.FirstLightCanvas })),
 );
 
 export interface FirstLightProps {
-  readonly trailTargetRef: RefObject<HTMLElement | null>;
-  readonly wingsAnchorRef: RefObject<HTMLElement | null>;
   readonly motion?: boolean;
 }
 
-export function FirstLight({ trailTargetRef, wingsAnchorRef, motion }: FirstLightProps) {
+export function FirstLight({ motion }: FirstLightProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [canvasDegradedReason, setCanvasDegradedReason] = useState<DegradedReason>();
   const runtime = useFirstLightRuntime(motion);
-  const geometry = useFirstLightGeometry(hostRef, trailTargetRef, wingsAnchorRef);
+  const frame = useFirstLightFrame(hostRef);
   const active = useFirstLightActive(hostRef);
   const fallbackReason = runtime.kind === "fallback" ? runtime.reason : canvasDegradedReason;
   const live =
-    runtime.kind === "ready" && geometry !== undefined && canvasDegradedReason === undefined;
-  useTrailLuminance(trailTargetRef, live);
+    runtime.kind === "ready" && frame !== undefined && canvasDegradedReason === undefined;
   const handleCanvasDegraded = useCallback((reason: DegradedReason, error?: unknown) => {
     setCanvasDegradedReason(reason);
     emitSpan("company.first_light.degraded", {
@@ -45,9 +37,9 @@ export function FirstLight({ trailTargetRef, wingsAnchorRef, motion }: FirstLigh
       className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
     >
       {fallbackReason ? <FirstLightStill reason={fallbackReason} /> : null}
-      {runtime.kind === "ready" && geometry && !canvasDegradedReason ? (
+      {live ? (
         <Suspense fallback={null}>
-          <FirstLightCanvas active={active} geometry={geometry} onDegraded={handleCanvasDegraded} />
+          <FirstLightCanvas active={active} frame={frame} onDegraded={handleCanvasDegraded} />
         </Suspense>
       ) : null}
     </div>
@@ -73,7 +65,7 @@ function FirstLightStill({ reason }: { readonly reason: DegradedReason }) {
       style={{
         opacity,
         background:
-          "radial-gradient(42% 34% at 28% 22%, rgba(255, 250, 240, 0.2), transparent 62%), linear-gradient(132deg, transparent 18%, rgba(125, 190, 255, 0.08) 37%, rgba(255, 250, 240, 0.16) 48%, rgba(255, 176, 110, 0.08) 56%, transparent 72%)",
+          "radial-gradient(32% 42% at 74% 16%, rgba(255, 238, 204, 0.34), transparent 58%), linear-gradient(132deg, transparent 14%, rgba(104, 184, 216, 0.1) 32%, rgba(255, 250, 240, 0.18) 48%, rgba(255, 176, 110, 0.12) 56%, transparent 74%)",
         mixBlendMode: "screen",
       }}
     />

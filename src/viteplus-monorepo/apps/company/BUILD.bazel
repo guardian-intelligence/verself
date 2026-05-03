@@ -7,11 +7,15 @@ package(default_visibility = ["//visibility:public"])
 FIRST_LIGHT_SHADER_SRC_MAP = [
     ("first-light.vert", "src/features/first-light/shader-src/first-light.vert"),
     ("first-light.frag", "src/features/first-light/shader-src/first-light.frag"),
-    ("lib/color.glsl", "src/features/first-light/shader-src/lib/color.glsl"),
-    ("lib/easing.glsl", "src/features/first-light/shader-src/lib/easing.glsl"),
-    ("lib/geometry.glsl", "src/features/first-light/shader-src/lib/geometry.glsl"),
-    ("lib/motion.glsl", "src/features/first-light/shader-src/lib/motion.glsl"),
+    ("lib/aberration.glsl", "src/features/first-light/shader-src/lib/aberration.glsl"),
+    ("lib/bands.glsl", "src/features/first-light/shader-src/lib/bands.glsl"),
+    ("lib/camera.glsl", "src/features/first-light/shader-src/lib/camera.glsl"),
+    ("lib/caustics.glsl", "src/features/first-light/shader-src/lib/caustics.glsl"),
+    ("lib/flare.glsl", "src/features/first-light/shader-src/lib/flare.glsl"),
+    ("lib/meniscus.glsl", "src/features/first-light/shader-src/lib/meniscus.glsl"),
     ("lib/noise.glsl", "src/features/first-light/shader-src/lib/noise.glsl"),
+    ("lib/plate.glsl", "src/features/first-light/shader-src/lib/plate.glsl"),
+    ("lib/tone.glsl", "src/features/first-light/shader-src/lib/tone.glsl"),
 ]
 
 viteplus_app(

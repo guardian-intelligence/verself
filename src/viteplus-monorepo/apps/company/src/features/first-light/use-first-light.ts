@@ -2,8 +2,7 @@
 
 import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import { emitSpan } from "~/lib/telemetry/browser";
-import { FIRST_LIGHT_TOTAL_MS, trailLuminance } from "./shader/envelopes";
-import type { DegradedReason, FirstLightGeometry, FirstLightRect, RendererBackend } from "./types";
+import type { DegradedReason, FirstLightFrame, RendererBackend } from "./types";
 
 type RuntimeState =
   | { readonly kind: "pending" }
@@ -68,56 +67,44 @@ export function useFirstLightRuntime(motion: boolean | undefined): RuntimeState 
   return state;
 }
 
-export function useFirstLightGeometry(
+export function useFirstLightFrame(
   hostRef: RefObject<HTMLElement | null>,
-  trailTargetRef: RefObject<HTMLElement | null>,
-  wingsAnchorRef: RefObject<HTMLElement | null>,
-): FirstLightGeometry | undefined {
-  const [geometry, setGeometry] = useState<FirstLightGeometry>();
+): FirstLightFrame | undefined {
+  const [frame, setFrame] = useState<FirstLightFrame>();
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
 
     const update = () => {
       const host = hostRef.current;
-      const trail = trailTargetRef.current;
-      const wings = wingsAnchorRef.current;
-      if (!host || !trail || !wings) return;
+      if (!host) return;
 
       const hostBox = host.getBoundingClientRect();
       if (hostBox.width <= 0 || hostBox.height <= 0) return;
 
-      setGeometry({
+      setFrame({
         viewport: {
           w: hostBox.width,
           h: hostBox.height,
           dpr: window.devicePixelRatio || 1,
         },
-        trail: rectWithin(hostBox, trail.getBoundingClientRect()),
-        wings: rectWithin(hostBox, wings.getBoundingClientRect()),
       });
     };
 
     const frame = window.requestAnimationFrame(update);
     const resizeObserver = new ResizeObserver(update);
     const host = hostRef.current;
-    const trail = trailTargetRef.current;
-    const wings = wingsAnchorRef.current;
     if (host) resizeObserver.observe(host);
-    if (trail) resizeObserver.observe(trail);
-    if (wings) resizeObserver.observe(wings);
 
     window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, { passive: true });
     return () => {
       window.cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update);
     };
-  }, [hostRef, trailTargetRef, wingsAnchorRef]);
+  }, [hostRef]);
 
-  return geometry;
+  return frame;
 }
 
 export function useFirstLightActive(hostRef: RefObject<HTMLElement | null>): boolean {
@@ -147,43 +134,8 @@ export function useFirstLightActive(hostRef: RefObject<HTMLElement | null>): boo
   return visible && intersecting;
 }
 
-export function useTrailLuminance(
-  trailTargetRef: RefObject<HTMLElement | null>,
-  enabled: boolean,
-): void {
-  useEffect(() => {
-    const target = trailTargetRef.current;
-    if (!enabled || !target || typeof window === "undefined") return;
-
-    const started = performance.now();
-    let frame = 0;
-    const tick = (now: number) => {
-      const elapsed = now - started;
-      target.style.setProperty("--firstlight-luminance", trailLuminance(elapsed).toFixed(3));
-      if (elapsed <= FIRST_LIGHT_TOTAL_MS) {
-        frame = window.requestAnimationFrame(tick);
-      }
-    };
-
-    frame = window.requestAnimationFrame(tick);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      target.style.removeProperty("--firstlight-luminance");
-    };
-  }, [enabled, trailTargetRef]);
-}
-
 function detectRendererBackend(): RendererBackend {
   const canvas = document.createElement("canvas");
   const gl = canvas.getContext("webgl2", { alpha: true, antialias: false });
   return gl ? "webgl2" : "none";
-}
-
-function rectWithin(host: DOMRect, rect: DOMRect): FirstLightRect {
-  return {
-    x: (rect.left - host.left) / host.width,
-    y: (rect.top - host.top) / host.height,
-    w: rect.width / host.width,
-    h: rect.height / host.height,
-  };
 }

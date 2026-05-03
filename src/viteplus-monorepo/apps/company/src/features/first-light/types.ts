@@ -7,26 +7,17 @@ export type DegradedReason =
   | "compile_error"
   | "context_lost";
 
-export interface FirstLightRect {
-  readonly x: number;
-  readonly y: number;
-  readonly w: number;
-  readonly h: number;
-}
-
 export interface FirstLightViewport {
   readonly w: number;
   readonly h: number;
   readonly dpr: number;
 }
 
-export interface FirstLightGeometry {
+export interface FirstLightFrame {
   readonly viewport: FirstLightViewport;
-  readonly trail: FirstLightRect;
-  readonly wings: FirstLightRect;
 }
 
-export interface ArrivalFrameMetrics {
+export interface FrameMetrics {
   readonly p50: number;
   readonly p99: number;
   readonly samples: number;

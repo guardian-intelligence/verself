@@ -1,54 +1,51 @@
 uniform float uTime;
 uniform float uActive;
 uniform vec2 uResolution;
-uniform vec4 uTrailRect;
-uniform vec4 uWingsRect;
+uniform float uDpr;
+uniform float uAspect;
+uniform float uMotionScale;
+uniform float uSeed;
 
 in vec2 vUv;
 out vec4 firstLightColor;
 
 #include "lib/noise.glsl"
-#include "lib/color.glsl"
-#include "lib/easing.glsl"
-#include "lib/geometry.glsl"
-#include "lib/motion.glsl"
+#include "lib/camera.glsl"
+#include "lib/plate.glsl"
+#include "lib/meniscus.glsl"
+#include "lib/bands.glsl"
+#include "lib/caustics.glsl"
+#include "lib/flare.glsl"
+#include "lib/aberration.glsl"
+#include "lib/tone.glsl"
 
 void main() {
   vec2 uv = vec2(vUv.x, 1.0 - vUv.y);
-  float ms = uTime * 1000.0;
-  float aspect = max(uResolution.x / max(uResolution.y, 1.0), 0.2);
-  vec2 source = sourcePosition(ms, uTrailRect, uWingsRect);
-  float intensity = sourceIntensity(ms) * uActive;
+  float t = uTime * uMotionScale + uSeed * 19.0;
+  float aspect = max(uAspect, 0.2);
+  OpticalFrame frame = firstlight_frame(uv, aspect, t);
 
-  vec2 fromSource = uv - source;
-  vec2 anisotropic = rotate2d(-0.72) * vec2(fromSource.x * aspect, fromSource.y);
-  float liquidLens = exp(-dot(anisotropic / vec2(0.115, 0.34), anisotropic / vec2(0.115, 0.34)));
-  float core = exp(-dot(anisotropic / vec2(0.035, 0.11), anisotropic / vec2(0.035, 0.11)));
-  float bloom = exp(-length(vec2(fromSource.x * aspect, fromSource.y)) * 12.0);
+  float rim = 0.0;
+  float body = 0.0;
+  float bend = 0.0;
+  firstlight_meniscus(frame, rim, body, bend);
 
-  float diagonal = abs(fromSource.x * aspect * 0.72 + fromSource.y * 1.12);
-  float longStreak = exp(-diagonal * 58.0) * exp(-abs(fromSource.x * aspect - fromSource.y * 0.65) * 0.72);
-  float comb = pow(1.0 - abs(sin((uv.x * aspect + uv.y * 1.18 - uTime * 0.18) * 28.0)), 8.0);
-  float streaks = longStreak * (0.34 + 0.44 * comb);
+  float bandMask = 0.0;
+  float bandEdge = 0.0;
+  vec3 color = firstlight_plate(frame, t);
+  vec3 bands = firstlight_bands(frame, t, bend, bandMask, bandEdge);
+  float caustic = firstlight_caustics(frame, bend + bandMask, t);
+  vec3 flare = firstlight_flare(frame, rim, bandEdge, caustic, t);
 
-  vec2 causticUv = rotate2d(0.42) * (uv * vec2(aspect, 1.0) * 8.0 + vec2(uTime * 0.23, -uTime * 0.08));
-  float caustic = firstlight_fbm(causticUv);
-  float grain = firstlight_hash(floor(uv * uResolution.xy * 0.85) + floor(uTime * 18.0));
-  float edge = smoothstep(0.2, 0.82, liquidLens) * (1.0 - core);
+  vec3 refracted = bands * (0.75 + caustic * 0.55);
+  refracted += vec3(0.055, 0.13, 0.155) * body * (0.36 + caustic * 0.5);
+  refracted += vec3(0.45, 0.76, 0.9) * rim * 0.34;
+  color += refracted;
+  color += flare;
+  color = firstlight_aberrate(color, bandEdge, rim, bandMask);
+  color = firstlight_tone(color);
+  color += firstlight_grain(uv, uResolution.xy / max(uDpr, 1.0), t);
 
-  float trailMask = roundedRectMask(uv, uTrailRect + vec4(-0.03, -0.04, 0.06, 0.08), 0.08);
-  float wingMask = roundedRectMask(uv, uWingsRect + vec4(-0.04, -0.04, 0.08, 0.08), 0.11);
-
-  float light = core * 0.82 + bloom * 0.18 + liquidLens * (0.2 + caustic * 0.18) + streaks * 0.46;
-  light += trailMask * streaks * 0.24;
-  light += wingMask * liquidLens * 0.22;
-  light *= intensity;
-  light *= 0.94 + grain * 0.08;
-
-  vec3 color = firstlight_spectral(edge, caustic);
-  color += firstlight_cool() * edge * 0.08 * intensity;
-  color += firstlight_amber() * core * 0.18 * intensity;
-
-  float alpha = firstlight_saturate(light * 1.28);
-  firstLightColor = vec4(color * light, alpha);
+  float alpha = clamp(uActive, 0.0, 1.0);
+  firstLightColor = vec4(color * alpha, alpha);
 }

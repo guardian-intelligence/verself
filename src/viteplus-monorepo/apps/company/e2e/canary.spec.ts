@@ -50,10 +50,12 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     await page.waitForTimeout(300);
   }
 
-  // 2. Landing-specific assertion: Argent wings on the fold.
+  // 2. Landing-specific assertion: blank optical plate on the fold.
   await page.goto("/");
-  const wings = page.locator("svg").first();
-  await expect(wings).toBeVisible();
+  await expect(page.locator("main h1")).toHaveCount(0);
+  await expect(page.locator("main p")).toHaveCount(0);
+  await expect(page.locator("footer")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveCount(1);
 
   // 2a. Masthead cutover — every chrome-bearing layout renders the wordmark
   //     in tracked uppercase Geist. The Fraunces masthead retired 2026-04-24;
@@ -104,7 +106,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     }
   }
 
-  // 3. Every catalogued OG slug renders as a 1200×630 SVG with Argent wings.
+  // 3. Every catalogued OG slug renders as a 1200×630 SVG.
   // The route returns 500 on OG-card validation failure.
   for (const slug of OG_SLUGS) {
     const og = await request.get(`/og/${slug}`);

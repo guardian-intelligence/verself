@@ -1,6 +1,6 @@
-import type { ArrivalFrameMetrics } from "../types";
+import type { FrameMetrics } from "../types";
 
-export function arrivalFrameMetrics(samples: readonly number[]): ArrivalFrameMetrics {
+export function frameMetrics(samples: readonly number[]): FrameMetrics {
   if (samples.length === 0) {
     return { p50: 0, p99: 0, samples: 0 };
   }
