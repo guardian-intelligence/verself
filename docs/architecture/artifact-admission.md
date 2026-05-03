@@ -60,7 +60,10 @@ admissions and records the scanner version and database digest with each result.
 ## Metadata
 
 Each artifact source has a policy identity and an admission record in
-`src/host-configuration/supply-chain/policy.json`:
+`src/host-configuration/supply-chain/__generated/policy.json` (generated
+output, gitignored). The supply-chain scanner regenerates it on demand when
+the file is missing; admission state is sourced from ClickHouse, not from
+hand-edited JSON.
 
 - source path, source kind, surface, and artifact name
 - upstream URL

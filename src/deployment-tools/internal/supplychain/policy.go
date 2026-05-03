@@ -1,7 +1,9 @@
 package supplychain
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +19,20 @@ func LoadPolicy(repoRoot, policyPath string) (Policy, error) {
 		policyPath = filepath.Join(repoRoot, policyPath)
 	}
 	raw, err := os.ReadFile(policyPath)
+	if errors.Is(err, os.ErrNotExist) {
+		// The policy file lives under __generated/ and is gitignored, so a
+		// fresh checkout has no committed copy. Regenerate from the scanner;
+		// admission state is sourced from ClickHouse, not this file.
+		report, scanErr := Scan(context.Background(), ScanOptions{RepoRoot: repoRoot})
+		if scanErr != nil {
+			return Policy{}, fmt.Errorf("supplychain: regenerate missing policy %s: %w", policyPath, scanErr)
+		}
+		policy := NewPolicyFromReport(report)
+		if writeErr := WritePolicy(policyPath, policy); writeErr != nil {
+			return Policy{}, fmt.Errorf("supplychain: persist regenerated policy %s: %w", policyPath, writeErr)
+		}
+		return policy, nil
+	}
 	if err != nil {
 		return Policy{}, fmt.Errorf("supplychain: read policy %s: %w", policyPath, err)
 	}
