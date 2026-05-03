@@ -20,15 +20,15 @@
   ansible.builtin.command:
     argv: [bazelisk, build, "{{ guest_rootfs_substrate_inputs_label }}"]
     chdir: "{{ guest_rootfs_monorepo_root }}"
-  changed_when: true
+  changed_when: false
 
-- name: Verify substrate input bundle exists
+- name: Verify substrate input bundle exists and compute digest
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.stat:
     path: "{{ guest_rootfs_substrate_inputs_path }}"
-    get_checksum: false
+    checksum_algorithm: sha256
   register: guest_rootfs_substrate_inputs
   failed_when: not guest_rootfs_substrate_inputs.stat.exists
 
@@ -39,15 +39,15 @@
   ansible.builtin.command:
     argv: [bazelisk, build, "{{ guest_rootfs_toolchain_bundle_label }}"]
     chdir: "{{ guest_rootfs_monorepo_root }}"
-  changed_when: true
+  changed_when: false
 
-- name: Verify toolchain bundle exists
+- name: Verify toolchain bundle exists and compute digest
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.stat:
     path: "{{ guest_rootfs_toolchain_bundle_path }}"
-    get_checksum: false
+    checksum_algorithm: sha256
   register: guest_rootfs_toolchain_bundle
   failed_when: not guest_rootfs_toolchain_bundle.stat.exists
 
@@ -69,91 +69,161 @@
     group: root
     mode: "0755"
 
-- name: Upload substrate input bundle
-  ansible.builtin.copy:
-    src: "{{ guest_rootfs_substrate_inputs_path }}"
-    dest: "{{ guest_rootfs_remote_substrate_inputs }}"
-    mode: "0644"
+- name: Read staged substrate digest
+  ansible.builtin.slurp:
+    src: "{{ guest_rootfs_substrate_digest_path }}"
+  register: guest_rootfs_substrate_digest_raw
+  failed_when: false
+  changed_when: false
 
-- name: Reset substrate build staging dir
-  ansible.builtin.file:
-    path: "{{ guest_rootfs_remote_substrate_dir }}"
-    state: absent
-
-- name: Recreate substrate build staging dir
-  ansible.builtin.file:
-    path: "{{ guest_rootfs_remote_substrate_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Extract substrate input bundle
-  ansible.builtin.unarchive:
-    src: "{{ guest_rootfs_remote_substrate_inputs }}"
-    dest: "{{ guest_rootfs_remote_substrate_dir }}"
-    remote_src: true
-    owner: root
-    group: root
-
-- name: Run substrate builder
-  ansible.builtin.command:
-    cmd: "{{ guest_rootfs_remote_substrate_dir }}/build-substrate"
-    chdir: "{{ guest_rootfs_remote_substrate_dir }}"
-  environment:
-    PATH: "{{ guest_rootfs_remote_path }}"
-    SUBSTRATE_INPUTS: "{{ guest_rootfs_remote_substrate_dir }}"
-    SUBSTRATE_OUTPUT_DIR: "{{ guest_rootfs_remote_substrate_output_dir }}"
-  changed_when: true
-
-- name: Verify substrate output artifacts exist
+- name: Inspect staged substrate artifacts
   ansible.builtin.stat:
-    path: "{{ guest_rootfs_remote_substrate_output_dir }}/{{ item }}"
-  loop:
-    - substrate.ext4
-    - vmlinux
-    - sbom.txt
-    - manifest.json
-  register: guest_rootfs_substrate_output_check
-  failed_when: not guest_rootfs_substrate_output_check.stat.exists
+    path: "{{ guest_rootfs_guest_images_dir }}/{{ item }}"
+    get_checksum: false
+  loop: "{{ guest_rootfs_substrate_artifacts }}"
+  register: guest_rootfs_staged_substrate_artifacts
+  changed_when: false
 
-- name: Stage substrate artifacts under guest-images dir
-  ansible.builtin.copy:
-    src: "{{ guest_rootfs_remote_substrate_output_dir }}/{{ item }}"
-    dest: "{{ guest_rootfs_guest_images_dir }}/{{ item }}"
-    remote_src: true
-    owner: root
-    group: root
-    mode: "0644"
-  loop:
-    - substrate.ext4
-    - vmlinux
-    - vmlinux.config
-    - sbom.txt
-    - manifest.json
+- name: Decide whether substrate image rebuild is required
+  ansible.builtin.set_fact:
+    guest_rootfs_substrate_current: >-
+      {{
+        (guest_rootfs_substrate_digest_raw.content | default('') | b64decode | trim) == guest_rootfs_substrate_inputs.stat.checksum
+        and (
+          guest_rootfs_staged_substrate_artifacts.results
+          | selectattr('stat.exists', 'equalto', false)
+          | list
+          | length
+        ) == 0
+      }}
+
+- name: Rebuild substrate image when input digest changed
+  when: not guest_rootfs_substrate_current
+  block:
+    - name: Upload substrate input bundle
+      ansible.builtin.copy:
+        src: "{{ guest_rootfs_substrate_inputs_path }}"
+        dest: "{{ guest_rootfs_remote_substrate_inputs }}"
+        mode: "0644"
+
+    - name: Reset substrate build staging dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ guest_rootfs_remote_substrate_dir }}"
+        - "{{ guest_rootfs_remote_substrate_output_dir }}"
+
+    - name: Recreate substrate build staging dir
+      ansible.builtin.file:
+        path: "{{ guest_rootfs_remote_substrate_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Extract substrate input bundle
+      ansible.builtin.unarchive:
+        src: "{{ guest_rootfs_remote_substrate_inputs }}"
+        dest: "{{ guest_rootfs_remote_substrate_dir }}"
+        remote_src: true
+        owner: root
+        group: root
+
+    - name: Run substrate builder
+      ansible.builtin.command:
+        cmd: "{{ guest_rootfs_remote_substrate_dir }}/build-substrate"
+        chdir: "{{ guest_rootfs_remote_substrate_dir }}"
+      environment:
+        PATH: "{{ guest_rootfs_remote_path }}"
+        SUBSTRATE_INPUTS: "{{ guest_rootfs_remote_substrate_dir }}"
+        SUBSTRATE_OUTPUT_DIR: "{{ guest_rootfs_remote_substrate_output_dir }}"
+      changed_when: true
+
+    - name: Verify substrate output artifacts exist
+      ansible.builtin.stat:
+        path: "{{ guest_rootfs_remote_substrate_output_dir }}/{{ item }}"
+      loop: "{{ guest_rootfs_substrate_artifacts }}"
+      register: guest_rootfs_substrate_output_check
+      failed_when: not guest_rootfs_substrate_output_check.stat.exists
+
+    - name: Stage substrate artifacts under guest-images dir
+      ansible.builtin.copy:
+        src: "{{ guest_rootfs_remote_substrate_output_dir }}/{{ item }}"
+        dest: "{{ guest_rootfs_guest_images_dir }}/{{ item }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ guest_rootfs_substrate_artifacts }}"
+
+    - name: Record staged substrate digest
+      ansible.builtin.copy:
+        content: "{{ guest_rootfs_substrate_inputs.stat.checksum }}\n"
+        dest: "{{ guest_rootfs_substrate_digest_path }}"
+        owner: root
+        group: root
+        mode: "0644"
 
 # ── Stage toolchain ext4s on remote ────────────────────────────────────────
 
-- name: Upload toolchain images bundle
-  ansible.builtin.copy:
-    src: "{{ guest_rootfs_toolchain_bundle_path }}"
-    dest: "{{ guest_rootfs_remote_tmp }}/toolchain-images-bundle.tar"
-    mode: "0644"
+- name: Read staged toolchain image digest
+  ansible.builtin.slurp:
+    src: "{{ guest_rootfs_toolchain_digest_path }}"
+  register: guest_rootfs_toolchain_digest_raw
+  failed_when: false
+  changed_when: false
 
-- name: Extract toolchain images bundle into guest-images dir
-  ansible.builtin.unarchive:
-    src: "{{ guest_rootfs_remote_tmp }}/toolchain-images-bundle.tar"
-    dest: "{{ guest_rootfs_guest_images_dir }}"
-    remote_src: true
-    owner: root
-    group: root
-
-- name: Verify toolchain ext4s landed
+- name: Inspect staged toolchain artifacts
   ansible.builtin.stat:
-    path: "{{ guest_rootfs_guest_images_dir }}/toolchains/{{ item }}.ext4"
+    path: "{{ guest_rootfs_guest_images_dir }}/{{ item }}"
     get_checksum: false
-  loop:
-    - gh-actions-runner
-    - forgejo-runner
+  loop: "{{ guest_rootfs_toolchain_artifacts }}"
   register: guest_rootfs_toolchain_check
-  failed_when: not guest_rootfs_toolchain_check.stat.exists
+  changed_when: false
+
+- name: Decide whether toolchain image extraction is required
+  ansible.builtin.set_fact:
+    guest_rootfs_toolchain_current: >-
+      {{
+        (guest_rootfs_toolchain_digest_raw.content | default('') | b64decode | trim) == guest_rootfs_toolchain_bundle.stat.checksum
+        and (
+          guest_rootfs_toolchain_check.results
+          | selectattr('stat.exists', 'equalto', false)
+          | list
+          | length
+        ) == 0
+      }}
+
+- name: Stage toolchain images when bundle digest changed
+  when: not guest_rootfs_toolchain_current
+  block:
+    - name: Upload toolchain images bundle
+      ansible.builtin.copy:
+        src: "{{ guest_rootfs_toolchain_bundle_path }}"
+        dest: "{{ guest_rootfs_remote_tmp }}/toolchain-images-bundle.tar"
+        mode: "0644"
+
+    - name: Extract toolchain images bundle into guest-images dir
+      ansible.builtin.unarchive:
+        src: "{{ guest_rootfs_remote_tmp }}/toolchain-images-bundle.tar"
+        dest: "{{ guest_rootfs_guest_images_dir }}"
+        remote_src: true
+        owner: root
+        group: root
+
+    - name: Verify toolchain artifacts landed
+      ansible.builtin.stat:
+        path: "{{ guest_rootfs_guest_images_dir }}/{{ item }}"
+        get_checksum: false
+      loop: "{{ guest_rootfs_toolchain_artifacts }}"
+      register: guest_rootfs_toolchain_staged_check
+      failed_when: not guest_rootfs_toolchain_staged_check.stat.exists
+
+    - name: Record staged toolchain image digest
+      ansible.builtin.copy:
+        content: "{{ guest_rootfs_toolchain_bundle.stat.checksum }}\n"
+        dest: "{{ guest_rootfs_toolchain_digest_path }}"
+        owner: root
+        group: root
+        mode: "0644"

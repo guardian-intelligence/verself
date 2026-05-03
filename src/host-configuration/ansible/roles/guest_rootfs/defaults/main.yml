@@ -21,3 +21,19 @@ guest_rootfs_remote_substrate_output_dir: "{{ guest_rootfs_remote_tmp }}/substra
 
 guest_rootfs_guest_images_dir: /var/lib/verself/guest-images
 guest_rootfs_remote_path: "{{ verself_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+guest_rootfs_substrate_digest_path: "{{ guest_rootfs_guest_images_dir }}/.substrate-inputs.sha256"
+guest_rootfs_toolchain_digest_path: "{{ guest_rootfs_guest_images_dir }}/toolchains/.toolchain-images.sha256"
+
+guest_rootfs_substrate_artifacts:
+  - substrate.ext4
+  - vmlinux
+  - vmlinux.config
+  - sbom.txt
+  - manifest.json
+
+guest_rootfs_toolchain_artifacts:
+  - toolchains/gh-actions-runner.ext4
+  - toolchains/gh-actions-runner.manifest.json
+  - toolchains/forgejo-runner.ext4
+  - toolchains/forgejo-runner.manifest.json
