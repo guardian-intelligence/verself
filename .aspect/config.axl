@@ -91,6 +91,7 @@ load(".aspect/tasks/observe.axl", "observe")
 load(".aspect/tasks/detect_intrusions.axl", "detect_intrusions")
 load(
     ".aspect/tasks/operator.axl",
+    operator_device = "device",
     operator_edge = "edge",
     operator_platform = "platform",
 )
@@ -156,6 +157,7 @@ def config(ctx):
     ctx.tasks.add(billing_events)
 
     # aspect operator ...
+    ctx.tasks.add(operator_device)
     ctx.tasks.add(operator_edge)
     ctx.tasks.add(operator_platform)
 

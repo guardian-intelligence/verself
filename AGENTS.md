@@ -82,6 +82,16 @@ Service topology, three safety rings, self-hosted mandate + allowed third-party 
 
 <operational_runbook>
 
+SSH access is tied to identity via Pomerium using Zitadel as its OIDC
+
+```shell
+ssh ubuntu@prod@access.verself.sh
+```
+
+- access.verself.sh: the Pomerium SSH listener.
+- prod: the Pomerium SSH route name.
+- ubuntu: the upstream Linux account Pomerium is allowed to request from sshd.
+
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
 The repo started as a CI orchestrator; that history lives in `README.md`.
