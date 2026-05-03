@@ -11,7 +11,7 @@
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
     sops_secrets_file: "{{ playbook_dir }}/../../../substrate/ansible/group_vars/all/secrets.sops.yml"
-    deprovision_inventory_file: "{{ playbook_dir }}/../../../substrate/ansible/inventory/{{ verself_site }}.ini"
+    deprovision_inventory_file: "{{ playbook_dir }}/../../../host-configuration/ansible/{{ verself_site }}.ini"
   tasks:
     - name: Require verself_site to be set
       ansible.builtin.assert:

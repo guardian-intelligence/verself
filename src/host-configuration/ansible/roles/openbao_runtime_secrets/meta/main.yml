@@ -1,7 +1,0 @@
----
-galaxy_info:
-  role_name: openbao_runtime_secrets
-  description: Reconcile OpenBao runtime-secret mounts, policies, roles, and seed values.
-  license: proprietary
-  min_ansible_version: "2.16"
-dependencies: []

@@ -1,11 +1,11 @@
 # Managed by Ansible - operator_ssh_access role.
 
-TrustedUserCAKeys {{ operator_ssh_trusted_user_ca_path }}
+TrustedUserCAKeys {{ operator_ssh_access_trusted_user_ca_path }}
 AuthorizedKeysFile none
-AllowUsers {{ operator_ssh_user }}
+AllowUsers {{ operator_ssh_access_user }}
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 
 # Pomerium owns public :22 and forwards authorised native-SSH sessions to
 # this local upstream. Binding sshd to loopback prevents direct host bypass.
-ListenAddress {{ operator_ssh_listen_address }}
+ListenAddress {{ operator_ssh_access_listen_address }}

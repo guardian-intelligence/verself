@@ -1,4 +1,4 @@
-# Example inventory. Copy to hosts.ini and populate with real IPs.
+# Example inventory. Copy to <site>.ini and populate with real IPs.
 # Terraform outputs can generate this automatically.
 
 [workers]

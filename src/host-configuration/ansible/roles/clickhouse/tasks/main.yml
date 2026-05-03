@@ -71,7 +71,10 @@
     cmd: |
       err_file="$(mktemp)"
       trap 'rm -f "$err_file"' EXIT
-      if find {{ item | quote }} \( ! -user {{ clickhouse_system_user | quote }} -o ! -group {{ clickhouse_system_group | quote }} \) -print -quit 2>"$err_file"; then
+      if find {{ item | quote }} \
+        \( ! -user {{ clickhouse_system_user | quote }} \
+        -o ! -group {{ clickhouse_system_group | quote }} \) \
+        -print -quit 2>"$err_file"; then
         exit 0
       fi
 

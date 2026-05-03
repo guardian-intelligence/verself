@@ -227,7 +227,7 @@ func (rt *Runtime) TraceID() string {
 }
 
 func InventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", "inventory", site+".ini")
+	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", site+".ini")
 }
 
 func SecretsPath(repoRoot string) string {

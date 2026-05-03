@@ -1,6 +1,6 @@
 ---
-operator_ssh_user: ubuntu
-operator_ssh_trusted_user_ca_path: /etc/ssh/verself-pomerium-user-ca.pub
-operator_ssh_pomerium_user_ca_pubkey_path: "{{ pomerium_ssh_user_ca_pubkey_path | default('/etc/credstore/pomerium/ssh-user-ca.pub') }}"
-operator_ssh_sshd_config_path: /etc/ssh/sshd_config.d/60-operator-access.conf
-operator_ssh_listen_address: 127.0.0.1
+operator_ssh_access_user: ubuntu
+operator_ssh_access_trusted_user_ca_path: /etc/ssh/verself-pomerium-user-ca.pub
+operator_ssh_access_pomerium_user_ca_pubkey_path: "{{ pomerium_ssh_user_ca_pubkey_path | default('/etc/credstore/pomerium/ssh-user-ca.pub') }}"
+operator_ssh_access_sshd_config_path: /etc/ssh/sshd_config.d/60-operator-access.conf
+operator_ssh_access_listen_address: 127.0.0.1

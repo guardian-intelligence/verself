@@ -1,13 +1,14 @@
 ---
 - name: Read Pomerium SSH user CA public key
   ansible.builtin.slurp:
-    src: "{{ operator_ssh_pomerium_user_ca_pubkey_path }}"
-  register: operator_ssh_user_ca_pubkey_raw
+    src: "{{ operator_ssh_access_pomerium_user_ca_pubkey_path }}"
+  register: operator_ssh_access_user_ca_pubkey_raw
+  no_log: true
 
 - name: Materialise trusted Pomerium SSH user CA
   ansible.builtin.copy:
-    content: "{{ operator_ssh_user_ca_pubkey_raw.content | b64decode }}"
-    dest: "{{ operator_ssh_trusted_user_ca_path }}"
+    content: "{{ operator_ssh_access_user_ca_pubkey_raw.content | b64decode }}"
+    dest: "{{ operator_ssh_access_trusted_user_ca_path }}"
     owner: root
     group: root
     mode: "0644"
@@ -16,7 +17,7 @@
 - name: Render sshd Pomerium upstream configuration
   ansible.builtin.template:
     src: 60-operator-access.conf.j2
-    dest: "{{ operator_ssh_sshd_config_path }}"
+    dest: "{{ operator_ssh_access_sshd_config_path }}"
     owner: root
     group: root
     mode: "0644"

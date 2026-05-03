@@ -33,7 +33,7 @@ ssh ubuntu@prod@access.<domain>
 
 `aspect operator device --site=prod` configures a checkout to use the native SSH
 route. It derives the Pomerium access host from `ops.yml`, writes the ignored
-per-site Ansible inventory under `src/host-configuration/ansible/inventory/`,
+per-site Ansible inventory under `src/host-configuration/ansible/`,
 and ensures a default OpenSSH key exists at `~/.ssh/id_ed25519`.
 
 Passphrase-protected device keys are supported through `ssh-agent`. Load the

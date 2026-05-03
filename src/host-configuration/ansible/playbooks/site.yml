@@ -180,8 +180,9 @@
   tags:
     - openbao-bindings
     - platform-bindings
-  roles:
-    - role: openbao_runtime_secrets
+  tasks:
+    - name: Import OpenBao platform runtime-secret bindings
+      ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
       tags:
         - openbao-runtime-secrets
         - secrets

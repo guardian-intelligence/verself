@@ -69,7 +69,7 @@ filegroup(
             "ansible/**/__generated/**",
             "ansible/**/__rendered/**",
             "ansible/**/__pycache__/**",
-            "ansible/inventory/*.ini",
+            "ansible/*.ini",
         ],
     ),
 )

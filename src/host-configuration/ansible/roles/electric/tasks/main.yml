@@ -143,7 +143,7 @@
 - name: "Apply pending Electric unit changes before publication reconcile"
   ansible.builtin.meta: flush_handlers
 
-- name: "Reconcile PostgreSQL publication after {{ electric_service_name }} startup"
+- name: "Reconcile PostgreSQL publication after startup for {{ electric_service_name }}"
   # Electric starts by restoring persisted shape filters; reconcile after restart
   # so the curated publication is the final database state.
   ansible.builtin.include_tasks:

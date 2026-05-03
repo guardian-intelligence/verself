@@ -3,7 +3,7 @@
 `src/provisioning-tools/` owns physical machine allocation and inventory
 production. Keep it limited to OpenTofu, controller-local provisioning
 playbooks, and helpers that write
-`src/host-configuration/ansible/inventory/<site>.ini`.
+`src/host-configuration/ansible/<site>.ini`.
 
 Do not add host package convergence, daemon configuration, Nomad deployment,
 or product service rollout here. Those belong to `src/host-configuration/`, rendered

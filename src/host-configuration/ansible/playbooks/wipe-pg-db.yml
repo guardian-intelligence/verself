@@ -7,7 +7,7 @@
 # Usage:
 #   verself-deploy ansible run --site=prod \
 #     --playbook=playbooks/wipe-pg-db.yml \
-#     --inventory=$(pwd)/src/host-configuration/ansible/inventory/prod.ini \
+#     --inventory=$(pwd)/src/host-configuration/ansible/prod.ini \
 #     --ansible-arg=-e --ansible-arg=wipe_pg_db_name=sandbox_rental
 #
 # Supported DBs:

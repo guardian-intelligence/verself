@@ -13,8 +13,8 @@ src/provisioning-tools/terraform/*.tfvars.json
 # Ansible
 src/host-configuration/ansible/*.retry
 src/host-configuration/ansible/.cache/
-src/host-configuration/ansible/inventory/*.ini
-!src/host-configuration/ansible/inventory/*.example
+src/host-configuration/ansible/*.ini
+!src/host-configuration/ansible/*.example
 
 # Legacy renderer cache.
 .cache/
