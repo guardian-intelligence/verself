@@ -29,9 +29,23 @@ The SSH route name is `prod`, so a standard client connects with:
 ssh ubuntu@prod@access.<domain>
 ```
 
-Pomerium binds the local SSH public key to the authenticated Zitadel subject on
-first use. Subsequent SSH, SCP, SFTP, Ansible, and Go SSH connections use the
-same public-key source and re-evaluate Pomerium policy on each connection.
+## Device Enrollment
+
+`aspect operator device --site=prod` configures a checkout to use the native SSH
+route. It derives the Pomerium access host from `ops.yml`, writes the ignored
+per-site Ansible inventory under `src/host-configuration/ansible/inventory/`,
+and ensures a default OpenSSH key exists at `~/.ssh/id_ed25519`.
+
+Zitadel users are scoped to human operators. Development devices and agent VMs
+present separate SSH keys. Pomerium binds each key to the authenticated human
+subject on first use.
+
+The generated inventory keeps Ansible's `[workers]` and `[infra]` topology
+groups. In the single-node topology both groups resolve to the same Pomerium
+access host, with `ansible_user=ubuntu@prod` selecting the Pomerium SSH route.
+
+Subsequent SSH, SCP, SFTP, Ansible, and Go SSH connections use the same
+public-key source and re-evaluate Pomerium policy on each connection.
 
 ## HTTP Operator Routes
 

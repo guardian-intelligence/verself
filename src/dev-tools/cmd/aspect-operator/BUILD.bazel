@@ -13,6 +13,7 @@ go_library(
         "db.go",
         "db_pg.go",
         "db_tb.go",
+        "device.go",
         "mail.go",
         "main.go",
         "output.go",

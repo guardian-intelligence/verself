@@ -21,6 +21,9 @@
 //	aspect-operator dev verself-web
 //	    Operator local-development tunnel helpers.
 //
+//	aspect-operator device
+//	    Configure this checkout/device to reach the operator access plane.
+//
 //	aspect-operator edge check|manifest
 //	    Operator-side public edge contract checker derived from topology,
 //	    authored Nomad jobs, and HAProxy template references.
@@ -72,6 +75,8 @@ func run(args []string) error {
 		return cmdMail(rest)
 	case "dev":
 		return cmdDev(rest)
+	case "device":
+		return cmdDevice(rest)
 	case "edge":
 		return cmdEdge(rest)
 	case "platform":
@@ -95,6 +100,7 @@ Subcommands:
   persona           Persona credential and fixture tooling
   mail              Mail operator helpers
   dev               Local development helpers
+  device            Configure this device for operator access
   edge              Public edge contract checker
   platform          Platform org/project/source convergence
 

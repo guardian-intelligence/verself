@@ -2,6 +2,7 @@
 
   aspect operator edge --action=check|manifest [--format=text|json|yaml]
   aspect operator platform --action=check|seed [--format=text|json]
+  aspect operator device [--site=prod]
 
 The implementation lives in src/dev-tools/cmd/aspect-operator.
 """
@@ -53,6 +54,30 @@ def _platform_impl(ctx):
     ]
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator platform " + action)
 
+def _device_impl(ctx):
+    bin = build_aspect_operator(ctx)
+    if bin == "":
+        return 1
+    site = ctx.args.site or "prod"
+    cli_args = [
+        "device",
+        "--repo-root",
+        ws_path(ctx),
+        "--site",
+        site,
+    ]
+    if ctx.args.access_host:
+        cli_args = cli_args + ["--access-host", ctx.args.access_host]
+    if ctx.args.ssh_route:
+        cli_args = cli_args + ["--ssh-route", ctx.args.ssh_route]
+    if ctx.args.force:
+        cli_args.append("--force")
+    if ctx.args.dry_run:
+        cli_args.append("--dry-run")
+    if not ctx.args.generate_key:
+        cli_args.append("--generate-key=false")
+    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator device --site " + site)
+
 edge = task(
     implementation = _edge_impl,
     name = "edge",
@@ -62,6 +87,21 @@ edge = task(
         "action": args.string(default = "check", description = "check | manifest."),
         "site": args.string(default = "prod", description = "Deployment site."),
         "format": args.string(default = "text", description = "Manifest output format: text | json | yaml."),
+    },
+)
+
+device = task(
+    implementation = _device_impl,
+    name = "device",
+    group = ["operator"],
+    summary = "Configure this checkout/device for Pomerium operator SSH and aspect commands.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "access_host": args.string(default = "", description = "Override Pomerium SSH host. Defaults to access.<verself_domain>."),
+        "ssh_route": args.string(default = "", description = "Override Pomerium native-SSH route. Defaults to --site."),
+        "force": args.boolean(default = False, description = "Overwrite an existing different local inventory."),
+        "dry_run": args.boolean(default = False, description = "Print the derived inventory and summary without writing files."),
+        "generate_key": args.boolean(default = True, description = "Generate ~/.ssh/id_ed25519 when no default SSH key exists."),
     },
 )
 
