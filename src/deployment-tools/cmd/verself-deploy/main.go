@@ -62,7 +62,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `verself-deploy — typed orchestrator for verself deploys
 
 usage:
-  verself-deploy run                  --site=<site> [--sha=<rev>] [--breakglass=<path>]
+  verself-deploy run                  --site=<site> [--sha=<rev>]
   verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
   verself-deploy nomad deploy-all     --site=<site> [--repo-root=<path>]
   verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>

@@ -39,7 +39,6 @@ func runRun(args []string) int {
 	site := fs.String("site", "prod", "deploy site")
 	sha := fs.String("sha", "", "git SHA being deployed (empty = HEAD)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	breakglassPath := fs.String("breakglass", "", "path to an expiring breakglass exception")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -75,15 +74,6 @@ func runRun(args []string) int {
 		// FixedString(40) requirement is satisfied even on a
 		// detached-HEAD harness invocation.
 		resolvedSha = snap.Get("VERSELF_COMMIT_SHA")
-	}
-	var breakglass *loadedBreakglass
-	if *breakglassPath != "" {
-		loaded, err := loadBreakglassException(*breakglassPath, *site, resolvedSha, time.Now())
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "verself-deploy run: breakglass rejected: %v\n", err)
-			return 2
-		}
-		breakglass = &loaded
 	}
 
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -124,9 +114,6 @@ func runRun(args []string) int {
 		attribute.Int("security_patch.failed_count", securityPatchRes.Result.FailedCount),
 		attribute.Int64("security_patch.duration_ms", securityPatchRes.EndedAt.Sub(securityPatchRes.StartedAt).Milliseconds()),
 	)
-	if breakglass != nil {
-		span.SetAttributes(attribute.String("breakglass.exception_id", breakglass.Exception.ID))
-	}
 	if err := runSecurityPostPreflight(ctx, rt, *site, securityPatchRes); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -150,7 +137,7 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, breakglass)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -168,26 +155,14 @@ func runDeployBody(
 	span trace.Span,
 	startedAt time.Time,
 	snap identity.Snapshot,
-	breakglass *loadedBreakglass,
 ) int {
 	// 1. Supply-chain policy gate. The gate is intentionally before host
 	// convergence so install-source drift fails before Ansible mutates the box.
-	_, supplyChainEval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, supplychain.DefaultPolicyPath, true)
-	supplyChainBreakglassAccepted := false
+	_, supplyChainEval, err := checkSupplyChainPolicy(ctx, rt, site, repoRoot, supplychain.DefaultPolicyPath, false)
 	if err != nil {
-		if breakglass == nil {
-			fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain policy failed: %v\n", err)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, err.Error())
-			return 1
-		}
-		if bgErr := validateBreakglassForSupplyChain(*breakglass, supplyChainEval); bgErr != nil {
-			msg := fmt.Sprintf("supply-chain policy failed and breakglass was rejected: %v", bgErr)
-			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, msg)
-			return 1
-		}
-		supplyChainBreakglassAccepted = true
-		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain breakglass accepted for %d rejected artifact source(s)\n", supplyChainEval.Rejected)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain policy failed: %v\n", err)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent}, err.Error())
+		return 1
 	}
 
 	// 2. Host configuration convergence. Ansible owns ordering via play order
@@ -204,14 +179,6 @@ func runDeployBody(
 		attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
 		attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
 	)
-	if supplyChainBreakglassAccepted {
-		if bgErr := recordSupplyChainBreakglass(ctx, rt, site, sha, snap, *breakglass, supplyChainEval); bgErr != nil {
-			msg := fmt.Sprintf("supply-chain breakglass evidence insert failed: %v", bgErr)
-			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, msg)
-			return 1
-		}
-	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, []string{securityPatchComponent, supplyChainComponent, "host-configuration"}, err.Error())

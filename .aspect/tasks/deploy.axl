@@ -1,4 +1,4 @@
-"""aspect deploy [--site=prod] [--sha=<rev>] [--breakglass=<path>]
+"""aspect deploy [--site=prod] [--sha=<rev>]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD), shells out to `verself-deploy run`, and
@@ -46,15 +46,13 @@ def _platform_seed(ctx, site):
         label = "aspect-operator platform seed",
     )
 
-def _deploy_one(ctx, site, sha, breakglass):
+def _deploy_one(ctx, site, sha):
     deploy_args = [
         "run",
         "--site=" + site,
         "--sha=" + sha,
         "--repo-root=" + ws_path(ctx),
     ]
-    if breakglass:
-        deploy_args = deploy_args + ["--breakglass=" + breakglass]
     if _edge_preflight(ctx, site) != 0:
         return 1
     bin = build_verself_deploy(ctx)
@@ -70,7 +68,7 @@ def _deploy_one(ctx, site, sha, breakglass):
         return deploy_rc
     return _platform_seed(ctx, site)
 
-def _deploy_in_worktree(ctx, site, sha, breakglass):
+def _deploy_in_worktree(ctx, site, sha):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
     and clean up. Inside the worktree HEAD == sha, so the inner invocation
     falls through to the in-tree path with no further branching."""
@@ -84,8 +82,6 @@ def _deploy_in_worktree(ctx, site, sha, breakglass):
     if rc != 0:
         return rc
     inner_args = ["deploy", "--site=" + site]
-    if breakglass:
-        inner_args = inner_args + ["--breakglass=" + breakglass]
     deploy_rc = checked_spawn(
         ctx, "aspect",
         inner_args,
@@ -102,13 +98,12 @@ def _deploy_in_worktree(ctx, site, sha, breakglass):
 def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
     sha = resolve_sha(ctx, ctx.args.sha or "")
-    breakglass = ctx.args.breakglass or ""
     if sha == "":
         return 1
     head = git_head(ctx)
     if sha != head:
-        return _deploy_in_worktree(ctx, site, sha, breakglass)
-    return _deploy_one(ctx, site, sha, breakglass)
+        return _deploy_in_worktree(ctx, site, sha)
+    return _deploy_one(ctx, site, sha)
 
 deploy = task(
     implementation = _deploy_impl,
@@ -117,6 +112,5 @@ deploy = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
-        "breakglass": args.string(default = "", description = "Expiring breakglass exception JSON consumed by the canonical deploy path."),
     },
 )

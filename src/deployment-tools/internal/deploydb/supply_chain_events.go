@@ -209,24 +209,19 @@ WHERE ServiceName = 'verself-deploy'
 }
 
 type SupplyChainEvidenceSummary struct {
-	DeployRunKey                string
-	RowCount                    uint64
-	Rejected                    uint64
-	Accepted                    uint64
-	Provisional                 uint64
-	EmptyTraceID                uint64
-	DistinctTraceID             uint64
-	TraceID                     string
-	PolicyCheckSpans            uint64
-	PolicyCheckErrorSpans       uint64
-	PolicyRecordSpans           uint64
-	BreakglassRows              uint64
-	BreakglassPolicyRejected    uint64
-	BreakglassPolicyProvisional uint64
-	BreakglassSpans             uint64
-	DeploySucceeded             uint64
-	DeployFailed                uint64
-	LastSupplyChainRow          time.Time
+	DeployRunKey       string
+	RowCount           uint64
+	Rejected           uint64
+	Accepted           uint64
+	Provisional        uint64
+	EmptyTraceID       uint64
+	DistinctTraceID    uint64
+	TraceID            string
+	PolicyCheckSpans   uint64
+	PolicyRecordSpans  uint64
+	DeploySucceeded    uint64
+	DeployFailed       uint64
+	LastSupplyChainRow time.Time
 }
 
 func (c *Client) SupplyChainEvidenceSummary(ctx context.Context, runKey string) (SupplyChainEvidenceSummary, error) {
@@ -278,38 +273,17 @@ WHERE deploy_run_key = {run_key:String}
 	if err := c.conn.QueryRow(ctx, `
 SELECT
   countIf(SpanName = 'verself_deploy.supply_chain.policy_check' AND StatusCode = 'Ok') AS policy_check_spans,
-  countIf(SpanName = 'verself_deploy.supply_chain.policy_check' AND StatusCode = 'Error') AS policy_check_error_spans,
-  countIf(SpanName = 'verself_deploy.supply_chain.policy_record' AND StatusCode = 'Ok') AS policy_record_spans,
-  countIf(SpanName = 'verself_deploy.breakglass.allow' AND StatusCode = 'Ok') AS breakglass_spans
+  countIf(SpanName = 'verself_deploy.supply_chain.policy_record' AND StatusCode = 'Ok') AS policy_record_spans
 FROM default.otel_traces
 WHERE ServiceName = 'verself-deploy'
   AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
 `, runKeyArg).Scan(
 		&summary.PolicyCheckSpans,
-		&summary.PolicyCheckErrorSpans,
 		&summary.PolicyRecordSpans,
-		&summary.BreakglassSpans,
 	); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return SupplyChainEvidenceSummary{}, fmt.Errorf("deploydb: query supply-chain policy spans: %w", err)
-	}
-
-	if err := c.conn.QueryRow(ctx, `
-SELECT
-  count() AS breakglass_rows,
-  sum(toUInt64(policy_rejected)) AS breakglass_policy_rejected,
-  sum(toUInt64(policy_provisional)) AS breakglass_policy_provisional
-FROM verself.breakglass_events
-WHERE deploy_run_key = {run_key:String}
-`, runKeyArg).Scan(
-		&summary.BreakglassRows,
-		&summary.BreakglassPolicyRejected,
-		&summary.BreakglassPolicyProvisional,
-	); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return SupplyChainEvidenceSummary{}, fmt.Errorf("deploydb: query breakglass evidence: %w", err)
 	}
 
 	if err := c.conn.QueryRow(ctx, `
@@ -335,12 +309,7 @@ WHERE deploy_run_key = {run_key:String}
 		attribute.Int64("supply_chain.empty_trace_id_count", int64(summary.EmptyTraceID)),
 		attribute.Int64("supply_chain.distinct_trace_id_count", int64(summary.DistinctTraceID)),
 		attribute.Int64("supply_chain.policy_check_span_count", int64(summary.PolicyCheckSpans)),
-		attribute.Int64("supply_chain.policy_check_error_span_count", int64(summary.PolicyCheckErrorSpans)),
 		attribute.Int64("supply_chain.policy_record_span_count", int64(summary.PolicyRecordSpans)),
-		attribute.Int64("breakglass.row_count", int64(summary.BreakglassRows)),
-		attribute.Int64("breakglass.policy_rejected_count", int64(summary.BreakglassPolicyRejected)),
-		attribute.Int64("breakglass.policy_provisional_count", int64(summary.BreakglassPolicyProvisional)),
-		attribute.Int64("breakglass.span_count", int64(summary.BreakglassSpans)),
 		attribute.Int64("deploy.succeeded_event_count", int64(summary.DeploySucceeded)),
 		attribute.Int64("deploy.failed_event_count", int64(summary.DeployFailed)),
 	)

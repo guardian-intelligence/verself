@@ -111,18 +111,17 @@ compares the result with the policy file. `aspect check --kind=supply-chain`
 runs that gate in review and is also the first gate in `aspect check --kind=all`.
 
 `aspect deploy` is the deployment entry point. `verself-deploy run` evaluates
-the same policy gate in strict mode before host convergence and records the
-evaluation after host convergence so first-run ClickHouse migrations can create
-the evidence table. It inserts one row per source into
+the same policy gate before host convergence and records the evaluation after
+host convergence so first-run ClickHouse migrations can create the evidence
+table. During the admission rollout, deploy uses provisional mode: unknown or
+rejected sources fail the deploy, while tracked-but-not-yet-admitted artifacts
+continue as provisional rows. It inserts one row per source into
 `verself.supply_chain_policy_events`, with the deploy run key, source surface,
 policy result, admission state, distribution references, storage URI, and
 trace/span IDs.
 
-The only deploy alternative is an expiring breakglass exception passed to the
-same `aspect deploy` path. Breakglass exceptions are consumed before host
-mutation, validated against the exact site and SHA being deployed, and recorded
-in `verself.breakglass_events` with the rejected/provisional policy counts and
-the deploy trace IDs.
+Operational breakglass is founder-held root SSH access to the host. It is not a
+routine deployment mode and is not part of `aspect deploy`.
 
 Deployment evidence query:
 
@@ -146,7 +145,8 @@ assertion gate. It recomputes the local policy evaluation, then verifies that
 ClickHouse contains exactly the expected number of policy rows for the deploy
 run, zero rejected rows, non-empty trace IDs, one supply-chain trace ID, OK
 `policy_check` and `policy_record` spans, and a succeeded deploy event without a
-failed deploy event.
+failed deploy event. Provisional rows are expected until admission metadata is
+complete.
 
 Artifact admission and install verification are deploy-flow internals rather
 than operator-facing deploy choices. Admission fetches upstream bytes, verifies

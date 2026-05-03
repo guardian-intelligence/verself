@@ -241,17 +241,14 @@ func runSupplyChainAssertEvidence(args []string) int {
 		return 1
 	}
 	fmt.Printf(
-		"supply-chain evidence ok: run_key=%s rows=%d rejected=%d provisional=%d accepted=%d policy_check_ok_spans=%d policy_check_error_spans=%d policy_record_spans=%d breakglass_rows=%d breakglass_spans=%d trace_id=%s\n",
+		"supply-chain evidence ok: run_key=%s rows=%d rejected=%d provisional=%d accepted=%d policy_check_spans=%d policy_record_spans=%d trace_id=%s\n",
 		summary.DeployRunKey,
 		summary.RowCount,
 		summary.Rejected,
 		summary.Provisional,
 		summary.Accepted,
 		summary.PolicyCheckSpans,
-		summary.PolicyCheckErrorSpans,
 		summary.PolicyRecordSpans,
-		summary.BreakglassRows,
-		summary.BreakglassSpans,
 		summary.TraceID,
 	)
 	return 0
@@ -354,32 +351,17 @@ func validateSupplyChainEvidence(summary deploydb.SupplyChainEvidenceSummary, ex
 	if summary.RowCount != uint64(expectedRows) {
 		issues = append(issues, fmt.Sprintf("expected %d supply-chain rows, observed %d", expectedRows, summary.RowCount))
 	}
+	if summary.Rejected != 0 {
+		issues = append(issues, fmt.Sprintf("expected zero rejected policy rows, observed %d", summary.Rejected))
+	}
 	if summary.EmptyTraceID != 0 {
 		issues = append(issues, fmt.Sprintf("expected zero empty trace IDs, observed %d", summary.EmptyTraceID))
 	}
 	if summary.DistinctTraceID != 1 {
 		issues = append(issues, fmt.Sprintf("expected one supply-chain trace ID, observed %d", summary.DistinctTraceID))
 	}
-	if summary.Rejected == 0 {
-		if summary.PolicyCheckSpans == 0 {
-			issues = append(issues, "missing OK policy_check span")
-		}
-		if summary.BreakglassRows != 0 {
-			issues = append(issues, fmt.Sprintf("expected zero breakglass rows, observed %d", summary.BreakglassRows))
-		}
-	} else {
-		if summary.PolicyCheckErrorSpans == 0 {
-			issues = append(issues, "missing Error policy_check span for fail-closed policy gate")
-		}
-		if summary.BreakglassRows != 1 {
-			issues = append(issues, fmt.Sprintf("expected one breakglass row for rejected policy rows, observed %d", summary.BreakglassRows))
-		}
-		if summary.BreakglassPolicyRejected != summary.Rejected {
-			issues = append(issues, fmt.Sprintf("breakglass rejected count %d did not match rejected policy rows %d", summary.BreakglassPolicyRejected, summary.Rejected))
-		}
-		if summary.BreakglassSpans == 0 {
-			issues = append(issues, "missing OK breakglass.allow span for rejected policy rows")
-		}
+	if summary.PolicyCheckSpans == 0 {
+		issues = append(issues, "missing OK policy_check span")
 	}
 	if summary.PolicyRecordSpans == 0 {
 		issues = append(issues, "missing OK policy_record span")
