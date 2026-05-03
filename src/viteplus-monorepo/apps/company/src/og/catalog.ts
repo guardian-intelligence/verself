@@ -3,8 +3,8 @@ import type { OGSpec } from "./template";
 
 // OG card catalog. Keyed by slug. Every public route looks up its spec by
 // slug and hands it to buildOGCard(). Adding a card = appending an entry here
-// with a title and a flare word that appears in the title. The voice lint
-// runs on every title before render, so banned words fail loudly at request
+// with a title and a flare word that appears in the title. buildOGCard()
+// validates each title before render so banned words fail loudly at request
 // time instead of reaching the share preview.
 //
 // Letters are NOT enumerated here — they synthesize an OGSpec from the

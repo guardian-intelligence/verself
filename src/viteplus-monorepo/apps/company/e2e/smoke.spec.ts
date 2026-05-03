@@ -3,8 +3,7 @@ import { expect, test } from "@playwright/test";
 test("landing renders with Argent wings and hero headline", async ({ page }) => {
   await page.goto("/");
 
-  // Hero headline present — copy comes from src/content/landing.ts. If voice
-  // pass rewrites the landing, this assertion needs to move with it.
+  // Hero headline present — copy comes from src/content/landing.ts.
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "The world needs your business to succeed",
   );

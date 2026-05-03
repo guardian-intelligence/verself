@@ -9,7 +9,6 @@
 //
 // Shape: every entry is a full bulletin with a body. Add a new bulletin by
 // prepending to ITEMS (the array is reverse-chronological by convention).
-// The voice lint scans every paragraph on build; no banned words or hooks.
 
 export type NewsroomCategory = "announcement" | "milestone" | "note";
 

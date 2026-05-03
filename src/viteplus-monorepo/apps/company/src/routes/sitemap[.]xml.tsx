@@ -2,11 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { LETTERS_META, sortedLetters } from "~/content/letters";
 import { SITE_URL } from "~/lib/head";
 
-// Dynamic sitemap. Routes are declared once here so (a) the list is the
-// single source of truth that the crawler, the voice lint, and the humans
-// agree on, and (b) retired paths vanish the moment the route is removed
-// rather than living on in a stale static XML. Letters are enumerated from
-// the content catalog so every post is indexable from the day it ships.
+// Dynamic sitemap. Routes are declared once here so retired paths vanish the
+// moment the route is removed rather than living on in a stale static XML.
+// Letters are enumerated from the content catalog so every post is indexable
+// from the day it ships.
 //
 // No external dep: the sitemap format is ~10 lines of XML and a sitemap
 // library (with plugins, schemas, priorities) is more surface than a 10-URL

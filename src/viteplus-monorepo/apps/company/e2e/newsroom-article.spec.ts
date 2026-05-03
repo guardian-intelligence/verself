@@ -7,8 +7,7 @@ import { expect, test } from "@playwright/test";
 //
 // Content-correctness comes from the seeded "we opened the newsroom" entry
 // in src/content/newsroom.ts; this spec asserts STRUCTURE (breadcrumb,
-// Fraunces H1, deck, byline, paragraph count, footer link), not copy — if
-// the copy changes, the voice lint catches it, not Playwright.
+// Fraunces H1, deck, byline, paragraph count, footer link), not copy.
 
 const CANONICAL_SLUG = "we-opened-the-newsroom";
 

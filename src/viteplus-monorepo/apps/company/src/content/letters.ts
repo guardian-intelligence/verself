@@ -7,7 +7,7 @@ import * as v from "valibot";
 // Adding a letter: drop a new .md file in ./letters/ with the frontmatter
 // fields below. The Vite plugin (vite.config: company:letters-markdown)
 // parses each file at build time; the browser only ever sees pre-rendered
-// HTML. The voice lint scans the body and frontmatter on every build.
+// HTML.
 
 // summary is the only frontmatter field allowed to be absent — that absence
 // is the publish gate. A letter with no summary is a draft: it parses, but

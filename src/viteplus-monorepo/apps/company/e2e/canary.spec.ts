@@ -104,9 +104,8 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     }
   }
 
-  // 3. Every catalogued OG slug renders as a 1200×630 SVG with Argent wings
-  // and no voice violations (the route returns 500 on voice failure — if any
-  // catalogued spec regresses into a banned term, this test fails loudly).
+  // 3. Every catalogued OG slug renders as a 1200×630 SVG with Argent wings.
+  // The route returns 500 on OG-card validation failure.
   for (const slug of OG_SLUGS) {
     const og = await request.get(`/og/${slug}`);
     expect(og.status(), `GET /og/${slug}`).toBe(200);
