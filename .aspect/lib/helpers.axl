@@ -47,7 +47,6 @@ VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deplo
 VERSELF_DEPLOY_BIN = "bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
 ASPECT_OPERATOR_TARGET = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
 ASPECT_OPERATOR_BIN = "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator"
-EDGE_GENERATED_TARGET = "//src/host-configuration:edge_generated"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -191,16 +190,6 @@ def build_aspect_operator(ctx):
     if rc != 0:
         return ""
     return ws_path(ctx, ASPECT_OPERATOR_BIN)
-
-def update_edge_generated(ctx):
-    """Materialize the gitignored HAProxy edge artifacts from Bazel outputs."""
-    return checked_spawn(
-        ctx,
-        "bazelisk",
-        ["run", EDGE_GENERATED_TARGET],
-        cwd = ws_path(ctx),
-        label = "bazelisk run " + EDGE_GENERATED_TARGET,
-    )
 
 _BAZEL_FILE_BASENAMES = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"]
 

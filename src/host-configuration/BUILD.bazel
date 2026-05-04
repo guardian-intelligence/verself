@@ -1,60 +1,6 @@
 # gazelle:prefix github.com/verself/host-configuration
 
-load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
-
 package(default_visibility = ["//visibility:public"])
-
-_EDGE_INPUTS = [
-    "ansible/group_vars/all/topology/clusters.yml",
-    "ansible/group_vars/all/topology/endpoints.yml",
-    "ansible/group_vars/all/topology/ops.yml",
-    "ansible/group_vars/all/topology/routes.yml",
-    "ansible/roles/haproxy/defaults/main.yml",
-    "//src/tools/deployment/nomad:prod_nomad_job_specs",
-    "//src/tools/deployment/nomad:sites/prod/release.json",
-]
-
-genrule(
-    name = "edge_haproxy_template",
-    srcs = _EDGE_INPUTS,
-    outs = ["__generated/edge/haproxy.cfg.j2"],
-    cmd = "$(location //src/tools/dev/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=haproxy-template > $@",
-    tools = ["//src/tools/dev/cmd/aspect-operator"],
-)
-
-genrule(
-    name = "edge_public_hosts_map",
-    srcs = _EDGE_INPUTS,
-    outs = ["__generated/edge/public-hosts.map.j2"],
-    cmd = "$(location //src/tools/dev/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=public-hosts-map > $@",
-    tools = ["//src/tools/dev/cmd/aspect-operator"],
-)
-
-genrule(
-    name = "edge_nomad_upstreams_config",
-    srcs = _EDGE_INPUTS,
-    outs = ["__generated/edge/nomad-upstreams.cfg.j2"],
-    cmd = "$(location //src/tools/dev/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=nomad-upstreams-config > $@",
-    tools = ["//src/tools/dev/cmd/aspect-operator"],
-)
-
-genrule(
-    name = "edge_nomad_upstreams_template",
-    srcs = _EDGE_INPUTS,
-    outs = ["__generated/edge/nomad-upstreams.ctmpl"],
-    cmd = "$(location //src/tools/dev/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=nomad-upstreams-template > $@",
-    tools = ["//src/tools/dev/cmd/aspect-operator"],
-)
-
-write_source_files(
-    name = "edge_generated",
-    files = {
-        "ansible/roles/haproxy/templates/__generated/haproxy.cfg.j2": ":edge_haproxy_template",
-        "ansible/roles/haproxy/templates/__generated/nomad-upstreams.cfg.j2": ":edge_nomad_upstreams_config",
-        "ansible/roles/haproxy/templates/__generated/nomad-upstreams.ctmpl": ":edge_nomad_upstreams_template",
-        "ansible/roles/haproxy/templates/__generated/public-hosts.map.j2": ":edge_public_hosts_map",
-    },
-)
 
 filegroup(
     name = "converge_sources",
@@ -75,7 +21,6 @@ filegroup(
         exclude = [
             "ansible/.ansible/**",
             "ansible/.cache/**",
-            "ansible/**/__generated/**",
             "ansible/**/__rendered/**",
             "ansible/**/__pycache__/**",
             "ansible/*.ini",

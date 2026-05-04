@@ -12,38 +12,36 @@ import (
 )
 
 type loadedInputs struct {
-	routes    RoutesFile
-	endpoints EndpointsFile
-	ops       OpsFile
-	clusters  ClustersFile
-	defaults  HAProxyDefaults
-	index     NomadIndex
+	routes                 RoutesFile
+	endpoints              EndpointsFile
+	ops                    OpsFile
+	clusters               ClustersFile
+	defaults               HAProxyDefaults
+	index                  NomadIndex
+	haproxyTemplate        string
+	publicHostsMap         string
+	nomadUpstreamsConfig   string
+	nomadUpstreamsTemplate string
 }
 
 func DefaultInputs(cfg Config) Inputs {
+	templateDir := filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates")
 	return Inputs{
-		Routes:          filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/routes.yml"),
-		Endpoints:       filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
-		Ops:             filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
-		Clusters:        filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
-		NomadIndex:      filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "release.json"),
-		HAProxyDefaults: filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
-	}
-}
-
-func DefaultOutputs(cfg Config) Outputs {
-	generatedDir := filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/__generated")
-	return Outputs{
-		HAProxyTemplate:        filepath.Join(generatedDir, "haproxy.cfg.j2"),
-		PublicHostsMap:         filepath.Join(generatedDir, "public-hosts.map.j2"),
-		NomadUpstreamsConfig:   filepath.Join(generatedDir, "nomad-upstreams.cfg.j2"),
-		NomadUpstreamsTemplate: filepath.Join(generatedDir, "nomad-upstreams.ctmpl"),
+		Routes:                 filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/routes.yml"),
+		Endpoints:              filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
+		Ops:                    filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
+		Clusters:               filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
+		NomadIndex:             filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "release.json"),
+		HAProxyDefaults:        filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
+		HAProxyTemplate:        filepath.Join(templateDir, "haproxy.cfg.j2"),
+		PublicHostsMap:         filepath.Join(templateDir, "public-hosts.map.j2"),
+		NomadUpstreamsConfig:   filepath.Join(templateDir, "nomad-upstreams.cfg.j2"),
+		NomadUpstreamsTemplate: filepath.Join(templateDir, "nomad-upstreams.ctmpl"),
 	}
 }
 
 func Build(cfg Config) (*Bundle, error) {
 	inputPaths := DefaultInputs(cfg)
-	outputPaths := DefaultOutputs(cfg)
 	in, err := loadInputs(inputPaths)
 	if err != nil {
 		return nil, err
@@ -52,42 +50,14 @@ func Build(cfg Config) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	artifacts := Artifacts{
-		HAProxyTemplate:        RenderHAProxyTemplate(plan),
-		PublicHostsMap:         RenderPublicHostsMap(plan),
-		NomadUpstreamsConfig:   RenderInitialNomadUpstreamsConfig(plan),
-		NomadUpstreamsTemplate: RenderNomadUpstreamsTemplate(plan),
-	}
-	manifest := BuildManifest(inputPaths, outputPaths, plan)
+	manifest := BuildManifest(inputPaths, plan)
 	sort.Strings(issues)
 	return &Bundle{
-		Inputs:    inputPaths,
-		Outputs:   outputPaths,
-		Plan:      plan,
-		Artifacts: artifacts,
-		Manifest:  manifest,
-		Issues:    issues,
+		Inputs:   inputPaths,
+		Plan:     plan,
+		Manifest: manifest,
+		Issues:   issues,
 	}, nil
-}
-
-func (b *Bundle) GeneratedArtifacts() []GeneratedArtifact {
-	return b.Outputs.GeneratedArtifacts(b.Artifacts)
-}
-
-func (b *Bundle) ArtifactIssues() []string {
-	return artifactIssues(b.GeneratedArtifacts())
-}
-
-func (b *Bundle) WriteArtifacts() error {
-	for _, artifact := range b.GeneratedArtifacts() {
-		if err := os.MkdirAll(filepath.Dir(artifact.Path), 0o755); err != nil {
-			return fmt.Errorf("create generated artifact dir for %s: %w", artifact.Path, err)
-		}
-		if err := os.WriteFile(artifact.Path, []byte(artifact.Content), 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", artifact.Path, err)
-		}
-	}
-	return nil
 }
 
 func loadInputs(inputPaths Inputs) (loadedInputs, error) {
@@ -110,6 +80,22 @@ func loadInputs(inputPaths Inputs) (loadedInputs, error) {
 	if err := readJSONFile(inputPaths.NomadIndex, &in.index); err != nil {
 		return loadedInputs{}, err
 	}
+	textFiles := []struct {
+		path string
+		into *string
+	}{
+		{path: inputPaths.HAProxyTemplate, into: &in.haproxyTemplate},
+		{path: inputPaths.PublicHostsMap, into: &in.publicHostsMap},
+		{path: inputPaths.NomadUpstreamsConfig, into: &in.nomadUpstreamsConfig},
+		{path: inputPaths.NomadUpstreamsTemplate, into: &in.nomadUpstreamsTemplate},
+	}
+	for _, file := range textFiles {
+		text, err := readTextFile(file.path)
+		if err != nil {
+			return loadedInputs{}, err
+		}
+		*file.into = text
+	}
 	return in, nil
 }
 
@@ -124,7 +110,6 @@ func compilePlan(cfg Config, inputPaths Inputs, in loadedInputs) (Plan, []string
 		Site:           cfg.Site,
 		Domains:        Domains{Product: in.ops.VerselfDomain, Company: in.ops.CompanyDomain},
 		Defaults:       in.defaults,
-		Artifacts:      in.ops.TopologyArtifacts,
 		Garage:         in.clusters.TopologyClusters.Garage,
 		Components:     in.endpoints.TopologyEndpoints,
 		NomadUpstreams: nomadUpstreams,
@@ -162,6 +147,7 @@ func compilePlan(cfg Config, inputPaths Inputs, in loadedInputs) (Plan, []string
 	plan.UpstreamKeys = compileUpstreamKeys(plan)
 	sortPlan(&plan)
 	validatePlan(plan, &issues)
+	validateAuthoredEdge(in, plan, &issues)
 	return plan, issues, nil
 }
 
@@ -510,6 +496,82 @@ func validatePlan(plan Plan, issues *[]string) {
 	}
 }
 
+func validateAuthoredEdge(in loadedInputs, plan Plan, issues *[]string) {
+	text := strings.Join([]string{
+		in.haproxyTemplate,
+		in.nomadUpstreamsConfig,
+		in.nomadUpstreamsTemplate,
+	}, "\n")
+	for _, object := range append(append([]HAProxyObject{}, plan.Frontends...), backendObjects(plan.Backends)...) {
+		if !hasGuidLine(text, object.GUID) {
+			issuef(issues, "authored HAProxy templates must define %s %s with guid %s", object.Kind, object.Name, object.GUID)
+		}
+	}
+	validatePublicHostsMap(in.publicHostsMap, plan, issues)
+	validateNomadUpstreamsTemplate(in.nomadUpstreamsTemplate, plan, issues)
+}
+
+func hasGuidLine(text, guid string) bool {
+	want := "guid " + guid
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func validatePublicHostsMap(text string, plan Plan, issues *[]string) {
+	actual := map[string]BackendID{}
+	for lineNum, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			issuef(issues, "public hosts map line %d must be '<host> <backend>'", lineNum+1)
+			continue
+		}
+		actual[fields[0]] = BackendID(fields[1])
+	}
+	expected := map[string]BackendID{}
+	for _, route := range plan.Routes {
+		if len(route.Paths) == 0 {
+			expected[route.FQDN] = route.Backend
+		}
+	}
+	for fqdn, backend := range expected {
+		if actual[fqdn] != backend {
+			issuef(issues, "public hosts map must route %s to %s", fqdn, backend)
+		}
+	}
+	for fqdn := range actual {
+		if _, ok := expected[fqdn]; !ok {
+			issuef(issues, "public hosts map contains unmanaged host %s", fqdn)
+		}
+	}
+}
+
+func validateNomadUpstreamsTemplate(text string, plan Plan, issues *[]string) {
+	serviceByKey := make(map[UpstreamKey]NomadService, len(plan.NomadUpstreams))
+	for _, service := range plan.NomadUpstreams {
+		serviceByKey[UpstreamKey(service.Key)] = service
+	}
+	for _, route := range plan.Routes {
+		if route.Upstream == "" {
+			continue
+		}
+		service, ok := serviceByKey[route.Upstream]
+		if !ok {
+			continue
+		}
+		if !strings.Contains(text, `nomadService "`+service.ServiceName+`"`) {
+			issuef(issues, "nomad upstreams template must discover service %s for route %s", service.ServiceName, route.Backend)
+		}
+	}
+}
+
 func backendObjects(backends []Backend) []HAProxyObject {
 	out := make([]HAProxyObject, 0, len(backends))
 	for _, backend := range backends {
@@ -545,6 +607,14 @@ func readYAMLFile(path string, target any) error {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	return nil
+}
+
+func readTextFile(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	return string(b), nil
 }
 
 func readJSONFile(path string, target any) error {

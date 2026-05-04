@@ -272,7 +272,7 @@
 
 - name: Deploy HAProxy public host map
   ansible.builtin.template:
-    src: __generated/public-hosts.map.j2
+    src: public-hosts.map.j2
     dest: "{{ haproxy_map_dir }}/public-hosts.map"
     owner: root
     group: haproxy
@@ -281,7 +281,7 @@
 
 - name: Deploy HAProxy Nomad upstream backend config
   ansible.builtin.template:
-    src: __generated/nomad-upstreams.cfg.j2
+    src: nomad-upstreams.cfg.j2
     dest: "{{ haproxy_nomad_upstreams_config }}"
     owner: root
     group: haproxy
@@ -290,7 +290,7 @@
 
 - name: Deploy HAProxy configuration
   ansible.builtin.template:
-    src: __generated/haproxy.cfg.j2
+    src: haproxy.cfg.j2
     dest: "{{ haproxy_config_dir }}/haproxy.cfg"
     owner: root
     group: haproxy

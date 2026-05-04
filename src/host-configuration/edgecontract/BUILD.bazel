@@ -6,7 +6,6 @@ go_library(
         "load.go",
         "manifest.go",
         "model.go",
-        "render.go",
     ],
     importpath = "github.com/verself/host-configuration/edgecontract",
     visibility = ["//visibility:public"],

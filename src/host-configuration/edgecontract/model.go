@@ -17,28 +17,16 @@ type Config struct {
 }
 
 type Inputs struct {
-	Routes          string `json:"routes" yaml:"routes"`
-	Endpoints       string `json:"endpoints" yaml:"endpoints"`
-	Ops             string `json:"ops" yaml:"ops"`
-	Clusters        string `json:"clusters" yaml:"clusters"`
-	NomadIndex      string `json:"nomad_index" yaml:"nomad_index"`
-	HAProxyDefaults string `json:"haproxy_defaults" yaml:"haproxy_defaults"`
-}
-
-type Outputs struct {
+	Routes                 string `json:"routes" yaml:"routes"`
+	Endpoints              string `json:"endpoints" yaml:"endpoints"`
+	Ops                    string `json:"ops" yaml:"ops"`
+	Clusters               string `json:"clusters" yaml:"clusters"`
+	NomadIndex             string `json:"nomad_index" yaml:"nomad_index"`
+	HAProxyDefaults        string `json:"haproxy_defaults" yaml:"haproxy_defaults"`
 	HAProxyTemplate        string `json:"haproxy_template" yaml:"haproxy_template"`
 	PublicHostsMap         string `json:"public_hosts_map" yaml:"public_hosts_map"`
 	NomadUpstreamsConfig   string `json:"nomad_upstreams_config" yaml:"nomad_upstreams_config"`
 	NomadUpstreamsTemplate string `json:"nomad_upstreams_template" yaml:"nomad_upstreams_template"`
-}
-
-func (o Outputs) GeneratedArtifacts(artifacts Artifacts) []GeneratedArtifact {
-	return []GeneratedArtifact{
-		{Name: "HAProxy template", Path: o.HAProxyTemplate, Content: artifacts.HAProxyTemplate},
-		{Name: "public hosts map", Path: o.PublicHostsMap, Content: artifacts.PublicHostsMap},
-		{Name: "Nomad upstreams config", Path: o.NomadUpstreamsConfig, Content: artifacts.NomadUpstreamsConfig},
-		{Name: "Nomad upstreams template", Path: o.NomadUpstreamsTemplate, Content: artifacts.NomadUpstreamsTemplate},
-	}
 }
 
 type (
@@ -70,12 +58,10 @@ const (
 )
 
 type Bundle struct {
-	Inputs    Inputs
-	Outputs   Outputs
-	Plan      Plan
-	Artifacts Artifacts
-	Manifest  Manifest
-	Issues    []string
+	Inputs   Inputs
+	Plan     Plan
+	Manifest Manifest
+	Issues   []string
 }
 
 type Plan struct {
@@ -83,7 +69,6 @@ type Plan struct {
 	GatewayHost    string
 	Domains        Domains
 	Defaults       HAProxyDefaults
-	Artifacts      ArtifactTopology
 	Garage         GarageCluster
 	Components     map[string]ComponentEndpoint
 	NomadUpstreams []NomadService
@@ -104,23 +89,9 @@ type HAProxyDefaults struct {
 	H2CComponents []string `yaml:"haproxy_h2c_components"`
 }
 
-type Artifacts struct {
-	HAProxyTemplate        string
-	PublicHostsMap         string
-	NomadUpstreamsConfig   string
-	NomadUpstreamsTemplate string
-}
-
-type GeneratedArtifact struct {
-	Name    string
-	Path    string
-	Content string
-}
-
 type Manifest struct {
 	Site           string          `json:"site" yaml:"site"`
 	Inputs         Inputs          `json:"inputs" yaml:"inputs"`
-	Outputs        Outputs         `json:"outputs" yaml:"outputs"`
 	Frontends      []HAProxyObject `json:"frontends" yaml:"frontends"`
 	Backends       []HAProxyObject `json:"backends" yaml:"backends"`
 	Servers        []HAProxyObject `json:"servers" yaml:"servers"`
@@ -190,15 +161,6 @@ type NomadService struct {
 	NomadDynamic bool   `json:"nomad_dynamic" yaml:"nomad_dynamic"`
 }
 
-type NomadEndpoint struct {
-	ServiceName string
-	ServiceID   string
-	AllocID     string
-	JobID       string
-	Address     string
-	Port        int
-}
-
 type RoutesFile struct {
 	TopologyGateways map[string]Gateway `yaml:"topology_gateways"`
 	TopologyRoutes   []TopologyRoute    `yaml:"topology_routes"`
@@ -256,23 +218,8 @@ type Interface struct {
 }
 
 type OpsFile struct {
-	CompanyDomain     string           `yaml:"company_domain"`
-	VerselfDomain     string           `yaml:"verself_domain"`
-	TopologyArtifacts ArtifactTopology `yaml:"topology_artifacts"`
-}
-
-type ArtifactTopology struct {
-	Nomad NomadArtifact `yaml:"nomad"`
-}
-
-type NomadArtifact struct {
-	Origin NomadArtifactOrigin `yaml:"origin"`
-}
-
-type NomadArtifactOrigin struct {
-	Hostname   string `yaml:"hostname"`
-	ListenHost string `yaml:"listen_host"`
-	Port       int    `yaml:"port"`
+	CompanyDomain string `yaml:"company_domain"`
+	VerselfDomain string `yaml:"verself_domain"`
 }
 
 type ClustersFile struct {

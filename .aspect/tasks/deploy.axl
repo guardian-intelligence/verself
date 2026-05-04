@@ -21,14 +21,10 @@ load(
     "git_head",
     "resolve_sha",
     "site_inventory_source",
-    "update_edge_generated",
     "ws_path",
 )
 
 def _edge_preflight(ctx, site):
-    render_rc = update_edge_generated(ctx)
-    if render_rc != 0:
-        return render_rc
     bin = build_aspect_operator(ctx)
     if bin == "":
         return 1

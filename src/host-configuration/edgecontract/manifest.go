@@ -2,7 +2,7 @@ package edgecontract
 
 import "sort"
 
-func BuildManifest(inputs Inputs, outputs Outputs, plan Plan) Manifest {
+func BuildManifest(inputs Inputs, plan Plan) Manifest {
 	routes := make([]RouteManifest, 0, len(plan.Routes))
 	for _, route := range plan.Routes {
 		routes = append(routes, RouteManifest{
@@ -39,7 +39,6 @@ func BuildManifest(inputs Inputs, outputs Outputs, plan Plan) Manifest {
 	return Manifest{
 		Site:           plan.Site,
 		Inputs:         inputs,
-		Outputs:        outputs,
 		Frontends:      frontends,
 		Backends:       backends,
 		Servers:        servers,
