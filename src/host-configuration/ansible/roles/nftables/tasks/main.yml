@@ -70,6 +70,16 @@
         )
       }}
 
+- name: Remove stale nftables rulesets
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ nftables_deployed_rulesets.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: (item.path | basename) not in (nftables_rendered_rulesets | map('basename') | list)
+  notify: reload nftables
+
 - name: Deploy rendered nftables rulesets
   ansible.builtin.copy:
     src: "{{ item }}"
