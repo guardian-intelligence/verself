@@ -1,6 +1,5 @@
 exports_files([
     "artifact.bzl",
-    "link_release.py",
     "release.bzl",
     "sites/prod/site.json",
 ])

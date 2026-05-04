@@ -30,6 +30,7 @@ go_library(
         "//src/tools/deployment/internal/runtime",
         "//src/tools/deployment/internal/sshtun",
         "//src/tools/deployment/internal/supplychain",
+        "@com_github_hashicorp_nomad_api//:api",
         "@com_github_opencontainers_go_digest//:go-digest",
         "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
         "@in_gopkg_yaml_v3//:yaml_v3",
@@ -52,6 +53,9 @@ go_binary(
 
 go_test(
     name = "verself-deploy_test",
-    srcs = ["host_configuration_inputs_test.go"],
+    srcs = [
+        "host_configuration_inputs_test.go",
+        "nomad_release_test.go",
+    ],
     embed = [":verself-deploy_lib"],
 )

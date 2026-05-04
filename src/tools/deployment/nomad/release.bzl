@@ -7,7 +7,6 @@ NomadComponentInfo = provider(
         "component": "Topology component key.",
         "depends_on": "List of Nomad job IDs that must be submitted before this component.",
         "descriptor": "Component descriptor JSON file.",
-        "embedded_templates": "label_keyed_string_dict of template files to exact Nomad spec placeholders.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
     },
@@ -57,27 +56,12 @@ def _nomad_component_impl(ctx):
             "path": artifact_file.path,
         })
 
-    embedded_templates = []
-    template_placeholders = {}
-    for template_target, placeholder in ctx.attr.embedded_templates.items():
-        if placeholder in template_placeholders:
-            fail("duplicate Nomad embedded template placeholder %s in %s" % (placeholder, ctx.label))
-        template_placeholders[placeholder] = True
-        template_file = _single_file(template_target, "embedded template")
-        inputs.append(template_file)
-        embedded_templates.append({
-            "label": _repo_label(template_target.label),
-            "path": template_file.path,
-            "placeholder": placeholder,
-        })
-
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
         "schema_version": 1,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "depends_on": ctx.attr.depends_on,
-        "embedded_templates": embedded_templates,
         "job_id": ctx.attr.job_id,
         "job_spec": job_spec.short_path,
         "job_spec_path": job_spec.path,
@@ -92,7 +76,6 @@ def _nomad_component_impl(ctx):
             component = ctx.attr.component,
             depends_on = ctx.attr.depends_on,
             descriptor = descriptor,
-            embedded_templates = ctx.attr.embedded_templates,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
         ),
@@ -111,10 +94,6 @@ nomad_component = rule(
         ),
         "depends_on": attr.string_list(
             doc = "Nomad job IDs that must be submitted before this component.",
-        ),
-        "embedded_templates": attr.label_keyed_string_dict(
-            allow_files = True,
-            doc = "Map of template file labels to exact placeholders in the Nomad job spec.",
         ),
         "job_id": attr.string(
             mandatory = True,

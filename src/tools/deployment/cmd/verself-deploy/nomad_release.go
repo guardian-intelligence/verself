@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hashicorp/nomad/api"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -38,6 +39,43 @@ const (
 	nomadReleaseMaxBytes      = 64 * 1024 * 1024
 	nomadComponentsQuery      = `kind("nomad_component rule", //src/...)`
 )
+
+const artifactSourcePrefix = "verself-artifact://"
+
+type nomadComponentDescriptor struct {
+	SchemaVersion int                       `json:"schema_version"`
+	Label         string                    `json:"label"`
+	Component     string                    `json:"component"`
+	DependsOn     []string                  `json:"depends_on"`
+	JobID         string                    `json:"job_id"`
+	JobSpec       string                    `json:"job_spec"`
+	JobSpecPath   string                    `json:"job_spec_path"`
+	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
+}
+
+type nomadDescriptorArtifact struct {
+	Label  string `json:"label"`
+	Output string `json:"output"`
+	Path   string `json:"path"`
+}
+
+type nomadArtifactDeliveryPolicy struct {
+	nomadrelease.ArtifactDelivery
+	KeyPrefix         string `json:"key_prefix"`
+	ChecksumAlgorithm string `json:"checksum_algorithm"`
+	Public            *bool  `json:"public"`
+}
+
+type nomadSiteConfig struct {
+	ArtifactDelivery nomadArtifactDeliveryPolicy `json:"artifact_delivery"`
+}
+
+type artifactBinding struct {
+	Artifact nomadrelease.Artifact
+	Checksum string
+	Label    string
+	Path     string
+}
 
 func runRelease(args []string) int {
 	if len(args) < 1 {
@@ -149,13 +187,7 @@ func publishNomadRelease(ctx context.Context, rt *runtime.Runtime, span trace.Sp
 	if err != nil {
 		return err
 	}
-	releasePath, cleanup, err := linkNomadRelease(ctx, repoRoot, site, descriptorPaths)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	release, err := nomadrelease.Load(releasePath)
+	release, err := assembleNomadRelease(repoRoot, site, descriptorPaths)
 	if err != nil {
 		return err
 	}
@@ -166,7 +198,6 @@ func publishNomadRelease(ctx context.Context, rt *runtime.Runtime, span trace.Sp
 		return fmt.Errorf("built nomad release unexpectedly already has sha=%s", release.SHA)
 	}
 	span.SetAttributes(
-		attribute.String("verself.nomad_release_path", releasePath),
 		attribute.String("verself.nomad_components_query", nomadComponentsQuery),
 		attribute.Int("verself.artifact_count", len(release.Artifacts)),
 		attribute.Int("verself.nomad_component_count", len(componentLabels)),
@@ -248,36 +279,340 @@ func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]str
 	return labels, descriptorPaths, nil
 }
 
-func linkNomadRelease(ctx context.Context, repoRoot, site string, descriptorPaths []string) (string, func(), error) {
-	out, err := os.CreateTemp("", "verself-nomad-release-*.json")
+func assembleNomadRelease(repoRoot, site string, descriptorPaths []string) (*nomadrelease.Release, error) {
+	components, err := loadNomadComponentDescriptors(descriptorPaths)
 	if err != nil {
-		return "", nil, fmt.Errorf("create temporary Nomad release file: %w", err)
+		return nil, err
 	}
-	outPath := out.Name()
-	if err := out.Close(); err != nil {
-		_ = os.Remove(outPath)
-		return "", nil, fmt.Errorf("close temporary Nomad release file: %w", err)
+	ordered, err := orderNomadComponents(components)
+	if err != nil {
+		return nil, err
 	}
-	cleanup := func() { _ = os.Remove(outPath) }
+	policy, err := loadNomadArtifactDeliveryPolicy(repoRoot, site)
+	if err != nil {
+		return nil, err
+	}
+	bindings, artifacts, err := bindNomadArtifacts(repoRoot, policy, components)
+	if err != nil {
+		return nil, err
+	}
 
-	args := []string{
-		filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "link_release.py"),
-		"--site", site,
-		"--components-query", nomadComponentsQuery,
-		"--site-config", filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "site.json"),
-		"--out", outPath,
+	referenced := map[string]bool{}
+	jobs := make([]nomadrelease.Job, 0, len(ordered))
+	submitOrder := make([]string, 0, len(ordered))
+	for _, component := range ordered {
+		specPath := resolveWorkspacePath(repoRoot, component.JobSpecPath)
+		job, err := loadAuthoredNomadSpec(specPath)
+		if err != nil {
+			return nil, err
+		}
+		seen, err := bindArtifactsInSpec(job, bindings)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", component.JobID, err)
+		}
+		for output := range seen {
+			referenced[output] = true
+		}
+		artifactDigestInput, err := json.Marshal(canonicalArtifactDigestInput(seen, bindings))
+		if err != nil {
+			return nil, fmt.Errorf("%s: encode artifact digest input: %w", component.JobID, err)
+		}
+		artifactDigest := nomadrelease.SHA256(artifactDigestInput)
+		specSHA, err := stampNomadSpecMeta(job, artifactDigest)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", component.JobID, err)
+		}
+		specBody, err := json.Marshal(struct {
+			Job *api.Job `json:"Job"`
+		}{
+			Job: job,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%s: encode bound Nomad spec: %w", component.JobID, err)
+		}
+		jobs = append(jobs, nomadrelease.Job{
+			JobID:          component.JobID,
+			SpecSHA256:     specSHA,
+			ArtifactSHA256: artifactDigest,
+			Spec:           specBody,
+		})
+		submitOrder = append(submitOrder, component.JobID)
 	}
-	for _, path := range descriptorPaths {
-		args = append(args, "--component-descriptor", path)
+	for output := range bindings {
+		if !referenced[output] {
+			return nil, fmt.Errorf("artifact %q was declared by a Nomad component but not referenced by any authored job", output)
+		}
 	}
-	cmd := exec.CommandContext(ctx, "python3", args...)
-	cmd.Dir = repoRoot
-	body, err := cmd.CombinedOutput()
+	release := &nomadrelease.Release{
+		SchemaVersion:    nomadrelease.SchemaVersion,
+		Site:             site,
+		ComponentsQuery:  nomadComponentsQuery,
+		ArtifactDelivery: policy.ArtifactDelivery,
+		Artifacts:        artifacts,
+		Jobs:             jobs,
+		SubmitOrder:      submitOrder,
+	}
+	if err := release.Validate(""); err != nil {
+		return nil, err
+	}
+	return release, nil
+}
+
+func loadNomadComponentDescriptors(paths []string) ([]nomadComponentDescriptor, error) {
+	if len(paths) == 0 {
+		return nil, errors.New("at least one Nomad component descriptor is required")
+	}
+	components := make([]nomadComponentDescriptor, 0, len(paths))
+	seenLabels := map[string]bool{}
+	for _, path := range paths {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		var component nomadComponentDescriptor
+		if err := json.Unmarshal(body, &component); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", path, err)
+		}
+		if component.SchemaVersion != 1 {
+			return nil, fmt.Errorf("%s: unsupported component descriptor schema_version=%d", path, component.SchemaVersion)
+		}
+		if component.Label == "" || component.Component == "" || component.JobID == "" || component.JobSpec == "" || component.JobSpecPath == "" {
+			return nil, fmt.Errorf("%s: component descriptor must include label, component, job_id, job_spec, and job_spec_path", path)
+		}
+		if seenLabels[component.Label] {
+			return nil, fmt.Errorf("duplicate Nomad component descriptor label %s", component.Label)
+		}
+		seenLabels[component.Label] = true
+		for _, artifact := range component.Artifacts {
+			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
+				return nil, fmt.Errorf("%s: artifact entries must include label, output, and path", path)
+			}
+		}
+		components = append(components, component)
+	}
+	return components, nil
+}
+
+func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadComponentDescriptor, error) {
+	byJobID := make(map[string]nomadComponentDescriptor, len(components))
+	for _, component := range components {
+		if _, exists := byJobID[component.JobID]; exists {
+			return nil, fmt.Errorf("duplicate Nomad job_id %s", component.JobID)
+		}
+		byJobID[component.JobID] = component
+	}
+	var out []nomadComponentDescriptor
+	temporary := map[string]bool{}
+	permanent := map[string]bool{}
+	var visit func(jobID string, stack []string) error
+	visit = func(jobID string, stack []string) error {
+		if permanent[jobID] {
+			return nil
+		}
+		if temporary[jobID] {
+			return fmt.Errorf("Nomad job dependency cycle: %s", strings.Join(append(stack, jobID), " -> "))
+		}
+		component, exists := byJobID[jobID]
+		if !exists {
+			return fmt.Errorf("unknown Nomad job dependency %q", jobID)
+		}
+		temporary[jobID] = true
+		deps := append([]string(nil), component.DependsOn...)
+		sort.Strings(deps)
+		for _, dep := range deps {
+			if _, exists := byJobID[dep]; !exists {
+				return fmt.Errorf("%s.depends_on references unknown Nomad job %q", jobID, dep)
+			}
+			if err := visit(dep, append(stack, jobID)); err != nil {
+				return err
+			}
+		}
+		temporary[jobID] = false
+		permanent[jobID] = true
+		out = append(out, component)
+		return nil
+	}
+	var jobIDs []string
+	for jobID := range byJobID {
+		jobIDs = append(jobIDs, jobID)
+	}
+	sort.Strings(jobIDs)
+	for _, jobID := range jobIDs {
+		if err := visit(jobID, nil); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func loadNomadArtifactDeliveryPolicy(repoRoot, site string) (nomadArtifactDeliveryPolicy, error) {
+	siteConfigPath := filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "site.json")
+	body, err := os.ReadFile(siteConfigPath)
 	if err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("link Nomad release: %w: %s", err, strings.TrimSpace(string(body)))
+		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("read %s: %w", siteConfigPath, err)
 	}
-	return outPath, cleanup, nil
+	var cfg nomadSiteConfig
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("decode %s: %w", siteConfigPath, err)
+	}
+	if cfg.ArtifactDelivery.Public == nil || *cfg.ArtifactDelivery.Public {
+		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("%s: artifact_delivery.public must be false", siteConfigPath)
+	}
+	if cfg.ArtifactDelivery.Bucket == "" || cfg.ArtifactDelivery.GetterSourcePrefix == "" || cfg.ArtifactDelivery.KeyPrefix == "" {
+		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("%s: artifact_delivery must include bucket, getter_source_prefix, and key_prefix", siteConfigPath)
+	}
+	if !strings.HasPrefix(cfg.ArtifactDelivery.GetterSourcePrefix, "s3::https://") {
+		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("%s: artifact_delivery.getter_source_prefix must start with s3::https://", siteConfigPath)
+	}
+	if cfg.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
+		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", siteConfigPath)
+	}
+	return cfg.ArtifactDelivery, nil
+}
+
+func bindNomadArtifacts(repoRoot string, policy nomadArtifactDeliveryPolicy, components []nomadComponentDescriptor) (map[string]artifactBinding, []nomadrelease.Artifact, error) {
+	bindings := map[string]artifactBinding{}
+	for _, component := range components {
+		for _, declared := range component.Artifacts {
+			if prior, exists := bindings[declared.Output]; exists {
+				if prior.Label != declared.Label || prior.Path != declared.Path {
+					return nil, nil, fmt.Errorf("Nomad artifact output %q is provided by both %s and %s", declared.Output, prior.Label, declared.Label)
+				}
+				continue
+			}
+			artifactPath := resolveWorkspacePath(repoRoot, declared.Path)
+			body, err := os.ReadFile(artifactPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read artifact %s: %w", declared.Path, err)
+			}
+			digest := nomadrelease.SHA256(body)
+			key := strings.Trim(policy.KeyPrefix, "/") + "/" + digest + "/" + declared.Output + ".tar"
+			artifact := nomadrelease.Artifact{
+				Output:        declared.Output,
+				LocalPath:     artifactPath,
+				SHA256:        digest,
+				Bucket:        policy.Bucket,
+				Key:           key,
+				GetterSource:  strings.TrimRight(policy.GetterSourcePrefix, "/") + "/" + key,
+				GetterOptions: policy.GetterOptions,
+			}
+			bindings[declared.Output] = artifactBinding{
+				Artifact: artifact,
+				Checksum: policy.ChecksumAlgorithm + ":" + digest,
+				Label:    declared.Label,
+				Path:     declared.Path,
+			}
+		}
+	}
+	artifacts := make([]nomadrelease.Artifact, 0, len(bindings))
+	for _, binding := range bindings {
+		artifacts = append(artifacts, binding.Artifact)
+	}
+	sort.Slice(artifacts, func(i, j int) bool {
+		if artifacts[i].Bucket != artifacts[j].Bucket {
+			return artifacts[i].Bucket < artifacts[j].Bucket
+		}
+		if artifacts[i].Key != artifacts[j].Key {
+			return artifacts[i].Key < artifacts[j].Key
+		}
+		return artifacts[i].Output < artifacts[j].Output
+	})
+	return bindings, artifacts, nil
+}
+
+func loadAuthoredNomadSpec(path string) (*api.Job, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	var spec struct {
+		Job *api.Job `json:"Job"`
+	}
+	if err := json.Unmarshal(body, &spec); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	if spec.Job == nil {
+		return nil, fmt.Errorf("%s: missing top-level Job object", path)
+	}
+	if spec.Job.ID == nil || *spec.Job.ID == "" {
+		return nil, fmt.Errorf("%s: Job.ID is required", path)
+	}
+	return spec.Job, nil
+}
+
+func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map[string]bool, error) {
+	seen := map[string]bool{}
+	for _, group := range job.TaskGroups {
+		for _, task := range group.Tasks {
+			for _, artifact := range task.Artifacts {
+				if artifact.GetterSource == nil {
+					continue
+				}
+				source := *artifact.GetterSource
+				if !strings.HasPrefix(source, artifactSourcePrefix) {
+					continue
+				}
+				output := strings.TrimPrefix(source, artifactSourcePrefix)
+				binding, ok := bindings[output]
+				if !ok {
+					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
+				}
+				getterOptions := map[string]string{}
+				for key, value := range binding.Artifact.GetterOptions {
+					getterOptions[key] = value
+				}
+				getterOptions["checksum"] = binding.Checksum
+				artifact.GetterSource = &binding.Artifact.GetterSource
+				artifact.GetterOptions = getterOptions
+				seen[output] = true
+			}
+		}
+	}
+	return seen, nil
+}
+
+func canonicalArtifactDigestInput(seen map[string]bool, bindings map[string]artifactBinding) []map[string]string {
+	outputs := make([]string, 0, len(seen))
+	for output := range seen {
+		outputs = append(outputs, output)
+	}
+	sort.Strings(outputs)
+	rows := make([]map[string]string, 0, len(outputs))
+	for _, output := range outputs {
+		binding := bindings[output]
+		rows = append(rows, map[string]string{
+			"getter_source": binding.Artifact.GetterSource,
+			"output":        output,
+			"sha256":        binding.Artifact.SHA256,
+		})
+	}
+	return rows
+}
+
+func stampNomadSpecMeta(job *api.Job, artifactDigest string) (string, error) {
+	if job.Meta == nil {
+		job.Meta = map[string]string{}
+	}
+	job.Meta["artifact_sha256"] = artifactDigest
+	delete(job.Meta, "spec_sha256")
+	specBody, err := json.Marshal(struct {
+		Job *api.Job `json:"Job"`
+	}{
+		Job: job,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode spec digest input: %w", err)
+	}
+	specDigest := nomadrelease.SHA256(specBody)
+	job.Meta["spec_sha256"] = specDigest
+	return specDigest, nil
+}
+
+func resolveWorkspacePath(repoRoot, path string) string {
+	if filepath.IsAbs(path) || repoRoot == "" {
+		return path
+	}
+	return filepath.Join(repoRoot, filepath.FromSlash(path))
 }
 
 func deployPublishedRelease(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot, sha string) error {
