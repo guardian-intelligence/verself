@@ -50,7 +50,7 @@ function LoginPage() {
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">Sign in to Console</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Authentication continues with the hosted identity service.
+          Authentication continues with the hosted IAM service.
         </p>
         {hydrated ? (
           <SignInButton {...(redirect ? { redirectTo: redirect } : {})} className="mt-6">

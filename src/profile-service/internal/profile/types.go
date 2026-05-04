@@ -32,7 +32,7 @@ var (
 	ErrConflict            = errors.New("version conflict")
 	ErrNotFound            = errors.New("not found")
 	ErrStoreUnavailable    = errors.New("profile store unavailable")
-	ErrIdentityUnavailable = errors.New("identity service unavailable")
+	ErrIdentityUnavailable = errors.New("iam service unavailable")
 )
 
 type Principal struct {

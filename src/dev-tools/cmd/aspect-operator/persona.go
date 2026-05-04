@@ -437,11 +437,11 @@ func printIdentityMetadata(rt *opruntime.Runtime, client *http.Client, personaNa
 	if err := waitForHTTP(rt.Ctx, client, baseURL+"/readyz", http.StatusOK); err != nil {
 		return err
 	}
-	access, err := identityAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization", token)
+	access, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization", token)
 	if err != nil {
 		return err
 	}
-	operations, err := identityAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization/operations", token)
+	operations, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization/operations", token)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "WARNING: iam-service operation catalog endpoint unavailable; continuing with empty operations metadata")
 		operations = map[string]any{"services": []any{}}
@@ -473,7 +473,7 @@ func waitForHTTP(ctx context.Context, client *http.Client, endpoint string, expe
 	}
 }
 
-func identityAPIGet(ctx context.Context, client *http.Client, endpoint, token string) (map[string]any, error) {
+func iamAPIGet(ctx context.Context, client *http.Client, endpoint, token string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -486,7 +486,7 @@ func identityAPIGet(ctx context.Context, client *http.Client, endpoint, token st
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("identity API %s: HTTP %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, fmt.Errorf("iam API %s: HTTP %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {

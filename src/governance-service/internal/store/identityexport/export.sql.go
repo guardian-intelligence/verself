@@ -28,8 +28,8 @@ FROM (
            c.revoked_by,
            c.last_used_at,
            COALESCE(array_agg(p.permission ORDER BY p.permission) FILTER (WHERE p.permission IS NOT NULL), '{}') AS permissions
-    FROM identity_api_credentials c
-    LEFT JOIN identity_api_credential_permissions p ON p.credential_id = c.credential_id
+    FROM iam_api_credentials c
+    LEFT JOIN iam_api_credential_permissions p ON p.credential_id = c.credential_id
     WHERE c.org_id = $1
     GROUP BY c.credential_id
     ORDER BY c.created_at,
@@ -65,7 +65,7 @@ const exportIdentityMemberCapabilitiesJSONL = `-- name: ExportIdentityMemberCapa
 SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT org_id, enabled_keys, version, updated_at, updated_by
-    FROM identity_member_capabilities
+    FROM iam_member_capabilities
     WHERE org_id = $1
 ) t
 `

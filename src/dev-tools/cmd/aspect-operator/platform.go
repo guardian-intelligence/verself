@@ -367,7 +367,7 @@ func stableUUID(parts ...string) uuid.UUID {
 }
 
 func (r *platformRunner) ensureIdentityOrganization() error {
-	return r.withSpan("platform.identity.ensure", []attribute.KeyValue{
+	return r.withSpan("platform.iam.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "iam_service"),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
@@ -380,40 +380,40 @@ func (r *platformRunner) ensureIdentityOrganization() error {
 		defer func() { _ = conn.Close(context.Background()) }()
 		tx, err := conn.Begin(ctx)
 		if err != nil {
-			return fmt.Errorf("identity organization: begin: %w", err)
+			return fmt.Errorf("iam organization: begin: %w", err)
 		}
 		defer rollbackTx(ctx, tx)
 
 		var displayName, slug, state string
 		err = tx.QueryRow(ctx, `
 SELECT display_name, slug, state
-FROM identity_organizations
+FROM iam_organizations
 WHERE org_id = $1
 FOR UPDATE`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
 		now := time.Now().UTC()
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			if _, err := tx.Exec(ctx, `
-INSERT INTO identity_organizations (org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
+INSERT INTO iam_organizations (org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
 VALUES ($1, $2, $3, 'active', 1, $4, $4, $5, $5)`,
 				r.cfg.OrgIDText, r.cfg.CompanyDisplayName, r.cfg.CompanySlug, platformActor, now); err != nil {
-				return fmt.Errorf("identity organization: insert: %w", err)
+				return fmt.Errorf("iam organization: insert: %w", err)
 			}
-			r.markChanged("identity.organization.created")
+			r.markChanged("iam.organization.created")
 		case err != nil:
-			return fmt.Errorf("identity organization: query: %w", err)
+			return fmt.Errorf("iam organization: query: %w", err)
 		default:
 			if slug != r.cfg.CompanySlug {
 				if _, err := tx.Exec(ctx, `
-INSERT INTO identity_organization_slug_redirects (slug, org_id, created_at, created_by)
+INSERT INTO iam_organization_slug_redirects (slug, org_id, created_at, created_by)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT DO NOTHING`, slug, r.cfg.OrgIDText, now, platformActor); err != nil {
-					return fmt.Errorf("identity organization: insert slug redirect: %w", err)
+					return fmt.Errorf("iam organization: insert slug redirect: %w", err)
 				}
 			}
 			if displayName != r.cfg.CompanyDisplayName || slug != r.cfg.CompanySlug || state != "active" {
 				if _, err := tx.Exec(ctx, `
-UPDATE identity_organizations
+UPDATE iam_organizations
 SET display_name = $2,
     slug = $3,
     state = 'active',
@@ -422,13 +422,13 @@ SET display_name = $2,
     updated_by = $5
 WHERE org_id = $1`,
 					r.cfg.OrgIDText, r.cfg.CompanyDisplayName, r.cfg.CompanySlug, now, platformActor); err != nil {
-					return fmt.Errorf("identity organization: update: %w", err)
+					return fmt.Errorf("iam organization: update: %w", err)
 				}
-				r.markChanged("identity.organization.updated")
+				r.markChanged("iam.organization.updated")
 			}
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("identity organization: commit: %w", err)
+			return fmt.Errorf("iam organization: commit: %w", err)
 		}
 		return nil
 	})
@@ -819,8 +819,8 @@ WHERE backend_id = $1 AND repo_id = $2`,
 }
 
 func (r *platformRunner) checkIdentityOrganization(issues *[]string) platformBoundaryRow {
-	row := platformBoundaryRow{Boundary: "iam_service.identity_organizations", Status: "ok"}
-	err := r.withSpan("platform.identity.check", []attribute.KeyValue{
+	row := platformBoundaryRow{Boundary: "iam_service.iam_organizations", Status: "ok"}
+	err := r.withSpan("platform.iam.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "iam_service"),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
@@ -833,15 +833,15 @@ func (r *platformRunner) checkIdentityOrganization(issues *[]string) platformBou
 		var displayName, slug, state string
 		err = conn.QueryRow(ctx, `
 SELECT display_name, slug, state
-FROM identity_organizations
+FROM iam_organizations
 WHERE org_id = $1`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
 		if errors.Is(err, pgx.ErrNoRows) {
-			*issues = append(*issues, "identity organization is missing")
+			*issues = append(*issues, "iam organization is missing")
 			row.Status = "missing"
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("identity organization: query: %w", err)
+			return fmt.Errorf("iam organization: query: %w", err)
 		}
 		var mismatches []string
 		if displayName != r.cfg.CompanyDisplayName {
@@ -854,7 +854,7 @@ WHERE org_id = $1`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
 			mismatches = append(mismatches, fmt.Sprintf("state=%q", state))
 		}
 		if len(mismatches) > 0 {
-			*issues = append(*issues, "identity organization mismatch: "+strings.Join(mismatches, ", "))
+			*issues = append(*issues, "iam organization mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
 			row.Detail = strings.Join(mismatches, ", ")
 		}

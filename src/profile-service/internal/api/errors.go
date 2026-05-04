@@ -67,7 +67,7 @@ func profileError(ctx context.Context, err error) error {
 	case errors.Is(err, profile.ErrNotFound):
 		return notFound(ctx, "profile-request-not-found", "profile request not found")
 	case errors.Is(err, profile.ErrIdentityUnavailable):
-		return upstreamFailure(ctx, "iam-service-unavailable", "identity service unavailable", err)
+		return upstreamFailure(ctx, "iam-service-unavailable", "iam service unavailable", err)
 	case errors.Is(err, profile.ErrStoreUnavailable):
 		return internalFailure(ctx, "profile-store-unavailable", "profile store unavailable", err)
 	default:

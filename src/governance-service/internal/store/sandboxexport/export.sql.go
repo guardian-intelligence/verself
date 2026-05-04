@@ -158,7 +158,7 @@ func (q *Queries) ExportSandboxExecutionFilesystemMountsJSONL(ctx context.Contex
 const exportSandboxExecutionLogsJSONL = `-- name: ExportSandboxExecutionLogsJSONL :many
 SELECT row_to_json(t)::text AS row_json
 FROM (
-    SELECT l.execution_id, l.attempt_id, l.seq, l.stream, l.chunk, l.created_at
+    SELECT l.execution_id, l.org_id, l.attempt_id, l.seq, l.stream, l.chunk, l.created_at
     FROM execution_logs l
     JOIN executions e ON e.execution_id = l.execution_id
     WHERE e.org_id::text = $1
