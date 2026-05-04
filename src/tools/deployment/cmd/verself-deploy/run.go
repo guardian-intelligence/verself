@@ -215,11 +215,13 @@ func runDeployBody(
 		return 1
 	}
 
-	// 3. Nomad deploy: deploy consumes the already-published release for sha.
-	if err := deployPublishedRelease(ctx, rt, span, site, repoRoot, sha); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad release deploy failed: %v\n", err)
+	// 3. Nomad deploy: Bazel discovers the checked-in nomad_component targets,
+	// Garage receives any missing content-addressed artifacts, and Nomad gets
+	// per-job resolved payloads directly.
+	if err := deployNomadComponents(ctx, rt, span, site, repoRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, "nomad"),
-			"nomad release deploy: "+err.Error())
+			"nomad deploy: "+err.Error())
 		return 1
 	}
 	components = append(components, "nomad")

@@ -69,7 +69,7 @@ The current deployment uses a Nomad-managed SpiceDB process backed by
 PostgreSQL:
 
 ```text
-src/components/spicedb/nomad.json
+src/host-configuration/components/spicedb/nomad.json
   gRPC API:       Nomad service spicedb-grpc, loopback dynamic port
   metrics/pprof:  Nomad service spicedb-metrics, loopback dynamic port
   HTTP gateway:   disabled

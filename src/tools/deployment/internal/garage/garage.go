@@ -34,7 +34,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tools/internal/nomadrelease"
+	"github.com/verself/deployment-tools/internal/deploymodel"
 )
 
 const (
@@ -78,7 +78,7 @@ type Publisher struct {
 
 // New constructs a Publisher from a manifest's artifact_delivery and
 // the runtime Config.
-func New(delivery nomadrelease.ArtifactDelivery, cfg Config) (*Publisher, error) {
+func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) {
 	endpoint, bucket, err := endpointFromGetterPrefix(delivery.GetterSourcePrefix)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func New(delivery nomadrelease.ArtifactDelivery, cfg Config) (*Publisher, error)
 // PublishAll uploads every artifact in the manifest, idempotent on
 // matching remote sha256. Each item gets its own put_object span
 // regardless of whether it actually transfers.
-func (p *Publisher) PublishAll(ctx context.Context, artifacts []nomadrelease.Artifact, repoRoot string) error {
+func (p *Publisher) PublishAll(ctx context.Context, artifacts []deploymodel.Artifact, repoRoot string) error {
 	for _, item := range artifacts {
 		if err := p.publishOne(ctx, item, repoRoot); err != nil {
 			return fmt.Errorf("%s: %w", item.Output, err)
@@ -122,7 +122,7 @@ func (p *Publisher) PublishAll(ctx context.Context, artifacts []nomadrelease.Art
 	return nil
 }
 
-func (p *Publisher) PublishBytes(ctx context.Context, item nomadrelease.Artifact, body []byte, contentType string) error {
+func (p *Publisher) PublishBytes(ctx context.Context, item deploymodel.Artifact, body []byte, contentType string) error {
 	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.put_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
@@ -140,7 +140,7 @@ func (p *Publisher) PublishBytes(ctx context.Context, item nomadrelease.Artifact
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	digest := nomadrelease.SHA256(body)
+	digest := deploymodel.SHA256(body)
 	if digest != item.SHA256 {
 		err := fmt.Errorf("body sha256=%s does not match expected sha256=%s", digest, item.SHA256)
 		span.RecordError(err)
@@ -195,7 +195,7 @@ func (p *Publisher) PublishBytes(ctx context.Context, item nomadrelease.Artifact
 	return nil
 }
 
-func (p *Publisher) ReadBytes(ctx context.Context, item nomadrelease.Artifact, maxBytes int64) ([]byte, error) {
+func (p *Publisher) ReadBytes(ctx context.Context, item deploymodel.Artifact, maxBytes int64) ([]byte, error) {
 	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.get_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
@@ -265,7 +265,7 @@ func (p *Publisher) ReadBytes(ctx context.Context, item nomadrelease.Artifact, m
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	digest := nomadrelease.SHA256(body)
+	digest := deploymodel.SHA256(body)
 	if item.SHA256 != "" && digest != item.SHA256 {
 		err := fmt.Errorf("remote object sha256=%s does not match expected sha256=%s", digest, item.SHA256)
 		span.RecordError(err)
@@ -290,7 +290,7 @@ func (p *Publisher) ReadBytes(ctx context.Context, item nomadrelease.Artifact, m
 	return body, nil
 }
 
-func (p *Publisher) Verify(ctx context.Context, item nomadrelease.Artifact) error {
+func (p *Publisher) Verify(ctx context.Context, item deploymodel.Artifact) error {
 	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.verify_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
@@ -346,7 +346,7 @@ func (p *Publisher) Verify(ctx context.Context, item nomadrelease.Artifact) erro
 	return nil
 }
 
-func (p *Publisher) publishOne(ctx context.Context, item nomadrelease.Artifact, repoRoot string) error {
+func (p *Publisher) publishOne(ctx context.Context, item deploymodel.Artifact, repoRoot string) error {
 	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.put_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
@@ -426,7 +426,7 @@ func (p *Publisher) publishOne(ctx context.Context, item nomadrelease.Artifact, 
 	}
 }
 
-func (p *Publisher) head(ctx context.Context, item nomadrelease.Artifact) (int, string, error) {
+func (p *Publisher) head(ctx context.Context, item deploymodel.Artifact) (int, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, p.objectURL(item).String(), http.NoBody)
 	if err != nil {
 		return 0, "", err
@@ -446,7 +446,7 @@ func (p *Publisher) head(ctx context.Context, item nomadrelease.Artifact) (int, 
 	return resp.StatusCode, "", nil
 }
 
-func (p *Publisher) getDigest(ctx context.Context, item nomadrelease.Artifact) (string, error) {
+func (p *Publisher) getDigest(ctx context.Context, item deploymodel.Artifact) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.objectURL(item).String(), http.NoBody)
 	if err != nil {
 		return "", err
@@ -470,7 +470,7 @@ func (p *Publisher) getDigest(ctx context.Context, item nomadrelease.Artifact) (
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func (p *Publisher) put(ctx context.Context, localPath string, item nomadrelease.Artifact) (int64, error) {
+func (p *Publisher) put(ctx context.Context, localPath string, item deploymodel.Artifact) (int64, error) {
 	file, err := os.Open(localPath)
 	if err != nil {
 		return 0, fmt.Errorf("open artifact: %w", err)
@@ -483,7 +483,7 @@ func (p *Publisher) put(ctx context.Context, localPath string, item nomadrelease
 	return p.putReader(ctx, file, info.Size(), "application/x-tar", item)
 }
 
-func (p *Publisher) putReader(ctx context.Context, body io.Reader, contentLength int64, contentType string, item nomadrelease.Artifact) (int64, error) {
+func (p *Publisher) putReader(ctx context.Context, body io.Reader, contentLength int64, contentType string, item deploymodel.Artifact) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, p.objectURL(item).String(), body)
 	if err != nil {
 		return 0, err
@@ -506,7 +506,7 @@ func (p *Publisher) putReader(ctx context.Context, body io.Reader, contentLength
 	return contentLength, nil
 }
 
-func (p *Publisher) objectURL(item nomadrelease.Artifact) *url.URL {
+func (p *Publisher) objectURL(item deploymodel.Artifact) *url.URL {
 	u := *p.endpoint
 	u.Path = "/" + path.Join(item.Bucket, item.Key)
 	return &u

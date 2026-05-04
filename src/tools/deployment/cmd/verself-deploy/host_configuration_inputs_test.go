@@ -13,7 +13,7 @@ func TestHostConfigurationSkipTags(t *testing.T) {
 	}{
 		{
 			name:         "grafana role skips guest image and firecracker work",
-			changedPaths: []string{"src/host-configuration/ansible/roles/grafana/vars/main.yml"},
+			changedPaths: []string{"src/host-configuration/components/grafana/vars/main.yml"},
 			want:         []string{"guest_rootfs", "firecracker"},
 		},
 		{
@@ -75,5 +75,63 @@ func TestHostConfigurationAnsibleArgs(t *testing.T) {
 	want := []string{"--skip-tags=guest_rootfs,firecracker"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("hostConfigurationAnsibleArgs() = %v, want %v", got, want)
+	}
+}
+
+func TestHostConfigurationPathRequiresAnsible(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{
+			name: "component role task is ansible input",
+			path: "src/host-configuration/components/spicedb/tasks/main.yml",
+			want: true,
+		},
+		{
+			name: "component nftables file is ansible input",
+			path: "src/host-configuration/components/spicedb/files/spicedb.nft",
+			want: true,
+		},
+		{
+			name: "clickhouse migration is ansible input",
+			path: "src/host-configuration/components/clickhouse/migrations/012_nomad_job_events.up.sql",
+			want: true,
+		},
+		{
+			name: "component nomad job is not ansible input",
+			path: "src/host-configuration/components/spicedb/nomad.json",
+			want: false,
+		},
+		{
+			name: "platform component go code is not ansible input",
+			path: "src/host-configuration/components/temporal-platform/cmd/verself-temporal-server/main.go",
+			want: false,
+		},
+		{
+			name: "platform component build file is not ansible input",
+			path: "src/host-configuration/components/temporal-platform/BUILD.bazel",
+			want: false,
+		},
+		{
+			name: "shared ansible role remains ansible input",
+			path: "src/host-configuration/ansible/roles/firecracker/tasks/main.yml",
+			want: true,
+		},
+		{
+			name: "host readme is not ansible input",
+			path: "src/host-configuration/README.md",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hostConfigurationPathRequiresAnsible(tt.path)
+			if got != tt.want {
+				t.Fatalf("hostConfigurationPathRequiresAnsible(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
 	}
 }

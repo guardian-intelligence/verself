@@ -19,6 +19,6 @@ use (
 	./src/services/source-code-hosting-service
 	./src/services/service-runtime/go
 	./src/host-configuration
-	./src/components/temporal-platform
+	./src/host-configuration/components/temporal-platform
 	./src/substrate/vm-orchestrator
 )

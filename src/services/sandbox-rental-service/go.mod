@@ -118,7 +118,7 @@ replace (
 	github.com/verself/governance-service => ../governance-service
 	github.com/verself/secrets-service => ../secrets-service
 	github.com/verself/source-code-hosting-service => ../source-code-hosting-service
-	github.com/verself/temporal-platform => ../../components/temporal-platform
+	github.com/verself/temporal-platform => ../../host-configuration/components/temporal-platform
 	github.com/verself/vm-orchestrator => ../../substrate/vm-orchestrator
 )
 

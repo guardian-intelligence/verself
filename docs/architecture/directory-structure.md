@@ -14,11 +14,8 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Source Owners (`src/`)
 
 - `host-configuration/` — Ansible host convergence, server tool admission,
-  host-local scripts, host ClickHouse schemas, and authored HAProxy templates.
-  Ansible lives here only.
-- `components/` — platform components wrapped as first-party runtime owners.
-  Components can have Nomad jobs and small owner-local setup code, but they do
-  not own customer-facing product APIs.
+  host-local operators, host component roles, component-owned ClickHouse
+  migrations, and authored HAProxy templates. Ansible lives here only.
 - `domain-transfer-objects/` — shared data-transfer contracts for service
   boundaries, OpenAPI-compatible DTOs, shared protobuf schemas, numeric wire
   primitives, and generated-client contract rules.
@@ -82,14 +79,16 @@ They do not converge host packages or deploy services.
 
 - `ansible/` — current private runner for host, daemon, and per-component
   prerequisite convergence.
-- `migrations/clickhouse/` — host convergence ClickHouse schema.
+- `components/` — platform component Ansible roles and optional
+  component-owned Nomad jobs.
+- `components/clickhouse/migrations/` — host convergence ClickHouse schema.
 - `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
   persona, billing, mail, database access, observability, and host evidence.
 Topology vars are authored in `src/host-configuration/ansible/group_vars/all/topology/`.
 Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
 Nomad jobs live with their owning service, frontend, or component as
-`nomad.json`; site release manifests under `src/tools/deployment/nomad/sites/`
-wire those owner-local jobs to artifact delivery and rollout inputs.
+`nomad.json`. The deploy runner wires owner-local jobs to artifact delivery and
+rollout inputs directly through Bazel and Nomad.
 
 ## Service- and host-local docs
 

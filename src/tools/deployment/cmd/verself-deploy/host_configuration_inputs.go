@@ -20,7 +20,7 @@ const (
 	hostConfigurationReasonInputsUnchanged   = "host_inputs_unchanged"
 )
 
-var hostConfigurationPathspecs = []string{
+var hostConfigurationDiffPathspecs = []string{
 	"MODULE.bazel",
 	"MODULE.bazel.lock",
 	"src/host-configuration",
@@ -36,6 +36,7 @@ type hostConfigurationDecision struct {
 	BaseRunKey   string
 	BaseSHA      string
 	ChangedPaths []string
+	IgnoredPaths []string
 	SkipTags     []string
 }
 
@@ -46,7 +47,7 @@ func decideHostConfigurationConvergence(ctx context.Context, rt *runtime.Runtime
 			attribute.String("verself.site", site),
 			attribute.String("verself.deploy_scope", scope),
 			attribute.String("verself.deploy_sha", sha),
-			attribute.StringSlice("host_configuration.pathspecs", hostConfigurationPathspecs),
+			attribute.StringSlice("host_configuration.pathspecs", hostConfigurationDiffPathspecs),
 		),
 	)
 	defer span.End()
@@ -66,7 +67,7 @@ func decideHostConfigurationConvergence(ctx context.Context, rt *runtime.Runtime
 		return decision, nil
 	}
 
-	changedPaths, err := gitChangedHostConfigurationInputs(ctx, repoRoot, last.Sha, sha)
+	changedPaths, ignoredPaths, err := gitChangedHostConfigurationInputs(ctx, repoRoot, last.Sha, sha)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -78,6 +79,7 @@ func decideHostConfigurationConvergence(ctx context.Context, rt *runtime.Runtime
 		BaseRunKey:   last.RunKey,
 		BaseSHA:      last.Sha,
 		ChangedPaths: changedPaths,
+		IgnoredPaths: ignoredPaths,
 	}
 	if decision.Run {
 		decision.Reason = hostConfigurationReasonInputsChanged
@@ -94,6 +96,7 @@ func recordHostConfigurationDecision(span trace.Span, decision hostConfiguration
 		attribute.String("host_configuration.base_run_key", decision.BaseRunKey),
 		attribute.String("host_configuration.base_sha", decision.BaseSHA),
 		attribute.Int("host_configuration.changed_path_count", len(decision.ChangedPaths)),
+		attribute.Int("host_configuration.ignored_path_count", len(decision.IgnoredPaths)),
 	}
 	if len(decision.ChangedPaths) > 0 {
 		attrs = append(attrs, attribute.StringSlice("host_configuration.changed_paths", firstStrings(decision.ChangedPaths, 20)))
@@ -101,8 +104,52 @@ func recordHostConfigurationDecision(span trace.Span, decision hostConfiguration
 	if len(decision.SkipTags) > 0 {
 		attrs = append(attrs, attribute.StringSlice("host_configuration.skip_tags", decision.SkipTags))
 	}
+	if len(decision.IgnoredPaths) > 0 {
+		attrs = append(attrs, attribute.StringSlice("host_configuration.ignored_paths", firstStrings(decision.IgnoredPaths, 20)))
+	}
 	span.SetAttributes(attrs...)
 	span.SetStatus(codes.Ok, "")
+}
+
+func hostConfigurationPathRequiresAnsible(path string) bool {
+	path = hostConfigurationNormalizePath(path)
+	if path == "" {
+		return false
+	}
+	if path == "MODULE.bazel" || path == "MODULE.bazel.lock" {
+		return true
+	}
+	if path == "src/host-configuration/ansible/group_vars/all/catalog.yml" {
+		return true
+	}
+	if strings.HasPrefix(path, "src/host-configuration/components/") {
+		return hostConfigurationComponentPathRequiresAnsible(path)
+	}
+	if hasAnyPathPrefix(path,
+		"src/host-configuration/ansible/",
+		"src/host-configuration/binaries/",
+		"src/substrate/vm-orchestrator/",
+		"src/substrate/vm-guest-telemetry/",
+		"src/domain-transfer-objects/go/",
+		"src/tools/observability/go/otel/",
+	) {
+		return true
+	}
+	return false
+}
+
+func hostConfigurationComponentPathRequiresAnsible(path string) bool {
+	rest := strings.TrimPrefix(path, "src/host-configuration/components/")
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 {
+		return false
+	}
+	switch parts[1] {
+	case "defaults", "files", "handlers", "meta", "migrations", "tasks", "templates", "vars":
+		return true
+	default:
+		return false
+	}
 }
 
 func hostConfigurationSkipTags(changedPaths []string) []string {
@@ -170,32 +217,38 @@ func hasAnyPathPrefix(path string, prefixes ...string) bool {
 	return false
 }
 
-func gitChangedHostConfigurationInputs(ctx context.Context, repoRoot, baseSHA, headSHA string) ([]string, error) {
+func gitChangedHostConfigurationInputs(ctx context.Context, repoRoot, baseSHA, headSHA string) ([]string, []string, error) {
 	if baseSHA == "" {
-		return nil, fmt.Errorf("host configuration change detection: base SHA is required")
+		return nil, nil, fmt.Errorf("host configuration change detection: base SHA is required")
 	}
 	if headSHA == "" {
-		return nil, fmt.Errorf("host configuration change detection: head SHA is required")
+		return nil, nil, fmt.Errorf("host configuration change detection: head SHA is required")
 	}
 	if baseSHA == headSHA {
-		return nil, nil
+		return nil, nil, nil
 	}
 	args := []string{"diff", "--name-only", "--diff-filter=ACDMRT", baseSHA, headSHA, "--"}
-	args = append(args, hostConfigurationPathspecs...)
+	args = append(args, hostConfigurationDiffPathspecs...)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = repoRoot
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("host configuration change detection: git diff: %w: %s", err, strings.TrimSpace(string(out)))
+		return nil, nil, fmt.Errorf("host configuration change detection: git diff: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	var paths []string
+	var ansiblePaths []string
+	var ignoredPaths []string
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			paths = append(paths, line)
+		if line == "" {
+			continue
+		}
+		if hostConfigurationPathRequiresAnsible(line) {
+			ansiblePaths = append(ansiblePaths, line)
+		} else {
+			ignoredPaths = append(ignoredPaths, line)
 		}
 	}
-	return paths, nil
+	return ansiblePaths, ignoredPaths, nil
 }
 
 func firstStrings(values []string, n int) []string {

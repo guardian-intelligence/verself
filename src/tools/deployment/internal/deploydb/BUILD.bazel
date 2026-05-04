@@ -9,6 +9,7 @@ go_library(
         "nomad_job_events.go",
         "open_operator.go",
         "operator_config.go",
+        "safeconv.go",
         "supply_chain_events.go",
         "tls.go",
     ],

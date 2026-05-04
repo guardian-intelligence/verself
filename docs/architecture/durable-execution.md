@@ -30,7 +30,7 @@ The current deployment is intentionally narrow:
 
 - One loopback-only Temporal cluster on the single-node host.
 - One owner-local Nomad job at
-  `src/components/temporal-platform/nomad.json` running Temporal in
+  `src/host-configuration/components/temporal-platform/nomad.json` running Temporal in
   combined mode.
 - One repo-owned `temporal-bootstrap` command run by Nomad after server
   start to ensure the sandbox and billing namespaces exist.
@@ -203,11 +203,11 @@ Drawbacks:
   [`change-data-capture.md`](change-data-capture.md),
   [`domain-event-stream.md`](domain-event-stream.md).
 - Implementation references:
-  `src/components/temporal-platform/cmd/verself-temporal-server/main.go`,
-  `src/components/temporal-platform/nomad.json`,
-  `src/components/temporal-platform/internal/tlsprovider/tlsprovider.go`,
-  `src/components/temporal-platform/internal/spiffeauth/spiffeauth.go`,
-  `src/host-configuration/ansible/roles/temporal/*`.
+  `src/host-configuration/components/temporal-platform/cmd/verself-temporal-server/main.go`,
+  `src/host-configuration/components/temporal-platform/nomad.json`,
+  `src/host-configuration/components/temporal-platform/internal/tlsprovider/tlsprovider.go`,
+  `src/host-configuration/components/temporal-platform/internal/spiffeauth/spiffeauth.go`,
+  `src/host-configuration/components/temporal-platform/*`.
 - Temporal self-hosted security and mTLS configuration:
   <https://docs.temporal.io/self-hosted-guide/security>.
 - Temporal platform documentation: <https://docs.temporal.io/>.

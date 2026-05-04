@@ -1,9 +1,0 @@
-load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
-
-nomad_component(
-    name = "nomad_component",
-    component = "haproxy_upstreams",
-    job_id = "haproxy-upstreams",
-    job_spec = "nomad.json",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)

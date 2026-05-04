@@ -1,0 +1,9 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    component = "spicedb",
+    job_id = "spicedb",
+    job_spec = "nomad.json",
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

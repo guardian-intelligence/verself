@@ -1,0 +1,563 @@
+---
+# ClickHouse configuration.
+# Binary provided by substrate_profile role (pinned static binary).
+
+- name: Create ClickHouse system group
+  ansible.builtin.group:
+    name: clickhouse
+    system: true
+
+- name: Create ClickHouse system user
+  ansible.builtin.user:
+    name: "{{ clickhouse_system_user }}"
+    group: "{{ clickhouse_system_group }}"
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    home: "{{ clickhouse_data_path }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create ClickHouse operator system group
+  ansible.builtin.group:
+    name: "{{ clickhouse_operator_system_group }}"
+    system: true
+
+- name: Create ClickHouse operator system user
+  ansible.builtin.user:
+    name: "{{ clickhouse_operator_system_user }}"
+    group: "{{ clickhouse_operator_system_group }}"
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    home: /var/lib/clickhouse-operator
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Set ClickHouse operator client command fact
+  ansible.builtin.set_fact:
+    clickhouse_operator_client_command: >-
+      sudo -u {{ clickhouse_operator_system_user }} {{ verself_bin }}/clickhouse-client
+      --config-file {{ clickhouse_operator_client_config_path }}
+      --user {{ clickhouse_operator_db_user }}
+
+- name: Create ClickHouse static config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/clickhouse-server/config.d
+    - /etc/clickhouse-server/tls
+
+- name: Create ClickHouse runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ clickhouse_system_user }}"
+    group: "{{ clickhouse_system_group }}"
+    mode: "0750"
+  loop:
+    - "{{ clickhouse_data_path }}"
+    - /var/log/clickhouse-server
+
+- name: Detect ClickHouse runtime paths with stale ownership
+  # ClickHouse removes tmp_merge_* directories during compaction, so the scan tolerates only disappeared paths.
+  ansible.builtin.shell:
+    cmd: |
+      err_file="$(mktemp)"
+      trap 'rm -f "$err_file"' EXIT
+      if find {{ item | quote }} \
+        \( ! -user {{ clickhouse_system_user | quote }} \
+        -o ! -group {{ clickhouse_system_group | quote }} \) \
+        -print -quit 2>"$err_file"; then
+        exit 0
+      fi
+
+      rc="$?"
+      non_disappeared_errors="$(grep -v 'No such file or directory' "$err_file" || true)"
+      if [ -n "$non_disappeared_errors" ]; then
+        printf '%s\n' "$non_disappeared_errors" >&2
+        exit "$rc"
+      fi
+      exit 0
+    executable: /bin/bash
+  register: clickhouse_runtime_ownership_probe
+  changed_when: false
+  loop:
+    - "{{ clickhouse_data_path }}"
+    - /var/log/clickhouse-server
+
+- name: Converge ClickHouse runtime tree ownership
+  ansible.builtin.command:
+    cmd: >-
+      chown -R {{ clickhouse_system_user }}:{{ clickhouse_system_group }}
+      {{ clickhouse_data_path }}
+      /var/log/clickhouse-server
+  when: >-
+    (clickhouse_runtime_ownership_probe.results
+      | selectattr('stdout', 'ne', '')
+      | list
+      | length) > 0
+  changed_when: true
+
+- name: Converge ClickHouse runtime top-level directory modes
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ clickhouse_system_user }}"
+    group: "{{ clickhouse_system_group }}"
+    mode: "0750"
+  loop:
+    - "{{ clickhouse_data_path }}"
+    - /var/log/clickhouse-server
+
+- name: Create ClickHouse operator directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ clickhouse_operator_client_dir }}"
+      owner: root
+      group: "{{ clickhouse_operator_system_group }}"
+      mode: "0750"
+    - path: /var/lib/clickhouse-operator
+      owner: "{{ clickhouse_operator_system_user }}"
+      group: "{{ clickhouse_operator_system_group }}"
+      mode: "0750"
+    - path: "{{ clickhouse_operator_spiffe_dir }}"
+      owner: "{{ clickhouse_operator_system_user }}"
+      group: "{{ clickhouse_operator_system_group }}"
+      mode: "0700"
+    - path: "{{ clickhouse_server_spiffe_dir }}"
+      owner: "{{ clickhouse_system_user }}"
+      group: "{{ clickhouse_system_group }}"
+      mode: "0700"
+
+- name: Deploy ClickHouse server certificate extensions
+  ansible.builtin.copy:
+    dest: /etc/clickhouse-server/tls/server-cert.ext
+    owner: root
+    group: clickhouse
+    mode: "0640"
+    content: |
+      basicConstraints=CA:FALSE
+      keyUsage=digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=IP:127.0.0.1,DNS:localhost
+
+- name: Generate ClickHouse local CA private key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -out
+      - /etc/clickhouse-server/tls/server-ca-key.pem
+      - "4096"
+    creates: /etc/clickhouse-server/tls/server-ca-key.pem
+
+- name: Generate ClickHouse local CA certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -nodes
+      - -key
+      - /etc/clickhouse-server/tls/server-ca-key.pem
+      - -sha256
+      - -days
+      - "3650"
+      - -out
+      - /etc/clickhouse-server/tls/server-ca.pem
+      - -subj
+      - /CN=Verself ClickHouse local CA
+    creates: /etc/clickhouse-server/tls/server-ca.pem
+
+- name: Generate ClickHouse server private key and CSR
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -keyout
+      - /etc/clickhouse-server/tls/server-key.pem
+      - -out
+      - /etc/clickhouse-server/tls/server.csr
+      - -subj
+      - /CN=127.0.0.1
+    creates: /etc/clickhouse-server/tls/server-key.pem
+
+- name: Sign ClickHouse server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -in
+      - /etc/clickhouse-server/tls/server.csr
+      - -CA
+      - /etc/clickhouse-server/tls/server-ca.pem
+      - -CAkey
+      - /etc/clickhouse-server/tls/server-ca-key.pem
+      - -CAcreateserial
+      - -out
+      - /etc/clickhouse-server/tls/server-cert.pem
+      - -days
+      - "3650"
+      - -sha256
+      - -extfile
+      - /etc/clickhouse-server/tls/server-cert.ext
+    creates: /etc/clickhouse-server/tls/server-cert.pem
+
+- name: Remove static ClickHouse SPIRE client CA bundle
+  ansible.builtin.file:
+    path: /etc/clickhouse-server/tls/client-ca.pem
+    state: absent
+
+- name: Converge ClickHouse TLS material ownership
+  ansible.builtin.file:
+    path: "/etc/clickhouse-server/tls/{{ item.name }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: server-ca.pem, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server-ca-key.pem, owner: root, group: root, mode: "0600" }
+    - { name: server-cert.pem, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server-key.pem, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server.csr, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server-cert.ext, owner: root, group: clickhouse, mode: "0640" }
+
+- name: Check ClickHouse local CA serial file
+  ansible.builtin.stat:
+    path: /etc/clickhouse-server/tls/server-ca.srl
+  register: clickhouse_server_ca_serial
+
+- name: Set ClickHouse local CA serial ownership
+  ansible.builtin.file:
+    path: /etc/clickhouse-server/tls/server-ca.srl
+    owner: root
+    group: root
+    mode: "0600"
+  when: clickhouse_server_ca_serial.stat.exists
+
+- name: Copy ClickHouse server CA into operator client config
+  ansible.builtin.copy:
+    src: /etc/clickhouse-server/tls/server-ca.pem
+    dest: "{{ clickhouse_operator_ca_path }}"
+    remote_src: true
+    owner: root
+    group: "{{ clickhouse_operator_system_group }}"
+    mode: "0640"
+
+- name: Deploy ClickHouse operator client config
+  ansible.builtin.template:
+    src: clickhouse-operator-client.xml.j2
+    dest: "{{ clickhouse_operator_client_config_path }}"
+    owner: root
+    group: "{{ clickhouse_operator_system_group }}"
+    mode: "0640"
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Deploy ClickHouse server SPIFFE helper config
+  ansible.builtin.template:
+    src: clickhouse-server-spiffe-helper.conf.j2
+    dest: "{{ clickhouse_server_helper_config_path }}"
+    owner: root
+    group: "{{ clickhouse_system_group }}"
+    mode: "0640"
+  notify: restart clickhouse-server-spiffe-helper
+
+- name: Deploy ClickHouse server SPIFFE helper systemd unit
+  ansible.builtin.template:
+    src: clickhouse-server-spiffe-helper.service.j2
+    dest: /etc/systemd/system/clickhouse-server-spiffe-helper.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart clickhouse-server-spiffe-helper
+
+- name: Apply ClickHouse server helper changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start ClickHouse server SPIFFE helper
+  ansible.builtin.systemd:
+    name: clickhouse-server-spiffe-helper
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for ClickHouse server SPIFFE bundle
+  ansible.builtin.wait_for:
+    path: "{{ clickhouse_server_spiffe_dir }}/bundle.pem"
+    timeout: 30
+
+- name: Deploy ClickHouse operator SPIFFE helper config
+  ansible.builtin.template:
+    src: clickhouse-operator-spiffe-helper.conf.j2
+    dest: "{{ clickhouse_operator_helper_config_path }}"
+    owner: root
+    group: "{{ clickhouse_operator_system_group }}"
+    mode: "0640"
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Deploy ClickHouse operator SPIFFE helper systemd unit
+  ansible.builtin.template:
+    src: clickhouse-operator-spiffe-helper.service.j2
+    dest: /etc/systemd/system/clickhouse-operator-spiffe-helper.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Deploy ClickHouse systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=ClickHouse Server
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
+
+      [Service]
+      Type=simple
+      User={{ clickhouse_system_user }}
+      Group={{ clickhouse_system_group }}
+      ExecStart={{ verself_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/verself.xml --pid-file {{ clickhouse_server_pid_path }}
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=500000
+      RuntimeDirectory=clickhouse-server
+      RuntimeDirectoryMode=0750
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/clickhouse-server.service
+    mode: "0644"
+  notify:
+    - restart clickhouse
+
+- name: Deploy ClickHouse server config
+  ansible.builtin.template:
+    src: clickhouse-config.xml.j2
+    dest: /etc/clickhouse-server/config.d/verself.xml
+    owner: root
+    group: clickhouse
+    mode: "0640"
+  notify: restart clickhouse
+
+- name: Apply ClickHouse config changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start ClickHouse
+  ansible.builtin.systemd:
+    name: clickhouse-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start ClickHouse operator SPIFFE helper
+  ansible.builtin.systemd:
+    name: clickhouse-operator-spiffe-helper
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for ClickHouse
+  ansible.builtin.shell: >
+    {{ clickhouse_operator_client_command }}
+    --query 'SELECT 1'
+  register: clickhouse_ready
+  retries: 10
+  delay: 3
+  until: clickhouse_ready.rc == 0
+  changed_when: false
+
+- name: Flush system logs (creates query_log table if query logging just enabled)
+  ansible.builtin.shell: >
+    {{ clickhouse_operator_client_command }}
+    --query 'SYSTEM FLUSH LOGS'
+  changed_when: false
+
+- name: Compute local migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ role_path }}/migrations"
+    executable: /bin/bash
+  register: clickhouse_migrations_local_hash
+  changed_when: false
+
+- name: Read remote migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/verself/migrations/.applied-hash
+  register: clickhouse_migrations_remote_hash
+  failed_when: false
+
+- name: Probe for expected tables (fingerprint can survive a wipe if /opt/verself is recreated before deploy)
+  ansible.builtin.shell: >
+    {{ clickhouse_operator_client_command }}
+    --query "
+      SELECT count()
+      FROM system.tables
+      WHERE (database = 'default' AND name = 'otel_metrics_sum')
+         OR (
+           database = 'verself'
+           AND name IN (
+             'metering',
+             'billing_events',
+             'audit_events',
+             'notification_events',
+             'domain_update_ledger',
+             'operator_command_runs',
+             'supply_chain_policy_events',
+             'artifact_admission_events',
+             'artifact_install_verification_events',
+             'nomad_job_events'
+           )
+         )"
+  register: clickhouse_expected_table_probe
+  changed_when: false
+
+- name: Determine whether ClickHouse schema reset is required
+  ansible.builtin.set_fact:
+    clickhouse_should_reset_schema: >-
+      {{
+        clickhouse_force_schema_reset
+        or (clickhouse_migrations_remote_hash is failed)
+        or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
+           != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
+        or ((clickhouse_expected_table_probe.stdout | trim) != '11')
+      }}
+
+- name: Apply ClickHouse migrations
+  when: clickhouse_should_reset_schema
+  block:
+    - name: Remove deployed migrations directory
+      ansible.builtin.file:
+        path: /opt/verself/migrations
+        state: absent
+
+    - name: Create deployed migrations directory
+      ansible.builtin.file:
+        path: /opt/verself/migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Upload migrations
+      ansible.builtin.copy:
+        src: "{{ role_path }}/migrations/"
+        dest: /opt/verself/migrations/
+        mode: "0644"
+
+    - name: Stop ClickHouse writers before force schema reset
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - otelcol
+        - billing-service
+        - iam-service
+        - notifications-service
+        - sandbox-rental-service
+        - governance-service
+      register: clickhouse_writers_stop_result
+      # Tolerate first-run case where the writer unit is not yet installed.
+      failed_when:
+        - clickhouse_writers_stop_result.failed | default(false)
+        - "'Could not find' not in (clickhouse_writers_stop_result.msg | default(''))"
+      when: clickhouse_force_schema_reset
+
+    - name: Drop verself database before force schema reset
+      ansible.builtin.shell: >
+        {{ clickhouse_operator_client_command }}
+        --query 'DROP DATABASE IF EXISTS verself SYNC'
+      changed_when: false
+      when: clickhouse_force_schema_reset
+
+    - name: Discover default ClickHouse telemetry tables to truncate
+      ansible.builtin.shell: >
+        {{ clickhouse_operator_client_command }}
+        --query "
+          SELECT concat(database, '.', name)
+          FROM system.tables
+          WHERE database = 'default'
+            AND engine NOT IN ('MaterializedView', 'View')
+            AND (name LIKE 'otel_%' OR name = 'http_access_logs')
+          ORDER BY name
+          FORMAT TSVRaw
+        "
+      register: clickhouse_force_reset_tables
+      changed_when: false
+      when: clickhouse_force_schema_reset
+
+    - name: Truncate default ClickHouse telemetry tables during force schema reset
+      ansible.builtin.shell: >
+        {{ clickhouse_operator_client_command }}
+        --query 'TRUNCATE TABLE {{ item }}'
+      loop: "{{ clickhouse_force_reset_tables.stdout_lines | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      when: clickhouse_force_schema_reset
+
+    - name: Create verself database
+      ansible.builtin.shell: >
+        {{ clickhouse_operator_client_command }}
+        --query 'CREATE DATABASE IF NOT EXISTS verself'
+      changed_when: false
+
+    - name: Apply migration files
+      ansible.builtin.shell: >
+        {{ clickhouse_operator_client_command }}
+        --database verself --multiquery
+        --queries-file /opt/verself/migrations/{{ item }}
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', role_path + '/migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+
+    - name: Record migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ clickhouse_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/verself/migrations/.applied-hash
+        mode: "0644"
+
+    - name: Start ClickHouse writers after force schema reset
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - otelcol
+        - billing-service
+        - iam-service
+        - notifications-service
+        - sandbox-rental-service
+        - governance-service
+      register: clickhouse_writers_start_result
+      # Tolerate first-run case where the writer unit is not yet installed.
+      failed_when:
+        - clickhouse_writers_start_result.failed | default(false)
+        - "'Could not find' not in (clickhouse_writers_start_result.msg | default(''))"
+      when: clickhouse_force_schema_reset

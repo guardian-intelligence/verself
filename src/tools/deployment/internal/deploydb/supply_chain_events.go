@@ -196,13 +196,13 @@ WHERE ServiceName = 'verself-deploy'
 	}
 
 	span.SetAttributes(
-		attribute.Int64("artifact.admission_row_count", int64(summary.AdmissionRows)),
-		attribute.Int64("artifact.install_row_count", int64(summary.InstallRows)),
-		attribute.Int64("artifact.rejected_admission_count", int64(summary.RejectedAdmissions)),
-		attribute.Int64("artifact.empty_trace_id_count", int64(summary.EmptyTraceID)),
-		attribute.Int64("artifact.distinct_trace_id_count", int64(summary.DistinctTraceID)),
-		attribute.Int64("artifact.admission_span_count", int64(summary.AdmissionSpans)),
-		attribute.Int64("artifact.install_span_count", int64(summary.InstallSpans)),
+		attribute.Int64("artifact.admission_row_count", int64FromUint64(summary.AdmissionRows, "artifact admission row count")),
+		attribute.Int64("artifact.install_row_count", int64FromUint64(summary.InstallRows, "artifact install row count")),
+		attribute.Int64("artifact.rejected_admission_count", int64FromUint64(summary.RejectedAdmissions, "artifact rejected admission count")),
+		attribute.Int64("artifact.empty_trace_id_count", int64FromUint64(summary.EmptyTraceID, "artifact empty trace id count")),
+		attribute.Int64("artifact.distinct_trace_id_count", int64FromUint64(summary.DistinctTraceID, "artifact distinct trace id count")),
+		attribute.Int64("artifact.admission_span_count", int64FromUint64(summary.AdmissionSpans, "artifact admission span count")),
+		attribute.Int64("artifact.install_span_count", int64FromUint64(summary.InstallSpans, "artifact install span count")),
 	)
 	span.SetStatus(codes.Ok, "")
 	return summary, nil
@@ -302,16 +302,16 @@ WHERE deploy_run_key = {run_key:String}
 	}
 
 	span.SetAttributes(
-		attribute.Int64("supply_chain.row_count", int64(summary.RowCount)),
-		attribute.Int64("supply_chain.rejected_count", int64(summary.Rejected)),
-		attribute.Int64("supply_chain.provisional_count", int64(summary.Provisional)),
-		attribute.Int64("supply_chain.accepted_count", int64(summary.Accepted)),
-		attribute.Int64("supply_chain.empty_trace_id_count", int64(summary.EmptyTraceID)),
-		attribute.Int64("supply_chain.distinct_trace_id_count", int64(summary.DistinctTraceID)),
-		attribute.Int64("supply_chain.policy_check_span_count", int64(summary.PolicyCheckSpans)),
-		attribute.Int64("supply_chain.policy_record_span_count", int64(summary.PolicyRecordSpans)),
-		attribute.Int64("deploy.succeeded_event_count", int64(summary.DeploySucceeded)),
-		attribute.Int64("deploy.failed_event_count", int64(summary.DeployFailed)),
+		attribute.Int64("supply_chain.row_count", int64FromUint64(summary.RowCount, "supply-chain row count")),
+		attribute.Int64("supply_chain.rejected_count", int64FromUint64(summary.Rejected, "supply-chain rejected count")),
+		attribute.Int64("supply_chain.provisional_count", int64FromUint64(summary.Provisional, "supply-chain provisional count")),
+		attribute.Int64("supply_chain.accepted_count", int64FromUint64(summary.Accepted, "supply-chain accepted count")),
+		attribute.Int64("supply_chain.empty_trace_id_count", int64FromUint64(summary.EmptyTraceID, "supply-chain empty trace id count")),
+		attribute.Int64("supply_chain.distinct_trace_id_count", int64FromUint64(summary.DistinctTraceID, "supply-chain distinct trace id count")),
+		attribute.Int64("supply_chain.policy_check_span_count", int64FromUint64(summary.PolicyCheckSpans, "supply-chain policy check span count")),
+		attribute.Int64("supply_chain.policy_record_span_count", int64FromUint64(summary.PolicyRecordSpans, "supply-chain policy record span count")),
+		attribute.Int64("deploy.succeeded_event_count", int64FromUint64(summary.DeploySucceeded, "deploy succeeded event count")),
+		attribute.Int64("deploy.failed_event_count", int64FromUint64(summary.DeployFailed, "deploy failed event count")),
 	)
 	span.SetStatus(codes.Ok, "")
 	return summary, nil

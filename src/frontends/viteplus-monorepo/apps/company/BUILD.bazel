@@ -1,7 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_route_tree")
-load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 package(default_visibility = ["//visibility:public"])
 

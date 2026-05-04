@@ -39,7 +39,7 @@ GO_DIRS = [
     "src/services/secrets-service",
     "src/services/service-runtime/go",
     "src/services/source-code-hosting-service",
-    "src/components/temporal-platform",
+    "src/host-configuration/components/temporal-platform",
     "src/substrate/vm-orchestrator",
 ]
 

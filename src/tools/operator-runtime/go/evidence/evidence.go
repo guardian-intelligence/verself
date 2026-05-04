@@ -13,6 +13,8 @@ import (
 
 const operatorCommandRunsTable = "verself.operator_command_runs"
 
+const maxUint32AsInt64 = int64(1<<32 - 1)
+
 type Recorder struct {
 	ClickHouse *opch.Client
 }
@@ -57,6 +59,7 @@ func (r Recorder) RecordCommandRun(ctx context.Context, rt *opruntime.Runtime, s
 	if duration < 0 {
 		duration = 0
 	}
+	durationMS := durationMillis(duration, "operator command duration")
 	row := CommandRun{
 		Timestamp:     time.Now().UTC(),
 		RunID:         uuid.NewString(),
@@ -66,7 +69,7 @@ func (r Recorder) RecordCommandRun(ctx context.Context, rt *opruntime.Runtime, s
 		TargetHost:    rt.Target.Host,
 		TargetUser:    rt.Target.User,
 		Status:        status,
-		DurationMS:    uint32(duration.Milliseconds()),
+		DurationMS:    durationMS,
 		ErrorKind:     errorKind,
 		ErrorMessage:  errorMessage,
 		TraceID:       rt.TraceID(),
@@ -83,4 +86,12 @@ func (r Recorder) RecordCommandRun(ctx context.Context, rt *opruntime.Runtime, s
 		return fmt.Errorf("operator evidence: send command run: %w", err)
 	}
 	return nil
+}
+
+func durationMillis(value time.Duration, field string) uint32 {
+	millis := value.Milliseconds()
+	if millis < 0 || millis > maxUint32AsInt64 {
+		panic(fmt.Sprintf("%s exceeds uint32 milliseconds range: %s", field, value))
+	}
+	return uint32(millis) // #nosec G115 -- millis is checked against uint32 range above.
 }

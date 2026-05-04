@@ -1,6 +1,6 @@
 # gazelle:prefix github.com/verself/projects-service
 
-load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 nomad_component(
     name = "nomad_component",

@@ -1,23 +1,30 @@
-# Component-Owned Host Configuration Inventory
+# Package-Owned Host Configuration Inventory
 
-Centralized component configuration remains in `src/host-configuration/ansible/group_vars/all/topology/*.yml`. The post-bootstrap boundary should move component-owned declarations into `src/components/*` package manifests and leave host configuration with global substrate primitives only.
+Centralized workload and platform-component configuration remains in `src/host-configuration/ansible/group_vars/all/topology/*.yml`. The post-bootstrap boundary should move authored declarations to the system that applies them:
+
+- Product API service code, migrations, generated API contracts, artifact targets, and default Nomad jobs stay in `src/services/<service>/`.
+- Frontend deployment files stay in their app packages under `src/frontends/`.
+- Non-service platform components such as ClickHouse, Electric, Zitadel, OpenBao, SpiceDB, Temporal, HAProxy, Stalwart, Grafana, and Pomerium live in `src/host-configuration/components/<component>/`.
+- Host configuration, including component-local Ansible roles, nftables, DNS, HAProxy edge config, SPIRE registrations, Postgres roles, systemd units, users, and filesystem paths, stays in `src/host-configuration/`.
+
+There is no cross-directory rendering layer. A platform component under `src/host-configuration/components/<component>/` may be a standard Ansible role and may also own a `nomad.json` file. Product services and frontends do not contain runnable Ansible; when they need durable host prerequisites, those prerequisites live in host-configuration component roles or shared host roles.
 
 ## Source Files
 
-| file | component-specific contents | target ownership |
+| file | centralized contents | target ownership |
 |---|---|---|
-| `routes.yml` | Public/browser/operator/protocol/guest routes, body limits, WAF mode, CORS mode, route path allowlists | Component ingress declarations. Gateway definitions stay substrate-global. |
-| `dns.yml` | DNS records duplicating route hostnames | Derived from component ingress declarations. |
-| `endpoints.yml` | Ports, bind addresses, exposure class, protocol, interface auth, path prefixes, health probes | Component runtime/interface declarations. |
-| `postgres.yml` | Per-component database, owner, role connection limit | Component data dependency declarations. Cluster max/reserved connections stay substrate-global. |
-| `spire.yml` | Workload-to-workload SPIFFE authorization edges | Caller-owned service dependency declarations, emitted into SPIRE registration. SPIRE daemon paths and trust-domain stay substrate-global. |
-| `components.yml` | Deployment supervisor, identities, nftables files, component order, workload auth/bootstrap, ClickHouse grants, credstore dirs, secret refs, runtime users/units | Component manifests plus typed substrate requirement providers. |
-| `ops.yml` | Component subdomains/domains, Electric publication instances, Temporal namespaces/role bindings | Component manifests. Site domain, WireGuard, artifact storage, bare-metal host facts stay substrate-global. |
-| `clusters.yml` | Temporal port topology; Garage cluster topology | Temporal moves with component if Nomad-owned. Garage stays substrate-global. |
+| `routes.yml` | Public/browser/operator/protocol/guest routes, body limits, WAF mode, CORS mode, route path allowlists | Direct HAProxy/DNS host config under `src/host-configuration/`; platform component routes live with their host-configuration component role where practical. |
+| `dns.yml` | DNS records duplicating route hostnames | Direct DNS reconciler inputs under `src/host-configuration/`. |
+| `endpoints.yml` | Ports, bind addresses, exposure class, protocol, interface auth, path prefixes, health probes | Nomad jobs for runtime service registration; host-exposed listeners remain direct host config. |
+| `postgres.yml` | Per-workload or platform-component database, owner, role connection limit | Component-local Ansible roles for component databases; shared PostgreSQL server invariants remain under the PostgreSQL host role. Service migrations remain with service code. |
+| `spire.yml` | Workload-to-workload SPIFFE authorization edges | Component-local Ansible roles or shared SPIRE role inputs under `src/host-configuration/`. |
+| `components.yml` | Deployment supervisor, identities, nftables files, component order, workload auth/bootstrap, ClickHouse grants, credstore dirs, secret refs, runtime users/units | Split by executor: Nomad deployment specs in owner packages; durable host concerns in `src/host-configuration/`. |
+| `ops.yml` | Subdomains/domains, Electric source/publication instances, Temporal namespaces/role bindings | Platform component roles plus direct host config files. Site domain, WireGuard, artifact storage, bare-metal host facts stay site-level. |
+| `clusters.yml` | Temporal port topology; Garage cluster topology | Platform component roles plus direct host config files. Physical disk and node facts stay site-level. |
 
 ## Ingress Routes
 
-All `topology_routes` entries are component-owned. `public_haproxy`, `direct_smtp`, and `firecracker_host` are gateway resources and should remain substrate-global.
+All `topology_routes` entries belong to the package that owns the upstream workload or platform component. `public_haproxy`, `direct_smtp`, and `firecracker_host` are gateway resources and should remain substrate-global.
 
 | component | gateway | host | interface | route kind | details |
 |---|---|---|---|---|---|
@@ -43,9 +50,9 @@ All `topology_routes` entries are component-owned. `public_haproxy`, `direct_smt
 | `sandbox_rental` | `firecracker_host` | `10.255.0.1` | `public_api` | `guest_host_route` | Guest access to GitHub runner JIT, runner bootstrap, stickydisk, checkout bundle paths. |
 | `forgejo` | `firecracker_host` | `10.255.0.1` | `forgejo_http` | `guest_host_route` | Guest access to Forgejo actions and Git smart HTTP paths. |
 
-## Component Runtime Interfaces
+## Runtime Interfaces
 
-These `topology_endpoints` entries describe component-owned ports, bindings, protocols, auth mode, path prefixes, and probes.
+These `topology_endpoints` entries describe owner-package ports, bindings, protocols, auth mode, path prefixes, and probes.
 
 | component | endpoints | interfaces |
 |---|---|---|
@@ -71,13 +78,12 @@ These `topology_endpoints` entries describe component-owned ports, bindings, pro
 
 ## Databases
 
-Move component database requirements and connection limits into component manifests. `postgresql_max_connections` and reserved-superuser settings remain PostgreSQL substrate configuration.
+Move database requirements and connection limits into component-local Ansible roles or the shared PostgreSQL host role. `postgresql_max_connections` and reserved-superuser settings remain PostgreSQL substrate configuration.
 
 | component | database | owner | connection limit |
 |---|---|---|---|
 | `billing` | `billing` | `billing` | `30` |
-| `electric` | attached to `sandbox_rental` publication | `electric` | `25` |
-| `electric_notifications` | attached to `notifications_service` publication | `electric_notifications` | `15` |
+| `electric` | source databases `sandbox_rental`, `notifications_service` | `electric_sandbox_rental`, `electric_notifications` | `25` + `15` source budgets |
 | `governance_service` | `governance_service` | `governance_service` | `15` |
 | `grafana` | `grafana` | `grafana` | `10` |
 | `iam_service` | `iam_service` | `iam_service` | `10` |
@@ -96,16 +102,16 @@ Move component database requirements and connection limits into component manife
 
 ## SPIFFE And Service Edges
 
-Move workload identities into component manifests. Move edges to caller-owned dependency declarations so service-to-service authorization is declared where the call is made.
+Move workload identities and edges into component-local Ansible roles or the shared SPIRE host role. Service packages can comment/link to the SPIRE entries that authorize their runtime identity.
 
 | owner | current centralized declaration |
 |---|---|
 | `billing` | Identity `/svc/billing-service`; inbound edge from `sandbox_rental` to `internal_api`. |
-| `clickhouse` | Operator identity `/svc/clickhouse-operator`; server identity `/svc/clickhouse-server`. Substrate-owned. |
+| `clickhouse` | Operator identity `/svc/clickhouse-operator`; server identity `/svc/clickhouse-server`. Move into `src/host-configuration/components/clickhouse`. |
 | `governance_service` | Identity `/svc/governance-service`; inbound edge from `sandbox_rental` to `internal_api`. |
 | `grafana` | Identity `/svc/grafana`; restart `grafana-clickhouse-spiffe-helper`, `grafana`. |
 | `iam_service` | Identity `/svc/iam-service`; inbound edge from `source_code_hosting_service` to `internal_api`. |
-| `nats` | Identity `/svc/nats`. Substrate-owned resource. |
+| `nats` | Identity `/svc/nats`. Move into `src/host-configuration/components/nats`. |
 | `object_storage_service` | Identity `/svc/object-storage-service`; outbound edge to Garage S3. |
 | `otelcol` | Identity `/svc/otelcol`. Substrate-owned. |
 | `projects_service` | Identity `/svc/projects-service`; inbound edge from `source_code_hosting_service` to `internal_api`. |
@@ -116,7 +122,7 @@ Move workload identities into component manifests. Move edges to caller-owned de
 
 ## Workload Substrate Requirements
 
-These are the component-owned host prerequisites currently embedded under `topology_components[].workload`.
+These are durable host prerequisites currently embedded under `topology_components[].workload`.
 
 | component | current centralized requirements |
 |---|---|
@@ -134,9 +140,9 @@ These are the component-owned host prerequisites currently embedded under `topol
 | `source_code_hosting_service` | IAM project audience, `/etc/credstore/source-code-hosting-service`, PG password, Forgejo token, webhook secret, runtime unit `source-code-hosting-service`. |
 | `verself_web` | `/etc/credstore/verself-web`, `/var/lib/verself-web`, Electric API secret refs, runtime unit `verself-web`. |
 
-## Component Network Policy
+## Network Policy
 
-`nftables_rulesets` in `components.yml` are component-owned exposure declarations. The substrate nftables role should consume generated rules from component manifests.
+`nftables_rulesets` in `components.yml` move to authored nftables files under component role `files/` directories. Host-global firewall policy remains under `src/host-configuration/ansible/host-files/etc/nftables.d/`.
 
 | component | ruleset |
 |---|---|
@@ -163,7 +169,7 @@ These are the component-owned host prerequisites currently embedded under `topol
 
 ## Domain And DNS Inputs
 
-Move subdomains and route DNS records into component ingress declarations. `verself_domain`, `company_domain`, operator device records, and physical host IPs remain site-level.
+Move subdomains and route DNS records into direct host-configuration DNS and HAProxy inputs. `verself_domain`, `company_domain`, operator device records, and physical host IPs remain site-level.
 
 | component | current centralized DNS/domain values |
 |---|---|
@@ -183,36 +189,369 @@ Move subdomains and route DNS records into component ingress declarations. `vers
 | `verself_web` | `verself.sh` |
 | `zitadel` | `auth.verself.sh` |
 
-## Service-Adjacent Resources
+## Shared Platform Components
 
-| resource | current centralized contents | target ownership |
+| resource | current centralized contents | target package and host config |
 |---|---|---|
-| `electric` | Publication name/tables for `sandbox_rental`, DB role, connection pool, storage dir, credstore dir, service port, nftables table | Move to `sandbox_rental` as a projection/sync dependency unless Electric becomes its own component manifest consumed by dependents. |
-| `electric_notifications` | Publication name/tables for `notifications_service`, DB role, connection pool, storage dir, credstore dir, service port, nftables table | Move to `notifications_service` as a projection/sync dependency unless Electric becomes its own component manifest consumed by dependents. |
-| `temporal` | Bootstrap namespaces `sandbox-rental-service` and `billing-service`, 24h retention, SPIFFE role bindings, service port topology | Move namespaces and role bindings to `sandbox_rental` and `billing`; keep Temporal server cluster mechanics in `src/components/temporal-platform`. |
-| `spicedb` | Nomad deployment, Postgres database, gRPC/metrics interfaces | Move fully into `src/components/spicedb`. |
-| `grafana` | Operator route, Postgres database, SPIFFE identity, endpoint | Move into `src/components/grafana` if it remains Nomad/component-managed; otherwise classify as substrate operator app. |
-| `pomerium` | Operator route, Postgres database, endpoint | Move into `src/components/pomerium` if it remains component-managed; otherwise classify as substrate operator app. |
-| `stalwart` | Mail routes, SMTP/JMAP endpoints, Postgres database, nftables, DNS records | Move mail protocol declarations into `src/components/stalwart` if Stalwart becomes component-managed; leave bare SMTP gateway primitive substrate-global. |
-| `zitadel` | OIDC route, endpoint, Postgres database | Move public OIDC origin and database requirement into `src/components/zitadel` if Zitadel becomes component-managed; leave host bootstrap credentials in substrate. |
+| `clickhouse` | Native TLS interface, server/operator identities, grants, schema bootstrap inputs, CA distribution, nftables exposure | Host component: `src/host-configuration/components/clickhouse`. Component role owns ClickHouse-specific users, config, migrations, schema bootstrap, grants, and nftables. |
+| `electric` and `electric_notifications` | Publication names/tables, DB reader roles, connection pools, storage dirs, credstore dirs, service ports, nftables tables | Host component: `src/host-configuration/components/electric`. Component role owns PostgreSQL publications, reader roles, pool budgets, storage, secrets, and nftables. |
+| `openbao` | API/cluster listeners, SPIFFE JWT mount, workload audience, policies, secret bindings, CA distribution, nftables exposure | Host component: `src/host-configuration/components/openbao`. Component role owns OpenBao policies, mounts, bindings, secret inputs, and nftables. |
+| `temporal` | Bootstrap namespaces `sandbox-rental-service` and `billing-service`, 24h retention, SPIFFE role bindings, service port topology | Host component: `src/host-configuration/components/temporal-platform`. Component role owns namespaces, retention, role bindings, and listener exposure. |
+| `spicedb` | Nomad deployment, Postgres database, gRPC/metrics interfaces | Host component: `src/host-configuration/components/spicedb`. Component role owns Postgres role/database, credentials, and nftables; `nomad.json` owns runtime scheduling. |
+| `grafana` | Operator route, Postgres database, SPIFFE identity, endpoint | Host component: `src/host-configuration/components/grafana`. Component role owns route, database, identity, plugins, and credentials; `nomad.json` owns runtime scheduling if Grafana is Nomad-managed. |
+| `pomerium` | Operator route, Postgres database, endpoint | Host component: `src/host-configuration/components/pomerium`. Component role owns route, database, access policy, and identity-provider integration; `nomad.json` owns runtime scheduling if Pomerium is Nomad-managed. |
+| `stalwart` | Mail routes, SMTP/JMAP endpoints, Postgres database, nftables, DNS records | Host component: `src/host-configuration/components/stalwart`. Component role owns mail protocol DNS, routes, database, credentials, and nftables; `nomad.json` owns runtime scheduling if Stalwart is Nomad-managed. |
+| `zitadel` | OIDC route, endpoint, Postgres database | Host component: `src/host-configuration/components/zitadel`. Component role owns route, database, bootstrap secrets, actions, and host service files; `nomad.json` owns runtime scheduling if Zitadel is Nomad-managed. |
+| `forgejo` | Git smart HTTP route, guest-host route, Postgres/database state, webhook/bootstrap resource bindings | Host component: `src/host-configuration/components/forgejo`. Component role owns Git routes, guest host exposure, database, credentials, and webhook/bootstrap bindings. |
+| `garage` | Artifact/storage origin, S3 endpoint contracts, service accounts, bucket bindings | Host component: `src/host-configuration/components/garage`. Component role owns storage layout, service accounts, buckets, S3 endpoints, and nftables. |
+| `haproxy` | Public edge routes, upstream templates, TLS renewal unit integration, route security headers, body limits, WAF mode | Host component: `src/host-configuration/components/haproxy`. Component role owns certificates, listeners, route files, reload policy, and privileged paths. |
+| `nats` | JetStream listener topology, accounts, stream defaults, service identity, nftables exposure | Host component: `src/host-configuration/components/nats`. Component role owns accounts, streams, listeners, identity, and nftables; `nomad.json` owns runtime scheduling if NATS is Nomad-managed. |
 
-## Recommended Manifest Shape
+## Nomad Job API
 
-Each component package should own one typed manifest exported through a Bazel provider:
+The public deploy contract is the checked-in Nomad job plus the Bazel target that makes it deployable. A deployable package that Nomad runs owns one `nomad.json` file. Bazel rule attributes describe the deployment metadata that does not belong inside the Nomad job schema: component key, Nomad job ID, artifact-producing labels, and submission dependencies.
 
-```json
-{
-  "component": "billing",
-  "deployment": {"supervisor": "nomad", "job_id": "billing-service"},
-  "interfaces": {},
-  "ingress": [],
-  "postgres": {},
-  "spiffe": {},
-  "clickhouse": {},
-  "runtime": {},
-  "secrets": [],
-  "bootstrap": []
-}
+```starlark
+nomad_component(
+    name = "nomad_component",
+    component = "profile-service",
+    job_id = "profile-service",
+    job_spec = "nomad.json",
+    artifacts = {
+        "//src/services/profile-service/cmd/profile-service:profile-service_nomad_artifact": "profile-service",
+    },
+)
 ```
 
-Host configuration should consume the union of these providers as data and converge substrate state. It should stop authoring component routes, component ports, component databases, SPIFFE edges, runtime users, service-specific credstore paths, and service-specific firewall files.
+`nomad.json` is the authored source of truth. Artifact stanzas may use `verself-artifact://<output>` as the `GetterSource`. The deploy runner resolves that URI after Bazel builds the declared artifact target, uploads the artifact to Garage under a content-addressed key, and sets Nomad getter checksum options before submission.
+
+The resolved Nomad payload is an ephemeral submit input. It may stamp `Job.Meta` with the resolved artifact digest and Nomad spec digest for no-op detection and evidence. It is not checked in and is not published as a release manifest.
+
+The Bazel rule validates direct contracts:
+
+- `job_id` matches `Job.ID`.
+- Every `verself-artifact://<output>` reference is declared in `artifacts`.
+- Every declared artifact output is referenced by the job.
+- `depends_on` references existing `nomad_component` job IDs.
+- Dependency ordering is acyclic.
+
+## Host Configuration Ownership
+
+Runnable Ansible for component-specific host state lives under `src/host-configuration/components/<component>/`. Each directory uses standard Ansible role layout and may contain a `nomad.json` file when the platform component is Nomad-managed:
+
+```text
+src/host-configuration/components/spicedb/
+  BUILD.bazel
+  nomad.json
+  defaults/
+    main.yml
+  files/
+    spicedb.nft
+  handlers/
+    main.yml
+  tasks/
+    main.yml
+  templates/
+```
+
+The site playbook imports component roles explicitly. There is no directory scanning, host bundle generation, component manifest compiler, or Ansible included from `src/services/**` or `src/frontends/**`.
+
+Product service packages can include `HOST_CONFIGURATION.md` or comments in `BUILD.bazel` that point to their host-configuration role when they need durable host concerns. JSON files are kept comment-free.
+
+```starlark
+# Durable host config for this component lives in:
+# - //src/host-configuration/components/profile-service
+nomad_component(
+    name = "nomad_component",
+    component = "profile-service",
+    job_id = "profile-service",
+    job_spec = "nomad.json",
+)
+```
+
+The comments are navigation aids. The host-configuration files are the source of truth for Ansible-owned behavior. For example, `src/host-configuration/components/spicedb/nomad.json` owns the Nomad job for SpiceDB, and the same directory's Ansible role owns the privileged host mutation for SpiceDB.
+
+## Ansible Boundary
+
+Ansible-owned concerns are authored where Ansible consumes them:
+
+| concern | source of truth |
+|---|---|
+| component-specific host state | `src/host-configuration/components/<component>/` standard Ansible role layout |
+| shared host substrate | `src/host-configuration/ansible/roles/<role>/` |
+| nftables exposure | component role `files/*.nft` copied by the role, or shared `src/host-configuration/ansible/host-files/etc/nftables.d/*.nft` for host-global policy |
+| HAProxy public edge config | `src/host-configuration/components/haproxy/` and shared HAProxy host inputs |
+| DNS reconciliation inputs | `src/host-configuration/` DNS reconciler inputs |
+| Postgres roles, databases, and connection limits | component roles for component-owned databases; shared PostgreSQL role for server-wide invariants |
+| SPIRE registrations | component roles for component identities and edges; shared SPIRE role for server-wide daemon config |
+| ClickHouse schemas and grants | `src/host-configuration/components/clickhouse/migrations/` and the ClickHouse component role |
+| OpenBao policies, mounts, and bindings | `src/host-configuration/components/openbao/` |
+| Electric PostgreSQL publications and reader roles | `src/host-configuration/components/electric/` |
+| runtime users, directories, and systemd units | the component or shared Ansible role that creates or manages them |
+
+There is no generated host bundle and no component-to-host compiler. A service deploy that changes Go code, frontend code, artifacts, or `nomad.json` does not run Ansible. A host concern change is a change to Ansible-owned paths under `src/host-configuration/ansible/**` or `src/host-configuration/components/*/{defaults,files,handlers,meta,tasks,templates,vars}/**`. The deploy runner either runs the matching Ansible playbook/tag from a direct path classifier or fails before Nomad submission with a clear instruction to apply the host-configuration step first.
+
+A Postgres connection-limit change for `profile-service` is edited in the profile-service host-configuration role. That change is reviewed as host configuration, applied by Ansible, and remains independent from the service's Nomad job file.
+
+ClickHouse migrations are owned by `src/host-configuration/components/clickhouse/migrations/`. They are Ansible-owned host convergence inputs because the ClickHouse component role applies them and records migration state. Service-owned ClickHouse tables that are part of a product API contract should remain with the service only if the service applies those migrations at deploy time through its own migration target.
+
+## Artifact Publish And Nomad Submit
+
+There is no release bundle API. The deploy runner uses the repository checkout for the requested SHA, Bazel for build inputs and outputs, Garage for immutable artifact storage, and Nomad for planning, registration, and deployment monitoring.
+
+`aspect deploy --site=<site> --sha=<sha>` resolves the SHA, enters a clean worktree for that commit when needed, and discovers deployable Nomad units with Bazel query over `nomad_component` rules. Bazel builds the discovered targets and their declared artifacts. Bazel's action cache determines whether build outputs are reused or rebuilt.
+
+Artifact publication is content-addressed. If the artifact digest already exists in Garage, the publisher verifies the remote object and records evidence. If it is missing, the publisher uploads the object and verifies it before Nomad submission.
+
+Nomad submission uses the resolved per-job payload:
+
+1. Replace `verself-artifact://<output>` with the Garage getter source for the artifact digest.
+2. Set the Nomad getter checksum for each artifact stanza.
+3. Compute the artifact digest set and the resolved Nomad spec digest.
+4. Stamp the digests in `Job.Meta`.
+5. Read the currently registered Nomad job.
+6. Skip the job when the registered job is not stopped and the digests match.
+7. Run Nomad plan for operator-visible diff.
+8. Register the job with Nomad's CAS fence using the prior `JobModifyIndex`.
+9. Monitor the resulting deployment and record terminal evidence.
+
+## Deploy Algorithm
+
+The deploy controller applies host configuration before Nomad submission and records evidence for every decision:
+
+1. Resolve the requested Git ref to a commit SHA.
+2. Enter a worktree for that exact commit if the requested SHA is not the current clean checkout.
+3. Discover `nomad_component` targets and build their declared artifacts.
+4. Publish missing artifacts to Garage under content-addressed keys.
+5. Check whether Ansible-owned host-configuration paths changed since the last applied host-configuration evidence for the site.
+6. If host configuration changed, run the direct Ansible playbook/tag mapped to those paths, or fail before Nomad submission with the exact files that require a host-configuration apply.
+7. Run one-shot migrations whose migration digest changed.
+8. Resolve each Nomad job payload and submit jobs in Bazel-declared dependency order.
+9. Skip Nomad jobs already registered with the target resolved spec and artifact digests.
+10. Record host-configuration, migration, artifact publication, Nomad, and deploy outcome evidence in ClickHouse.
+
+Most service deploys touch service code, artifacts, migrations, or `nomad.json` only. Those deploys skip Ansible.
+
+## Cutover Plan
+
+1. Keep checked-in `nomad.json` files as the direct Nomad job source of truth.
+2. Use Bazel rule attributes for deployment metadata: component name, job ID, artifact labels, migration labels, and dependency ordering.
+3. Delete the release bundle API, proposed component manifest, custom deployment JSON, convergence surface, and host-bundle compiler design.
+4. Move non-service platform component packages into `src/host-configuration/components/<component>/`.
+5. Move durable host concerns from centralized topology into component-local Ansible roles or shared host roles.
+6. Add `HOST_CONFIGURATION.md` or `BUILD.bazel` comments in product service packages that point to the host-configuration role for that service.
+7. Replace topology-driven Ansible loops with explicit site playbook imports, role-owned vars/files, and direct Ansible tasks.
+8. Keep deploy path gating executor-specific: Ansible role paths require host-configuration evidence; `nomad.json` and artifact-only changes do not.
+9. Delete generated Nomad-spec/profile plans. Standardization happens by copyable examples and review, not rendering.
+10. Keep runnable Ansible under `src/host-configuration/`; product service and frontend packages contain links to host configuration rather than Ansible snippets.
+
+## Additional Cleanup
+
+After the component role cutover, the remaining cleanup is concentrated in topology deletion:
+
+1. Leave shared substrate roles in `src/host-configuration/ansible/roles/`: base OS, server tool admission, Nomad agent, PostgreSQL server, SPIRE server, Firecracker, WireGuard, ZFS, operator SSH access, and nftables host baseline.
+2. Move component-specific nftables files into each component role's `files/` directory; keep `host-firewall.nft`, `firecracker.nft`, and `nomad.nft` host-global.
+3. Replace `topology_*` loops with explicit site playbook imports of component roles. The playbook remains the composition graph.
+4. Convert shared helper roles such as SPIRE registration, Zitadel project role binding, OpenBao runtime secret binding, and PostgreSQL database creation into small reusable task APIs invoked by component roles, rather than centralized registries.
+5. Delete topology filters, component convergence Python helpers, generated nftables payloads, and generated Nomad profile plans after the direct role sources exist.
+6. Keep service-owned PostgreSQL migrations and OpenAPI generation in service packages; host-configuration owns database creation, credentials, grants, network policy, and daemon placement.
+
+## Bespoke Surface Cleanup
+
+| current surface | cleanup target | disposition |
+|---|---|---|
+| Central topology in `ansible/group_vars/all/topology/{components,endpoints,routes,dns,postgres,spire,ops}.yml` | Component-local Ansible roles or direct files under the host subsystem that consumes the data | Delete once each subsystem has an authored source of truth. |
+| `ansible/plugins/filter/topology.py` | Direct role vars/files | Delete after topology files are removed. |
+| `playbooks/tasks/component-substrate.yml` and `tasks/component/*.yml` | Role-owned tasks and direct files | Delete per-component orchestration loops. |
+| `ansible/files/component_filesystem_convergence.py` | Ansible role tasks for users/directories | Delete unless a role demonstrably needs a small typed helper. |
+| `ansible/files/component_postgres_convergence.py` | Postgres role vars and tasks | Delete if native SQL/tasks can express the desired state clearly. |
+| `ansible/files/runtime_accounts_convergence.py` | Ansible account tasks | Delete after account state is direct role data. |
+| `roles/spire_registrations/files/spire_registration_convergence.py` | SPIRE registration role inputs | Delete if direct role data can drive registration. |
+| `ansible/rules/services_registry_contract.py` | Reviewable direct files plus focused validation where needed | Keep only invariants that catch concrete host safety issues. |
+| Generated nftables payloads | Authored nftables files under component role `files/` directories or host-global `ansible/host-files/etc/nftables.d/` | Delete generation. |
+| `topology_electric_instances` | Electric role vars/files under `src/host-configuration/components/electric/` | Collapse per-source pseudo-components into direct Electric host config. |
+| Generated Nomad specs from profiles | Authored `nomad.json` plus Bazel `nomad_component` attributes | Delete Nomad spec generation. |
+| `host_configuration_inputs.go` pathspec-to-bundle detection | Direct executor path evidence | Keep only a simple changed-path classifier that distinguishes Ansible-owned paths from Nomad-only paths. |
+| Cloudflare DNS reconciler reading generated topology | Direct DNS input files | Keep the reconciler engine; replace topology loading. |
+| HAProxy upstream atomic apply | Authored HAProxy/Nomad service template inputs | Keep atomic apply, validation, rollback, and reload behavior. |
+
+Routine OpenAPI generation, sqlc, generated service clients, and Nomad deployment monitoring remain. They are contract generation or scheduler integration, not host-configuration rendering.
+
+## Target Directory Structure
+
+After the cutover, `src/host-configuration/components` contains non-service platform component packages. Product services and frontends keep application code and default Nomad job files in their owning packages; their durable host prerequisites live in host-configuration component roles when needed.
+
+`src/host-configuration` owns every durable host concern in the form consumed by Ansible or the host reconciler binary. A platform component directory can be a standard Ansible role and a Bazel package at the same time.
+
+```text
+src/host-configuration/
+  BUILD.bazel
+  binaries/
+    BUILD.bazel
+    server_tools.bzl
+  cmd/
+    haproxy-lego-renew/
+    haproxy-upstreams-apply/
+    reconcile-cloudflare-dns/
+    zot-htpasswd/
+  components/
+    BUILD.bazel
+    clickhouse/
+      BUILD.bazel
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      migrations/
+        001_initial_schema.up.sql
+      tasks/main.yml
+      templates/
+    electric/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    forgejo/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    garage/
+      BUILD.bazel
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    grafana/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    haproxy/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    nats/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    openbao/
+      BUILD.bazel
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    pomerium/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    spicedb/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    stalwart/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    temporal-platform/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+    zitadel/
+      BUILD.bazel
+      nomad.json
+      defaults/main.yml
+      files/
+      handlers/main.yml
+      tasks/main.yml
+      templates/
+  ansible/
+    ansible.cfg
+    requirements.yml
+    prod.ini.example
+    group_vars/
+      all/
+        catalog.yml
+        main.yml
+        secrets.example.yml
+        secrets.sops.yml
+        site.yml
+        postgres/
+          server.yml
+        spire/
+          server.yml
+    host-files/
+      etc/
+        nftables.conf
+        nftables.d/
+          firecracker.nft
+          host-firewall.nft
+          nomad.nft
+    playbooks/
+      site.yml
+      security-patch.yml
+      setup-dev.yml
+      setup-sops.yml
+      verification-reset.yml
+      wipe-pg-db.yml
+    roles/
+      base/
+      firecracker/
+      nomad/
+      operator_ssh_access/
+      postgresql/
+      server_tools/
+      spire/
+      wireguard/
+      zfs/
+    rules/
+      no_execstart_secrets.py
+      no_masterkey_cli.py
+      no_psql_object_state.py
+      no_secret_without_no_log.py
+      no_validate_certs_false.py
+      site_orchestrates_only.py
+```
+
+Host-configuration directory rules:
+
+- Files are grouped by the Ansible role or host binary that consumes them.
+- Platform component directories under `components/` are explicit Ansible roles and Bazel packages.
+- Product service and frontend packages do not own runnable Ansible inputs.
+- `nomad.json` under a platform component is a Nomad input, not a signal that Ansible must run.
+- Ansible remains the authority for admitted binary installation, host security, nftables, host users/directories, systemd, Postgres roles/databases, SPIRE registrations, DNS inputs, HAProxy edge config, ClickHouse grants, OpenBao policy, and Electric PostgreSQL publications.
+- Nomad remains the authority for running deployable services and Nomad-managed platform components from authored `nomad.json` specs.

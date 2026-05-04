@@ -26,6 +26,8 @@ import (
 
 type stringList []string
 
+const maxUint32AsInt64 = int64(1<<32 - 1)
+
 func (s *stringList) String() string {
 	return strings.Join(*s, ",")
 }
@@ -268,7 +270,22 @@ func userCredential(name string) (*syscall.Credential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse gid for %s: %w", name, err)
 	}
-	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}, nil
+	credentialUID, err := uint32FromInt(uid, "uid", name)
+	if err != nil {
+		return nil, err
+	}
+	credentialGID, err := uint32FromInt(gid, "gid", name)
+	if err != nil {
+		return nil, err
+	}
+	return &syscall.Credential{Uid: credentialUID, Gid: credentialGID}, nil
+}
+
+func uint32FromInt(value int, field string, userName string) (uint32, error) {
+	if value < 0 || int64(value) > maxUint32AsInt64 {
+		return 0, fmt.Errorf("%s for %s exceeds uint32 range: %d", field, userName, value)
+	}
+	return uint32(value), nil // #nosec G115 -- value is checked against uint32 range above.
 }
 
 func withLDLibraryPath(env []string, path string) []string {

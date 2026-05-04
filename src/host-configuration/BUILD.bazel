@@ -16,7 +16,7 @@ filegroup(
     srcs = glob(
         [
             "ansible/**",
-            "migrations/**",
+            "components/**",
         ],
         exclude = [
             "ansible/.ansible/**",

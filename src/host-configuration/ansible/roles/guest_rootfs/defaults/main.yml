@@ -7,7 +7,9 @@ guest_rootfs_monorepo_root: "{{ playbook_dir }}/../../../.."
 # Substrate inputs bundle: build-substrate + ubuntu-base + vmlinux
 # + vmlinux.config + vm-bridge + vm-guest-telemetry + versions.json.
 guest_rootfs_substrate_inputs_label: //src/substrate/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle
-guest_rootfs_substrate_inputs_path: "{{ guest_rootfs_monorepo_root }}/bazel-bin/src/substrate/vm-orchestrator/guest-images/substrate/substrate_inputs_bundle.tar"
+guest_rootfs_substrate_inputs_path: >-
+  {{ guest_rootfs_monorepo_root ~
+  '/bazel-bin/src/substrate/vm-orchestrator/guest-images/substrate/substrate_inputs_bundle.tar' }}
 
 # Toolchain images bundle: every platform-tier toolchain ext4 +
 # manifest under toolchains/<ref>.ext4.

@@ -913,10 +913,10 @@ func waitForArtifactEvidence(ctx context.Context, rt *runtime.Runtime, runKey st
 
 func validateArtifactEvidence(summary deploydb.ArtifactEvidenceSummary, expectedAdmissions, expectedInstallVerifications int) error {
 	var issues []string
-	if summary.AdmissionRows != uint64(expectedAdmissions) {
+	if summary.AdmissionRows != uint64FromInt(expectedAdmissions, "expected artifact admissions") {
 		issues = append(issues, fmt.Sprintf("expected %d artifact admission rows, observed %d", expectedAdmissions, summary.AdmissionRows))
 	}
-	if summary.InstallRows != uint64(expectedInstallVerifications) {
+	if summary.InstallRows != uint64FromInt(expectedInstallVerifications, "expected artifact install verifications") {
 		issues = append(issues, fmt.Sprintf("expected %d artifact install verification rows, observed %d", expectedInstallVerifications, summary.InstallRows))
 	}
 	if summary.RejectedAdmissions != 0 {

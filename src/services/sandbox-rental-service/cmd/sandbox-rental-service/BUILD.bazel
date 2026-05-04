@@ -7,8 +7,8 @@ go_library(
     importpath = "github.com/verself/sandbox-rental-service/cmd/sandbox-rental-service",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/components/temporal-platform/sdkclient",
         "//src/domain-transfer-objects/go:dto",
+        "//src/host-configuration/components/temporal-platform/sdkclient",
         "//src/services/billing-service/client",
         "//src/services/sandbox-rental-service/internal/api",
         "//src/services/sandbox-rental-service/internal/jobs",

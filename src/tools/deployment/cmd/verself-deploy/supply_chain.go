@@ -348,7 +348,7 @@ func waitForSupplyChainEvidence(ctx context.Context, rt *runtime.Runtime, runKey
 
 func validateSupplyChainEvidence(summary deploydb.SupplyChainEvidenceSummary, expectedRows int, requireSucceeded bool) error {
 	var issues []string
-	if summary.RowCount != uint64(expectedRows) {
+	if summary.RowCount != uint64FromInt(expectedRows, "expected supply-chain rows") {
 		issues = append(issues, fmt.Sprintf("expected %d supply-chain rows, observed %d", expectedRows, summary.RowCount))
 	}
 	if summary.Rejected != 0 {

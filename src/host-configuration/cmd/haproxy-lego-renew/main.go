@@ -20,6 +20,8 @@ import (
 
 type stringList []string
 
+const maxIntAsUintptr = ^uintptr(0) >> 1
+
 func (s *stringList) String() string {
 	return strings.Join(*s, ",")
 }
@@ -187,14 +189,27 @@ func lockLegoState(path string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", lockPath, err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	fd, err := fileDescriptor(f, lockPath)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := syscall.Flock(fd, syscall.LOCK_EX); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("lock %s: %w", lockPath, err)
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(fd, syscall.LOCK_UN)
 		_ = f.Close()
 	}, nil
+}
+
+func fileDescriptor(f *os.File, path string) (int, error) {
+	fd := f.Fd()
+	if fd > maxIntAsUintptr {
+		return 0, fmt.Errorf("file descriptor for %s exceeds int range: %d", path, fd)
+	}
+	return int(fd), nil // #nosec G115 -- fd is checked against the platform int range above.
 }
 
 func runLego(cfg config, certPath, keyPath string) error {

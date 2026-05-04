@@ -4,7 +4,7 @@ load(
     openapi_ts_bin = "bin",
 )
 load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree")
-load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 package(default_visibility = ["//visibility:public"])
 

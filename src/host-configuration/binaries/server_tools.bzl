@@ -101,9 +101,9 @@ HOST_GO_TOOLS = [
     ("//src/host-configuration/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
     ("//src/host-configuration/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
     ("//src/host-configuration/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
-    ("//src/components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
-    ("//src/components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
-    ("//src/components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
+    ("//src/host-configuration/components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
+    ("//src/host-configuration/components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
+    ("//src/host-configuration/components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
     ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator", "vm-orchestrator"),
     ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli", "vm-orchestrator-cli"),
 ]

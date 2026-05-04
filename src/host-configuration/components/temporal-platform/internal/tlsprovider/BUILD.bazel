@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "tlsprovider",
+    srcs = ["tlsprovider.go"],
+    importpath = "github.com/verself/temporal-platform/internal/tlsprovider",
+    visibility = ["//src/host-configuration/components/temporal-platform:__subpackages__"],
+    deps = [
+        "//src/services/service-runtime/go/workload",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_temporal_go_server//common/rpc/encryption",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":tlsprovider",
+    visibility = ["//src/host-configuration/components/temporal-platform:__subpackages__"],
+)

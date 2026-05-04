@@ -1,0 +1,11 @@
+# gazelle:prefix github.com/verself/temporal-platform
+
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    component = "temporal",
+    job_id = "temporal",
+    job_spec = "nomad.json",
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

@@ -83,13 +83,11 @@ load(
     provision_apply = "apply",
     provision_destroy = "destroy",
 )
-load(".aspect/tasks/release.axl", release_publish = "publish")
 load(".aspect/tasks/tidy.axl", "tidy")
 
 def config(ctx):
     # Top-level tasks.
     ctx.tasks.add(deploy)
-    ctx.tasks.add(release_publish)
     ctx.tasks.add(artifacts_inventory)
     ctx.tasks.add(artifacts_evidence)
     ctx.tasks.add(artifacts_admission_evidence)

@@ -1,5 +1,5 @@
 exports_files([
     "artifact.bzl",
-    "release.bzl",
+    "component.bzl",
     "sites/prod/site.json",
 ])

@@ -31,3 +31,10 @@ func uint16FromInt(value int, field string) uint16 {
 	}
 	return uint16(value) // #nosec G115 -- value is checked against MaxUint16 above.
 }
+
+func uint64FromInt(value int, field string) uint64 {
+	if value < 0 {
+		panic(fmt.Sprintf("%s cannot be negative: %d", field, value))
+	}
+	return uint64(value) // #nosec G115 -- value is checked to be non-negative above.
+}
