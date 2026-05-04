@@ -396,7 +396,6 @@ After the component role cutover, the remaining cleanup is concentrated in topol
 | `ansible/files/component_postgres_convergence.py` | Postgres role vars and tasks | Delete if native SQL/tasks can express the desired state clearly. |
 | `ansible/files/runtime_accounts_convergence.py` | Ansible account tasks | Delete after account state is direct role data. |
 | `roles/spire_registrations/files/spire_registration_convergence.py` | SPIRE registration role inputs | Delete if direct role data can drive registration. |
-| `ansible/rules/services_registry_contract.py` | Reviewable direct files plus focused validation where needed | Keep only invariants that catch concrete host safety issues. |
 | Generated nftables payloads | Authored nftables files under component role `files/` directories or host-global `ansible/host-files/etc/nftables.d/` | Delete generation. |
 | `topology_electric_instances` | Electric role vars/files under `src/host-configuration/components/electric/` | Collapse per-source pseudo-components into direct Electric host config. |
 | Generated Nomad specs from profiles | Authored `nomad.hcl` plus Bazel `nomad_component` attributes | Delete Nomad spec generation. |

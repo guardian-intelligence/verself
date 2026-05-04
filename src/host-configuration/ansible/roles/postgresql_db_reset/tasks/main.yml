@@ -16,12 +16,17 @@
     postgresql_db_reset_database_was_dropped: false
 
 - name: Probe PostgreSQL database reset client unit state
-  verself_systemd_status:
-    unit: "{{ item }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ item }}"
   loop: "{{ postgresql_db_reset_stop_units | default([]) }}"
   loop_control:
     label: "{{ item }}"
   register: postgresql_db_reset_client_states
+  changed_when: false
+  failed_when: false
   when: (postgresql_db_reset_stop_units | default([])) | length > 0
 
 - name: Stop PostgreSQL database reset clients
@@ -206,7 +211,8 @@
         {{
           postgresql_db_reset_client_states.results
           | default([])
-          | selectattr('active')
+          | selectattr('rc', 'defined')
+          | selectattr('rc', 'equalto', 0)
           | list
         }}
       loop_control:
