@@ -5,8 +5,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - preflight
     - controller
@@ -19,8 +17,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - always
   tasks:
@@ -35,8 +31,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - runtime_accounts
   tasks:
@@ -52,8 +46,6 @@
   gather_facts: true
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - foundation
   roles:
@@ -79,8 +71,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - worker
     - firecracker
@@ -95,8 +85,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   become: true
   tags:
     - preflight
@@ -116,8 +104,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - worker
   roles:
@@ -145,8 +131,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - infra
     - network
@@ -168,8 +152,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - daemons
   roles:
@@ -227,8 +209,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - openbao-bindings
     - platform-bindings
@@ -246,8 +226,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - daemons
   roles:
@@ -323,8 +301,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - components
   roles:
@@ -349,8 +325,6 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-    - "../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
-    - "../../../tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   tags:
     - external-dns
     - cloudflare-dns
