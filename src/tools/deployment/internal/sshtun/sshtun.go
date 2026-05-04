@@ -288,31 +288,30 @@ func (c *Client) Close() error {
 // the historical cert layout stays readable during the live host cutover.
 func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 	var (
-		methods []ssh.AuthMethod
-		labels  []string
-		conn    net.Conn
+		methods  []ssh.AuthMethod
+		labels   []string
+		conn     net.Conn
+		agentErr error
 	)
 	// Some access proxies end auth negotiation after an invalid SSH cert,
 	// so offer ordinary identities before the legacy certificate path.
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		agentConn, err := net.Dial("unix", sock)
 		if err != nil {
-			if conn != nil {
-				_ = conn.Close()
-			}
-			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
-		}
-		signers, err := agent.NewClient(agentConn).Signers()
-		if err != nil {
-			_ = agentConn.Close()
-			return nil, nil, "", fmt.Errorf("ssh agent signers: %w", err)
-		}
-		if len(signers) == 0 {
-			_ = agentConn.Close()
+			// VS Code can leave SSH_AUTH_SOCK pointing at a removed socket; fall back to file-backed operator keys.
+			agentErr = fmt.Errorf("ssh agent dial: %w", err)
 		} else {
-			conn = agentConn
-			methods = append(methods, ssh.PublicKeys(signers...))
-			labels = append(labels, "ssh-agent")
+			signers, err := agent.NewClient(agentConn).Signers()
+			if err != nil {
+				_ = agentConn.Close()
+				agentErr = fmt.Errorf("ssh agent signers: %w", err)
+			} else if len(signers) == 0 {
+				_ = agentConn.Close()
+			} else {
+				conn = agentConn
+				methods = append(methods, ssh.PublicKeys(signers...))
+				labels = append(labels, "ssh-agent")
+			}
 		}
 	}
 	if signer, label, err := loadDefaultKeySigner(len(methods) > 0); err == nil {
@@ -338,6 +337,9 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		labels = append(labels, "keyboard-interactive")
 	}
 	if len(methods) == 0 {
+		if agentErr != nil {
+			return nil, nil, "", fmt.Errorf("%w; no fallback signer found", agentErr)
+		}
 		return nil, nil, "", errors.New("sshtun: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
 	}
 	return methods, conn, strings.Join(labels, "+"), nil
