@@ -12,8 +12,9 @@ const (
 )
 
 type Config struct {
-	RepoRoot string
-	Site     string
+	RepoRoot   string
+	Site       string
+	NomadIndex string
 }
 
 type Inputs struct {

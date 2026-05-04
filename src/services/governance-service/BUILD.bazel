@@ -1,6 +1,14 @@
 # gazelle:prefix github.com/verself/governance-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/governance-service/cmd/governance-service:governance-service_nomad_artifact": "governance-service",
+    },
+    component = "governance_service",
+    job_id = "governance-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -1,6 +1,15 @@
 # gazelle:prefix github.com/verself/iam-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact": "iam-service",
+    },
+    component = "iam_service",
+    depends_on = ["spicedb"],
+    job_id = "iam-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

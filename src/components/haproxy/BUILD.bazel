@@ -1,4 +1,12 @@
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    component = "haproxy_upstreams",
+    embedded_templates = {
+        ":nomad-upstreams.ctmpl": "__VERSELF_HAPROXY_NOMAD_UPSTREAMS_TEMPLATE__",
+    },
+    job_id = "haproxy-upstreams",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

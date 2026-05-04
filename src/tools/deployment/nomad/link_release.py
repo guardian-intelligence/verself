@@ -16,7 +16,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", required=True)
     parser.add_argument("--jobs-target", required=True)
-    parser.add_argument("--jobs-index", required=True)
+    parser.add_argument("--site-config", required=True)
+    parser.add_argument("--component-index", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--artifact", action="append", default=[], help="output=path")
     parser.add_argument("--job-spec", action="append", default=[], help="job_id=path")
@@ -193,13 +194,15 @@ def main() -> int:
     }
     used_embedded_templates: set[str] = set()
 
-    index_path = Path(args.jobs_index)
-    index = json.loads(index_path.read_text(encoding="utf-8"))
-    components = index.get("components", [])
+    site_config_path = Path(args.site_config)
+    site_config = json.loads(site_config_path.read_text(encoding="utf-8"))
+    component_index_path = Path(args.component_index)
+    component_index = json.loads(component_index_path.read_text(encoding="utf-8"))
+    components = component_index.get("components", [])
     if not isinstance(components, list):
-        raise ValueError("Nomad release manifest components must be a list")
+        raise ValueError("Nomad component index components must be a list")
     ordered = ordered_components(components)
-    delivery = artifact_delivery(index)
+    delivery = artifact_delivery(site_config)
 
     artifact_bindings: dict[str, dict[str, object]] = {}
     artifacts_by_key: dict[tuple[str, str], dict[str, object]] = {}
@@ -275,7 +278,7 @@ def main() -> int:
         "site": args.site,
         "sha": "",
         "jobs_target": args.jobs_target,
-        "artifact_delivery": index["artifact_delivery"],
+        "artifact_delivery": site_config["artifact_delivery"],
         "artifacts": [
             {
                 "output": item["output"],

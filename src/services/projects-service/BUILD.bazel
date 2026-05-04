@@ -1,6 +1,14 @@
 # gazelle:prefix github.com/verself/projects-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/projects-service/cmd/projects-service:projects-service_nomad_artifact": "projects-service",
+    },
+    component = "projects_service",
+    job_id = "projects-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -1,6 +1,15 @@
 # gazelle:prefix github.com/verself/billing-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/billing-service/cmd/billing-service:billing-service_nomad_artifact": "billing-service",
+    },
+    component = "billing",
+    depends_on = ["secrets-service"],
+    job_id = "billing",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

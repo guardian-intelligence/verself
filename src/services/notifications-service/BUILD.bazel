@@ -1,6 +1,14 @@
 # gazelle:prefix github.com/verself/notifications-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/notifications-service/cmd/notifications-service:notifications-service_nomad_artifact": "notifications-service",
+    },
+    component = "notifications_service",
+    job_id = "notifications-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

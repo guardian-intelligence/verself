@@ -4,11 +4,19 @@ load(
     openapi_ts_bin = "bin",
 )
 load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree")
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(
-    ["nomad.json"],
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        ":node_app_nomad_artifact": "verself-web",
+        "//src/frontends/viteplus-monorepo:nodejs_runtime_nomad_artifact": "nodejs-runtime",
+    },
+    component = "verself_web",
+    job_id = "verself-web",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

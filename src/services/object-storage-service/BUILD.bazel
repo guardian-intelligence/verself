@@ -1,6 +1,15 @@
 # gazelle:prefix github.com/verself/object-storage-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/object-storage-service/cmd/object-storage-service:object-storage-service_nomad_artifact": "object-storage-service",
+    },
+    component = "object_storage_service",
+    depends_on = ["governance-service"],
+    job_id = "object-storage-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

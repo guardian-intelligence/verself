@@ -1,6 +1,15 @@
 # gazelle:prefix github.com/verself/secrets-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/secrets-service/cmd/secrets-service:secrets-service_nomad_artifact": "secrets-service",
+    },
+    component = "secrets_service",
+    depends_on = ["governance-service"],
+    job_id = "secrets-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

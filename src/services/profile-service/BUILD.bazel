@@ -1,6 +1,18 @@
 # gazelle:prefix github.com/verself/profile-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/profile-service/cmd/profile-service:profile-service_nomad_artifact": "profile-service",
+    },
+    component = "profile_service",
+    depends_on = [
+        "governance-service",
+        "iam-service",
+    ],
+    job_id = "profile-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

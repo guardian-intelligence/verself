@@ -26,17 +26,21 @@ type loadedInputs struct {
 
 func DefaultInputs(cfg Config) Inputs {
 	templateDir := filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates")
+	nomadIndex := cfg.NomadIndex
+	if nomadIndex == "" {
+		nomadIndex = filepath.Join(cfg.RepoRoot, "bazel-bin/src/tools/deployment/nomad", cfg.Site+"_nomad_component_index.json")
+	}
 	return Inputs{
 		Routes:                 filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/routes.yml"),
 		Endpoints:              filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
 		Ops:                    filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
 		Clusters:               filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
-		NomadIndex:             filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "release.json"),
+		NomadIndex:             nomadIndex,
 		HAProxyDefaults:        filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
 		HAProxyTemplate:        filepath.Join(templateDir, "haproxy.cfg.j2"),
 		PublicHostsMap:         filepath.Join(templateDir, "public-hosts.map.j2"),
 		NomadUpstreamsConfig:   filepath.Join(templateDir, "nomad-upstreams.cfg.j2"),
-		NomadUpstreamsTemplate: filepath.Join(templateDir, "nomad-upstreams.ctmpl"),
+		NomadUpstreamsTemplate: filepath.Join(cfg.RepoRoot, "src/components/haproxy/nomad-upstreams.ctmpl"),
 	}
 }
 

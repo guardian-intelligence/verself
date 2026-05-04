@@ -306,19 +306,19 @@ func submitOneReleaseJob(ctx context.Context, rt *runtime.Runtime, client *nomad
 }
 
 func loadSiteArtifactDelivery(repoRoot, site string) (nomadrelease.ArtifactDelivery, error) {
-	indexPath := filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "release.json")
-	body, err := os.ReadFile(indexPath)
+	siteConfigPath := filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "site.json")
+	body, err := os.ReadFile(siteConfigPath)
 	if err != nil {
-		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("read %s: %w", indexPath, err)
+		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("read %s: %w", siteConfigPath, err)
 	}
 	var index struct {
 		ArtifactDelivery nomadrelease.ArtifactDelivery `json:"artifact_delivery"`
 	}
 	if err := json.Unmarshal(body, &index); err != nil {
-		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("decode %s: %w", indexPath, err)
+		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("decode %s: %w", siteConfigPath, err)
 	}
 	if index.ArtifactDelivery.Bucket == "" || index.ArtifactDelivery.GetterSourcePrefix == "" {
-		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("%s: artifact_delivery is incomplete", indexPath)
+		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("%s: artifact_delivery is incomplete", siteConfigPath)
 	}
 	return index.ArtifactDelivery, nil
 }

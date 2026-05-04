@@ -15,6 +15,7 @@ ResourceAttributes['verself.deploy_run_key'].
 load(
     ".aspect/lib/helpers.axl",
     "build_aspect_operator",
+    "build_nomad_component_index",
     "build_verself_deploy",
     "checked_spawn",
     "git_dirty",
@@ -25,13 +26,16 @@ load(
 )
 
 def _edge_preflight(ctx, site):
+    index = build_nomad_component_index(ctx, site)
+    if index == "":
+        return 1
     bin = build_aspect_operator(ctx)
     if bin == "":
         return 1
     return checked_spawn(
         ctx,
         bin,
-        ["edge", "check", "--repo-root", ws_path(ctx), "--site", site],
+        ["edge", "check", "--repo-root", ws_path(ctx), "--site", site, "--nomad-index", index],
         cwd = ws_path(ctx),
         label = "aspect-operator edge check",
     )

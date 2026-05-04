@@ -1,0 +1,37 @@
+{
+  "artifact_delivery": {
+    "kind": "garage_s3_private_origin",
+    "bucket": "nomad-artifacts",
+    "key_prefix": "sha256",
+    "getter_source_prefix": "s3::https://artifacts.internal.verself.sh:9443/nomad-artifacts",
+    "getter_options": {
+      "region": "garage"
+    },
+    "getter_credentials": {
+      "source": "host_environment",
+      "environment_file": "/etc/nomad/nomad-artifacts.env",
+      "access_key_id_env": "AWS_ACCESS_KEY_ID",
+      "secret_access_key_env": "AWS_SECRET_ACCESS_KEY"
+    },
+    "publisher_credentials": {
+      "source": "controller_environment",
+      "environment_file": "/etc/garage/nomad-artifacts/publisher.env",
+      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_AWS_ACCESS_KEY_ID",
+      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_AWS_SECRET_ACCESS_KEY"
+    },
+    "checksum_algorithm": "sha256",
+    "public": false,
+    "origin": {
+      "scheme": "https",
+      "hostname": "artifacts.internal.verself.sh",
+      "port": 9443,
+      "placement": "node_local",
+      "resolution": "per_node_hosts_file",
+      "listen_host": "127.0.0.1",
+      "public_dns": false,
+      "public_ingress": false,
+      "ca_bundle_path": "/etc/verself/pki/nomad-artifacts-ca.pem"
+    }
+  },
+  "nomad_addr": "http://127.0.0.1:4646"
+}

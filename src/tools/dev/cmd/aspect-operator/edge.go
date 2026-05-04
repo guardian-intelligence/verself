@@ -14,9 +14,10 @@ import (
 )
 
 type edgeConfig struct {
-	repoRoot string
-	site     string
-	format   string
+	repoRoot   string
+	site       string
+	format     string
+	nomadIndex string
 }
 
 func cmdEdge(args []string) error {
@@ -43,7 +44,7 @@ func cmdEdgeCheck(args []string) error {
 	if err != nil {
 		return err
 	}
-	bundle, err := edgecontract.Build(edgecontract.Config{RepoRoot: cfg.repoRoot, Site: cfg.site})
+	bundle, err := edgecontract.Build(edgecontract.Config{RepoRoot: cfg.repoRoot, Site: cfg.site, NomadIndex: cfg.nomadIndex})
 	if err != nil {
 		return err
 	}
@@ -71,7 +72,7 @@ func cmdEdgeManifest(args []string) error {
 	if err != nil {
 		return err
 	}
-	bundle, err := edgecontract.Build(edgecontract.Config{RepoRoot: cfg.repoRoot, Site: cfg.site})
+	bundle, err := edgecontract.Build(edgecontract.Config{RepoRoot: cfg.repoRoot, Site: cfg.site, NomadIndex: cfg.nomadIndex})
 	if err != nil {
 		return err
 	}
@@ -93,6 +94,7 @@ func parseEdgeFlags(name string, args []string) (edgeConfig, error) {
 	fs.StringVar(&cfg.repoRoot, "repo-root", "", "Path to the verself-sh checkout root.")
 	fs.StringVar(&cfg.site, "site", edgecontract.DefaultSite, "Deployment site whose Nomad jobs should be checked.")
 	fs.StringVar(&cfg.format, "format", "text", "Manifest output format: text, json, or yaml.")
+	fs.StringVar(&cfg.nomadIndex, "nomad-index", "", "Path to the Bazel-built Nomad component index JSON.")
 	if err := fs.Parse(args); err != nil {
 		return edgeConfig{}, err
 	}
@@ -111,6 +113,9 @@ func parseEdgeFlags(name string, args []string) (edgeConfig, error) {
 		return edgeConfig{}, fmt.Errorf("%s: resolve --repo-root: %w", name, err)
 	}
 	cfg.repoRoot = abs
+	if cfg.nomadIndex != "" && !filepath.IsAbs(cfg.nomadIndex) {
+		cfg.nomadIndex = filepath.Join(cfg.repoRoot, cfg.nomadIndex)
+	}
 	if cfg.site == "" {
 		return edgeConfig{}, fmt.Errorf("%s: --site is required", name)
 	}
@@ -132,6 +137,7 @@ Subcommands:
 Common flags:
   --repo-root <path>  verself-sh checkout root
   --site <site>       deployment site (default: prod)
+  --nomad-index <path> Bazel-built Nomad component index JSON
   --format <format>   manifest format: text, json, yaml
 `)
 }

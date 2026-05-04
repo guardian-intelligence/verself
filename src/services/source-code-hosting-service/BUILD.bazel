@@ -1,6 +1,18 @@
 # gazelle:prefix github.com/verself/source-code-hosting-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service_nomad_artifact": "source-code-hosting-service",
+    },
+    component = "source_code_hosting_service",
+    depends_on = [
+        "projects-service",
+        "secrets-service",
+    ],
+    job_id = "source-code-hosting-service",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

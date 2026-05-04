@@ -7,7 +7,7 @@
 The implementation lives in src/tools/dev/cmd/aspect-operator.
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "build_aspect_operator", "build_nomad_component_index", "checked_spawn", "ws_path")
 
 def _edge_impl(ctx):
     bin = build_aspect_operator(ctx)
@@ -17,6 +17,9 @@ def _edge_impl(ctx):
     if action != "check" and action != "manifest":
         ctx.std.io.stderr.write("ERROR: --action must be check or manifest\n")
         return 1
+    index = build_nomad_component_index(ctx, ctx.args.site or "prod")
+    if index == "":
+        return 1
     cli_args = [
         "edge",
         action,
@@ -24,6 +27,8 @@ def _edge_impl(ctx):
         ws_path(ctx),
         "--site",
         ctx.args.site or "prod",
+        "--nomad-index",
+        index,
         "--format",
         ctx.args.format or "text",
     ]

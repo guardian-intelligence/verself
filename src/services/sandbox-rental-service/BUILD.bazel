@@ -1,6 +1,20 @@
 # gazelle:prefix github.com/verself/sandbox-rental-service
 
-exports_files(
-    ["nomad.json"],
+load("//src/tools/deployment/nomad:release.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker_nomad_artifact": "sandbox-rental-recurring-worker",
+        "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service_nomad_artifact": "sandbox-rental-service",
+    },
+    component = "sandbox_rental",
+    depends_on = [
+        "secrets-service",
+        "source-code-hosting-service",
+        "temporal",
+    ],
+    job_id = "sandbox-rental",
+    job_spec = "nomad.json",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
