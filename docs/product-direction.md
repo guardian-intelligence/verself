@@ -1,23 +1,9 @@
 # Product Direction
 
-Where the platform is headed. When this doc disagrees with `docs/system-context.md`, the latter describes what exists today and wins for ground truth; this doc describes the target state.
-
-## Direction
-
-- Each project under `src/` should be treated as its own public open-source repo.
-- `vm-orchestrator` (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones/checkpoints, TAP networking, jailer lifecycle, vm-bridge control, and guest telemetry aggregation. It exposes a gRPC API over a Unix socket for service callers. `vm-guest-telemetry` (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. `sandbox-rental-service` is the product control plane layered on that substrate.
-- Runtime product services must never receive privileged host access. All ZFS, Firecracker, TAP, jailer, `/dev/kvm`, and `/dev/zvol` operations go through `vm-orchestrator`; services carry policy-checked refs over the orchestrator API, not host paths, dataset names, device paths, or privileged CLIs.
+- Dogfood our own Forgejo and CI: establish `main`, `beta`, `gamma`, and per-branch preview environments of the entire system with automatic promotion. Dev branches merge to `gamma`; `gamma` bakes and runs more expensive automation tests, then promotes to `beta`; `beta` sees private invite-only users and has manual or time-gated promotion to `main`. Dev branches are accessible only by the founder and their agent.cy-checked refs over the orchestrator API, not host paths, dataset names, device paths, or privileged CLIs.
 - Every service should:
   1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into the policy and billing abstractions.
-  2. Be designed such that we are the principal customers (dogfooding). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to zero after applying an adjustment. Not currently upheld for Mail; worth dogfooding there too. This philosophy is direction, not current state; uphold as the codebase is upgraded.
-- Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Verself owns the product policy model; each Go service owns and enforces its operation catalog. The platform ships working default role bundles and policy documents, then exposes customer editing through a constrained Verself organization console rather than requiring founders to hand-author IAM documents. See `src/platform/docs/identity-and-iam.md`.
-- Public surface direction: product workflows converge into the
-  authenticated browser app at `<domain>` (sharing the apex with docs and
-  policy), while customer, SDK, and CLI APIs live on service-owned
-  `<service>.api.<domain>` origins. Verself does not use a shared
-  `api.<domain>/<service>/...` gateway; service subdomains are the public
-  ownership boundary.
-- Dogfood our own Forgejo and CI: establish `main`, `beta`, `gamma`, and per-branch preview environments of the entire system with automatic promotion. Dev branches merge to `gamma`; `gamma` bakes and runs more expensive automation tests, then promotes to `beta`; `beta` sees private invite-only users and has manual or time-gated promotion to `main`. Dev branches are accessible only by the founder and their agent.
+  2. Be designed such that we are the principal customers (dogfooding). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to zero
 - Define e2e canaries of our own infrastructure as repeatable, scheduled workloads.
 
 ## Sandbox Runtime Products

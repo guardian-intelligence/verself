@@ -8,7 +8,7 @@ Polyglot monorepo structured as a modular monolith.
 
 Layers:
 
-1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, HAProxy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates only here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
+1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, HAProxy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
 2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
