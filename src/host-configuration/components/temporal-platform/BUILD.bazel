@@ -6,6 +6,6 @@ nomad_component(
     name = "nomad_component",
     component = "temporal",
     job_id = "temporal",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

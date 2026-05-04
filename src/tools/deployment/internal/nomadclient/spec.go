@@ -2,10 +2,9 @@
 // github.com/hashicorp/nomad/api: parse → plan → CAS-safe register →
 // blocking-query monitor. Each step is a span.
 //
-// Authored and resolved specs use `{"Job": {...}}` JSON envelopes, the same
-// shape Nomad's HTTP API consumes for POST /v1/jobs. The nomad/api Job struct
-// unmarshals directly from the inner object; we strip the envelope here so
-// callers work with *api.Job everywhere downstream.
+// Resolved specs use `{"Job": {...}}` JSON envelopes, the same shape Nomad's
+// HTTP API consumes for POST /v1/jobs. Authored source specs are owner-local
+// HCL2 files parsed by the target Nomad server before artifact binding.
 package nomadclient
 
 import (
@@ -26,7 +25,7 @@ type Spec struct {
 	SpecDigest     string
 }
 
-// LoadSpec reads a resolved .nomad.json file and validates stamped metadata.
+// LoadSpec reads a resolved Nomad JSON file and validates stamped metadata.
 // Errors here surface the contract between resolver and submitter.
 func LoadSpec(path string) (*Spec, error) {
 	data, err := os.ReadFile(path)

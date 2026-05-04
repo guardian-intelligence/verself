@@ -15,6 +15,6 @@ nomad_component(
         "temporal",
     ],
     job_id = "sandbox-rental",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

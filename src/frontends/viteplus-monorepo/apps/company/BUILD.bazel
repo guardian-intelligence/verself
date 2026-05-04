@@ -13,7 +13,7 @@ nomad_component(
     },
     component = "company",
     job_id = "company",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

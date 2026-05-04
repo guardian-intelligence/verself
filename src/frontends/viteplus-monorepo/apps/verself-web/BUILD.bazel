@@ -16,7 +16,7 @@ nomad_component(
     },
     component = "verself_web",
     job_id = "verself-web",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

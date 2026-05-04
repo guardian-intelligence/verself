@@ -1,11 +1,26 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/hashicorp/nomad/api"
 )
+
+type testNomadSpecParser struct {
+	job *api.Job
+}
+
+func (p testNomadSpecParser) ParseJobHCL(context.Context, []byte, string) (*api.Job, error) {
+	return p.job, nil
+}
+
+func testString(s string) *string {
+	return &s
+}
 
 func TestAssembleNomadDeploymentBindsOnlyArtifactStanzas(t *testing.T) {
 	repoRoot := t.TempDir()
@@ -46,32 +61,11 @@ func TestAssembleNomadDeploymentBindsOnlyArtifactStanzas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	specPath := filepath.Join(repoRoot, "src", "services", "svc", "nomad.json")
+	specPath := filepath.Join(repoRoot, "src", "services", "svc", "nomad.hcl")
 	if err := os.MkdirAll(filepath.Dir(specPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	spec := `{
-  "Job": {
-    "ID": "svc",
-    "Meta": {},
-    "TaskGroups": [
-      {
-        "Name": "svc",
-        "Tasks": [
-          {
-            "Name": "svc",
-            "Artifacts": [
-              {"GetterSource": "verself-artifact://svc", "RelativeDest": "local"}
-            ],
-            "Env": {
-              "UNCHANGED": "verself-artifact://svc"
-            }
-          }
-        ]
-      }
-    ]
-  }
-}`
+	spec := `job "svc" {}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +77,8 @@ func TestAssembleNomadDeploymentBindsOnlyArtifactStanzas(t *testing.T) {
   "component": "svc",
   "depends_on": [],
   "job_id": "svc",
-  "job_spec": "src/services/svc/nomad.json",
-  "job_spec_path": "src/services/svc/nomad.json",
+  "job_spec": "src/services/svc/nomad.hcl",
+  "job_spec_path": "src/services/svc/nomad.hcl",
   "artifacts": [
     {
       "label": "//src/services/svc:svc_nomad_artifact",
@@ -97,7 +91,27 @@ func TestAssembleNomadDeploymentBindsOnlyArtifactStanzas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deployment, err := assembleNomadDeployment(repoRoot, "prod", []string{descriptorPath})
+	src := "verself-artifact://svc"
+	dest := "local"
+	deployment, err := assembleNomadDeployment(context.Background(), testNomadSpecParser{
+		job: &api.Job{
+			ID:   testString("svc"),
+			Meta: map[string]string{},
+			TaskGroups: []*api.TaskGroup{{
+				Name: testString("svc"),
+				Tasks: []*api.Task{{
+					Name: "svc",
+					Artifacts: []*api.TaskArtifact{{
+						GetterSource: &src,
+						RelativeDest: &dest,
+					}},
+					Env: map[string]string{
+						"UNCHANGED": "verself-artifact://svc",
+					},
+				}},
+			}},
+		},
+	}, repoRoot, "prod", []string{descriptorPath})
 	if err != nil {
 		t.Fatal(err)
 	}

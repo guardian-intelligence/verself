@@ -9,6 +9,6 @@ nomad_component(
     },
     component = "governance_service",
     job_id = "governance-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

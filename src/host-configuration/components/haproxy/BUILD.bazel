@@ -4,6 +4,6 @@ nomad_component(
     name = "nomad_component",
     component = "haproxy_upstreams",
     job_id = "haproxy-upstreams",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

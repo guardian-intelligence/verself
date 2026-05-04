@@ -10,6 +10,6 @@ nomad_component(
     component = "secrets_service",
     depends_on = ["governance-service"],
     job_id = "secrets-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

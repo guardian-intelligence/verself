@@ -9,6 +9,6 @@ nomad_component(
     },
     component = "notifications_service",
     job_id = "notifications-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

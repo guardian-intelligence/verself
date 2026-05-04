@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"bufio"
 	"errors"
 	"fmt"
 	"net"
@@ -18,17 +18,6 @@ import (
 
 type devOptions struct {
 	operatorRuntimeOptions
-}
-
-type nomadJobFile struct {
-	Job struct {
-		TaskGroups []struct {
-			Tasks []struct {
-				Name string            `json:"Name"`
-				Env  map[string]string `json:"Env"`
-			} `json:"Tasks"`
-		} `json:"TaskGroups"`
-	} `json:"Job"`
 }
 
 type tunnelSpec struct {
@@ -193,23 +182,57 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 }
 
 func verselfWebJobEnv(repoRoot, site string) (map[string]string, error) {
-	path := filepath.Join(repoRoot, "src", "deployment-tools", "nomad", "sites", site, "jobs", "verself-web.nomad.json")
+	path := filepath.Join(repoRoot, "src", "frontends", "viteplus-monorepo", "apps", "verself-web", "nomad.hcl")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	var job nomadJobFile
-	if err := json.Unmarshal(raw, &job); err != nil {
+	env, err := parseNomadTaskEnv(raw, "verself-web")
+	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	for _, group := range job.Job.TaskGroups {
-		for _, task := range group.Tasks {
-			if task.Name == "verself-web" {
-				return task.Env, nil
+	return env, nil
+}
+
+func parseNomadTaskEnv(raw []byte, taskName string) (map[string]string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(string(raw)))
+	taskHeader := "task " + strconv.Quote(taskName) + " {"
+	inTask := false
+	inEnv := false
+	env := map[string]string{}
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		switch {
+		case !inTask:
+			if line == taskHeader {
+				inTask = true
 			}
+		case !inEnv:
+			if line == "env {" {
+				inEnv = true
+			}
+		default:
+			if line == "}" {
+				if len(env) == 0 {
+					return nil, fmt.Errorf("%s env block is empty", taskName)
+				}
+				return env, nil
+			}
+			key, value, ok := strings.Cut(line, "=")
+			if !ok {
+				return nil, fmt.Errorf("invalid env assignment %q", line)
+			}
+			parsed, err := strconv.Unquote(strings.TrimSpace(value))
+			if err != nil {
+				return nil, err
+			}
+			env[strings.TrimSpace(key)] = strings.ReplaceAll(parsed, "$${", "${")
 		}
 	}
-	return nil, fmt.Errorf("%s did not contain a verself-web task", path)
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("%s task env not found", taskName)
 }
 
 func chooseLocalPort(envName string, choices []int) (int, error) {

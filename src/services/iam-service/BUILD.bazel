@@ -10,6 +10,6 @@ nomad_component(
     component = "iam_service",
     depends_on = ["spicedb"],
     job_id = "iam-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

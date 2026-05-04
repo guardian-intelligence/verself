@@ -30,7 +30,7 @@ The current deployment is intentionally narrow:
 
 - One loopback-only Temporal cluster on the single-node host.
 - One owner-local Nomad job at
-  `src/host-configuration/components/temporal-platform/nomad.json` running Temporal in
+  `src/host-configuration/components/temporal-platform/nomad.hcl` running Temporal in
   combined mode.
 - One repo-owned `temporal-bootstrap` command run by Nomad after server
   start to ensure the sandbox and billing namespaces exist.
@@ -204,7 +204,7 @@ Drawbacks:
   [`domain-event-stream.md`](domain-event-stream.md).
 - Implementation references:
   `src/host-configuration/components/temporal-platform/cmd/verself-temporal-server/main.go`,
-  `src/host-configuration/components/temporal-platform/nomad.json`,
+  `src/host-configuration/components/temporal-platform/nomad.hcl`,
   `src/host-configuration/components/temporal-platform/internal/tlsprovider/tlsprovider.go`,
   `src/host-configuration/components/temporal-platform/internal/spiffeauth/spiffeauth.go`,
   `src/host-configuration/components/temporal-platform/*`.

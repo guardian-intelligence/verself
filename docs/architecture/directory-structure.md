@@ -87,7 +87,7 @@ They do not converge host packages or deploy services.
 Topology vars are authored in `src/host-configuration/ansible/group_vars/all/topology/`.
 Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
 Nomad jobs live with their owning service, frontend, or component as
-`nomad.json`. The deploy runner wires owner-local jobs to artifact delivery and
+`nomad.hcl`. The deploy runner wires owner-local jobs to artifact delivery and
 rollout inputs directly through Bazel and Nomad.
 
 ## Service- and host-local docs

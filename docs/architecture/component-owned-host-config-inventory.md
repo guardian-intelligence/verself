@@ -2,12 +2,12 @@
 
 Centralized workload and platform-component configuration remains in `src/host-configuration/ansible/group_vars/all/topology/*.yml`. The post-bootstrap boundary should move authored declarations to the system that applies them:
 
-- Product API service code, migrations, generated API contracts, artifact targets, and default Nomad jobs stay in `src/services/<service>/`.
+- Product API service code, migrations, generated API contracts, artifact targets, and authored Nomad jobspecs stay in `src/services/<service>/`.
 - Frontend deployment files stay in their app packages under `src/frontends/`.
 - Non-service platform components such as ClickHouse, Electric, Zitadel, OpenBao, SpiceDB, Temporal, HAProxy, Stalwart, Grafana, and Pomerium live in `src/host-configuration/components/<component>/`.
 - Host configuration, including component-local Ansible roles, nftables, DNS, HAProxy edge config, SPIRE registrations, Postgres roles, systemd units, users, and filesystem paths, stays in `src/host-configuration/`.
 
-There is no cross-directory rendering layer. A platform component under `src/host-configuration/components/<component>/` may be a standard Ansible role and may also own a `nomad.json` file. Product services and frontends do not contain runnable Ansible; when they need durable host prerequisites, those prerequisites live in host-configuration component roles or shared host roles.
+There is no cross-directory rendering layer. A platform component under `src/host-configuration/components/<component>/` may be a standard Ansible role and may also own a `nomad.hcl` file. Product services and frontends do not contain runnable Ansible; when they need durable host prerequisites, those prerequisites live in host-configuration component roles or shared host roles.
 
 ## Source Files
 
@@ -197,35 +197,44 @@ Move subdomains and route DNS records into direct host-configuration DNS and HAP
 | `electric` and `electric_notifications` | Publication names/tables, DB reader roles, connection pools, storage dirs, credstore dirs, service ports, nftables tables | Host component: `src/host-configuration/components/electric`. Component role owns PostgreSQL publications, reader roles, pool budgets, storage, secrets, and nftables. |
 | `openbao` | API/cluster listeners, SPIFFE JWT mount, workload audience, policies, secret bindings, CA distribution, nftables exposure | Host component: `src/host-configuration/components/openbao`. Component role owns OpenBao policies, mounts, bindings, secret inputs, and nftables. |
 | `temporal` | Bootstrap namespaces `sandbox-rental-service` and `billing-service`, 24h retention, SPIFFE role bindings, service port topology | Host component: `src/host-configuration/components/temporal-platform`. Component role owns namespaces, retention, role bindings, and listener exposure. |
-| `spicedb` | Nomad deployment, Postgres database, gRPC/metrics interfaces | Host component: `src/host-configuration/components/spicedb`. Component role owns Postgres role/database, credentials, and nftables; `nomad.json` owns runtime scheduling. |
-| `grafana` | Operator route, Postgres database, SPIFFE identity, endpoint | Host component: `src/host-configuration/components/grafana`. Component role owns route, database, identity, plugins, and credentials; `nomad.json` owns runtime scheduling if Grafana is Nomad-managed. |
-| `pomerium` | Operator route, Postgres database, endpoint | Host component: `src/host-configuration/components/pomerium`. Component role owns route, database, access policy, and identity-provider integration; `nomad.json` owns runtime scheduling if Pomerium is Nomad-managed. |
-| `stalwart` | Mail routes, SMTP/JMAP endpoints, Postgres database, nftables, DNS records | Host component: `src/host-configuration/components/stalwart`. Component role owns mail protocol DNS, routes, database, credentials, and nftables; `nomad.json` owns runtime scheduling if Stalwart is Nomad-managed. |
-| `zitadel` | OIDC route, endpoint, Postgres database | Host component: `src/host-configuration/components/zitadel`. Component role owns route, database, bootstrap secrets, actions, and host service files; `nomad.json` owns runtime scheduling if Zitadel is Nomad-managed. |
+| `spicedb` | Nomad deployment, Postgres database, gRPC/metrics interfaces | Host component: `src/host-configuration/components/spicedb`. Component role owns Postgres role/database, credentials, and nftables; `nomad.hcl` owns runtime scheduling. |
+| `grafana` | Operator route, Postgres database, SPIFFE identity, endpoint | Host component: `src/host-configuration/components/grafana`. Component role owns route, database, identity, plugins, and credentials; `nomad.hcl` owns runtime scheduling if Grafana is Nomad-managed. |
+| `pomerium` | Operator route, Postgres database, endpoint | Host component: `src/host-configuration/components/pomerium`. Component role owns route, database, access policy, and identity-provider integration; `nomad.hcl` owns runtime scheduling if Pomerium is Nomad-managed. |
+| `stalwart` | Mail routes, SMTP/JMAP endpoints, Postgres database, nftables, DNS records | Host component: `src/host-configuration/components/stalwart`. Component role owns mail protocol DNS, routes, database, credentials, and nftables; `nomad.hcl` owns runtime scheduling if Stalwart is Nomad-managed. |
+| `zitadel` | OIDC route, endpoint, Postgres database | Host component: `src/host-configuration/components/zitadel`. Component role owns route, database, bootstrap secrets, actions, and host service files; `nomad.hcl` owns runtime scheduling if Zitadel is Nomad-managed. |
 | `forgejo` | Git smart HTTP route, guest-host route, Postgres/database state, webhook/bootstrap resource bindings | Host component: `src/host-configuration/components/forgejo`. Component role owns Git routes, guest host exposure, database, credentials, and webhook/bootstrap bindings. |
 | `garage` | Artifact/storage origin, S3 endpoint contracts, service accounts, bucket bindings | Host component: `src/host-configuration/components/garage`. Component role owns storage layout, service accounts, buckets, S3 endpoints, and nftables. |
 | `haproxy` | Public edge routes, upstream templates, TLS renewal unit integration, route security headers, body limits, WAF mode | Host component: `src/host-configuration/components/haproxy`. Component role owns certificates, listeners, route files, reload policy, and privileged paths. |
-| `nats` | JetStream listener topology, accounts, stream defaults, service identity, nftables exposure | Host component: `src/host-configuration/components/nats`. Component role owns accounts, streams, listeners, identity, and nftables; `nomad.json` owns runtime scheduling if NATS is Nomad-managed. |
+| `nats` | JetStream listener topology, accounts, stream defaults, service identity, nftables exposure | Host component: `src/host-configuration/components/nats`. Component role owns accounts, streams, listeners, identity, and nftables; `nomad.hcl` owns runtime scheduling if NATS is Nomad-managed. |
 
-## Nomad Job API
+## Nomad Jobspec API
 
-The public deploy contract is the checked-in Nomad job plus the Bazel target that makes it deployable. A deployable package that Nomad runs owns one `nomad.json` file. Bazel rule attributes describe the deployment metadata that does not belong inside the Nomad job schema: component key, Nomad job ID, artifact-producing labels, and submission dependencies.
+The public deploy contract is the checked-in Nomad jobspec plus the Bazel target that makes it deployable. A deployable package that Nomad runs owns one `nomad.hcl` file. Nomad's documented jobspec language is HCL, and Nomad parses that HCL into the API JSON payload used for plan, register, inspect, and submit operations:
+
+- <https://developer.hashicorp.com/nomad/docs/job-specification>
+- <https://developer.hashicorp.com/nomad/docs/reference/hcl2>
+- <https://developer.hashicorp.com/nomad/api-docs/json-jobs>
+- <https://developer.hashicorp.com/nomad/api-docs/jobs#parse-job>
+
+Bazel rule attributes describe deployment metadata that does not belong inside the Nomad job schema: component key, Nomad job ID, artifact-producing labels, and submission dependencies.
 
 ```starlark
 nomad_component(
     name = "nomad_component",
     component = "profile-service",
     job_id = "profile-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     artifacts = {
         "//src/services/profile-service/cmd/profile-service:profile-service_nomad_artifact": "profile-service",
     },
 )
 ```
 
-`nomad.json` is the authored source of truth. Artifact stanzas may use `verself-artifact://<output>` as the `GetterSource`. The deploy runner resolves that URI after Bazel builds the declared artifact target, uploads the artifact to Garage under a content-addressed key, and sets Nomad getter checksum options before submission.
+`nomad.hcl` is the authored source of truth. Artifact stanzas may use `verself-artifact://<output>` as the source. The deploy runner parses HCL with Nomad's HCL parser, resolves that URI after Bazel builds the declared artifact target, uploads the artifact to Garage under a content-addressed key, and sets Nomad getter checksum options before submission.
 
-The resolved Nomad payload is an ephemeral submit input. It may stamp `Job.Meta` with the resolved artifact digest and Nomad spec digest for no-op detection and evidence. It is not checked in and is not published as a release manifest.
+The resolved Nomad API payload is an ephemeral submit input. It may stamp `Job.Meta` with the resolved artifact digest and Nomad spec digest for no-op detection and evidence. It is not checked in and is not published as a release manifest.
+
+The authored HCL surface stays hermetic and owner-local. HCL variables, var files, shared partials, local environment reads, and cross-directory includes are outside the deploy contract until they are represented as explicit Bazel inputs. Extensibility comes from Nomad's native HCL blocks and the owner package's Bazel target, not from a repository-wide renderer.
 
 The Bazel rule validates direct contracts:
 
@@ -237,12 +246,12 @@ The Bazel rule validates direct contracts:
 
 ## Host Configuration Ownership
 
-Runnable Ansible for component-specific host state lives under `src/host-configuration/components/<component>/`. Each directory uses standard Ansible role layout and may contain a `nomad.json` file when the platform component is Nomad-managed:
+Runnable Ansible for component-specific host state lives under `src/host-configuration/components/<component>/`. Each directory uses standard Ansible role layout and may contain a `nomad.hcl` file when the platform component is Nomad-managed:
 
 ```text
 src/host-configuration/components/spicedb/
   BUILD.bazel
-  nomad.json
+  nomad.hcl
   defaults/
     main.yml
   files/
@@ -256,7 +265,7 @@ src/host-configuration/components/spicedb/
 
 The site playbook imports component roles explicitly. There is no directory scanning, host bundle generation, component manifest compiler, or Ansible included from `src/services/**` or `src/frontends/**`.
 
-Product service packages can include `HOST_CONFIGURATION.md` or comments in `BUILD.bazel` that point to their host-configuration role when they need durable host concerns. JSON files are kept comment-free.
+Product service packages can include `HOST_CONFIGURATION.md` or comments in `BUILD.bazel` that point to their host-configuration role when they need durable host concerns. The host-configuration files remain the source of truth for Ansible-owned behavior.
 
 ```starlark
 # Durable host config for this component lives in:
@@ -265,11 +274,11 @@ nomad_component(
     name = "nomad_component",
     component = "profile-service",
     job_id = "profile-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
 )
 ```
 
-The comments are navigation aids. The host-configuration files are the source of truth for Ansible-owned behavior. For example, `src/host-configuration/components/spicedb/nomad.json` owns the Nomad job for SpiceDB, and the same directory's Ansible role owns the privileged host mutation for SpiceDB.
+The comments are navigation aids. For example, `src/host-configuration/components/spicedb/nomad.hcl` owns the Nomad job for SpiceDB, and the same directory's Ansible role owns the privileged host mutation for SpiceDB.
 
 ## Ansible Boundary
 
@@ -289,21 +298,41 @@ Ansible-owned concerns are authored where Ansible consumes them:
 | Electric PostgreSQL publications and reader roles | `src/host-configuration/components/electric/` |
 | runtime users, directories, and systemd units | the component or shared Ansible role that creates or manages them |
 
-There is no generated host bundle and no component-to-host compiler. A service deploy that changes Go code, frontend code, artifacts, or `nomad.json` does not run Ansible. A host concern change is a change to Ansible-owned paths under `src/host-configuration/ansible/**` or `src/host-configuration/components/*/{defaults,files,handlers,meta,tasks,templates,vars}/**`. The deploy runner either runs the matching Ansible playbook/tag from a direct path classifier or fails before Nomad submission with a clear instruction to apply the host-configuration step first.
+There is no generated host bundle and no component-to-host compiler. Ansible is modeled as a deployable executor, not as a side-channel path classifier. Bazel models each Ansible deployable unit's inputs and produces a desired unit digest. The deploy runner compares that digest to the last successful applied unit evidence for the site and runs the unit only when the digest changes.
 
 A Postgres connection-limit change for `profile-service` is edited in the profile-service host-configuration role. That change is reviewed as host configuration, applied by Ansible, and remains independent from the service's Nomad job file.
 
-ClickHouse migrations are owned by `src/host-configuration/components/clickhouse/migrations/`. They are Ansible-owned host convergence inputs because the ClickHouse component role applies them and records migration state. Service-owned ClickHouse tables that are part of a product API contract should remain with the service only if the service applies those migrations at deploy time through its own migration target.
+ClickHouse migrations are owned by `src/host-configuration/components/clickhouse/migrations/`. They are host-configuration deployable inputs because the ClickHouse component role or migration executor applies them and records migration state. Service-owned ClickHouse tables that are part of a product API contract should remain with the service only if the service applies those migrations at deploy time through its own migration target.
+
+## Deployable Units
+
+There is no release bundle API. The deploy runner uses the repository checkout for the requested SHA, Bazel for build inputs and outputs, Garage for immutable artifact storage, ClickHouse for deploy evidence, and executor-specific APIs for apply operations.
+
+The deployment graph is executor-neutral. A deployable unit has:
+
+| field | meaning |
+|---|---|
+| `unit_id` | Stable deploy evidence key. |
+| `executor` | Apply mechanism such as `nomad`, `ansible`, `migration`, or `security_patch`. |
+| `desired_digest` | Bazel-produced digest of the desired deployable output and declared inputs. |
+| `dependencies` | Unit IDs that must be decided or applied first. |
+| `payload` | Executor-specific apply input: resolved Nomad API job, Ansible playbook/tag and vars, migration plan, or security patch policy. |
+| `evidence` | ClickHouse rows and OTel spans for decided, skipped, applied, failed, and terminal states. |
+
+Bazel is the only component that decides whether a deployable output has changed. The deploy runner never uses hand-maintained Git pathspecs to decide which component changed. Executors decide whether the live system is already at the desired digest:
+
+- Nomad compares desired `spec_sha256` and `artifact_sha256` against the registered job's `Job.Meta`.
+- Ansible compares desired unit digests against successful host-convergence evidence in ClickHouse.
+- Security patching uses a freshness policy because upstream package availability changes without a Git commit.
+- Migration executors compare migration-set digests against applied migration evidence.
 
 ## Artifact Publish And Nomad Submit
 
-There is no release bundle API. The deploy runner uses the repository checkout for the requested SHA, Bazel for build inputs and outputs, Garage for immutable artifact storage, and Nomad for planning, registration, and deployment monitoring.
-
-`aspect deploy --site=<site> --sha=<sha>` resolves the SHA, enters a clean worktree for that commit when needed, and discovers deployable Nomad units with Bazel query over `nomad_component` rules. Bazel builds the discovered targets and their declared artifacts. Bazel's action cache determines whether build outputs are reused or rebuilt.
+`aspect deploy --site=<site> --sha=<sha>` resolves the SHA, enters a clean worktree for that commit when needed, and discovers deployable units with Bazel query over deployment rules. Bazel builds the discovered targets and their declared artifacts. Bazel's action cache determines whether build outputs are reused or rebuilt.
 
 Artifact publication is content-addressed. If the artifact digest already exists in Garage, the publisher verifies the remote object and records evidence. If it is missing, the publisher uploads the object and verifies it before Nomad submission.
 
-Nomad submission uses the resolved per-job payload:
+Nomad submission uses the resolved per-job API payload:
 
 1. Replace `verself-artifact://<output>` with the Garage getter source for the artifact digest.
 2. Set the Nomad getter checksum for each artifact stanza.
@@ -317,31 +346,31 @@ Nomad submission uses the resolved per-job payload:
 
 ## Deploy Algorithm
 
-The deploy controller applies host configuration before Nomad submission and records evidence for every decision:
+The deploy controller records evidence for every unit decision:
 
 1. Resolve the requested Git ref to a commit SHA.
 2. Enter a worktree for that exact commit if the requested SHA is not the current clean checkout.
-3. Discover `nomad_component` targets and build their declared artifacts.
-4. Publish missing artifacts to Garage under content-addressed keys.
-5. Check whether Ansible-owned host-configuration paths changed since the last applied host-configuration evidence for the site.
-6. If host configuration changed, run the direct Ansible playbook/tag mapped to those paths, or fail before Nomad submission with the exact files that require a host-configuration apply.
-7. Run one-shot migrations whose migration digest changed.
-8. Resolve each Nomad job payload and submit jobs in Bazel-declared dependency order.
-9. Skip Nomad jobs already registered with the target resolved spec and artifact digests.
-10. Record host-configuration, migration, artifact publication, Nomad, and deploy outcome evidence in ClickHouse.
+3. Discover deployable targets and build their declared outputs.
+4. Compute desired unit digests from Bazel outputs and executor payloads.
+5. Evaluate units in Bazel-declared dependency order.
+6. Skip units whose desired digest already matches executor evidence or live executor metadata.
+7. Apply changed Ansible, security-patch, migration, and Nomad units through their executor APIs.
+8. Publish missing Nomad artifacts to Garage under content-addressed keys before Nomad registration.
+9. Submit Nomad jobs whose registered `Job.Meta` digests differ from the desired resolved payload.
+10. Record unit decisions, artifact publication, executor apply events, terminal health, and deploy outcome evidence in ClickHouse.
 
-Most service deploys touch service code, artifacts, migrations, or `nomad.json` only. Those deploys skip Ansible.
+Most service deploys touch service code, artifacts, migrations, or `nomad.hcl` only. Those deploys skip unrelated Ansible units because their Bazel-produced digests do not change.
 
 ## Cutover Plan
 
-1. Keep checked-in `nomad.json` files as the direct Nomad job source of truth.
-2. Use Bazel rule attributes for deployment metadata: component name, job ID, artifact labels, migration labels, and dependency ordering.
+1. Keep checked-in Nomad source as owner-local `nomad.hcl` and parse it to Nomad API JSON during deploy.
+2. Use Bazel rule attributes for deployment metadata: executor, unit ID, component name, job ID, artifact labels, migration labels, and dependency ordering.
 3. Delete the release bundle API, proposed component manifest, custom deployment JSON, convergence surface, and host-bundle compiler design.
 4. Move non-service platform component packages into `src/host-configuration/components/<component>/`.
 5. Move durable host concerns from centralized topology into component-local Ansible roles or shared host roles.
 6. Add `HOST_CONFIGURATION.md` or `BUILD.bazel` comments in product service packages that point to the host-configuration role for that service.
 7. Replace topology-driven Ansible loops with explicit site playbook imports, role-owned vars/files, and direct Ansible tasks.
-8. Keep deploy path gating executor-specific: Ansible role paths require host-configuration evidence; `nomad.json` and artifact-only changes do not.
+8. Replace deploy path gating with Bazel-modeled deployable unit digests and executor-specific no-op checks.
 9. Delete generated Nomad-spec/profile plans. Standardization happens by copyable examples and review, not rendering.
 10. Keep runnable Ansible under `src/host-configuration/`; product service and frontend packages contain links to host configuration rather than Ansible snippets.
 
@@ -370,8 +399,8 @@ After the component role cutover, the remaining cleanup is concentrated in topol
 | `ansible/rules/services_registry_contract.py` | Reviewable direct files plus focused validation where needed | Keep only invariants that catch concrete host safety issues. |
 | Generated nftables payloads | Authored nftables files under component role `files/` directories or host-global `ansible/host-files/etc/nftables.d/` | Delete generation. |
 | `topology_electric_instances` | Electric role vars/files under `src/host-configuration/components/electric/` | Collapse per-source pseudo-components into direct Electric host config. |
-| Generated Nomad specs from profiles | Authored `nomad.json` plus Bazel `nomad_component` attributes | Delete Nomad spec generation. |
-| `host_configuration_inputs.go` pathspec-to-bundle detection | Direct executor path evidence | Keep only a simple changed-path classifier that distinguishes Ansible-owned paths from Nomad-only paths. |
+| Generated Nomad specs from profiles | Authored `nomad.hcl` plus Bazel `nomad_component` attributes | Delete Nomad spec generation. |
+| Pathspec-to-bundle host detection | Bazel-modeled Ansible deployable units | Removed from the deploy runner. |
 | Cloudflare DNS reconciler reading generated topology | Direct DNS input files | Keep the reconciler engine; replace topology loading. |
 | HAProxy upstream atomic apply | Authored HAProxy/Nomad service template inputs | Keep atomic apply, validation, rollback, and reload behavior. |
 
@@ -379,7 +408,7 @@ Routine OpenAPI generation, sqlc, generated service clients, and Nomad deploymen
 
 ## Target Directory Structure
 
-After the cutover, `src/host-configuration/components` contains non-service platform component packages. Product services and frontends keep application code and default Nomad job files in their owning packages; their durable host prerequisites live in host-configuration component roles when needed.
+After the cutover, `src/host-configuration/components` contains non-service platform component packages. Product services and frontends keep application code and authored Nomad jobspecs in their owning packages; their durable host prerequisites live in host-configuration component roles when needed.
 
 `src/host-configuration` owns every durable host concern in the form consumed by Ansible or the host reconciler binary. A platform component directory can be a standard Ansible role and a Bazel package at the same time.
 
@@ -407,7 +436,7 @@ src/host-configuration/
       templates/
     electric/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -415,7 +444,7 @@ src/host-configuration/
       templates/
     forgejo/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -430,7 +459,7 @@ src/host-configuration/
       templates/
     grafana/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -438,7 +467,7 @@ src/host-configuration/
       templates/
     haproxy/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -446,7 +475,7 @@ src/host-configuration/
       templates/
     nats/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -461,7 +490,7 @@ src/host-configuration/
       templates/
     pomerium/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -469,7 +498,7 @@ src/host-configuration/
       templates/
     spicedb/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -477,7 +506,7 @@ src/host-configuration/
       templates/
     stalwart/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -485,7 +514,7 @@ src/host-configuration/
       templates/
     temporal-platform/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -493,7 +522,7 @@ src/host-configuration/
       templates/
     zitadel/
       BUILD.bazel
-      nomad.json
+      nomad.hcl
       defaults/main.yml
       files/
       handlers/main.yml
@@ -552,6 +581,6 @@ Host-configuration directory rules:
 - Files are grouped by the Ansible role or host binary that consumes them.
 - Platform component directories under `components/` are explicit Ansible roles and Bazel packages.
 - Product service and frontend packages do not own runnable Ansible inputs.
-- `nomad.json` under a platform component is a Nomad input, not a signal that Ansible must run.
+- `nomad.hcl` under a platform component is a Nomad executor input, not an Ansible executor input.
 - Ansible remains the authority for admitted binary installation, host security, nftables, host users/directories, systemd, Postgres roles/databases, SPIRE registrations, DNS inputs, HAProxy edge config, ClickHouse grants, OpenBao policy, and Electric PostgreSQL publications.
-- Nomad remains the authority for running deployable services and Nomad-managed platform components from authored `nomad.json` specs.
+- Nomad remains the authority for running deployable services and Nomad-managed platform components from authored `nomad.hcl` specs.

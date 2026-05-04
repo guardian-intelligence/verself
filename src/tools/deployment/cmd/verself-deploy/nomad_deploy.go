@@ -80,6 +80,10 @@ type nomadDeployment struct {
 	SubmitOrder      []string
 }
 
+type authoredNomadSpecParser interface {
+	ParseJobHCL(context.Context, []byte, string) (*api.Job, error)
+}
+
 func (d *nomadDeployment) validate() error {
 	if d == nil {
 		return fmt.Errorf("nomad deployment is nil")
@@ -141,7 +145,17 @@ func deployNomadComponents(ctx context.Context, rt *runtime.Runtime, span trace.
 	if err != nil {
 		return err
 	}
-	deployment, err := assembleNomadDeployment(repoRoot, site, descriptorPaths)
+	nomadForward, err := rt.SSH.Forward(ctx, "nomad", defaultNomadRemotePort)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = nomadForward.Close() }()
+	nomad, err := nomadclient.New("http://" + nomadForward.ListenAddr)
+	if err != nil {
+		return err
+	}
+
+	deployment, err := assembleNomadDeployment(ctx, nomad, repoRoot, site, descriptorPaths)
 	if err != nil {
 		return err
 	}
@@ -162,7 +176,7 @@ func deployNomadComponents(ctx context.Context, rt *runtime.Runtime, span trace.
 	if err := pub.PublishAll(ctx, deployment.Artifacts, repoRoot); err != nil {
 		return err
 	}
-	return submitDeploymentJobs(ctx, rt, deployment)
+	return submitDeploymentJobs(ctx, rt, nomad, deployment)
 }
 
 func discoverNomadComponents(ctx context.Context, repoRoot string) ([]string, error) {
@@ -212,7 +226,7 @@ func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]str
 	return labels, descriptorPaths, nil
 }
 
-func assembleNomadDeployment(repoRoot, site string, descriptorPaths []string) (*nomadDeployment, error) {
+func assembleNomadDeployment(ctx context.Context, parser authoredNomadSpecParser, repoRoot, site string, descriptorPaths []string) (*nomadDeployment, error) {
 	components, err := loadNomadComponentDescriptors(descriptorPaths)
 	if err != nil {
 		return nil, err
@@ -235,7 +249,7 @@ func assembleNomadDeployment(repoRoot, site string, descriptorPaths []string) (*
 	submitOrder := make([]string, 0, len(ordered))
 	for _, component := range ordered {
 		specPath := resolveWorkspacePath(repoRoot, component.JobSpecPath)
-		job, err := loadAuthoredNomadSpec(specPath)
+		job, err := loadAuthoredNomadSpec(ctx, parser, specPath)
 		if err != nil {
 			return nil, err
 		}
@@ -265,6 +279,8 @@ func assembleNomadDeployment(repoRoot, site string, descriptorPaths []string) (*
 		}
 		jobs = append(jobs, deploymodel.NomadJob{
 			JobID:          component.JobID,
+			Component:      component.Component,
+			DependsOn:      append([]string(nil), component.DependsOn...),
 			SpecSHA256:     specSHA,
 			ArtifactSHA256: artifactDigest,
 			Spec:           specBody,
@@ -451,24 +467,15 @@ func bindNomadArtifacts(repoRoot string, policy nomadArtifactDeliveryPolicy, com
 	return bindings, artifacts, nil
 }
 
-func loadAuthoredNomadSpec(path string) (*api.Job, error) {
+func loadAuthoredNomadSpec(ctx context.Context, parser authoredNomadSpecParser, path string) (*api.Job, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	var spec struct {
-		Job *api.Job `json:"Job"`
+	if parser == nil {
+		return nil, fmt.Errorf("Nomad HCL parser is required for %s", path)
 	}
-	if err := json.Unmarshal(body, &spec); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	if spec.Job == nil {
-		return nil, fmt.Errorf("%s: missing top-level Job object", path)
-	}
-	if spec.Job.ID == nil || *spec.Job.ID == "" {
-		return nil, fmt.Errorf("%s: Job.ID is required", path)
-	}
-	return spec.Job, nil
+	return parser.ParseJobHCL(ctx, body, path)
 }
 
 func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map[string]bool, error) {
@@ -546,15 +553,7 @@ func resolveWorkspacePath(repoRoot, path string) string {
 	return filepath.Join(repoRoot, filepath.FromSlash(path))
 }
 
-func submitDeploymentJobs(ctx context.Context, rt *runtime.Runtime, deployment *nomadDeployment) error {
-	forward, err := rt.SSH.Forward(ctx, "nomad", defaultNomadRemotePort)
-	if err != nil {
-		return err
-	}
-	client, err := nomadclient.New("http://" + forward.ListenAddr)
-	if err != nil {
-		return err
-	}
+func submitDeploymentJobs(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, deployment *nomadDeployment) error {
 	for _, jobID := range deployment.SubmitOrder {
 		job, ok := deployment.jobByID(jobID)
 		if !ok {
@@ -597,9 +596,12 @@ func submitOneDeploymentJob(ctx context.Context, rt *runtime.Runtime, client *no
 	timeoutCtx, cancel := context.WithTimeout(ctx, nomadSubmitTimeout)
 	defer cancel()
 	evidence := nomadJobEvidenceWriter{
-		db:     rt.DeployDB,
-		runKey: rt.Identity.RunKey(),
-		site:   rt.Site,
+		db:               rt.DeployDB,
+		runKey:           rt.Identity.RunKey(),
+		site:             rt.Site,
+		unitID:           job.JobID,
+		unitDependencies: job.DependsOn,
+		unitPayloadKind:  "nomad_job",
 	}
 	if err := submitSpec(timeoutCtx, span, client, spec, evidence); err != nil {
 		recordFailure(span, err)

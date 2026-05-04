@@ -10,6 +10,6 @@ nomad_component(
     component = "object_storage_service",
     depends_on = ["governance-service"],
     job_id = "object-storage-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

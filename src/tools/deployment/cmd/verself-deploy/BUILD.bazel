@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 go_library(
     name = "verself-deploy_lib",
     srcs = [
+        "ansible_units.go",
         "ansible_run.go",
         "artifacts.go",
-        "host_configuration_inputs.go",
         "main.go",
         "nomad_deploy.go",
         "nomad_submit.go",
@@ -54,7 +54,6 @@ go_binary(
 go_test(
     name = "verself-deploy_test",
     srcs = [
-        "host_configuration_inputs_test.go",
         "nomad_deploy_test.go",
     ],
     embed = [":verself-deploy_lib"],

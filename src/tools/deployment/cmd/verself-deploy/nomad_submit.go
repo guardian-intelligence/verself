@@ -21,7 +21,7 @@ import (
 
 func runNomadSubmit(args []string) int {
 	fs := flag.NewFlagSet("nomad submit", flag.ContinueOnError)
-	specPath := fs.String("spec", "", "path to a resolved Nomad job spec (.nomad.json)")
+	specPath := fs.String("spec", "", "path to a resolved Nomad job JSON spec")
 	nomadAddr := fs.String("nomad-addr", "", "Nomad agent HTTP address; if empty, the binary opens an SSH-forwarded tunnel to the controller")
 	site := fs.String("site", "prod", "site label (selects inventory and agent queue dir)")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
@@ -94,9 +94,12 @@ func runNomadSubmit(args []string) int {
 }
 
 type nomadJobEvidenceWriter struct {
-	db     *deploydb.Client
-	runKey string
-	site   string
+	db               *deploydb.Client
+	runKey           string
+	site             string
+	unitID           string
+	unitDependencies []string
+	unitPayloadKind  string
 }
 
 func (w nomadJobEvidenceWriter) record(ctx context.Context, ev deploydb.NomadJobEvent) error {
@@ -106,6 +109,21 @@ func (w nomadJobEvidenceWriter) record(ctx context.Context, ev deploydb.NomadJob
 	ev.RunKey = w.runKey
 	ev.Site = w.site
 	return w.db.RecordNomadJobEvent(ctx, ev)
+}
+
+func (w nomadJobEvidenceWriter) recordUnit(ctx context.Context, ev deploydb.DeployUnitEvent) error {
+	if w.db == nil || w.unitID == "" {
+		return nil
+	}
+	ev.RunKey = w.runKey
+	ev.Site = w.site
+	ev.Executor = deploydb.DeployExecutorNomad
+	ev.UnitID = w.unitID
+	if ev.PayloadKind == "" {
+		ev.PayloadKind = w.unitPayloadKind
+	}
+	ev.DependencyUnits = append([]string(nil), w.unitDependencies...)
+	return w.db.RecordDeployUnitEvent(ctx, ev)
 }
 
 func submitOnce(ctx context.Context, parent trace.Span, client *nomadclient.Client, specPath string, evidence nomadJobEvidenceWriter) error {
@@ -135,6 +153,16 @@ func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 		return err
 	}
 	parent.SetAttributes(attribute.Bool("verself.noop", decision.NoOp))
+	if err := evidence.recordUnit(ctx, deploydb.DeployUnitEvent{
+		Kind:           deploydb.DeployUnitEventDecided,
+		DesiredDigest:  spec.SpecDigest,
+		ObservedDigest: decision.PriorSpecDigest,
+		NoOp:           decision.NoOp,
+		PayloadKind:    "nomad_job",
+		DurationMs:     durationMillis(time.Since(stageStartedAt), "nomad decision duration"),
+	}); err != nil {
+		return err
+	}
 	if err := evidence.record(ctx, deploydb.NomadJobEvent{
 		JobID:               spec.JobID(),
 		Kind:                deploydb.NomadJobEventDecided,
@@ -149,6 +177,15 @@ func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 		return err
 	}
 	if decision.NoOp {
+		if err := evidence.recordUnit(ctx, deploydb.DeployUnitEvent{
+			Kind:           deploydb.DeployUnitEventSkipped,
+			DesiredDigest:  spec.SpecDigest,
+			ObservedDigest: decision.PriorSpecDigest,
+			NoOp:           true,
+			PayloadKind:    "nomad_job",
+		}); err != nil {
+			return err
+		}
 		_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: %s already at desired digests; no submit\n", spec.JobID())
 		return nil
 	}
@@ -156,6 +193,14 @@ func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 	stageStartedAt = time.Now()
 	submitted, err := client.Submit(ctx, spec, decision.PriorJobModifyIndex)
 	if err != nil {
+		unitErr := evidence.recordUnit(ctx, deploydb.DeployUnitEvent{
+			Kind:           deploydb.DeployUnitEventFailed,
+			DesiredDigest:  spec.SpecDigest,
+			ObservedDigest: decision.PriorSpecDigest,
+			PayloadKind:    "nomad_job",
+			DurationMs:     durationMillis(time.Since(stageStartedAt), "nomad submit duration"),
+			ErrorMessage:   err.Error(),
+		})
 		if recordErr := evidence.record(ctx, deploydb.NomadJobEvent{
 			JobID:               spec.JobID(),
 			Kind:                deploydb.NomadJobEventSubmitFailed,
@@ -166,8 +211,8 @@ func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 			PriorStopped:        decision.PriorStopped,
 			DurationMs:          durationMillis(time.Since(stageStartedAt), "nomad submit duration"),
 			ErrorMessage:        err.Error(),
-		}); recordErr != nil {
-			return recordErr
+		}); recordErr != nil || unitErr != nil {
+			return errors.Join(recordErr, unitErr)
 		}
 		return err
 	}
@@ -197,11 +242,21 @@ func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 	stageStartedAt = time.Now()
 	monitorResult, err := client.Monitor(ctx, submitted)
 	eventKind := deploydb.NomadJobEventDeploymentSucceeded
+	unitKind := deploydb.DeployUnitEventSucceeded
 	errorMessage := ""
 	if err != nil {
 		eventKind = deploydb.NomadJobEventDeploymentFailed
+		unitKind = deploydb.DeployUnitEventFailed
 		errorMessage = err.Error()
 	}
+	unitRecordErr := evidence.recordUnit(ctx, deploydb.DeployUnitEvent{
+		Kind:           unitKind,
+		DesiredDigest:  spec.SpecDigest,
+		ObservedDigest: spec.SpecDigest,
+		PayloadKind:    "nomad_job",
+		DurationMs:     durationMillis(time.Since(stageStartedAt), "nomad monitor duration"),
+		ErrorMessage:   errorMessage,
+	})
 	if recordErr := evidence.record(ctx, deploydb.NomadJobEvent{
 		JobID:               spec.JobID(),
 		Kind:                eventKind,
@@ -220,8 +275,8 @@ func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 		TerminalStatus:      monitorResult.TerminalStatus,
 		DurationMs:          durationMillis(time.Since(stageStartedAt), "nomad monitor duration"),
 		ErrorMessage:        errorMessage,
-	}); recordErr != nil {
-		return recordErr
+	}); recordErr != nil || unitRecordErr != nil {
+		return errors.Join(recordErr, unitRecordErr)
 	}
 	if err != nil {
 		return err

@@ -1,5 +1,7 @@
 # gazelle:prefix github.com/verself/host-configuration
 
+load("//src/tools/deployment/units:unit.bzl", "deploy_unit")
+
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -16,7 +18,14 @@ filegroup(
     srcs = glob(
         [
             "ansible/**",
-            "components/**",
+            "components/*/defaults/**",
+            "components/*/files/**",
+            "components/*/handlers/**",
+            "components/*/meta/**",
+            "components/*/migrations/**",
+            "components/*/tasks/**",
+            "components/*/templates/**",
+            "components/*/vars/**",
         ],
         exclude = [
             "ansible/.ansible/**",
@@ -25,5 +34,25 @@ filegroup(
             "ansible/**/__pycache__/**",
             "ansible/*.ini",
         ],
+        allow_empty = True,
     ),
+)
+
+deploy_unit(
+    name = "host_convergence_unit",
+    payload_kind = "ansible_site_playbook",
+    phase = "host_configuration_site",
+    playbook = "playbooks/site.yml",
+    srcs = [":converge_sources"],
+    unit_id = "host-configuration",
+)
+
+deploy_unit(
+    name = "security_patch_unit",
+    executor = "security_patch",
+    payload_kind = "ansible_security_patch_playbook",
+    phase = "security_patch",
+    playbook = "playbooks/security-patch.yml",
+    srcs = ["ansible/playbooks/security-patch.yml"],
+    unit_id = "security-patch",
 )

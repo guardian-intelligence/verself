@@ -13,6 +13,6 @@ nomad_component(
         "iam-service",
     ],
     job_id = "profile-service",
-    job_spec = "nomad.json",
+    job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

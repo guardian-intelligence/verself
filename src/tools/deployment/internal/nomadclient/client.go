@@ -52,6 +52,8 @@ type Decision struct {
 	PriorJobModifyIndex uint64
 	PriorVersion        uint64
 	PriorStopped        bool
+	PriorArtifactDigest string
+	PriorSpecDigest     string
 }
 
 // Decide reads the currently-registered job (if any) and compares its
@@ -103,7 +105,45 @@ func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {
 		PriorJobModifyIndex: prevModify,
 		PriorVersion:        prevVersion,
 		PriorStopped:        stopped,
+		PriorArtifactDigest: curArtifact,
+		PriorSpecDigest:     curSpec,
 	}, nil
+}
+
+// ParseJobHCL asks the target Nomad agent to parse an authored HCL2 jobspec.
+// This keeps deploy behavior aligned with the server version that will run the job.
+func (c *Client) ParseJobHCL(ctx context.Context, body []byte, source string) (*api.Job, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.parse_hcl",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.jobspec_source", source)),
+	)
+	defer span.End()
+
+	if len(body) == 0 {
+		err := fmt.Errorf("%s: Nomad jobspec is empty", source)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	// nomad/api does not expose a context-aware ParseHCLOpts call in the pinned client.
+	job, err := c.api.Jobs().ParseHCLOpts(&api.JobsParseRequest{
+		JobHCL:       string(body),
+		Canonicalize: false,
+	})
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("parse %s: %w", source, err)
+	}
+	if job == nil || job.ID == nil || *job.ID == "" {
+		err := fmt.Errorf("%s: parsed Nomad job is missing ID", source)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	span.SetAttributes(attribute.String("nomad.job_id", *job.ID))
+	span.SetStatus(codes.Ok, "")
+	return job, nil
 }
 
 // SubmitResult is the handle returned from a successful Register call.

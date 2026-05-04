@@ -25,6 +25,7 @@ import (
 const (
 	hostConfigurationSitePlaybook = "playbooks/site.yml"
 	hostConfigurationPhase        = "host_configuration_site"
+	hostConfigurationComponent    = "host-configuration"
 	canonicalDeployScope          = "affected"
 )
 
@@ -136,7 +137,7 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, securityPatchRes)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -154,6 +155,7 @@ func runDeployBody(
 	span trace.Span,
 	startedAt time.Time,
 	snap identity.Snapshot,
+	securityPatchRes securityPatchResult,
 ) int {
 	// 1. Supply-chain policy gate. The gate is intentionally before host
 	// convergence so install-source drift fails before Ansible mutates the box.
@@ -171,46 +173,46 @@ func runDeployBody(
 	// previous successful deploy; out-of-band host mutation is handled by the
 	// explicit full host convergence path instead of every routine deploy.
 	components := []string{securityPatchComponent, supplyChainComponent}
-	hostDecision, err := decideHostConfigurationConvergence(ctx, rt, site, sha, scope, repoRoot)
+	deployUnitLabels, deployUnitDescriptorPaths, err := buildDeployUnitDescriptors(ctx, repoRoot)
 	if err != nil {
-		msg := fmt.Sprintf("host configuration change detection failed: %v", err)
+		msg := fmt.Sprintf("deploy unit discovery failed: %v", err)
 		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
 		return 1
 	}
-	span.SetAttributes(attribute.String("host_configuration.decision", hostDecision.Reason))
-	if hostDecision.Run {
-		if len(hostDecision.ChangedPaths) > 0 {
-			fmt.Fprintf(os.Stderr, "verself-deploy: host configuration inputs changed since %s (%s); running %s\n",
-				hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), hostConfigurationSitePlaybook)
-		} else {
-			fmt.Fprintf(os.Stderr, "verself-deploy: no previous successful deploy for %s/%s; running %s\n",
-				site, scope, hostConfigurationSitePlaybook)
-		}
-		if len(hostDecision.SkipTags) > 0 {
-			fmt.Fprintf(os.Stderr, "verself-deploy: skipping unchanged host configuration tags: %s\n", strings.Join(hostDecision.SkipTags, ","))
-		}
-		hostConfigurationRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, hostConfigurationAnsibleArgs(hostDecision))
-		if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
-			msg := ansibleFailureMessage(hostConfigurationSitePlaybook, hostConfigurationRes, err)
-			fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
-			return 1
-		}
+	span.SetAttributes(
+		attribute.String("verself.deploy_units_query", deployUnitsQuery),
+		attribute.Int("verself.deploy_unit_count", len(deployUnitLabels)),
+	)
+	deployUnits, err := loadDeployUnitDescriptors(deployUnitDescriptorPaths)
+	if err != nil {
+		msg := fmt.Sprintf("deploy unit descriptor load failed: %v", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
+		return 1
+	}
+	hostRan, err := convergeHostConfigurationUnit(ctx, rt, span, site, repoRoot, deployUnits)
+	if err != nil {
+		msg := fmt.Sprintf("host configuration failed: %v", err)
+		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+		return 1
+	}
+	if hostRan {
 		components = append(components, hostConfigurationComponent)
-		span.SetAttributes(
-			attribute.Bool("host_configuration.skipped", false),
-			attribute.Int("ansible.task_count", hostConfigurationRes.TaskCount),
-			attribute.Int("ansible.changed_total", hostConfigurationRes.ChangedCount),
-			attribute.Int("ansible.failed_count", hostConfigurationRes.FailedCount),
-		)
-	} else {
-		fmt.Fprintf(os.Stderr, "verself-deploy: host configuration unchanged since %s (%s); skipping %s\n",
-			hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), hostConfigurationSitePlaybook)
-		span.SetAttributes(attribute.Bool("host_configuration.skipped", true))
+	}
+	if err := recordSecurityPatchDeployUnit(ctx, rt, site, repoRoot, deployUnits, securityPatchRes); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: security patch deploy unit evidence insert failed: %v\n", err)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
+		return 1
 	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
+		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
+		return 1
+	}
+	if err := recordSupplyChainDeployUnit(ctx, rt, site, repoRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain deploy unit evidence insert failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
 		return 1
 	}
@@ -245,13 +247,6 @@ func runDeployBody(
 		return 1
 	}
 	return 0
-}
-
-func hostConfigurationAnsibleArgs(decision hostConfigurationDecision) []string {
-	if len(decision.SkipTags) == 0 {
-		return nil
-	}
-	return []string{"--skip-tags=" + strings.Join(decision.SkipTags, ",")}
 }
 
 func runHostConfigurationSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {
