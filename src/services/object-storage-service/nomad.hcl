@@ -111,6 +111,8 @@ job "object-storage-service" {
           name = "object-storage-service-http-public_http"
           type = "http"
           path = "/healthz"
+          protocol = "https"
+          tls_skip_verify = true
           port = "public_http"
           interval = "1s"
           timeout = "3s"
