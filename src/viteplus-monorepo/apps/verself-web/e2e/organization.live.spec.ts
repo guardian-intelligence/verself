@@ -5,7 +5,7 @@ test.describe("Console Organization", () => {
     await ensureTestUserExists();
   });
 
-  test("organization management route renders the capability switchboard from identity-service", async ({
+  test("organization management route renders the capability switchboard from iam-service", async ({
     app,
   }) => {
     const run = app.createRun();

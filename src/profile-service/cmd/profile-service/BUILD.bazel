@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//src/auth-middleware",
         "//src/auth-middleware/workload",
-        "//src/identity-service/internalclient",
+        "//src/iam-service/internalclient",
         "//src/observability/go/otel",
         "//src/profile-service/internal/api",
         "//src/profile-service/internal/profile",

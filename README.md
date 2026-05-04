@@ -2,7 +2,7 @@
 
 Set of services + console + marketing page for a PaaS software business (that builds itself through dogfooding), almost entirely self-hosted on bare-metal with Forgejo, fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general purpose RDBMS.
 
-The unified product app lives at `https://<domain>` (authenticated browser console, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://identity.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`. See [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+The unified product app lives at `https://<domain>` (authenticated browser console, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://iam.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`. See [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
 
 This README is a map. Per-task documentation lives in `aspect <task> --help`.
 

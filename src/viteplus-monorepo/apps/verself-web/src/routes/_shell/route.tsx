@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { IdentityApiProvider } from "@verself/auth-web/components";
-import { identityApiClient } from "~/lib/identity-api-client";
+import { IAMApiProvider } from "@verself/auth-web/components";
+import { iamApiClient } from "~/lib/iam-api-client";
 import { AppShell } from "~/features/shell/app-shell";
 
 // Pathless layout that owns the app chrome (sidebar, top bar, command
@@ -15,8 +15,8 @@ export const Route = createFileRoute("/_shell")({
 
 function ShellLayout() {
   return (
-    <IdentityApiProvider client={identityApiClient}>
+    <IAMApiProvider client={iamApiClient}>
       <AppShell />
-    </IdentityApiProvider>
+    </IAMApiProvider>
   );
 }

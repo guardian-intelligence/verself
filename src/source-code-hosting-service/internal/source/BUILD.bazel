@@ -4,7 +4,7 @@ go_library(
     name = "source",
     srcs = [
         "forgejo.go",
-        "identity_client.go",
+        "iam_client.go",
         "projects_client.go",
         "runner_repository_client.go",
         "safeconv.go",
@@ -16,7 +16,7 @@ go_library(
     importpath = "github.com/verself/source-code-hosting-service/internal/source",
     visibility = ["//src/source-code-hosting-service:__subpackages__"],
     deps = [
-        "//src/identity-service/internalclient",
+        "//src/iam-service/internalclient",
         "//src/projects-service/internalclient",
         "//src/sandbox-rental-service/internalclient",
         "//src/secrets-service/internalclient",

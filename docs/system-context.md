@@ -15,7 +15,7 @@ Public origins follow the AWS-style service subdomain model documented in
 the product apex (`<domain>`) serves the authenticated console alongside
 docs and policy in a single TanStack Start app, and public service APIs
 live at `<service>.api.<domain>` such as `billing.api.<domain>`,
-`sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code does not
+`sandbox.api.<domain>`, and `iam.api.<domain>`. Browser code does not
 call service API origins directly; TanStack Start server functions preserve
 the same-origin CSP and attach service credentials server-side.
 

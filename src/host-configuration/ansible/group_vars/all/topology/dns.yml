@@ -18,7 +18,7 @@ topology_dns_records:
     record: sandbox.api
     zone: product
   - kind: public_api_origin
-    record: identity.api
+    record: iam.api
     zone: product
   - kind: public_api_origin
     record: profile.api

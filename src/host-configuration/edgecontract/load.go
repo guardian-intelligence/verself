@@ -262,7 +262,7 @@ func compileBackends(plan Plan) []Backend {
 		{ID: "be_sandbox_execution_submit", Profile: SecurityAPI, BodyLimit: 65536, Target: dynamicTarget("VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP", ProxyH2C, "be_sandbox_execution_submit_srv_dyn")},
 		{ID: "be_sandbox_execution_schedule_create", Profile: SecurityAPI, BodyLimit: 65536, Target: dynamicTarget("VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP", ProxyH2C, "be_sandbox_execution_schedule_create_srv_dyn")},
 		{ID: "be_source_forgejo_webhook", Profile: SecurityAPI, BodyLimit: 1048576, Target: dynamicTarget("VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP", ProxyH2C, "be_source_forgejo_webhook_srv_dyn")},
-		{ID: "be_zitadel_action_api_credentials", Profile: SecurityAPI, BodyLimit: 65536, Target: dynamicTarget("VERSELF_UPSTREAM_IDENTITY_SERVICE_PUBLIC_HTTP", ProxyH2C, "be_zitadel_action_api_credentials_srv_dyn")},
+		{ID: "be_zitadel_action_api_credentials", Profile: SecurityAPI, BodyLimit: 65536, Target: dynamicTarget("VERSELF_UPSTREAM_IAM_SERVICE_PUBLIC_HTTP", ProxyH2C, "be_zitadel_action_api_credentials_srv_dyn")},
 		{ID: "be_firecracker_sandbox_h2c", Profile: SecurityNone, Target: dynamicTarget("VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP", ProxyH2C, "be_firecracker_sandbox_h2c_srv_dyn")},
 		{ID: "be_firecracker_forgejo", Profile: SecurityNone},
 		{ID: "be_garage_nomad_artifacts", Profile: SecurityNone},

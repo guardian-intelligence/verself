@@ -35,14 +35,14 @@ import {
   organizationQuery,
 } from "../queries.ts";
 import { useSignedInAuth } from "../../react.ts";
-import { useIdentityApi } from "../identity-api.ts";
+import { useIAMApi } from "../iam-api.ts";
 import type { Member, MemberCapabilities, Organization } from "../types.ts";
 import { PermissionAlert } from "./error-alert.tsx";
 
-const PERMISSION_ORGANIZATION_WRITE = "identity:organization:write";
-const PERMISSION_MEMBER_INVITE = "identity:member:invite";
-const PERMISSION_MEMBER_ROLES_WRITE = "identity:member:roles:write";
-const PERMISSION_MEMBER_CAPABILITIES_WRITE = "identity:member_capabilities:write";
+const PERMISSION_ORGANIZATION_WRITE = "iam:organization:write";
+const PERMISSION_MEMBER_INVITE = "iam:member:invite";
+const PERMISSION_MEMBER_ROLES_WRITE = "iam:member:roles:write";
+const PERMISSION_MEMBER_CAPABILITIES_WRITE = "iam:member_capabilities:write";
 
 // Customer-facing roles. "owner" is intentionally omitted from the picker —
 // ownership is assigned at org creation and protected server-side; the UI
@@ -73,7 +73,7 @@ export interface OrganizationProfileProps {
 
 export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
   const auth = useSignedInAuth();
-  const api = useIdentityApi();
+  const api = useIAMApi();
   const organization = useSuspenseQuery(organizationQuery(auth, api)).data;
   const members = useSuspenseQuery(organizationMembersQuery(auth, api)).data;
   const memberCapabilities = useSuspenseQuery(organizationMemberCapabilitiesQuery(auth, api)).data;

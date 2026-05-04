@@ -13,7 +13,7 @@ require (
 	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
-	github.com/verself/identity-service v0.0.0
+	github.com/verself/iam-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -60,7 +60,7 @@ require (
 replace (
 	github.com/verself/auth-middleware => ../auth-middleware
 	github.com/verself/governance-service => ../governance-service
-	github.com/verself/identity-service => ../identity-service
+	github.com/verself/iam-service => ../iam-service
 )
 
 replace github.com/verself/domain-transfer-objects => ../domain-transfer-objects/go

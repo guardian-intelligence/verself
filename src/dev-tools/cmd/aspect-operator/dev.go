@@ -103,7 +103,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 	}
 	tunnels := []tunnelSpec{
 		{Name: "sandbox-rental-service", EnvKey: "SANDBOX_RENTAL_SERVICE_BASE_URL", Remote: "127.0.0.1:4243", Choices: []int{14243, 24243, 34243, 44243, 54243}},
-		{Name: "identity-service", EnvKey: "IDENTITY_SERVICE_BASE_URL", Remote: "127.0.0.1:4248", Choices: []int{14248, 24248, 34248, 44248, 54248}},
+		{Name: "iam-service", EnvKey: "IAM_SERVICE_BASE_URL", Remote: "127.0.0.1:4248", Choices: []int{14248, 24248, 34248, 44248, 54248}},
 		{Name: "profile-service", EnvKey: "PROFILE_SERVICE_BASE_URL", Remote: "127.0.0.1:4258", Choices: []int{14258, 24258, 34258, 44258, 54258}},
 		{Name: "governance-service", EnvKey: "GOVERNANCE_SERVICE_BASE_URL", Remote: "127.0.0.1:4250", Choices: []int{14250, 24250, 34250, 44250, 54250}},
 		{Name: "notifications-service", EnvKey: "NOTIFICATIONS_SERVICE_BASE_URL", Remote: "127.0.0.1:4260", Choices: []int{14260, 24260, 34260, 44260, 54260}},
@@ -157,7 +157,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 	env["PRODUCT_BASE_URL"] = firstNonEmpty(os.Getenv("PRODUCT_BASE_URL"), "https://"+domain)
 	for _, key := range []string{
 		"SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE",
-		"IDENTITY_SERVICE_AUTH_AUDIENCE",
+		"IAM_SERVICE_AUTH_AUDIENCE",
 		"PROFILE_SERVICE_AUTH_AUDIENCE",
 		"NOTIFICATIONS_SERVICE_AUTH_AUDIENCE",
 		"PROJECTS_SERVICE_AUTH_AUDIENCE",
@@ -178,7 +178,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 	env["TEST_BASE_URL"] = env["BASE_URL"]
 	summary := map[string]string{
 		"app":                    env["BASE_URL"],
-		"identity":               env["IDENTITY_SERVICE_BASE_URL"],
+		"identity":               env["IAM_SERVICE_BASE_URL"],
 		"sandbox":                env["SANDBOX_RENTAL_SERVICE_BASE_URL"],
 		"profile":                env["PROFILE_SERVICE_BASE_URL"],
 		"governance":             env["GOVERNANCE_SERVICE_BASE_URL"],
@@ -258,8 +258,8 @@ func devPortEnvName(baseURLKey string) string {
 	switch baseURLKey {
 	case "SANDBOX_RENTAL_SERVICE_BASE_URL":
 		return "CONSOLE_DEV_LOCAL_SANDBOX_PORT"
-	case "IDENTITY_SERVICE_BASE_URL":
-		return "CONSOLE_DEV_LOCAL_IDENTITY_PORT"
+	case "IAM_SERVICE_BASE_URL":
+		return "CONSOLE_DEV_LOCAL_IAM_PORT"
 	case "PROFILE_SERVICE_BASE_URL":
 		return "CONSOLE_DEV_LOCAL_PROFILE_PORT"
 	case "GOVERNANCE_SERVICE_BASE_URL":

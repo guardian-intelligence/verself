@@ -1,0 +1,82 @@
+use typechecking
+
+definition user {}
+
+definition service_account {}
+
+definition role {
+  relation member: user | service_account
+}
+
+definition org {
+  relation owner: user | role#member
+  relation admin: user | service_account | role#member
+  relation member: user | service_account | role#member
+  relation member_inviter: user | service_account | role#member
+  relation execution_lister: user | service_account | role#member
+  relation billing_viewer: user | service_account | role#member
+  relation source_viewer: user | service_account | role#member
+  relation secret_user: user | service_account | role#member
+
+  permission read = owner + admin + member
+  permission manage_iam = owner + admin
+  permission manage_members = owner + admin
+  permission manage_api_credentials = owner + admin
+  permission invite_members = owner + admin + member_inviter
+  permission list_executions = owner + admin + execution_lister
+  permission view_billing = owner + admin + billing_viewer
+  permission view_source = owner + admin + source_viewer
+  permission use_secrets = owner + admin + secret_user
+}
+
+definition project {
+  relation parent_org: org
+
+  permission read = parent_org->read
+  permission write = parent_org->manage_iam
+}
+
+definition environment {
+  relation parent_project: project
+
+  permission read = parent_project->read
+  permission write = parent_project->write
+}
+
+definition repository {
+  relation parent_org: org
+
+  permission read = parent_org->view_source
+  permission write = parent_org->manage_iam
+}
+
+definition execution {
+  relation parent_org: org
+  relation repository: repository
+
+  permission read = parent_org->list_executions + repository->read
+}
+
+definition attempt {
+  relation execution: execution
+
+  permission read_logs = execution->read
+}
+
+definition secret {
+  relation parent_org: org
+
+  permission read = parent_org->use_secrets
+  permission write = parent_org->manage_iam
+  permission delete = parent_org->manage_iam
+}
+
+definition transit_key {
+  relation parent_org: org
+
+  permission encrypt = parent_org->use_secrets
+  permission decrypt = parent_org->use_secrets
+  permission sign = parent_org->use_secrets
+  permission verify = parent_org->use_secrets
+  permission manage = parent_org->manage_iam
+}

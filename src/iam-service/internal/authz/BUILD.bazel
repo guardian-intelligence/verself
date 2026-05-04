@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "authz",
+    srcs = ["service.go"],
+    importpath = "github.com/verself/iam-service/internal/authz",
+    visibility = ["//src/iam-service:__subpackages__"],
+    deps = [
+        "//src/iam-service/internal/identity",
+        "//src/iam-service/internal/spicedb",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":authz",
+    visibility = ["//src/iam-service:__subpackages__"],
+)

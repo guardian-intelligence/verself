@@ -9,7 +9,7 @@ go_library(
         "decimal.go",
         "doc.go",
         "governance.go",
-        "identity.go",
+        "iam.go",
         "mailbox.go",
         "notifications.go",
         "openapi.go",

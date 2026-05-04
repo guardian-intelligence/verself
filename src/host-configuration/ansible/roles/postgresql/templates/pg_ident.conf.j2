@@ -6,7 +6,7 @@
 verself_services      postgres            postgres
 verself_services      billing             billing
 verself_services      sandbox_rental      sandbox_rental
-verself_services      identity_service    identity_service
+verself_services      iam_service    iam_service
 verself_services      governance_service  governance_service
 verself_services      profile_service     profile_service
 verself_services      notifications_service notifications_service
@@ -20,6 +20,6 @@ verself_services      stalwart            stalwart
 verself_services      temporal_server     temporal
 
 # governance-service performs forensic exports across service-owned databases.
-verself_services      governance_service  identity_service
+verself_services      governance_service  iam_service
 verself_services      governance_service  billing
 verself_services      governance_service  sandbox_rental

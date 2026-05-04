@@ -138,27 +138,27 @@ topology_components:
     supervisor: nomad
   identities:
     default:
-      entry_id: verself-identity-service
-      path: /svc/identity-service
-      user: identity_service
+      entry_id: verself-iam-service
+      path: /svc/iam-service
+      user: iam_service
   kind: service
-  name: identity_service
+  name: iam_service
   nftables_rulesets:
-  - name: identity_service
-    table: verself_identity_service
-    target: /etc/nftables.d/identity-service.nft
+  - name: iam_service
+    table: verself_iam_service
+    target: /etc/nftables.d/iam-service.nft
   order: 10
   postgres:
-    database: identity_service
+    database: iam_service
     password_ref:
       kind: ansible_var
-      name: postgresql_identity_service_password
+      name: postgresql_iam_service_password
       no_log: true
   workload:
     auth:
       audience: '370200564807548260'
       kind: owned_project
-      project_name: identity-service
+      project_name: iam-service
       project_role_assertion: true
       project_role_check: true
       roles:
@@ -173,17 +173,17 @@ topology_components:
         key: member
     bootstrap:
     - class: identity_provider
-      name: identity_zitadel_actions
+      name: iam_zitadel_actions
       reason: Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state.
     - class: identity_provider
       name: browser_oidc
-      reason: Reconciles the console OIDC application and persists runtime client credentials for identity-service browser
+      reason: Reconciles the console OIDC application and persists runtime client credentials for iam-service browser
         auth.
     bootstrap_config:
       browser_oidc:
         app_name: verself-web
-        credstore_dir: /etc/credstore/identity-service
-        credstore_group: identity_service
+        credstore_dir: /etc/credstore/iam-service
+        credstore_group: iam_service
         grant_types:
         - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
         - OIDC_GRANT_TYPE_REFRESH_TOKEN
@@ -211,28 +211,39 @@ topology_components:
       - action: SELECT
         table: verself.domain_update_ledger
       spiffe_identity: default
-      user: identity_service
+      user: iam_service
     directories:
-    - group: identity_service
+    - group: iam_service
       mode: '0750'
       owner: root
-      path: /etc/credstore/identity-service
+      path: /etc/credstore/iam-service
     secret_refs:
-    - group: identity_service
+    - group: iam_service
       mode: '0640'
       name: clickhouse-ca-cert
       no_log: true
       owner: root
-      path: /etc/credstore/identity-service/clickhouse-ca-cert
+      path: /etc/credstore/iam-service/clickhouse-ca-cert
       restart_units: []
       source:
         kind: remote_src
         remote_src: /etc/clickhouse-server/tls/server-ca.pem
+    - group: iam_service
+      mode: '0640'
+      name: spicedb-grpc-preshared-key
+      no_log: true
+      owner: root
+      path: /etc/credstore/iam-service/spicedb-grpc-preshared-key
+      restart_units:
+      - iam-service
+      source:
+        kind: remote_src
+        remote_src: /etc/credstore/spicedb/grpc-preshared-key
     units:
-    - name: identity-service
+    - name: iam-service
       supplementary_groups:
       - '{{ spire_workload_group }}'
-      user: identity_service
+      user: iam_service
 - deployment:
     supervisor: nomad
   identities:
@@ -258,7 +269,7 @@ topology_components:
     auth:
       audience: '370200564807548260'
       kind: identity_project_audience
-      project_name: identity-service
+      project_name: iam-service
     clickhouse:
       grants:
       - action: INSERT
@@ -348,7 +359,7 @@ topology_components:
     auth:
       audience: '370200564807548260'
       kind: identity_project_audience
-      project_name: identity-service
+      project_name: iam-service
     directories:
     - group: profile_service
       mode: '0750'
@@ -398,7 +409,7 @@ topology_components:
     auth:
       audience: '370200564807548260'
       kind: identity_project_audience
-      project_name: identity-service
+      project_name: iam-service
     clickhouse:
       grants:
       - action: INSERT
@@ -466,7 +477,7 @@ topology_components:
     auth:
       audience: '370200564807548260'
       kind: identity_project_audience
-      project_name: identity-service
+      project_name: iam-service
     directories:
     - group: projects_service
       mode: '0750'
@@ -729,7 +740,7 @@ topology_components:
     auth:
       audience: '370200564807548260'
       kind: identity_project_audience
-      project_name: identity-service
+      project_name: iam-service
     directories:
     - group: source_code_hosting_service
       mode: '0750'

@@ -1,0 +1,6 @@
+load("//bazel:openapi_codegen.bzl", "verself_openapi_specs")
+
+verself_openapi_specs(
+    internal_tool = "//src/iam-service/cmd/iam-internal-openapi",
+    public_tool = "//src/iam-service/cmd/iam-openapi",
+)

@@ -100,9 +100,9 @@ Avoid useState -- sync small bits of imperative state to search params. For trul
 
 ### Zitadel OIDC Architecture
 
-Only identity-service owns interactive browser OIDC apps. Frontends start the
-identity-service browser auth flow and consume its HTTP-only session snapshot.
-Other Go backend services validate JWTs that identity-service exchanged for
+Only iam-service owns interactive browser OIDC apps. Frontends start the
+iam-service browser auth flow and consume its HTTP-only session snapshot.
+Other Go backend services validate JWTs that iam-service exchanged for
 their audience. A backend only needs the Zitadel **project ID** as the `audience`
 claim to validate against.
 
@@ -134,16 +134,16 @@ Nomad job env for production facts, and exports the current runtime env for the
 local server:
 
 - `VERSELF_DOMAIN`
-- `IDENTITY_SERVICE_BASE_URL`
+- `IAM_SERVICE_BASE_URL`
 - `SANDBOX_RENTAL_SERVICE_BASE_URL`
-- service auth audiences for identity-service token exchange
+- service auth audiences for iam-service token exchange
 
 Open the `app:` URL printed by `aspect dev verself-web`. The launcher prefers
 `http://127.0.0.1:4244` but will move to a higher local port if that one is
 busy, then records the chosen URL in `/tmp/verself-web-dev.env`. Vite HMR gives
 sub-second feedback on every file save. API calls, Electric shapes, and OTLP
 traces all flow through the SSH tunnels to the deployed single-node stack.
-Interactive browser login is owned by identity-service and the public apex
+Interactive browser login is owned by iam-service and the public apex
 route; the frontend does not create local OIDC apps or local auth-session
 databases.
 

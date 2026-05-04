@@ -32,7 +32,7 @@ sql:
               type: Time
   - engine: postgresql
     schema:
-      - ../identity-service/migrations
+      - ../iam-service/migrations
     queries:
       - internal/store/identityexport/queries
     gen:

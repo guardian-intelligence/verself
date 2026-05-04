@@ -8,7 +8,7 @@ postgresql_role_connection_limits:
   electric_notifications: 15
   governance_service: 15
   grafana: 10
-  identity_service: 10
+  iam_service: 10
   mailbox_service: 10
   notifications_service: 10
   object_storage_service: 10
@@ -39,9 +39,9 @@ topology_postgres:
     - component: sandbox_rental
       database: sandbox_rental
       owner: sandbox_rental
-    - component: identity_service
-      database: identity_service
-      owner: identity_service
+    - component: iam_service
+      database: iam_service
+      owner: iam_service
     - component: governance_service
       database: governance_service
       owner: governance_service

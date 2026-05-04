@@ -80,7 +80,7 @@ export const Route = createRootRouteWithContext<{
 // __root.tsx owns the document and global providers (auth + query + brand
 // telemetry). Visual chrome lives in pathless route layers: signed-in surfaces
 // nest under _shell/_authenticated; public docs + policy nest under _workshop.
-// Auth entry routes render with no chrome; identity-service owns the OIDC callback.
+// Auth entry routes render with no chrome; iam-service owns the OIDC callback.
 function RootComponent() {
   const routeContext = Route.useRouteContext();
   const authSnapshot = parseAuthSnapshot(routeContext);

@@ -74,15 +74,15 @@
       ]
     },
     {
-      "component": "identity_service",
-      "job_id": "identity-service",
-      "bazel_label": "//src/identity-service/cmd/identity-service:identity-service",
-      "output": "identity-service",
+      "component": "iam_service",
+      "job_id": "iam-service",
+      "bazel_label": "//src/iam-service/cmd/iam-service:iam-service",
+      "output": "iam-service",
       "artifacts": [
         {
-          "bazel_label": "//src/identity-service/cmd/identity-service:identity-service",
-          "nomad_artifact_label": "//src/identity-service/cmd/identity-service:identity-service_nomad_artifact",
-          "output": "identity-service"
+          "bazel_label": "//src/iam-service/cmd/iam-service:iam-service",
+          "nomad_artifact_label": "//src/iam-service/cmd/iam-service:iam-service_nomad_artifact",
+          "output": "iam-service"
         }
       ]
     },
@@ -122,7 +122,7 @@
       "output": "profile-service",
       "depends_on": [
         "governance-service",
-        "identity-service"
+        "iam-service"
       ],
       "artifacts": [
         {

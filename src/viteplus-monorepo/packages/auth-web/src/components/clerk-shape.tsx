@@ -3,7 +3,7 @@ import { type ReactNode, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@verself/ui/components/ui/avatar";
 import { Button, type buttonVariants } from "@verself/ui/components/ui/button";
 import { useAuth, useClerk, useSignedInAuth, useUser } from "../react.ts";
-import { useIdentityApi } from "./identity-api.ts";
+import { useIAMApi } from "./iam-api.ts";
 import { organizationQuery } from "./queries.ts";
 
 type ButtonVariant = NonNullable<Parameters<typeof buttonVariants>[0]>["variant"];
@@ -98,10 +98,10 @@ export function UserButton({ organizationPath = "/organization", imageUrl }: Use
 // organization. Inside a page that already loads the org via its loader
 // (e.g. `<OrganizationProfile>`), this hits the React Query cache. On a page
 // that does not, the first call triggers a server-fn fetch through the
-// IdentityApiClient and suspends.
+// IAMApiClient and suspends.
 export function usePermissions(): ReadonlySet<string> {
   const auth = useSignedInAuth();
-  const api = useIdentityApi();
+  const api = useIAMApi();
   const organization = useSuspenseQuery(organizationQuery(auth, api)).data;
   return useMemo(() => new Set(organization.permissions), [organization.permissions]);
 }

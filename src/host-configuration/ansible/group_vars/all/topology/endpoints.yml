@@ -386,7 +386,7 @@ topology_endpoints:
         openapi: ""
         path_prefix: ""
     probes: {}
-  identity_service:
+  iam_service:
     endpoints:
       internal_https:
         address: "127.0.0.1:4241"

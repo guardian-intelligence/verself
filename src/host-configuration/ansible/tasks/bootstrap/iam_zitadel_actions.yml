@@ -1,0 +1,106 @@
+---
+- name: List Zitadel Actions V2 targets for iam-service API credentials
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/targets/search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ component_zitadel_admin_pat }}"
+      Host: "auth.{{ verself_domain }}"
+    body_format: json
+    body:
+      pagination:
+        limit: 100
+    return_content: true
+    status_code: 200
+  register: iam_service_zitadel_action_targets
+  no_log: true
+
+- name: Select iam-service API credential Actions V2 target
+  ansible.builtin.set_fact:
+    iam_service_zitadel_action_target: >-
+      {{
+        (
+          iam_service_zitadel_action_targets.json.targets | default([])
+          | selectattr('name', 'equalto', 'verself-api-credential-claims')
+          | list
+          | first
+        ) | default({})
+      }}
+  no_log: true
+
+- name: Create iam-service API credential Actions V2 target if missing
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/targets"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ component_zitadel_admin_pat }}"
+      Host: "auth.{{ verself_domain }}"
+    body_format: json
+    body:
+      name: verself-api-credential-claims
+      endpoint: "https://{{ zitadel_domain }}/internal/zitadel/actions/api-credential-claims"
+      timeout: "1s"
+      payloadType: PAYLOAD_TYPE_JSON
+      restCall:
+        interruptOnError: false
+    return_content: true
+    status_code: [200, 201]
+  register: iam_service_zitadel_action_target_created
+  when: iam_service_zitadel_action_target == {}
+  no_log: true
+
+- name: Set iam-service API credential Actions V2 target state
+  ansible.builtin.set_fact:
+    iam_service_zitadel_action_target_id: >-
+      {{
+        iam_service_zitadel_action_target.id
+        | default(iam_service_zitadel_action_target_created.json.id, true)
+      }}
+    iam_service_zitadel_action_signing_key: >-
+      {{
+        iam_service_zitadel_action_target.signingKey
+        | default(iam_service_zitadel_action_target_created.json.signingKey, true)
+      }}
+  no_log: true
+
+- name: Assert iam-service API credential Actions V2 target state is complete
+  ansible.builtin.assert:
+    that:
+      - iam_service_zitadel_action_target_id | default('', true) | length > 0
+      - iam_service_zitadel_action_signing_key | default('', true) | length > 0
+    fail_msg: iam-service API credential Zitadel Actions V2 target did not return id and signingKey.
+
+- name: Wire iam-service API credential target into pre-access-token execution
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/executions"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ component_zitadel_admin_pat }}"
+      Host: "auth.{{ verself_domain }}"
+    body_format: json
+    body:
+      condition:
+        function:
+          name: preaccesstoken
+      targets:
+        - "{{ iam_service_zitadel_action_target_id }}"
+    status_code: 200
+  no_log: true
+
+- name: Deploy iam-service Zitadel admin token credential
+  ansible.builtin.copy:
+    content: "{{ component_zitadel_admin_pat }}"
+    dest: /etc/credstore/iam-service/zitadel-admin-token
+    owner: root
+    group: iam_service
+    mode: "0640"
+  no_log: true
+
+- name: Deploy iam-service Zitadel action signing key credential
+  ansible.builtin.copy:
+    content: "{{ iam_service_zitadel_action_signing_key }}"
+    dest: /etc/credstore/iam-service/zitadel-action-signing-key
+    owner: root
+    group: iam_service
+    mode: "0640"
+  no_log: true

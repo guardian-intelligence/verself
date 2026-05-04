@@ -53,7 +53,7 @@ workload.example.com
 Service identities:
 
 ```text
-spiffe://spiffe.verself.sh/svc/identity-service
+spiffe://spiffe.verself.sh/svc/iam-service
 spiffe://spiffe.verself.sh/svc/governance-service
 spiffe://spiffe.verself.sh/svc/billing-service
 spiffe://spiffe.verself.sh/svc/secrets-service
@@ -135,7 +135,7 @@ source-code-hosting-service -> sandbox-rental-service
 source-code-hosting-service -> secrets-service
 secrets-service        -> billing-service
 secrets-service        -> governance-service
-identity-service       -> governance-service
+iam-service       -> governance-service
 billing-service        -> governance-service
 mailbox-service        -> governance-service
 ```

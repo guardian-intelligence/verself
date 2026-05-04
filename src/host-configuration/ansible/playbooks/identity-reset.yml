@@ -1,8 +1,0 @@
----
-# Wipe-only maintenance playbook. Rebuild host and application state through
-# the canonical aspect deploy path after running it.
-
-- name: Wipe identity-service PostgreSQL state
-  import_playbook: wipe-pg-db.yml
-  vars:
-    wipe_pg_db_name: identity_service

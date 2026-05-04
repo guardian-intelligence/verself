@@ -59,7 +59,7 @@ func run() error {
 
 	cfg := envconfig.New()
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	identityPGDSN := cfg.RequireString("GOVERNANCE_IDENTITY_PG_DSN")
+	identityPGDSN := cfg.RequireString("GOVERNANCE_IAM_PG_DSN")
 	billingPGDSN := cfg.RequireString("GOVERNANCE_BILLING_PG_DSN")
 	sandboxPGDSN := cfg.RequireString("GOVERNANCE_SANDBOX_PG_DSN")
 	auditHMACKey := cfg.RequireCredential("audit-hmac-key")
@@ -76,7 +76,7 @@ func run() error {
 	exportTTLHours := cfg.Int("GOVERNANCE_EXPORT_TTL_HOURS", 168)
 	environment := cfg.String("GOVERNANCE_ENVIRONMENT", "single-node")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	identityPGMaxConns := cfg.Int("GOVERNANCE_IDENTITY_PG_MAX_CONNS", 4)
+	identityPGMaxConns := cfg.Int("GOVERNANCE_IAM_PG_MAX_CONNS", 4)
 	billingPGMaxConns := cfg.Int("GOVERNANCE_BILLING_PG_MAX_CONNS", 4)
 	sandboxPGMaxConns := cfg.Int("GOVERNANCE_SANDBOX_PG_MAX_CONNS", 4)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
@@ -155,7 +155,7 @@ func run() error {
 
 	auditClientIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
-		workloadauth.ServiceIdentity,
+		workloadauth.ServiceIAM,
 		workloadauth.ServiceProfile,
 		workloadauth.ServiceSandboxRental,
 		workloadauth.ServiceSecrets,

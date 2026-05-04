@@ -61,7 +61,7 @@ Out of scope for v1:
 | ClickHouse (`secure_document_events`) | Append-only projection of every committed envelope, document, recipient, share-link, view, sign, decline, void, expire, tombstone, and key-unwrap audit event. HMAC chain authorship lives in Postgres. |
 | Object storage | Ciphertext-only blob storage. Stores original uploads, sealed signed revisions, audit-trail PDFs, and rasterized-page caches keyed by `(document_id, revision)`. |
 | secrets-service | Holds the org KEK; performs DEK wrap/unwrap. Mints short-lived signing certificates per recipient per envelope from the platform CA. Performs grant-bound signature primitives and audit-chain HMAC operations over SPIFFE so that private keys and HMAC keys never enter this service. |
-| identity-service | Issues step-up authentication tokens (passkey / SMS-OTP / OIDC re-auth) that signing requests must present. Owns user identity, recipient↔user binding, and recipient invitation routing for internal users. |
+| iam-service | Issues step-up authentication tokens (passkey / SMS-OTP / OIDC re-auth) that signing requests must present. Owns user identity, recipient↔user binding, and recipient invitation routing for internal users. |
 | mailbox-service | Outbound envelope-invitation, signing-link, completion, and decline notifications. |
 | governance-service | Consumes this service's committed audit outbox stream and ingests it into the cross-service audit ledger. |
 | billing-service | Consumes envelope-completed and signature-completed events for usage metering and per-org showback. |
@@ -302,14 +302,14 @@ Recipients prove identity at one of three v1 levels:
 | Level | Evidence | Where the token comes from |
 |---|---|---|
 | `email` | A signed link delivered to the recipient's email and clicked. This is delivery evidence, not a strong authenticator. | Token issued by this service against the recipient row at `envelope.sent`. |
-| `sms_otp` | An OTP delivered via SMS and verified at access time. SMS is a restricted fallback because it is not phishing-resistant and is exposed to SIM-swap and number-porting attacks. | identity-service `/v1/step-up/sms`. |
-| `passkey` | WebAuthn assertion at access time, bound to the recipient's user identity. | identity-service `/v1/step-up/passkey`. |
+| `sms_otp` | An OTP delivered via SMS and verified at access time. SMS is a restricted fallback because it is not phishing-resistant and is exposed to SIM-swap and number-porting attacks. | iam-service `/v1/step-up/sms`. |
+| `passkey` | WebAuthn assertion at access time, bound to the recipient's user identity. | iam-service `/v1/step-up/passkey`. |
 
 Levels are totally ordered: `email < sms_otp < passkey`.
 
 `envelopes.required_assurance` is a floor. `recipients.required_assurance` may raise but not lower the floor for that recipient.
 
-The signing endpoint requires a `step-up token`: a short-lived JWT issued by identity-service, bound to `(envelope_id, recipient_id, method, issued_at)`, with a TTL of 10 minutes. The signing handler:
+The signing endpoint requires a `step-up token`: a short-lived JWT issued by iam-service, bound to `(envelope_id, recipient_id, method, issued_at)`, with a TTL of 10 minutes. The signing handler:
 
 1. Verifies the token's signature and binding against this envelope-recipient pair.
 2. Verifies the token's declared method meets or exceeds `recipients.required_assurance`.

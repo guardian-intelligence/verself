@@ -36,7 +36,7 @@ topology_spire:
       interface: internal_api
   - from: source_code_hosting_service
     to:
-      component: identity_service
+      component: iam_service
       interface: internal_api
   - from: object_storage_service
     to:

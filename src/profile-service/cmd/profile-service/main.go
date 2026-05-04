@@ -16,7 +16,7 @@ import (
 
 	auth "github.com/verself/auth-middleware"
 	workloadauth "github.com/verself/auth-middleware/workload"
-	identityinternalclient "github.com/verself/identity-service/internalclient"
+	iaminternalclient "github.com/verself/iam-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
 	profileapi "github.com/verself/profile-service/internal/api"
 	"github.com/verself/profile-service/internal/profile"
@@ -73,7 +73,7 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
-	identityInternalURL := cfg.RequireURL("PROFILE_IDENTITY_INTERNAL_URL")
+	iamInternalURL := cfg.RequireURL("PROFILE_IAM_INTERNAL_URL")
 	governanceAuditURL := cfg.String("PROFILE_GOVERNANCE_AUDIT_URL", "")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
@@ -100,17 +100,17 @@ func run() error {
 	}
 	defer pg.Close()
 
-	identityHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIdentity, nil)
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
 	if err != nil {
 		return fmt.Errorf("profile identity mtls: %w", err)
 	}
-	identityClient, err := identityinternalclient.NewClientWithResponses(identityInternalURL, identityinternalclient.WithHTTPClient(identityHTTPClient))
+	iamClient, err := iaminternalclient.NewClientWithResponses(iamInternalURL, iaminternalclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("identity internal client: %w", err)
 	}
 	svc := &profile.Service{
 		Store:    profile.SQLStore{PG: pg},
-		Identity: profile.IdentityInternalClient{Client: identityClient},
+		Identity: profile.IAMInternalClient{Client: iamClient},
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("profile readiness: %w", err)

@@ -369,11 +369,11 @@ func stableUUID(parts ...string) uuid.UUID {
 func (r *platformRunner) ensureIdentityOrganization() error {
 	return r.withSpan("platform.identity.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
-		attribute.String("db.name", "identity_service"),
+		attribute.String("db.name", "iam_service"),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
 		attribute.String("verself.org_slug", r.cfg.CompanySlug),
 	}, func(ctx context.Context) error {
-		conn, err := r.openPG(ctx, "identity_service")
+		conn, err := r.openPG(ctx, "iam_service")
 		if err != nil {
 			return err
 		}
@@ -819,13 +819,13 @@ WHERE backend_id = $1 AND repo_id = $2`,
 }
 
 func (r *platformRunner) checkIdentityOrganization(issues *[]string) platformBoundaryRow {
-	row := platformBoundaryRow{Boundary: "identity_service.identity_organizations", Status: "ok"}
+	row := platformBoundaryRow{Boundary: "iam_service.identity_organizations", Status: "ok"}
 	err := r.withSpan("platform.identity.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
-		attribute.String("db.name", "identity_service"),
+		attribute.String("db.name", "iam_service"),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
 	}, func(ctx context.Context) error {
-		conn, err := r.openPG(ctx, "identity_service")
+		conn, err := r.openPG(ctx, "iam_service")
 		if err != nil {
 			return err
 		}

@@ -156,7 +156,7 @@ func resolvePersona(repoRoot, name string) (personaDefinition, error) {
 			MachineSecretPath:  "/etc/credstore/seed-system/assume-platform-admin-client-secret",
 			MailboxAccount:     "agents",
 			IncludePlatformOps: true,
-			TokenProjects:      []string{"sandbox-rental", "identity-service", "secrets-service", "mailbox-service", "forgejo"},
+			TokenProjects:      []string{"sandbox-rental", "iam-service", "secrets-service", "mailbox-service", "forgejo"},
 		}, nil
 	case "acme-admin":
 		return personaDefinition{
@@ -165,7 +165,7 @@ func resolvePersona(repoRoot, name string) (personaDefinition, error) {
 			HumanPasswordPath: "/etc/credstore/seed-system/acme-admin-password",
 			MachineUsername:   "assume-acme-admin",
 			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-admin-client-secret",
-			TokenProjects:     []string{"sandbox-rental", "identity-service", "secrets-service"},
+			TokenProjects:     []string{"sandbox-rental", "iam-service", "secrets-service"},
 		}, nil
 	case "acme-member":
 		return personaDefinition{
@@ -174,7 +174,7 @@ func resolvePersona(repoRoot, name string) (personaDefinition, error) {
 			HumanPasswordPath: "/etc/credstore/seed-system/acme-user-password",
 			MachineUsername:   "assume-acme-member",
 			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-member-client-secret",
-			TokenProjects:     []string{"sandbox-rental", "identity-service", "secrets-service"},
+			TokenProjects:     []string{"sandbox-rental", "iam-service", "secrets-service"},
 		}, nil
 	default:
 		return personaDefinition{}, fmt.Errorf("persona must be one of platform-admin, acme-admin, acme-member")
@@ -270,7 +270,7 @@ func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath stri
 	finalized = true
 	fmt.Fprintf(os.Stderr, "persona env written: %s\n", outputPath)
 	fmt.Fprintf(os.Stderr, "source %s\n", shellExportValue(outputPath))
-	return printIdentityMetadata(rt, client, def.Name, projectTokens["identity-service"])
+	return printIdentityMetadata(rt, client, def.Name, projectTokens["iam-service"])
 }
 
 func readRemoteSecretString(rt *opruntime.Runtime, path string) (string, error) {
@@ -381,9 +381,9 @@ func personaEnv(def personaDefinition, domain, authBaseURL, humanPassword string
 		}
 	}
 	addProjectEnv("sandbox-rental", "SANDBOX_RENTAL")
-	addProjectEnv("identity-service", "IDENTITY_SERVICE")
-	if token := projectTokens["identity-service"]; token != "" {
-		env["SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE"] = projectIDs["identity-service"]
+	addProjectEnv("iam-service", "IAM_SERVICE")
+	if token := projectTokens["iam-service"]; token != "" {
+		env["SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE"] = projectIDs["iam-service"]
 		env["SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN"] = token
 		env["SOURCE_CODE_HOSTING_SERVICE_TOKEN"] = token
 	}
@@ -426,9 +426,9 @@ func shellExportValue(value string) string {
 
 func printIdentityMetadata(rt *opruntime.Runtime, client *http.Client, personaName, token string) error {
 	if token == "" {
-		return errors.New("identity-service token is missing")
+		return errors.New("iam-service token is missing")
 	}
-	forward, err := rt.SSH.Forward(rt.Ctx, "identity-service", "127.0.0.1:4248")
+	forward, err := rt.SSH.Forward(rt.Ctx, "iam-service", "127.0.0.1:4248")
 	if err != nil {
 		return err
 	}
@@ -443,7 +443,7 @@ func printIdentityMetadata(rt *opruntime.Runtime, client *http.Client, personaNa
 	}
 	operations, err := identityAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization/operations", token)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "WARNING: identity-service operation catalog endpoint unavailable; continuing with empty operations metadata")
+		fmt.Fprintln(os.Stderr, "WARNING: iam-service operation catalog endpoint unavailable; continuing with empty operations metadata")
 		operations = map[string]any{"services": []any{}}
 	}
 	metadata := identityMetadata(personaName, access, operations)
@@ -538,7 +538,7 @@ func identityMetadata(personaName string, access, operations map[string]any) map
 	sort.Strings(withoutDeclared)
 	return map[string]any{
 		"persona": personaName,
-		"identity_service": map[string]any{
+		"iam_service": map[string]any{
 			"access":     access,
 			"operations": operations,
 			"effective_operations": map[string]any{

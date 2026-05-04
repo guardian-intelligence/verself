@@ -44,7 +44,7 @@
               "ELECTRIC_NOTIFICATIONS_BASE_URL": "http://127.0.0.1:3012",
               "HOME": "/var/lib/verself-web",
               "HOST": "127.0.0.1",
-              "IDENTITY_SERVICE_AUTH_AUDIENCE": "370200564807548260",
+              "IAM_SERVICE_AUTH_AUDIENCE": "370200564807548260",
               "NODE_ENV": "production",
               "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE": "370200564807548260",
               "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
@@ -86,7 +86,7 @@
               {
                 "ChangeMode": "restart",
                 "DestPath": "secrets/upstreams.env",
-                "EmbeddedTmpl": "GOVERNANCE_SERVICE_BASE_URL=http://{{- with nomadService \"governance-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nIDENTITY_SERVICE_BASE_URL=http://{{- with nomadService \"identity-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nNOTIFICATIONS_SERVICE_BASE_URL=http://{{- with nomadService \"notifications-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROFILE_SERVICE_BASE_URL=http://{{- with nomadService \"profile-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROJECTS_SERVICE_BASE_URL=http://{{- with nomadService \"projects-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_RENTAL_SERVICE_BASE_URL=http://{{- with nomadService \"sandbox-rental-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSOURCE_CODE_HOSTING_SERVICE_BASE_URL=http://{{- with nomadService \"source-code-hosting-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "EmbeddedTmpl": "GOVERNANCE_SERVICE_BASE_URL=http://{{- with nomadService \"governance-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nIAM_SERVICE_BASE_URL=http://{{- with nomadService \"iam-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nNOTIFICATIONS_SERVICE_BASE_URL=http://{{- with nomadService \"notifications-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROFILE_SERVICE_BASE_URL=http://{{- with nomadService \"profile-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nPROJECTS_SERVICE_BASE_URL=http://{{- with nomadService \"projects-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_RENTAL_SERVICE_BASE_URL=http://{{- with nomadService \"sandbox-rental-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSOURCE_CODE_HOSTING_SERVICE_BASE_URL=http://{{- with nomadService \"source-code-hosting-service-public-http\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
                 "Envvars": true
               }
             ],

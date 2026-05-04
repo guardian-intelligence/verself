@@ -135,7 +135,7 @@
         - zitadel_masterkey
         - zitadel_admin_password
         - postgresql_sandbox_rental_password
-        - postgresql_identity_service_password
+        - postgresql_iam_service_password
       loop_control:
         label: "{{ item }}"
       no_log: true
@@ -154,7 +154,7 @@
           zitadel_admin_password: "{{ _rand32s.zitadel_admin_password }}#@F1"
           zitadel_admin_pat: ""
           postgresql_sandbox_rental_password: "{{ _rand32s.postgresql_sandbox_rental_password }}"
-          postgresql_identity_service_password: "{{ _rand32s.postgresql_identity_service_password }}"
+          postgresql_iam_service_password: "{{ _rand32s.postgresql_iam_service_password }}"
           stripe_secret_key: ""
           stripe_webhook_secret: ""
           resend_api_key: ""

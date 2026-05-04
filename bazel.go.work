@@ -7,7 +7,7 @@ use (
 	./src/deployment-tools
 	./src/dev-tools
 	./src/governance-service
-	./src/identity-service
+	./src/iam-service
 	./src/mailbox-service
 	./src/notifications-service
 	./src/object-storage-service

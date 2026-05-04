@@ -2,13 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
 import { requireEnv, requireURLFromEnv } from "@verself/web-env";
 import {
-  IdentityApiError,
+  IAMApiError,
   getMembers as getMembersRequest,
   getMemberCapabilities as getMemberCapabilitiesRequest,
   getOrganization as getOrganizationRequest,
   inviteMember as inviteMemberRequest,
   inviteMemberRequestSchema,
-  isIdentityApiError,
+  isIAMApiError,
   listMyOrganizations as listMyOrganizationsRequest,
   putMemberCapabilities as putMemberCapabilitiesRequest,
   putMemberCapabilitiesRequestSchema,
@@ -16,7 +16,7 @@ import {
   updateOrganizationRequestSchema,
   updateMemberRoles as updateMemberRolesRequest,
   updateMemberRolesRequestSchema,
-} from "~/lib/identity-api";
+} from "~/lib/iam-api";
 import {
   GovernanceApiError,
   auditEventsQuerySchema,
@@ -88,7 +88,7 @@ import type {
   PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
-} from "~/lib/identity-api";
+} from "~/lib/iam-api";
 import type {
   CreateExportRequest,
   GovernanceAuditEvent,
@@ -177,7 +177,7 @@ import type {
 } from "~/lib/sandbox-rental-api";
 import { consoleAuthMiddleware, getAccessTokenForAudience, type ConsoleAuthContext } from "./auth";
 
-const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
+const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
 const PROFILE_SERVICE_BASE_URL = requireURLFromEnv("PROFILE_SERVICE_BASE_URL");
 const NOTIFICATIONS_SERVICE_BASE_URL = requireURLFromEnv("NOTIFICATIONS_SERVICE_BASE_URL");
@@ -186,7 +186,7 @@ const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
   "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
 );
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
-const IDENTITY_SERVICE_AUTH_AUDIENCE = requireEnv("IDENTITY_SERVICE_AUTH_AUDIENCE");
+const IAM_SERVICE_AUTH_AUDIENCE = requireEnv("IAM_SERVICE_AUTH_AUDIENCE");
 const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE = requireEnv("SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE");
 const PROFILE_SERVICE_AUTH_AUDIENCE = requireEnv("PROFILE_SERVICE_AUTH_AUDIENCE");
 const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireEnv("NOTIFICATIONS_SERVICE_AUTH_AUDIENCE");
@@ -195,7 +195,7 @@ const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireEnv(
   "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
 );
 
-export { IdentityApiError, isIdentityApiError };
+export { IAMApiError, isIAMApiError };
 export { GovernanceApiError, isGovernanceApiError };
 export { ProfileApiError, isProfileApiError };
 export { NotificationsApiError, isNotificationsApiError };
@@ -276,25 +276,21 @@ async function sandboxRentalClientOptions(context: ConsoleAuthContext | undefine
   };
 }
 
-async function identityClientOptions(
+async function iamClientOptions(
   context: ConsoleAuthContext | undefined,
   options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
 ) {
-  const accessToken = await getAccessTokenForAudience(
-    context,
-    IDENTITY_SERVICE_AUTH_AUDIENCE,
-    options,
-  );
+  const accessToken = await getAccessTokenForAudience(context, IAM_SERVICE_AUTH_AUDIENCE, options);
   return {
     accessToken,
-    baseUrl: IDENTITY_SERVICE_BASE_URL,
+    baseUrl: IAM_SERVICE_BASE_URL,
   };
 }
 
 async function governanceClientOptions(context: ConsoleAuthContext | undefined) {
-  const identityOptions = await identityClientOptions(context);
+  const iamOptions = await iamClientOptions(context);
   return {
-    ...identityOptions,
+    ...iamOptions,
     baseUrl: GOVERNANCE_SERVICE_BASE_URL,
   };
 }
@@ -337,14 +333,14 @@ async function sourceCodeHostingClientOptions(context: ConsoleAuthContext | unde
 export const getOrganization = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getOrganizationRequest(await identityClientOptions(context));
+    return getOrganizationRequest(await iamClientOptions(context));
   });
 
 export const listMyOrganizations = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
     return listMyOrganizationsRequest(
-      await identityClientOptions(context, { roleAssignmentScope: "all_granted_orgs" }),
+      await iamClientOptions(context, { roleAssignmentScope: "all_granted_orgs" }),
     );
   });
 
@@ -353,7 +349,7 @@ export const updateOrganization = createServerFn({ method: "POST" })
   .inputValidator(updateOrganizationRequestSchema)
   .handler(async ({ context, data }) => {
     return updateOrganizationRequest({
-      ...(await identityClientOptions(context)),
+      ...(await iamClientOptions(context)),
       body: data,
     });
   });
@@ -361,7 +357,7 @@ export const updateOrganization = createServerFn({ method: "POST" })
 export const getMembers = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getMembersRequest(await identityClientOptions(context));
+    return getMembersRequest(await iamClientOptions(context));
   });
 
 export const inviteMember = createServerFn({ method: "POST" })
@@ -369,7 +365,7 @@ export const inviteMember = createServerFn({ method: "POST" })
   .inputValidator(inviteMemberRequestSchema)
   .handler(async ({ context, data }) => {
     return inviteMemberRequest({
-      ...(await identityClientOptions(context)),
+      ...(await iamClientOptions(context)),
       body: data,
     });
   });
@@ -379,7 +375,7 @@ export const updateMemberRoles = createServerFn({ method: "POST" })
   .inputValidator(updateMemberRolesRequestSchema)
   .handler(async ({ context, data }) => {
     return updateMemberRolesRequest({
-      ...(await identityClientOptions(context)),
+      ...(await iamClientOptions(context)),
       body: data,
     });
   });
@@ -387,7 +383,7 @@ export const updateMemberRoles = createServerFn({ method: "POST" })
 export const getMemberCapabilities = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getMemberCapabilitiesRequest(await identityClientOptions(context));
+    return getMemberCapabilitiesRequest(await iamClientOptions(context));
   });
 
 export const putMemberCapabilities = createServerFn({ method: "POST" })
@@ -395,7 +391,7 @@ export const putMemberCapabilities = createServerFn({ method: "POST" })
   .inputValidator(putMemberCapabilitiesRequestSchema)
   .handler(async ({ context, data }) => {
     return putMemberCapabilitiesRequest({
-      ...(await identityClientOptions(context)),
+      ...(await iamClientOptions(context)),
       body: data,
     });
   });

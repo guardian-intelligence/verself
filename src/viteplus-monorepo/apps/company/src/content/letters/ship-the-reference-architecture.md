@@ -13,6 +13,6 @@ The first year of any company is spent on the same dozen systems. Identity. Bill
 
 The open-source world is rich in primitives and thin in assemblies. There are a hundred identity providers, a hundred billing systems, a hundred metrics pipelines. There is no single codebase that takes all of them, wires them together the way a real company would, and then operates itself on that codebase.
 
-We build that codebase. The repo is one per subdirectory — platform, mailbox-service, billing-service, identity-service, sandbox-rental-service, vm-orchestrator, and the pieces that hold them together. We dogfood every service on the same substrate our customers use. Letters is the place where we talk about why and how.
+We build that codebase. The repo is one per subdirectory — platform, mailbox-service, billing-service, iam-service, sandbox-rental-service, vm-orchestrator, and the pieces that hold them together. We dogfood every service on the same substrate our customers use. Letters is the place where we talk about why and how.
 
 The first customer of Guardian is Guardian.

@@ -1,9 +1,9 @@
 // Clerk-shaped React surface for organizations, members, and member capabilities.
 // Pair this with @verself/auth-web/react's <AuthProvider>: wrap your
-// authenticated subtree in <IdentityApiProvider client={...}> and these
+// authenticated subtree in <IAMApiProvider client={...}> and these
 // components do the rest.
 
-export { IdentityApiProvider, useIdentityApi, type IdentityApiClient } from "./identity-api.ts";
+export { IAMApiProvider, useIAMApi, type IAMApiClient } from "./iam-api.ts";
 export type {
   InviteMemberRequest,
   InviteMemberResponse,

@@ -9,7 +9,7 @@ import * as v from "valibot";
 import { parse as parseYaml } from "yaml";
 
 import sandboxRentalYaml from "../__generated/openapi-specs/sandbox-rental-api/openapi-3.1.yaml?raw";
-import identityYaml from "../__generated/openapi-specs/identity-api/openapi-3.1.yaml?raw";
+import identityYaml from "../__generated/openapi-specs/iam-api/openapi-3.1.yaml?raw";
 import mailboxYaml from "../__generated/openapi-specs/mailbox-api/openapi-3.1.yaml?raw";
 import billingYaml from "../__generated/openapi-specs/billing-api/openapi-3.1.yaml?raw";
 
@@ -155,9 +155,9 @@ export const SERVICE_CATALOG: readonly ServiceCatalogEntry[] = [
   {
     id: "identity",
     title: "Identity",
-    subdomain: "identity.api",
+    subdomain: "iam.api",
     publicSurface: true,
-    document: parseDocument(identityYaml, "identity-service"),
+    document: parseDocument(identityYaml, "iam-service"),
   },
   {
     id: "mailbox",

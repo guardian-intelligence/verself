@@ -86,7 +86,7 @@ haproxy_firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_ser
 haproxy_h2c_components:
   - billing
   - governance_service
-  - identity_service
+  - iam_service
   - mailbox_service
   - notifications_service
   - profile_service

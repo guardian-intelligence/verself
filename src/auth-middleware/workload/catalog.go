@@ -8,7 +8,7 @@ const (
 	ServiceClickHouseOperator = "clickhouse-operator"
 	ServiceGrafana            = "grafana"
 	ServiceGovernance         = "governance-service"
-	ServiceIdentity           = "identity-service"
+	ServiceIAM                = "iam-service"
 	ServiceMailbox            = "mailbox-service"
 	ServiceNATS               = "nats"
 	ServiceNotifications      = "notifications-service"

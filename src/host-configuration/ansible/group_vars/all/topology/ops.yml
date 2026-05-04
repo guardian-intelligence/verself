@@ -40,8 +40,8 @@ forgejo_domain: '{{ forgejo_subdomain }}.{{ verself_domain }}'
 forgejo_subdomain: git
 governance_service_domain: '{{ governance_service_subdomain }}.{{ verself_domain }}'
 governance_service_subdomain: governance.api
-identity_service_domain: '{{ identity_service_subdomain }}.{{ verself_domain }}'
-identity_service_subdomain: identity.api
+iam_service_domain: '{{ iam_service_subdomain }}.{{ verself_domain }}'
+iam_service_subdomain: iam.api
 mailbox_service_domain: '{{ mailbox_service_subdomain }}.{{ verself_domain }}'
 mailbox_service_subdomain: mail.api
 notifications_service_domain: '{{ notifications_service_subdomain }}.{{ verself_domain }}'

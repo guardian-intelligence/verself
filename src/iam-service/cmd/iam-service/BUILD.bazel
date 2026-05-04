@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/deployment-tools/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "iam-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/iam-service/cmd/iam-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/auth-middleware",
+        "//src/auth-middleware/workload",
+        "//src/iam-service/internal/api",
+        "//src/iam-service/internal/authz",
+        "//src/iam-service/internal/identity",
+        "//src/iam-service/internal/spicedb",
+        "//src/iam-service/internal/zitadel",
+        "//src/iam-service/migrations",
+        "//src/iam-service/schema",
+        "//src/observability/go/otel",
+        "//src/service-runtime/go/envconfig",
+        "//src/service-runtime/go/httpserver",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "iam-service",
+    embed = [":iam-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "iam-service_nomad_artifact",
+    binary = ":iam-service",
+    output = "iam-service",
+)
+
+exports_files(["nomad-overrides.json"])

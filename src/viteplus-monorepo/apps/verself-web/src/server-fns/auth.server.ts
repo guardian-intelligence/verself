@@ -8,14 +8,14 @@ import {
 } from "@verself/auth-web/isomorphic";
 import type { ConsoleAuthContext } from "./auth";
 
-const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
+const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
 
 const resourceTokenResponseSchema = v.object({
   accessToken: v.pipe(v.string(), v.nonEmpty()),
 });
 
 function identityAuthURL(path: string): string {
-  return new URL(`/api/v1/auth/${path}`, IDENTITY_SERVICE_BASE_URL).toString();
+  return new URL(`/api/v1/auth/${path}`, IAM_SERVICE_BASE_URL).toString();
 }
 
 function currentCookieHeader(): string | undefined {

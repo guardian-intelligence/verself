@@ -35,10 +35,20 @@ several SpiceDB processes.
 - Raw SpiceDB imports are confined to `iam-service/internal/spicedb`.
 - Product services use typed authorization operations, not arbitrary
   object-type, relation, permission, or subject strings.
+- Public IAM policy APIs follow Google Cloud IAM semantics:
+  `getIamPolicy`, `setIamPolicy`, and `testIamPermissions`.
+- Public HTTP routes are OpenAPI-native concrete resource routes. SDKs may
+  expose Google-style resource-name helpers over those routes.
+- Policy replacement requires optimistic concurrency through `etag` after
+  bootstrap/default creation.
 - Authorization checks return typed decision evidence, not bare booleans.
 - Every security-sensitive check carries an explicit freshness policy.
 - Product mutations that require authorization accept typed decision evidence.
 - Relationship writes are idempotent by default and carry transaction metadata.
+- Public mutations require an idempotency key. Internal mutations require a
+  command request ID or idempotency key in the generated internal contract.
+- List APIs use `page_size`, `page_token`, `next_page_token`, `filter`, and
+  `order_by` rather than offset pagination.
 - A resource is not exposed to read paths until its authorization parent edges
   have been acknowledged by SpiceDB and represented by a ZedToken.
 - List endpoints declare their authorization strategy before implementation:
@@ -49,6 +59,9 @@ several SpiceDB processes.
   state.
 - SpiceDB Watch, IAM outbox rows, and ClickHouse evidence are part of the
   correctness model.
+- OAuth refresh tokens, device-code login, and PKCE remain Zitadel/OIDC
+  concerns. `iam-service` validates access tokens and manages product
+  authorization state; it does not become an OAuth authorization server.
 
 ## Substrate
 
@@ -108,17 +121,17 @@ The schema defines object types, stored relations, and computed permissions:
 use typechecking
 
 definition user {}
-definition api_credential {}
+definition service_account {}
 
 definition role {
-  relation member: user | api_credential
+  relation member: user | service_account
 }
 
 definition org {
   relation owner: user
   relation admin: user
-  relation member: user | api_credential
-  relation execution_lister: user | api_credential | role#member
+  relation member: user | service_account
+  relation execution_lister: user | service_account | role#member
 
   permission read = owner + admin + member
   permission manage_iam = owner + admin
@@ -157,6 +170,7 @@ Model authorization-relevant resources and inheritance boundaries:
 
 - `org`
 - `role`
+- `service_account`
 - `api_credential`
 - `project`
 - `environment`
@@ -199,6 +213,10 @@ src/iam-service/
   client/
   internalclient/
 
+  sdk/
+    go/
+    typescript/
+
   migrations/
 
   schema/
@@ -229,6 +247,10 @@ src/iam-service/
 
   internal/roles/
     customer-visible role catalog, role grants, capability replacement
+
+  internal/policies/
+    getIamPolicy, setIamPolicy, testIamPermissions, etag handling, and
+    binding compilation
 
   internal/credentials/
     customer API credential metadata, grants, roll, revoke, claim resolution
@@ -287,7 +309,9 @@ Wire contract locations:
 | SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/iam-service/openapi/internal-openapi-3.0.yaml`, `src/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/iam-service/openapi` |
 | Generated public Go client | `src/iam-service/client/client.gen.go` | `//src/iam-service/client:client` |
 | Generated internal Go client | `src/iam-service/internalclient/client.gen.go` | `//src/iam-service/internalclient:internalclient` |
+| Curated Go IAM SDK | `src/iam-service/sdk/go/` | `//src/iam-service/sdk/go:iam` |
 | Browser TypeScript clients | `src/viteplus-monorepo/apps/verself-web/src/__generated/iam-api/` | frontend OpenAPI generation target |
+| Curated TypeScript IAM SDK | `src/iam-service/sdk/typescript/` | TypeScript SDK generation target |
 | SpiceDB schema | `src/iam-service/schema/verself.zed` | `//src/iam-service/schema:schema` |
 | SpiceDB schema assertions | `src/iam-service/schema/assertions.yaml`, `src/iam-service/schema/expected-relations.yaml` | `//src/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
@@ -303,6 +327,191 @@ consumed by more than `iam-service`, put the protobuf under
 OpenAPI remains the generated-client surface for product services. A missing
 service shape is fixed by adding the Huma route and regenerating the committed
 OpenAPI specs and clients, not by hand-writing HTTP or gRPC calls.
+
+## API Layering
+
+The product surface is organized in four layers:
+
+1. `iam-service` exposes HTTP JSON APIs generated from Huma/OpenAPI. Internal
+   product-service operations use the SPIFFE-only internal OpenAPI surface.
+2. Language SDKs wrap generated clients. SDKs own retries, idempotency key
+   generation, auto-pagination, resource-name helpers, error normalization,
+   request tracing headers, and DTO conversion.
+3. The console uses TanStack server functions as web adapters. Server
+   functions call the SDK and own cookie/session/CSRF concerns.
+4. The CLI calls the SDK directly. Server functions are not a CLI transport
+   contract.
+
+The SDK should make the public API feel Google-IAM-like even when the HTTP
+routes are OpenAPI-native:
+
+```go
+policy, err := client.IAM.GetIAMPolicy(ctx, "organizations/org_123")
+updated, err := client.IAM.SetIAMPolicy(ctx, "organizations/org_123", policy, iam.WithETag(policy.ETag))
+allowed, err := client.IAM.TestIAMPermissions(ctx, "executions/exec_456", []string{"executions.read", "executions.logs.read"})
+```
+
+```text
+verself iam policies get organizations/org_123
+verself iam policies add-binding organizations/org_123 --role roles/execution.viewer --member user:usr_123
+verself iam test-permissions executions/exec_456 executions.read executions.logs.read
+```
+
+CLI convenience commands such as `add-binding` are read-modify-write helpers
+over `getIamPolicy` and `setIamPolicy`. The service API stays small.
+
+## Huma OpenAPI Shape
+
+The public IAM API copies Google Cloud IAM semantics:
+
+- `getIamPolicy`: read the policy attached to a resource.
+- `setIamPolicy`: replace the policy attached to a resource using `etag`
+  concurrency.
+- `testIamPermissions`: return the subset of requested permissions the caller
+  currently has on a resource.
+
+Google's REST docs often use gRPC-transcoding paths such as
+`/{resource=projects/*}:setIamPolicy`. OpenAPI path parameters do not model
+slash-containing resource names cleanly, and Huma routes should remain
+ordinary OpenAPI routes. `iam-service` therefore registers concrete routes for
+each policy-bearing resource type and lets SDK helpers translate resource
+names to those routes.
+
+Initial public policy routes:
+
+```text
+GET  /api/v1/organizations/{org_id}/iamPolicy
+PUT  /api/v1/organizations/{org_id}/iamPolicy
+POST /api/v1/organizations/{org_id}/iamPolicy:testPermissions
+
+GET  /api/v1/projects/{project_id}/iamPolicy
+PUT  /api/v1/projects/{project_id}/iamPolicy
+POST /api/v1/projects/{project_id}/iamPolicy:testPermissions
+
+GET  /api/v1/repositories/{repository_id}/iamPolicy
+PUT  /api/v1/repositories/{repository_id}/iamPolicy
+POST /api/v1/repositories/{repository_id}/iamPolicy:testPermissions
+
+GET  /api/v1/secrets/{secret_id}/iamPolicy
+PUT  /api/v1/secrets/{secret_id}/iamPolicy
+POST /api/v1/secrets/{secret_id}/iamPolicy:testPermissions
+```
+
+Only resource types that support directly attached policy receive these routes.
+Inherited leaf resources such as execution attempts may support
+`testIamPermissions` without supporting `setIamPolicy`.
+
+Huma operation declarations should stay next to policy metadata:
+
+```go
+registerIAMRoute(api, huma.Operation{
+    OperationID:   "set-organization-iam-policy",
+    Method:        http.MethodPut,
+    Path:          "/api/v1/organizations/{org_id}/iamPolicy",
+    Summary:       "Set organization IAM policy",
+    DefaultStatus: http.StatusOK,
+}, operationPolicy{
+    Permission:         permissionIAMPolicySet,
+    Resource:           "organization_iam_policy",
+    Action:             "set",
+    OrgScope:           "path_org_id",
+    RateLimitClass:     "iam_policy_mutation",
+    Idempotency:        idempotencyHeaderKey,
+    AuditEvent:         "iam.policy.set",
+    OperationType:      "write",
+    RiskLevel:          "high",
+    DataClassification: "authorization_policy",
+    BodyLimitBytes:     bodyLimitSmallJSON,
+}, setOrganizationIAMPolicy(svc))
+```
+
+Core wire DTOs:
+
+```go
+type Policy struct {
+    Version  int32     `json:"version"`
+    ETag     string    `json:"etag"`
+    Bindings []Binding `json:"bindings"`
+}
+
+type Binding struct {
+    Role    string   `json:"role"`
+    Members []string `json:"members"`
+}
+
+type SetIAMPolicyRequest struct {
+    Policy     Policy `json:"policy"`
+    UpdateMask string `json:"update_mask,omitempty"`
+}
+
+type TestIAMPermissionsRequest struct {
+    Permissions []string `json:"permissions" minItems:"1" maxItems:"100"`
+}
+
+type TestIAMPermissionsResponse struct {
+    Permissions []string `json:"permissions"`
+}
+```
+
+Policy member strings use a small fixed vocabulary:
+
+```text
+user:{zitadel_subject}
+serviceAccount:{service_account_id}
+```
+
+Role names use resource-name-like strings:
+
+```text
+roles/owner
+roles/admin
+roles/member
+roles/execution.viewer
+organizations/{org_id}/roles/{role_id}
+```
+
+`setIamPolicy` compiles policy bindings into typed SpiceDB relationship writes.
+It does not store or evaluate a customer-editable policy language in the first
+cut. Conditions and caveats can be added later as a deliberate schema/API
+extension.
+
+Standard list APIs use the Google AIP pagination vocabulary:
+
+```go
+type ListRolesInput struct {
+    Parent    string `query:"parent,omitempty" maxLength:"256"`
+    PageSize  int    `query:"page_size,omitempty" minimum:"1" maximum:"100"`
+    PageToken string `query:"page_token,omitempty" maxLength:"1024"`
+    Filter    string `query:"filter,omitempty" maxLength:"2048"`
+    OrderBy   string `query:"order_by,omitempty" maxLength:"256"`
+}
+
+type ListRolesResponse struct {
+    Roles         []Role `json:"roles"`
+    NextPageToken string `json:"next_page_token,omitempty"`
+}
+```
+
+Page tokens are opaque, URL-safe, and authorization-neutral. The service
+reauthorizes every request that includes a page token.
+
+All public operations accept `X-Request-ID` for trace correlation. Mutating
+operations declare `Idempotency-Key` in OpenAPI and reject requests that omit
+it.
+
+HTTP error responses use RFC 9457 Problem Details with stable Verself problem
+types and trace-backed `instance` values. The SDK maps those problem documents
+to language-native typed errors.
+
+Authentication flows remain standard OIDC/OAuth:
+
+- console: authorization code with PKCE and server-side sessions;
+- CLI: device authorization flow or authorization code with PKCE;
+- SDK workloads: bearer access token or customer API credential;
+- repo-owned service calls: SPIFFE mTLS on internal clients.
+
+Refresh tokens are issued and refreshed by Zitadel's token endpoint. They are
+never sent to product resource APIs and are not represented in IAM policy DTOs.
 
 ## Bazel Targets
 
@@ -324,6 +533,8 @@ The service should create these targets:
 
 //src/iam-service/client:client
 //src/iam-service/internalclient:internalclient
+//src/iam-service/sdk/go:iam
+//src/iam-service/sdk/typescript:iam
 //src/iam-service/migrations:migrations
 //src/iam-service/schema:schema
 //src/iam-service/schema:schema_tests
@@ -337,6 +548,7 @@ The service should create these targets:
 //src/iam-service/internal/orgs:orgs
 //src/iam-service/internal/members:members
 //src/iam-service/internal/roles:roles
+//src/iam-service/internal/policies:policies
 //src/iam-service/internal/credentials:credentials
 //src/iam-service/internal/browser:browser
 //src/iam-service/internal/actions:actions
@@ -399,6 +611,8 @@ surface:
 | Organization members | `internal/members` | Directory-backed read model; filters service accounts out of the member table and exposes them through credentials. |
 | Member invite and role update | `internal/members` plus `internal/roles` | Mutations write directory state and SpiceDB relationships through command envelopes. |
 | Member capability replacement | `internal/roles` | Represented as role grants and SpiceDB relationships; no customer-editable policy language in the first cut. |
+| IAM policy get/set/test | `internal/policies` plus `internal/authz` | Google-IAM-style resource policy operations over Huma/OpenAPI. `setIamPolicy` requires `etag` and idempotency after bootstrap. |
+| Permission and role catalog | `internal/roles` plus `internal/policies` | Exposes predefined roles, org-scoped roles, and permission metadata for SDKs, CLI, and console affordances. |
 | API credential list/read/create/roll/revoke | `internal/credentials` | Secret material is returned only at create or roll. Metadata and grants are durable IAM state. |
 | API credential claim resolution | `internal/actions` plus `internal/credentials` | Zitadel action calls resolve non-secret credential metadata and exact allowed permissions. |
 | Human profile sync | `internal/orgs` or `internal/members` | Narrow internal operation for directory/profile propagation. |
@@ -423,10 +637,10 @@ cmd/iam-service
   -> internal/api
 
 internal/api
-  -> internal/{orgs,members,roles,credentials,browser,actions,syncauth,resourceedges}
+  -> internal/{orgs,members,roles,policies,credentials,browser,actions,syncauth,resourceedges}
   -> internal/problems
 
-internal/{orgs,members,roles,credentials,browser,actions,syncauth,resourceedges}
+internal/{orgs,members,roles,policies,credentials,browser,actions,syncauth,resourceedges}
   -> internal/authz
   -> internal/commands
   -> internal/store
@@ -466,6 +680,11 @@ operations such as `CanListExecutions`, `CanReadAttemptLogs`,
 It returns typed decisions and never returns a bare `bool` to vertical command
 packages.
 
+`internal/policies` owns public IAM policy semantics: policy read assembly,
+`etag` verification, role/member binding validation, `setIamPolicy` compilation
+to SpiceDB relationship operations, and `testIamPermissions` response shaping.
+It does not import AuthZed clients directly.
+
 `internal/spicedb` is a substrate adapter. It converts generated model refs to
 AuthZed protobuf requests, applies consistency policies, attaches request
 metadata, records low-level metrics, and translates substrate errors. No other
@@ -500,11 +719,14 @@ codes or serialize problem documents.
   payloads.
 - `internal/syncauth` is the only package that issues Electric shape
   capabilities.
+- `internal/policies` is the only package that accepts public IAM policy
+  documents and compiles them into typed authorization commands.
 - Vertical packages do not import each other. Cross-area behavior goes through
   small interfaces declared by the caller or through `internal/commands`
   envelopes.
 - No package imports from `cmd/`.
-- Generated clients are the only supported cross-service API surface.
+- Generated clients are the only supported cross-service API surface. Curated
+  SDKs wrap generated clients; they do not bypass them.
 
 These rules should be enforced with Bazel package visibility or a static import
 check. A compile-time failure is preferable to a code review convention.
@@ -587,6 +809,9 @@ internal/api/
   public_orgs.go
   public_members.go
   public_roles.go
+  public_policies.go
+  public_permissions.go
+  public_service_accounts.go
   public_credentials.go
   public_browser.go
   public_actions.go
@@ -962,16 +1187,30 @@ secret ownership should be represented as relationships.
 ## API Surface
 
 Public APIs are for organization IAM management by authenticated users and
-customer credentials:
+customer credentials. The public surface is intentionally conventional:
 
-- list effective permissions;
-- create role;
-- update role grants;
-- bind and unbind role members;
-- list members and credential grants;
-- issue or revoke customer API credentials;
-- inspect access to a resource;
-- view audit-backed authorization history.
+| Resource | Operations |
+| --- | --- |
+| IAM policy | `getIamPolicy`, `setIamPolicy`, `testIamPermissions` on supported resources. |
+| Roles | list predefined roles, list org roles, create org role, update org role, delete org role. |
+| Members | list members, invite member, update member role bindings, remove member. |
+| Service accounts | list, create, update display metadata, disable, delete. |
+| API credentials | list, read metadata, create, roll, revoke. |
+| Permission catalog | list permissions, inspect role-to-permission expansion, list effective permissions. |
+| Authorization history | audit-backed inspection by resource, actor, role, credential, and command ID. |
+
+Initial policy-bearing resource paths are concrete Huma routes:
+
+```text
+/api/v1/organizations/{org_id}/iamPolicy
+/api/v1/projects/{project_id}/iamPolicy
+/api/v1/repositories/{repository_id}/iamPolicy
+/api/v1/secrets/{secret_id}/iamPolicy
+```
+
+The SDK accepts resource names such as `organizations/org_123` and dispatches
+to the correct generated client method. This keeps OpenAPI generation
+straightforward without forcing callers to learn every route variant.
 
 Internal APIs are SPIFFE-only and serve product services:
 
@@ -984,10 +1223,15 @@ Internal APIs are SPIFFE-only and serve product services:
 - read sync scope state;
 - publish command/audit metadata.
 
+Internal APIs carry origin subject fields explicitly. They do not accept
+browser cookies, console session IDs, or customer refresh tokens. Product
+services call generated `internalclient` packages with SPIFFE mTLS and typed
+origin context.
+
 Public route declarations include IAM metadata, audit metadata, idempotency
-metadata, body limits, and rate-limit class in the Huma operation definition.
-Internal routes authorize exact SPIFFE peer IDs and carry origin subject fields
-explicitly.
+metadata, body limits, rate-limit class, and response problem types in the Huma
+operation definition. Internal routes authorize exact SPIFFE peer IDs and carry
+their own operation policies.
 
 ## PostgreSQL State
 
@@ -996,6 +1240,7 @@ explicitly.
 - command idempotency records;
 - outbox rows;
 - role display metadata;
+- service account metadata;
 - customer API credential metadata;
 - capability lease records;
 - revocation epochs;
@@ -1142,3 +1387,19 @@ deployment failure.
   <https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/>.
 - Huma:
   <https://pkg.go.dev/github.com/danielgtaylor/huma/v2>.
+- Google IAM policy API:
+  <https://cloud.google.com/iam/docs/reference/rest/>.
+- Google API pagination:
+  <https://google.aip.dev/158>.
+- Google API request IDs:
+  <https://google.aip.dev/155>.
+- Google API errors:
+  <https://google.aip.dev/193>.
+- RFC 9457 Problem Details:
+  <https://www.rfc-editor.org/rfc/rfc9457>.
+- OAuth 2.0 refresh tokens:
+  <https://www.rfc-editor.org/rfc/rfc6749>.
+- OAuth 2.0 Device Authorization Grant:
+  <https://www.rfc-editor.org/rfc/rfc8628>.
+- SCIM 2.0 protocol:
+  <https://www.rfc-editor.org/rfc/rfc7644>.

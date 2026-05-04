@@ -8,7 +8,7 @@ import {
   SignInButton,
   availableOrganizationMetadataQuery,
   organizationMembersQuery,
-  useIdentityApi,
+  useIAMApi,
   type OrganizationMetadataValue,
 } from "@verself/auth-web/components";
 import { useClerk, useSignedInAuth, useUser } from "@verself/auth-web/react";
@@ -283,7 +283,7 @@ const ACTIVE_MEMBER_STATE = "USER_STATE_ACTIVE";
 function useActiveMemberCount(): number | null {
   const auth = useSignedInAuth();
   const hydrated = useHydrated();
-  const api = useIdentityApi();
+  const api = useIAMApi();
   const { data } = useQuery({
     ...organizationMembersQuery(auth, api),
     enabled: hydrated,
@@ -292,13 +292,13 @@ function useActiveMemberCount(): number | null {
   return data.filter((member) => member.state === ACTIVE_MEMBER_STATE).length;
 }
 
-// Display names live in identity-service (Zitadel only carries the primary
+// Display names live in iam-service (Zitadel only carries the primary
 // domain, which is infra detail and never reaches the browser). One fetch
 // covers every org the actor can switch into.
 function useAvailableOrganizationProfiles(): ReadonlyMap<string, OrganizationMetadataValue> | null {
   const auth = useSignedInAuth();
   const hydrated = useHydrated();
-  const api = useIdentityApi();
+  const api = useIAMApi();
   const { data } = useQuery({
     ...availableOrganizationMetadataQuery(auth, api),
     enabled: hydrated,
@@ -315,7 +315,7 @@ function organizationLabel(
   organization: AuthOrganizationContext,
   profiles: ReadonlyMap<string, OrganizationMetadataValue> | null,
 ): string {
-  // Empty while the identity-service profile is in flight — the surrounding
+  // Empty while the iam-service profile is in flight — the surrounding
   // skeleton/`ready` gating keeps the trigger blank rather than flashing the
   // raw orgID, which would be a worse UX than nothing.
   return profiles?.get(organization.orgID)?.display_name ?? "";

@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "../isomorphic.ts";
-import type { IdentityApiClient } from "./identity-api.ts";
+import type { IAMApiClient } from "./iam-api.ts";
 
 export interface OrganizationMetadataValue {
   readonly display_name: string;
@@ -14,16 +14,13 @@ function organizationQueryKey<TParts extends readonly unknown[]>(
   return authQueryKey(auth, "organization", ...parts);
 }
 
-export const organizationQuery = (auth: AuthenticatedAuth, api: IdentityApiClient) =>
+export const organizationQuery = (auth: AuthenticatedAuth, api: IAMApiClient) =>
   queryOptions({
     queryKey: organizationQueryKey(auth, "summary"),
     queryFn: () => api.getOrganization(),
   });
 
-export const availableOrganizationMetadataQuery = (
-  auth: AuthenticatedAuth,
-  api: IdentityApiClient,
-) =>
+export const availableOrganizationMetadataQuery = (auth: AuthenticatedAuth, api: IAMApiClient) =>
   queryOptions({
     queryKey: organizationQueryKey(auth, "available-metadata"),
     queryFn: async () => {
@@ -40,16 +37,13 @@ export const availableOrganizationMetadataQuery = (
     },
   });
 
-export const organizationMembersQuery = (auth: AuthenticatedAuth, api: IdentityApiClient) =>
+export const organizationMembersQuery = (auth: AuthenticatedAuth, api: IAMApiClient) =>
   queryOptions({
     queryKey: organizationQueryKey(auth, "members"),
     queryFn: () => api.listMembers(),
   });
 
-export const organizationMemberCapabilitiesQuery = (
-  auth: AuthenticatedAuth,
-  api: IdentityApiClient,
-) =>
+export const organizationMemberCapabilitiesQuery = (auth: AuthenticatedAuth, api: IAMApiClient) =>
   queryOptions({
     queryKey: organizationQueryKey(auth, "member-capabilities"),
     queryFn: () => api.getMemberCapabilities(),
@@ -58,7 +52,7 @@ export const organizationMemberCapabilitiesQuery = (
 export async function loadOrganizationPage(
   queryClient: QueryClient,
   auth: AuthenticatedAuth,
-  api: IdentityApiClient,
+  api: IAMApiClient,
 ) {
   const [organization, members, memberCapabilities] = await Promise.all([
     queryClient.ensureQueryData(organizationQuery(auth, api)),

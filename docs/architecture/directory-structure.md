@@ -17,7 +17,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `vm-guest-telemetry/` — Zig guest agent streaming 60Hz health over vsock.
 - `sandbox-rental-service/` — compute product control plane (executions, checkpoint refs, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
-- `identity-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
+- `iam-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
 - `domain-transfer-objects/` — shared DTOs, protobuf schemas, OpenAPI-compatible wire-language types, and generated contract conventions.
 - `service-runtime/` — shared service startup/runtime packages such as Go env loading and HTTP listener policy.
 - `observability/` — shared telemetry packages and operational query tools.

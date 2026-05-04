@@ -472,7 +472,7 @@
       loop:
         - otelcol
         - billing-service
-        - identity-service
+        - iam-service
         - notifications-service
         - sandbox-rental-service
         - governance-service
@@ -550,7 +550,7 @@
       loop:
         - otelcol
         - billing-service
-        - identity-service
+        - iam-service
         - notifications-service
         - sandbox-rental-service
         - governance-service

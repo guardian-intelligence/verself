@@ -35,7 +35,7 @@ CONTROL_PLANE_SERVICES = {
     "billing",
     "company",
     "governance_service",
-    "identity_service",
+    "iam_service",
     "mailbox_service",
     "notifications_service",
     "object_storage_service",
