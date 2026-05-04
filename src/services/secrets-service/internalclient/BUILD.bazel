@@ -1,0 +1,14 @@
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
+
+verself_oapi_go_client(
+    name = "internalclient",
+    importpath = "github.com/verself/secrets-service/internalclient",
+    package = "secretsinternalclient",
+    spec = "//src/services/secrets-service/openapi:internal-openapi-3.0.yaml",
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":internalclient",
+    visibility = ["//visibility:public"],
+)

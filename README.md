@@ -30,9 +30,9 @@ bazelisk mod tidy
 
 ```bash
 # 2. Tell OpenTofu where to provision (one time per environment).
-cp src/provisioning-tools/terraform/terraform.tfvars.example.json \
-   src/provisioning-tools/terraform/terraform.tfvars.json
-$EDITOR src/provisioning-tools/terraform/terraform.tfvars.json   # set project_id
+cp src/tools/provisioning/terraform/terraform.tfvars.example.json \
+   src/tools/provisioning/terraform/terraform.tfvars.json
+$EDITOR src/tools/provisioning/terraform/terraform.tfvars.json   # set project_id
 
 # 3. Provision bare metal + render inventory.
 aspect dev sops-init
@@ -62,7 +62,7 @@ The bootstrap scripts are platform-specific:
 
 Idempotent: short-circuits when the existing binary already matches the pinned sha256 / version. Falls back to `~/.local/bin` when the install directory is non-writable and `sudo` is unavailable, with a PATH warning. Set `BOOTSTRAP_INSTALL_DIR` to override the default `/usr/local/bin`.
 
-Versions of record live as constants at the top of each `scripts/bootstrap-*` entrypoint. The dev-tools catalog under `src/dev-tools/` is the version-of-record for everything else; `aspect dev install` lays those down.
+Versions of record live as constants at the top of each `scripts/bootstrap-*` entrypoint. The dev-tools catalog under `src/tools/dev/` is the version-of-record for everything else; `aspect dev install` lays those down.
 
 ## Aspect command map
 
@@ -215,13 +215,13 @@ High-signal documents to read directly:
 - Onboarding device or VM (operator SSH, Pomerium + Zitadel): [`docs/architecture/onboarding-device-or-vm.md`](docs/architecture/onboarding-device-or-vm.md)
 - Identity and IAM (Zitadel, SCIM, three-role model, API credentials): [`src/platform/docs/identity-and-iam.md`](src/platform/docs/identity-and-iam.md)
 - Workload identity (SPIFFE/SPIRE, OpenBao): [`docs/architecture/workload-identity.md`](docs/architecture/workload-identity.md)
-- Billing architecture (TigerBeetle ledger, dual-write, Stripe webhooks): [`src/billing-service/docs/billing-architecture.md`](src/billing-service/docs/billing-architecture.md)
-- VM execution control plane (sandbox-rental-service ↔ vm-orchestrator): [`src/sandbox-rental-service/docs/vm-execution-control-plane.md`](src/sandbox-rental-service/docs/vm-execution-control-plane.md)
-- vm-orchestrator privilege boundary, Firecracker networking, jailer: [`src/vm-orchestrator/AGENTS.md`](src/vm-orchestrator/AGENTS.md)
-- ZFS volume lifecycle (zvol, clone, snapshot, checkpoint, restore): [`src/vm-orchestrator/docs/zfs-volume-lifecycle.md`](src/vm-orchestrator/docs/zfs-volume-lifecycle.md)
-- Wire contracts and DTO patterns: [`src/domain-transfer-objects/docs/wire-contracts.md`](src/domain-transfer-objects/docs/wire-contracts.md)
-- Inbound mail (Stalwart, JMAP/SMTP, tenant isolation): [`src/mailbox-service/docs/inbound-mail.md`](src/mailbox-service/docs/inbound-mail.md)
-- Audit data contract (HMAC chain, OCSF, SIEM export): [`src/governance-service/docs/audit-data-contract.md`](src/governance-service/docs/audit-data-contract.md)
+- Billing architecture (TigerBeetle ledger, dual-write, Stripe webhooks): [`src/services/billing-service/docs/billing-architecture.md`](src/services/billing-service/docs/billing-architecture.md)
+- VM execution control plane (sandbox-rental-service ↔ vm-orchestrator): [`src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`](src/services/sandbox-rental-service/docs/vm-execution-control-plane.md)
+- vm-orchestrator privilege boundary, Firecracker networking, jailer: [`src/substrate/vm-orchestrator/AGENTS.md`](src/substrate/vm-orchestrator/AGENTS.md)
+- ZFS volume lifecycle (zvol, clone, snapshot, checkpoint, restore): [`src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`](src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md)
+- Wire contracts and DTO patterns: [`src/sdks/domain-transfer-objects/docs/wire-contracts.md`](src/sdks/domain-transfer-objects/docs/wire-contracts.md)
+- Inbound mail (Stalwart, JMAP/SMTP, tenant isolation): [`src/services/mailbox-service/docs/inbound-mail.md`](src/services/mailbox-service/docs/inbound-mail.md)
+- Audit data contract (HMAC chain, OCSF, SIEM export): [`src/services/governance-service/docs/audit-data-contract.md`](src/services/governance-service/docs/audit-data-contract.md)
 - Secrets service (OIDC provider role, KMS alternative): [`src/platform/docs/secrets-service.md`](src/platform/docs/secrets-service.md)
 - Agent workspace (QEMU/KVM, AI coding agent VMs): [`docs/architecture/agent-workspace.md`](docs/architecture/agent-workspace.md)
 - Product direction: [`docs/product-direction.md`](docs/product-direction.md)

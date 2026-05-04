@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "forwarder",
+    srcs = ["forwarder.go"],
+    importpath = "github.com/verself/mailbox-service/internal/forwarder",
+    visibility = ["//src/services/mailbox-service:__subpackages__"],
+    deps = [
+        "//src/services/mailbox-service/internal/jmap",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":forwarder",
+    visibility = ["//src/services/mailbox-service:__subpackages__"],
+)

@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "garage",
+    srcs = ["garage.go"],
+    importpath = "github.com/verself/deployment-tools/internal/garage",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = [
+        "//src/tools/deployment/internal/render",
+        "@com_github_aws_aws_sdk_go_v2//aws",
+        "@com_github_aws_aws_sdk_go_v2//aws/signer/v4:signer",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":garage",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)

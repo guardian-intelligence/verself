@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "profile",
+    srcs = [
+        "data_rights.go",
+        "iam_client.go",
+        "service.go",
+        "sql_store.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/profile-service/internal/profile",
+    visibility = ["//src/services/profile-service:__subpackages__"],
+    deps = [
+        "//src/services/iam-service/internalclient",
+        "//src/services/profile-service/internal/store",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_x_text//language",
+        "@org_golang_x_text//unicode/norm",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":profile",
+    visibility = ["//src/services/profile-service:__subpackages__"],
+)

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "source-code-hosting-internal-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/source-code-hosting-service/cmd/source-code-hosting-internal-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/source-code-hosting-service/internal/api"],
+)
+
+go_binary(
+    name = "source-code-hosting-internal-openapi",
+    embed = [":source-code-hosting-internal-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

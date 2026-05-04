@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "profile-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/profile-service/cmd/profile-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/services/iam-service/internalclient",
+        "//src/tools/observability/go/otel",
+        "//src/services/profile-service/internal/api",
+        "//src/services/profile-service/internal/profile",
+        "//src/services/profile-service/migrations",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "profile-service",
+    embed = [":profile-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "profile-service_nomad_artifact",
+    binary = ":profile-service",
+    output = "profile-service",
+)
+
+exports_files(["nomad-overrides.json"])

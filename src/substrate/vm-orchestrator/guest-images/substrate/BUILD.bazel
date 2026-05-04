@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "build_substrate_lib",
+    srcs = ["build_substrate.go"],
+    importpath = "github.com/verself/vm-orchestrator/guest-images/substrate",
+    visibility = ["//visibility:private"],
+)
+
+# The substrate builder runs on the Firecracker host as root because it mounts
+# chroot filesystems, installs the minimal apt package set, and materializes an
+# ext4 image from staged inputs.
+go_binary(
+    name = "build_substrate",
+    embed = [":build_substrate_lib"],
+)
+
+# Substrate-image build inputs bundled for the deploy host.
+# build_substrate runs on the Firecracker host and consumes the Bazel-vendored
+# Ubuntu base + kernel + Bazel-built vm-bridge + vm-guest-telemetry binaries
+# staged alongside it. The Ansible guest_rootfs role builds this bundle on the
+# controller, copies it to the host, and runs the binary remotely.
+
+pkg_tar(
+    name = "substrate_inputs_bundle",
+    files = {
+        ":build_substrate": "build-substrate",
+        "//src/substrate/vm-guest-telemetry:vm-guest-telemetry": "vm-guest-telemetry",
+        "//src/substrate/vm-orchestrator/cmd/vm-bridge:vm-bridge-linux-amd64": "vm-bridge",
+        "@guest_image_ubuntu_base//file": "ubuntu-base.tar.gz",
+        "@guest_image_vmlinux//file": "vmlinux",
+        "@guest_image_vmlinux_config//file": "vmlinux.config",
+        "versions.json": "versions.json",
+    },
+    modes = {
+        "build-substrate": "0755",
+        "vm-bridge": "0755",
+        "vm-guest-telemetry": "0755",
+        "ubuntu-base.tar.gz": "0644",
+        "vmlinux": "0644",
+        "vmlinux.config": "0644",
+        "versions.json": "0644",
+    },
+)

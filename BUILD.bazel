@@ -6,8 +6,8 @@ exports_files(["bazel.go.work"])
 # gazelle:exclude artifacts
 # gazelle:exclude smoke-artifacts
 # gazelle:exclude docs/references
-# gazelle:exclude src/viteplus-monorepo
-# gazelle:exclude src/vm-guest-telemetry
+# gazelle:exclude src/frontends/viteplus-monorepo
+# gazelle:exclude src/substrate/vm-guest-telemetry
 
 gazelle(
     name = "gazelle",
@@ -17,8 +17,8 @@ gazelle(
 test_suite(
     name = "dev_check",
     tests = [
-        "//src/viteplus-monorepo/apps/company:dev_check",
-        "//src/viteplus-monorepo/apps/verself-web:dev_check",
+        "//src/frontends/viteplus-monorepo/apps/company:dev_check",
+        "//src/frontends/viteplus-monorepo/apps/verself-web:dev_check",
     ],
 )
 
@@ -26,7 +26,7 @@ write_source_files(
     name = "dev_update",
     additional_update_targets = [
         "//src/host-configuration:edge_generated",
-        "//src/viteplus-monorepo/apps/company:dev_update",
-        "//src/viteplus-monorepo/apps/verself-web:dev_update",
+        "//src/frontends/viteplus-monorepo/apps/company:dev_update",
+        "//src/frontends/viteplus-monorepo/apps/verself-web:dev_update",
     ],
 )

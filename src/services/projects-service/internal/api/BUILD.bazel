@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "api",
+    srcs = [
+        "errors.go",
+        "internal.go",
+        "internal_openapi.go",
+        "openapi.go",
+        "policy.go",
+        "routes.go",
+        "safeconv.go",
+    ],
+    importpath = "github.com/verself/projects-service/internal/api",
+    visibility = ["//src/services/projects-service:__subpackages__"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/services/projects-service/internal/projects",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_google_uuid//:uuid",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":api",
+    visibility = ["//src/services/projects-service:__subpackages__"],
+)

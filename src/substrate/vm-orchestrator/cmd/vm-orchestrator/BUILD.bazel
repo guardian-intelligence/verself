@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "vm-orchestrator_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/vm-orchestrator/cmd/vm-orchestrator",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/tools/observability/go/otel",
+        "//src/substrate/vm-orchestrator",
+        "//src/substrate/vm-orchestrator/proto/v1:proto",
+        "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
+        "@io_opentelemetry_go_otel//:otel",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)
+
+go_binary(
+    name = "vm-orchestrator",
+    embed = [":vm-orchestrator_lib"],
+    visibility = ["//visibility:public"],
+)

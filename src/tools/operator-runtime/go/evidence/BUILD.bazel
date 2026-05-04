@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "evidence",
+    srcs = ["evidence.go"],
+    importpath = "github.com/verself/operator-runtime/evidence",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/tools/operator-runtime/go/clickhouse",
+        "//src/tools/operator-runtime/go/runtime",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":evidence",
+    visibility = ["//visibility:public"],
+)

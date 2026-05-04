@@ -1,6 +1,6 @@
 # Directory Structure
 
-Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; each Go service keeps its own `go.mod`, and the TypeScript monorepo is pnpm-driven under `src/viteplus-monorepo/`.
+Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; each Go service keeps its own `go.mod`, and the TypeScript monorepo is pnpm-driven under `src/frontends/viteplus-monorepo/`.
 
 ## Top level
 
@@ -11,28 +11,62 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `scripts/` — platform bootstrap shell entrypoints only (`bootstrap-linux-amd64`, `bootstrap-darwin-arm64`).
 - `MODULE.aspect` + `.aspect/` — canonical task surface for founder/agent workflows. Run `aspect` (no args) for the full list; read before reaching for ad-hoc scripts.
 
-## Go services (`src/`)
+## Source Owners (`src/`)
 
-- `vm-orchestrator/` — privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket).
-- `vm-guest-telemetry/` — Zig guest agent streaming 60Hz health over vsock.
-- `sandbox-rental-service/` — compute product control plane (executions, checkpoint refs, billing windows).
+- `host-configuration/` — Ansible host convergence, server tool admission,
+  host-local scripts, host ClickHouse schemas, and rendered edge contract
+  checks. Ansible lives here only.
+- `components/` — platform components wrapped as first-party runtime owners.
+  Components can have Nomad jobs and small owner-local setup code, but they do
+  not own customer-facing product APIs.
+- `frontends/` — browser and future client applications. The current
+  TypeScript workspace is `frontends/viteplus-monorepo/`.
+- `sdks/` — generated and curated client layers, shared wire DTOs, protobuf
+  schemas, OpenAPI-compatible transfer types, validators, and package-local SDK
+  adapters.
+- `services/` — product API services, service-local workers, service-owned
+  databases, migrations, and shared service runtime packages.
+- `substrate/` — privileged host and guest substrate binaries that sit outside
+  the service mesh, including `vm-orchestrator/` and `vm-guest-telemetry/`.
+- `tools/` — controller/operator/deployment tooling, provisioning, shared
+  operator runtime packages, and observability query tools.
+
+## Product Services (`src/services/`)
+
+- `sandbox-rental-service/` — compute product control plane (executions,
+  checkpoint refs, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
-- `iam-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
-- `domain-transfer-objects/` — shared DTOs, protobuf schemas, OpenAPI-compatible wire-language types, and generated contract conventions.
-- `service-runtime/` — shared service startup/runtime packages such as Go env loading and HTTP listener policy.
-- `observability/` — shared telemetry packages and operational query tools.
-- `auth-middleware/` — local JWT validation against Zitadel JWKS plus shared SPIFFE workload identity helpers.
-- `deployment-tools/` — typed deploy orchestration binary and Nomad job resolution rules.
-- `dev-tools/` — controller development tool catalog plus operator/bootstrap command binaries.
+- `iam-service/`, `mailbox-service/`, and other `*-service/` packages —
+  service-owned databases, migrations, Huma APIs, and service-local workers.
+- `auth-middleware/` — local JWT validation against Zitadel JWKS plus shared
+  SPIFFE workload identity helpers.
+- `service-runtime/` — shared service startup/runtime packages such as Go env
+  loading and HTTP listener policy.
 
-## Frontend (`src/viteplus-monorepo/`)
+## Substrate (`src/substrate/`)
+
+- `vm-orchestrator/` — privileged host daemon (Firecracker, ZFS, TAP, jailer,
+  vm-bridge, gRPC over Unix socket).
+- `vm-guest-telemetry/` — Zig guest agent streaming 60Hz health over vsock.
+
+## Tooling (`src/tools/`)
+
+- `deployment/` — typed deploy orchestration binary and Nomad job resolution
+  rules.
+- `dev/` — controller development tool catalog plus operator/bootstrap command
+  binaries.
+- `operator-runtime/` — shared operator database and evidence access packages.
+- `observability/` — shared telemetry packages and operational query tools.
+- `provisioning/` — OpenTofu bare-metal allocation and inventory production.
+
+## Frontend (`src/frontends/viteplus-monorepo/`)
 
 - `apps/` — TanStack Start applications:
   - `company` — Guardian Intelligence company site on `company_domain` (guardianintelligence.org). Owns landing, `/design`, `/letters` (+ RSS), `/solutions`, `/company`, `/careers`, `/press`, `/changelog`, `/contact`, `/og/*` dynamic OG cards. Forker-friendly split: `src/content/`, `src/brand/`, `src/routes/`, `src/components/`.
   - `verself-web` — the unified product app on the `verself_domain` apex. Owns the authenticated browser console (sandbox, billing, identity, profile, notifications, mail, source, future product workflows behind TanStack Start server functions), the public docs at `/docs` and `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog).
 - `packages/` — shared UI, brand marks, generated OpenAPI clients, Valibot validators.
 
-## Provisioning Tools (`src/provisioning-tools/`)
+## Provisioning Tools (`src/tools/provisioning/`)
 
 - `terraform/` — OpenTofu bare-metal provisioning for Latitude.sh.
 - `ansible/` — local controller playbooks that apply/destroy the OpenTofu
@@ -51,17 +85,17 @@ They do not converge host packages or deploy services.
   persona, billing, mail, database access, observability, and host evidence.
 Topology vars are authored in `src/host-configuration/ansible/group_vars/all/topology/`.
 Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
-Nomad base jobs live under `src/deployment-tools/nomad/sites/<site>/jobs/`
+Nomad base jobs live under `src/tools/deployment/nomad/sites/<site>/jobs/`
 and are resolved by Bazel with the service-owned artifact and rollout inputs.
 
 ## Service- and host-local docs
 
 Host convergence, OpenTofu provisioning, and deploy wrappers live in
-`src/host-configuration/`, `src/provisioning-tools/`, and `.aspect/`.
+`src/host-configuration/`, `src/tools/provisioning/`, and `.aspect/`.
 
 Bazel-owned package definitions live with their owners:
 `src/host-configuration/binaries/` for server and host configuration tools,
-`src/dev-tools/binaries/` for controller dev tools, and
-`src/vm-orchestrator/guest-images/` for guest-image inputs.
+`src/tools/dev/binaries/` for controller dev tools, and
+`src/substrate/vm-orchestrator/guest-images/` for guest-image inputs.
 
-Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.
+Service-local docs live under each service's `docs/` directory (e.g. `src/services/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.

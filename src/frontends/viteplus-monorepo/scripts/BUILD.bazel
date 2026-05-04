@@ -1,0 +1,35 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+js_binary(
+    name = "openapi_postprocess",
+    entry_point = "openapi-postprocess.ts",
+)
+
+js_binary(
+    name = "bundle_instrumentation",
+    data = ["//src/frontends/viteplus-monorepo:node_modules/rolldown"],
+    entry_point = "bundle-instrumentation.ts",
+)
+
+js_binary(
+    name = "emit_asset_integrity",
+    entry_point = "emit-asset-integrity.ts",
+)
+
+js_binary(
+    name = "generate_route_tree",
+    data = ["//src/frontends/viteplus-monorepo:node_modules/@tanstack/router-generator"],
+    entry_point = "generate-route-tree.ts",
+)
+
+js_binary(
+    name = "generate_glsl_module",
+    entry_point = "generate-glsl-module.ts",
+)
+
+js_binary(
+    name = "write_supplychain_evidence",
+    entry_point = "write-supplychain-evidence.ts",
+)

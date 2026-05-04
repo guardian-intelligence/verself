@@ -101,7 +101,7 @@ Two components are deliberately outside the SPIFFE trust domain:
 
 - `vm-orchestrator` runs as a privileged host daemon. It talks to services
   over its gRPC Unix socket and authenticates peers through filesystem ACLs on
-  the socket path. See [`src/vm-orchestrator/AGENTS.md`](../../src/vm-orchestrator/AGENTS.md).
+  the socket path. See [`src/substrate/vm-orchestrator/AGENTS.md`](../../src/substrate/vm-orchestrator/AGENTS.md).
 - `vm-guest-telemetry` runs inside Firecracker guest VMs and streams over
   vsock 10790. Guests are never SPIFFE peers; the vsock boundary is the trust
   edge.
@@ -392,13 +392,13 @@ Smoke-test queries assert:
 
 - Current system context: [system-context.md](../system-context.md).
 - Service plane split: [service-architecture.md](service-architecture.md).
-- Secrets service code: [`src/secrets-service/`](../../src/secrets-service/).
+- Secrets service code: [`src/services/secrets-service/`](../../src/services/secrets-service/).
 - Audit actor fields:
-  [audit-data-contract.md](../../src/governance-service/docs/audit-data-contract.md).
+  [audit-data-contract.md](../../src/services/governance-service/docs/audit-data-contract.md).
 - Listener and port inventory:
   `src/host-configuration/ansible/group_vars/all/topology/`.
 - Trust domain exclusion for the privileged host daemon:
-  [`src/vm-orchestrator/AGENTS.md`](../../src/vm-orchestrator/AGENTS.md).
+  [`src/substrate/vm-orchestrator/AGENTS.md`](../../src/substrate/vm-orchestrator/AGENTS.md).
 - SPIRE trust domains and attestation:
   <https://spiffe.io/docs/latest/deploying/configuring/>.
 - SPIRE server federation bundle endpoint:

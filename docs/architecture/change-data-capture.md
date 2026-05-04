@@ -199,7 +199,7 @@ The implementing agent for the future shared CDC service must answer:
 - System context on the current dual-write pattern:
   [`../system-context.md`](../system-context.md).
 - Billing's transactional projection and reconciliation shape:
-  [`../../src/billing-service/docs/billing-architecture.md`](../../src/billing-service/docs/billing-architecture.md).
+  [`../../src/services/billing-service/docs/billing-architecture.md`](../../src/services/billing-service/docs/billing-architecture.md).
 - PostgreSQL logical replication:
   <https://www.postgresql.org/docs/current/logical-replication.html>.
 - Debezium architecture and operational model:

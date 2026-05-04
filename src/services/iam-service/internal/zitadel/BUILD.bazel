@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "zitadel",
+    srcs = ["client.go"],
+    importpath = "github.com/verself/iam-service/internal/zitadel",
+    visibility = ["//src/services/iam-service:__subpackages__"],
+    deps = ["//src/services/iam-service/internal/identity"],
+)
+
+go_test(
+    name = "zitadel_test",
+    srcs = ["client_test.go"],
+    embed = [":zitadel"],
+    deps = ["//src/services/iam-service/internal/identity"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":zitadel",
+    visibility = ["//src/services/iam-service:__subpackages__"],
+)

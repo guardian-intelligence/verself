@@ -13,15 +13,15 @@ load(
     "ws_path",
 )
 
-_MS = "src/mailbox-service"
+_MS = "src/services/mailbox-service"
 _SITE = "prod"
 
 def _aspect_operator_bin(ctx):
-    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+    target = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
     rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
     if rc != 0:
         return ""
-    return ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    return ws_path(ctx, "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _mailbox_tool(ctx, *args):
     if inventory_check(ctx, _SITE) != 0:

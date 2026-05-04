@@ -4,11 +4,11 @@ This is a future runtime provider, not a separate checkpoint architecture.
 
 The shared model lives in:
 
-- `src/sandbox-rental-service/internal/jobs/`
-- `src/sandbox-rental-service/migrations/`
-- `src/vm-orchestrator/`
-- `src/vm-orchestrator/vmproto/`
-- `src/vm-guest-telemetry/`
+- `src/services/sandbox-rental-service/internal/jobs/`
+- `src/services/sandbox-rental-service/migrations/`
+- `src/substrate/vm-orchestrator/`
+- `src/substrate/vm-orchestrator/vmproto/`
+- `src/substrate/vm-guest-telemetry/`
 
 Firecracker is the current provider for snapshot-backed VM segments. Full Ubuntu
 agent workspaces can add a future provider when desktop devices, long-running

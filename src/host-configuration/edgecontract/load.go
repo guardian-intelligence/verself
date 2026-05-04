@@ -26,8 +26,8 @@ func DefaultInputs(cfg Config) Inputs {
 		Endpoints:       filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
 		Ops:             filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
 		Clusters:        filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
-		NomadIndex:      filepath.Join(cfg.RepoRoot, "src/deployment-tools/nomad/sites", cfg.Site, "jobs/index.json"),
-		NomadJobsDir:    filepath.Join(cfg.RepoRoot, "src/deployment-tools/nomad/sites", cfg.Site, "jobs"),
+		NomadIndex:      filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "jobs/index.json"),
+		NomadJobsDir:    filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "jobs"),
 		HAProxyDefaults: filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
 	}
 }

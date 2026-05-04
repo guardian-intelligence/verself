@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "billing-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/billing-service/cmd/billing-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/billing-service/internal/billingapi"],
+)
+
+go_binary(
+    name = "billing-openapi",
+    embed = [":billing-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

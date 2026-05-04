@@ -1,0 +1,52 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "api",
+    srcs = [
+        "audit_sink.go",
+        "billing_return_url.go",
+        "dto.go",
+        "errors.go",
+        "github_webhook.go",
+        "internal_routes.go",
+        "openapi.go",
+        "policy.go",
+        "routes.go",
+        "safeconv.go",
+    ],
+    importpath = "github.com/verself/sandbox-rental-service/internal/api",
+    visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/services/billing-service/client",
+        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/services/governance-service/internalclient",
+        "//src/services/sandbox-rental-service/internal/jobs",
+        "//src/services/sandbox-rental-service/internal/recurring",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = ["security_test.go"],
+    embed = [":api"],
+    deps = [
+        "//src/services/auth-middleware",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":api",
+    visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
+)

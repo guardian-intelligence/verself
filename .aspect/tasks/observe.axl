@@ -26,11 +26,11 @@ _FLAG_MAP = [
 ]
 
 def _observe_bin(ctx):
-    target = "//src/observability/go/cmd/observe:observe"
+    target = "//src/tools/observability/go/cmd/observe:observe"
     rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
     if rc != 0:
         return ""
-    return ws_path(ctx, "bazel-bin/src/observability/go/cmd/observe/observe_/observe")
+    return ws_path(ctx, "bazel-bin/src/tools/observability/go/cmd/observe/observe_/observe")
 
 def _impl(ctx):
     if inventory_check(ctx) != 0:

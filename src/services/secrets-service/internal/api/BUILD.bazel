@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "api",
+    srcs = [
+        "audit_sink.go",
+        "errors.go",
+        "internal.go",
+        "internal_openapi.go",
+        "openapi.go",
+        "policy.go",
+        "raw_token.go",
+        "routes.go",
+    ],
+    importpath = "github.com/verself/secrets-service/internal/api",
+    visibility = ["//src/services/secrets-service:__subpackages__"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/services/billing-service/client",
+        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/services/governance-service/internalclient",
+        "//src/services/secrets-service/internal/secrets",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":api",
+    visibility = ["//src/services/secrets-service:__subpackages__"],
+)

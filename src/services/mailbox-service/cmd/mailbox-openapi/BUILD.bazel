@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "mailbox-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/mailbox-service/cmd/mailbox-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/mailbox-service/internal/api"],
+)
+
+go_binary(
+    name = "mailbox-openapi",
+    embed = [":mailbox-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "bazelbuild",
+    srcs = ["build.go"],
+    importpath = "github.com/verself/deployment-tools/internal/bazelbuild",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = [
+        "//src/tools/deployment/internal/bep",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":bazelbuild",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)

@@ -313,7 +313,7 @@ type ChangelogChange struct {
 }
 ```
 
-`apiversion-changelog` CLI emits markdown for `src/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy/changelog.tsx`. `Hidden()` changes are excluded from rendered output but retained in the structured form.
+`apiversion-changelog` CLI emits markdown for `src/frontends/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy/changelog.tsx`. `Hidden()` changes are excluded from rendered output but retained in the structured form.
 
 ## 12. Tooling
 
@@ -339,7 +339,7 @@ Failures are tagged structured errors so CI parses cleanly.
 A service adopts the library with a four-line diff:
 
 ```go
-// src/billing-service/internal/billingapi/api.go
+// src/services/billing-service/internal/billingapi/api.go
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
     config := huma.DefaultConfig("Billing Service", cfg.Version)
     api := humago.New(mux, config)
@@ -350,14 +350,14 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 }
 ```
 
-The service owns its own `Bundle` (e.g. `src/billing-service/internal/billing/versions.go`). Cross-service shared changes — when a DTO in `domain-transfer-objects` evolves and multiple services consume it — live in `src/domain-transfer-objects/go/versions/<dto-area>.go` and are imported into each service's bundle. The generated contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
+The service owns its own `Bundle` (e.g. `src/services/billing-service/internal/billing/versions.go`). Cross-service shared changes — when a DTO in `domain-transfer-objects` evolves and multiple services consume it — live in `src/sdks/domain-transfer-objects/go/versions/<dto-area>.go` and are imported into each service's bundle. The generated contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
 
 ## 14. Generated Client Implications
 
 `oapi-codegen` and `@hey-api/openapi-ts` already run against committed OpenAPI specs. Per-version specs check in alongside:
 
 ```
-src/billing-service/openapi/
+src/services/billing-service/openapi/
   openapi-3.0.yaml                          # HEAD (existing)
   openapi-3.1.yaml                          # HEAD (existing)
   versions/2026-04-25/openapi-3.0.yaml      # NEW
@@ -406,7 +406,7 @@ A v0 ship is achieved when:
 
 1. The library compiles, passes `apiversion-check`, and exposes the surface in §3.
 2. `billing-service` adopts it with one historical `Change` (e.g. a renamed field) and a live rehearsal proves a v1 client gets the old shape and a HEAD client gets the new shape.
-3. Per-version OpenAPI specs are checked into `src/billing-service/openapi/versions/` and a regenerated TS client compiles against the latest version.
+3. Per-version OpenAPI specs are checked into `src/services/billing-service/openapi/versions/` and a regenerated TS client compiles against the latest version.
 4. ClickHouse trace spans surface `apiversion.matched` for every billing request.
 5. The console renders the changelog from the bundle.
 6. The billing-service Bazel package regenerates the version specs from the binary deterministically.

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "sandbox-rental-internal-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/sandbox-rental-service/cmd/sandbox-rental-internal-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/sandbox-rental-service/internal/api"],
+)
+
+go_binary(
+    name = "sandbox-rental-internal-openapi",
+    embed = [":sandbox-rental-internal-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

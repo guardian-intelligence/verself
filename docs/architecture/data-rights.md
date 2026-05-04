@@ -244,6 +244,6 @@ The data-rights e2e path should:
 - California CCPA/CPRA consumer rights summary:
   [California DOJ CCPA](https://www.oag.ca.gov/privacy/ccpa).
 - Governance audit retention and immutable records:
-  [`src/governance-service/docs/audit-data-contract.md`](../../src/governance-service/docs/audit-data-contract.md).
+  [`src/services/governance-service/docs/audit-data-contract.md`](../../src/services/governance-service/docs/audit-data-contract.md).
 - Published retention commitments:
-  [`src/viteplus-monorepo/apps/verself-web/src/policies/retention.yml`](../../src/viteplus-monorepo/apps/verself-web/src/policies/retention.yml).
+  [`src/frontends/viteplus-monorepo/apps/verself-web/src/policies/retention.yml`](../../src/frontends/viteplus-monorepo/apps/verself-web/src/policies/retention.yml).

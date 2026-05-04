@@ -1,5 +1,0 @@
-load("//bazel:openapi_codegen.bzl", "verself_openapi_specs")
-
-verself_openapi_specs(
-    public_tool = "//src/billing-service/cmd/billing-openapi",
-)

@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "deploydb",
+    srcs = [
+        "ansible_task_events.go",
+        "client.go",
+        "deploy_events.go",
+        "open_operator.go",
+        "operator_config.go",
+        "supply_chain_events.go",
+        "tls.go",
+    ],
+    importpath = "github.com/verself/deployment-tools/internal/deploydb",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = [
+        "//src/tools/deployment/internal/sshtun",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":deploydb",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)

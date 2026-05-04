@@ -1,0 +1,16 @@
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
+
+verself_oapi_go_client(
+    name = "internalclient",
+    importpath = "github.com/verself/iam-service/internalclient",
+    package = "iaminternalclient",
+    response_type_suffix = "HTTPResponse",
+    spec = "//src/services/iam-service/openapi:internal-openapi-3.0.yaml",
+    deps = ["@com_github_oapi_codegen_runtime//:runtime"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":internalclient",
+    visibility = ["//visibility:public"],
+)

@@ -10,11 +10,11 @@ load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
 _VALID_PERSONAS = ["platform-admin", "acme-admin", "acme-member"]
 
 def _aspect_operator_bin(ctx):
-    target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
+    target = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
     rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
     if rc != 0:
         return ""
-    return ws_path(ctx, "bazel-bin/src/dev-tools/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    return ws_path(ctx, "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator")
 
 def _assume_impl(ctx):
     if inventory_check(ctx) != 0:

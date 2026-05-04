@@ -100,11 +100,11 @@ SERVER_TOOL_DEPS = [
 HOST_GO_TOOLS = [
     ("//src/host-configuration/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
     ("//src/host-configuration/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
-    ("//src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
-    ("//src/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
-    ("//src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
-    ("//src/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator", "vm-orchestrator"),
-    ("//src/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli", "vm-orchestrator-cli"),
+    ("//src/components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
+    ("//src/components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
+    ("//src/components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
+    ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator", "vm-orchestrator"),
+    ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli", "vm-orchestrator-cli"),
 ]
 
 SERVER_TOOL_SYMLINKS = {
@@ -336,7 +336,7 @@ def server_tools_archive(name = "server_tools_archive"):
     pkg_tar(
         name = name,
         out = "server_tools.tar.zst",
-        compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
+        compressor = "//src/tools/dev/cmd/zstd-compressor:zstd-compressor",
         deps = SERVER_TOOL_DEPS,
         extension = "tar.zst",
         symlinks = SERVER_TOOL_SYMLINKS,
@@ -358,7 +358,7 @@ def substrate_go_tools_archive(name = "substrate_go_tools"):
     pkg_tar(
         name = name,
         out = "substrate_go_tools.tar.zst",
-        compressor = "//src/dev-tools/cmd/zstd-compressor:zstd-compressor",
+        compressor = "//src/tools/dev/cmd/zstd-compressor:zstd-compressor",
         extension = "tar.zst",
         files = files,
         modes = modes,

@@ -1,0 +1,1054 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+func buildQueries(cfg config) ([]query, error) {
+	params := baseParams(cfg)
+
+	switch cfg.what {
+	case "catalog":
+		return buildCatalogQueries(cfg, params)
+	case "describe":
+		return buildDescribeQueries(cfg, params)
+	case "overview":
+		return []query{
+			newQuery("overview.services", overviewServicesSQL, params),
+			newQuery("overview.deploys", overviewDeploysSQL, params),
+			newQuery("overview.errors", overviewErrorsSQL, params),
+		}, nil
+	case "metric":
+		if cfg.metric == "" {
+			return nil, errors.New("--what=metric requires --metric=<metric_name>")
+		}
+		if cfg.mode == "rate" {
+			return []query{newQuery("metric.rate", metricRateSQL, params)}, nil
+		}
+		if cfg.mode != "latest" {
+			return nil, errors.New("--what=metric --mode must be latest or rate")
+		}
+		return []query{newQuery("metric.latest", metricLatestSQL, params)}, nil
+	case "errors":
+		return []query{newQuery("errors.recent", errorsRecentSQL, params)}, nil
+	case "service":
+		if cfg.service == "" {
+			return nil, errors.New("--what=service requires --service=<service_name>")
+		}
+		if cfg.errorsOnly {
+			return []query{newQuery("errors.recent", errorsRecentSQL, params)}, nil
+		}
+		return []query{
+			newQuery("service.http_spans", serviceHTTPSpansSQL, params),
+			newQuery("service.logs", serviceLogsSQL, params),
+		}, nil
+	case "mail":
+		return []query{
+			newQuery("mail.events", mailEventsSQL, params),
+			newQuery("mail.metrics", mailMetricsSQL, params),
+		}, nil
+	case "workload-identity":
+		return []query{
+			newQuery("workload_identity.spans", workloadIdentitySpansSQL, params),
+			newQuery("workload_identity.spire_logs", workloadIdentitySpireLogsSQL, params),
+		}, nil
+	case "temporal":
+		return []query{
+			newQuery("temporal.authz", temporalAuthzSQL, params),
+			newQuery("temporal.bootstrap", temporalBootstrapSQL, params),
+			newQuery("temporal.logs", temporalLogsSQL, params),
+			newQuery("temporal.metrics", temporalMetricsSQL, params),
+		}, nil
+	case "deploy":
+		if cfg.runKey != "" {
+			return []query{
+				newQuery("deploy.run", deployRunSQL, params),
+				newQuery("deploy.codegen_actions", deployCodegenActionsSQL, params),
+				newQuery("deploy.rebuild_blast_radius", deployRebuildBlastRadiusSQL, params),
+			}, nil
+		}
+		return []query{
+			newQuery("deploy.tasks", deployTasksSQL, params),
+			newQuery("deploy.bazel_cache", deployBazelCacheSQL, params),
+		}, nil
+	case "supply-chain":
+		return []query{
+			newQuery("supply_chain.policy_summary", supplyChainPolicySummarySQL, params),
+			newQuery("supply_chain.policy_findings", supplyChainPolicyFindingsSQL, params),
+		}, nil
+	case "trace":
+		if cfg.traceID == "" {
+			return nil, errors.New("--what=trace requires --trace-id=<trace-id>")
+		}
+		return []query{newQuery("trace.detail", traceDetailSQL, params)}, nil
+	case "http":
+		return []query{newQuery("http.access", httpAccessSQL, params)}, nil
+	case "logs":
+		return []query{newQuery("logs.recent", logsRecentSQL, params)}, nil
+	default:
+		return nil, fmt.Errorf("unknown --what=%q; run `aspect observe` for the discovery index", cfg.what)
+	}
+}
+
+func buildCatalogQueries(cfg config, params map[string]string) ([]query, error) {
+	switch cfg.signal {
+	case "":
+		return []query{newQuery("catalog.inventory", catalogInventorySQL, params)}, nil
+	case "metrics":
+		return []query{
+			newQuery("catalog.metrics.namespaces", metricNamespaceCatalogSQL, params),
+			newQuery("catalog.metrics.names", metricNameCatalogSQL, params),
+		}, nil
+	case "traces":
+		return []query{newQuery("catalog.traces", traceCatalogSQL, params)}, nil
+	case "logs":
+		return []query{newQuery("catalog.logs", logFieldCatalogSQL, params)}, nil
+	case "http":
+		return []query{newQuery("catalog.http", httpCatalogSQL, params)}, nil
+	case "deploy", "deploys":
+		return []query{newQuery("catalog.deploys", deployCatalogSQL, params)}, nil
+	default:
+		return nil, fmt.Errorf("--what=catalog requires --signal=metrics|traces|logs|http|deploys; got %q", cfg.signal)
+	}
+}
+
+func buildDescribeQueries(cfg config, params map[string]string) ([]query, error) {
+	primaryTargets := 0
+	for _, value := range []string{cfg.metric, cfg.span, cfg.field} {
+		if value != "" {
+			primaryTargets++
+		}
+	}
+	if cfg.queryName != "" {
+		primaryTargets++
+	}
+	if cfg.service != "" && primaryTargets == 0 {
+		primaryTargets++
+	}
+	if primaryTargets > 1 {
+		return nil, errors.New("--what=describe requires exactly one primary target: --metric, --span, --field, --service, or --query")
+	}
+	if cfg.queryName != "" {
+		return nil, errors.New("--what=describe --query is handled without ClickHouse; run `aspect observe --what=describe --query=<query-id>`")
+	}
+	if cfg.metric != "" && cfg.service != "" {
+		return nil, errors.New("--what=describe --metric does not accept --service; use --what=catalog --signal=metrics --service=<service>")
+	}
+	if primaryTargets == 0 {
+		return nil, errors.New("--what=describe requires --metric, --service, --span, --field, or --query")
+	}
+	switch {
+	case cfg.metric != "":
+		return []query{
+			newQuery("describe.metric.summary", describeMetricSummarySQL, params),
+			newQuery("describe.metric.attributes", describeMetricAttributesSQL, params),
+		}, nil
+	case cfg.span != "":
+		return []query{
+			newQuery("describe.span.summary", describeSpanSummarySQL, params),
+			newQuery("describe.span.attributes", describeSpanAttributesSQL, params),
+		}, nil
+	case cfg.field != "":
+		return []query{
+			newQuery("describe.field.logs", describeLogFieldSQL, params),
+			newQuery("describe.field.span_attributes", describeSpanFieldSQL, params),
+			newQuery("describe.field.resource_attributes", describeResourceFieldSQL, params),
+		}, nil
+	case cfg.service != "":
+		return []query{
+			newQuery("describe.service.signals", describeServiceSignalsSQL, params),
+			newQuery("describe.service.metrics", describeServiceMetricsSQL, params),
+			newQuery("describe.service.spans", describeServiceSpansSQL, params),
+			newQuery("describe.service.log_fields", describeServiceLogFieldsSQL, params),
+		}, nil
+	default:
+		return nil, errors.New("--what=describe requires one of --metric, --service, --span, --field, or --query")
+	}
+}
+
+func baseParams(cfg config) map[string]string {
+	return map[string]string{
+		"minutes":    strconv.FormatUint(uint64(cfg.minutes), 10),
+		"row_limit":  strconv.FormatUint(uint64(cfg.limit), 10),
+		"service":    cfg.service,
+		"metric":     cfg.metric,
+		"span":       cfg.span,
+		"field":      cfg.field,
+		"prefix":     cfg.prefix,
+		"search":     cfg.search,
+		"group_by":   cfg.groupBy,
+		"trace_id":   cfg.traceID,
+		"run_key":    cfg.runKey,
+		"host":       cfg.host,
+		"status_min": strconv.FormatUint(uint64(cfg.statusMin), 10),
+	}
+}
+
+func newQuery(id, sql string, params map[string]string) query {
+	return query{
+		id:        id,
+		title:     queryTitle(id),
+		family:    queryFamily(id),
+		purpose:   queryPurpose(id),
+		database:  "default",
+		sql:       sql,
+		params:    params,
+		next:      queryDocNext(id),
+		windowed:  strings.Contains(sql, "toIntervalMinute({minutes:"),
+		emptyHint: emptyHintFor(id),
+	}
+}
+
+// emptyHintFor returns a one-line reason that a specific query id might be
+// empty even across a wide window, so the hint beats "try --minutes=..." when
+// widening the lookback won't help.
+func emptyHintFor(id string) string {
+	switch id {
+	case "describe.metric.attributes":
+		return "This metric has no attributes — it is identified only by its service resource."
+	case "describe.span.attributes":
+		return "This span has no attributes — unusual for server/client spans, expected for internal no-op spans."
+	case "describe.service.metrics":
+		return "This service has emitted no metrics — it likely only ships traces and logs."
+	case "describe.field.logs":
+		return "No LogAttribute with this name. If this field is a top-level column (for example ServiceName or TraceId), it won't appear in any attribute map."
+	case "describe.field.span_attributes":
+		return "No SpanAttribute with this name across any service."
+	case "describe.field.resource_attributes":
+		return "No ResourceAttribute with this name across traces or logs."
+	case "catalog.deploys":
+		return "No ansible.task spans have been recorded. Run `aspect deploy` to populate deploy traces."
+	default:
+		return ""
+	}
+}
+
+// catalog.inventory emits one row per signal. `names` counts the vocabulary
+// a caller can drill into with `--signal=...`, and `names_of` labels what those
+// names are — otherwise the number is ambiguous (13 severity levels vs ~170
+// log attribute keys, for example).
+const catalogInventorySQL = `
+SELECT signal,
+       services,
+       names,
+       names_of,
+       rows_7d,
+       drill_in
+FROM
+(
+  SELECT 'metrics' AS signal,
+         countDistinct(if(ServiceName = '', '<resource-only>', ServiceName)) AS services,
+         countDistinct(MetricName) AS names,
+         'metric names' AS names_of,
+         toUInt64(sum(Samples)) AS rows_7d,
+         'aspect observe --what=catalog --signal=metrics' AS drill_in,
+         1 AS sort_key
+  FROM default.otel_metric_catalog_live
+  UNION ALL
+  SELECT 'traces',
+         countDistinct(ServiceName),
+         countDistinct(SpanName),
+         'span names',
+         count(),
+         'aspect observe --what=catalog --signal=traces',
+         2
+  FROM default.otel_traces
+  WHERE Timestamp > now() - toIntervalDay(7)
+  UNION ALL
+  SELECT 'logs',
+         countDistinct(ServiceName),
+         -- arrayFlatten+arrayDistinct avoids the row explosion arrayJoin
+         -- would cause, which would corrupt the count() sibling column.
+         length(arrayDistinct(arrayFlatten(groupArray(mapKeys(LogAttributes))))),
+         'log attribute keys',
+         count(),
+         'aspect observe --what=catalog --signal=logs',
+         3
+  FROM default.otel_logs
+  WHERE Timestamp > now() - toIntervalDay(7)
+  UNION ALL
+  SELECT 'http',
+         countDistinct(ServiceName),
+         countDistinct(Host),
+         'hosts',
+         count(),
+         'aspect observe --what=catalog --signal=http',
+         4
+  FROM default.http_access_logs
+  WHERE Timestamp > now() - toIntervalDay(7)
+  UNION ALL
+  SELECT 'deploys',
+         toUInt64(1),
+         countDistinct(SpanAttributes['verself.deploy_run_key']),
+         'deploy run keys',
+         count(),
+         'aspect observe --what=catalog --signal=deploys',
+         5
+  FROM default.otel_traces
+  WHERE ServiceName = 'ansible'
+    AND SpanName = 'ansible.task'
+    AND Timestamp > now() - toIntervalDay(7)
+)
+ORDER BY sort_key`
+
+const metricNamespaceCatalogSQL = `
+SELECT
+  if(position(MetricName, '.') = 0, concat(MetricName, '.*'), concat(arrayElement(splitByChar('.', MetricName), 1), '.*')) AS namespace,
+  countDistinct(MetricName) AS metric_names,
+  arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS kinds,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(if(ServiceName = '', '<resource-only>', ServiceName))), 1, 8), ', ') AS services
+FROM default.otel_metric_catalog_live
+WHERE ({prefix:String} = '' OR startsWith(MetricName, {prefix:String}))
+  AND ({service:String} = '' OR ServiceName = {service:String})
+  AND ({search:String} = '' OR positionCaseInsensitive(MetricName, {search:String}) > 0)
+GROUP BY namespace
+ORDER BY namespace
+LIMIT {row_limit:UInt32}`
+
+const metricNameCatalogSQL = `
+SELECT
+  MetricName AS metric,
+  arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS kinds,
+  any(MetricUnit) AS unit,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(if(ServiceName = '', '<resource-only>', ServiceName))), 1, 8), ', ') AS services,
+  sum(Samples) AS samples,
+  sum(AttributeSets) AS attribute_sets
+FROM default.otel_metric_catalog_live
+WHERE ({prefix:String} = '' OR startsWith(MetricName, {prefix:String}))
+  AND ({service:String} = '' OR ServiceName = {service:String})
+  AND ({search:String} = '' OR positionCaseInsensitive(MetricName, {search:String}) > 0)
+GROUP BY MetricName
+ORDER BY metric
+LIMIT {row_limit:UInt32}`
+
+const traceCatalogSQL = `
+SELECT
+  ServiceName AS service,
+  SpanName AS span,
+  SpanKind AS kind,
+  count() AS samples,
+  arrayStringConcat(arraySort(groupUniqArray(StatusCode)), ', ') AS statuses,
+  round(avg(Duration) / 1000000, 2) AS avg_ms
+FROM default.otel_traces
+WHERE ({service:String} = '' OR ServiceName = {service:String})
+  AND ({search:String} = '' OR positionCaseInsensitive(SpanName, {search:String}) > 0)
+GROUP BY service, span, kind
+ORDER BY service, span
+LIMIT {row_limit:UInt32}`
+
+const logFieldCatalogSQL = `
+SELECT
+  ServiceName AS service,
+  attr_key AS field,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 8), ', ') AS sample_values
+FROM
+(
+  SELECT
+    ServiceName,
+    attr_key,
+    attr_value
+  FROM default.otel_logs
+  ARRAY JOIN mapKeys(LogAttributes) AS attr_key, mapValues(LogAttributes) AS attr_value
+  WHERE ({service:String} = '' OR ServiceName = {service:String})
+    AND ({search:String} = '' OR positionCaseInsensitive(attr_key, {search:String}) > 0 OR positionCaseInsensitive(attr_value, {search:String}) > 0)
+)
+GROUP BY service, field
+ORDER BY service, field
+LIMIT {row_limit:UInt32}`
+
+const httpCatalogSQL = `
+SELECT
+  Host AS host,
+  Method AS method,
+  countDistinct(Path) AS paths,
+  min(Status) AS min_status,
+  max(Status) AS max_status,
+  round(avg(DurationMs), 2) AS avg_ms
+FROM default.http_access_logs
+WHERE ({host:String} = '' OR Host = {host:String})
+  AND ({search:String} = '' OR positionCaseInsensitive(Path, {search:String}) > 0)
+GROUP BY host, method
+ORDER BY host, method
+LIMIT {row_limit:UInt32}`
+
+const deployCatalogSQL = `
+SELECT
+  extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  count() AS tasks,
+  countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
+  min(Timestamp) AS first_seen,
+  max(Timestamp) AS last_seen
+FROM default.otel_traces
+WHERE ServiceName = 'ansible'
+  AND SpanName = 'ansible.task'
+  AND (
+    {search:String} = ''
+    OR positionCaseInsensitive(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :'), {search:String}) > 0
+    OR positionCaseInsensitive(SpanAttributes['verself.deploy_run_key'], {search:String}) > 0
+  )
+GROUP BY role, deploy_run_key
+ORDER BY deploy_run_key DESC, role
+LIMIT {row_limit:UInt32}`
+
+const describeMetricSummarySQL = `
+SELECT
+  MetricName AS metric,
+  arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS kinds,
+  arrayStringConcat(arraySort(groupUniqArray(MetricUnit)), ', ') AS units,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(if(ServiceName = '', '<resource-only>', ServiceName))), 1, 12), ', ') AS services,
+  anyLast(MetricDescription) AS description,
+  sum(Samples) AS samples,
+  sum(AttributeSets) AS attribute_sets,
+  if(countIf(MetricKind = 'sum') > 0, 'yes-for-monotonic-sums', 'usually-no') AS rate_candidate
+FROM default.otel_metric_catalog_live
+WHERE MetricName = {metric:String}
+GROUP BY MetricName
+ORDER BY metric`
+
+const describeMetricAttributesSQL = `
+SELECT
+  attr_key AS attribute,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 12), ', ') AS sample_values
+FROM
+(
+  SELECT
+    attr_key,
+    attr_value
+  FROM default.otel_metric_latest
+  ARRAY JOIN mapKeys(Attributes) AS attr_key, mapValues(Attributes) AS attr_value
+  WHERE MetricName = {metric:String}
+)
+GROUP BY attribute
+ORDER BY attribute
+LIMIT {row_limit:UInt32}`
+
+const describeServiceSignalsSQL = `
+SELECT 'metrics' AS signal, countDistinct(MetricName) AS names, sum(Samples) AS rows FROM default.otel_metric_catalog_live WHERE ServiceName = {service:String}
+UNION ALL
+SELECT 'traces' AS signal, countDistinct(SpanName) AS names, count() AS rows FROM default.otel_traces WHERE ServiceName = {service:String}
+UNION ALL
+SELECT 'logs' AS signal, countDistinct(Body) AS names, count() AS rows FROM default.otel_logs WHERE ServiceName = {service:String}
+UNION ALL
+SELECT 'http' AS signal, countDistinct(Path) AS names, count() AS rows FROM default.http_access_logs WHERE ServiceName = {service:String}
+ORDER BY signal`
+
+const describeServiceMetricsSQL = `
+SELECT
+  MetricName AS metric,
+  arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS kinds,
+  any(MetricUnit) AS unit,
+  sum(AttributeSets) AS attribute_sets
+FROM default.otel_metric_catalog_live
+WHERE ServiceName = {service:String}
+GROUP BY metric
+ORDER BY metric
+LIMIT {row_limit:UInt32}`
+
+const describeServiceSpansSQL = `
+SELECT
+  SpanName AS span,
+  SpanKind AS kind,
+  count() AS samples,
+  arrayStringConcat(arraySort(groupUniqArray(StatusCode)), ', ') AS statuses
+FROM default.otel_traces
+WHERE ServiceName = {service:String}
+GROUP BY span, kind
+ORDER BY span
+LIMIT {row_limit:UInt32}`
+
+const describeServiceLogFieldsSQL = `
+SELECT
+  attr_key AS field,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 8), ', ') AS sample_values
+FROM default.otel_logs
+ARRAY JOIN mapKeys(LogAttributes) AS attr_key, mapValues(LogAttributes) AS attr_value
+WHERE ServiceName = {service:String}
+GROUP BY field
+ORDER BY field
+LIMIT {row_limit:UInt32}`
+
+const describeSpanSummarySQL = `
+SELECT
+  ServiceName AS service,
+  SpanName AS span,
+  SpanKind AS kind,
+  count() AS samples,
+  arrayStringConcat(arraySort(groupUniqArray(StatusCode)), ', ') AS statuses,
+  round(min(Duration) / 1000000, 2) AS min_ms,
+  round(avg(Duration) / 1000000, 2) AS avg_ms,
+  round(max(Duration) / 1000000, 2) AS max_ms
+FROM default.otel_traces
+WHERE SpanName = {span:String}
+  AND ({service:String} = '' OR ServiceName = {service:String})
+GROUP BY service, span, kind
+ORDER BY service
+LIMIT {row_limit:UInt32}`
+
+const describeSpanAttributesSQL = `
+SELECT
+  attr_key AS attribute,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 96))), 1, 5), ', ') AS sample_values
+FROM default.otel_traces
+ARRAY JOIN mapKeys(SpanAttributes) AS attr_key, mapValues(SpanAttributes) AS attr_value
+WHERE SpanName = {span:String}
+  AND ({service:String} = '' OR ServiceName = {service:String})
+GROUP BY attribute
+ORDER BY attribute
+LIMIT {row_limit:UInt32}`
+
+// describe.field.* queries match FIELD as a case-insensitive substring on the
+// attribute map key. That lets callers pass an intuitive fragment
+// (deploy_run_key) and still discover namespaced keys
+// (verself.deploy_run_key) without guessing the namespace.
+const describeLogFieldSQL = `
+SELECT
+  attr_key,
+  ServiceName AS service,
+  count() AS rows,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+FROM default.otel_logs
+ARRAY JOIN mapKeys(LogAttributes) AS attr_key, mapValues(LogAttributes) AS attr_value
+WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+  AND ({service:String} = '' OR ServiceName = {service:String})
+GROUP BY attr_key, service
+ORDER BY attr_key, service
+LIMIT {row_limit:UInt32}`
+
+const describeSpanFieldSQL = `
+SELECT
+  attr_key,
+  ServiceName AS service,
+  count() AS spans,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+FROM default.otel_traces
+ARRAY JOIN mapKeys(SpanAttributes) AS attr_key, mapValues(SpanAttributes) AS attr_value
+WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+  AND ({service:String} = '' OR ServiceName = {service:String})
+GROUP BY attr_key, service
+ORDER BY attr_key, service
+LIMIT {row_limit:UInt32}`
+
+const describeResourceFieldSQL = `
+SELECT source, attr_key, service, rows, distinct_values, sample_values
+FROM
+(
+  SELECT
+    'traces' AS source,
+    attr_key,
+    ServiceName AS service,
+    count() AS rows,
+    uniqExact(attr_value) AS distinct_values,
+    arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+  FROM default.otel_traces
+  ARRAY JOIN mapKeys(ResourceAttributes) AS attr_key, mapValues(ResourceAttributes) AS attr_value
+  WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+    AND ({service:String} = '' OR ServiceName = {service:String})
+  GROUP BY attr_key, service
+  UNION ALL
+  SELECT
+    'logs' AS source,
+    attr_key,
+    ServiceName AS service,
+    count() AS rows,
+    uniqExact(attr_value) AS distinct_values,
+    arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+  FROM default.otel_logs
+  ARRAY JOIN mapKeys(ResourceAttributes) AS attr_key, mapValues(ResourceAttributes) AS attr_value
+  WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+    AND ({service:String} = '' OR ServiceName = {service:String})
+  GROUP BY attr_key, service
+)
+ORDER BY source, attr_key, service
+LIMIT {row_limit:UInt32}`
+
+const metricLatestSQL = `
+SELECT
+  if({group_by:String} = '', if(ServiceName = '', '<resource-only>', ServiceName), arrayElement(Attributes, {group_by:String})) AS series,
+  MetricName AS metric,
+  MetricKind AS kind,
+  any(MetricUnit) AS unit,
+  argMax(CurrentValue, SampledAt) AS value,
+  max(SampledAt) AS sampled_at,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(toString(Attributes))), 1, 4), ' | ') AS attribute_sets
+FROM default.otel_metric_latest
+WHERE MetricName = {metric:String}
+GROUP BY series, metric, kind
+ORDER BY series
+LIMIT {row_limit:UInt32}`
+
+const metricRateSQL = `
+SELECT
+  toStartOfInterval(TimeUnix, INTERVAL 30 SECOND) AS time,
+  if({group_by:String} = '', if(ServiceName = '', '<resource-only>', ServiceName), arrayElement(Attributes, {group_by:String})) AS series,
+  round((max(Value) - min(Value)) / greatest(dateDiff('second', min(TimeUnix), max(TimeUnix)), 1), 6) AS per_second,
+  count() AS samples
+FROM default.otel_metric_scalar
+WHERE MetricName = {metric:String}
+  AND TimeUnix > now() - toIntervalMinute({minutes:UInt32})
+GROUP BY time, series
+ORDER BY time, series
+LIMIT {row_limit:UInt32}`
+
+const errorsRecentSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SignalKind AS signal,
+  ServiceName AS service,
+  Severity AS severity,
+  HttpStatus AS status,
+  Path AS path,
+  Name AS name,
+  TraceId AS trace_id
+FROM default.otel_signal_errors
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ({service:String} = '' OR ServiceName = {service:String})
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const serviceHTTPSpansSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SpanName AS span,
+  SpanAttributes['http.method'] AS method,
+  SpanAttributes['http.target'] AS path,
+  SpanAttributes['http.status_code'] AS status,
+  intDiv(Duration, 1000000) AS ms,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = {service:String}
+  AND SpanAttributes['http.target'] != ''
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const serviceLogsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SeverityText AS level,
+  Body AS message,
+  TraceId AS trace_id
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = {service:String}
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const mailEventsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  Direction AS direction,
+  EventType AS event,
+  nullIf(MailboxAccount, '') AS mailbox,
+  nullIf(Sender, '') AS sender,
+  nullIf(Subject, '') AS subject,
+  Message AS message
+FROM default.mail_events
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const mailMetricsSQL = `
+SELECT
+  MetricGroup AS metric_group,
+  MetricName AS metric,
+  CurrentValue AS value,
+  SampledAt AS sampled_at
+FROM default.mail_metrics_latest
+ORDER BY metric_group, metric
+LIMIT {row_limit:UInt32}`
+
+const workloadIdentitySpansSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  nullIf(SpanAttributes['spiffe.peer_id'], '') AS peer_id,
+  nullIf(SpanAttributes['spiffe.expected_server_id'], '') AS expected_server_id,
+  nullIf(SpanAttributes['spiffe.id'], '') AS svid_id,
+  nullIf(SpanAttributes['jwt.audience'], '') AS audience,
+  nullIf(SpanAttributes['bao.role'], '') AS bao_role,
+  StatusCode AS status,
+  intDiv(Duration, 1000000) AS ms,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND (
+    startsWith(SpanName, 'auth.spiffe.')
+    OR startsWith(SpanName, 'workload.openbao.')
+    OR SpanName IN ('secrets.bao.jwt_svid.login', 'secrets.injection.service_token.exchange')
+  )
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const workloadIdentitySpireLogsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SeverityText AS level,
+  Body AS message,
+  toString(LogAttributes) AS attributes
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('spire-server', 'spire-agent')
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalAuthzSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  nullIf(SpanAttributes['spiffe.peer_id'], '') AS peer_id,
+  nullIf(SpanAttributes['spiffe.expected_server_id'], '') AS expected_server_id,
+  nullIf(SpanAttributes['temporal.namespace'], '') AS namespace,
+  nullIf(SpanAttributes['rpc.method'], '') AS rpc_method,
+  nullIf(SpanAttributes['temporal.authz.decision'], '') AS decision,
+  nullIf(SpanAttributes['temporal.authz.reason'], '') AS reason,
+  StatusCode AS status,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('temporal-server', 'temporal-bootstrap')
+  AND SpanName IN ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize')
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalBootstrapSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  StatusCode AS status,
+  nullIf(SpanAttributes['temporal.namespace'], '') AS namespace,
+  nullIf(SpanAttributes['rpc.method'], '') AS rpc_method,
+  intDiv(Duration, 1000000) AS ms,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND (
+    ServiceName = 'temporal-bootstrap'
+    OR (ServiceName = 'temporal-server' AND SpanAttributes['temporal.namespace'] != '')
+  )
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalLogsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SeverityText AS level,
+  Body AS message,
+  TraceId AS trace_id
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('temporal-server', 'temporal-bootstrap')
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalMetricsSQL = `
+SELECT
+  if(ServiceName = '', '<resource-only>', ServiceName) AS service,
+  MetricName AS metric,
+  arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS kinds,
+  any(MetricUnit) AS unit,
+  max(LastSeenAt) AS last_seen_at,
+  sum(Samples) AS samples
+FROM default.otel_metric_catalog_live
+WHERE LastSeenAt > now() - toIntervalMinute({minutes:UInt32})
+  AND startsWith(ServiceName, 'temporal-server')
+GROUP BY service, metric
+ORDER BY service, metric
+LIMIT {row_limit:UInt32}`
+
+const deployTasksSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
+  SpanAttributes['ansible.task.name'] AS task,
+  StatusCode AS status,
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = 'ansible'
+  AND SpanName = 'ansible.task'
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const deployRunSQL = `
+SELECT
+  Timestamp,
+  extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
+  SpanAttributes['ansible.task.name'] AS task,
+  StatusCode AS status,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE ServiceName = 'ansible'
+  AND SpanName = 'ansible.task'
+  AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
+ORDER BY Timestamp
+LIMIT {row_limit:UInt32}`
+
+// deployBazelCacheSQL totals bazel-remote hit and miss counts in the lookback
+// window by summing the per-(kind, method, status) counter delta. Counter
+// resets (process restarts) make max-min slightly understate the true total
+// across the window — close enough for the magnitudes we look at here.
+const deployBazelCacheSQL = `
+SELECT
+  status,
+  sum(delta) AS total
+FROM (
+  SELECT
+    Attributes['status'] AS status,
+    Attributes['kind'] AS kind,
+    Attributes['method'] AS method,
+    max(Value) - min(Value) AS delta
+  FROM default.otel_metrics_sum
+  WHERE ServiceName = 'bazel-remote'
+    AND MetricName = 'bazel_remote_incoming_requests_total'
+    AND TimeUnix > now() - toIntervalMinute({minutes:UInt32})
+  GROUP BY status, kind, method
+)
+GROUP BY status
+ORDER BY status`
+
+// deployCodegenActionsSQL surfaces every codegen Bazel spawn that ran
+// for one deploy. The spans are emitted by
+// src/tools/observability/go/cmd/bazel-execlog-to-otel from --execution_log_json_file.
+// Mnemonics come from package-owned OpenAPI genrules, direct oapi-codegen
+// actions, and src/frontends/viteplus-monorepo/viteplus_rules.bzl (OpenapiTsGen for
+// the frontend TS SDK gen). The cache_hit column distinguishes "the action
+// graph correctly invalidated and re-ran" (cache_hit=0) from "every
+// codegen target was already cached" (cache_hit=1) — both are valid
+// outcomes for a deploy, but they answer different operator questions.
+const deployCodegenActionsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SpanAttributes['bazel.mnemonic'] AS mnemonic,
+  SpanAttributes['bazel.target_label'] AS target,
+  SpanAttributes['bazel.runner'] AS runner,
+  SpanAttributes['bazel.cache_hit'] = 'true' AS cache_hit,
+  toUInt64OrZero(SpanAttributes['bazel.duration_ms']) AS ms
+FROM default.otel_traces
+WHERE ServiceName = 'bazel'
+  AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND startsWith(SpanName, 'bazel.spawn.')
+  AND SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage')
+ORDER BY Timestamp
+LIMIT {row_limit:UInt32}`
+
+// deployRebuildBlastRadiusSQL groups every Bazel spawn with a
+// //src/<svc>/... target by service so the operator can verify a
+// deploy rebuilt the right things and only the right things. Cached
+// spawns count toward total_spawns but execution_spawns isolates the
+// ones that actually ran — useful after a Huma-route change to confirm
+// the right cross-service consumers re-executed while unrelated
+// services stayed cached.
+const deployRebuildBlastRadiusSQL = `
+SELECT
+  extract(SpanAttributes['bazel.target_label'], '^//src/([^/]+)') AS service,
+  countIf(SpanAttributes['bazel.cache_hit'] != 'true') AS execution_spawns,
+  countIf(SpanAttributes['bazel.cache_hit'] = 'true') AS cached_spawns,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoCompilePkg') AS go_compiles,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoLink') AS go_links,
+  countIf(SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage')) AS codegen_spawns,
+  count() AS total_spawns,
+  sum(toUInt64OrZero(SpanAttributes['bazel.duration_ms'])) AS total_ms
+FROM default.otel_traces
+WHERE ServiceName = 'bazel'
+  AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND startsWith(SpanName, 'bazel.spawn.')
+  AND startsWith(SpanAttributes['bazel.target_label'], '//src/')
+GROUP BY service
+HAVING service != ''
+ORDER BY execution_spawns DESC, total_spawns DESC
+LIMIT {row_limit:UInt32}`
+
+const supplyChainPolicySummarySQL = `
+SELECT
+  deploy_run_key,
+  site,
+  surface,
+  source_kind,
+  policy_result,
+  admission_state,
+  count() AS findings,
+  countIf(digest = '') AS without_digest,
+  max(event_at) AS last_seen
+FROM verself.supply_chain_policy_events
+WHERE ({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({run_key:String} != '' AND deploy_run_key = {run_key:String})
+GROUP BY deploy_run_key, site, surface, source_kind, policy_result, admission_state
+ORDER BY last_seen DESC, surface, source_kind, policy_result
+LIMIT {row_limit:UInt32}`
+
+const supplyChainPolicyFindingsSQL = `
+SELECT
+  source_path,
+  line,
+  surface,
+  source_kind,
+  artifact,
+  policy_result,
+  admission_state,
+  policy_reason,
+  digest,
+  tuf_target_path,
+  storage_uri,
+  trace_id
+FROM verself.supply_chain_policy_events
+WHERE ({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({run_key:String} != '' AND deploy_run_key = {run_key:String})
+ORDER BY event_at DESC, policy_result DESC, surface, source_path, line
+LIMIT {row_limit:UInt32}`
+
+const traceDetailSQL = `
+SELECT
+  Timestamp,
+  ServiceName AS service,
+  SpanName AS span,
+  ParentSpanId AS parent_span_id,
+  StatusCode AS status,
+  round(Duration / 1000000, 2) AS ms,
+  SpanAttributes['http.method'] AS method,
+  SpanAttributes['http.target'] AS target,
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key
+FROM default.otel_traces
+WHERE TraceId = {trace_id:String}
+ORDER BY Timestamp
+LIMIT {row_limit:UInt32}`
+
+const httpAccessSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  Host AS host,
+  Method AS method,
+  Status AS status,
+  Path AS path,
+  round(DurationMs, 2) AS ms,
+  ClientIP AS client_ip,
+  TraceId AS trace_id
+FROM default.http_access_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ({host:String} = '' OR Host = {host:String})
+  AND Status >= {status_min:UInt16}
+  AND ({search:String} = '' OR positionCaseInsensitive(Path, {search:String}) > 0)
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+// Overview queries use fixed windows (24h for services and errors, 7d for
+// deploys) rather than honoring MINUTES — the bird's-eye view should be
+// predictable regardless of whatever lookback a caller defaulted elsewhere
+// in their session. The registry family description calls this out.
+const overviewServicesSQL = `
+SELECT
+  if(service = '', '<resource-only>', service) AS service,
+  sum(metric_samples) AS metric_samples,
+  sum(trace_samples) AS trace_samples,
+  sum(log_samples) AS log_samples,
+  sum(http_samples) AS http_samples
+FROM
+(
+  SELECT ServiceName AS service,
+         count() AS metric_samples,
+         toUInt64(0) AS trace_samples,
+         toUInt64(0) AS log_samples,
+         toUInt64(0) AS http_samples
+  FROM default.otel_metric_scalar
+  WHERE TimeUnix > now() - toIntervalHour(24)
+  GROUP BY service
+  UNION ALL
+  SELECT ServiceName AS service,
+         toUInt64(0),
+         count(),
+         toUInt64(0),
+         toUInt64(0)
+  FROM default.otel_traces
+  WHERE Timestamp > now() - toIntervalHour(24)
+  GROUP BY service
+  UNION ALL
+  SELECT ServiceName AS service,
+         toUInt64(0),
+         toUInt64(0),
+         count(),
+         toUInt64(0)
+  FROM default.otel_logs
+  WHERE Timestamp > now() - toIntervalHour(24)
+  GROUP BY service
+  UNION ALL
+  SELECT ServiceName AS service,
+         toUInt64(0),
+         toUInt64(0),
+         toUInt64(0),
+         count()
+  FROM default.http_access_logs
+  WHERE Timestamp > now() - toIntervalHour(24)
+  GROUP BY service
+)
+GROUP BY service
+ORDER BY metric_samples + trace_samples + log_samples + http_samples DESC
+LIMIT {row_limit:UInt32}`
+
+const overviewDeploysSQL = `
+SELECT
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  countDistinct(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :')) AS roles,
+  count() AS tasks,
+  countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
+  min(Timestamp) AS first_seen,
+  max(Timestamp) AS last_seen,
+  dateDiff('second', min(Timestamp), max(Timestamp)) AS duration_seconds
+FROM default.otel_traces
+WHERE ServiceName = 'ansible'
+  AND SpanName = 'ansible.task'
+  AND Timestamp > now() - toIntervalDay(7)
+  AND SpanAttributes['verself.deploy_run_key'] != ''
+GROUP BY deploy_run_key
+ORDER BY last_seen DESC
+LIMIT {row_limit:UInt32}`
+
+const overviewErrorsSQL = `
+SELECT
+  ServiceName AS service,
+  countIf(SignalKind = 'trace') AS trace_errors,
+  countIf(SignalKind = 'log') AS log_errors,
+  countIf(SignalKind = 'http_access') AS http_errors,
+  count() AS total_errors,
+  max(Timestamp) AS last_seen
+FROM default.otel_signal_errors
+WHERE Timestamp > now() - toIntervalHour(24)
+GROUP BY service
+ORDER BY total_errors DESC
+LIMIT {row_limit:UInt32}`
+
+// FIELD= filters logs on either LogAttributes or ResourceAttributes. Resource
+// attributes (verself.deploy_run_key, host.name, ...) are discoverable via
+// `--what=describe --field=...` — the filter must accept the same keys or the
+// describe → filter flow silently drops every row.
+const logsRecentSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SeverityText AS level,
+  Body AS message,
+  TraceId AS trace_id,
+  toString(LogAttributes) AS attributes
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ({service:String} = '' OR ServiceName = {service:String})
+  AND ({field:String} = ''
+       OR arrayElement(LogAttributes, {field:String}) != ''
+       OR arrayElement(ResourceAttributes, {field:String}) != '')
+  AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`

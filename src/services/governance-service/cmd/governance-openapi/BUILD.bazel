@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "governance-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/governance-service/cmd/governance-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/governance-service/internal/api"],
+)
+
+go_binary(
+    name = "governance-openapi",
+    embed = [":governance-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

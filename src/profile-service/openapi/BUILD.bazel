@@ -1,6 +1,0 @@
-load("//bazel:openapi_codegen.bzl", "verself_openapi_specs")
-
-verself_openapi_specs(
-    internal_tool = "//src/profile-service/cmd/profile-internal-openapi",
-    public_tool = "//src/profile-service/cmd/profile-openapi",
-)

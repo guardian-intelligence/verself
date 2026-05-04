@@ -201,7 +201,7 @@ that land in ClickHouse.
 Repository layout:
 
 ```text
-src/iam-service/
+src/services/iam-service/
   cmd/
     iam-service/
     iam-openapi/
@@ -305,24 +305,24 @@ Wire contract locations:
 
 | Contract | Location | Bazel owner |
 | --- | --- | --- |
-| Public IAM API OpenAPI 3.0/3.1 | `src/iam-service/openapi/openapi-3.0.yaml`, `src/iam-service/openapi/openapi-3.1.yaml` | `//src/iam-service/openapi` |
-| SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/iam-service/openapi/internal-openapi-3.0.yaml`, `src/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/iam-service/openapi` |
-| Generated public Go client | `src/iam-service/client/client.gen.go` | `//src/iam-service/client:client` |
-| Generated internal Go client | `src/iam-service/internalclient/client.gen.go` | `//src/iam-service/internalclient:internalclient` |
-| Curated Go IAM SDK | `src/iam-service/sdk/go/` | `//src/iam-service/sdk/go:iam` |
-| Browser TypeScript clients | `src/viteplus-monorepo/apps/verself-web/src/__generated/iam-api/` | frontend OpenAPI generation target |
-| Curated TypeScript IAM SDK | `src/iam-service/sdk/typescript/` | TypeScript SDK generation target |
-| SpiceDB schema | `src/iam-service/schema/verself.zed` | `//src/iam-service/schema:schema` |
-| SpiceDB schema assertions | `src/iam-service/schema/assertions.yaml`, `src/iam-service/schema/expected-relations.yaml` | `//src/iam-service/schema:schema_tests` |
-| Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
-| Future shared protobuf messages | `src/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
-| Future IAM-owned gRPC-only contract | `src/iam-service/proto/v1/*.proto` | `//src/iam-service/proto/v1:iam_proto` |
+| Public IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
+| SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
+| Generated public Go client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
+| Generated internal Go client | `src/services/iam-service/internalclient/client.gen.go` | `//src/services/iam-service/internalclient:internalclient` |
+| Curated Go IAM SDK | `src/services/iam-service/sdk/go/` | `//src/services/iam-service/sdk/go:iam` |
+| Browser TypeScript clients | `src/frontends/viteplus-monorepo/apps/verself-web/src/__generated/iam-api/` | frontend OpenAPI generation target |
+| Curated TypeScript IAM SDK | `src/services/iam-service/sdk/typescript/` | TypeScript SDK generation target |
+| SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
+| SpiceDB schema assertions | `src/services/iam-service/schema/assertions.yaml`, `src/services/iam-service/schema/expected-relations.yaml` | `//src/services/iam-service/schema:schema_tests` |
+| Shared DTOs used by multiple services or frontend wrappers | `src/sdks/domain-transfer-objects/go/` | `//src/sdks/domain-transfer-objects/go:dto` |
+| Future shared protobuf messages | `src/sdks/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/sdks/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
+| Future IAM-owned gRPC-only contract | `src/services/iam-service/proto/v1/*.proto` | `//src/services/iam-service/proto/v1:iam_proto` |
 
 Add a service-local protobuf directory only if the operation cannot be cleanly
 represented by the existing OpenAPI service pattern, for example a binary
 stream that should not become a public HTTP contract. If the message shape is
 consumed by more than `iam-service`, put the protobuf under
-`src/domain-transfer-objects/proto/` instead.
+`src/sdks/domain-transfer-objects/proto/` instead.
 
 OpenAPI remains the generated-client surface for product services. A missing
 service shape is fixed by adding the Huma route and regenerating the committed
@@ -518,57 +518,57 @@ never sent to product resource APIs and are not represented in IAM policy DTOs.
 The service should create these targets:
 
 ```text
-//src/iam-service:go_default_library
+//src/services/iam-service:go_default_library
 
-//src/iam-service/cmd/iam-service:iam-service
-//src/iam-service/cmd/iam-service:iam-service_nomad_artifact
-//src/iam-service/cmd/iam-openapi:iam-openapi
-//src/iam-service/cmd/iam-internal-openapi:iam-internal-openapi
-//src/iam-service/cmd/iam-schema-gen:iam-schema-gen
+//src/services/iam-service/cmd/iam-service:iam-service
+//src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact
+//src/services/iam-service/cmd/iam-openapi:iam-openapi
+//src/services/iam-service/cmd/iam-internal-openapi:iam-internal-openapi
+//src/services/iam-service/cmd/iam-schema-gen:iam-schema-gen
 
-//src/iam-service/openapi:openapi-3.0.yaml
-//src/iam-service/openapi:openapi-3.1.yaml
-//src/iam-service/openapi:internal-openapi-3.0.yaml
-//src/iam-service/openapi:internal-openapi-3.1.yaml
+//src/services/iam-service/openapi:openapi-3.0.yaml
+//src/services/iam-service/openapi:openapi-3.1.yaml
+//src/services/iam-service/openapi:internal-openapi-3.0.yaml
+//src/services/iam-service/openapi:internal-openapi-3.1.yaml
 
-//src/iam-service/client:client
-//src/iam-service/internalclient:internalclient
-//src/iam-service/sdk/go:iam
-//src/iam-service/sdk/typescript:iam
-//src/iam-service/migrations:migrations
-//src/iam-service/schema:schema
-//src/iam-service/schema:schema_tests
+//src/services/iam-service/client:client
+//src/services/iam-service/internalclient:internalclient
+//src/services/iam-service/sdk/go:iam
+//src/services/iam-service/sdk/typescript:iam
+//src/services/iam-service/migrations:migrations
+//src/services/iam-service/schema:schema
+//src/services/iam-service/schema:schema_tests
 
-//src/iam-service/internal/api:api
-//src/iam-service/internal/bootstrap:bootstrap
-//src/iam-service/internal/model:model
-//src/iam-service/internal/spicedb:spicedb
-//src/iam-service/internal/authz:authz
-//src/iam-service/internal/decision:decision
-//src/iam-service/internal/orgs:orgs
-//src/iam-service/internal/members:members
-//src/iam-service/internal/roles:roles
-//src/iam-service/internal/policies:policies
-//src/iam-service/internal/credentials:credentials
-//src/iam-service/internal/browser:browser
-//src/iam-service/internal/actions:actions
-//src/iam-service/internal/syncauth:syncauth
-//src/iam-service/internal/resourceedges:resourceedges
-//src/iam-service/internal/commands:commands
-//src/iam-service/internal/watch:watch
-//src/iam-service/internal/reconcile:reconcile
-//src/iam-service/internal/audit:audit
-//src/iam-service/internal/problems:problems
-//src/iam-service/internal/directory:directory
-//src/iam-service/internal/store:store
+//src/services/iam-service/internal/api:api
+//src/services/iam-service/internal/bootstrap:bootstrap
+//src/services/iam-service/internal/model:model
+//src/services/iam-service/internal/spicedb:spicedb
+//src/services/iam-service/internal/authz:authz
+//src/services/iam-service/internal/decision:decision
+//src/services/iam-service/internal/orgs:orgs
+//src/services/iam-service/internal/members:members
+//src/services/iam-service/internal/roles:roles
+//src/services/iam-service/internal/policies:policies
+//src/services/iam-service/internal/credentials:credentials
+//src/services/iam-service/internal/browser:browser
+//src/services/iam-service/internal/actions:actions
+//src/services/iam-service/internal/syncauth:syncauth
+//src/services/iam-service/internal/resourceedges:resourceedges
+//src/services/iam-service/internal/commands:commands
+//src/services/iam-service/internal/watch:watch
+//src/services/iam-service/internal/reconcile:reconcile
+//src/services/iam-service/internal/audit:audit
+//src/services/iam-service/internal/problems:problems
+//src/services/iam-service/internal/directory:directory
+//src/services/iam-service/internal/store:store
 ```
 
 If a future service-local protobuf is added, use the existing repo pattern:
 
 ```text
-//src/iam-service/proto/v1:iam_proto
-//src/iam-service/proto/v1:iam_go_proto
-//src/iam-service/proto/v1:proto
+//src/services/iam-service/proto/v1:iam_proto
+//src/services/iam-service/proto/v1:iam_go_proto
+//src/services/iam-service/proto/v1:proto
 ```
 
 The root `BUILD.bazel` contains only the Gazelle prefix:

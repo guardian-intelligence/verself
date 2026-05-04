@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "secrets-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/secrets-service/cmd/secrets-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/services/billing-service/client",
+        "//src/tools/observability/go/otel",
+        "//src/services/secrets-service/client",
+        "//src/services/secrets-service/internal/api",
+        "//src/services/secrets-service/internal/secrets",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "secrets-service",
+    embed = [":secrets-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "secrets-service_nomad_artifact",
+    binary = ":secrets-service",
+    output = "secrets-service",
+)
+
+exports_files(["nomad-overrides.json"])

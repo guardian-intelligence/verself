@@ -1,0 +1,247 @@
+{
+  "artifact_delivery": {
+    "kind": "garage_s3_private_origin",
+    "bucket": "nomad-artifacts",
+    "key_prefix": "sha256",
+    "getter_source_prefix": "s3::https://artifacts.internal.verself.sh:9443/nomad-artifacts",
+    "getter_options": {
+      "region": "garage"
+    },
+    "getter_credentials": {
+      "source": "host_environment",
+      "environment_file": "/etc/nomad/nomad-artifacts.env",
+      "access_key_id_env": "AWS_ACCESS_KEY_ID",
+      "secret_access_key_env": "AWS_SECRET_ACCESS_KEY"
+    },
+    "publisher_credentials": {
+      "source": "controller_environment",
+      "environment_file": "/etc/garage/nomad-artifacts/publisher.env",
+      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_AWS_ACCESS_KEY_ID",
+      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_AWS_SECRET_ACCESS_KEY"
+    },
+    "checksum_algorithm": "sha256",
+    "public": false,
+    "origin": {
+      "scheme": "https",
+      "hostname": "artifacts.internal.verself.sh",
+      "port": 9443,
+      "placement": "node_local",
+      "resolution": "per_node_hosts_file",
+      "listen_host": "127.0.0.1",
+      "public_dns": false,
+      "public_ingress": false,
+      "ca_bundle_path": "/etc/verself/pki/nomad-artifacts-ca.pem"
+    }
+  },
+  "nomad_addr": "http://127.0.0.1:4646",
+  "components": [
+    {
+      "component": "billing",
+      "job_id": "billing",
+      "bazel_label": "//src/services/billing-service/cmd/billing-service:billing-service",
+      "output": "billing-service",
+      "depends_on": [
+        "secrets-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/billing-service/cmd/billing-service:billing-service",
+          "nomad_artifact_label": "//src/services/billing-service/cmd/billing-service:billing-service_nomad_artifact",
+          "output": "billing-service"
+        }
+      ]
+    },
+    {
+      "component": "sandbox_rental",
+      "job_id": "sandbox-rental",
+      "bazel_label": "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service",
+      "output": "sandbox-rental-service",
+      "depends_on": [
+        "secrets-service",
+        "source-code-hosting-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service",
+          "nomad_artifact_label": "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service_nomad_artifact",
+          "output": "sandbox-rental-service"
+        },
+        {
+          "bazel_label": "//src/services/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker",
+          "nomad_artifact_label": "//src/services/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker_nomad_artifact",
+          "output": "sandbox-rental-recurring-worker"
+        }
+      ]
+    },
+    {
+      "component": "iam_service",
+      "job_id": "iam-service",
+      "bazel_label": "//src/services/iam-service/cmd/iam-service:iam-service",
+      "output": "iam-service",
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/iam-service/cmd/iam-service:iam-service",
+          "nomad_artifact_label": "//src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact",
+          "output": "iam-service"
+        }
+      ]
+    },
+    {
+      "component": "governance_service",
+      "job_id": "governance-service",
+      "bazel_label": "//src/services/governance-service/cmd/governance-service:governance-service",
+      "output": "governance-service",
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/governance-service/cmd/governance-service:governance-service",
+          "nomad_artifact_label": "//src/services/governance-service/cmd/governance-service:governance-service_nomad_artifact",
+          "output": "governance-service"
+        }
+      ]
+    },
+    {
+      "component": "secrets_service",
+      "job_id": "secrets-service",
+      "bazel_label": "//src/services/secrets-service/cmd/secrets-service:secrets-service",
+      "output": "secrets-service",
+      "depends_on": [
+        "governance-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/secrets-service/cmd/secrets-service:secrets-service",
+          "nomad_artifact_label": "//src/services/secrets-service/cmd/secrets-service:secrets-service_nomad_artifact",
+          "output": "secrets-service"
+        }
+      ]
+    },
+    {
+      "component": "profile_service",
+      "job_id": "profile-service",
+      "bazel_label": "//src/services/profile-service/cmd/profile-service:profile-service",
+      "output": "profile-service",
+      "depends_on": [
+        "governance-service",
+        "iam-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/profile-service/cmd/profile-service:profile-service",
+          "nomad_artifact_label": "//src/services/profile-service/cmd/profile-service:profile-service_nomad_artifact",
+          "output": "profile-service"
+        }
+      ]
+    },
+    {
+      "component": "company",
+      "job_id": "company",
+      "bazel_label": "//src/frontends/viteplus-monorepo/apps/company:node_app_nomad_artifact",
+      "output": "company",
+      "artifacts": [
+        {
+          "bazel_label": "//src/frontends/viteplus-monorepo/apps/company:node_app_nomad_artifact",
+          "nomad_artifact_label": "//src/frontends/viteplus-monorepo/apps/company:node_app_nomad_artifact",
+          "output": "company"
+        },
+        {
+          "bazel_label": "//src/frontends/viteplus-monorepo:nodejs_runtime_nomad_artifact",
+          "nomad_artifact_label": "//src/frontends/viteplus-monorepo:nodejs_runtime_nomad_artifact",
+          "output": "nodejs-runtime"
+        }
+      ]
+    },
+    {
+      "component": "mailbox_service",
+      "job_id": "mailbox-service",
+      "bazel_label": "//src/services/mailbox-service/cmd/mailbox-service:mailbox-service",
+      "output": "mailbox-service",
+      "depends_on": [
+        "secrets-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/mailbox-service/cmd/mailbox-service:mailbox-service",
+          "nomad_artifact_label": "//src/services/mailbox-service/cmd/mailbox-service:mailbox-service_nomad_artifact",
+          "output": "mailbox-service"
+        }
+      ]
+    },
+    {
+      "component": "notifications_service",
+      "job_id": "notifications-service",
+      "bazel_label": "//src/services/notifications-service/cmd/notifications-service:notifications-service",
+      "output": "notifications-service",
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/notifications-service/cmd/notifications-service:notifications-service",
+          "nomad_artifact_label": "//src/services/notifications-service/cmd/notifications-service:notifications-service_nomad_artifact",
+          "output": "notifications-service"
+        }
+      ]
+    },
+    {
+      "component": "object_storage_service",
+      "job_id": "object-storage-service",
+      "bazel_label": "//src/services/object-storage-service/cmd/object-storage-service:object-storage-service",
+      "output": "object-storage-service",
+      "depends_on": [
+        "governance-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/object-storage-service/cmd/object-storage-service:object-storage-service",
+          "nomad_artifact_label": "//src/services/object-storage-service/cmd/object-storage-service:object-storage-service_nomad_artifact",
+          "output": "object-storage-service"
+        }
+      ]
+    },
+    {
+      "component": "projects_service",
+      "job_id": "projects-service",
+      "bazel_label": "//src/services/projects-service/cmd/projects-service:projects-service",
+      "output": "projects-service",
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/projects-service/cmd/projects-service:projects-service",
+          "nomad_artifact_label": "//src/services/projects-service/cmd/projects-service:projects-service_nomad_artifact",
+          "output": "projects-service"
+        }
+      ]
+    },
+    {
+      "component": "source_code_hosting_service",
+      "job_id": "source-code-hosting-service",
+      "bazel_label": "//src/services/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service",
+      "output": "source-code-hosting-service",
+      "depends_on": [
+        "projects-service",
+        "secrets-service"
+      ],
+      "artifacts": [
+        {
+          "bazel_label": "//src/services/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service",
+          "nomad_artifact_label": "//src/services/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service_nomad_artifact",
+          "output": "source-code-hosting-service"
+        }
+      ]
+    },
+    {
+      "component": "verself_web",
+      "job_id": "verself-web",
+      "bazel_label": "//src/frontends/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact",
+      "output": "verself-web",
+      "artifacts": [
+        {
+          "bazel_label": "//src/frontends/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact",
+          "nomad_artifact_label": "//src/frontends/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact",
+          "output": "verself-web"
+        },
+        {
+          "bazel_label": "//src/frontends/viteplus-monorepo:nodejs_runtime_nomad_artifact",
+          "nomad_artifact_label": "//src/frontends/viteplus-monorepo:nodejs_runtime_nomad_artifact",
+          "output": "nodejs-runtime"
+        }
+      ]
+    }
+  ]
+}

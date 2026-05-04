@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "billingapi",
+    srcs = ["api.go"],
+    importpath = "github.com/verself/billing-service/internal/billingapi",
+    visibility = ["//src/services/billing-service:__subpackages__"],
+    deps = [
+        "//src/services/auth-middleware/workload",
+        "//src/services/billing-service/internal/billing",
+        "//src/sdks/domain-transfer-objects/go:dto",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":billingapi",
+    visibility = ["//src/services/billing-service:__subpackages__"],
+)

@@ -1,25 +1,25 @@
 go 1.25.8
 
 use (
-	./src/domain-transfer-objects/go
-	./src/auth-middleware
-	./src/billing-service
-	./src/deployment-tools
-	./src/dev-tools
-	./src/governance-service
-	./src/iam-service
-	./src/mailbox-service
-	./src/notifications-service
-	./src/object-storage-service
-	./src/observability/go
-	./src/operator-runtime/go
-	./src/profile-service
-	./src/projects-service
-	./src/sandbox-rental-service
-	./src/secrets-service
-	./src/source-code-hosting-service
-	./src/service-runtime/go
+	./src/sdks/domain-transfer-objects/go
+	./src/services/auth-middleware
+	./src/services/billing-service
+	./src/tools/deployment
+	./src/tools/dev
+	./src/services/governance-service
+	./src/services/iam-service
+	./src/services/mailbox-service
+	./src/services/notifications-service
+	./src/services/object-storage-service
+	./src/tools/observability/go
+	./src/tools/operator-runtime/go
+	./src/services/profile-service
+	./src/services/projects-service
+	./src/services/sandbox-rental-service
+	./src/services/secrets-service
+	./src/services/source-code-hosting-service
+	./src/services/service-runtime/go
 	./src/host-configuration
-	./src/temporal-platform
-	./src/vm-orchestrator
+	./src/components/temporal-platform
+	./src/substrate/vm-orchestrator
 )

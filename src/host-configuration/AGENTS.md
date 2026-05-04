@@ -5,7 +5,7 @@ runner here, and the public deploy entry point is `aspect deploy`.
 
 ## Boundaries
 
-- `src/provisioning-tools/` owns OpenTofu and bare-metal allocation.
+- `src/tools/provisioning/` owns OpenTofu and bare-metal allocation.
 - Nomad owns application and frontend rollout.
 - Host configuration owns base OS packages, host networking, ZFS, trust roots,
   stateful daemons, operator daemons, external reconcilers, and per-component
@@ -24,7 +24,7 @@ foundation work through `meta/main.yml` dependencies; a role that needs a
 prerequisite runs after that prerequisite in `site.yml` or fails loudly when
 invoked outside the site graph.
 
-`verself-deploy run` (under `src/deployment-tools/`) is the deploy-flow
+`verself-deploy run` (under `src/tools/deployment/`) is the deploy-flow
 process: it derives identity, runs `playbooks/site.yml`, fans out to Nomad,
 and writes `verself.deploy_events` through a typed ClickHouse writer.
 

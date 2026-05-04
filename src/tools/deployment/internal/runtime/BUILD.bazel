@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "runtime",
+    srcs = ["bootstrap.go"],
+    importpath = "github.com/verself/deployment-tools/internal/runtime",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = [
+        "//src/tools/deployment/internal/deploydb",
+        "//src/tools/deployment/internal/identity",
+        "//src/tools/deployment/internal/inventory",
+        "//src/tools/deployment/internal/sshtun",
+        "//src/tools/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//baggage",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel//propagation",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":runtime",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)

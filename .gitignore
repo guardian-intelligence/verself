@@ -4,11 +4,11 @@
 verself.toml
 
 # Terraform
-src/provisioning-tools/terraform/.terraform/
-src/provisioning-tools/terraform/.terraform.lock.hcl
-src/provisioning-tools/terraform/terraform.tfstate
-src/provisioning-tools/terraform/terraform.tfstate.backup
-src/provisioning-tools/terraform/*.tfvars.json
+src/tools/provisioning/terraform/.terraform/
+src/tools/provisioning/terraform/.terraform.lock.hcl
+src/tools/provisioning/terraform/terraform.tfstate
+src/tools/provisioning/terraform/terraform.tfstate.backup
+src/tools/provisioning/terraform/*.tfvars.json
 
 # Ansible
 src/host-configuration/ansible/*.retry
@@ -57,7 +57,7 @@ src/platform/ci/output/sbom.txt
 .claude/scheduled_tasks.lock
 
 __pycache__
-src/sandbox-rental-service/sandbox-rental-service
+src/services/sandbox-rental-service/sandbox-rental-service
 
 node_modules
 

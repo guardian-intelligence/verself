@@ -1,0 +1,56 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "sandbox-rental-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/sandbox-rental-service/cmd/sandbox-rental-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/services/billing-service/client",
+        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/tools/observability/go/otel",
+        "//src/services/sandbox-rental-service/internal/api",
+        "//src/services/sandbox-rental-service/internal/jobs",
+        "//src/services/sandbox-rental-service/internal/recurring",
+        "//src/services/sandbox-rental-service/internal/scheduler",
+        "//src/services/sandbox-rental-service/internal/sourceworkflow",
+        "//src/services/sandbox-rental-service/migrations",
+        "//src/services/secrets-service/client",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "//src/components/temporal-platform/sdkclient",
+        "//src/substrate/vm-orchestrator",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_riverqueue_river//:river",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//baggage",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_binary(
+    name = "sandbox-rental-service",
+    embed = [":sandbox-rental-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "sandbox-rental-service_nomad_artifact",
+    binary = ":sandbox-rental-service",
+    output = "sandbox-rental-service",
+)
+
+go_test(
+    name = "sandbox-rental-service_test",
+    srcs = ["main_test.go"],
+    embed = [":sandbox-rental-service_lib"],
+)
+
+exports_files(["nomad-overrides.json"])

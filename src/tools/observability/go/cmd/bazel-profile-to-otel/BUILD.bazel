@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "bazel-profile-to-otel_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/observability/cmd/bazel-profile-to-otel",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/tools/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_binary(
+    name = "bazel-profile-to-otel",
+    embed = [":bazel-profile-to-otel_lib"],
+    visibility = ["//visibility:public"],
+)

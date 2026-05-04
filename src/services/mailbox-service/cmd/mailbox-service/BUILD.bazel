@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "mailbox-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/mailbox-service/cmd/mailbox-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/auth-middleware",
+        "//src/services/auth-middleware/workload",
+        "//src/services/mailbox-service/internal/api",
+        "//src/services/mailbox-service/internal/app",
+        "//src/services/mailbox-service/internal/forwarder",
+        "//src/services/mailbox-service/internal/mailstore",
+        "//src/services/mailbox-service/internal/sessionproxy",
+        "//src/services/mailbox-service/internal/sync",
+        "//src/services/mailbox-service/migrations",
+        "//src/tools/observability/go/otel",
+        "//src/services/secrets-service/client",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+    ],
+)
+
+go_binary(
+    name = "mailbox-service",
+    embed = [":mailbox-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "mailbox-service_nomad_artifact",
+    binary = ":mailbox-service",
+    output = "mailbox-service",
+)
+
+exports_files(["nomad-overrides.json"])

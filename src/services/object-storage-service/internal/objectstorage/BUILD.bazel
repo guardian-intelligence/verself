@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "objectstorage",
+    srcs = [
+        "access_events.go",
+        "audit.go",
+        "crypto.go",
+        "garage.go",
+        "random.go",
+        "s3.go",
+        "s3_xml.go",
+        "safeconv.go",
+        "service.go",
+        "sigv4.go",
+        "store.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/object-storage-service/internal/objectstorage",
+    visibility = ["//src/services/object-storage-service:__subpackages__"],
+    deps = [
+        "//src/services/auth-middleware/workload",
+        "//src/services/object-storage-service/internal/store",
+        "@com_github_aws_aws_sdk_go_v2//aws",
+        "@com_github_aws_aws_sdk_go_v2//aws/signer/v4:signer",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":objectstorage",
+    visibility = ["//src/services/object-storage-service:__subpackages__"],
+)

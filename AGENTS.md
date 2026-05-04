@@ -39,10 +39,10 @@ Invariant patterns:
 
 Boundary components that sit outside the usual service shape:
 
-- `src/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
-- `src/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
+- `src/substrate/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
+- `src/substrate/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
 - `src/host-configuration/` — host and daemon convergence: Ansible runner, host scripts, controller OTLP agent, and ClickHouse schema.
-- `src/provisioning-tools/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
+- `src/tools/provisioning/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
 
 Top-level landmarks:
 
@@ -55,7 +55,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 
 <product_policy>
 
-Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy`.
+Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/frontends/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy`.
 
 </product_policy>
 
@@ -100,16 +100,16 @@ Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`
 
 Recommended that you read relevant ones directly. You can have a subagent summarize the ones that are not related to your task.
 
-- **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/mailbox-service/docs/inbound-mail.md`
-- **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/vm-orchestrator/AGENTS.md`
-- **ZFS volume lifecycle, zvol, clone, snapshot, checkpoint, restore:** `src/vm-orchestrator/docs/zfs-volume-lifecycle.md`
-- **Wire contracts, DTO patterns, protobuf schemas, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract gate:** `src/domain-transfer-objects/docs/wire-contracts.md`
-- **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
+- **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/services/mailbox-service/docs/inbound-mail.md`
+- **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/substrate/vm-orchestrator/AGENTS.md`
+- **ZFS volume lifecycle, zvol, clone, snapshot, checkpoint, restore:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
+- **Wire contracts, DTO patterns, protobuf schemas, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract gate:** `src/sdks/domain-transfer-objects/docs/wire-contracts.md`
+- **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, OIDC discovery, Verself policy split:** `src/platform/docs/identity-and-iam.md`
 - **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
-- Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
-- **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
+- Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
+- **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
 - **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/host-configuration/ansible/group_vars/all/topology/` plus service-owned Nomad metadata.
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`

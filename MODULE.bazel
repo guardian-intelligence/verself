@@ -15,8 +15,8 @@ bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go"
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
 include("//src/host-configuration/binaries:server_tools.MODULE.bazel")
-include("//src/dev-tools/binaries:dev_tools.MODULE.bazel")
-include("//src/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
+include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
+include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(
@@ -57,7 +57,7 @@ node.toolchain(
 use_repo(node, "nodejs_toolchains")
 
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
-pnpm.pnpm(pnpm_version_from = "//src/viteplus-monorepo:package.json")
+pnpm.pnpm(pnpm_version_from = "//src/frontends/viteplus-monorepo:package.json")
 use_repo(pnpm, "pnpm")
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
@@ -66,8 +66,8 @@ npm.npm_translate_lock(
     bins = {
         "@hey-api/openapi-ts": ["openapi-ts=./bin/index.cjs"],
     },
-    npmrc = "//src/viteplus-monorepo:.npmrc",
-    pnpm_lock = "//src/viteplus-monorepo:pnpm-lock.yaml",
+    npmrc = "//src/frontends/viteplus-monorepo:.npmrc",
+    pnpm_lock = "//src/frontends/viteplus-monorepo:pnpm-lock.yaml",
 )
 use_repo(npm, "npm")
 

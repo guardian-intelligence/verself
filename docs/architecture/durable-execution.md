@@ -205,9 +205,9 @@ Drawbacks:
   [`change-data-capture.md`](change-data-capture.md),
   [`domain-event-stream.md`](domain-event-stream.md).
 - Implementation references:
-  `src/temporal-platform/cmd/verself-temporal-server/main.go`,
-  `src/temporal-platform/internal/tlsprovider/tlsprovider.go`,
-  `src/temporal-platform/internal/spiffeauth/spiffeauth.go`,
+  `src/components/temporal-platform/cmd/verself-temporal-server/main.go`,
+  `src/components/temporal-platform/internal/tlsprovider/tlsprovider.go`,
+  `src/components/temporal-platform/internal/spiffeauth/spiffeauth.go`,
   `src/host-configuration/ansible/roles/temporal/*`.
 - Temporal self-hosted security and mTLS configuration:
   <https://docs.temporal.io/self-hosted-guide/security>.

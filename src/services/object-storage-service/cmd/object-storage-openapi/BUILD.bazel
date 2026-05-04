@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "object-storage-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/object-storage-service/cmd/object-storage-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/object-storage-service/internal/api"],
+)
+
+go_binary(
+    name = "object-storage-openapi",
+    embed = [":object-storage-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

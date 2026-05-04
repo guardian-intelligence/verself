@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "iam-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/iam-service/cmd/iam-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/iam-service/internal/api"],
+)
+
+go_binary(
+    name = "iam-openapi",
+    embed = [":iam-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "schema",
+    srcs = ["embed.go"],
+    embedsrcs = ["verself.zed"],
+    importpath = "github.com/verself/iam-service/schema",
+    visibility = ["//src/services/iam-service:__subpackages__"],
+)
+
+filegroup(
+    name = "zed",
+    srcs = ["verself.zed"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":schema",
+    visibility = ["//src/services/iam-service:__subpackages__"],
+)

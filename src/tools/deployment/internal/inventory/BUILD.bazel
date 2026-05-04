@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "inventory",
+    srcs = ["inventory.go"],
+    importpath = "github.com/verself/deployment-tools/internal/inventory",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":inventory",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)

@@ -4,11 +4,11 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/host-configuration/ansible/group_vars/all/topology/` and service-owned Nomad metadata under each deployable package. Host firewall files are authored in `src/host-configuration/ansible/host-files/`. Bazel-input artefacts are authored in their owner packages: `src/host-configuration/binaries/`, `src/dev-tools/binaries/`, and `src/vm-orchestrator/guest-images/`. Run `aspect operator edge --action=render` followed by `aspect operator edge --action=check` to materialize and validate the gitignored HAProxy artifacts under `templates/__generated/`.
+High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/host-configuration/ansible/group_vars/all/topology/` and service-owned Nomad metadata under each deployable package. Host firewall files are authored in `src/host-configuration/ansible/host-files/`. Bazel-input artefacts are authored in their owner packages: `src/host-configuration/binaries/`, `src/tools/dev/binaries/`, and `src/substrate/vm-orchestrator/guest-images/`. Run `aspect operator edge --action=render` followed by `aspect operator edge --action=check` to materialize and validate the gitignored HAProxy artifacts under `templates/__generated/`.
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
-Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Public specs generate customer/human `client` packages. SPIFFE-only service operations get their own committed internal OpenAPI specs and `internalclient` packages; callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated client so trace propagation and peer authorization stay centralized. Shared cross-service transfer contracts live in `src/domain-transfer-objects`; use them for Huma boundary DTOs, protobuf schemas, and generated-client contracts instead of service-local 64-bit JSON encodings.
+Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Public specs generate customer/human `client` packages. SPIFFE-only service operations get their own committed internal OpenAPI specs and `internalclient` packages; callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated client so trace propagation and peer authorization stay centralized. Shared cross-service transfer contracts live in `src/sdks/domain-transfer-objects`; use them for Huma boundary DTOs, protobuf schemas, and generated-client contracts instead of service-local 64-bit JSON encodings.
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):
@@ -33,9 +33,9 @@ Single-node is the default deployment — everything runs on one box with no rep
 
 ## Safety Rings
 
-- **Internet-Exposed:** frontend TanStack apps (`src/viteplus-monorepo/apps/*`), Go services (`src/sandbox-rental-service`, `src/mailbox-service`, `src/billing-service`'s webhook handler), Forgejo, Grafana. Hardened via nftables.
+- **Internet-Exposed:** frontend TanStack apps (`src/frontends/viteplus-monorepo/apps/*`), Go services (`src/services/sandbox-rental-service`, `src/services/mailbox-service`, `src/services/billing-service`'s webhook handler), Forgejo, Grafana. Hardened via nftables.
 - **Private Subnet / Linux Userspace:** internal Go services (billing-service), databases (PostgreSQL, ClickHouse, TigerBeetle), self-hosted platform components (Zitadel, Stalwart).
-- **Linux Root:** ZFS, `src/vm-orchestrator`.
+- **Linux Root:** ZFS, `src/substrate/vm-orchestrator`.
 
 ## Self-Hosting and Third-Party Providers
 
@@ -49,7 +49,7 @@ Hard product requirement: everything self-hosted. Exceptions:
 
 ## Auth and IAM
 
-Zitadel is the sole IdP for humans, organizations, and customer/API credentials. All public Go service APIs import `src/auth-middleware/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE (see [workload-identity.md](architecture/workload-identity.md)); Zitadel machine users are not used for repo-owned service-to-service calls.
+Zitadel is the sole IdP for humans, organizations, and customer/API credentials. All public Go service APIs import `src/services/auth-middleware/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE (see [workload-identity.md](architecture/workload-identity.md)); Zitadel machine users are not used for repo-owned service-to-service calls.
 
 Auth at the web application level is treated only as a UX concern. Authentication and authorization happen in services validating JWTs and calling out to Zitadel, and sometimes at the DB level. Any violation of this principle is a critical security concern.
 
@@ -65,11 +65,11 @@ ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative 
 
 ## Billing
 
-Credit-based subscription billing with entitlements — a prepaid + metered hybrid. Monthly subscriptions grant entitlements like credits, access to digital goods, software licenses, and priority lanes; credits are consumed via metering events (token inference, vCPU/RAM/disk/network usage, build minutes). Full model: `src/billing-service/docs/billing-architecture.md`.
+Credit-based subscription billing with entitlements — a prepaid + metered hybrid. Monthly subscriptions grant entitlements like credits, access to digital goods, software licenses, and priority lanes; credits are consumed via metering events (token inference, vCPU/RAM/disk/network usage, build minutes). Full model: `src/services/billing-service/docs/billing-architecture.md`.
 
 ## Inbound Mail
 
-Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-service model: `src/mailbox-service/docs/inbound-mail.md`.
+Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-service model: `src/services/mailbox-service/docs/inbound-mail.md`.
 
 ## Supply Chain
 

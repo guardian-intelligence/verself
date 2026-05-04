@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "jmap",
+    srcs = [
+        "changes.go",
+        "client.go",
+        "eventsource.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/mailbox-service/internal/jmap",
+    visibility = ["//src/services/mailbox-service:__subpackages__"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":jmap",
+    visibility = ["//src/services/mailbox-service:__subpackages__"],
+)
