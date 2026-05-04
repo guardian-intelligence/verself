@@ -12,47 +12,67 @@ is enforced by absence: do not reintroduce shortcut tasks for things
 """
 
 load(
+    ".aspect/tasks/artifacts.axl",
+    artifacts_admission_evidence = "admission_evidence",
+    artifacts_evidence = "evidence",
+    artifacts_inventory = "inventory",
+)
+load(
     ".aspect/tasks/bazel.axl",
     bazel_gazelle = "gazelle",
     bazel_tidy = "tidy",
     bazel_update = "update",
 )
 load(
-    ".aspect/tasks/provision.axl",
-    provision_apply = "apply",
-    provision_destroy = "destroy",
+    ".aspect/tasks/billing.axl",
+    billing_clock = "clock",
+    billing_documents = "documents",
+    billing_events = "events",
+    billing_finalizations = "finalizations",
+    billing_seed = "seed",
+    billing_state = "state",
+)
+load(".aspect/tasks/check.axl", "check")
+load(
+    ".aspect/tasks/db.axl",
+    db_ch_query = "ch_query",
+    db_ch_schemas = "ch_schemas",
+    db_pg_list = "pg_list",
+    db_pg_query = "pg_query",
+    db_pg_shell = "pg_shell",
+    db_tb_lookup_account = "tb_lookup_account",
+    db_tb_query_accounts = "tb_query_accounts",
+    db_tb_shell = "tb_shell",
+)
+load(".aspect/tasks/deploy.axl", "deploy")
+load(".aspect/tasks/detect_intrusions.axl", "detect_intrusions")
+load(
+    ".aspect/tasks/dev.axl",
+    dev_hooks_install = "hooks_install",
+    dev_install = "install",
+    dev_sops_init = "sops_init",
+    dev_verself_web = "verself_web",
 )
 load(
     ".aspect/tasks/host_configuration.axl",
     host_configuration_edit_secrets = "edit_secrets",
 )
-load(".aspect/tasks/deploy.axl", "deploy")
 load(
-    ".aspect/tasks/artifacts.axl",
-    artifacts_admission_evidence = "admission_evidence",
-    artifacts_evidence = "evidence",
-    artifacts_inventory = "inventory",
-    artifacts_publish = "publish",
+    ".aspect/tasks/mail.axl",
+    mail_accounts = "accounts",
+    mail_code = "code",
+    mail_list = "list_task",
+    mail_mailboxes = "mailboxes",
+    mail_passwords = "passwords",
+    mail_read = "read",
+    mail_send = "send",
 )
+load(".aspect/tasks/observe.axl", "observe")
 load(
-    ".aspect/tasks/db.axl",
-    db_pg_list = "pg_list",
-    db_pg_shell = "pg_shell",
-    db_pg_query = "pg_query",
-    db_ch_query = "ch_query",
-    db_ch_schemas = "ch_schemas",
-    db_tb_shell = "tb_shell",
-    db_tb_query_accounts = "tb_query_accounts",
-    db_tb_lookup_account = "tb_lookup_account",
-)
-load(".aspect/tasks/check.axl", "check")
-load(".aspect/tasks/tidy.axl", "tidy")
-load(
-    ".aspect/tasks/dev.axl",
-    dev_install = "install",
-    dev_sops_init = "sops_init",
-    dev_hooks_install = "hooks_install",
-    dev_verself_web = "verself_web",
+    ".aspect/tasks/operator.axl",
+    operator_device = "device",
+    operator_edge = "edge",
+    operator_platform = "platform",
 )
 load(
     ".aspect/tasks/persona.axl",
@@ -60,37 +80,17 @@ load(
     persona_user_state = "user_state",
 )
 load(
-    ".aspect/tasks/billing.axl",
-    billing_seed = "seed",
-    billing_clock = "clock",
-    billing_state = "state",
-    billing_documents = "documents",
-    billing_finalizations = "finalizations",
-    billing_events = "events",
+    ".aspect/tasks/provision.axl",
+    provision_apply = "apply",
+    provision_destroy = "destroy",
 )
-load(
-    ".aspect/tasks/mail.axl",
-    mail_list = "list_task",
-    mail_accounts = "accounts",
-    mail_mailboxes = "mailboxes",
-    mail_code = "code",
-    mail_read = "read",
-    mail_send = "send",
-    mail_passwords = "passwords",
-)
-load(".aspect/tasks/observe.axl", "observe")
-load(".aspect/tasks/detect_intrusions.axl", "detect_intrusions")
-load(
-    ".aspect/tasks/operator.axl",
-    operator_device = "device",
-    operator_edge = "edge",
-    operator_platform = "platform",
-)
+load(".aspect/tasks/release.axl", release_publish = "publish")
+load(".aspect/tasks/tidy.axl", "tidy")
 
 def config(ctx):
     # Top-level tasks.
     ctx.tasks.add(deploy)
-    ctx.tasks.add(artifacts_publish)
+    ctx.tasks.add(release_publish)
     ctx.tasks.add(artifacts_inventory)
     ctx.tasks.add(artifacts_evidence)
     ctx.tasks.add(artifacts_admission_evidence)

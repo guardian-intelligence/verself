@@ -1,14 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "render",
-    srcs = ["render.go"],
-    importpath = "github.com/verself/deployment-tools/internal/render",
+    name = "nomadrelease",
+    srcs = ["release.go"],
+    importpath = "github.com/verself/deployment-tools/internal/nomadrelease",
     visibility = ["//src/tools/deployment:__subpackages__"],
 )
 
 alias(
     name = "go_default_library",
-    actual = ":render",
+    actual = ":nomadrelease",
     visibility = ["//src/tools/deployment:__subpackages__"],
 )

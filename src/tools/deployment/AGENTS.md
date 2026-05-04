@@ -15,15 +15,19 @@ packages, not this deployment orchestrator.
   baggage so every span this binary creates carries `verself.deploy_run_key`,
   `verself.deploy_id`, `verself.site`, `verself.author`.
 - `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
+- `internal/nomadrelease/` — typed release manifest contract between Bazel's
+  build/publish phase and deploy's consume-only Nomad submission path.
+- `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
   Uses `Plan` → `EnforceRegister` for CAS-safe submit, then mirrors the
   upstream `nomad deployment status -monitor` blocking-query loop on
   `Deployments.Info`.
 
 ## Phase boundaries
 
-This module owns deploy orchestration: BEP-driven artifact resolution,
+This module owns deploy orchestration: published Nomad release consumption,
 Nomad submit/monitor, streaming Ansible event capture, identity propagation,
-and ClickHouse deploy evidence rows.
+and ClickHouse deploy evidence rows. Release publication is a separate command
+that lets deploy fail fast when the requested SHA was not built.
 
 ## Conventions
 

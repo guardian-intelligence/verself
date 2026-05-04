@@ -33,22 +33,27 @@ func LoadSpec(path string) (*Spec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
+	return ParseSpec(data, path)
+}
+
+// ParseSpec validates a resolved Nomad job spec already held in memory.
+func ParseSpec(data []byte, source string) (*Spec, error) {
 	var env struct {
 		Job *api.Job `json:"Job"`
 	}
 	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
+		return nil, fmt.Errorf("decode %s: %w", source, err)
 	}
 	if env.Job == nil {
-		return nil, fmt.Errorf("%s: missing top-level Job object", path)
+		return nil, fmt.Errorf("%s: missing top-level Job object", source)
 	}
 	if env.Job.ID == nil || *env.Job.ID == "" {
-		return nil, fmt.Errorf("%s: Job.ID is required", path)
+		return nil, fmt.Errorf("%s: Job.ID is required", source)
 	}
 	artifact := env.Job.Meta["artifact_sha256"]
 	specDigest := env.Job.Meta["spec_sha256"]
 	if artifact == "" || specDigest == "" {
-		return nil, fmt.Errorf("%s: Job.Meta must include artifact_sha256 and spec_sha256", path)
+		return nil, fmt.Errorf("%s: Job.Meta must include artifact_sha256 and spec_sha256", source)
 	}
 	return &Spec{
 		Job:            env.Job,

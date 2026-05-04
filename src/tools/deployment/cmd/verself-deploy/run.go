@@ -215,12 +215,11 @@ func runDeployBody(
 		return 1
 	}
 
-	// 3. Nomad fan-out: Bazel resolves the whole graph, and Nomad submit
-	// skips jobs whose resolver-stamped spec/artifact digests are current.
-	if err := deployAffected(ctx, rt, span, site, repoRoot, false); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad deploy-affected failed: %v\n", err)
+	// 3. Nomad deploy: deploy consumes the already-published release for sha.
+	if err := deployPublishedRelease(ctx, rt, span, site, repoRoot, sha); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy run: nomad release deploy failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, "nomad"),
-			"nomad deploy-affected: "+err.Error())
+			"nomad release deploy: "+err.Error())
 		return 1
 	}
 	components = append(components, "nomad")

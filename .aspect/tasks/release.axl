@@ -1,0 +1,100 @@
+"""aspect release publish --site=prod [--sha=<rev>]
+
+Builds the site Nomad release for a git SHA and uploads its content-addressed
+artifacts plus release.json to the private Garage artifact origin. Deploy only
+consumes an already-published release for the requested SHA.
+"""
+
+load(
+    ".aspect/lib/helpers.axl",
+    "DEFAULT_SITE",
+    "build_verself_deploy",
+    "checked_spawn",
+    "git_head",
+    "resolve_sha",
+    "site_inventory_source",
+    "ws_path",
+)
+
+def _copy_inventory_to_worktree(ctx, site, wt):
+    inv_rel = site_inventory_source(site)
+    inv_abs = ws_path(ctx, inv_rel)
+    rc = checked_spawn(ctx, "test", ["-f", inv_abs], label = "test -f " + inv_rel)
+    if rc != 0:
+        ctx.std.io.stderr.write("ERROR: " + inv_rel + " not found. Run: aspect provision apply\n")
+        return 1
+    rc = checked_spawn(
+        ctx,
+        "mkdir",
+        ["-p", wt + "/src/host-configuration/ansible"],
+        label = "mkdir worktree inventory dir",
+    )
+    if rc != 0:
+        return rc
+    return checked_spawn(
+        ctx,
+        "cp",
+        [inv_abs, wt + "/" + inv_rel],
+        label = "copy " + inv_rel + " into release worktree",
+    )
+
+def _publish_one(ctx, site, sha, repo_root):
+    bin = build_verself_deploy(ctx)
+    if bin == "":
+        return 1
+    return checked_spawn(
+        ctx,
+        bin,
+        ["release", "publish", "--site=" + site, "--sha=" + sha, "--repo-root=" + repo_root],
+        cwd = repo_root,
+        label = "verself-deploy release publish --site=" + site + " --sha=" + sha[:12],
+    )
+
+def _publish_in_worktree(ctx, site, sha):
+    wt = "/tmp/verself-release-" + sha[:12]
+    _ = checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
+    rc = checked_spawn(
+        ctx,
+        "git",
+        ["worktree", "add", "--detach", wt, sha],
+        label = "git worktree add " + wt,
+    )
+    if rc != 0:
+        return rc
+    rc = _copy_inventory_to_worktree(ctx, site, wt)
+    if rc == 0:
+        rc = checked_spawn(
+            ctx,
+            "aspect",
+            ["release", "publish", "--site=" + site],
+            cwd = wt,
+            label = "aspect release publish (worktree " + sha[:12] + ")",
+        )
+    _ = checked_spawn(
+        ctx,
+        "git",
+        ["worktree", "remove", "--force", wt],
+        label = "git worktree remove " + wt,
+    )
+    return rc
+
+def _publish_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    sha = resolve_sha(ctx, ctx.args.sha or "")
+    if sha == "":
+        return 1
+    head = git_head(ctx)
+    if sha != head:
+        return _publish_in_worktree(ctx, site, sha)
+    return _publish_one(ctx, site, sha, ws_path(ctx))
+
+publish = task(
+    implementation = _publish_impl,
+    name = "publish",
+    group = ["release"],
+    summary = "Build and publish the immutable Nomad release for a git SHA.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "sha": args.string(default = "", description = "Git SHA or symbolic ref to publish. Defaults to HEAD."),
+    },
+)

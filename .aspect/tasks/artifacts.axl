@@ -1,40 +1,12 @@
-"""aspect artifacts publish --site=prod
-aspect artifacts inventory
+"""aspect artifacts inventory
 aspect artifacts evidence --run-key=<deploy-run-key>
 aspect artifacts admission-evidence --run-key=<deploy-run-key>
 
-Builds the resolved Nomad artifact set and uploads every content-addressed
-tarball to the private Garage artifact origin. Deployment calls the same
-publisher before submitting jobs; this task exists for operator rehearsal and
-for verifying Garage artifact substrate independently. Artifact admission and
-install verification are internal deploy-flow steps, not operator-facing deploy
-choices.
+Artifact admission and install verification are internal deploy-flow steps, not
+operator-facing deploy choices.
 """
 
 load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "build_verself_deploy", "checked_spawn", "ws_path")
-
-def _publish_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    bin = build_verself_deploy(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
-        ctx,
-        bin,
-        ["nomad", "deploy-affected", "--site=" + site, "--repo-root=" + ws_path(ctx), "--publish-only"],
-        cwd = ws_path(ctx),
-        label = "verself-deploy nomad deploy-affected --publish-only --site=" + site,
-    )
-
-publish = task(
-    implementation = _publish_impl,
-    name = "publish",
-    group = ["artifacts"],
-    summary = "Build and publish content-addressed Nomad artifacts to private Garage.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-    },
-)
 
 def _inventory_impl(ctx):
     bin = build_verself_deploy(ctx)

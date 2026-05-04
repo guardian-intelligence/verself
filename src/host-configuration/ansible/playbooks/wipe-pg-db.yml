@@ -1,6 +1,6 @@
 ---
 # Wipe one managed PostgreSQL service database and recreate substrate state.
-# Application migrations run through nomad deploy-affected after this playbook.
+# Application migrations run through the published Nomad release after this playbook.
 # For Electric-published databases, run substrate convergence after migrations
 # so the Electric role can bind publications to the recreated tables.
 #

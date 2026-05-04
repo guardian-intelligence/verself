@@ -19,6 +19,7 @@ load(
     "checked_spawn",
     "git_head",
     "resolve_sha",
+    "site_inventory_source",
     "update_edge_generated",
     "ws_path",
 )
@@ -51,7 +52,8 @@ def _deploy_one(ctx, site, sha):
     if bin == "":
         return 1
     deploy_rc = checked_spawn(
-        ctx, bin,
+        ctx,
+        bin,
         deploy_args,
         cwd = ws_path(ctx),
         label = "verself-deploy run --site=" + site,
@@ -67,21 +69,39 @@ def _deploy_in_worktree(ctx, site, sha):
     wt = "/tmp/verself-deploy-" + sha[:12]
     _ = checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
     rc = checked_spawn(
-        ctx, "git",
+        ctx,
+        "git",
         ["worktree", "add", "--detach", wt, sha],
         label = "git worktree add " + wt,
     )
     if rc != 0:
         return rc
+    inv_rel = site_inventory_source(site)
+    inv_abs = ws_path(ctx, inv_rel)
+    rc = checked_spawn(ctx, "test", ["-f", inv_abs], label = "test -f " + inv_rel)
+    if rc != 0:
+        ctx.std.io.stderr.write("ERROR: " + inv_rel + " not found. Run: aspect provision apply\n")
+        _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
+        return 1
+    rc = checked_spawn(ctx, "mkdir", ["-p", wt + "/src/host-configuration/ansible"], label = "mkdir worktree inventory dir")
+    if rc != 0:
+        _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
+        return rc
+    rc = checked_spawn(ctx, "cp", [inv_abs, wt + "/" + inv_rel], label = "copy " + inv_rel + " into deploy worktree")
+    if rc != 0:
+        _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
+        return rc
     inner_args = ["deploy", "--site=" + site]
     deploy_rc = checked_spawn(
-        ctx, "aspect",
+        ctx,
+        "aspect",
         inner_args,
         cwd = wt,
         label = "aspect deploy (worktree " + sha[:12] + ")",
     )
     _ = checked_spawn(
-        ctx, "git",
+        ctx,
+        "git",
         ["worktree", "remove", "--force", wt],
         label = "git worktree remove " + wt,
     )

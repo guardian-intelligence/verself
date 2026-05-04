@@ -7,7 +7,7 @@
 // here are implementation seams for typed AXL tasks and evidence assertions:
 //
 //	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
-//	verself-deploy nomad deploy-affected --site=<site> [--repo-root=<path>]
+//	verself-deploy release publish  --site=<site> --sha=<sha> [--repo-root=<path>]
 //	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
 //	verself-deploy supply-chain check --repo-root=<path>
 //	verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
@@ -40,6 +40,8 @@ func main() {
 		os.Exit(runRun(os.Args[2:]))
 	case "nomad":
 		os.Exit(runNomad(os.Args[2:]))
+	case "release":
+		os.Exit(runRelease(os.Args[2:]))
 	case "ansible":
 		os.Exit(runAnsible(os.Args[2:]))
 	case "artifacts":
@@ -64,7 +66,7 @@ func usage() {
 usage:
   verself-deploy run                  --site=<site> [--sha=<rev>]
   verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
-  verself-deploy nomad deploy-affected --site=<site> [--repo-root=<path>]
+  verself-deploy release publish      --site=<site> --sha=<sha> [--repo-root=<path>]
   verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
   verself-deploy artifacts assert-evidence --run-key=<deploy-run-key> [--site=<site>]
   verself-deploy supply-chain check   [--repo-root=<path>] [--policy=<path>]
@@ -73,19 +75,17 @@ usage:
   verself-deploy with-otel            --site=<site> -- <cmd> [args...]
 
 `+
-		"`run` is the AXL deploy entry point: identity, deploy evidence,\nAnsible site convergence, and affected Nomad fan-out happen inside this\nsingle process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
+		"`run` is the AXL deploy entry point: identity, deploy evidence,\nAnsible site convergence, and Nomad release submission happen inside this\nsingle process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
 }
 
 func runNomad(args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "verself-deploy nomad: missing subcommand (try `submit` or `deploy-affected`)")
+		fmt.Fprintln(os.Stderr, "verself-deploy nomad: missing subcommand (try `submit`)")
 		return 2
 	}
 	switch args[0] {
 	case "submit":
 		return runNomadSubmit(args[1:])
-	case "deploy-affected":
-		return runNomadDeployAffected(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad: unknown subcommand: %s\n", args[0])
 		return 2

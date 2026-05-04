@@ -1,9 +1,9 @@
-load(":jobs.bzl", "nomad_resolved_jobs")
+load(":release.bzl", "nomad_release")
 
 exports_files([
     "artifact.bzl",
-    "jobs.bzl",
-    "resolve_jobs.py",
+    "link_release.py",
+    "release.bzl",
 ])
 
 filegroup(
@@ -14,8 +14,8 @@ filegroup(
 
 exports_files(["sites/prod/jobs/index.json"])
 
-nomad_resolved_jobs(
-    name = "prod_nomad_jobs",
+nomad_release(
+    name = "prod_nomad_release",
     artifacts = {
         "//src/services/billing-service/cmd/billing-service:billing-service_nomad_artifact": "billing-service",
         "//src/frontends/viteplus-monorepo:nodejs_runtime_nomad_artifact": "nodejs-runtime",
@@ -38,4 +38,5 @@ nomad_resolved_jobs(
     },
     index = "sites/prod/jobs/index.json",
     job_specs = [":prod_nomad_job_specs"],
+    site = "prod",
 )

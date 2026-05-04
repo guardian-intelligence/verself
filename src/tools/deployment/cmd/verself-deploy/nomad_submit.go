@@ -113,6 +113,10 @@ func submitOnce(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 	if err != nil {
 		return err
 	}
+	return submitSpec(ctx, parent, client, spec, evidence)
+}
+
+func submitSpec(ctx context.Context, parent trace.Span, client *nomadclient.Client, spec *nomadclient.Spec, evidence nomadJobEvidenceWriter) error {
 	parent.SetAttributes(attribute.String("nomad.job_id", spec.JobID()))
 
 	stageStartedAt := time.Now()

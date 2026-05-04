@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""Resolve authored Nomad specs into Bazel deploy artifacts."""
+"""Link authored Nomad jobs and Bazel artifacts into one release JSON."""
 
 import argparse
 import hashlib
 import json
-import os
-import shutil
 import sys
 from pathlib import Path
 
 
 ARTIFACT_PREFIX = "verself-artifact://"
+SCHEMA_VERSION = 1
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--site", required=True)
+    parser.add_argument("--jobs-target", required=True)
     parser.add_argument("--jobs-index", required=True)
-    parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--out", required=True)
     parser.add_argument("--artifact", action="append", default=[], help="output=path")
     parser.add_argument(
         "--embedded-template",
@@ -40,25 +41,15 @@ def canonical_digest(value: object) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def parse_artifacts(values: list[str]) -> dict[str, Path]:
-    out = {}
+def parse_kv_paths(values: list[str], label: str) -> dict[str, Path]:
+    out: dict[str, Path] = {}
     for item in values:
         name, sep, raw_path = item.partition("=")
         if not sep or not name or not raw_path:
-            raise ValueError(f"artifact must be output=path, got {item!r}")
+            raise ValueError(f"{label} must be name=path, got {item!r}")
+        if name in out:
+            raise ValueError(f"duplicate {label} {name!r}")
         out[name] = Path(raw_path)
-    return out
-
-
-def parse_embedded_templates(values: list[str]) -> dict[str, Path]:
-    out: dict[str, Path] = {}
-    for item in values:
-        placeholder, sep, raw_path = item.partition("=")
-        if not sep or not placeholder or not raw_path:
-            raise ValueError(f"embedded template must be placeholder=path, got {item!r}")
-        if placeholder in out:
-            raise ValueError(f"duplicate embedded template placeholder {placeholder!r}")
-        out[placeholder] = Path(raw_path)
     return out
 
 
@@ -115,7 +106,7 @@ def artifact_delivery(index: dict) -> dict[str, object]:
     }
 
 
-def resolve_artifacts(spec: dict, artifact_bindings: dict[str, dict[str, str]]) -> set[str]:
+def resolve_artifacts(spec: dict, artifact_bindings: dict[str, dict[str, object]]) -> set[str]:
     job = spec.get("Job")
     if not isinstance(job, dict):
         raise ValueError("spec.Job missing or wrong type")
@@ -130,7 +121,7 @@ def resolve_artifacts(spec: dict, artifact_bindings: dict[str, dict[str, str]]) 
                 binding = artifact_bindings.get(output)
                 if binding is None:
                     raise ValueError(f"artifact {output!r} referenced by spec but not provided to Bazel rule")
-                stanza["GetterSource"] = binding["url"]
+                stanza["GetterSource"] = binding["getter_source"]
                 getter_options = dict(binding["getter_options"])
                 getter_options["checksum"] = binding["checksum"]
                 stanza["GetterOptions"] = getter_options
@@ -189,17 +180,13 @@ def ordered_components(components: list[dict]) -> list[dict]:
 
 def main() -> int:
     args = parse_args()
-    artifacts_by_output = parse_artifacts(args.artifact)
-    embedded_template_paths = parse_embedded_templates(args.embedded_template)
+    artifacts_by_output = parse_kv_paths(args.artifact, "artifact")
+    embedded_template_paths = parse_kv_paths(args.embedded_template, "embedded template")
     embedded_templates = {
         placeholder: path.read_text(encoding="utf-8")
         for placeholder, path in embedded_template_paths.items()
     }
     used_embedded_templates: set[str] = set()
-    out_dir = Path(args.out_dir)
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
 
     index_path = Path(args.jobs_index)
     index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -209,8 +196,8 @@ def main() -> int:
     ordered = ordered_components(components)
     delivery = artifact_delivery(index)
 
-    artifact_bindings = {}
-    publish_artifacts_by_key = {}
+    artifact_bindings: dict[str, dict[str, object]] = {}
+    artifacts_by_key: dict[tuple[str, str], dict[str, object]] = {}
     for component in components:
         for artifact in component.get("artifacts", []):
             output = artifact.get("output", "")
@@ -219,29 +206,25 @@ def main() -> int:
                 raise ValueError(f"jobs/index.json references artifact {output!r}, but Bazel rule did not provide it")
             digest = sha256_file(path)
             key = f"{delivery['key_prefix']}/{digest}/{output}.tar"
-            url = f"{delivery['source_prefix']}/{key}"
+            getter_source = f"{delivery['source_prefix']}/{key}"
             checksum = f"{delivery['checksum_algorithm']}:{digest}"
-            artifact_bindings[output] = {
-                "path": str(path),
-                "sha256": digest,
-                "url": url,
-                "key": key,
-                "bucket": delivery["bucket"],
-                "checksum": checksum,
-                "getter_options": delivery["getter_options"],
-            }
-            publish_artifacts_by_key[(delivery["bucket"], key)] = {
+            binding = {
                 "output": output,
                 "local_path": str(path),
                 "sha256": digest,
                 "bucket": delivery["bucket"],
                 "key": key,
-                "getter_source": url,
+                "getter_source": getter_source,
+                "getter_options": delivery["getter_options"],
+                "checksum": checksum,
             }
+            artifact_bindings[output] = binding
+            artifacts_by_key[(str(delivery["bucket"]), key)] = binding
 
     authored_jobs_dir = index_path.parent
     referenced = set()
-    submit_rows = []
+    jobs = []
+    submit_order = []
     for component in ordered:
         job_id = component["job_id"]
         spec_path = authored_jobs_dir / f"{job_id}.nomad.json"
@@ -254,15 +237,22 @@ def main() -> int:
                 {
                     "output": output,
                     "sha256": artifact_bindings[output]["sha256"],
-                    "url": artifact_bindings[output]["url"],
+                    "getter_source": artifact_bindings[output]["getter_source"],
                 }
                 for output in sorted(seen)
             ]
         )
         stamp_meta(spec, artifact_digest)
-        resolved_path = out_dir / f"{job_id}.nomad.json"
-        resolved_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        submit_rows.append((job_id, resolved_path.name))
+        meta = spec["Job"]["Meta"]
+        jobs.append(
+            {
+                "job_id": job_id,
+                "spec_sha256": meta["spec_sha256"],
+                "artifact_sha256": meta["artifact_sha256"],
+                "spec": spec,
+            }
+        )
+        submit_order.append(job_id)
 
     extras = sorted(set(artifact_bindings) - referenced)
     if extras:
@@ -271,18 +261,28 @@ def main() -> int:
     if unused_templates:
         raise ValueError(f"embedded template placeholders were provided but not used: {', '.join(unused_templates)}")
 
-    publish_manifest = {
+    release = {
+        "schema_version": SCHEMA_VERSION,
+        "site": args.site,
+        "sha": "",
+        "jobs_target": args.jobs_target,
         "artifact_delivery": index["artifact_delivery"],
-        "artifacts": sorted(publish_artifacts_by_key.values(), key=lambda row: (row["bucket"], row["key"], row["output"])),
+        "artifacts": [
+            {
+                "output": item["output"],
+                "local_path": item["local_path"],
+                "sha256": item["sha256"],
+                "bucket": item["bucket"],
+                "key": item["key"],
+                "getter_source": item["getter_source"],
+                "getter_options": item["getter_options"],
+            }
+            for item in sorted(artifacts_by_key.values(), key=lambda row: (row["bucket"], row["key"], row["output"]))
+        ],
+        "jobs": jobs,
+        "submit_order": submit_order,
     }
-    (out_dir / "publish.json").write_text(
-        json.dumps(publish_manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (out_dir / "submit.tsv").write_text(
-        "".join("\t".join(row) + "\n" for row in submit_rows),
-        encoding="utf-8",
-    )
+    Path(args.out).write_text(json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
 
 
@@ -290,5 +290,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"resolve_jobs.py: {exc}", file=sys.stderr)
+        print(f"link_release.py: {exc}", file=sys.stderr)
         raise SystemExit(1)
