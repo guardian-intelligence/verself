@@ -42,13 +42,17 @@ func (o Outputs) GeneratedArtifacts(artifacts Artifacts) []GeneratedArtifact {
 	}
 }
 
-type BackendID string
-type ServerGUID string
-type UpstreamKey string
+type (
+	BackendID   string
+	ServerGUID  string
+	UpstreamKey string
+)
 
-type OriginKind string
-type SecurityProfile string
-type ProxyProtocol string
+type (
+	OriginKind      string
+	SecurityProfile string
+	ProxyProtocol   string
+)
 
 const (
 	OriginBrowser   OriginKind = "browser_origin"

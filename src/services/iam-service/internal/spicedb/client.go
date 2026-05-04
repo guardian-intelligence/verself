@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	authzed "github.com/authzed/authzed-go/v1"
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
+	authzed "github.com/authzed/authzed-go/v1"
 	"github.com/authzed/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
