@@ -180,12 +180,29 @@
 
 # --- Host networking (native nftables) ---
 
+- name: Gather network facts for implicit Firecracker uplink
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - network
+  when: firecracker_host_uplink_interface | default('', true) | length == 0
+
+- name: Require default IPv4 interface for implicit Firecracker uplink
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.default_ipv4 is defined
+      - ansible_facts.default_ipv4.interface is defined
+      - ansible_facts.default_ipv4.interface | length > 0
+    fail_msg: >-
+      Set firecracker_host_uplink_interface explicitly or ensure the host has a default IPv4 route.
+  when: firecracker_host_uplink_interface | default('', true) | length == 0
+
 - name: Resolve uplink interface for Firecracker NAT
   ansible.builtin.set_fact:
     firecracker_resolved_uplink: >-
       {{ firecracker_host_uplink_interface
-         if firecracker_host_uplink_interface != ''
-         else ansible_facts['default_ipv4']['interface'] }}
+         if (firecracker_host_uplink_interface | default('', true) | length > 0)
+         else ansible_facts.default_ipv4.interface }}
 
 - name: Persist IP forwarding via sysctl
   ansible.posix.sysctl:
