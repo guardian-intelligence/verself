@@ -8,7 +8,7 @@
     "Name": "sandbox-rental",
     "TaskGroups": [
       {
-        "Count": 1,
+        "Count": 2,
         "Name": "sandbox-rental-service",
         "Networks": [
           {
@@ -161,13 +161,31 @@
                 "AddressMode": "auto",
                 "Name": "sandbox-rental-internal-https",
                 "PortLabel": "internal_https",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "tcp",
+                    "PortLabel": "internal_https",
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "sandbox-rental-service-tcp-internal_https"
+                  }
+                ]
               },
               {
                 "AddressMode": "auto",
                 "Name": "sandbox-rental-public-http",
                 "PortLabel": "public_http",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "tcp",
+                    "PortLabel": "public_http",
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "sandbox-rental-service-tcp-public_http"
+                  }
+                ]
               }
             ],
             "Templates": [
@@ -181,7 +199,16 @@
             "User": "sandbox_rental"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "checks",
+          "MinHealthyTime": 3000000000,
+          "HealthyDeadline": 300000000000,
+          "ProgressDeadline": 600000000000,
+          "Canary": 1,
+          "AutoRevert": true,
+          "AutoPromote": true
+        }
       },
       {
         "Count": 1,
@@ -239,7 +266,16 @@
             "User": "sandbox_rental"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "task_states",
+          "MinHealthyTime": 1000000000,
+          "HealthyDeadline": 30000000000,
+          "ProgressDeadline": 60000000000,
+          "Canary": 0,
+          "AutoRevert": true,
+          "AutoPromote": false
+        }
       }
     ],
     "Type": "service"

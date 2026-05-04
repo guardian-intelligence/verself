@@ -195,15 +195,15 @@ func submitResolvedEntries(ctx context.Context, rt *runtime.Runtime, site, repoR
 	}
 
 	for _, entry := range entries {
-		if err := submitOneEntry(ctx, rt.Tracer, client, jobsDir, entry); err != nil {
+		if err := submitOneEntry(ctx, rt, client, jobsDir, entry); err != nil {
 			return fmt.Errorf("%s: %w", entry.JobID, err)
 		}
 	}
 	return nil
 }
 
-func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclient.Client, jobsDir string, entry render.SubmitEntry) error {
-	ctx, span := tracer.Start(ctx, "verself_deploy.nomad.submit",
+func submitOneEntry(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, jobsDir string, entry render.SubmitEntry) error {
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.submit",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", entry.JobID),
@@ -216,7 +216,12 @@ func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclien
 	timeoutCtx, cancel := context.WithTimeout(ctx, deployAffectedSubmitTimeout)
 	defer cancel()
 
-	if err := submitOnce(timeoutCtx, span, client, specPath); err != nil {
+	evidence := nomadJobEvidenceWriter{
+		db:     rt.DeployDB,
+		runKey: rt.Identity.RunKey(),
+		site:   rt.Site,
+	}
+	if err := submitOnce(timeoutCtx, span, client, specPath, evidence); err != nil {
 		recordFailure(span, err)
 		return err
 	}

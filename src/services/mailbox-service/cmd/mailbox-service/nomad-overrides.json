@@ -1,9 +1,0 @@
-{
-  "tasks": {
-    "mailbox-service": {
-      "checks": [
-        {"Type": "http", "Path": "/readyz", "PortLabel": "public_http", "Interval": "1s", "Timeout": "3s"}
-      ]
-    }
-  }
-}

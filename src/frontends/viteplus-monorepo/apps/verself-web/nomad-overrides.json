@@ -1,9 +1,0 @@
-{
-  "tasks": {
-    "verself-web": {
-      "checks": [
-        { "Type": "http", "Path": "/", "PortLabel": "http", "Interval": "1s", "Timeout": "3s" }
-      ]
-    }
-  }
-}

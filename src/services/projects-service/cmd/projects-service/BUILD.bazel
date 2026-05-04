@@ -31,5 +31,3 @@ nomad_binary_artifact(
     binary = ":projects-service",
     output = "projects-service",
 )
-
-exports_files(["nomad-overrides.json"])

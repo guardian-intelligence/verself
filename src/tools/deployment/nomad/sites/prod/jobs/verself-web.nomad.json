@@ -8,7 +8,7 @@
     "Name": "verself-web",
     "TaskGroups": [
       {
-        "Count": 1,
+        "Count": 2,
         "Name": "verself-web",
         "Networks": [
           {
@@ -79,7 +79,17 @@
                 "AddressMode": "auto",
                 "Name": "verself-web-http",
                 "PortLabel": "http",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "http",
+                    "Path": "/",
+                    "PortLabel": "http",
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "verself-web-http-http"
+                  }
+                ]
               }
             ],
             "Templates": [
@@ -93,7 +103,16 @@
             "User": "verself-web"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "checks",
+          "MinHealthyTime": 3000000000,
+          "HealthyDeadline": 300000000000,
+          "ProgressDeadline": 600000000000,
+          "Canary": 1,
+          "AutoRevert": true,
+          "AutoPromote": true
+        }
       }
     ],
     "Type": "service"

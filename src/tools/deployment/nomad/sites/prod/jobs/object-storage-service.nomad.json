@@ -8,7 +8,7 @@
     "Name": "object-storage-service",
     "TaskGroups": [
       {
-        "Count": 1,
+        "Count": 2,
         "Name": "object-storage-service",
         "Networks": [
           {
@@ -127,14 +127,35 @@
                 "AddressMode": "auto",
                 "Name": "object-storage-service-public-http",
                 "PortLabel": "public_http",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "http",
+                    "Path": "/healthz",
+                    "PortLabel": "public_http",
+                    "Protocol": "https",
+                    "TLSSkipVerify": true,
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "object-storage-service-http-public_http"
+                  }
+                ]
               }
             ],
             "Templates": null,
             "User": "object_storage_service"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "checks",
+          "MinHealthyTime": 3000000000,
+          "HealthyDeadline": 300000000000,
+          "ProgressDeadline": 600000000000,
+          "Canary": 1,
+          "AutoRevert": true,
+          "AutoPromote": true
+        }
       },
       {
         "Count": 1,
@@ -200,7 +221,16 @@
                 "AddressMode": "auto",
                 "Name": "object-storage-service-admin-http",
                 "PortLabel": "admin_http",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "tcp",
+                    "PortLabel": "admin_http",
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "object-storage-admin-tcp-admin_http"
+                  }
+                ]
               }
             ],
             "Templates": [
@@ -214,7 +244,16 @@
             "User": "object_storage_admin"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "checks",
+          "MinHealthyTime": 3000000000,
+          "HealthyDeadline": 300000000000,
+          "ProgressDeadline": 600000000000,
+          "Canary": 1,
+          "AutoRevert": true,
+          "AutoPromote": true
+        }
       }
     ],
     "Type": "service"

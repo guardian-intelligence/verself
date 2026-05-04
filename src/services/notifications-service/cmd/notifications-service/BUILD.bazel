@@ -32,5 +32,3 @@ nomad_binary_artifact(
     binary = ":notifications-service",
     output = "notifications-service",
 )
-
-exports_files(["nomad-overrides.json"])

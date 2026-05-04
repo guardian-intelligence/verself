@@ -25,11 +25,24 @@ const MonitorWaitTime = 10 * time.Second
 // same way no further waiting helps.
 const FailFastDeadAllocs = 3
 
+// MonitorResult is the terminal deployment shape that deploy evidence writes
+// to ClickHouse. It mirrors the operator-relevant fields from Nomad's
+// deployment object rather than exposing the full API type downstream.
+type MonitorResult struct {
+	DeploymentExists  bool
+	DeploymentID      string
+	DesiredTotal      int
+	HealthyTotal      int
+	UnhealthyTotal    int
+	PlacedTotal       int
+	TerminalStatus    string
+	StatusDescription string
+}
+
 // Monitor mirrors the upstream `nomad deployment status -monitor`
-// blocking-query loop on Deployments.Info. Returns nil when the
-// deployment terminates successfully; returns a *TerminalError when
-// the deployment ends in any non-successful state.
-func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) error {
+// blocking-query loop on Deployments.Info. It returns the terminal deployment
+// state and a *TerminalError when the deployment ends unsuccessfully.
+func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult, error) {
 	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.deployment_monitor",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
@@ -48,7 +61,7 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) error {
 	if sub.DeploymentID == "" {
 		span.SetAttributes(attribute.Bool("nomad.deployment.exists", false))
 		span.SetStatus(codes.Ok, "no deployment created (system/batch job)")
-		return nil
+		return MonitorResult{TerminalStatus: "none"}, nil
 	}
 	span.SetAttributes(attribute.String("nomad.deployment_id", sub.DeploymentID))
 
@@ -62,20 +75,20 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) error {
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return fmt.Errorf("deployment info %s: %w", sub.DeploymentID, err)
+			return MonitorResult{DeploymentExists: true, DeploymentID: sub.DeploymentID}, fmt.Errorf("deployment info %s: %w", sub.DeploymentID, err)
 		}
 		if dep == nil {
 			err := fmt.Errorf("deployment %s not found", sub.DeploymentID)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return err
+			return MonitorResult{DeploymentExists: true, DeploymentID: sub.DeploymentID}, err
 		}
 
 		switch dep.Status {
 		case api.DeploymentStatusSuccessful:
 			c.recordTerminalAttributes(span, dep, "successful")
 			span.SetStatus(codes.Ok, "")
-			return nil
+			return monitorResult(dep, "successful"), nil
 		case api.DeploymentStatusFailed,
 			api.DeploymentStatusCancelled,
 			api.DeploymentStatusBlocked:
@@ -89,7 +102,7 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) error {
 			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return err
+			return monitorResult(dep, dep.Status), err
 		}
 
 		// Still in flight. Surface progress on the span so a slow
@@ -115,7 +128,9 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) error {
 			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return err
+			result := monitorResult(dep, "fail_fast")
+			result.StatusDescription = fmt.Sprintf("%d allocs already failed", dead)
+			return result, err
 		}
 
 		// LastIndex advances the blocking query for the next round.
@@ -125,8 +140,22 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) error {
 		if err := ctx.Err(); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return err
+			return monitorResult(dep, dep.Status), err
 		}
+	}
+}
+
+func monitorResult(dep *api.Deployment, status string) MonitorResult {
+	desired, healthy, unhealthy, placed := tgTotals(dep)
+	return MonitorResult{
+		DeploymentExists:  true,
+		DeploymentID:      dep.ID,
+		DesiredTotal:      desired,
+		HealthyTotal:      healthy,
+		UnhealthyTotal:    unhealthy,
+		PlacedTotal:       placed,
+		TerminalStatus:    status,
+		StatusDescription: dep.StatusDescription,
 	}
 }
 

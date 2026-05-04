@@ -33,5 +33,3 @@ nomad_binary_artifact(
     binary = ":object-storage-service",
     output = "object-storage-service",
 )
-
-exports_files(["nomad-overrides.json"])

@@ -8,7 +8,7 @@
     "Name": "source-code-hosting-service",
     "TaskGroups": [
       {
-        "Count": 1,
+        "Count": 2,
         "Name": "source-code-hosting-service",
         "Networks": [
           {
@@ -131,7 +131,17 @@
                 "AddressMode": "auto",
                 "Name": "source-code-hosting-service-public-http",
                 "PortLabel": "public_http",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "http",
+                    "Path": "/readyz",
+                    "PortLabel": "public_http",
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "source-code-hosting-service-http-public_http"
+                  }
+                ]
               }
             ],
             "Templates": [
@@ -145,7 +155,16 @@
             "User": "source_code_hosting_service"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "checks",
+          "MinHealthyTime": 3000000000,
+          "HealthyDeadline": 300000000000,
+          "ProgressDeadline": 600000000000,
+          "Canary": 1,
+          "AutoRevert": true,
+          "AutoPromote": true
+        }
       }
     ],
     "Type": "service"

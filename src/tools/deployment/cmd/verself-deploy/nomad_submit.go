@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
@@ -79,7 +80,11 @@ func runNomadSubmit(args []string) int {
 		return 1
 	}
 
-	if err := submitOnce(monitorCtx, span, client, *specPath); err != nil {
+	if err := submitOnce(monitorCtx, span, client, *specPath, nomadJobEvidenceWriter{
+		db:     rt.DeployDB,
+		runKey: rt.Identity.RunKey(),
+		site:   rt.Site,
+	}); err != nil {
 		recordFailure(span, err)
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad submit: %v\n", err)
 		return 1
@@ -88,25 +93,78 @@ func runNomadSubmit(args []string) int {
 	return 0
 }
 
-func submitOnce(ctx context.Context, parent trace.Span, client *nomadclient.Client, specPath string) error {
+type nomadJobEvidenceWriter struct {
+	db     *deploydb.Client
+	runKey string
+	site   string
+}
+
+func (w nomadJobEvidenceWriter) record(ctx context.Context, ev deploydb.NomadJobEvent) error {
+	if w.db == nil {
+		return nil
+	}
+	ev.RunKey = w.runKey
+	ev.Site = w.site
+	return w.db.RecordNomadJobEvent(ctx, ev)
+}
+
+func submitOnce(ctx context.Context, parent trace.Span, client *nomadclient.Client, specPath string, evidence nomadJobEvidenceWriter) error {
 	spec, err := nomadclient.LoadSpec(specPath)
 	if err != nil {
 		return err
 	}
 	parent.SetAttributes(attribute.String("nomad.job_id", spec.JobID()))
 
+	stageStartedAt := time.Now()
 	decision, err := client.Decide(ctx, spec)
 	if err != nil {
+		if recordErr := evidence.record(ctx, deploydb.NomadJobEvent{
+			JobID:          spec.JobID(),
+			Kind:           deploydb.NomadJobEventSubmitFailed,
+			SpecSHA256:     spec.SpecDigest,
+			ArtifactSHA256: spec.ArtifactDigest,
+			DurationMs:     durationMillis(time.Since(stageStartedAt), "nomad decision duration"),
+			ErrorMessage:   err.Error(),
+		}); recordErr != nil {
+			return recordErr
+		}
 		return err
 	}
 	parent.SetAttributes(attribute.Bool("verself.noop", decision.NoOp))
+	if err := evidence.record(ctx, deploydb.NomadJobEvent{
+		JobID:               spec.JobID(),
+		Kind:                deploydb.NomadJobEventDecided,
+		SpecSHA256:          spec.SpecDigest,
+		ArtifactSHA256:      spec.ArtifactDigest,
+		PriorJobModifyIndex: decision.PriorJobModifyIndex,
+		PriorVersion:        decision.PriorVersion,
+		PriorStopped:        decision.PriorStopped,
+		NoOp:                decision.NoOp,
+		DurationMs:          durationMillis(time.Since(stageStartedAt), "nomad decision duration"),
+	}); err != nil {
+		return err
+	}
 	if decision.NoOp {
 		_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: %s already at desired digests; no submit\n", spec.JobID())
 		return nil
 	}
 
+	stageStartedAt = time.Now()
 	submitted, err := client.Submit(ctx, spec, decision.PriorJobModifyIndex)
 	if err != nil {
+		if recordErr := evidence.record(ctx, deploydb.NomadJobEvent{
+			JobID:               spec.JobID(),
+			Kind:                deploydb.NomadJobEventSubmitFailed,
+			SpecSHA256:          spec.SpecDigest,
+			ArtifactSHA256:      spec.ArtifactDigest,
+			PriorJobModifyIndex: decision.PriorJobModifyIndex,
+			PriorVersion:        decision.PriorVersion,
+			PriorStopped:        decision.PriorStopped,
+			DurationMs:          durationMillis(time.Since(stageStartedAt), "nomad submit duration"),
+			ErrorMessage:        err.Error(),
+		}); recordErr != nil {
+			return recordErr
+		}
 		return err
 	}
 	parent.SetAttributes(
@@ -116,8 +174,52 @@ func submitOnce(ctx context.Context, parent trace.Span, client *nomadclient.Clie
 	)
 	_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: %s submitted job_modify_index=%d eval_id=%s deployment_id=%s\n",
 		submitted.JobID, submitted.JobModifyIndex, submitted.EvalID, submitted.DeploymentID)
+	if err := evidence.record(ctx, deploydb.NomadJobEvent{
+		JobID:               spec.JobID(),
+		Kind:                deploydb.NomadJobEventSubmitted,
+		SpecSHA256:          spec.SpecDigest,
+		ArtifactSHA256:      spec.ArtifactDigest,
+		PriorJobModifyIndex: decision.PriorJobModifyIndex,
+		PriorVersion:        decision.PriorVersion,
+		PriorStopped:        decision.PriorStopped,
+		EvalID:              submitted.EvalID,
+		DeploymentID:        submitted.DeploymentID,
+		JobModifyIndex:      submitted.JobModifyIndex,
+		DurationMs:          durationMillis(time.Since(stageStartedAt), "nomad submit duration"),
+	}); err != nil {
+		return err
+	}
 
-	if err := client.Monitor(ctx, submitted); err != nil {
+	stageStartedAt = time.Now()
+	monitorResult, err := client.Monitor(ctx, submitted)
+	eventKind := deploydb.NomadJobEventDeploymentSucceeded
+	errorMessage := ""
+	if err != nil {
+		eventKind = deploydb.NomadJobEventDeploymentFailed
+		errorMessage = err.Error()
+	}
+	if recordErr := evidence.record(ctx, deploydb.NomadJobEvent{
+		JobID:               spec.JobID(),
+		Kind:                eventKind,
+		SpecSHA256:          spec.SpecDigest,
+		ArtifactSHA256:      spec.ArtifactDigest,
+		PriorJobModifyIndex: decision.PriorJobModifyIndex,
+		PriorVersion:        decision.PriorVersion,
+		PriorStopped:        decision.PriorStopped,
+		EvalID:              submitted.EvalID,
+		DeploymentID:        monitorResult.DeploymentID,
+		JobModifyIndex:      submitted.JobModifyIndex,
+		DesiredTotal:        uint16FromInt(monitorResult.DesiredTotal, "nomad desired total"),
+		HealthyTotal:        uint16FromInt(monitorResult.HealthyTotal, "nomad healthy total"),
+		UnhealthyTotal:      uint16FromInt(monitorResult.UnhealthyTotal, "nomad unhealthy total"),
+		PlacedTotal:         uint16FromInt(monitorResult.PlacedTotal, "nomad placed total"),
+		TerminalStatus:      monitorResult.TerminalStatus,
+		DurationMs:          durationMillis(time.Since(stageStartedAt), "nomad monitor duration"),
+		ErrorMessage:        errorMessage,
+	}); recordErr != nil {
+		return recordErr
+	}
+	if err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: %s healthy\n", submitted.JobID)

@@ -29,7 +29,6 @@ viteplus_node_app_artifact(
     output = "verself-web",
 )
 
-exports_files(["nomad-overrides.json"])
 
 viteplus_route_tree(name = "route_tree")
 

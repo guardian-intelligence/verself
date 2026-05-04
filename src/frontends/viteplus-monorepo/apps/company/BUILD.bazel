@@ -91,5 +91,3 @@ test_suite(
         ":route_tree_tests",
     ],
 )
-
-exports_files(["nomad-overrides.json"])

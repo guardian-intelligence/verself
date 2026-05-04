@@ -33,6 +33,9 @@
               "command": "/opt/verself/profile/bin/haproxy-upstreams-apply"
             },
             "Driver": "raw_exec",
+            "Env": {
+              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317"
+            },
             "KillSignal": "SIGTERM",
             "KillTimeout": 5000000000,
             "Name": "haproxy-upstreams",
@@ -84,7 +87,16 @@
             "User": "root"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "task_states",
+          "MinHealthyTime": 1000000000,
+          "HealthyDeadline": 30000000000,
+          "ProgressDeadline": 60000000000,
+          "Canary": 0,
+          "AutoRevert": true,
+          "AutoPromote": false
+        }
       }
     ],
     "Type": "service"

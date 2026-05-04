@@ -15,6 +15,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	verselfotel "github.com/verself/observability/otel"
 )
 
 type stringList []string
@@ -75,7 +82,21 @@ func run(args []string) error {
 	if len(cfg.haproxyConfigs) == 0 {
 		cfg.haproxyConfigs = append(cfg.haproxyConfigs, "/etc/haproxy/haproxy.cfg", cfg.dest)
 	}
-	changed, err := applyOnce(cfg)
+	shutdown, err := initTelemetry()
+	if err != nil {
+		// HAProxy upstream convergence is the availability path; telemetry
+		// failure is reported but must not prevent a valid edge reload.
+		fmt.Fprintf(os.Stderr, "haproxy-upstreams-apply: telemetry disabled: %v\n", err)
+	} else {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := shutdown(shutdownCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "haproxy-upstreams-apply: telemetry shutdown: %v\n", err)
+			}
+		}()
+	}
+	changed, err := applyOnceWithTelemetry(context.Background(), cfg)
 	if err != nil {
 		return err
 	}
@@ -87,6 +108,41 @@ func run(args []string) error {
 	defer stop()
 	<-ctx.Done()
 	return nil
+}
+
+func initTelemetry() (func(context.Context) error, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	shutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
+		ServiceName: "haproxy-upstreams-apply",
+	})
+	if err != nil {
+		return nil, err
+	}
+	return shutdown, nil
+}
+
+func applyOnceWithTelemetry(ctx context.Context, cfg config) (bool, error) {
+	tracer := otel.Tracer("github.com/verself/host-configuration/cmd/haproxy-upstreams-apply")
+	ctx, span := tracer.Start(ctx, "haproxy_upstreams.apply",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("haproxy.upstreams.source", cfg.source),
+			attribute.String("haproxy.upstreams.dest", cfg.dest),
+			attribute.String("haproxy.reload_unit", cfg.reloadUnit),
+			attribute.Bool("haproxy.upstreams.daemon", cfg.daemon),
+		),
+	)
+	defer span.End()
+	changed, err := applyOnce(cfg)
+	span.SetAttributes(attribute.Bool("haproxy.upstreams.changed", changed))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return false, err
+	}
+	span.SetStatus(codes.Ok, "")
+	return changed, nil
 }
 
 func applyOnce(cfg config) (bool, error) {

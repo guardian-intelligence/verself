@@ -36,5 +36,3 @@ nomad_binary_artifact(
     binary = ":iam-service",
     output = "iam-service",
 )
-
-exports_files(["nomad-overrides.json"])

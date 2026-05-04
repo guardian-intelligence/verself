@@ -426,7 +426,8 @@
              'operator_command_runs',
              'supply_chain_policy_events',
              'artifact_admission_events',
-             'artifact_install_verification_events'
+             'artifact_install_verification_events',
+             'nomad_job_events'
            )
          )"
   register: clickhouse_expected_table_probe
@@ -440,7 +441,7 @@
         or (clickhouse_migrations_remote_hash is failed)
         or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
            != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
-        or ((clickhouse_expected_table_probe.stdout | trim) != '10')
+        or ((clickhouse_expected_table_probe.stdout | trim) != '11')
       }}
 
 - name: Apply ClickHouse migrations

@@ -5,6 +5,13 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/host-configuration/cmd/haproxy-upstreams-apply",
     visibility = ["//visibility:private"],
+    deps = [
+        "//src/tools/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
 )
 
 go_binary(

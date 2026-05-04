@@ -31,5 +31,3 @@ nomad_binary_artifact(
     binary = ":source-code-hosting-service",
     output = "source-code-hosting-service",
 )
-
-exports_files(["nomad-overrides.json"])

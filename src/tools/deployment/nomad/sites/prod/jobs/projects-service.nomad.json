@@ -8,7 +8,7 @@
     "Name": "projects-service",
     "TaskGroups": [
       {
-        "Count": 1,
+        "Count": 2,
         "Name": "projects-service",
         "Networks": [
           {
@@ -121,14 +121,33 @@
                 "AddressMode": "auto",
                 "Name": "projects-service-public-http",
                 "PortLabel": "public_http",
-                "Provider": "nomad"
+                "Provider": "nomad",
+                "Checks": [
+                  {
+                    "Type": "http",
+                    "Path": "/readyz",
+                    "PortLabel": "public_http",
+                    "Interval": 1000000000,
+                    "Timeout": 3000000000,
+                    "Name": "projects-service-http-public_http"
+                  }
+                ]
               }
             ],
             "Templates": null,
             "User": "projects_service"
           }
         ],
-        "Update": null
+        "Update": {
+          "MaxParallel": 1,
+          "HealthCheck": "checks",
+          "MinHealthyTime": 3000000000,
+          "HealthyDeadline": 300000000000,
+          "ProgressDeadline": 600000000000,
+          "Canary": 1,
+          "AutoRevert": true,
+          "AutoPromote": true
+        }
       }
     ],
     "Type": "service"

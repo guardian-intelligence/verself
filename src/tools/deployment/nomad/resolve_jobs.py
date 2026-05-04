@@ -19,12 +19,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--artifact", action="append", default=[], help="output=path")
     parser.add_argument(
-        "--override",
-        action="append",
-        default=[],
-        help="job_id=path to a per-component nomad-overrides.json carrying the service's check and rollout-policy blocks.",
-    )
-    parser.add_argument(
         "--embedded-template",
         action="append",
         default=[],
@@ -56,18 +50,6 @@ def parse_artifacts(values: list[str]) -> dict[str, Path]:
     return out
 
 
-def parse_overrides(values: list[str]) -> dict[str, Path]:
-    out: dict[str, Path] = {}
-    for item in values:
-        name, sep, raw_path = item.partition("=")
-        if not sep or not name or not raw_path:
-            raise ValueError(f"override must be job_id=path, got {item!r}")
-        if name in out:
-            raise ValueError(f"duplicate override registered for job_id {name!r}")
-        out[name] = Path(raw_path)
-    return out
-
-
 def parse_embedded_templates(values: list[str]) -> dict[str, Path]:
     out: dict[str, Path] = {}
     for item in values:
@@ -95,158 +77,6 @@ def replace_embedded_templates(value: object, templates: dict[str, str], used: s
             for key, item in value.items()
         }
     return value
-
-
-# Mirrors Nomad's duration-string vocabulary so override authors can write
-# "1s" / "5m" / "10m" instead of nanoseconds. Rendered specs carry int
-# nanoseconds because the Nomad HTTP API expects Go's time.Duration on the
-# wire.
-_DURATION_UNITS = {
-    "ns": 1,
-    "us": 1_000,
-    "ms": 1_000_000,
-    "s": 1_000_000_000,
-    "m": 60 * 1_000_000_000,
-    "h": 3600 * 1_000_000_000,
-}
-
-
-def parse_duration_ns(value: object) -> int:
-    if isinstance(value, bool):
-        raise ValueError(f"duration cannot be a bool: {value!r}")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if not isinstance(value, str):
-        raise ValueError(f"duration must be a string or number, got {type(value).__name__}: {value!r}")
-    s = value.strip()
-    if not s:
-        raise ValueError("duration cannot be empty")
-    i = 0
-    while i < len(s) and (s[i].isdigit() or s[i] == "."):
-        i += 1
-    num_part, unit_part = s[:i], s[i:]
-    if not num_part or not unit_part:
-        raise ValueError(f"duration must look like '3s' or '500ms', got {value!r}")
-    multiplier = _DURATION_UNITS.get(unit_part)
-    if multiplier is None:
-        raise ValueError(f"unknown duration unit {unit_part!r}; supported: {sorted(_DURATION_UNITS)}")
-    return int(float(num_part) * multiplier)
-
-
-def normalize_check(check: object, task_name: str) -> dict:
-    if not isinstance(check, dict):
-        raise ValueError(f"override tasks[{task_name}].checks: each check must be a JSON object")
-    out = dict(check)
-    kind = out.get("Type")
-    if kind not in ("http", "tcp"):
-        raise ValueError(f"override tasks[{task_name}]: unsupported check Type={kind!r}; expected 'http' or 'tcp'")
-    port_label = out.get("PortLabel")
-    if not isinstance(port_label, str) or not port_label:
-        raise ValueError(f"override tasks[{task_name}]: check missing PortLabel")
-    if kind == "http":
-        path = out.get("Path", "")
-        if not isinstance(path, str) or not path.startswith("/"):
-            raise ValueError(f"override tasks[{task_name}]: http check needs Path starting with '/', got {path!r}")
-    out["Interval"] = parse_duration_ns(out.get("Interval", "1s"))
-    out["Timeout"] = parse_duration_ns(out.get("Timeout", "3s"))
-    out.setdefault("Name", f"{task_name}-{kind}-{port_label}")
-    return out
-
-
-def build_update_block(update: object) -> dict:
-    if update is None:
-        update = {}
-    if not isinstance(update, dict):
-        raise ValueError("override 'update' must be a JSON object")
-    health_check = str(update.get("HealthCheck", "checks"))
-    if health_check not in ("checks", "task_states", "manual"):
-        raise ValueError("override update.HealthCheck must be checks, task_states, or manual")
-    return {
-        "MaxParallel":      int(update.get("MaxParallel", 1)),
-        "HealthCheck":      health_check,
-        "MinHealthyTime":   parse_duration_ns(update.get("MinHealthyTime", "3s")),
-        "HealthyDeadline":  parse_duration_ns(update.get("HealthyDeadline", "5m")),
-        "ProgressDeadline": parse_duration_ns(update.get("ProgressDeadline", "10m")),
-        "Canary":           int(update.get("Canary", 1)),
-        "AutoRevert":       bool(update.get("AutoRevert", True)),
-        "AutoPromote":      bool(update.get("AutoPromote", True)),
-    }
-
-
-def apply_override(spec: dict, override: dict) -> None:
-    """Splice per-component health checks and rollout policy onto an authored base spec.
-
-    spec.Job.TaskGroups[*].Update is replaced with a normalized update
-    block. Authored specs pre-register one Nomad service per port label
-    (Provider=nomad, AddressMode=auto) so any consumer can resolve the
-    alloc address via `nomadService` template lookups; this routine
-    attaches the override's health checks to the existing service entry
-    whose PortLabel matches each check.
-    """
-    if not isinstance(override, dict):
-        raise ValueError("override file must contain a JSON object at the top level")
-    job = spec.get("Job")
-    if not isinstance(job, dict):
-        raise ValueError("apply_override: spec.Job missing or wrong type")
-    groups = job.get("TaskGroups")
-    if not isinstance(groups, list) or not groups:
-        raise ValueError("apply_override: spec.Job.TaskGroups missing or empty")
-
-    update_block = build_update_block(override.get("update"))
-    tasks_override = override.get("tasks") or {}
-    if not isinstance(tasks_override, dict):
-        raise ValueError("override 'tasks' must be a map of task_name to {checks: [...]}")
-
-    seen_tasks: set[str] = set()
-    for group in groups:
-        if not isinstance(group, dict):
-            raise ValueError("apply_override: TaskGroup is not an object")
-        group["Update"] = update_block
-        for task in group.get("Tasks") or []:
-            if not isinstance(task, dict):
-                continue
-            task_name = task.get("Name")
-            if not isinstance(task_name, str):
-                continue
-            override_task = tasks_override.get(task_name)
-            if not override_task:
-                continue
-            seen_tasks.add(task_name)
-            if not isinstance(override_task, dict):
-                raise ValueError(f"override tasks[{task_name}] must be a JSON object")
-            checks_raw = override_task.get("checks") or []
-            if not isinstance(checks_raw, list):
-                raise ValueError(f"override tasks[{task_name}].checks must be a list")
-            checks = [normalize_check(c, task_name) for c in checks_raw]
-            if not checks:
-                continue
-            services = task.get("Services") or []
-            if not isinstance(services, list) or not services:
-                raise ValueError(
-                    f"override tasks[{task_name}]: task has no Services to attach checks to; "
-                    "ensure the component declares at least one endpoint in authored topology"
-                )
-            services_by_port = {s.get("PortLabel"): s for s in services if isinstance(s, dict)}
-            for check in checks:
-                port_label = check.get("PortLabel")
-                service = services_by_port.get(port_label)
-                if service is None:
-                    raise ValueError(
-                        f"override tasks[{task_name}]: check PortLabel={port_label!r} has no matching "
-                        f"Service entry; available: {sorted(p for p in services_by_port if p)}"
-                    )
-                existing = service.setdefault("Checks", [])
-                if not isinstance(existing, list):
-                    raise ValueError(f"override tasks[{task_name}]: existing Checks for {port_label!r} is not a list")
-                existing.append(check)
-
-    extras = sorted(set(tasks_override) - seen_tasks)
-    if extras:
-        raise ValueError(
-            f"override declares tasks that are not present in the authored spec: {', '.join(extras)}"
-        )
 
 
 def artifact_delivery(index: dict) -> dict[str, object]:
@@ -360,7 +190,6 @@ def ordered_components(components: list[dict]) -> list[dict]:
 def main() -> int:
     args = parse_args()
     artifacts_by_output = parse_artifacts(args.artifact)
-    overrides_by_job = parse_overrides(args.override)
     embedded_template_paths = parse_embedded_templates(args.embedded_template)
     embedded_templates = {
         placeholder: path.read_text(encoding="utf-8")
@@ -379,21 +208,6 @@ def main() -> int:
         raise ValueError("jobs/index.json components must be a list")
     ordered = ordered_components(components)
     delivery = artifact_delivery(index)
-
-    rendered_job_ids = {component["job_id"] for component in components}
-    missing_overrides = sorted(rendered_job_ids - set(overrides_by_job))
-    if missing_overrides:
-        raise ValueError(
-            "Nomad-supervised jobs are missing nomad-overrides.json registration: "
-            f"{', '.join(missing_overrides)}. Add the file in each service directory and "
-            "register it via the overrides={...} attribute on nomad_resolved_jobs."
-        )
-    extra_overrides = sorted(set(overrides_by_job) - rendered_job_ids)
-    if extra_overrides:
-        raise ValueError(
-            "nomad-overrides.json registered for jobs that the authored index does not include: "
-            f"{', '.join(extra_overrides)}"
-        )
 
     artifact_bindings = {}
     publish_artifacts_by_key = {}
@@ -435,15 +249,6 @@ def main() -> int:
         spec = replace_embedded_templates(spec, embedded_templates, used_embedded_templates)
         seen = resolve_artifacts(spec, artifact_bindings)
         referenced.update(seen)
-        override_path = overrides_by_job[job_id]
-        try:
-            override = json.loads(override_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"override file {override_path} is not valid JSON: {exc}") from exc
-        try:
-            apply_override(spec, override)
-        except ValueError as exc:
-            raise ValueError(f"applying override for job_id={job_id!r}: {exc}") from exc
         artifact_digest = canonical_digest(
             [
                 {
