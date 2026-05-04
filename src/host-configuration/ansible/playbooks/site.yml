@@ -21,18 +21,18 @@
       tags:
         - always
 
-- name: "Userspace"
+- name: "Runtime accounts"
   hosts: all
   become: true
   gather_facts: false
   tags:
-    - userspace
+    - runtime_accounts
   tasks:
     # nftables resolves symbolic skuid names while loading rules, so service users must exist before firewall convergence.
-    - name: Configure userspace accounts
-      ansible.builtin.import_tasks: tasks/userspace.yml
+    - name: Configure runtime accounts
+      ansible.builtin.import_tasks: tasks/runtime_accounts.yml
       tags:
-        - userspace
+        - runtime_accounts
 
 - name: "Host foundation"
   hosts: all

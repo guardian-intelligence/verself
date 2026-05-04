@@ -2,7 +2,7 @@
 # Batched user/group creation across the union of every Nomad-supervised
 # component's workload.units. Replaces the per-component loop that previously
 # walked tasks/component/users.yml inside component_substrate.yml. A single
-# userspace probe gates the module loops so external drift still reconciles.
+# runtime-account probe gates the module loops so external drift still reconciles.
 #
 # Multiple units across multiple components can share one runtime user; we
 # union supplementary_groups across all units that target the same user so
@@ -29,28 +29,28 @@
         | list
       }}
 
-- name: Probe component userspace convergence once
+- name: Probe component runtime account convergence once
   ansible.builtin.script: >-
-    {{ playbook_dir }}/../files/userspace_convergence.py
+    {{ playbook_dir }}/../files/runtime_accounts_convergence.py
     --workload-group {{ spire_workload_group }}
   environment:
-    COMPONENT_USERSPACE_UNITS: "{{ all_component_units | to_json }}"
-  register: component_userspace_convergence_raw
+    COMPONENT_RUNTIME_ACCOUNT_UNITS: "{{ all_component_units | to_json }}"
+  register: component_runtime_accounts_convergence_raw
   changed_when: false
 
-- name: Set component userspace convergence plan
+- name: Set component runtime account convergence plan
   ansible.builtin.set_fact:
-    component_userspace_convergence: "{{ component_userspace_convergence_raw.stdout | from_json }}"
+    component_runtime_accounts_convergence: "{{ component_runtime_accounts_convergence_raw.stdout | from_json }}"
   changed_when: false
 
-- name: Skip component userspace reconciliation when already converged
+- name: Skip component runtime account reconciliation when already converged
   ansible.builtin.debug:
     msg: >-
-      Component userspace already converged for {{
-      component_userspace_convergence.desired_user_count }} runtime users and {{
-      component_userspace_convergence.desired_group_count }} groups; skipping group and user tasks.
-  when: component_userspace_convergence.converged | bool
+      Component runtime accounts already converged for {{
+      component_runtime_accounts_convergence.desired_user_count }} users and {{
+      component_runtime_accounts_convergence.desired_group_count }} groups; skipping group and user tasks.
+  when: component_runtime_accounts_convergence.converged | bool
 
-- name: Reconcile component userspace
-  ansible.builtin.include_tasks: userspace_reconcile.yml
-  when: not (component_userspace_convergence.converged | bool)
+- name: Reconcile component runtime accounts
+  ansible.builtin.include_tasks: runtime_accounts_reconcile.yml
+  when: not (component_runtime_accounts_convergence.converged | bool)

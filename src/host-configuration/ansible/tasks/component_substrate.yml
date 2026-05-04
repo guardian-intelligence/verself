@@ -1,7 +1,7 @@
 ---
 # Per-component substrate state for a single Nomad-supervised component.
 # Invoked from L4a's loop over application_components. User/group creation
-# moved to L2's batched userspace_batch.yml; what remains here is component-
+# moved to L2's batched runtime_accounts_batch.yml; what remains here is component-
 # specific state that varies per workload (directories, credstore files, PG /
 # CH bindings, Zitadel auth reconcile, bootstrap hooks).
 #

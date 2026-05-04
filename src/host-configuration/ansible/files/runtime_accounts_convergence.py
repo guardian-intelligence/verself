@@ -8,12 +8,12 @@ import sys
 
 
 def load_units() -> list[dict]:
-    raw = os.environ.get("COMPONENT_USERSPACE_UNITS", "")
+    raw = os.environ.get("COMPONENT_RUNTIME_ACCOUNT_UNITS", "")
     if raw == "":
-        raise ValueError("COMPONENT_USERSPACE_UNITS is required")
+        raise ValueError("COMPONENT_RUNTIME_ACCOUNT_UNITS is required")
     value = json.loads(raw)
     if not isinstance(value, list):
-        raise ValueError("COMPONENT_USERSPACE_UNITS must be a JSON array")
+        raise ValueError("COMPONENT_RUNTIME_ACCOUNT_UNITS must be a JSON array")
     return value
 
 
