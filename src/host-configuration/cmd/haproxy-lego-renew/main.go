@@ -129,30 +129,41 @@ func run(args []string) error {
 		return err
 	}
 	combined := append(append([]byte{}, keyPEM...), certPEM...)
-	if err := atomicWriteWithValidatedHAProxy(cfg, cfg.pemOut, combined, cfg.pemGroup); err != nil {
+	pemChanged, err := atomicWriteWithValidatedHAProxy(cfg, cfg.pemOut, combined, cfg.pemGroup)
+	if err != nil {
 		return err
 	}
+	splitChanged := false
 	if cfg.splitCertOut != "" || cfg.splitKeyOut != "" {
 		if cfg.splitCertOut == "" || cfg.splitKeyOut == "" {
 			return errors.New("--split-cert-out and --split-key-out must be provided together")
 		}
-		if err := atomicWrite(cfg.splitCertOut, certPEM, cfg.splitGroup); err != nil {
+		changed, err := atomicWriteIfChanged(cfg.splitCertOut, certPEM, cfg.splitGroup)
+		if err != nil {
 			return err
 		}
-		if err := atomicWrite(cfg.splitKeyOut, keyPEM, cfg.splitGroup); err != nil {
+		splitChanged = splitChanged || changed
+		changed, err = atomicWriteIfChanged(cfg.splitKeyOut, keyPEM, cfg.splitGroup)
+		if err != nil {
 			return err
+		}
+		splitChanged = splitChanged || changed
+	}
+	if pemChanged {
+		for _, unit := range cfg.reloadUnits {
+			if err := systemctlIfActive("reload", unit); err != nil {
+				return err
+			}
 		}
 	}
-	for _, unit := range cfg.reloadUnits {
-		if err := systemctlIfActive("reload", unit); err != nil {
-			return err
+	if pemChanged || splitChanged {
+		for _, unit := range cfg.restartUnits {
+			if err := systemctlIfActive("restart", unit); err != nil {
+				return err
+			}
 		}
 	}
-	for _, unit := range cfg.restartUnits {
-		if err := systemctlIfActive("restart", unit); err != nil {
-			return err
-		}
-	}
+	fmt.Printf("haproxy-lego-renew: pem_changed=%t split_changed=%t\n", pemChanged, splitChanged)
 	return nil
 }
 
@@ -342,25 +353,42 @@ func firstCertificate(b []byte) (*x509.Certificate, error) {
 	}
 }
 
-func atomicWriteWithValidatedHAProxy(cfg config, path string, content []byte, group string) error {
+func atomicWriteWithValidatedHAProxy(cfg config, path string, content []byte, group string) (bool, error) {
 	oldContent, oldErr := os.ReadFile(path)
 	if oldErr != nil && !errors.Is(oldErr, os.ErrNotExist) {
-		return fmt.Errorf("read existing %s: %w", path, oldErr)
+		return false, fmt.Errorf("read existing %s: %w", path, oldErr)
+	}
+	if oldErr == nil && bytes.Equal(oldContent, content) {
+		return false, nil
 	}
 	if err := atomicWrite(path, content, group); err != nil {
-		return err
+		return false, err
 	}
 	if err := validateHAProxy(cfg); err != nil {
 		if oldErr == nil {
 			if restoreErr := atomicWrite(path, oldContent, group); restoreErr != nil {
-				return fmt.Errorf("haproxy validation failed after writing %s: %w; rollback failed: %v", path, err, restoreErr)
+				return false, fmt.Errorf("haproxy validation failed after writing %s: %w; rollback failed: %v", path, err, restoreErr)
 			}
 		} else if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return fmt.Errorf("haproxy validation failed after writing %s: %w; cleanup failed: %v", path, err, removeErr)
+			return false, fmt.Errorf("haproxy validation failed after writing %s: %w; cleanup failed: %v", path, err, removeErr)
 		}
-		return fmt.Errorf("haproxy validation failed after writing %s; previous material restored: %w", path, err)
+		return false, fmt.Errorf("haproxy validation failed after writing %s; previous material restored: %w", path, err)
 	}
-	return nil
+	return true, nil
+}
+
+func atomicWriteIfChanged(path string, content []byte, group string) (bool, error) {
+	oldContent, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("read existing %s: %w", path, err)
+	}
+	if err == nil && bytes.Equal(oldContent, content) {
+		return false, nil
+	}
+	if err := atomicWrite(path, content, group); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func atomicWrite(path string, content []byte, group string) error {

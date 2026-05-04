@@ -311,6 +311,7 @@
     src: haproxy.service.j2
     dest: /etc/systemd/system/haproxy.service
     mode: "0644"
+  register: haproxy_systemd_unit
   notify: restart haproxy
 
 - name: Deploy HAProxy lego renew systemd service
@@ -318,6 +319,7 @@
     src: haproxy-lego-renew.service.j2
     dest: /etc/systemd/system/haproxy-lego-renew.service
     mode: "0644"
+  register: haproxy_lego_renew_service
 
 - name: Deploy HAProxy lego renew systemd timer
   ansible.builtin.copy:
@@ -334,6 +336,15 @@
       WantedBy=timers.target
     dest: /etc/systemd/system/haproxy-lego-renew.timer
     mode: "0644"
+  register: haproxy_lego_renew_timer
+
+- name: Reload systemd manager after HAProxy unit changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: >-
+    haproxy_systemd_unit.changed
+    or haproxy_lego_renew_service.changed
+    or haproxy_lego_renew_timer.changed
 
 - name: Issue or renew HAProxy public certificates
   ansible.builtin.command:
