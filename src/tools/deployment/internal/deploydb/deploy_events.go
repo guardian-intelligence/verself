@@ -23,6 +23,7 @@ var sha40 = regexp.MustCompile(`^[0-9a-f]{40}$`)
 // verself.deploy_events. ClickHouse rows are append-only; callers write
 // one lifecycle event per state transition.
 type DeployEvent struct {
+	EventAt            time.Time
 	RunKey             string
 	Site               string
 	Sha                string
@@ -60,8 +61,14 @@ func (c *Client) RecordDeployEvent(ctx context.Context, ev DeployEvent) error {
 	if err := validateDeployEvent(ev); err != nil {
 		return err
 	}
+	eventAt := ev.EventAt
+	if eventAt.IsZero() {
+		eventAt = time.Now().UTC()
+	} else {
+		eventAt = eventAt.UTC()
+	}
 	row := deployEventRow{
-		EventAt:            time.Now().UTC(),
+		EventAt:            eventAt,
 		DeployRunKey:       ev.RunKey,
 		Site:               ev.Site,
 		Sha:                ev.Sha,

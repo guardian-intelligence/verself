@@ -159,6 +159,10 @@
       tags:
         - spire
         - identity
+    - role: spire_registrations
+      tags:
+        - spire-registrations
+        - identity
     - role: garage
       tags:
         - garage
@@ -308,10 +312,6 @@
       tags:
         - resend
         - external-api
-    - role: spire_registrations
-      tags:
-        - spire-registrations
-        - identity
 
   tasks:
     - name: Configure Nomad application substrate bindings

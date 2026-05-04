@@ -28,6 +28,7 @@ const (
 // The deploy runner uses it for unit-level no-op decisions where Nomad is not
 // already the source of observed live digests.
 type DeployUnitEvent struct {
+	EventAt         time.Time
 	RunKey          string
 	Site            string
 	Executor        string
@@ -71,8 +72,14 @@ func (c *Client) RecordDeployUnitEvent(ctx context.Context, ev DeployUnitEvent) 
 		return err
 	}
 	sc := trace.SpanContextFromContext(ctx)
+	eventAt := ev.EventAt
+	if eventAt.IsZero() {
+		eventAt = time.Now().UTC()
+	} else {
+		eventAt = eventAt.UTC()
+	}
 	row := deployUnitEventRow{
-		EventAt:          time.Now().UTC(),
+		EventAt:          eventAt,
 		DeployRunKey:     ev.RunKey,
 		Site:             ev.Site,
 		Executor:         ev.Executor,

@@ -269,6 +269,43 @@ func convergeAnsibleDeployUnit(
 	return true, nil
 }
 
+func recordBootstrappedHostConfigurationUnit(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, units []deployUnitDescriptor, bootstrap *hostConfigurationBootstrapResult) error {
+	if bootstrap == nil || bootstrap.Result == nil {
+		return fmt.Errorf("missing host configuration bootstrap result")
+	}
+	unit, ok := findDeployUnit(units, deploydb.DeployExecutorAnsible, hostConfigurationComponent)
+	if !ok {
+		return fmt.Errorf("missing deploy unit %s/%s", deploydb.DeployExecutorAnsible, hostConfigurationComponent)
+	}
+	digest, err := digestDeployUnit(repoRoot, site, unit)
+	if err != nil {
+		return err
+	}
+	unit.digest = digest
+	eventsReady, err := rt.DeployDB.HasDeployUnitEvents(ctx)
+	if err != nil {
+		return err
+	}
+	if !eventsReady {
+		return fmt.Errorf("host configuration bootstrap completed but %s is still missing", "verself.deploy_unit_events")
+	}
+	duration := bootstrap.EndedAt.Sub(bootstrap.StartedAt)
+	if bootstrap.EndedAt.IsZero() || bootstrap.StartedAt.IsZero() || duration < 0 {
+		duration = 0
+	}
+	events := []deploydb.DeployUnitEvent{
+		unitEventAt(rt, site, unit, deploydb.DeployUnitEventDecided, "", false, 0, "", bootstrap.StartedAt),
+		unitEventAt(rt, site, unit, deploydb.DeployUnitEventApplied, "", false, 0, "", bootstrap.StartedAt),
+		unitEventAt(rt, site, unit, deploydb.DeployUnitEventSucceeded, digest, false, durationMillis(duration, "host configuration bootstrap duration"), "", bootstrap.EndedAt),
+	}
+	for _, ev := range events {
+		if err := rt.DeployDB.RecordDeployUnitEvent(ctx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func recordSecurityPatchDeployUnit(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, units []deployUnitDescriptor, res securityPatchResult) error {
 	unit, ok := findDeployUnit(units, deploydb.DeployExecutorSecurityPatch, securityPatchComponent)
 	if !ok {
@@ -324,6 +361,12 @@ func unitEvent(rt *runtime.Runtime, site string, unit deployUnitDescriptor, kind
 		DurationMs:      durationMs,
 		ErrorMessage:    truncateError(errorMessage),
 	}
+}
+
+func unitEventAt(rt *runtime.Runtime, site string, unit deployUnitDescriptor, kind, observedDigest string, noOp bool, durationMs uint32, errorMessage string, eventAt time.Time) deploydb.DeployUnitEvent {
+	ev := unitEvent(rt, site, unit, kind, observedDigest, noOp, durationMs, errorMessage)
+	ev.EventAt = eventAt
+	return ev
 }
 
 func digestDeployUnit(repoRoot, site string, unit deployUnitDescriptor) (string, error) {

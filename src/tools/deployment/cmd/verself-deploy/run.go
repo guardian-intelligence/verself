@@ -88,6 +88,8 @@ func runRun(args []string) int {
 		return 1
 	}
 
+	startedAt := time.Now()
+	var bootstrapHost *hostConfigurationBootstrapResult
 	rt, err := runtime.Init(parentCtx, runtime.Options{
 		ServiceName:    serviceName,
 		ServiceVersion: serviceVersion,
@@ -95,8 +97,26 @@ func runRun(args []string) int {
 		RepoRoot:       rr,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: %v\n", err)
-		return 1
+		if !requiresHostConfigurationBootstrap(err) {
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "verself-deploy run: ClickHouse evidence substrate unavailable; bootstrapping host configuration first: %v\n", err)
+		bootstrapHost, err = runHostConfigurationBootstrap(parentCtx, *site, rr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy run: bootstrap host configuration failed: %v\n", err)
+			return 1
+		}
+		rt, err = runtime.Init(parentCtx, runtime.Options{
+			ServiceName:    serviceName,
+			ServiceVersion: serviceVersion,
+			Site:           *site,
+			RepoRoot:       rr,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy run: runtime after bootstrap: %v\n", err)
+			return 1
+		}
 	}
 	defer rt.Close()
 
@@ -113,7 +133,16 @@ func runRun(args []string) int {
 		attribute.Int("security_patch.changed_total", securityPatchRes.Result.ChangedCount),
 		attribute.Int("security_patch.failed_count", securityPatchRes.Result.FailedCount),
 		attribute.Int64("security_patch.duration_ms", securityPatchRes.EndedAt.Sub(securityPatchRes.StartedAt).Milliseconds()),
+		attribute.Bool("host_configuration.bootstrap_ran", bootstrapHost != nil),
 	)
+	if bootstrapHost != nil && bootstrapHost.Result != nil {
+		span.SetAttributes(
+			attribute.Int("host_configuration.bootstrap.task_count", bootstrapHost.Result.TaskCount),
+			attribute.Int("host_configuration.bootstrap.changed_total", bootstrapHost.Result.ChangedCount),
+			attribute.Int("host_configuration.bootstrap.failed_count", bootstrapHost.Result.FailedCount),
+			attribute.Int64("host_configuration.bootstrap.duration_ms", bootstrapHost.EndedAt.Sub(bootstrapHost.StartedAt).Milliseconds()),
+		)
+	}
 	if err := runSecurityPostPreflight(ctx, rt, *site, securityPatchRes); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -121,14 +150,14 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	startedAt := time.Now()
 	startedEvent := deploydb.DeployEvent{
-		RunKey: snap.RunKey(),
-		Site:   *site,
-		Sha:    resolvedSha,
-		Actor:  snap.Get("VERSELF_AUTHOR"),
-		Scope:  canonicalDeployScope,
-		Kind:   deploydb.EventStarted,
+		EventAt: startedAt,
+		RunKey:  snap.RunKey(),
+		Site:    *site,
+		Sha:     resolvedSha,
+		Actor:   snap.Get("VERSELF_AUTHOR"),
+		Scope:   canonicalDeployScope,
+		Kind:    deploydb.EventStarted,
 	}
 	if err := rt.DeployDB.RecordDeployEvent(ctx, startedEvent); err != nil {
 		span.RecordError(err)
@@ -137,7 +166,7 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, securityPatchRes)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, securityPatchRes, bootstrapHost)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -156,6 +185,7 @@ func runDeployBody(
 	startedAt time.Time,
 	snap identity.Snapshot,
 	securityPatchRes securityPatchResult,
+	bootstrapHost *hostConfigurationBootstrapResult,
 ) int {
 	// 1. Supply-chain policy gate. The gate is intentionally before host
 	// convergence so install-source drift fails before Ansible mutates the box.
@@ -191,12 +221,23 @@ func runDeployBody(
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
 		return 1
 	}
-	hostRan, err := convergeHostConfigurationUnit(ctx, rt, span, site, repoRoot, deployUnits)
-	if err != nil {
-		msg := fmt.Sprintf("host configuration failed: %v", err)
-		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
-		return 1
+	var hostRan bool
+	if bootstrapHost != nil {
+		if err := recordBootstrappedHostConfigurationUnit(ctx, rt, site, repoRoot, deployUnits, bootstrapHost); err != nil {
+			msg := fmt.Sprintf("host configuration bootstrap evidence failed: %v", err)
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+			return 1
+		}
+		hostRan = true
+	} else {
+		hostRan, err = convergeHostConfigurationUnit(ctx, rt, span, site, repoRoot, deployUnits)
+		if err != nil {
+			msg := fmt.Sprintf("host configuration failed: %v", err)
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+			return 1
+		}
 	}
 	if hostRan {
 		components = append(components, hostConfigurationComponent)
@@ -247,6 +288,68 @@ func runDeployBody(
 		return 1
 	}
 	return 0
+}
+
+type hostConfigurationBootstrapResult struct {
+	StartedAt time.Time
+	EndedAt   time.Time
+	Result    *ansible.Result
+}
+
+func requiresHostConfigurationBootstrap(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "runtime: clickhouse open: deploydb: read operator config") ||
+		strings.Contains(msg, "runtime: clickhouse open: deploydb: open native client") ||
+		strings.Contains(msg, "runtime: clickhouse open: deploydb: ping native client")
+}
+
+func runHostConfigurationBootstrap(ctx context.Context, site, repoRoot string) (*hostConfigurationBootstrapResult, error) {
+	rt, err := runtime.Init(ctx, runtime.Options{
+		ServiceName:     serviceName,
+		ServiceVersion:  serviceVersion,
+		Site:            site,
+		RepoRoot:        repoRoot,
+		SkipOTLPForward: true,
+		SkipClickHouse:  true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer rt.Close()
+
+	ctx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.host_configuration.bootstrap",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("verself.site", site),
+			attribute.Bool("host_configuration.bootstrap", true),
+		),
+	)
+	defer span.End()
+
+	startedAt := time.Now()
+	res, runErr := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, nil)
+	endedAt := time.Now()
+	result := &hostConfigurationBootstrapResult{
+		StartedAt: startedAt,
+		EndedAt:   endedAt,
+		Result:    res,
+	}
+	if runErr != nil || res == nil || res.ExitCode != 0 {
+		msg := ansibleFailureMessage(hostConfigurationSitePlaybook, res, runErr)
+		span.RecordError(fmt.Errorf("%s", msg))
+		span.SetStatus(codes.Error, msg)
+		return result, fmt.Errorf("%s", msg)
+	}
+	span.SetAttributes(
+		attribute.Int("ansible.task_count", res.TaskCount),
+		attribute.Int("ansible.changed_total", res.ChangedCount),
+		attribute.Int("ansible.failed_count", res.FailedCount),
+	)
+	span.SetStatus(codes.Ok, "")
+	return result, nil
 }
 
 func runHostConfigurationSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {
