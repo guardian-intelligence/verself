@@ -1,8 +1,8 @@
 """aspect deploy [--site=prod] [--sha=<rev>]
 
 The single deploy verb. Resolves --sha (falling back to a temporary
-worktree when non-HEAD), shells out to `verself-deploy run`, and
-converges the dogfooded platform org/repo after Nomad services are up.
+worktree when non-HEAD) and shells out to `verself-deploy run`.
+Environment seeding is an explicit operator task, not part of deploy.
 The binary owns identity derivation, deploy_events writes, Ansible site
 convergence, and affected Nomad fan-out inside one process sharing one SSH
 session and one SSH-forwarded OTLP channel to the bare-metal otelcol.
@@ -38,18 +38,6 @@ def _edge_preflight(ctx, site):
         label = "aspect-operator edge check",
     )
 
-def _platform_seed(ctx, site):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
-        ctx,
-        bin,
-        ["platform", "--action", "seed", "--repo-root", ws_path(ctx), "--site", site],
-        cwd = ws_path(ctx),
-        label = "aspect-operator platform seed",
-    )
-
 def _deploy_one(ctx, site, sha):
     deploy_args = [
         "run",
@@ -70,7 +58,7 @@ def _deploy_one(ctx, site, sha):
     )
     if deploy_rc != 0:
         return deploy_rc
-    return _platform_seed(ctx, site)
+    return 0
 
 def _deploy_in_worktree(ctx, site, sha):
     """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
