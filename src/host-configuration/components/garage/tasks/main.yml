@@ -312,7 +312,7 @@
           print(json.dumps({"changed": False, "version": layout["version"], "roles": current_roles}))
           raise SystemExit(0)
 
-      cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "layout", "revert")
+      cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "layout", "revert", "--yes")
       changed = True
 
       desired_ids = {role["id"] for role in desired_roles}
