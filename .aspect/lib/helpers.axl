@@ -58,7 +58,7 @@ def ws_path(ctx, *parts):
 
 def site_inventory_source(site):
     """Repo-relative path to the per-site authored inventory file."""
-    return HOST_CONFIGURATION_DIR + "/ansible/" + site + ".ini"
+    return HOST_CONFIGURATION_DIR + "/sites/" + site + "/inventory.ini"
 
 def inventory_check(ctx, site = DEFAULT_SITE):
     """Fail loud when the per-site Ansible inventory is missing.

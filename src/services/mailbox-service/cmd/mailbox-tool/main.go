@@ -35,10 +35,7 @@ func run(ctx context.Context, args []string) error {
 		return usageError()
 	}
 
-	// The deploy cache is the source of truth at runtime; the authored
-	// The authored inventory is named per site; prod.ini matches the only
-	// inventory the repo currently authors.
-	inventoryDefault := filepath.Join("..", "host-configuration", "ansible", "prod.ini")
+	inventoryDefault := filepath.Join("..", "host-configuration", "sites", "prod", "inventory.ini")
 	rootFlags := flag.NewFlagSet("mailbox-tool", flag.ContinueOnError)
 	rootFlags.SetOutput(io.Discard)
 	inventoryPath := rootFlags.String("inventory", inventoryDefault, "Path to ansible inventory")

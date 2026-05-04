@@ -192,7 +192,7 @@ func postgresSecretsPath(rt *opruntime.Runtime, opts *dbPGOptions) string {
 	if opts.secretsFile != "" {
 		return opts.secretsFile
 	}
-	return opruntime.SecretsPath(rt.RepoRoot)
+	return opruntime.HostConfigurationSecretsPath(rt.RepoRoot, rt.Site)
 }
 
 func splitHostPort(addr string) (string, string, error) {

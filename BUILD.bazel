@@ -25,7 +25,6 @@ test_suite(
 write_source_files(
     name = "dev_update",
     additional_update_targets = [
-        "//src/host-configuration:edge_generated",
         "//src/frontends/viteplus-monorepo/apps/company:dev_update",
         "//src/frontends/viteplus-monorepo/apps/verself-web:dev_update",
     ],

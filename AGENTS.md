@@ -196,3 +196,17 @@ Planned Upcoming Projects
 * Analytics Service (PostHog clone) -- we build this ourselves using ClickHouse
 * Readyset for Postgres query-result cache.
 * Invoices + Preview Invoice for Current Billing Period
+
+## Adding a site
+
+Site names are `prod`, `beta`, `gamma`, or `dev-<operator>`. The apex domain, Pomerium route name, Cloudflare zone scope, and allowed Stripe environment are site-level facts in `src/host-configuration/sites/<site>/vars.yml`.
+
+Each site has exactly three stage directories:
+
+- `src/tools/provisioning/sites/<site>/`
+- `src/host-configuration/sites/<site>/`
+- `src/tools/deployment/sites/<site>/`
+
+Each stage owns one independently decryptable SOPS bag. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host-configuration bag contains host bootstrap and component-install secrets and must exist before `aspect deploy --site=<site>`. The deployment bag contains product/runtime integration secrets; it may be empty while the site's `enabled_components` allowlist excludes components that require those values.
+
+To add a site, copy the three `sites/prod/` directories to the new site name, replace the three SOPS bags, update `src/host-configuration/sites/<site>/vars.yml`, and set `enabled_components` to the exact component set that should converge for that site. Components absent from `enabled_components` are skipped by `playbooks/site.yml`; after component-role rollout, they are also omitted from Nomad registration by the deploy runner.

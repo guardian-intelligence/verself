@@ -68,7 +68,7 @@ func cmdMailSend(args []string) error {
 		if err != nil {
 			return err
 		}
-		apiKey, err := opruntime.DecryptSOPSValue(rt.Ctx, opruntime.SecretsPath(rt.RepoRoot), "resend_api_key")
+		apiKey, err := opruntime.DecryptSOPSValue(rt.Ctx, opruntime.DeploymentSecretsPath(rt.RepoRoot, rt.Site), "resend_api_key")
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func cmdMailPasswords(args []string) error {
 			return err
 		}
 		for _, label := range []string{"ceo", "agents"} {
-			password, err := opruntime.DecryptSOPSValue(rt.Ctx, opruntime.SecretsPath(rt.RepoRoot), "stalwart_"+label+"_password")
+			password, err := opruntime.DecryptSOPSValue(rt.Ctx, opruntime.HostConfigurationSecretsPath(rt.RepoRoot, rt.Site), "stalwart_"+label+"_password")
 			if err != nil {
 				return err
 			}

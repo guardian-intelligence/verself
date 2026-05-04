@@ -7,7 +7,7 @@
 #   2. Writes .sops.yaml with the Age public key
 #   3. Installs the community.sops Ansible collection
 #   4. Generates all service credentials
-#   5. Writes and encrypts ansible/group_vars/all/secrets.sops.yml
+#   5. Writes and encrypts the prod host-configuration SOPS bag
 #
 # Usage:
 #   aspect dev sops-init
@@ -19,7 +19,7 @@
 
   vars:
     repo_root: "{{ playbook_dir }}/../../../.."
-    secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+    secrets_file: "{{ playbook_dir }}/../../sites/prod/secrets.sops.yml"
     age_key_file: >-
       {{ lookup('env', 'SOPS_AGE_KEY_FILE')
          | default(lookup('env', 'HOME') ~ '/.config/sops/age/keys.txt', true) }}
@@ -180,5 +180,5 @@
             Age key:      {{ age_key_file }}
 
             Next steps:
-              Edit secrets:  sops src/host-configuration/ansible/group_vars/all/secrets.sops.yml
+              Edit secrets:  sops src/host-configuration/sites/prod/secrets.sops.yml
               Deploy:        aspect deploy --site=prod

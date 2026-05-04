@@ -6,30 +6,3 @@
 # playbook_dir is <repo>/src/host-configuration/ansible/playbooks during convergence.
 platform_host_files_dir: "{{ playbook_dir }}/../host-files"
 postgresql_log_dir: /var/log/postgresql
-
-# Platform-owned organization. This org is the first-party customer account the
-# deployment dogfoods for CI, runtime secrets, source hosting, and showback.
-platform_org_id: "370200542594579812"
-platform_company_slug: guardian-intelligence
-platform_company_display_name: Guardian Intelligence
-platform_repo_slug: verself
-platform_repo_display_name: Verself
-platform_repo_description: Verself platform monorepo.
-
-# First-party runtime secrets are scoped to the platform organization and are
-# fetched through secrets-service over SPIFFE mTLS.
-secrets_service_platform_org_id: "{{ platform_org_id }}"
-
-# Operator email forwarding — all mail to ceo@<domain> is copied here by the
-# mailbox-service internal forwarder. Required for turnkey operator
-# notifications.
-stalwart_operator_forward_to: ""
-
-# GitHub Actions runner integration. Create/update the customer-facing app at
-# https://github.com/settings/apps/new or the org-owned app settings URL below.
-# The private key, webhook secret, and client secret are required platform-org
-# runtime secrets and are not committed.
-sandbox_rental_service_github_app_id: 3370540
-sandbox_rental_service_github_app_slug: verself-ci
-sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
-sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci"

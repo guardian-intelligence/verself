@@ -258,7 +258,7 @@
       - -d
       - --extract
       - '["zitadel_admin_pat"]'
-      - "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+      - "{{ playbook_dir }}/../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
   register: zitadel_admin_pat_sops_current
   delegate_to: localhost
   become: false
@@ -274,7 +274,7 @@
       - sops
       - set
       - --value-stdin
-      - "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+      - "{{ playbook_dir }}/../../sites/{{ verself_site | default('prod') }}/secrets.sops.yml"
       - '["zitadel_admin_pat"]'
     stdin: "{{ zitadel_admin_pat | to_json }}"
   delegate_to: localhost

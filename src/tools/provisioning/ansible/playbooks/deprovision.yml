@@ -10,8 +10,9 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
-    sops_secrets_file: "{{ playbook_dir }}/../../../substrate/ansible/group_vars/all/secrets.sops.yml"
-    deprovision_inventory_file: "{{ playbook_dir }}/../../../host-configuration/ansible/{{ verself_site }}.ini"
+    provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ verself_site }}"
+    sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
+    deprovision_inventory_file: "{{ playbook_dir }}/../../../host-configuration/sites/{{ verself_site }}/inventory.ini"
   tasks:
     - name: Require verself_site to be set
       ansible.builtin.assert:
@@ -34,7 +35,7 @@
         state: absent
         binary_path: tofu
         variables_files:
-          - terraform.tfvars.json
+          - "{{ provisioning_site_dir }}/terraform.tfvars.json"
       environment:
         LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
 

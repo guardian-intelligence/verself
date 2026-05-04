@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -48,7 +49,7 @@ func run(args []string) error {
 	cfg := config{}
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host-configuration Ansible root (defaults to src/host-configuration/ansible).")
-	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted secrets.yml (defaults to <ansible-dir>/group_vars/all/secrets.sops.yml).")
+	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted secrets.yml (defaults to src/host-configuration/sites/<site>/secrets.sops.yml).")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print the diff without applying.")
@@ -59,7 +60,7 @@ func run(args []string) error {
 		cfg.ansibleDir = "src/host-configuration/ansible"
 	}
 	if cfg.secretsPath == "" {
-		cfg.secretsPath = cfg.ansibleDir + "/group_vars/all/secrets.sops.yml"
+		cfg.secretsPath = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "secrets.sops.yml"))
 	}
 
 	desired, err := loadDesired(cfg.ansibleDir)

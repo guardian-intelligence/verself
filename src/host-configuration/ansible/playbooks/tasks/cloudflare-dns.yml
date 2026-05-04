@@ -10,6 +10,7 @@
       - --
       - "--site={{ verself_site }}"
       - "--ansible-dir={{ playbook_dir }}/.."
+      - "--secrets={{ playbook_dir }}/../../sites/{{ verself_site }}/secrets.sops.yml"
     chdir: "{{ playbook_dir }}/../../.."
   register: cloudflare_dns_reconcile
   changed_when: cloudflare_dns_reconcile.stdout is search('applied=[1-9][0-9]*')

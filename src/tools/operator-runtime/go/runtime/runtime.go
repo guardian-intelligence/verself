@@ -227,9 +227,17 @@ func (rt *Runtime) TraceID() string {
 }
 
 func InventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", site+".ini")
+	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini")
 }
 
 func SecretsPath(repoRoot string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "secrets.sops.yml")
+	return HostConfigurationSecretsPath(repoRoot, DefaultSite)
+}
+
+func HostConfigurationSecretsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "secrets.sops.yml")
+}
+
+func DeploymentSecretsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, "src", "tools", "deployment", "sites", site, "secrets.sops.yml")
 }

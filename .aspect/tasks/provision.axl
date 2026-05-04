@@ -8,30 +8,35 @@ load(
     "ws_path",
 )
 
-def _ansible_local(ctx, playbook, *extra_args):
+def _ansible_local(ctx, playbook, site, *extra_args):
     args_list = [playbook] + list(extra_args)
     return checked_spawn(
         ctx,
         "ansible-playbook",
         args_list,
         cwd = ws_path(ctx, PROVISION_DIR, "ansible"),
+        env = {"VERSELF_SITE": site},
         label = "ansible-playbook " + " ".join(args_list),
     )
 
 def _apply_impl(ctx):
-    return _ansible_local(ctx, "playbooks/provision.yml")
+    return _ansible_local(ctx, "playbooks/provision.yml", ctx.args.site or DEFAULT_SITE)
 
 def _destroy_impl(ctx):
     if not ctx.args.confirm:
         ctx.std.io.stderr.write("ERROR: --confirm is required to destroy provisioned infrastructure\n")
         return 1
-    return _ansible_local(ctx, "playbooks/deprovision.yml", "-e", "verself_site=" + (ctx.args.site or DEFAULT_SITE))
+    site = ctx.args.site or DEFAULT_SITE
+    return _ansible_local(ctx, "playbooks/deprovision.yml", site, "-e", "verself_site=" + site)
 
 apply = task(
     implementation = _apply_impl,
     name = "apply",
     group = ["provision"],
     summary = "Provision bare metal through OpenTofu and write host inventory.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
 )
 
 destroy = task(

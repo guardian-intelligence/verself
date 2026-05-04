@@ -1147,7 +1147,7 @@ func (r *platformRunner) postgresSecretsPath() string {
 	if r.opts.secretsFile != "" {
 		return r.opts.secretsFile
 	}
-	return opruntime.SecretsPath(r.rt.RepoRoot)
+	return opruntime.HostConfigurationSecretsPath(r.rt.RepoRoot, r.rt.Site)
 }
 
 func (r *platformRunner) forgejoClient(ctx context.Context) (platformForgejoClient, func(), error) {

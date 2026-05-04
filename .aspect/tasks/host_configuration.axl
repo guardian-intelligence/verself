@@ -11,7 +11,7 @@ def _edit_secrets_impl(ctx):
     return checked_spawn(
         ctx,
         "sops",
-        [ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible/group_vars/all/secrets.sops.yml")],
+        [ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/prod/secrets.sops.yml")],
         label = "sops edit host-configuration secrets",
     )
 

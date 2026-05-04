@@ -10,21 +10,21 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
-    sops_secrets_file: "{{ playbook_dir }}/../../../substrate/ansible/group_vars/all/secrets.sops.yml"
     provision_site: "{{ lookup('env', 'VERSELF_SITE') | default('prod', true) }}"
-    inventory_path: "{{ playbook_dir }}/../../../host-configuration/ansible/{{ provision_site }}.ini"
+    provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ provision_site }}"
+    sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
+    inventory_path: "{{ playbook_dir }}/../../../host-configuration/sites/{{ provision_site }}/inventory.ini"
   tasks:
     - name: Verify terraform.tfvars.json exists
       ansible.builtin.stat:
-        path: "{{ terraform_project_path }}/terraform.tfvars.json"
+        path: "{{ provisioning_site_dir }}/terraform.tfvars.json"
       register: tfvars_stat
 
     - name: Fail if tfvars missing
       ansible.builtin.fail:
         msg: >-
-          terraform/terraform.tfvars.json not found.
-          Copy the example and fill in your project_id:
-            cp terraform/terraform.tfvars.example.json terraform/terraform.tfvars.json
+          {{ provisioning_site_dir }}/terraform.tfvars.json not found.
+          Create the site-scoped tfvars before running provisioning.
       when: not tfvars_stat.stat.exists
 
     - name: Extract Latitude.sh auth token from SOPS
@@ -43,7 +43,7 @@
         force_init: true
         binary_path: tofu
         variables_files:
-          - terraform.tfvars.json
+          - "{{ provisioning_site_dir }}/terraform.tfvars.json"
       environment:
         LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
 
@@ -93,7 +93,7 @@
 
     - name: Read terraform.tfvars.json
       ansible.builtin.slurp:
-        src: "{{ terraform_project_path }}/terraform.tfvars.json"
+        src: "{{ provisioning_site_dir }}/terraform.tfvars.json"
       register: tfvars_content
 
     - name: Resolve inventory cluster name

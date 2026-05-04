@@ -8,7 +8,7 @@
 - name: Validate Resend API key is configured
   ansible.builtin.fail:
     msg: >-
-      resend_api_key is empty. Add it via: sops ansible/group_vars/all/secrets.sops.yml
+      resend_api_key is empty. Add it via: sops src/tools/deployment/sites/{{ verself_site | default('prod') }}/secrets.sops.yml
   when: resend_api_key | default('', true) | length == 0
 
 # --- Domain registration ---

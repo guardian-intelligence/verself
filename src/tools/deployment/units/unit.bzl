@@ -12,7 +12,8 @@ DeployUnitInfo = provider(
 
 def _repo_label(label):
     raw = str(label)
-    if raw.startswith("@@//"):
+    canonical_main_prefix = "@" + "@//"
+    if raw.startswith(canonical_main_prefix):
         return raw[2:]
     return raw
 

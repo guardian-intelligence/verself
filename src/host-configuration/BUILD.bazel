@@ -27,6 +27,7 @@ filegroup(
             "components/*/templates/**",
             "components/*/vars/**",
         ],
+        allow_empty = True,
         exclude = [
             "ansible/.ansible/**",
             "ansible/.cache/**",
@@ -34,25 +35,24 @@ filegroup(
             "ansible/**/__pycache__/**",
             "ansible/*.ini",
         ],
-        allow_empty = True,
     ),
 )
 
 deploy_unit(
     name = "host_convergence_unit",
+    srcs = [":converge_sources"],
     payload_kind = "ansible_site_playbook",
     phase = "host_configuration_site",
     playbook = "playbooks/site.yml",
-    srcs = [":converge_sources"],
     unit_id = "host-configuration",
 )
 
 deploy_unit(
     name = "security_patch_unit",
+    srcs = ["ansible/playbooks/security-patch.yml"],
     executor = "security_patch",
     payload_kind = "ansible_security_patch_playbook",
     phase = "security_patch",
     playbook = "playbooks/security-patch.yml",
-    srcs = ["ansible/playbooks/security-patch.yml"],
     unit_id = "security-patch",
 )

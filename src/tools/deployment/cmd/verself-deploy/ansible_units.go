@@ -328,7 +328,7 @@ func unitEvent(rt *runtime.Runtime, site string, unit deployUnitDescriptor, kind
 
 func digestDeployUnit(repoRoot, site string, unit deployUnitDescriptor) (string, error) {
 	extra := []deployDigestInput{{
-		ShortPath: "src/host-configuration/ansible/" + site + ".ini",
+		ShortPath: "src/host-configuration/sites/" + site + "/inventory.ini",
 		Path:      authoredInventoryPath(repoRoot, site),
 	}}
 	return digestWorkspaceFiles(repoRoot, unit.Sources, extra)

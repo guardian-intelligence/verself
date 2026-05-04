@@ -250,7 +250,7 @@ func openBillingPG(rt *opruntime.Runtime, opts *billingOptions) (*pgx.Conn, erro
 	}
 	passwordPath := opts.secretsFile
 	if passwordPath == "" {
-		passwordPath = opruntime.SecretsPath(rt.RepoRoot)
+		passwordPath = opruntime.HostConfigurationSecretsPath(rt.RepoRoot, rt.Site)
 	}
 	return oppg.OpenOverSSH(rt.Ctx, rt, oppg.Config{
 		Database:     "billing",

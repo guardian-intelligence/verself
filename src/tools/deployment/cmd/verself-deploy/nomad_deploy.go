@@ -393,7 +393,7 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 }
 
 func loadNomadArtifactDeliveryPolicy(repoRoot, site string) (nomadArtifactDeliveryPolicy, error) {
-	siteConfigPath := filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "site.json")
+	siteConfigPath := deploymentSiteConfigPath(repoRoot, site)
 	body, err := os.ReadFile(siteConfigPath)
 	if err != nil {
 		return nomadArtifactDeliveryPolicy{}, fmt.Errorf("read %s: %w", siteConfigPath, err)

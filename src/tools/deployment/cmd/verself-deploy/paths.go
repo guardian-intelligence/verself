@@ -7,7 +7,23 @@ import (
 )
 
 func authoredInventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "ansible", site+".ini")
+	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini")
+}
+
+func deploymentSiteConfigPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, "src", "tools", "deployment", "sites", site, "site.json")
+}
+
+func provisioningSiteDir(repoRoot, site string) string {
+	return filepath.Join(repoRoot, "src", "tools", "provisioning", "sites", site)
+}
+
+func hostConfigurationSiteSecretsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "secrets.sops.yml")
+}
+
+func deploymentSiteSecretsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, "src", "tools", "deployment", "sites", site, "secrets.sops.yml")
 }
 
 func resolveRepoRoot(prefix, repoRoot string) (string, bool) {
