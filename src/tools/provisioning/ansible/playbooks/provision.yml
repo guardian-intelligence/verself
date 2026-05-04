@@ -14,7 +14,7 @@
     provision_site: "{{ lookup('env', 'VERSELF_SITE') | default('prod', true) }}"
     provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ provision_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
-    inventory_path: "{{ playbook_dir }}/../../../host-configuration/sites/{{ provision_site }}/inventory.ini"
+    inventory_path: "{{ playbook_dir }}/../../../../host-configuration/sites/{{ provision_site }}/inventory.ini"
   tasks:
     - name: Verify terraform.tfvars.json exists
       ansible.builtin.stat:

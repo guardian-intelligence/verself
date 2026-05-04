@@ -13,7 +13,7 @@
     tofu_binary_path: "{{ lookup('env', 'TOFU_BIN') | default('/home/ubuntu/.nix-profile/bin/tofu', true) }}"
     provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ verself_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
-    deprovision_inventory_file: "{{ playbook_dir }}/../../../host-configuration/sites/{{ verself_site }}/inventory.ini"
+    deprovision_inventory_file: "{{ playbook_dir }}/../../../../host-configuration/sites/{{ verself_site }}/inventory.ini"
   tasks:
     - name: Require verself_site to be set
       ansible.builtin.assert:
