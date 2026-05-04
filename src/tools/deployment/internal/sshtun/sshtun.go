@@ -35,7 +35,10 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-const tracerName = "github.com/verself/deployment-tools/internal/sshtun"
+const (
+	tracerName            = "github.com/verself/deployment-tools/internal/sshtun"
+	sshAgentSignerTimeout = 2 * time.Second
+)
 
 // Client is a deploy-scoped SSH connection. Open it once with Dial,
 // register one local-port forward per role with Forward, run remote
@@ -296,12 +299,18 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 	// Some access proxies end auth negotiation after an invalid SSH cert,
 	// so offer ordinary identities before the legacy certificate path.
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-		agentConn, err := net.Dial("unix", sock)
+		dialer := net.Dialer{Timeout: sshAgentSignerTimeout}
+		agentConn, err := dialer.Dial("unix", sock)
 		if err != nil {
 			// VS Code can leave SSH_AUTH_SOCK pointing at a removed socket; fall back to file-backed operator keys.
 			agentErr = fmt.Errorf("ssh agent dial: %w", err)
 		} else {
+			// SSH_AUTH_SOCK can point at an agent socket that accepts a
+			// connection but never answers List; bound discovery so deploys
+			// can fall back to file-backed signers.
+			_ = agentConn.SetDeadline(time.Now().Add(sshAgentSignerTimeout))
 			signers, err := agent.NewClient(agentConn).Signers()
+			_ = agentConn.SetDeadline(time.Time{})
 			if err != nil {
 				_ = agentConn.Close()
 				agentErr = fmt.Errorf("ssh agent signers: %w", err)
