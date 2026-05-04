@@ -39,6 +39,43 @@
     label: "{{ item | basename }}"
   when: (item | basename) != "firecracker.nft"
 
+- name: Extract symbolic nftables skuid users
+  ansible.builtin.set_fact:
+    nftables_required_users: >-
+      {{
+        (
+          nftables_required_users | default([])
+          + (
+            lookup('ansible.builtin.file', item, rstrip=False)
+            | regex_findall('meta\\s+skuid\\s+(?:!=\\s*)?([A-Za-z_][A-Za-z0-9_-]*)')
+          )
+        )
+        | unique
+        | sort
+      }}
+  loop: "{{ nftables_rendered_rulesets }}"
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Ensure nftables skuid groups exist before ruleset validation
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+  loop: "{{ nftables_required_users | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Ensure nftables skuid users exist before ruleset validation
+  ansible.builtin.user:
+    name: "{{ item }}"
+    group: "{{ item }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  loop: "{{ nftables_required_users | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+
 - name: Inspect deployed nftables rulesets
   ansible.builtin.find:
     paths: /etc/nftables.d
