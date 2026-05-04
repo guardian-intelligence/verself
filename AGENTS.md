@@ -94,6 +94,15 @@ ssh ubuntu@prod@access.verself.sh
 
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
+Nomad deploys consume an immutable release artifact from the private Garage artifact origin. Before deploying a SHA through Nomad, publish the release for that exact SHA:
+
+```shell
+aspect release publish --site=prod --sha=HEAD
+aspect deploy --site=prod --sha=HEAD
+```
+
+Use the same explicit SHA or ref for both commands. `aspect release publish` builds the Bazel-discovered `nomad_component` descriptors, uploads component artifacts, and writes the `release.json` object that `aspect deploy` later reads before submitting jobs to Nomad.
+
 ### High-signal Documents.
 
 @README.md -- mp
