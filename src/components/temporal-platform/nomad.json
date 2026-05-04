@@ -224,7 +224,7 @@
         "Update": {
           "AutoPromote": true,
           "AutoRevert": true,
-          "Canary": 0,
+          "Canary": 1,
           "HealthCheck": "checks",
           "HealthyDeadline": 300000000000,
           "MaxParallel": 1,
