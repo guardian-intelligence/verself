@@ -11,7 +11,7 @@ _EDGE_INPUTS = [
     "ansible/group_vars/all/topology/routes.yml",
     "ansible/roles/haproxy/defaults/main.yml",
     "//src/tools/deployment/nomad:prod_nomad_job_specs",
-    "//src/tools/deployment/nomad:sites/prod/jobs/index.json",
+    "//src/tools/deployment/nomad:sites/prod/release.json",
 ]
 
 genrule(

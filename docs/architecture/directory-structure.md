@@ -87,8 +87,9 @@ They do not converge host packages or deploy services.
   persona, billing, mail, database access, observability, and host evidence.
 Topology vars are authored in `src/host-configuration/ansible/group_vars/all/topology/`.
 Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
-Nomad base jobs live under `src/tools/deployment/nomad/sites/<site>/jobs/`
-and are resolved by Bazel with the service-owned artifact and rollout inputs.
+Nomad jobs live with their owning service, frontend, or component as
+`nomad.json`; site release manifests under `src/tools/deployment/nomad/sites/`
+wire those owner-local jobs to artifact delivery and rollout inputs.
 
 ## Service- and host-local docs
 

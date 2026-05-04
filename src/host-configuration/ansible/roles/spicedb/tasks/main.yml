@@ -54,7 +54,6 @@
     - { path: "{{ spicedb_config_dir }}", owner: root, group: "{{ spicedb_system_group }}", mode: "0750" }
     - { path: "{{ spicedb_credstore_dir }}", owner: root, group: "{{ spicedb_system_group }}", mode: "0750" }
     - { path: "{{ spicedb_state_dir }}", owner: "{{ spicedb_system_user }}", group: "{{ spicedb_system_group }}", mode: "0750" }
-    - { path: "{{ spicedb_state_dir }}/.ansible/tmp", owner: "{{ spicedb_system_user }}", group: "{{ spicedb_system_group }}", mode: "0700" }
   loop_control:
     label: "{{ item.path }}"
 
@@ -92,67 +91,4 @@
     owner: root
     group: "{{ spicedb_system_group }}"
     mode: "0640"
-  notify: restart spicedb
   no_log: true
-
-- name: Run SpiceDB datastore migrations
-  become: true
-  become_user: "{{ spicedb_system_user }}"
-  vars:
-    ansible_remote_tmp: "{{ spicedb_state_dir }}/.ansible/tmp"
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/spicedb"
-      - datastore
-      - migrate
-      - head
-      - --datastore-engine
-      - postgres
-      - --datastore-conn-uri
-      - "{{ spicedb_datastore_conn_uri }}"
-      - --log-format
-      - json
-      - --skip-release-check
-  environment:
-    HOME: /tmp
-  changed_when: false
-
-- name: Deploy SpiceDB systemd unit
-  ansible.builtin.template:
-    src: spicedb.service.j2
-    dest: /etc/systemd/system/spicedb.service
-    owner: root
-    group: root
-    mode: "0644"
-  notify: restart spicedb
-
-- name: Apply SpiceDB unit and credential changes before readiness
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start SpiceDB
-  ansible.builtin.systemd:
-    name: spicedb
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Wait for SpiceDB gRPC listener
-  ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.spicedb.host }}"
-    port: "{{ topology_endpoints.spicedb.endpoints.grpc.port }}"
-    timeout: 30
-
-- name: Wait for SpiceDB metrics listener
-  ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.spicedb.host }}"
-    port: "{{ topology_endpoints.spicedb.endpoints.metrics.port }}"
-    timeout: 30
-
-- name: Verify SpiceDB metrics endpoint
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.spicedb.endpoints.metrics.address }}/metrics"
-    status_code: 200
-  changed_when: false
-
-# zed accepts tokens as CLI flags, which would expose the gRPC key in argv.
-# iam-service will consume the key through a root-owned env/credential file.

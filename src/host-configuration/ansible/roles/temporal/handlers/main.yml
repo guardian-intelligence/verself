@@ -1,8 +1,0 @@
----
-- name: Restart temporal-server
-  listen: restart temporal-server
-  ansible.builtin.systemd:
-    name: temporal-server
-    state: restarted
-    daemon_reload: true
-  failed_when: false

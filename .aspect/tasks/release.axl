@@ -10,6 +10,7 @@ load(
     "DEFAULT_SITE",
     "build_verself_deploy",
     "checked_spawn",
+    "git_dirty",
     "git_head",
     "resolve_sha",
     "site_inventory_source",
@@ -84,7 +85,7 @@ def _publish_impl(ctx):
     if sha == "":
         return 1
     head = git_head(ctx)
-    if sha != head:
+    if sha != head or git_dirty(ctx):
         return _publish_in_worktree(ctx, site, sha)
     return _publish_one(ctx, site, sha, ws_path(ctx))
 

@@ -8,11 +8,28 @@ exports_files([
 
 filegroup(
     name = "prod_nomad_job_specs",
-    srcs = glob(["sites/prod/jobs/*.nomad.json"]),
+    srcs = [
+        "//src/components/haproxy:nomad.json",
+        "//src/components/spicedb:nomad.json",
+        "//src/components/temporal-platform:nomad.json",
+        "//src/frontends/viteplus-monorepo/apps/company:nomad.json",
+        "//src/frontends/viteplus-monorepo/apps/verself-web:nomad.json",
+        "//src/services/billing-service:nomad.json",
+        "//src/services/governance-service:nomad.json",
+        "//src/services/iam-service:nomad.json",
+        "//src/services/mailbox-service:nomad.json",
+        "//src/services/notifications-service:nomad.json",
+        "//src/services/object-storage-service:nomad.json",
+        "//src/services/profile-service:nomad.json",
+        "//src/services/projects-service:nomad.json",
+        "//src/services/sandbox-rental-service:nomad.json",
+        "//src/services/secrets-service:nomad.json",
+        "//src/services/source-code-hosting-service:nomad.json",
+    ],
     visibility = ["//src/host-configuration:__pkg__"],
 )
 
-exports_files(["sites/prod/jobs/index.json"])
+exports_files(["sites/prod/release.json"])
 
 nomad_release(
     name = "prod_nomad_release",
@@ -36,7 +53,24 @@ nomad_release(
     embedded_templates = {
         "//src/host-configuration:edge_nomad_upstreams_template": "__VERSELF_HAPROXY_NOMAD_UPSTREAMS_TEMPLATE__",
     },
-    index = "sites/prod/jobs/index.json",
-    job_specs = [":prod_nomad_job_specs"],
+    index = "sites/prod/release.json",
+    job_specs = {
+        "//src/components/haproxy:nomad.json": "haproxy-upstreams",
+        "//src/components/spicedb:nomad.json": "spicedb",
+        "//src/components/temporal-platform:nomad.json": "temporal",
+        "//src/frontends/viteplus-monorepo/apps/company:nomad.json": "company",
+        "//src/frontends/viteplus-monorepo/apps/verself-web:nomad.json": "verself-web",
+        "//src/services/billing-service:nomad.json": "billing",
+        "//src/services/governance-service:nomad.json": "governance-service",
+        "//src/services/iam-service:nomad.json": "iam-service",
+        "//src/services/mailbox-service:nomad.json": "mailbox-service",
+        "//src/services/notifications-service:nomad.json": "notifications-service",
+        "//src/services/object-storage-service:nomad.json": "object-storage-service",
+        "//src/services/profile-service:nomad.json": "profile-service",
+        "//src/services/projects-service:nomad.json": "projects-service",
+        "//src/services/sandbox-rental-service:nomad.json": "sandbox-rental",
+        "//src/services/secrets-service:nomad.json": "secrets-service",
+        "//src/services/source-code-hosting-service:nomad.json": "source-code-hosting-service",
+    },
     site = "prod",
 )

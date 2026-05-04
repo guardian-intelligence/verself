@@ -93,6 +93,8 @@ topology_components:
   name: postgresql
 - kind: resource
   name: spicedb
+  deployment:
+    supervisor: nomad
   postgres:
     connection_limit: 20
     database: spicedb
@@ -117,11 +119,11 @@ topology_components:
     server:
       entry_id: verself-temporal-server
       path: /svc/temporal-server
-      restart_units:
-      - temporal-server
       user: temporal_server
   kind: resource
   name: temporal
+  deployment:
+    supervisor: nomad
   postgres:
     connection_limit: 80
     database: temporal

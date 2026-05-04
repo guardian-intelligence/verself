@@ -29,18 +29,18 @@ service boundary.
 The current deployment is intentionally narrow:
 
 - One loopback-only Temporal cluster on the single-node host.
-- One repo-owned `temporal-server` systemd unit running Temporal in
+- One owner-local Nomad job at
+  `src/components/temporal-platform/nomad.json` running Temporal in
   combined mode.
-- One repo-owned `temporal-web` systemd unit for operator access.
-- One repo-owned `temporal-bootstrap` command used during deploys and
-  live verification to ensure the sandbox and billing namespaces exist.
-- Frontend gRPC on `127.0.0.1:7233`, metrics on `127.0.0.1:9001`,
-  private membership ports reserved in authored topology for a later split
-  into dedicated roles.
+- One repo-owned `temporal-bootstrap` command run by Nomad after server
+  start to ensure the sandbox and billing namespaces exist.
+- Frontend gRPC and metrics exposed as Nomad services
+  `temporal-frontend-grpc` and `temporal-metrics` on loopback dynamic
+  ports. Private membership ports are allocated by the same job for a
+  later split into dedicated roles.
 
-The current operator surface is Grafana, Temporal Web,
-`aspect observe --what=temporal`, `tdbg`, and SQL against the visibility
-database.
+The current operator surface is Grafana, `aspect observe --what=temporal`,
+`tdbg`, and SQL against the visibility database.
 
 ## SPIFFE posture
 
@@ -66,7 +66,6 @@ Current identities:
 
 ```
 spiffe://<td>/svc/temporal-server
-spiffe://<td>/svc/temporal-web
 ```
 
 Single-node combined mode deliberately collapses frontend, history,
@@ -173,9 +172,8 @@ Temporal deployment evidence should cover three concrete checks:
 
 1. Asserts the retired `temporal-proof` binary, `temporal-proof-worker`
    unit, and `verself-temporal-proof` SPIRE entry are absent.
-2. Runs `temporal-bootstrap`, restarts `temporal-server`, and runs
-   `temporal-bootstrap` again to prove the supported namespace-admin path
-   is healthy after restart.
+2. Deploys the `temporal` Nomad job and verifies the poststart
+   `temporal-bootstrap` task succeeds.
 3. Asserts ClickHouse traces/logs/metrics and PostgreSQL namespace rows
    for the supported bootstrap surface.
 
@@ -206,6 +204,7 @@ Drawbacks:
   [`domain-event-stream.md`](domain-event-stream.md).
 - Implementation references:
   `src/components/temporal-platform/cmd/verself-temporal-server/main.go`,
+  `src/components/temporal-platform/nomad.json`,
   `src/components/temporal-platform/internal/tlsprovider/tlsprovider.go`,
   `src/components/temporal-platform/internal/spiffeauth/spiffeauth.go`,
   `src/host-configuration/ansible/roles/temporal/*`.

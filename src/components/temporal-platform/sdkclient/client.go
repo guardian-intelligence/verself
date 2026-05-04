@@ -20,8 +20,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-const DefaultFrontendAddress = "127.0.0.1:7233"
-
 type Config struct {
 	HostPort string
 }
@@ -29,7 +27,7 @@ type Config struct {
 func LoadConfigFromEnv() (Config, error) {
 	l := envconfig.New()
 	cfg := Config{
-		HostPort: l.String("VERSELF_TEMPORAL_FRONTEND_ADDRESS", DefaultFrontendAddress),
+		HostPort: l.RequireString("VERSELF_TEMPORAL_FRONTEND_ADDRESS"),
 	}
 	if err := l.Err(); err != nil {
 		return Config{}, err

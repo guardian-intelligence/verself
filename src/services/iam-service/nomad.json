@@ -45,7 +45,6 @@
             "Env": {
               "IAM_BROWSER_AUTH_LOGIN_AUDIENCES": "370200928688586084,370200564807548260",
               "IAM_BROWSER_AUTH_PUBLIC_BASE_URL": "https://verself.sh",
-              "IAM_SPICEDB_GRPC_ENDPOINT": "127.0.0.1:50051",
               "IAM_ZITADEL_BASE_URL": "http://127.0.0.1:8085",
               "IAM_ZITADEL_HOST": "auth.verself.sh",
               "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
@@ -97,7 +96,6 @@
             "Env": {
               "IAM_BROWSER_AUTH_LOGIN_AUDIENCES": "370200928688586084,370200564807548260",
               "IAM_BROWSER_AUTH_PUBLIC_BASE_URL": "https://verself.sh",
-              "IAM_SPICEDB_GRPC_ENDPOINT": "127.0.0.1:50051",
               "IAM_ZITADEL_BASE_URL": "http://127.0.0.1:8085",
               "IAM_ZITADEL_HOST": "auth.verself.sh",
               "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
@@ -173,7 +171,7 @@
               {
                 "ChangeMode": "restart",
                 "DestPath": "secrets/upstreams.env",
-                "EmbeddedTmpl": "IAM_GOVERNANCE_AUDIT_URL=https://{{- with nomadService \"governance-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "EmbeddedTmpl": "IAM_GOVERNANCE_AUDIT_URL=https://{{- with nomadService \"governance-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nIAM_SPICEDB_GRPC_ENDPOINT={{- with nomadService \"spicedb-grpc\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
                 "Envvars": true
               }
             ],

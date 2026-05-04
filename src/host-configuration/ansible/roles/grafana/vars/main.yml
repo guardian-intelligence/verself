@@ -1345,7 +1345,7 @@ grafana_dashboards:
             BY time, series
       - id: 2
         uid: "temporal-bootstrap-operations"
-        title: "Web + Bootstrap Operations"
+        title: "Schema + Bootstrap Operations"
         type: "timeseries"
         x: 8
         y: 0
@@ -1357,8 +1357,8 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT $__timeInterval(Timestamp) AS time, concat(ServiceName, ': ', SpanName) AS series, toFloat64(count()) AS calls FROM
-            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'temporal-bootstrap' GROUP BY time, series ORDER BY time,
-            series
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName IN ('temporal-bootstrap', 'temporal-schema') GROUP BY time,
+            series ORDER BY time, series
       - id: 3
         uid: "temporal-process-memory"
         title: "Process Memory"
@@ -1411,7 +1411,7 @@ grafana_dashboards:
             SELECT Timestamp, ServiceName AS service, SpanName AS span, SpanAttributes['spiffe.peer_id'] AS peer_id,
             SpanAttributes['temporal.namespace'] AS namespace, SpanAttributes['rpc.method'] AS rpc_method,
             SpanAttributes['temporal.authz.decision'] AS decision, SpanAttributes['temporal.authz.reason'] AS reason, StatusCode, TraceId FROM
-            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-bootstrap') AND SpanName IN
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-bootstrap', 'temporal-schema') AND SpanName IN
             ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize') ORDER BY Timestamp DESC LIMIT 100
       - id: 6
         uid: "temporal-bootstrap-runs"
@@ -1444,7 +1444,7 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT Timestamp, ServiceName AS service, SeverityText AS level, Body AS message, TraceId FROM default.otel_logs WHERE
-            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-bootstrap') ORDER BY Timestamp DESC
+            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-bootstrap', 'temporal-schema') ORDER BY Timestamp DESC
             LIMIT 100
       - id: 8
         uid: "temporal-metric-latest"

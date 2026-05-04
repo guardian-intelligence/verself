@@ -679,7 +679,7 @@ var queryDocs = []queryDoc{
 		ID:      "temporal.activity",
 		Family:  "temporal",
 		Title:   "Temporal Activity",
-		Purpose: "Show recent Temporal Web requests, Temporal auth spans, bootstrap runs, service logs, and metric catalog rows.",
+		Purpose: "Show recent Temporal auth spans, schema/bootstrap runs, service logs, and metric catalog rows.",
 		Optional: []string{
 			"--minutes=<lookback>",
 			"--limit=<rows>",
@@ -693,6 +693,7 @@ var queryDocs = []queryDoc{
 			"aspect observe --what=describe --service=temporal-server",
 			"aspect observe --what=describe --span=temporal.auth.authorize",
 			"aspect observe --what=logs --service=temporal-bootstrap",
+			"aspect observe --what=logs --service=temporal-schema",
 		},
 	},
 }

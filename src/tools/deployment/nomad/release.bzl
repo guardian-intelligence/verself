@@ -17,6 +17,15 @@ def _nomad_release_impl(ctx):
         artifact_files.append(files[0])
         artifact_args.append("%s=%s" % (output, files[0].path))
 
+    job_spec_files = []
+    job_spec_args = []
+    for target, job_id in ctx.attr.job_specs.items():
+        files = target.files.to_list()
+        if len(files) != 1:
+            fail("%s must produce exactly one Nomad job spec file, got %d" % (target.label, len(files)))
+        job_spec_files.append(files[0])
+        job_spec_args.append("%s=%s" % (job_id, files[0].path))
+
     embedded_template_files = []
     embedded_template_args = []
     for target, placeholder in ctx.attr.embedded_templates.items():
@@ -32,12 +41,13 @@ def _nomad_release_impl(ctx):
     args.add("--jobs-index", index_file.path)
     args.add("--out", out.path)
     args.add_all(artifact_args, before_each = "--artifact")
+    args.add_all(job_spec_args, before_each = "--job-spec")
     args.add_all(embedded_template_args, before_each = "--embedded-template")
 
     ctx.actions.run(
         executable = ctx.executable._linker,
         arguments = [args],
-        inputs = depset(ctx.files.job_specs + artifact_files + embedded_template_files + [
+        inputs = depset(job_spec_files + artifact_files + embedded_template_files + [
             index_file,
             ctx.executable._linker,
         ]),
@@ -62,16 +72,16 @@ nomad_release = rule(
         "index": attr.label(
             allow_single_file = True,
             mandatory = True,
-            doc = "Authored jobs/index.json describing the Nomad-supervised component set.",
+            doc = "Authored site release manifest describing the Nomad-supervised component set.",
         ),
         "embedded_templates": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "Map of generated template labels to placeholder strings replaced in authored Nomad specs before digest stamping.",
         ),
-        "job_specs": attr.label_list(
+        "job_specs": attr.label_keyed_string_dict(
             allow_files = True,
             mandatory = True,
-            doc = "Authored *.nomad.json base specs referenced by the index.",
+            doc = "Map of owner-local authored Nomad job specs to their Nomad job_id.",
         ),
         "_linker": attr.label(
             default = Label("//src/tools/deployment/nomad:link_release.py"),

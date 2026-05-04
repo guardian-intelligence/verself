@@ -306,7 +306,7 @@ func submitOneReleaseJob(ctx context.Context, rt *runtime.Runtime, client *nomad
 }
 
 func loadSiteArtifactDelivery(repoRoot, site string) (nomadrelease.ArtifactDelivery, error) {
-	indexPath := filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "jobs", "index.json")
+	indexPath := filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "release.json")
 	body, err := os.ReadFile(indexPath)
 	if err != nil {
 		return nomadrelease.ArtifactDelivery{}, fmt.Errorf("read %s: %w", indexPath, err)

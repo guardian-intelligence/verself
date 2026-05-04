@@ -718,7 +718,7 @@ SELECT
   TraceId AS trace_id
 FROM default.otel_traces
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('temporal-server', 'temporal-bootstrap')
+  AND ServiceName IN ('temporal-server', 'temporal-bootstrap', 'temporal-schema')
   AND SpanName IN ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -736,7 +736,7 @@ SELECT
 FROM default.otel_traces
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
   AND (
-    ServiceName = 'temporal-bootstrap'
+    ServiceName IN ('temporal-bootstrap', 'temporal-schema')
     OR (ServiceName = 'temporal-server' AND SpanAttributes['temporal.namespace'] != '')
   )
 ORDER BY Timestamp DESC
@@ -751,7 +751,7 @@ SELECT
   TraceId AS trace_id
 FROM default.otel_logs
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('temporal-server', 'temporal-bootstrap')
+  AND ServiceName IN ('temporal-server', 'temporal-bootstrap', 'temporal-schema')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 

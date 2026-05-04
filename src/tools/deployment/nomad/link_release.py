@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jobs-index", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--artifact", action="append", default=[], help="output=path")
+    parser.add_argument("--job-spec", action="append", default=[], help="job_id=path")
     parser.add_argument(
         "--embedded-template",
         action="append",
@@ -73,7 +74,7 @@ def replace_embedded_templates(value: object, templates: dict[str, str], used: s
 def artifact_delivery(index: dict) -> dict[str, object]:
     delivery = index.get("artifact_delivery")
     if not isinstance(delivery, dict):
-        raise ValueError("jobs/index.json must include artifact_delivery")
+        raise ValueError("Nomad release manifest must include artifact_delivery")
     if delivery.get("public") is not False:
         raise ValueError("artifact_delivery.public must be false")
 
@@ -146,6 +147,9 @@ def ordered_components(components: list[dict]) -> list[dict]:
         job_id = component.get("job_id")
         if not isinstance(job_id, str) or not job_id:
             raise ValueError(f"component index row missing job_id: {component!r}")
+        job_spec = component.get("job_spec")
+        if not isinstance(job_spec, str) or not job_spec:
+            raise ValueError(f"component {job_id!r} missing owner-local job_spec")
         if job_id in by_job_id:
             raise ValueError(f"duplicate Nomad job_id in index: {job_id}")
         by_job_id[job_id] = component
@@ -181,6 +185,7 @@ def ordered_components(components: list[dict]) -> list[dict]:
 def main() -> int:
     args = parse_args()
     artifacts_by_output = parse_kv_paths(args.artifact, "artifact")
+    job_specs_by_id = parse_kv_paths(args.job_spec, "job spec")
     embedded_template_paths = parse_kv_paths(args.embedded_template, "embedded template")
     embedded_templates = {
         placeholder: path.read_text(encoding="utf-8")
@@ -192,7 +197,7 @@ def main() -> int:
     index = json.loads(index_path.read_text(encoding="utf-8"))
     components = index.get("components", [])
     if not isinstance(components, list):
-        raise ValueError("jobs/index.json components must be a list")
+        raise ValueError("Nomad release manifest components must be a list")
     ordered = ordered_components(components)
     delivery = artifact_delivery(index)
 
@@ -203,7 +208,7 @@ def main() -> int:
             output = artifact.get("output", "")
             path = artifacts_by_output.get(output)
             if path is None:
-                raise ValueError(f"jobs/index.json references artifact {output!r}, but Bazel rule did not provide it")
+                raise ValueError(f"Nomad release manifest references artifact {output!r}, but Bazel rule did not provide it")
             digest = sha256_file(path)
             key = f"{delivery['key_prefix']}/{digest}/{output}.tar"
             getter_source = f"{delivery['source_prefix']}/{key}"
@@ -221,13 +226,14 @@ def main() -> int:
             artifact_bindings[output] = binding
             artifacts_by_key[(str(delivery["bucket"]), key)] = binding
 
-    authored_jobs_dir = index_path.parent
     referenced = set()
     jobs = []
     submit_order = []
     for component in ordered:
         job_id = component["job_id"]
-        spec_path = authored_jobs_dir / f"{job_id}.nomad.json"
+        spec_path = job_specs_by_id.get(job_id)
+        if spec_path is None:
+            raise ValueError(f"release manifest references job_id {job_id!r}, but Bazel rule did not provide its job spec")
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
         spec = replace_embedded_templates(spec, embedded_templates, used_embedded_templates)
         seen = resolve_artifacts(spec, artifact_bindings)
@@ -260,6 +266,9 @@ def main() -> int:
     unused_templates = sorted(set(embedded_templates) - used_embedded_templates)
     if unused_templates:
         raise ValueError(f"embedded template placeholders were provided but not used: {', '.join(unused_templates)}")
+    extra_job_specs = sorted(set(job_specs_by_id) - set(submit_order))
+    if extra_job_specs:
+        raise ValueError(f"job specs were provided but not referenced by release manifest: {', '.join(extra_job_specs)}")
 
     release = {
         "schema_version": SCHEMA_VERSION,

@@ -128,6 +128,16 @@ def git_head(ctx):
         return ""
     return r.stdout.strip()
 
+def git_dirty(ctx):
+    """Return True when the workspace has uncommitted tracked or untracked changes."""
+    r = (ctx.std.process.command("git")
+        .args(["status", "--porcelain"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        return True
+    return r.stdout.strip() != ""
+
 def resolve_sha(ctx, raw):
     """Resolve a short SHA, full SHA, or symbolic ref (e.g. prod-tip) to a
     40-char hex SHA. Empty input resolves to HEAD.

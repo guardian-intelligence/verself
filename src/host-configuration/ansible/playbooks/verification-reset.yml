@@ -1,9 +1,8 @@
 ---
 # Wipe verification-environment PostgreSQL state to a clean slate.
 #
-# Wipe-only: run box.yml separately after this playbook to reconfigure substrate. Pass
-# temporal_force_schema_reset=true / clickhouse_force_schema_reset=true on
-# the follow-up box.yml call when the wipe requires a schema rebuild.
+# Wipe-only: run box.yml separately after this playbook to reconfigure substrate.
+# Nomad-owned component schemas are rebuilt by their jobs on the next deploy.
 
 - name: Wipe billing state for verification reset
   import_playbook: wipe-pg-db.yml

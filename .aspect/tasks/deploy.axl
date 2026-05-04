@@ -17,6 +17,7 @@ load(
     "build_aspect_operator",
     "build_verself_deploy",
     "checked_spawn",
+    "git_dirty",
     "git_head",
     "resolve_sha",
     "site_inventory_source",
@@ -113,7 +114,7 @@ def _deploy_impl(ctx):
     if sha == "":
         return 1
     head = git_head(ctx)
-    if sha != head:
+    if sha != head or git_dirty(ctx):
         return _deploy_in_worktree(ctx, site, sha)
     return _deploy_one(ctx, site, sha)
 

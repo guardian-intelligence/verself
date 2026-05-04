@@ -1,7 +1,0 @@
----
-- name: Restart spicedb
-  listen: restart spicedb
-  ansible.builtin.systemd:
-    name: spicedb
-    state: restarted
-    daemon_reload: true

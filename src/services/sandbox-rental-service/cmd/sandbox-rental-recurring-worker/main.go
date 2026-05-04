@@ -47,7 +47,7 @@ func run() error {
 
 	cfg := envconfig.New()
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
+	temporalFrontendAddress := cfg.RequireString("SANDBOX_TEMPORAL_FRONTEND_ADDRESS")
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")

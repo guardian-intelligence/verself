@@ -22,7 +22,6 @@ type Inputs struct {
 	Ops             string `json:"ops" yaml:"ops"`
 	Clusters        string `json:"clusters" yaml:"clusters"`
 	NomadIndex      string `json:"nomad_index" yaml:"nomad_index"`
-	NomadJobsDir    string `json:"nomad_jobs_dir" yaml:"nomad_jobs_dir"`
 	HAProxyDefaults string `json:"haproxy_defaults" yaml:"haproxy_defaults"`
 }
 
@@ -301,6 +300,7 @@ type NomadIndex struct {
 type IndexComponent struct {
 	Component string `json:"component"`
 	JobID     string `json:"job_id"`
+	JobSpec   string `json:"job_spec"`
 }
 
 type NomadJobFile struct {
@@ -319,7 +319,8 @@ type NomadTaskGroup struct {
 }
 
 type NomadNetwork struct {
-	DynamicPorts []NomadDynamicPort `json:"DynamicPorts"`
+	DynamicPorts  []NomadDynamicPort `json:"DynamicPorts"`
+	ReservedPorts []NomadDynamicPort `json:"ReservedPorts"`
 }
 
 type NomadDynamicPort struct {

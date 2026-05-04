@@ -38,6 +38,7 @@
     {
       "component": "billing",
       "job_id": "billing",
+      "job_spec": "src/services/billing-service/nomad.json",
       "bazel_label": "//src/services/billing-service/cmd/billing-service:billing-service",
       "output": "billing-service",
       "depends_on": [
@@ -54,11 +55,13 @@
     {
       "component": "sandbox_rental",
       "job_id": "sandbox-rental",
+      "job_spec": "src/services/sandbox-rental-service/nomad.json",
       "bazel_label": "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service",
       "output": "sandbox-rental-service",
       "depends_on": [
         "secrets-service",
-        "source-code-hosting-service"
+        "source-code-hosting-service",
+        "temporal"
       ],
       "artifacts": [
         {
@@ -76,8 +79,12 @@
     {
       "component": "iam_service",
       "job_id": "iam-service",
+      "job_spec": "src/services/iam-service/nomad.json",
       "bazel_label": "//src/services/iam-service/cmd/iam-service:iam-service",
       "output": "iam-service",
+      "depends_on": [
+        "spicedb"
+      ],
       "artifacts": [
         {
           "bazel_label": "//src/services/iam-service/cmd/iam-service:iam-service",
@@ -89,6 +96,7 @@
     {
       "component": "governance_service",
       "job_id": "governance-service",
+      "job_spec": "src/services/governance-service/nomad.json",
       "bazel_label": "//src/services/governance-service/cmd/governance-service:governance-service",
       "output": "governance-service",
       "artifacts": [
@@ -102,11 +110,25 @@
     {
       "component": "haproxy_upstreams",
       "job_id": "haproxy-upstreams",
+      "job_spec": "src/components/haproxy/nomad.json",
+      "artifacts": []
+    },
+    {
+      "component": "spicedb",
+      "job_id": "spicedb",
+      "job_spec": "src/components/spicedb/nomad.json",
+      "artifacts": []
+    },
+    {
+      "component": "temporal",
+      "job_id": "temporal",
+      "job_spec": "src/components/temporal-platform/nomad.json",
       "artifacts": []
     },
     {
       "component": "secrets_service",
       "job_id": "secrets-service",
+      "job_spec": "src/services/secrets-service/nomad.json",
       "bazel_label": "//src/services/secrets-service/cmd/secrets-service:secrets-service",
       "output": "secrets-service",
       "depends_on": [
@@ -123,6 +145,7 @@
     {
       "component": "profile_service",
       "job_id": "profile-service",
+      "job_spec": "src/services/profile-service/nomad.json",
       "bazel_label": "//src/services/profile-service/cmd/profile-service:profile-service",
       "output": "profile-service",
       "depends_on": [
@@ -140,6 +163,7 @@
     {
       "component": "company",
       "job_id": "company",
+      "job_spec": "src/frontends/viteplus-monorepo/apps/company/nomad.json",
       "bazel_label": "//src/frontends/viteplus-monorepo/apps/company:node_app_nomad_artifact",
       "output": "company",
       "artifacts": [
@@ -158,6 +182,7 @@
     {
       "component": "mailbox_service",
       "job_id": "mailbox-service",
+      "job_spec": "src/services/mailbox-service/nomad.json",
       "bazel_label": "//src/services/mailbox-service/cmd/mailbox-service:mailbox-service",
       "output": "mailbox-service",
       "depends_on": [
@@ -174,6 +199,7 @@
     {
       "component": "notifications_service",
       "job_id": "notifications-service",
+      "job_spec": "src/services/notifications-service/nomad.json",
       "bazel_label": "//src/services/notifications-service/cmd/notifications-service:notifications-service",
       "output": "notifications-service",
       "artifacts": [
@@ -187,6 +213,7 @@
     {
       "component": "object_storage_service",
       "job_id": "object-storage-service",
+      "job_spec": "src/services/object-storage-service/nomad.json",
       "bazel_label": "//src/services/object-storage-service/cmd/object-storage-service:object-storage-service",
       "output": "object-storage-service",
       "depends_on": [
@@ -203,6 +230,7 @@
     {
       "component": "projects_service",
       "job_id": "projects-service",
+      "job_spec": "src/services/projects-service/nomad.json",
       "bazel_label": "//src/services/projects-service/cmd/projects-service:projects-service",
       "output": "projects-service",
       "artifacts": [
@@ -216,6 +244,7 @@
     {
       "component": "source_code_hosting_service",
       "job_id": "source-code-hosting-service",
+      "job_spec": "src/services/source-code-hosting-service/nomad.json",
       "bazel_label": "//src/services/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service",
       "output": "source-code-hosting-service",
       "depends_on": [
@@ -233,6 +262,7 @@
     {
       "component": "verself_web",
       "job_id": "verself-web",
+      "job_spec": "src/frontends/viteplus-monorepo/apps/verself-web/nomad.json",
       "bazel_label": "//src/frontends/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact",
       "output": "verself-web",
       "artifacts": [

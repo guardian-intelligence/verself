@@ -4,6 +4,11 @@ load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "vi
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    ["nomad.json"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
 FIRST_LIGHT_SHADER_SRC_MAP = [
     ("first-light.vert", "src/features/first-light/shader-src/first-light.vert"),
     ("first-light.frag", "src/features/first-light/shader-src/first-light.frag"),

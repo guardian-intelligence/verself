@@ -59,7 +59,6 @@
               "SANDBOX_GITHUB_RUNNER_GROUP_ID": "1",
               "SANDBOX_GITHUB_WEB_BASE_URL": "https://github.com",
               "SANDBOX_PUBLIC_BASE_URL": "https://sandbox.api.verself.sh",
-              "SANDBOX_TEMPORAL_FRONTEND_ADDRESS": "127.0.0.1:7233",
               "SANDBOX_TEMPORAL_NAMESPACE": "sandbox-rental-service",
               "SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING": "sandbox-rental-service.recurring-vm",
               "SANDBOX_VM_ORCHESTRATOR_SOCKET": "/run/vm-orchestrator/api.sock",
@@ -121,7 +120,6 @@
               "SANDBOX_GITHUB_RUNNER_GROUP_ID": "1",
               "SANDBOX_GITHUB_WEB_BASE_URL": "https://github.com",
               "SANDBOX_PUBLIC_BASE_URL": "https://sandbox.api.verself.sh",
-              "SANDBOX_TEMPORAL_FRONTEND_ADDRESS": "127.0.0.1:7233",
               "SANDBOX_TEMPORAL_NAMESPACE": "sandbox-rental-service",
               "SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING": "sandbox-rental-service.recurring-vm",
               "SANDBOX_VM_ORCHESTRATOR_SOCKET": "/run/vm-orchestrator/api.sock",
@@ -192,7 +190,7 @@
               {
                 "ChangeMode": "restart",
                 "DestPath": "secrets/upstreams.env",
-                "EmbeddedTmpl": "SANDBOX_BILLING_URL=https://{{- with nomadService \"billing-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_GOVERNANCE_AUDIT_URL=https://{{- with nomadService \"governance-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_SECRETS_URL=https://{{- with nomadService \"secrets-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService \"source-code-hosting-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "EmbeddedTmpl": "SANDBOX_BILLING_URL=https://{{- with nomadService \"billing-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_GOVERNANCE_AUDIT_URL=https://{{- with nomadService \"governance-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_SECRETS_URL=https://{{- with nomadService \"secrets-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService \"source-code-hosting-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService \"temporal-frontend-grpc\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
                 "Envvars": true
               }
             ],
@@ -230,7 +228,6 @@
               "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
               "OTEL_RESOURCE_ATTRIBUTES": "verself.supervisor=nomad",
               "OTEL_SERVICE_NAME": "sandbox-rental-recurring-worker",
-              "SANDBOX_TEMPORAL_FRONTEND_ADDRESS": "127.0.0.1:7233",
               "SANDBOX_TEMPORAL_NAMESPACE": "sandbox-rental-service",
               "SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING": "sandbox-rental-service.recurring-vm",
               "SPIFFE_ENDPOINT_SOCKET": "unix:///run/spire-agent/sockets/agent.sock",
@@ -259,7 +256,7 @@
               {
                 "ChangeMode": "restart",
                 "DestPath": "secrets/upstreams.env",
-                "EmbeddedTmpl": "SANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService \"source-code-hosting-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "EmbeddedTmpl": "SANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService \"source-code-hosting-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\nSANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService \"temporal-frontend-grpc\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
                 "Envvars": true
               }
             ],

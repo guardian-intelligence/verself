@@ -1,1 +1,6 @@
 # gazelle:prefix github.com/verself/profile-service
+
+exports_files(
+    ["nomad.json"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

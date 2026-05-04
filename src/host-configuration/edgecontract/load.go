@@ -26,8 +26,7 @@ func DefaultInputs(cfg Config) Inputs {
 		Endpoints:       filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/endpoints.yml"),
 		Ops:             filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/ops.yml"),
 		Clusters:        filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/group_vars/all/topology/clusters.yml"),
-		NomadIndex:      filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "jobs/index.json"),
-		NomadJobsDir:    filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "jobs"),
+		NomadIndex:      filepath.Join(cfg.RepoRoot, "src/tools/deployment/nomad/sites", cfg.Site, "release.json"),
 		HAProxyDefaults: filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/defaults/main.yml"),
 	}
 }
@@ -117,7 +116,7 @@ func loadInputs(inputPaths Inputs) (loadedInputs, error) {
 func compilePlan(cfg Config, inputPaths Inputs, in loadedInputs) (Plan, []string, error) {
 	var issues []string
 	componentJobs := collectComponentJobs(in.index, &issues)
-	nomadUpstreams, serviceByKey, err := collectNomadUpstreams(inputPaths.NomadJobsDir, componentJobs, &issues)
+	nomadUpstreams, serviceByKey, err := collectNomadUpstreams(cfg.RepoRoot, in.index, componentJobs, &issues)
 	if err != nil {
 		return Plan{}, nil, err
 	}
@@ -385,22 +384,25 @@ func collectComponentJobs(index NomadIndex, issues *[]string) map[string]string 
 	return out
 }
 
-func collectNomadUpstreams(jobsDir string, componentJobs map[string]string, issues *[]string) ([]NomadService, map[UpstreamKey]NomadService, error) {
-	entries, err := os.ReadDir(jobsDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read %s: %w", jobsDir, err)
-	}
+func collectNomadUpstreams(repoRoot string, index NomadIndex, componentJobs map[string]string, issues *[]string) ([]NomadService, map[UpstreamKey]NomadService, error) {
 	componentByJob := make(map[string]string, len(componentJobs))
 	for component, jobID := range componentJobs {
 		componentByJob[jobID] = component
 	}
 	var services []NomadService
 	byKey := map[UpstreamKey]NomadService{}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".nomad.json") {
+	seenJobSpecs := map[string]bool{}
+	for _, component := range index.Components {
+		if component.JobID == "" || component.JobSpec == "" {
+			issuef(issues, "nomad release component entries must include job_id and job_spec")
 			continue
 		}
-		path := filepath.Join(jobsDir, entry.Name())
+		if seenJobSpecs[component.JobSpec] {
+			issuef(issues, "nomad release job spec %s is referenced more than once", component.JobSpec)
+			continue
+		}
+		seenJobSpecs[component.JobSpec] = true
+		path := filepath.Join(repoRoot, filepath.FromSlash(component.JobSpec))
 		var jobFile NomadJobFile
 		if err := readJSONFile(path, &jobFile); err != nil {
 			return nil, nil, err
@@ -408,6 +410,10 @@ func collectNomadUpstreams(jobsDir string, componentJobs map[string]string, issu
 		jobID := jobFile.Job.ID
 		if jobID == "" {
 			issuef(issues, "%s: Job.ID is required", path)
+			continue
+		}
+		if jobID != component.JobID {
+			issuef(issues, "%s: Job.ID is %s, manifest job_id is %s", path, jobID, component.JobID)
 			continue
 		}
 		component := componentByJob[jobID]
@@ -439,6 +445,11 @@ func collectDynamicPorts(group NomadTaskGroup) map[string]NomadDynamicPort {
 	out := map[string]NomadDynamicPort{}
 	for _, network := range group.Networks {
 		for _, port := range network.DynamicPorts {
+			if port.Label != "" {
+				out[port.Label] = port
+			}
+		}
+		for _, port := range network.ReservedPorts {
 			if port.Label != "" {
 				out[port.Label] = port
 			}

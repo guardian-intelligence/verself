@@ -97,7 +97,7 @@ func run() error {
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
-	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
+	temporalFrontendAddress := cfg.RequireString("SANDBOX_TEMPORAL_FRONTEND_ADDRESS")
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	vmOrchestratorSocket := cfg.String("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)

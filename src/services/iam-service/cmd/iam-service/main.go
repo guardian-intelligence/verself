@@ -90,7 +90,7 @@ func run() error {
 	browserAuthLoginAudiencesRaw := cfg.RequireString("IAM_BROWSER_AUTH_LOGIN_AUDIENCES")
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
-	spiceDBEndpoint := cfg.String("IAM_SPICEDB_GRPC_ENDPOINT", "127.0.0.1:50051")
+	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
 	spiceDBPresharedKey := cfg.RequireCredential("spicedb-grpc-preshared-key")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {

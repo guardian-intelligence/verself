@@ -65,13 +65,13 @@ several SpiceDB processes.
 
 ## Substrate
 
-The first deployment uses a systemd-managed SpiceDB process backed by
+The current deployment uses a Nomad-managed SpiceDB process backed by
 PostgreSQL:
 
 ```text
-spicedb.service
-  gRPC API:       127.0.0.1:50051
-  metrics/pprof:  127.0.0.1:9090
+src/components/spicedb/nomad.json
+  gRPC API:       Nomad service spicedb-grpc, loopback dynamic port
+  metrics/pprof:  Nomad service spicedb-metrics, loopback dynamic port
   HTTP gateway:   disabled
   datastore:      PostgreSQL database spicedb
   auth:           gRPC preshared key, private to spicedb and iam-service
