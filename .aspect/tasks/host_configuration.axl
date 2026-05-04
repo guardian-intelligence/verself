@@ -5,13 +5,13 @@ Host convergence and guest-image staging are deploy internals owned by
 that does not mutate the provisioned host.
 """
 
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "checked_spawn", "ws_path")
 
 def _edit_secrets_impl(ctx):
     return checked_spawn(
         ctx,
         "sops",
-        [ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/secrets.sops.yml")],
+        [ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible/group_vars/all/secrets.sops.yml")],
         label = "sops edit host-configuration secrets",
     )
 

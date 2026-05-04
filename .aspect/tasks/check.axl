@@ -4,7 +4,7 @@ Cross-cutting verification gates used during PR review. `--kind=all` runs in
 fast-failure order: buildifier → supply-chain → edge → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "SUBSTRATE_DIR", "bazel_tracked_files", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "update_edge_generated", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "build_aspect_operator", "build_verself_deploy", "checked_spawn", "update_edge_generated", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
     for d in GO_DIRS:
@@ -79,7 +79,7 @@ def _ansible_lint(ctx):
             "playbooks",
             "roles",
         ],
-        cwd = ws_path(ctx, SUBSTRATE_DIR, "ansible"),
+        cwd = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
         label = "ansible-lint",
     )
 

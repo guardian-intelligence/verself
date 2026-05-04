@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "verself-deploy_lib",
@@ -49,4 +49,10 @@ go_binary(
     name = "verself-deploy",
     embed = [":verself-deploy_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "verself-deploy_test",
+    srcs = ["host_configuration_inputs_test.go"],
+    embed = [":verself-deploy_lib"],
 )

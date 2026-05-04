@@ -23,13 +23,13 @@ import (
 )
 
 const (
-	substrateSitePlaybook = "playbooks/site.yml"
-	substratePhase        = "substrate_site"
-	canonicalDeployScope  = "affected"
+	hostConfigurationSitePlaybook = "playbooks/site.yml"
+	hostConfigurationPhase        = "host_configuration_site"
+	canonicalDeployScope          = "affected"
 )
 
 // runRun is the `verself-deploy run` entry point. It owns identity,
-// deploy evidence writes, substrate convergence through the canonical
+// deploy evidence writes, host configuration convergence through the canonical
 // Ansible site playbook, and affected Nomad submits.
 //
 // AXL-side responsibilities preserved because they sit outside the deploy
@@ -182,14 +182,17 @@ func runDeployBody(
 	if hostDecision.Run {
 		if len(hostDecision.ChangedPaths) > 0 {
 			fmt.Fprintf(os.Stderr, "verself-deploy: host configuration inputs changed since %s (%s); running %s\n",
-				hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), substrateSitePlaybook)
+				hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), hostConfigurationSitePlaybook)
 		} else {
 			fmt.Fprintf(os.Stderr, "verself-deploy: no previous successful deploy for %s/%s; running %s\n",
-				site, scope, substrateSitePlaybook)
+				site, scope, hostConfigurationSitePlaybook)
 		}
-		hostConfigurationRes, err := runSubstrateSitePlaybook(ctx, rt, site, repoRoot, nil)
+		if len(hostDecision.SkipTags) > 0 {
+			fmt.Fprintf(os.Stderr, "verself-deploy: skipping unchanged host configuration tags: %s\n", strings.Join(hostDecision.SkipTags, ","))
+		}
+		hostConfigurationRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, hostConfigurationAnsibleArgs(hostDecision))
 		if err != nil || hostConfigurationRes == nil || hostConfigurationRes.ExitCode != 0 {
-			msg := ansibleFailureMessage(substrateSitePlaybook, hostConfigurationRes, err)
+			msg := ansibleFailureMessage(hostConfigurationSitePlaybook, hostConfigurationRes, err)
 			fmt.Fprintf(os.Stderr, "verself-deploy run: host configuration failed: %s\n", msg)
 			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
 			return 1
@@ -203,7 +206,7 @@ func runDeployBody(
 		)
 	} else {
 		fmt.Fprintf(os.Stderr, "verself-deploy: host configuration unchanged since %s (%s); skipping %s\n",
-			hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), substrateSitePlaybook)
+			hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), hostConfigurationSitePlaybook)
 		span.SetAttributes(attribute.Bool("host_configuration.skipped", true))
 	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
@@ -243,7 +246,14 @@ func runDeployBody(
 	return 0
 }
 
-func runSubstrateSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {
+func hostConfigurationAnsibleArgs(decision hostConfigurationDecision) []string {
+	if len(decision.SkipTags) == 0 {
+		return nil
+	}
+	return []string{"--skip-tags=" + strings.Join(decision.SkipTags, ",")}
+}
+
+func runHostConfigurationSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {
 	inventoryPath := authoredInventoryPath(repoRoot, site)
 	if _, err := os.Stat(inventoryPath); err != nil {
 		return nil, fmt.Errorf("inventory missing at %s: %w", inventoryPath, err)
@@ -252,12 +262,12 @@ func runSubstrateSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, re
 	args := append([]string{}, extraArgs...)
 	args = append(args, "-e", "verself_site="+site)
 	return ansible.Run(ctx, rt.DeployDB, ansible.Options{
-		Playbook:      substrateSitePlaybook,
+		Playbook:      hostConfigurationSitePlaybook,
 		Inventory:     inventoryPath,
 		AnsibleDir:    ansibleDir,
 		ExtraArgs:     args,
 		Site:          site,
-		Phase:         substratePhase,
+		Phase:         hostConfigurationPhase,
 		RunKey:        rt.Identity.RunKey(),
 		OTLPEndpoint:  rt.OTLPEndpoint(),
 		AdditionalEnv: []string{"VERSELF_SITE=" + site},

@@ -1,6 +1,6 @@
 """aspect dev <action> — controller development helpers."""
 
-load(".aspect/lib/helpers.axl", "SUBSTRATE_DIR", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "checked_spawn", "inventory_check", "ws_path")
 
 def _aspect_operator_bin(ctx):
     target = "//src/dev-tools/cmd/aspect-operator:aspect-operator"
@@ -15,12 +15,12 @@ def _ansible_local(ctx, playbook, *extra_args):
         ctx,
         "ansible-playbook",
         args_list,
-        cwd = ws_path(ctx, SUBSTRATE_DIR, "ansible"),
+        cwd = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
         label = "ansible-playbook " + " ".join(args_list),
     )
 
 def _install_impl(ctx):
-    catalog = ws_path(ctx, SUBSTRATE_DIR, "ansible/group_vars/all/catalog.yml")
+    catalog = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible/group_vars/all/catalog.yml")
     return _ansible_local(ctx, "playbooks/setup-dev.yml", "-e", "@" + catalog)
 
 def _sops_init_impl(ctx):

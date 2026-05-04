@@ -36,6 +36,7 @@ type hostConfigurationDecision struct {
 	BaseRunKey   string
 	BaseSHA      string
 	ChangedPaths []string
+	SkipTags     []string
 }
 
 func decideHostConfigurationConvergence(ctx context.Context, rt *runtime.Runtime, site, sha, scope, repoRoot string) (hostConfigurationDecision, error) {
@@ -80,6 +81,7 @@ func decideHostConfigurationConvergence(ctx context.Context, rt *runtime.Runtime
 	}
 	if decision.Run {
 		decision.Reason = hostConfigurationReasonInputsChanged
+		decision.SkipTags = hostConfigurationSkipTags(changedPaths)
 	}
 	recordHostConfigurationDecision(span, decision)
 	return decision, nil
@@ -96,8 +98,76 @@ func recordHostConfigurationDecision(span trace.Span, decision hostConfiguration
 	if len(decision.ChangedPaths) > 0 {
 		attrs = append(attrs, attribute.StringSlice("host_configuration.changed_paths", firstStrings(decision.ChangedPaths, 20)))
 	}
+	if len(decision.SkipTags) > 0 {
+		attrs = append(attrs, attribute.StringSlice("host_configuration.skip_tags", decision.SkipTags))
+	}
 	span.SetAttributes(attrs...)
 	span.SetStatus(codes.Ok, "")
+}
+
+func hostConfigurationSkipTags(changedPaths []string) []string {
+	var skipTags []string
+	if !hostConfigurationAnyPathMatches(changedPaths, hostConfigurationPathRequiresGuestRootFS) {
+		skipTags = append(skipTags, "guest_rootfs")
+	}
+	if !hostConfigurationAnyPathMatches(changedPaths, hostConfigurationPathRequiresFirecracker) {
+		skipTags = append(skipTags, "firecracker")
+	}
+	return skipTags
+}
+
+func hostConfigurationAnyPathMatches(paths []string, match func(string) bool) bool {
+	for _, path := range paths {
+		if match(hostConfigurationNormalizePath(path)) {
+			return true
+		}
+	}
+	return false
+}
+
+func hostConfigurationPathRequiresGuestRootFS(path string) bool {
+	if path == "MODULE.bazel" || path == "MODULE.bazel.lock" {
+		return true
+	}
+	if path == "src/host-configuration/ansible/group_vars/all/catalog.yml" {
+		return true
+	}
+	return hasAnyPathPrefix(path,
+		"src/host-configuration/ansible/roles/guest_rootfs/",
+		"src/vm-guest-telemetry/",
+		"src/vm-orchestrator/cmd/vm-bridge/",
+		"src/vm-orchestrator/guest-images/",
+		"src/vm-orchestrator/vmproto/",
+	)
+}
+
+func hostConfigurationPathRequiresFirecracker(path string) bool {
+	if hostConfigurationPathRequiresGuestRootFS(path) {
+		return true
+	}
+	return hasAnyPathPrefix(path,
+		"src/host-configuration/ansible/group_vars/workers/",
+		"src/host-configuration/ansible/group_vars/all/topology/ops.yml",
+		"src/host-configuration/ansible/host-files/etc/nftables.d/firecracker.nft",
+		"src/host-configuration/ansible/playbooks/tasks/firecracker-preflight.yml",
+		"src/host-configuration/ansible/roles/firecracker/",
+		"src/vm-orchestrator/",
+	)
+}
+
+func hostConfigurationNormalizePath(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.TrimPrefix(path, "./")
+	return strings.TrimPrefix(path, "/")
+}
+
+func hasAnyPathPrefix(path string, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if path == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func gitChangedHostConfigurationInputs(ctx context.Context, repoRoot, baseSHA, headSHA string) ([]string, error) {

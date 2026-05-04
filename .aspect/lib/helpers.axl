@@ -17,7 +17,7 @@ Conventions:
     non-zero exit code. They never silently coerce errors to no-ops.
 """
 
-SUBSTRATE_DIR = "src/host-configuration"
+HOST_CONFIGURATION_DIR = "src/host-configuration"
 PROVISION_DIR = "src/provisioning-tools"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
@@ -60,7 +60,7 @@ def ws_path(ctx, *parts):
 
 def site_inventory_source(site):
     """Repo-relative path to the per-site authored inventory file."""
-    return SUBSTRATE_DIR + "/ansible/" + site + ".ini"
+    return HOST_CONFIGURATION_DIR + "/ansible/" + site + ".ini"
 
 def inventory_check(ctx, site = DEFAULT_SITE):
     """Fail loud when the per-site Ansible inventory is missing.
@@ -71,8 +71,8 @@ def inventory_check(ctx, site = DEFAULT_SITE):
     """
     inv = ws_path(ctx, site_inventory_source(site))
     r = (ctx.std.process.command("test")
-         .args(["-f", inv])
-         .spawn().wait())
+        .args(["-f", inv])
+        .spawn().wait())
     if r.code != 0:
         ctx.std.io.stderr.write(
             "ERROR: " + site_inventory_source(site) + " not found. Run: aspect provision apply\n",
@@ -88,6 +88,7 @@ def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     int matches the program's exit code; non-zero is the caller's signal to
     propagate.
     """
+
     # TODO(aspect-followups): emit a row to default.aspect_task_invocations on
     # exit so we can answer "how often is each task actually invoked" without
     # taking on the full OTel task-tracing surface.
@@ -121,9 +122,9 @@ def require_one_of(ctx, names, values):
 def git_head(ctx):
     """Return the 40-char SHA at HEAD, or empty string on failure."""
     r = (ctx.std.process.command("git")
-         .args(["rev-parse", "HEAD"])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
+        .args(["rev-parse", "HEAD"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
     if r.status.code != 0:
         return ""
     return r.stdout.strip()
@@ -134,9 +135,9 @@ def resolve_sha(ctx, raw):
     """
     target = raw if raw and raw != "" else "HEAD"
     r = (ctx.std.process.command("git")
-         .args(["rev-parse", "--verify", target + "^{commit}"])
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
+        .args(["rev-parse", "--verify", target + "^{commit}"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
     if r.status.code != 0:
         ctx.std.io.stderr.write("ERROR: cannot resolve git ref " + target + "\n")
         return ""
@@ -148,7 +149,8 @@ def build_verself_deploy(ctx):
     bazel disk cache, so per-task invocations are sub-second.
     """
     rc = checked_spawn(
-        ctx, "bazelisk",
+        ctx,
+        "bazelisk",
         ["build", "--config=remote-writer", VERSELF_DEPLOY_TARGET],
         cwd = ws_path(ctx),
         label = "bazelisk build " + VERSELF_DEPLOY_TARGET,
@@ -156,7 +158,8 @@ def build_verself_deploy(ctx):
     if rc != 0:
         ctx.std.io.stderr.write("WARN: remote-writer build failed; retrying with local Bazel cache only\n")
         rc = checked_spawn(
-            ctx, "bazelisk",
+            ctx,
+            "bazelisk",
             ["build", VERSELF_DEPLOY_TARGET],
             cwd = ws_path(ctx),
             label = "bazelisk build " + VERSELF_DEPLOY_TARGET + " (local fallback)",
@@ -170,7 +173,8 @@ def build_aspect_operator(ctx):
     empty string on failure.
     """
     rc = checked_spawn(
-        ctx, "bazelisk",
+        ctx,
+        "bazelisk",
         ["build", ASPECT_OPERATOR_TARGET],
         cwd = ws_path(ctx),
         label = "bazelisk build " + ASPECT_OPERATOR_TARGET,
@@ -199,10 +203,10 @@ def bazel_tracked_files(ctx):
     Returns None on git failure so callers can short-circuit.
     """
     r = (ctx.std.process.command("git")
-         .args(["ls-files", "-z"])
-         .current_dir(ws_path(ctx))
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
+        .args(["ls-files", "-z"])
+        .current_dir(ws_path(ctx))
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
     if r.status.code != 0:
         ctx.std.io.stderr.write("ERROR: git ls-files failed\n")
         return None
@@ -218,9 +222,9 @@ def bazel_tracked_files(ctx):
 def tool_version(ctx, program, *args):
     """Run `<program> <args...>` and return the first stdout line, or None."""
     r = (ctx.std.process.command(program)
-         .args(list(args))
-         .stdout("piped").stderr("piped")
-         .spawn().wait_with_output())
+        .args(list(args))
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
     if r.status.code != 0:
         return None
     out = r.stdout.strip()
