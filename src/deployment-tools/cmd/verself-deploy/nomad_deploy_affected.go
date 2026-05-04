@@ -145,7 +145,7 @@ func deployAffected(ctx context.Context, rt *runtime.Runtime, span trace.Span, s
 	if len(submitEntries) == 0 {
 		return nil
 	}
-	return submitResolvedEntries(ctx, rt, nomadJobsDir, submitEntries)
+	return submitResolvedEntries(ctx, rt, site, repoRoot, nomadJobsDir, submitEntries)
 }
 
 func publishArtifacts(ctx context.Context, sshClient *sshtun.Client, manifest *render.Manifest, repoRoot string) error {
@@ -184,7 +184,7 @@ func publishArtifacts(ctx context.Context, sshClient *sshtun.Client, manifest *r
 	return pub.PublishAll(ctx, manifest, repoRoot)
 }
 
-func submitResolvedEntries(ctx context.Context, rt *runtime.Runtime, jobsDir string, entries []render.SubmitEntry) error {
+func submitResolvedEntries(ctx context.Context, rt *runtime.Runtime, site, repoRoot, jobsDir string, entries []render.SubmitEntry) error {
 	forward, err := rt.SSH.Forward(ctx, "nomad", defaultNomadRemotePort)
 	if err != nil {
 		return err
@@ -194,23 +194,24 @@ func submitResolvedEntries(ctx context.Context, rt *runtime.Runtime, jobsDir str
 	if err != nil {
 		return err
 	}
+	haproxyOpts := haproxyupstreams.Options{RepoRoot: repoRoot, Site: site}
 
 	for _, entry := range entries {
-		if err := submitOneEntry(ctx, rt.Tracer, client, jobsDir, entry); err != nil {
+		if err := submitOneEntry(ctx, rt.Tracer, client, rt.SSH, haproxyOpts, jobsDir, entry); err != nil {
 			return fmt.Errorf("%s: %w", entry.JobID, err)
 		}
 	}
-	// Once every alloc reports healthy, the Nomad service catalog
-	// holds the live <jobid>-<endpoint> to 127.0.0.1:port map. HAProxy
-	// reads those addresses from a map file at request time. Reconcile
-	// rewrites the map, validates the config, and reloads HAProxy.
-	if err := haproxyupstreams.Reconcile(ctx, client, rt.SSH); err != nil {
+	// The per-job loop reconciles during rollouts so healthy canaries
+	// become routable before Nomad stops the prior allocation. This
+	// final pass catches no-op deployments and any catalog changes that
+	// landed after the last monitor tick.
+	if _, err := haproxyupstreams.Reconcile(ctx, client, rt.SSH, haproxyOpts); err != nil {
 		return fmt.Errorf("reconcile haproxy upstreams: %w", err)
 	}
 	return nil
 }
 
-func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclient.Client, jobsDir string, entry render.SubmitEntry) error {
+func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclient.Client, sshClient *sshtun.Client, haproxyOpts haproxyupstreams.Options, jobsDir string, entry render.SubmitEntry) error {
 	ctx, span := tracer.Start(ctx, "verself_deploy.nomad.submit",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
@@ -224,12 +225,54 @@ func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclien
 	timeoutCtx, cancel := context.WithTimeout(ctx, deployAffectedSubmitTimeout)
 	defer cancel()
 
+	stopReconciler, err := startHAProxyReconcileLoop(timeoutCtx, client, sshClient, haproxyOpts)
+	if err != nil {
+		recordFailure(span, err)
+		return err
+	}
 	if err := submitOnce(timeoutCtx, span, client, specPath); err != nil {
+		_ = stopReconciler()
+		recordFailure(span, err)
+		return err
+	}
+	if err := stopReconciler(); err != nil {
 		recordFailure(span, err)
 		return err
 	}
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func startHAProxyReconcileLoop(ctx context.Context, client *nomadclient.Client, sshClient *sshtun.Client, opts haproxyupstreams.Options) (func() error, error) {
+	if _, err := haproxyupstreams.Reconcile(ctx, client, sshClient, opts); err != nil {
+		return nil, fmt.Errorf("initial haproxy upstream reconcile: %w", err)
+	}
+	loopCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-loopCtx.Done():
+				done <- nil
+				return
+			case <-ticker.C:
+				if _, err := haproxyupstreams.Reconcile(loopCtx, client, sshClient, opts); err != nil {
+					if loopCtx.Err() != nil {
+						done <- nil
+						return
+					}
+					done <- fmt.Errorf("periodic haproxy upstream reconcile: %w", err)
+					return
+				}
+			}
+		}
+	}()
+	return func() error {
+		cancel()
+		return <-done
+	}, nil
 }
 
 // commonParentDir returns the longest path that is a directory

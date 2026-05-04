@@ -31,10 +31,10 @@ genrule(
 )
 
 genrule(
-    name = "edge_upstreams_map",
+    name = "edge_nomad_upstreams_config",
     srcs = _EDGE_INPUTS,
-    outs = ["__generated/edge/upstreams.map.j2"],
-    cmd = "$(location //src/dev-tools/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=upstreams-map > $@",
+    outs = ["__generated/edge/nomad-upstreams.cfg.j2"],
+    cmd = "$(location //src/dev-tools/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=nomad-upstreams-config > $@",
     tools = ["//src/dev-tools/cmd/aspect-operator"],
 )
 
@@ -42,8 +42,8 @@ write_source_files(
     name = "edge_generated",
     files = {
         "ansible/roles/haproxy/templates/__generated/haproxy.cfg.j2": ":edge_haproxy_template",
+        "ansible/roles/haproxy/templates/__generated/nomad-upstreams.cfg.j2": ":edge_nomad_upstreams_config",
         "ansible/roles/haproxy/templates/__generated/public-hosts.map.j2": ":edge_public_hosts_map",
-        "ansible/roles/haproxy/templates/__generated/upstreams.map.j2": ":edge_upstreams_map",
     },
 )
 

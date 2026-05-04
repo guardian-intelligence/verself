@@ -36,6 +36,9 @@ server {
 
 client {
   enabled = true
+  min_dynamic_port = 20000
+  max_dynamic_port = 32000
+
   # Single-node: server is co-resident on loopback. Setting servers
   # explicitly skips Consul discovery (we don't run Consul).
   servers = ["127.0.0.1:4647"]
@@ -44,9 +47,11 @@ client {
     set_environment_variables = "AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION,AWS_EC2_METADATA_DISABLED"
   }
 
-  # Pin every reserved port to 127.0.0.1 so the native service registry
-  # advertises loopback for HTTP/TCP checks. Components bind 127.0.0.1
-  # at L4; nftables enforces loopback-only at L3 as defense-in-depth.
+  # The dynamic port range above is mirrored by the static nftables perimeter
+  # rules that drop non-loopback ingress to allocation listeners.
+  # Pin every named host-network port to 127.0.0.1 so the native service
+  # registry advertises loopback for HTTP/TCP checks. Components bind
+  # 127.0.0.1 at L4; nftables enforces loopback-only at L3 as defense-in-depth.
   # Filtering by CIDR avoids fingerprinting ::1 alongside 127.0.0.1
   # (per hashicorp/nomad#15341).
   host_network "loopback" {

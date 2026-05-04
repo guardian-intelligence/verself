@@ -36,7 +36,7 @@ func (s *stringList) Set(value string) error {
 type config struct {
 	legoBin              string
 	haproxyBin           string
-	haproxyConfig        string
+	haproxyConfigs       stringList
 	haproxyLDLibraryPath string
 	legoPath             string
 	email                string
@@ -70,7 +70,7 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("haproxy-lego-renew", flag.ContinueOnError)
 	fs.StringVar(&cfg.legoBin, "lego-bin", "/opt/verself/profile/bin/lego", "Path to the lego binary.")
 	fs.StringVar(&cfg.haproxyBin, "haproxy-bin", "/opt/verself/profile/bin/haproxy", "Path to the HAProxy binary.")
-	fs.StringVar(&cfg.haproxyConfig, "haproxy-config", "/etc/haproxy/haproxy.cfg", "HAProxy config to validate.")
+	fs.Var(&cfg.haproxyConfigs, "haproxy-config", "HAProxy config to validate; repeat in HAProxy load order.")
 	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "LD_LIBRARY_PATH used when invoking HAProxy.")
 	fs.StringVar(&cfg.legoPath, "lego-path", "/var/lib/lego", "lego state directory.")
 	fs.StringVar(&cfg.email, "email", "", "ACME account email.")
@@ -104,6 +104,9 @@ func run(args []string) error {
 	}
 	if cfg.certName == "" {
 		cfg.certName = cfg.domains[0]
+	}
+	if len(cfg.haproxyConfigs) == 0 {
+		cfg.haproxyConfigs = append(cfg.haproxyConfigs, "/etc/haproxy/haproxy.cfg")
 	}
 	if err := requireCloudflareCredential(cfg.dnsProvider); err != nil {
 		return err
@@ -414,11 +417,15 @@ func groupID(group string) (int, error) {
 func validateHAProxy(cfg config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, cfg.haproxyBin, "-c", "-f", cfg.haproxyConfig)
+	argv := []string{"-c"}
+	for _, config := range cfg.haproxyConfigs {
+		argv = append(argv, "-f", config)
+	}
+	cmd := exec.CommandContext(ctx, cfg.haproxyBin, argv...)
 	cmd.Env = withLDLibraryPath(os.Environ(), cfg.haproxyLDLibraryPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s -c -f %s: %w: %s", cfg.haproxyBin, cfg.haproxyConfig, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%s %s: %w: %s", cfg.haproxyBin, strings.Join(argv, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

@@ -279,10 +279,10 @@
     mode: "0640"
   notify: reload haproxy
 
-- name: Initialise HAProxy Nomad upstream map
+- name: Deploy HAProxy Nomad upstream backend config
   ansible.builtin.template:
-    src: __generated/upstreams.map.j2
-    dest: "{{ haproxy_map_dir }}/upstreams.map"
+    src: __generated/nomad-upstreams.cfg.j2
+    dest: "{{ haproxy_nomad_upstreams_config }}"
     owner: root
     group: haproxy
     mode: "0640"
@@ -302,7 +302,7 @@
       trap "rm -f \"$tmp\"" EXIT;
       /usr/bin/install -o haproxy -g haproxy -m 0640 "$1" "$tmp";
       cd /;
-      /usr/bin/sudo -u haproxy /usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$tmp"'
+      /usr/bin/sudo -u haproxy /usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$tmp" -f {{ haproxy_nomad_upstreams_config }}'
       -- %s
   notify: restart haproxy
 
@@ -361,6 +361,8 @@
       - "{{ verself_bin }}/haproxy"
       - --haproxy-config
       - "{{ haproxy_config_dir }}/haproxy.cfg"
+      - --haproxy-config
+      - "{{ haproxy_nomad_upstreams_config }}"
       - --haproxy-ld-library-path
       - "{{ haproxy_aws_lc_library_path }}"
       - --lego-path

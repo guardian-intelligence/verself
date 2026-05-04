@@ -206,15 +206,18 @@ func (c *Client) findDeploymentID(ctx context.Context, jobID string, jobModifyIn
 // ServiceAddress is the resolved network endpoint for one entry in
 // Nomad's service catalog.
 type ServiceAddress struct {
-	Name    string
-	Address string
-	Port    int
+	Name      string
+	ServiceID string
+	AllocID   string
+	JobID     string
+	Address   string
+	Port      int
 }
 
-// ListServiceAddresses returns the live address of every Nomad-native
-// service registration. It walks Nomad's catalog (one List call,
-// one Get per service name) and returns the first registration of
-// each service. On a single-node deployment that's the only one.
+// ListServiceAddresses returns the routable addresses of every
+// Nomad-native service registration. Registrations are filtered through
+// allocation deployment health so HAProxy does not route canaries before
+// Nomad's own checks have passed.
 //
 // Caller-side filtering is expected: registrations come from any
 // component that opted into Nomad service registration, including
@@ -232,6 +235,7 @@ func (c *Client) ListServiceAddresses(ctx context.Context) ([]ServiceAddress, er
 		return nil, fmt.Errorf("nomad services list: %w", err)
 	}
 	var out []ServiceAddress
+	allocRoutable := map[string]bool{}
 	for _, ns := range stubs {
 		for _, svc := range ns.Services {
 			regs, _, err := c.api.Services().Get(svc.ServiceName, (&api.QueryOptions{}).WithContext(ctx))
@@ -240,20 +244,67 @@ func (c *Client) ListServiceAddresses(ctx context.Context) ([]ServiceAddress, er
 				span.SetStatus(codes.Error, err.Error())
 				return nil, fmt.Errorf("nomad services get %s: %w", svc.ServiceName, err)
 			}
-			if len(regs) == 0 {
-				continue
+			for _, reg := range regs {
+				if reg == nil {
+					continue
+				}
+				routable, ok := allocRoutable[reg.AllocID]
+				if !ok {
+					var err error
+					routable, err = c.allocationRoutable(ctx, reg.AllocID)
+					if err != nil {
+						span.RecordError(err)
+						span.SetStatus(codes.Error, err.Error())
+						return nil, err
+					}
+					allocRoutable[reg.AllocID] = routable
+				}
+				if !routable {
+					continue
+				}
+				out = append(out, ServiceAddress{
+					Name:      reg.ServiceName,
+					ServiceID: reg.ID,
+					AllocID:   reg.AllocID,
+					JobID:     reg.JobID,
+					Address:   reg.Address,
+					Port:      reg.Port,
+				})
 			}
-			reg := regs[0]
-			out = append(out, ServiceAddress{
-				Name:    reg.ServiceName,
-				Address: reg.Address,
-				Port:    reg.Port,
-			})
 		}
 	}
-	span.SetAttributes(attribute.Int("nomad.services.count", len(out)))
+	span.SetAttributes(
+		attribute.Int("nomad.services.count", len(out)),
+		attribute.Int("nomad.allocations.inspected", len(allocRoutable)),
+	)
 	span.SetStatus(codes.Ok, "")
 	return out, nil
+}
+
+func (c *Client) allocationRoutable(ctx context.Context, allocID string) (bool, error) {
+	if allocID == "" {
+		return false, nil
+	}
+	alloc, _, err := c.api.Allocations().Info(allocID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		if isNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("nomad allocation info %s: %w", allocID, err)
+	}
+	if alloc == nil {
+		return false, nil
+	}
+	if alloc.ClientStatus != api.AllocClientStatusRunning {
+		return false, nil
+	}
+	if alloc.DeploymentStatus == nil {
+		return true, nil
+	}
+	if alloc.DeploymentStatus.Healthy == nil {
+		return false, nil
+	}
+	return *alloc.DeploymentStatus.Healthy, nil
 }
 
 // isNotFound matches Nomad's "Unexpected response code: 404" wrapping.

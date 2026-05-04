@@ -1,20 +1,10 @@
-// Package haproxyupstreams reconciles HAProxy map files from Nomad's
-// native service catalog.
-//
-// HAProxy maps `VERSELF_UPSTREAM_<COMP>_<EP>` keys to the current
-// allocation listener for every Nomad-supervised upstream. This
-// package walks Nomad's catalog, rewrites the map atomically, validates
-// the live HAProxy configuration, and reloads HAProxy.
-//
-// The mapping rule is mechanical: a Nomad service named
-// `<jobid>-<endpoint>` becomes the map key
-// `VERSELF_UPSTREAM_<UPPER(jobid_with_dashes_to_underscores)_<UPPER(endpoint)>`.
+// Package haproxyupstreams reconciles HAProxy's Nomad-backed backend
+// configuration from Nomad's native service catalog.
 package haproxyupstreams
 
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -31,89 +21,130 @@ import (
 const tracerName = "github.com/verself/deployment-tools/internal/haproxyupstreams"
 
 const (
-	upstreamsPath        = "/etc/haproxy/maps/upstreams.map"
+	nomadUpstreamsPath   = "/etc/haproxy/nomad-upstreams.cfg"
 	haproxyBin           = "/opt/verself/profile/bin/haproxy"
 	haproxyConfig        = "/etc/haproxy/haproxy.cfg"
 	haproxyLDLibraryPath = "/opt/aws-lc/lib/x86_64-linux-gnu"
 )
 
-// Reconcile fetches every Nomad-registered service address, rewrites
-// /etc/haproxy/maps/upstreams.map on the controller node, validates
-// the HAProxy configuration against that map, and reloads HAProxy.
-func Reconcile(ctx context.Context, client *nomadclient.Client, ssh *sshtun.Client) error {
+type Options struct {
+	RepoRoot string
+	Site     string
+}
+
+type Result struct {
+	Changed       bool
+	EndpointCount int
+	ConfigBytes   int
+}
+
+// Reconcile fetches Nomad service registrations, renders every HAProxy
+// backend that targets a Nomad upstream, validates the complete HAProxy
+// configuration, and reloads HAProxy only when the rendered backend file
+// changes.
+func Reconcile(ctx context.Context, client *nomadclient.Client, ssh *sshtun.Client, opts Options) (Result, error) {
 	tracer := otel.Tracer(tracerName)
 	ctx, span := tracer.Start(ctx, "verself_deploy.haproxy.reconcile_upstreams",
 		trace.WithSpanKind(trace.SpanKindInternal),
 	)
 	defer span.End()
 
-	addresses, err := client.ListServiceAddresses(ctx)
+	body, endpointCount, err := buildConfig(ctx, client, opts)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	body, err := buildMapFile(addresses)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
+		return Result{}, err
 	}
 	span.SetAttributes(
-		attribute.Int("verself.haproxy.upstream.count", len(addresses)),
+		attribute.Int("verself.haproxy.upstream.endpoint_count", endpointCount),
 		attribute.Int("verself.haproxy.upstream.bytes", len(body)),
 	)
 
-	if err := writeAndValidateUpstreamFile(ctx, ssh, body); err != nil {
+	changed, err := writeAndValidateUpstreamConfig(ctx, ssh, body)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return Result{}, err
 	}
-	if err := reloadHAProxy(ctx, ssh); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
+	if changed {
+		if err := reloadHAProxy(ctx, ssh); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return Result{}, err
+		}
 	}
+	span.SetAttributes(attribute.Bool("verself.haproxy.upstream.changed", changed))
 	span.SetStatus(codes.Ok, "")
-	return nil
+	return Result{Changed: changed, EndpointCount: endpointCount, ConfigBytes: len(body)}, nil
 }
 
-// buildMapFile renders the HAProxy upstream map body. It is exported
-// via the lowercase function name only for tests in the same package;
-// the rest of the package is callable surface for verself-deploy.
-func buildMapFile(addresses []nomadclient.ServiceAddress) (string, error) {
-	rows := make(map[string]string, len(addresses))
+// Stage writes the Nomad backend config without validating or reloading
+// HAProxy. The deploy controller uses it immediately before host
+// configuration convergence, where the currently running HAProxy config may
+// still define the old dynamic backends inline; Ansible validates the staged
+// file together with the newly rendered static config before restart.
+func Stage(ctx context.Context, client *nomadclient.Client, ssh *sshtun.Client, opts Options) (Result, error) {
+	tracer := otel.Tracer(tracerName)
+	ctx, span := tracer.Start(ctx, "verself_deploy.haproxy.stage_upstreams",
+		trace.WithSpanKind(trace.SpanKindInternal),
+	)
+	defer span.End()
+
+	body, endpointCount, err := buildConfig(ctx, client, opts)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Result{}, err
+	}
+	changed, err := writeUpstreamConfig(ctx, ssh, body)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Result{}, err
+	}
+	span.SetAttributes(
+		attribute.Int("verself.haproxy.upstream.endpoint_count", endpointCount),
+		attribute.Int("verself.haproxy.upstream.bytes", len(body)),
+		attribute.Bool("verself.haproxy.upstream.changed", changed),
+	)
+	span.SetStatus(codes.Ok, "")
+	return Result{Changed: changed, EndpointCount: endpointCount, ConfigBytes: len(body)}, nil
+}
+
+func buildConfig(ctx context.Context, client *nomadclient.Client, opts Options) (string, int, error) {
+	if opts.RepoRoot == "" {
+		return "", 0, fmt.Errorf("haproxy upstream reconcile requires RepoRoot")
+	}
+	if opts.Site == "" {
+		return "", 0, fmt.Errorf("haproxy upstream reconcile requires Site")
+	}
+	bundle, err := edgecontract.Build(edgecontract.Config{RepoRoot: opts.RepoRoot, Site: opts.Site})
+	if err != nil {
+		return "", 0, err
+	}
+	if len(bundle.Issues) > 0 {
+		return "", 0, fmt.Errorf("edge contract has issues: %s", strings.Join(bundle.Issues, "; "))
+	}
+
+	addresses, err := client.ListServiceAddresses(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	endpoints := make([]edgecontract.NomadEndpoint, 0, len(addresses))
 	for _, addr := range addresses {
-		key := mapKey(addr.Name)
-		if key == "" {
-			continue
-		}
 		if err := validateLoopbackAddress(addr); err != nil {
-			return "", err
+			return "", 0, err
 		}
-		rows[key] = addr.Address + ":" + strconv.Itoa(addr.Port)
+		endpoints = append(endpoints, edgecontract.NomadEndpoint{
+			ServiceName: addr.Name,
+			ServiceID:   addr.ServiceID,
+			AllocID:     addr.AllocID,
+			JobID:       addr.JobID,
+			Address:     addr.Address,
+			Port:        addr.Port,
+		})
 	}
-	keys := make([]string, 0, len(rows))
-	for key := range rows {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var b strings.Builder
-	for _, key := range keys {
-		b.WriteString(key)
-		b.WriteByte(' ')
-		b.WriteString(rows[key])
-		b.WriteByte('\n')
-	}
-	return b.String(), nil
-}
-
-// mapKey converts a Nomad service name (`<jobid>-<endpoint>`) to the
-// matching VERSELF_UPSTREAM_* key HAProxy expects. Service
-// names outside the authored job naming contract return an empty
-// string so the caller skips them.
-func mapKey(serviceName string) string {
-	return string(edgecontract.NomadServiceUpstreamKey(serviceName))
+	return edgecontract.RenderNomadUpstreamsConfig(bundle.Plan, endpoints), len(endpoints), nil
 }
 
 func validateLoopbackAddress(addr nomadclient.ServiceAddress) error {
@@ -126,27 +157,59 @@ func validateLoopbackAddress(addr nomadclient.ServiceAddress) error {
 	return nil
 }
 
-func writeAndValidateUpstreamFile(ctx context.Context, ssh *sshtun.Client, body string) error {
-	// HAProxy validates the fixed map path, so the command installs a
-	// backup first and restores it if config validation fails.
+func writeUpstreamConfig(ctx context.Context, ssh *sshtun.Client, body string) (bool, error) {
+	cmd := fmt.Sprintf(
+		"set -eu\n"+
+			"tmp=$(sudo mktemp %s.tmp.XXXXXX)\n"+
+			"trap 'if [ -n \"${tmp:-}\" ] && sudo test -e \"$tmp\"; then sudo rm -f \"$tmp\"; fi' EXIT\n"+
+			"sudo tee \"$tmp\" >/dev/null <<'VERSELFHAPROXY_NOMAD_UPSTREAMS_EOF'\n%sVERSELFHAPROXY_NOMAD_UPSTREAMS_EOF\n"+
+			"sudo chmod 0640 \"$tmp\"\n"+
+			"sudo chown root:haproxy \"$tmp\"\n"+
+			"if sudo test -e %s && sudo cmp -s \"$tmp\" %s; then\n"+
+			"  sudo rm -f \"$tmp\"\n"+
+			"  echo VERSELF_HAPROXY_STATUS=unchanged\n"+
+			"  exit 0\n"+
+			"fi\n"+
+			"sudo mv \"$tmp\" %s\n"+
+			"echo VERSELF_HAPROXY_STATUS=changed\n",
+		nomadUpstreamsPath,
+		body,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
+	)
+	out, err := ssh.Exec(ctx, cmd)
+	if err != nil {
+		return false, fmt.Errorf("write %s: %w", nomadUpstreamsPath, err)
+	}
+	return strings.Contains(string(out), "VERSELF_HAPROXY_STATUS=changed"), nil
+}
+
+func writeAndValidateUpstreamConfig(ctx context.Context, ssh *sshtun.Client, body string) (bool, error) {
 	checkCommand := fmt.Sprintf(
-		"cd / && LD_LIBRARY_PATH=%s %s -c -f %s",
+		"cd / && LD_LIBRARY_PATH=%s %s -c -f %s -f %s",
 		haproxyLDLibraryPath,
 		haproxyBin,
 		haproxyConfig,
+		nomadUpstreamsPath,
 	)
 	cmd := fmt.Sprintf(
 		"set -eu\n"+
 			"tmp=$(sudo mktemp %s.tmp.XXXXXX)\n"+
 			"backup=\"\"\n"+
 			"trap 'if [ -n \"${tmp:-}\" ] && sudo test -e \"$tmp\"; then sudo rm -f \"$tmp\"; fi' EXIT\n"+
+			"sudo tee \"$tmp\" >/dev/null <<'VERSELFHAPROXY_NOMAD_UPSTREAMS_EOF'\n%sVERSELFHAPROXY_NOMAD_UPSTREAMS_EOF\n"+
+			"sudo chmod 0640 \"$tmp\"\n"+
+			"sudo chown root:haproxy \"$tmp\"\n"+
+			"if sudo test -e %s && sudo cmp -s \"$tmp\" %s; then\n"+
+			"  sudo rm -f \"$tmp\"\n"+
+			"  echo VERSELF_HAPROXY_STATUS=unchanged\n"+
+			"  exit 0\n"+
+			"fi\n"+
 			"if sudo test -e %s; then\n"+
 			"  backup=$(sudo mktemp %s.backup.XXXXXX)\n"+
 			"  sudo cp -a %s \"$backup\"\n"+
 			"fi\n"+
-			"sudo tee \"$tmp\" >/dev/null <<'VERSELFHAPROXY_UPSTREAMS_EOF'\n%sVERSELFHAPROXY_UPSTREAMS_EOF\n"+
-			"sudo chmod 0640 \"$tmp\"\n"+
-			"sudo chown root:haproxy \"$tmp\"\n"+
 			"sudo mv \"$tmp\" %s\n"+
 			// `haproxy -c` opens shm-stats-file, so validate as the service user that must reload it.
 			"if ! sudo -u haproxy /bin/sh -c %s; then\n"+
@@ -159,21 +222,25 @@ func writeAndValidateUpstreamFile(ctx context.Context, ssh *sshtun.Client, body 
 			"fi\n"+
 			"if [ -n \"$backup\" ]; then\n"+
 			"  sudo rm -f \"$backup\"\n"+
-			"fi\n",
-		upstreamsPath,
-		upstreamsPath,
-		upstreamsPath,
-		upstreamsPath,
+			"fi\n"+
+			"echo VERSELF_HAPROXY_STATUS=changed\n",
+		nomadUpstreamsPath,
 		body,
-		upstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
 		strconv.Quote(checkCommand),
-		upstreamsPath,
-		upstreamsPath,
+		nomadUpstreamsPath,
+		nomadUpstreamsPath,
 	)
-	if _, err := ssh.Exec(ctx, cmd); err != nil {
-		return fmt.Errorf("write and validate %s: %w", upstreamsPath, err)
+	out, err := ssh.Exec(ctx, cmd)
+	if err != nil {
+		return false, fmt.Errorf("write and validate %s: %w", nomadUpstreamsPath, err)
 	}
-	return nil
+	return strings.Contains(string(out), "VERSELF_HAPROXY_STATUS=changed"), nil
 }
 
 func reloadHAProxy(ctx context.Context, ssh *sshtun.Client) error {

@@ -27,16 +27,16 @@ type Inputs struct {
 }
 
 type Outputs struct {
-	HAProxyTemplate     string `json:"haproxy_template" yaml:"haproxy_template"`
-	PublicHostsMap      string `json:"public_hosts_map" yaml:"public_hosts_map"`
-	InitialUpstreamsMap string `json:"initial_upstreams_map" yaml:"initial_upstreams_map"`
+	HAProxyTemplate      string `json:"haproxy_template" yaml:"haproxy_template"`
+	PublicHostsMap       string `json:"public_hosts_map" yaml:"public_hosts_map"`
+	NomadUpstreamsConfig string `json:"nomad_upstreams_config" yaml:"nomad_upstreams_config"`
 }
 
 func (o Outputs) GeneratedArtifacts(artifacts Artifacts) []GeneratedArtifact {
 	return []GeneratedArtifact{
 		{Name: "HAProxy template", Path: o.HAProxyTemplate, Content: artifacts.HAProxyTemplate},
 		{Name: "public hosts map", Path: o.PublicHostsMap, Content: artifacts.PublicHostsMap},
-		{Name: "initial upstreams map", Path: o.InitialUpstreamsMap, Content: artifacts.InitialUpstreamsMap},
+		{Name: "Nomad upstreams config", Path: o.NomadUpstreamsConfig, Content: artifacts.NomadUpstreamsConfig},
 	}
 }
 
@@ -100,9 +100,9 @@ type HAProxyDefaults struct {
 }
 
 type Artifacts struct {
-	HAProxyTemplate     string
-	PublicHostsMap      string
-	InitialUpstreamsMap string
+	HAProxyTemplate      string
+	PublicHostsMap       string
+	NomadUpstreamsConfig string
 }
 
 type GeneratedArtifact struct {
@@ -182,6 +182,15 @@ type NomadService struct {
 	AddressMode  string `json:"address_mode" yaml:"address_mode"`
 	Provider     string `json:"provider" yaml:"provider"`
 	NomadDynamic bool   `json:"nomad_dynamic" yaml:"nomad_dynamic"`
+}
+
+type NomadEndpoint struct {
+	ServiceName string
+	ServiceID   string
+	AllocID     string
+	JobID       string
+	Address     string
+	Port        int
 }
 
 type RoutesFile struct {

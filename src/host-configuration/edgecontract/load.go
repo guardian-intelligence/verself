@@ -35,9 +35,9 @@ func DefaultInputs(cfg Config) Inputs {
 func DefaultOutputs(cfg Config) Outputs {
 	generatedDir := filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/__generated")
 	return Outputs{
-		HAProxyTemplate:     filepath.Join(generatedDir, "haproxy.cfg.j2"),
-		PublicHostsMap:      filepath.Join(generatedDir, "public-hosts.map.j2"),
-		InitialUpstreamsMap: filepath.Join(generatedDir, "upstreams.map.j2"),
+		HAProxyTemplate:      filepath.Join(generatedDir, "haproxy.cfg.j2"),
+		PublicHostsMap:       filepath.Join(generatedDir, "public-hosts.map.j2"),
+		NomadUpstreamsConfig: filepath.Join(generatedDir, "nomad-upstreams.cfg.j2"),
 	}
 }
 
@@ -53,9 +53,9 @@ func Build(cfg Config) (*Bundle, error) {
 		return nil, err
 	}
 	artifacts := Artifacts{
-		HAProxyTemplate:     RenderHAProxyTemplate(plan),
-		PublicHostsMap:      RenderPublicHostsMap(plan),
-		InitialUpstreamsMap: RenderInitialUpstreamsMap(plan),
+		HAProxyTemplate:      RenderHAProxyTemplate(plan),
+		PublicHostsMap:       RenderPublicHostsMap(plan),
+		NomadUpstreamsConfig: RenderInitialNomadUpstreamsConfig(plan),
 	}
 	manifest := BuildManifest(inputPaths, outputPaths, plan)
 	sort.Strings(issues)
@@ -264,6 +264,7 @@ func compileBackends(plan Plan) []Backend {
 		{ID: "be_source_forgejo_webhook", Profile: SecurityAPI, BodyLimit: 1048576, Target: dynamicTarget("VERSELF_UPSTREAM_SOURCE_CODE_HOSTING_SERVICE_PUBLIC_HTTP", ProxyH2C, "be_source_forgejo_webhook_srv_dyn")},
 		{ID: "be_zitadel_action_api_credentials", Profile: SecurityAPI, BodyLimit: 65536, Target: dynamicTarget("VERSELF_UPSTREAM_IAM_SERVICE_PUBLIC_HTTP", ProxyH2C, "be_zitadel_action_api_credentials_srv_dyn")},
 		{ID: "be_firecracker_sandbox_h2c", Profile: SecurityNone, Target: dynamicTarget("VERSELF_UPSTREAM_SANDBOX_RENTAL_PUBLIC_HTTP", ProxyH2C, "be_firecracker_sandbox_h2c_srv_dyn")},
+		{ID: "be_mailbox_jmap_session", Profile: SecurityProtocol, Target: dynamicTarget("VERSELF_UPSTREAM_MAILBOX_SERVICE_PUBLIC_HTTP", ProxyH2C, "be_mailbox_jmap_session_srv_dyn")},
 		{ID: "be_firecracker_forgejo", Profile: SecurityNone},
 		{ID: "be_garage_nomad_artifacts", Profile: SecurityNone},
 	}
@@ -327,9 +328,6 @@ func compileUpstreamKeys(plan Plan) []UpstreamKey {
 	var keys []UpstreamKey
 	for _, route := range plan.Routes {
 		keys = append(keys, route.Upstream)
-		if route.Component == "stalwart" {
-			keys = append(keys, "VERSELF_UPSTREAM_MAILBOX_SERVICE_PUBLIC_HTTP")
-		}
 	}
 	for _, backend := range plan.Backends {
 		keys = append(keys, backend.Target.Upstream)
@@ -344,7 +342,7 @@ func routeServerGUIDs(route PublicRoute) []ServerGUID {
 	case route.Component == "zitadel":
 		return []ServerGUID{StaticServerGUID(route.Backend, "zitadel")}
 	case route.Component == "stalwart":
-		return []ServerGUID{StaticServerGUID(route.Backend, "mailbox"), StaticServerGUID(route.Backend, "stalwart")}
+		return []ServerGUID{StaticServerGUID(route.Backend, "stalwart")}
 	default:
 		return []ServerGUID{DynamicServerGUID(route.Backend)}
 	}

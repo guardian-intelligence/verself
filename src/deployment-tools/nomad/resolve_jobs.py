@@ -125,12 +125,18 @@ def build_update_block(update: object) -> dict:
         update = {}
     if not isinstance(update, dict):
         raise ValueError("override 'update' must be a JSON object")
+    health_check = str(update.get("HealthCheck", "checks"))
+    if health_check not in ("checks", "task_states", "manual"):
+        raise ValueError("override update.HealthCheck must be checks, task_states, or manual")
     return {
         "MaxParallel":      int(update.get("MaxParallel", 1)),
+        "HealthCheck":      health_check,
         "MinHealthyTime":   parse_duration_ns(update.get("MinHealthyTime", "3s")),
         "HealthyDeadline":  parse_duration_ns(update.get("HealthyDeadline", "5m")),
         "ProgressDeadline": parse_duration_ns(update.get("ProgressDeadline", "10m")),
+        "Canary":           int(update.get("Canary", 1)),
         "AutoRevert":       bool(update.get("AutoRevert", True)),
+        "AutoPromote":      bool(update.get("AutoPromote", True)),
     }
 
 

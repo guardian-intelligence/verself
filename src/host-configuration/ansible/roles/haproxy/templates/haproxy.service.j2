@@ -10,9 +10,9 @@ User=haproxy
 Group=haproxy
 SupplementaryGroups=adm
 Environment=LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }}
-ExecStartPre=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg
-ExecStart={{ verself_bin }}/haproxy -Ws -f {{ haproxy_config_dir }}/haproxy.cfg -p /run/haproxy/haproxy.pid -S /run/haproxy/master.sock
-ExecReload=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg
+ExecStartPre=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }}
+ExecStart={{ verself_bin }}/haproxy -Ws -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }} -p /run/haproxy/haproxy.pid -S /run/haproxy/master.sock
+ExecReload=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }}
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 RestartSec=5
