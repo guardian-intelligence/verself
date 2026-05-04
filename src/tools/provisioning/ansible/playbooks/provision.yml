@@ -10,6 +10,7 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
+    tofu_binary_path: "{{ lookup('env', 'TOFU_BIN') | default('/home/ubuntu/.nix-profile/bin/tofu', true) }}"
     provision_site: "{{ lookup('env', 'VERSELF_SITE') | default('prod', true) }}"
     provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ provision_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
@@ -41,7 +42,7 @@
         project_path: "{{ terraform_project_path }}"
         state: present
         force_init: true
-        binary_path: tofu
+        binary_path: "{{ tofu_binary_path }}"
         variables_files:
           - "{{ provisioning_site_dir }}/terraform.tfvars.json"
       environment:
@@ -50,7 +51,7 @@
     - name: Read worker IPs from OpenTofu outputs
       ansible.builtin.command:
         argv:
-          - tofu
+          - "{{ tofu_binary_path }}"
           - "-chdir={{ terraform_project_path }}"
           - output
           - -json
@@ -62,7 +63,7 @@
     - name: Read infra IPs from OpenTofu outputs
       ansible.builtin.command:
         argv:
-          - tofu
+          - "{{ tofu_binary_path }}"
           - "-chdir={{ terraform_project_path }}"
           - output
           - -json

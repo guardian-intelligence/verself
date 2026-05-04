@@ -10,6 +10,7 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
+    tofu_binary_path: "{{ lookup('env', 'TOFU_BIN') | default('/home/ubuntu/.nix-profile/bin/tofu', true) }}"
     provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ verself_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
     deprovision_inventory_file: "{{ playbook_dir }}/../../../host-configuration/sites/{{ verself_site }}/inventory.ini"
@@ -33,7 +34,7 @@
       community.general.terraform:
         project_path: "{{ terraform_project_path }}"
         state: absent
-        binary_path: tofu
+        binary_path: "{{ tofu_binary_path }}"
         variables_files:
           - "{{ provisioning_site_dir }}/terraform.tfvars.json"
       environment:
