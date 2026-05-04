@@ -47,7 +47,7 @@
           nftables_required_users | default([])
           + (
             lookup('ansible.builtin.file', item, rstrip=False)
-            | regex_findall('meta\\s+skuid\\s+(?:!=\\s*)?([A-Za-z_][A-Za-z0-9_-]*)')
+            | regex_findall('meta\s+skuid\s+(?:!=\s*)?([A-Za-z_][A-Za-z0-9_-]*)')
           )
         )
         | unique
