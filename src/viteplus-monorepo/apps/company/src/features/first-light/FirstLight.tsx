@@ -2,7 +2,8 @@
 
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
 import { emitSpan } from "~/lib/telemetry/browser";
-import type { DegradedReason } from "./types";
+import { firstLightCelestialProfile } from "./profile";
+import type { CelestialRenderProfile, DegradedReason } from "./types";
 import { useFirstLightActive, useFirstLightFrame, useFirstLightRuntime } from "./use-first-light";
 
 const FirstLightCanvas = lazy(() =>
@@ -11,9 +12,10 @@ const FirstLightCanvas = lazy(() =>
 
 export interface FirstLightProps {
   readonly motion?: boolean;
+  readonly profile?: CelestialRenderProfile;
 }
 
-export function FirstLight({ motion }: FirstLightProps) {
+export function FirstLight({ motion, profile = firstLightCelestialProfile }: FirstLightProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [canvasDegradedReason, setCanvasDegradedReason] = useState<DegradedReason>();
   const runtime = useFirstLightRuntime(motion);
@@ -39,7 +41,12 @@ export function FirstLight({ motion }: FirstLightProps) {
       {fallbackReason ? <FirstLightStill reason={fallbackReason} /> : null}
       {live ? (
         <Suspense fallback={null}>
-          <FirstLightCanvas active={active} frame={frame} onDegraded={handleCanvasDegraded} />
+          <FirstLightCanvas
+            active={active}
+            frame={frame}
+            onDegraded={handleCanvasDegraded}
+            profile={profile}
+          />
         </Suspense>
       ) : null}
     </div>

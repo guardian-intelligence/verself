@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { FilmGrain } from "~/components/film-grain";
 import { FirstLight } from "~/features/first-light";
 import { ogMeta } from "~/lib/head";
 
@@ -23,7 +22,6 @@ function LandingHero() {
   return (
     <section className="relative isolate min-h-[calc(100svh-var(--header-h))] overflow-hidden">
       <div className="absolute inset-0 bg-[var(--treatment-ground)]" />
-      <FilmGrain intensity={0.22} />
       <FirstLight />
     </section>
   );

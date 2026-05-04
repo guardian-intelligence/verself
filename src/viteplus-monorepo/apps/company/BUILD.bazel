@@ -11,10 +11,14 @@ FIRST_LIGHT_SHADER_SRC_MAP = [
     ("lib/bands.glsl", "src/features/first-light/shader-src/lib/bands.glsl"),
     ("lib/camera.glsl", "src/features/first-light/shader-src/lib/camera.glsl"),
     ("lib/caustics.glsl", "src/features/first-light/shader-src/lib/caustics.glsl"),
+    ("lib/composite.glsl", "src/features/first-light/shader-src/lib/composite.glsl"),
+    ("lib/disk.glsl", "src/features/first-light/shader-src/lib/disk.glsl"),
     ("lib/flare.glsl", "src/features/first-light/shader-src/lib/flare.glsl"),
+    ("lib/lens.glsl", "src/features/first-light/shader-src/lib/lens.glsl"),
     ("lib/meniscus.glsl", "src/features/first-light/shader-src/lib/meniscus.glsl"),
     ("lib/noise.glsl", "src/features/first-light/shader-src/lib/noise.glsl"),
     ("lib/plate.glsl", "src/features/first-light/shader-src/lib/plate.glsl"),
+    ("lib/shape.glsl", "src/features/first-light/shader-src/lib/shape.glsl"),
     ("lib/tone.glsl", "src/features/first-light/shader-src/lib/tone.glsl"),
 ]
 
