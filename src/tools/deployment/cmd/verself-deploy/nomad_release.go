@@ -39,30 +39,6 @@ const (
 	nomadComponentsQuery      = `kind("nomad_component rule", //src/...)`
 )
 
-type nomadComponentDescriptor struct {
-	SchemaVersion     int                       `json:"schema_version"`
-	Label             string                    `json:"label"`
-	Component         string                    `json:"component"`
-	JobID             string                    `json:"job_id"`
-	JobSpec           string                    `json:"job_spec"`
-	JobSpecPath       string                    `json:"job_spec_path"`
-	DependsOn         []string                  `json:"depends_on"`
-	Artifacts         []nomadDescriptorArtifact `json:"artifacts"`
-	EmbeddedTemplates []nomadDescriptorTemplate `json:"embedded_templates"`
-}
-
-type nomadDescriptorArtifact struct {
-	Label  string `json:"label"`
-	Output string `json:"output"`
-	Path   string `json:"path"`
-}
-
-type nomadDescriptorTemplate struct {
-	Label       string `json:"label"`
-	Placeholder string `json:"placeholder"`
-	Path        string `json:"path"`
-}
-
 func runRelease(args []string) int {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "verself-deploy release: missing subcommand (try `publish`)")
@@ -75,43 +51,6 @@ func runRelease(args []string) int {
 		fmt.Fprintf(os.Stderr, "verself-deploy release: unknown subcommand: %s\n", args[0])
 		return 2
 	}
-}
-
-func runNomadComponentIndex(args []string) int {
-	fs := flag.NewFlagSet("nomad component-index", flag.ContinueOnError)
-	site := fs.String("site", "prod", "deployment site label")
-	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	out := fs.String("out", "", "path to write the discovered Nomad component index JSON")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if *out == "" {
-		fmt.Fprintln(os.Stderr, "verself-deploy nomad component-index: --out is required")
-		fs.Usage()
-		return 2
-	}
-	if *repoRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "verself-deploy nomad component-index: cwd: %v\n", err)
-			return 1
-		}
-		*repoRoot = cwd
-	}
-	absRepoRoot, err := filepath.Abs(*repoRoot)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy nomad component-index: repo-root: %v\n", err)
-		return 1
-	}
-	*repoRoot = absRepoRoot
-	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := writeNomadComponentIndex(parentCtx, *repoRoot, *out); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy nomad component-index: site=%s: %v\n", *site, err)
-		return 1
-	}
-	_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: wrote Nomad component index site=%s path=%s\n", *site, *out)
-	return 0
 }
 
 func runReleasePublish(args []string) int {
@@ -339,53 +278,6 @@ func linkNomadRelease(ctx context.Context, repoRoot, site string, descriptorPath
 		return "", nil, fmt.Errorf("link Nomad release: %w: %s", err, strings.TrimSpace(string(body)))
 	}
 	return outPath, cleanup, nil
-}
-
-func writeNomadComponentIndex(ctx context.Context, repoRoot, outPath string) error {
-	_, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot)
-	if err != nil {
-		return err
-	}
-	components := make([]nomadComponentDescriptor, 0, len(descriptorPaths))
-	for _, descriptorPath := range descriptorPaths {
-		body, err := os.ReadFile(descriptorPath)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", descriptorPath, err)
-		}
-		var component nomadComponentDescriptor
-		if err := json.Unmarshal(body, &component); err != nil {
-			return fmt.Errorf("decode %s: %w", descriptorPath, err)
-		}
-		if component.SchemaVersion != 1 || component.Component == "" || component.JobID == "" || component.JobSpec == "" {
-			return fmt.Errorf("%s: incomplete Nomad component descriptor", descriptorPath)
-		}
-		components = append(components, component)
-	}
-	sort.Slice(components, func(i, j int) bool {
-		return components[i].JobID < components[j].JobID
-	})
-	rows := make([]map[string]string, 0, len(components))
-	for _, component := range components {
-		rows = append(rows, map[string]string{
-			"component": component.Component,
-			"job_id":    component.JobID,
-			"job_spec":  component.JobSpec,
-		})
-	}
-	body, err := json.Marshal(struct {
-		Components []map[string]string `json:"components"`
-	}{Components: rows})
-	if err != nil {
-		return fmt.Errorf("encode Nomad component index: %w", err)
-	}
-	body = append(body, '\n')
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Dir(outPath), err)
-	}
-	if err := os.WriteFile(outPath, body, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", outPath, err)
-	}
-	return nil
 }
 
 func deployPublishedRelease(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot, sha string) error {

@@ -71,7 +71,6 @@ load(".aspect/tasks/observe.axl", "observe")
 load(
     ".aspect/tasks/operator.axl",
     operator_device = "device",
-    operator_edge = "edge",
     operator_platform = "platform",
 )
 load(
@@ -140,7 +139,6 @@ def config(ctx):
 
     # aspect operator ...
     ctx.tasks.add(operator_device)
-    ctx.tasks.add(operator_edge)
     ctx.tasks.add(operator_platform)
 
     # aspect detect-intrusions

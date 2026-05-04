@@ -7,7 +7,6 @@
 // here are implementation seams for typed AXL tasks and evidence assertions:
 //
 //	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
-//	verself-deploy nomad component-index --out=<path> [--repo-root=<path>]
 //	verself-deploy release publish  --site=<site> --sha=<sha> [--repo-root=<path>]
 //	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
 //	verself-deploy supply-chain check --repo-root=<path>
@@ -67,7 +66,6 @@ func usage() {
 usage:
   verself-deploy run                  --site=<site> [--sha=<rev>]
   verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
-  verself-deploy nomad component-index --out=<path> [--repo-root=<path>]
   verself-deploy release publish      --site=<site> --sha=<sha> [--repo-root=<path>]
   verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
   verself-deploy artifacts assert-evidence --run-key=<deploy-run-key> [--site=<site>]
@@ -88,8 +86,6 @@ func runNomad(args []string) int {
 	switch args[0] {
 	case "submit":
 		return runNomadSubmit(args[1:])
-	case "component-index":
-		return runNomadComponentIndex(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "verself-deploy nomad: unknown subcommand: %s\n", args[0])
 		return 2

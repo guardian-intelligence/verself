@@ -24,10 +24,6 @@
 //	aspect-operator device
 //	    Configure this checkout/device to reach the operator access plane.
 //
-//	aspect-operator edge check|manifest
-//	    Public edge contract checker derived from topology, authored Nomad jobs,
-//	    and authored HAProxy templates.
-//
 //	aspect-operator platform --action=check|seed
 //	    Operator-side platform organization convergence for the dogfooded
 //	    first-party org, project, Forgejo repository, and source backend.
@@ -77,8 +73,6 @@ func run(args []string) error {
 		return cmdDev(rest)
 	case "device":
 		return cmdDevice(rest)
-	case "edge":
-		return cmdEdge(rest)
 	case "platform":
 		return cmdPlatform(rest)
 	case "-h", "--help", "help":
@@ -101,7 +95,6 @@ Subcommands:
   mail              Mail operator helpers
   dev               Local development helpers
   device            Configure this device for operator access
-  edge              Public edge contract checker
   platform          Platform org/project/source convergence
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.

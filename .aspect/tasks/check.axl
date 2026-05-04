@@ -1,10 +1,10 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|buildifier|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|buildifier|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: buildifier → supply-chain → edge → ansible → conversions → vet → lint → test.
+fast-failure order: buildifier → supply-chain → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "build_aspect_operator", "build_nomad_component_index", "build_verself_deploy", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "build_verself_deploy", "checked_spawn", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
     for d in GO_DIRS:
@@ -50,21 +50,6 @@ def _conversions(ctx):
         if rc != 0:
             return rc
     return 0
-
-def _edge(ctx):
-    index = build_nomad_component_index(ctx)
-    if index == "":
-        return 1
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
-        ctx,
-        bin,
-        ["edge", "check", "--repo-root", ws_path(ctx), "--site", DEFAULT_SITE, "--nomad-index", index],
-        cwd = ws_path(ctx),
-        label = "aspect-operator edge check",
-    )
 
 def _ansible_lint(ctx):
     return checked_spawn(
@@ -112,14 +97,13 @@ _CHECKERS = {
     "go-vet": _go_vet,
     "go-lint": _go_lint,
     "conversions": _conversions,
-    "edge": _edge,
     "ansible": _ansible_lint,
     "supply-chain": _supply_chain,
     "buildifier": _buildifier,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "supply-chain", "edge", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "supply-chain", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -137,7 +121,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|edge|ansible|supply-chain|buildifier|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|buildifier|all).",
     args = {
         "kind": args.string(
             default = "all",

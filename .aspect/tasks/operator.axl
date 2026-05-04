@@ -1,38 +1,12 @@
 """aspect operator — operator-side platform helpers.
 
-  aspect operator edge --action=check|manifest [--format=text|json|yaml]
   aspect operator platform --action=check|seed [--format=text|json]
   aspect operator device [--site=prod]
 
 The implementation lives in src/tools/dev/cmd/aspect-operator.
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "build_nomad_component_index", "checked_spawn", "ws_path")
-
-def _edge_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
-    action = ctx.args.action or "check"
-    if action != "check" and action != "manifest":
-        ctx.std.io.stderr.write("ERROR: --action must be check or manifest\n")
-        return 1
-    index = build_nomad_component_index(ctx, ctx.args.site or "prod")
-    if index == "":
-        return 1
-    cli_args = [
-        "edge",
-        action,
-        "--repo-root",
-        ws_path(ctx),
-        "--site",
-        ctx.args.site or "prod",
-        "--nomad-index",
-        index,
-        "--format",
-        ctx.args.format or "text",
-    ]
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator edge " + action)
+load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")
 
 def _platform_impl(ctx):
     bin = build_aspect_operator(ctx)
@@ -82,18 +56,6 @@ def _device_impl(ctx):
     if not ctx.args.generate_key:
         cli_args.append("--generate-key=false")
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator device --site " + site)
-
-edge = task(
-    implementation = _edge_impl,
-    name = "edge",
-    group = ["operator"],
-    summary = "Validate or emit the HAProxy public edge contract.",
-    args = {
-        "action": args.string(default = "check", description = "check | manifest."),
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "format": args.string(default = "text", description = "Manifest output format: text | json | yaml."),
-    },
-)
 
 device = task(
     implementation = _device_impl,

@@ -191,23 +191,6 @@ def build_aspect_operator(ctx):
         return ""
     return ws_path(ctx, ASPECT_OPERATOR_BIN)
 
-def build_nomad_component_index(ctx, site = DEFAULT_SITE):
-    """Write the query-discovered Nomad component index consumed by edge checks."""
-    bin = build_verself_deploy(ctx)
-    if bin == "":
-        return ""
-    out = "/tmp/verself-" + site + "-nomad-component-index.json"
-    rc = checked_spawn(
-        ctx,
-        bin,
-        ["nomad", "component-index", "--site=" + site, "--repo-root=" + ws_path(ctx), "--out=" + out],
-        cwd = ws_path(ctx),
-        label = "verself-deploy nomad component-index --site=" + site,
-    )
-    if rc != 0:
-        return ""
-    return out
-
 _BAZEL_FILE_BASENAMES = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"]
 
 def bazel_tracked_files(ctx):

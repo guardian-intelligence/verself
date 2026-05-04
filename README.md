@@ -73,7 +73,7 @@ Versions of record live as constants at the top of each `scripts/bootstrap-*` en
 | Task | Description |
 | --- | --- |
 | `aspect deploy` | Run the canonical deploy path from authored inputs (`--site`, `--sha`). |
-| `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|edge\|ansible\|supply-chain\|all`). |
+| `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|ansible\|supply-chain\|all`). |
 | `aspect observe` | Discover or query telemetry (`--what catalog\|queries\|describe\|metric\|trace\|logs\|http\|service\|errors\|mail\|deploy\|supply-chain\|workload-identity\|temporal`). |
 | `aspect detect-intrusions` | Scan `verself.host_auth_events` for accepted SSH sessions that bypassed Pomerium. |
 
@@ -111,7 +111,6 @@ are deploy internals of `aspect deploy`.
 | Task | Description |
 | --- | --- |
 | `device` | Configure this checkout/device for Pomerium operator SSH and aspect commands. |
-| `edge` | Validate, render, or emit the derived public edge contract. |
 | `platform` | Check or seed the dogfooded platform organization and source repository. |
 
 `aspect operator device` is the entry point for getting a checkout (laptop or new dev VM) onto the host access plane through Pomerium + Zitadel. If the device key is passphrase-protected, load it into `ssh-agent` before running operator commands:
@@ -211,7 +210,7 @@ after changing inventory inputs.
 High-signal documents to read directly:
 
 - Repo layout: [`docs/architecture/directory-structure.md`](docs/architecture/directory-structure.md)
-- Public origins and edge contract: [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md)
+- Public origins: [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md)
 - Onboarding device or VM (operator SSH, Pomerium + Zitadel): [`docs/architecture/onboarding-device-or-vm.md`](docs/architecture/onboarding-device-or-vm.md)
 - Identity and IAM (Zitadel, SCIM, three-role model, API credentials): [`src/platform/docs/identity-and-iam.md`](src/platform/docs/identity-and-iam.md)
 - Workload identity (SPIFFE/SPIRE, OpenBao): [`docs/architecture/workload-identity.md`](docs/architecture/workload-identity.md)

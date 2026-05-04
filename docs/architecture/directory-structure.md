@@ -14,8 +14,8 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Source Owners (`src/`)
 
 - `host-configuration/` — Ansible host convergence, server tool admission,
-  host-local scripts, host ClickHouse schemas, and rendered edge contract
-  checks. Ansible lives here only.
+  host-local scripts, host ClickHouse schemas, and authored HAProxy templates.
+  Ansible lives here only.
 - `components/` — platform components wrapped as first-party runtime owners.
   Components can have Nomad jobs and small owner-local setup code, but they do
   not own customer-facing product APIs.
