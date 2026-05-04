@@ -1,40 +1,6 @@
-load(":release.bzl", "nomad_component_index", "nomad_release")
-
 exports_files([
     "artifact.bzl",
     "link_release.py",
     "release.bzl",
     "sites/prod/site.json",
 ])
-
-PROD_COMPONENTS = [
-    "//src/components/haproxy:nomad_component",
-    "//src/components/spicedb:nomad_component",
-    "//src/components/temporal-platform:nomad_component",
-    "//src/frontends/viteplus-monorepo/apps/company:nomad_component",
-    "//src/frontends/viteplus-monorepo/apps/verself-web:nomad_component",
-    "//src/services/billing-service:nomad_component",
-    "//src/services/governance-service:nomad_component",
-    "//src/services/iam-service:nomad_component",
-    "//src/services/mailbox-service:nomad_component",
-    "//src/services/notifications-service:nomad_component",
-    "//src/services/object-storage-service:nomad_component",
-    "//src/services/profile-service:nomad_component",
-    "//src/services/projects-service:nomad_component",
-    "//src/services/sandbox-rental-service:nomad_component",
-    "//src/services/secrets-service:nomad_component",
-    "//src/services/source-code-hosting-service:nomad_component",
-]
-
-nomad_component_index(
-    name = "prod_nomad_component_index",
-    components = PROD_COMPONENTS,
-    visibility = ["//visibility:public"],
-)
-
-nomad_release(
-    name = "prod_nomad_release",
-    components = PROD_COMPONENTS,
-    site = "prod",
-    site_config = "sites/prod/site.json",
-)

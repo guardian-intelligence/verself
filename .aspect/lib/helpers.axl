@@ -47,8 +47,6 @@ VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deplo
 VERSELF_DEPLOY_BIN = "bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
 ASPECT_OPERATOR_TARGET = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
 ASPECT_OPERATOR_BIN = "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator"
-NOMAD_COMPONENT_INDEX_TARGET = "//src/tools/deployment/nomad:prod_nomad_component_index"
-NOMAD_COMPONENT_INDEX_BIN = "bazel-bin/src/tools/deployment/nomad/prod_nomad_component_index.json"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -194,20 +192,21 @@ def build_aspect_operator(ctx):
     return ws_path(ctx, ASPECT_OPERATOR_BIN)
 
 def build_nomad_component_index(ctx, site = DEFAULT_SITE):
-    """Build the site Nomad component index consumed by edge checks."""
-    if site != DEFAULT_SITE:
-        ctx.std.io.stderr.write("ERROR: no Nomad component index target is registered for site " + site + "\n")
+    """Write the query-discovered Nomad component index consumed by edge checks."""
+    bin = build_verself_deploy(ctx)
+    if bin == "":
         return ""
+    out = "/tmp/verself-" + site + "-nomad-component-index.json"
     rc = checked_spawn(
         ctx,
-        "bazelisk",
-        ["build", NOMAD_COMPONENT_INDEX_TARGET],
+        bin,
+        ["nomad", "component-index", "--site=" + site, "--repo-root=" + ws_path(ctx), "--out=" + out],
         cwd = ws_path(ctx),
-        label = "bazelisk build " + NOMAD_COMPONENT_INDEX_TARGET,
+        label = "verself-deploy nomad component-index --site=" + site,
     )
     if rc != 0:
         return ""
-    return ws_path(ctx, NOMAD_COMPONENT_INDEX_BIN)
+    return out
 
 _BAZEL_FILE_BASENAMES = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"]
 

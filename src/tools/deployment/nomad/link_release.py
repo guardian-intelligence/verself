@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Link authored Nomad jobs and Bazel artifacts into one release JSON."""
+"""Link query-discovered Nomad component descriptors into one release JSON."""
 
 import argparse
 import hashlib
@@ -9,23 +9,20 @@ from pathlib import Path
 
 
 ARTIFACT_PREFIX = "verself-artifact://"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--site", required=True)
-    parser.add_argument("--jobs-target", required=True)
+    parser.add_argument("--components-query", required=True)
     parser.add_argument("--site-config", required=True)
-    parser.add_argument("--component-index", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--artifact", action="append", default=[], help="output=path")
-    parser.add_argument("--job-spec", action="append", default=[], help="job_id=path")
     parser.add_argument(
-        "--embedded-template",
+        "--component-descriptor",
         action="append",
         default=[],
-        help="placeholder=path; replaces exact placeholder string values inside authored Nomad specs before digest stamping.",
+        help="Path to a Bazel-built nomad_component descriptor JSON.",
     )
     return parser.parse_args()
 
@@ -43,18 +40,6 @@ def canonical_digest(value: object) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def parse_kv_paths(values: list[str], label: str) -> dict[str, Path]:
-    out: dict[str, Path] = {}
-    for item in values:
-        name, sep, raw_path = item.partition("=")
-        if not sep or not name or not raw_path:
-            raise ValueError(f"{label} must be name=path, got {item!r}")
-        if name in out:
-            raise ValueError(f"duplicate {label} {name!r}")
-        out[name] = Path(raw_path)
-    return out
-
-
 def replace_embedded_templates(value: object, templates: dict[str, str], used: set[str]) -> object:
     if isinstance(value, str):
         replacement = templates.get(value)
@@ -70,6 +55,50 @@ def replace_embedded_templates(value: object, templates: dict[str, str], used: s
             for key, item in value.items()
         }
     return value
+
+
+def load_component_descriptors(paths: list[str]) -> list[dict]:
+    if not paths:
+        raise ValueError("at least one --component-descriptor is required")
+    components = []
+    seen_labels = set()
+    for raw_path in paths:
+        path = Path(raw_path)
+        component = json.loads(path.read_text(encoding="utf-8"))
+        if component.get("schema_version") != 1:
+            raise ValueError(f"{path}: unsupported component descriptor schema_version={component.get('schema_version')!r}")
+        label = component.get("label")
+        if not isinstance(label, str) or not label:
+            raise ValueError(f"{path}: component descriptor label is required")
+        if label in seen_labels:
+            raise ValueError(f"duplicate Nomad component descriptor label {label}")
+        seen_labels.add(label)
+        for field in ("component", "job_id", "job_spec", "job_spec_path"):
+            if not isinstance(component.get(field), str) or not component[field]:
+                raise ValueError(f"{path}: {field} is required")
+        artifacts = component.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            raise ValueError(f"{path}: artifacts must be a list")
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                raise ValueError(f"{path}: artifact entries must be objects")
+            for field in ("label", "output", "path"):
+                if not isinstance(artifact.get(field), str) or not artifact[field]:
+                    raise ValueError(f"{path}: artifact.{field} is required")
+        templates = component.get("embedded_templates", [])
+        if not isinstance(templates, list):
+            raise ValueError(f"{path}: embedded_templates must be a list")
+        for template in templates:
+            if not isinstance(template, dict):
+                raise ValueError(f"{path}: embedded_template entries must be objects")
+            for field in ("label", "placeholder", "path"):
+                if not isinstance(template.get(field), str) or not template[field]:
+                    raise ValueError(f"{path}: embedded_template.{field} is required")
+        depends_on = component.get("depends_on", [])
+        if not isinstance(depends_on, list) or not all(isinstance(dep, str) for dep in depends_on):
+            raise ValueError(f"{path}: depends_on must be a string list")
+        components.append(component)
+    return components
 
 
 def artifact_delivery(index: dict) -> dict[str, object]:
@@ -147,7 +176,7 @@ def ordered_components(components: list[dict]) -> list[dict]:
     for component in components:
         job_id = component.get("job_id")
         if not isinstance(job_id, str) or not job_id:
-            raise ValueError(f"component index row missing job_id: {component!r}")
+            raise ValueError(f"component descriptor missing job_id: {component!r}")
         job_spec = component.get("job_spec")
         if not isinstance(job_spec, str) or not job_spec:
             raise ValueError(f"component {job_id!r} missing owner-local job_spec")
@@ -185,33 +214,36 @@ def ordered_components(components: list[dict]) -> list[dict]:
 
 def main() -> int:
     args = parse_args()
-    artifacts_by_output = parse_kv_paths(args.artifact, "artifact")
-    job_specs_by_id = parse_kv_paths(args.job_spec, "job spec")
-    embedded_template_paths = parse_kv_paths(args.embedded_template, "embedded template")
-    embedded_templates = {
-        placeholder: path.read_text(encoding="utf-8")
-        for placeholder, path in embedded_template_paths.items()
-    }
+    components = load_component_descriptors(args.component_descriptor)
+    embedded_templates = {}
+    for component in components:
+        for template in component["embedded_templates"]:
+            placeholder = template["placeholder"]
+            if placeholder in embedded_templates:
+                raise ValueError(f"embedded template placeholder {placeholder!r} is provided more than once")
+            embedded_templates[placeholder] = Path(template["path"]).read_text(encoding="utf-8")
     used_embedded_templates: set[str] = set()
 
     site_config_path = Path(args.site_config)
     site_config = json.loads(site_config_path.read_text(encoding="utf-8"))
-    component_index_path = Path(args.component_index)
-    component_index = json.loads(component_index_path.read_text(encoding="utf-8"))
-    components = component_index.get("components", [])
-    if not isinstance(components, list):
-        raise ValueError("Nomad component index components must be a list")
     ordered = ordered_components(components)
     delivery = artifact_delivery(site_config)
 
     artifact_bindings: dict[str, dict[str, object]] = {}
+    artifact_sources: dict[str, tuple[str, str]] = {}
     artifacts_by_key: dict[tuple[str, str], dict[str, object]] = {}
     for component in components:
         for artifact in component.get("artifacts", []):
             output = artifact.get("output", "")
-            path = artifacts_by_output.get(output)
-            if path is None:
-                raise ValueError(f"Nomad release manifest references artifact {output!r}, but Bazel rule did not provide it")
+            path = Path(artifact["path"])
+            if output in artifact_bindings:
+                prior_label, prior_path = artifact_sources[output]
+                if prior_label != artifact["label"] or prior_path != artifact["path"]:
+                    raise ValueError(
+                        f"Nomad artifact output {output!r} is provided by both "
+                        f"{prior_label} and {artifact['label']}"
+                    )
+                continue
             digest = sha256_file(path)
             key = f"{delivery['key_prefix']}/{digest}/{output}.tar"
             getter_source = f"{delivery['source_prefix']}/{key}"
@@ -227,6 +259,7 @@ def main() -> int:
                 "checksum": checksum,
             }
             artifact_bindings[output] = binding
+            artifact_sources[output] = (artifact["label"], artifact["path"])
             artifacts_by_key[(str(delivery["bucket"]), key)] = binding
 
     referenced = set()
@@ -234,9 +267,7 @@ def main() -> int:
     submit_order = []
     for component in ordered:
         job_id = component["job_id"]
-        spec_path = job_specs_by_id.get(job_id)
-        if spec_path is None:
-            raise ValueError(f"release manifest references job_id {job_id!r}, but Bazel rule did not provide its job spec")
+        spec_path = Path(component["job_spec_path"])
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
         spec = replace_embedded_templates(spec, embedded_templates, used_embedded_templates)
         seen = resolve_artifacts(spec, artifact_bindings)
@@ -269,15 +300,12 @@ def main() -> int:
     unused_templates = sorted(set(embedded_templates) - used_embedded_templates)
     if unused_templates:
         raise ValueError(f"embedded template placeholders were provided but not used: {', '.join(unused_templates)}")
-    extra_job_specs = sorted(set(job_specs_by_id) - set(submit_order))
-    if extra_job_specs:
-        raise ValueError(f"job specs were provided but not referenced by release manifest: {', '.join(extra_job_specs)}")
 
     release = {
         "schema_version": SCHEMA_VERSION,
         "site": args.site,
         "sha": "",
-        "jobs_target": args.jobs_target,
+        "components_query": args.components_query,
         "artifact_delivery": site_config["artifact_delivery"],
         "artifacts": [
             {

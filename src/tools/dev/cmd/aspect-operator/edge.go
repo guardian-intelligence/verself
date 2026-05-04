@@ -94,7 +94,7 @@ func parseEdgeFlags(name string, args []string) (edgeConfig, error) {
 	fs.StringVar(&cfg.repoRoot, "repo-root", "", "Path to the verself-sh checkout root.")
 	fs.StringVar(&cfg.site, "site", edgecontract.DefaultSite, "Deployment site whose Nomad jobs should be checked.")
 	fs.StringVar(&cfg.format, "format", "text", "Manifest output format: text, json, or yaml.")
-	fs.StringVar(&cfg.nomadIndex, "nomad-index", "", "Path to the Bazel-built Nomad component index JSON.")
+	fs.StringVar(&cfg.nomadIndex, "nomad-index", "", "Path to the query-discovered Nomad component index JSON.")
 	if err := fs.Parse(args); err != nil {
 		return edgeConfig{}, err
 	}
@@ -119,6 +119,9 @@ func parseEdgeFlags(name string, args []string) (edgeConfig, error) {
 	if cfg.site == "" {
 		return edgeConfig{}, fmt.Errorf("%s: --site is required", name)
 	}
+	if cfg.nomadIndex == "" {
+		return edgeConfig{}, fmt.Errorf("%s: --nomad-index is required; run through `aspect operator edge` so query discovery can build it", name)
+	}
 	switch cfg.format {
 	case "text", "json", "yaml":
 	default:
@@ -137,7 +140,7 @@ Subcommands:
 Common flags:
   --repo-root <path>  verself-sh checkout root
   --site <site>       deployment site (default: prod)
-  --nomad-index <path> Bazel-built Nomad component index JSON
+  --nomad-index <path> query-discovered Nomad component index JSON
   --format <format>   manifest format: text, json, yaml
 `)
 }

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	SchemaVersion = 1
+	SchemaVersion = 2
 	FileName      = "release.json"
 )
 
@@ -26,7 +26,7 @@ type Release struct {
 	Site             string           `json:"site"`
 	SHA              string           `json:"sha"`
 	PublishedAt      string           `json:"published_at,omitempty"`
-	JobsTarget       string           `json:"jobs_target"`
+	ComponentsQuery  string           `json:"components_query"`
 	ArtifactDelivery ArtifactDelivery `json:"artifact_delivery"`
 	Artifacts        []Artifact       `json:"artifacts"`
 	Jobs             []Job            `json:"jobs"`
@@ -106,8 +106,8 @@ func (r *Release) Validate(expectedSHA string) error {
 	if expectedSHA != "" && r.SHA != expectedSHA {
 		return fmt.Errorf("nomad release sha=%s, want %s", r.SHA, expectedSHA)
 	}
-	if r.JobsTarget == "" {
-		return fmt.Errorf("nomad release jobs_target is required")
+	if r.ComponentsQuery == "" {
+		return fmt.Errorf("nomad release components_query is required")
 	}
 	if r.ArtifactDelivery.Bucket == "" || r.ArtifactDelivery.GetterSourcePrefix == "" {
 		return fmt.Errorf("nomad release artifact_delivery is incomplete")

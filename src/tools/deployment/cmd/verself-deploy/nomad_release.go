@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -34,7 +36,32 @@ const (
 
 	nomadReleaseSubmitTimeout = 5 * time.Minute
 	nomadReleaseMaxBytes      = 64 * 1024 * 1024
+	nomadComponentsQuery      = `kind("nomad_component rule", //src/...)`
 )
+
+type nomadComponentDescriptor struct {
+	SchemaVersion     int                       `json:"schema_version"`
+	Label             string                    `json:"label"`
+	Component         string                    `json:"component"`
+	JobID             string                    `json:"job_id"`
+	JobSpec           string                    `json:"job_spec"`
+	JobSpecPath       string                    `json:"job_spec_path"`
+	DependsOn         []string                  `json:"depends_on"`
+	Artifacts         []nomadDescriptorArtifact `json:"artifacts"`
+	EmbeddedTemplates []nomadDescriptorTemplate `json:"embedded_templates"`
+}
+
+type nomadDescriptorArtifact struct {
+	Label  string `json:"label"`
+	Output string `json:"output"`
+	Path   string `json:"path"`
+}
+
+type nomadDescriptorTemplate struct {
+	Label       string `json:"label"`
+	Placeholder string `json:"placeholder"`
+	Path        string `json:"path"`
+}
 
 func runRelease(args []string) int {
 	if len(args) < 1 {
@@ -48,6 +75,43 @@ func runRelease(args []string) int {
 		fmt.Fprintf(os.Stderr, "verself-deploy release: unknown subcommand: %s\n", args[0])
 		return 2
 	}
+}
+
+func runNomadComponentIndex(args []string) int {
+	fs := flag.NewFlagSet("nomad component-index", flag.ContinueOnError)
+	site := fs.String("site", "prod", "deployment site label")
+	repoRoot := fs.String("repo-root", "", "verself-sh checkout root (defaults to cwd)")
+	out := fs.String("out", "", "path to write the discovered Nomad component index JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *out == "" {
+		fmt.Fprintln(os.Stderr, "verself-deploy nomad component-index: --out is required")
+		fs.Usage()
+		return 2
+	}
+	if *repoRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy nomad component-index: cwd: %v\n", err)
+			return 1
+		}
+		*repoRoot = cwd
+	}
+	absRepoRoot, err := filepath.Abs(*repoRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy nomad component-index: repo-root: %v\n", err)
+		return 1
+	}
+	*repoRoot = absRepoRoot
+	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := writeNomadComponentIndex(parentCtx, *repoRoot, *out); err != nil {
+		fmt.Fprintf(os.Stderr, "verself-deploy nomad component-index: site=%s: %v\n", *site, err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: wrote Nomad component index site=%s path=%s\n", *site, *out)
+	return 0
 }
 
 func runReleasePublish(args []string) int {
@@ -142,20 +206,17 @@ func publishNomadRelease(ctx context.Context, rt *runtime.Runtime, span trace.Sp
 	}
 	defer closeViteplusRegistry()
 
-	target := releaseTarget(site)
-	build, err := bazelbuild.Build(ctx, repoRoot, []string{target}, "--config=remote-writer")
+	componentLabels, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot)
 	if err != nil {
 		return err
 	}
-	outputs, err := build.Stream.ResolveOutputs(target, repoRoot)
+	releasePath, cleanup, err := linkNomadRelease(ctx, repoRoot, site, descriptorPaths)
 	if err != nil {
-		return fmt.Errorf("resolve %s outputs: %w", target, err)
+		return err
 	}
-	if len(outputs) != 1 {
-		return fmt.Errorf("%s must produce exactly one release JSON output, got %d: %v", target, len(outputs), outputs)
-	}
+	defer cleanup()
 
-	release, err := nomadrelease.Load(outputs[0])
+	release, err := nomadrelease.Load(releasePath)
 	if err != nil {
 		return err
 	}
@@ -166,9 +227,10 @@ func publishNomadRelease(ctx context.Context, rt *runtime.Runtime, span trace.Sp
 		return fmt.Errorf("built nomad release unexpectedly already has sha=%s", release.SHA)
 	}
 	span.SetAttributes(
-		attribute.String("verself.nomad_release_path", outputs[0]),
-		attribute.String("verself.nomad_release_target", target),
+		attribute.String("verself.nomad_release_path", releasePath),
+		attribute.String("verself.nomad_components_query", nomadComponentsQuery),
 		attribute.Int("verself.artifact_count", len(release.Artifacts)),
+		attribute.Int("verself.nomad_component_count", len(componentLabels)),
 		attribute.Int("verself.nomad_job_count", len(release.Jobs)),
 	)
 
@@ -197,6 +259,132 @@ func publishNomadRelease(ctx context.Context, rt *runtime.Runtime, span trace.Sp
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "verself-deploy: published nomad release site=%s sha=%s key=%s digest=%s\n",
 		site, sha, releaseArtifact.Key, releaseArtifact.SHA256)
+	return nil
+}
+
+func discoverNomadComponents(ctx context.Context, repoRoot string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "bazelisk", "query", nomadComponentsQuery)
+	cmd.Dir = repoRoot
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	body, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("bazelisk query %s: %w: %s", nomadComponentsQuery, err, strings.TrimSpace(stderr.String()))
+	}
+	var labels []string
+	for _, line := range strings.Split(string(body), "\n") {
+		label := strings.TrimSpace(line)
+		if label == "" {
+			continue
+		}
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	if len(labels) == 0 {
+		return nil, fmt.Errorf("bazel query %s returned no Nomad components", nomadComponentsQuery)
+	}
+	return labels, nil
+}
+
+func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]string, []string, error) {
+	labels, err := discoverNomadComponents(ctx, repoRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	build, err := bazelbuild.Build(ctx, repoRoot, labels, "--config=remote-writer")
+	if err != nil {
+		return nil, nil, err
+	}
+	descriptorPaths := make([]string, 0, len(labels))
+	for _, label := range labels {
+		outputs, err := build.Stream.ResolveOutputs(label, repoRoot)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve %s descriptor output: %w", label, err)
+		}
+		if len(outputs) != 1 {
+			return nil, nil, fmt.Errorf("%s must produce exactly one component descriptor output, got %d: %v", label, len(outputs), outputs)
+		}
+		descriptorPaths = append(descriptorPaths, outputs[0])
+	}
+	return labels, descriptorPaths, nil
+}
+
+func linkNomadRelease(ctx context.Context, repoRoot, site string, descriptorPaths []string) (string, func(), error) {
+	out, err := os.CreateTemp("", "verself-nomad-release-*.json")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temporary Nomad release file: %w", err)
+	}
+	outPath := out.Name()
+	if err := out.Close(); err != nil {
+		_ = os.Remove(outPath)
+		return "", nil, fmt.Errorf("close temporary Nomad release file: %w", err)
+	}
+	cleanup := func() { _ = os.Remove(outPath) }
+
+	args := []string{
+		filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "link_release.py"),
+		"--site", site,
+		"--components-query", nomadComponentsQuery,
+		"--site-config", filepath.Join(repoRoot, "src", "tools", "deployment", "nomad", "sites", site, "site.json"),
+		"--out", outPath,
+	}
+	for _, path := range descriptorPaths {
+		args = append(args, "--component-descriptor", path)
+	}
+	cmd := exec.CommandContext(ctx, "python3", args...)
+	cmd.Dir = repoRoot
+	body, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("link Nomad release: %w: %s", err, strings.TrimSpace(string(body)))
+	}
+	return outPath, cleanup, nil
+}
+
+func writeNomadComponentIndex(ctx context.Context, repoRoot, outPath string) error {
+	_, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot)
+	if err != nil {
+		return err
+	}
+	components := make([]nomadComponentDescriptor, 0, len(descriptorPaths))
+	for _, descriptorPath := range descriptorPaths {
+		body, err := os.ReadFile(descriptorPath)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", descriptorPath, err)
+		}
+		var component nomadComponentDescriptor
+		if err := json.Unmarshal(body, &component); err != nil {
+			return fmt.Errorf("decode %s: %w", descriptorPath, err)
+		}
+		if component.SchemaVersion != 1 || component.Component == "" || component.JobID == "" || component.JobSpec == "" {
+			return fmt.Errorf("%s: incomplete Nomad component descriptor", descriptorPath)
+		}
+		components = append(components, component)
+	}
+	sort.Slice(components, func(i, j int) bool {
+		return components[i].JobID < components[j].JobID
+	})
+	rows := make([]map[string]string, 0, len(components))
+	for _, component := range components {
+		rows = append(rows, map[string]string{
+			"component": component.Component,
+			"job_id":    component.JobID,
+			"job_spec":  component.JobSpec,
+		})
+	}
+	body, err := json.Marshal(struct {
+		Components []map[string]string `json:"components"`
+	}{Components: rows})
+	if err != nil {
+		return fmt.Errorf("encode Nomad component index: %w", err)
+	}
+	body = append(body, '\n')
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Dir(outPath), err)
+	}
+	if err := os.WriteFile(outPath, body, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outPath, err)
+	}
 	return nil
 }
 
@@ -356,10 +544,6 @@ func newGaragePublisher(ctx context.Context, sshClient *sshtun.Client, delivery 
 		AccessKeyID:     access,
 		SecretAccessKey: secret,
 	})
-}
-
-func releaseTarget(site string) string {
-	return fmt.Sprintf("//src/tools/deployment/nomad:%s_nomad_release", site)
 }
 
 func resolveGitSHA(repoRoot, raw string) (string, error) {
