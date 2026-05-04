@@ -21,6 +21,19 @@
       tags:
         - always
 
+- name: "Userspace"
+  hosts: all
+  become: true
+  gather_facts: false
+  tags:
+    - userspace
+  tasks:
+    # nftables resolves symbolic skuid names while loading rules, so service users must exist before firewall convergence.
+    - name: Configure userspace accounts
+      ansible.builtin.import_tasks: tasks/userspace.yml
+      tags:
+        - userspace
+
 - name: "Host foundation"
   hosts: all
   become: true
@@ -116,18 +129,6 @@
             | map('extract', topology_wireguard.tunnels)
             | list
           }}
-
-- name: "Userspace"
-  hosts: infra
-  become: true
-  gather_facts: false
-  tags:
-    - userspace
-  tasks:
-    - name: Configure userspace accounts
-      ansible.builtin.import_tasks: tasks/userspace.yml
-      tags:
-        - userspace
 
 - name: "Substrate daemons"
   hosts: infra
