@@ -389,6 +389,10 @@ func evaluateSupplyChain(ctx context.Context, repoRoot, policyPath string, stric
 	if err != nil {
 		return supplychain.Report{}, supplychain.Evaluation{}, err
 	}
+	policy, err = supplychain.RefreshGeneratedPolicyIfStale(repoRoot, policyPath, policy, report)
+	if err != nil {
+		return supplychain.Report{}, supplychain.Evaluation{}, err
+	}
 	eval, err := supplychain.Evaluate(report, policy, strictAdmitted)
 	if err != nil {
 		return supplychain.Report{}, supplychain.Evaluation{}, err

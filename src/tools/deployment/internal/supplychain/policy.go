@@ -46,6 +46,25 @@ func LoadPolicy(repoRoot, policyPath string) (Policy, error) {
 	return policy, nil
 }
 
+func RefreshGeneratedPolicyIfStale(repoRoot, policyPath string, policy Policy, report Report) (Policy, error) {
+	if !isDefaultGeneratedPolicy(repoRoot, policyPath) || policyHasAdmittedArtifacts(policy) || policyIDsMatchReport(policy, report) {
+		return policy, nil
+	}
+	// The default policy is an ignored generated cache, so stale provisional entries must not block deploys after a source rehome.
+	refreshed := NewPolicyFromReport(report)
+	path := policyPath
+	if path == "" {
+		path = DefaultPolicyPath
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(repoRoot, path)
+	}
+	if err := WritePolicy(path, refreshed); err != nil {
+		return Policy{}, err
+	}
+	return refreshed, nil
+}
+
 func WritePolicy(path string, policy Policy) error {
 	raw, err := json.MarshalIndent(policy, "", "  ")
 	if err != nil {
@@ -59,6 +78,51 @@ func WritePolicy(path string, policy Policy) error {
 		return fmt.Errorf("supplychain: write policy %s: %w", path, err)
 	}
 	return nil
+}
+
+func isDefaultGeneratedPolicy(repoRoot, policyPath string) bool {
+	if policyPath == "" {
+		policyPath = DefaultPolicyPath
+	}
+	path := policyPath
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(repoRoot, path)
+	}
+	defaultPath := filepath.Join(repoRoot, DefaultPolicyPath)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = filepath.Clean(path)
+	}
+	absDefaultPath, err := filepath.Abs(defaultPath)
+	if err != nil {
+		absDefaultPath = filepath.Clean(defaultPath)
+	}
+	return filepath.Clean(absPath) == filepath.Clean(absDefaultPath)
+}
+
+func policyHasAdmittedArtifacts(policy Policy) bool {
+	for _, artifact := range policy.Artifacts {
+		if artifact.Admission.State == AdmissionAdmitted {
+			return true
+		}
+	}
+	return false
+}
+
+func policyIDsMatchReport(policy Policy, report Report) bool {
+	if len(policy.Artifacts) != len(report.Findings) {
+		return false
+	}
+	ids := make(map[string]bool, len(policy.Artifacts))
+	for _, artifact := range policy.Artifacts {
+		ids[artifact.ID] = true
+	}
+	for _, finding := range report.Findings {
+		if !ids[finding.ID] {
+			return false
+		}
+	}
+	return true
 }
 
 func Evaluate(report Report, policy Policy, strictAdmitted bool) (Evaluation, error) {
