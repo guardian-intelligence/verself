@@ -148,7 +148,7 @@
               {
                 "ChangeMode": "restart",
                 "DestPath": "secrets/upstreams.env",
-                "EmbeddedTmpl": "BILLING_SECRETS_URL=https://{{- with nomadService \"secrets-service-internal-https\" }}{{ range . }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
+                "EmbeddedTmpl": "BILLING_SECRETS_URL=https://{{- with nomadService \"secrets-service-internal-https\" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}\n",
                 "Envvars": true
               }
             ],
