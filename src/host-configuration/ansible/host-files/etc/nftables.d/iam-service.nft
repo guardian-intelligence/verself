@@ -16,7 +16,7 @@ table inet verself_iam_service {
 
         ct state established,related accept
         meta skuid != iam_service accept
-        oifname "lo" tcp dport { 5432, 9440, 8085, 4317, 20000-32000 } accept
+        oifname "lo" tcp dport { 5432, 9440, 8085, 4317, 50051, 20000-32000 } accept
         oifname "lo" tcp dport 443 accept
         meta l4proto != tcp meta l4proto != udp accept
 
