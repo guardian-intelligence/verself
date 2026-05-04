@@ -1,7 +1,7 @@
 {
   "tasks": {},
   "update": {
-    "AutoPromote": true,
+    "AutoPromote": false,
     "AutoRevert": true,
     "Canary": 0,
     "HealthCheck": "task_states",
