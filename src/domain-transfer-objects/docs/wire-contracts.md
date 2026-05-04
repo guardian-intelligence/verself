@@ -1,6 +1,6 @@
 # Wire Contracts
 
-`src/sdks/domain-transfer-objects` owns transfer contracts shared by Go services, OpenAPI specs, protobuf schemas, generated TypeScript clients, and app-facing TypeScript wrappers. Service domain packages can keep native Go types and service-local aliases. Huma boundary structs own JSON encoding and generated schema.
+`src/domain-transfer-objects` owns transfer contracts shared by Go services, OpenAPI specs, protobuf schemas, generated-client contract types, and app-facing TypeScript wrappers. Service domain packages can keep native Go types and service-local aliases. Huma boundary structs own JSON encoding and generated schema.
 
 ## Numeric Safety
 
@@ -12,7 +12,7 @@ Internal Go domain structs can keep `uint64` and `int64`. Do not return those st
 
 ## Service Boundary Pattern
 
-Shared DTO structs live in `src/sdks/domain-transfer-objects/go` once their field language is shared across services or generated clients. Shared protobuf schemas live in `src/sdks/domain-transfer-objects/proto` once binary transport consumers need the same contract. Service packages keep small converter functions next to the Huma handlers because those functions understand the local domain model and authorization context.
+Shared DTO structs live in `src/domain-transfer-objects/go` once their field language is shared across services or generated clients. Shared protobuf schemas live in `src/domain-transfer-objects/proto` once binary transport consumers need the same contract. Service packages keep small converter functions next to the Huma handlers because those functions understand the local domain model and authorization context.
 
 Use this shape:
 

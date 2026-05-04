@@ -33,7 +33,7 @@ go_library(
     importpath = "github.com/verself/vm-orchestrator",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/substrate/vm-orchestrator/proto/v1:proto",
         "//src/substrate/vm-orchestrator/vmproto",
         "//src/substrate/vm-orchestrator/zfs",

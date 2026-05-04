@@ -19,11 +19,13 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `components/` — platform components wrapped as first-party runtime owners.
   Components can have Nomad jobs and small owner-local setup code, but they do
   not own customer-facing product APIs.
+- `domain-transfer-objects/` — shared data-transfer contracts for service
+  boundaries, OpenAPI-compatible DTOs, shared protobuf schemas, numeric wire
+  primitives, and generated-client contract rules.
 - `frontends/` — browser and future client applications. The current
   TypeScript workspace is `frontends/viteplus-monorepo/`.
-- `sdks/` — generated and curated client layers, shared wire DTOs, protobuf
-  schemas, OpenAPI-compatible transfer types, validators, and package-local SDK
-  adapters.
+- `sdks/` — generated and curated client layers, validators, and package-local
+  SDK adapters.
 - `services/` — product API services, service-local workers, service-owned
   databases, migrations, and shared service runtime packages.
 - `substrate/` — privileged host and guest substrate binaries that sit outside

@@ -314,15 +314,15 @@ Wire contract locations:
 | Curated TypeScript IAM SDK | `src/services/iam-service/sdk/typescript/` | TypeScript SDK generation target |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema assertions | `src/services/iam-service/schema/assertions.yaml`, `src/services/iam-service/schema/expected-relations.yaml` | `//src/services/iam-service/schema:schema_tests` |
-| Shared DTOs used by multiple services or frontend wrappers | `src/sdks/domain-transfer-objects/go/` | `//src/sdks/domain-transfer-objects/go:dto` |
-| Future shared protobuf messages | `src/sdks/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/sdks/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
+| Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
+| Future shared protobuf messages | `src/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
 | Future IAM-owned gRPC-only contract | `src/services/iam-service/proto/v1/*.proto` | `//src/services/iam-service/proto/v1:iam_proto` |
 
 Add a service-local protobuf directory only if the operation cannot be cleanly
 represented by the existing OpenAPI service pattern, for example a binary
 stream that should not become a public HTTP contract. If the message shape is
 consumed by more than `iam-service`, put the protobuf under
-`src/sdks/domain-transfer-objects/proto/` instead.
+`src/domain-transfer-objects/proto/` instead.
 
 OpenAPI remains the generated-client surface for product services. A missing
 service shape is fixed by adding the Huma route and regenerating the committed

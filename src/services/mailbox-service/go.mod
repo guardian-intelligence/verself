@@ -60,7 +60,7 @@ replace github.com/verself/auth-middleware => ../auth-middleware
 
 replace github.com/verself/secrets-service => ../secrets-service
 
-replace github.com/verself/domain-transfer-objects => ../../sdks/domain-transfer-objects/go
+replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

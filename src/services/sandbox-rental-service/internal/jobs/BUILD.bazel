@@ -24,7 +24,7 @@ go_library(
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
     deps = [
         "//src/services/billing-service/client",
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/services/sandbox-rental-service/internal/scheduler",
         "//src/services/sandbox-rental-service/internal/store",
         "//src/substrate/vm-orchestrator",

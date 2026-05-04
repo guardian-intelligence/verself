@@ -1,7 +1,7 @@
 go 1.25.8
 
 use (
-	./src/sdks/domain-transfer-objects/go
+	./src/domain-transfer-objects/go
 	./src/services/auth-middleware
 	./src/services/billing-service
 	./src/tools/deployment

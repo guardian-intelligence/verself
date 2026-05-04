@@ -26,7 +26,7 @@ var hostConfigurationPathspecs = []string{
 	"src/host-configuration",
 	"src/substrate/vm-orchestrator",
 	"src/substrate/vm-guest-telemetry",
-	"src/sdks/domain-transfer-objects/go",
+	"src/domain-transfer-objects/go",
 	"src/tools/observability/go/otel",
 }
 

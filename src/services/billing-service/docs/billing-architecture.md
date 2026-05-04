@@ -22,7 +22,7 @@ Reference points in this repo:
 
 - `src/platform/docs/identity-and-iam.md` for org/auth ownership boundaries.
 - `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md` for the reserve/settle split used by sandbox jobs and the existing River control-plane pattern.
-- `src/sdks/domain-transfer-objects/docs/wire-contracts.md` for wire-shape and generated-client conventions.
+- `src/domain-transfer-objects/docs/wire-contracts.md` for wire-shape and generated-client conventions.
 
 Provider reference points:
 
@@ -2835,4 +2835,4 @@ The expected target event set contains setup-intent, invoice, payment-intent, ch
 
 - `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - `src/platform/docs/identity-and-iam.md`
-- `src/sdks/domain-transfer-objects/docs/wire-contracts.md`
+- `src/domain-transfer-objects/docs/wire-contracts.md`

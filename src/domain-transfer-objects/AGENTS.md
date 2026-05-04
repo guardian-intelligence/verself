@@ -1,6 +1,6 @@
 # domain-transfer-objects
 
-`src/sdks/domain-transfer-objects` owns shared data-transfer contracts used at service boundaries: Go DTO types, committed OpenAPI-compatible wire schemas, future protobuf schemas, generated Go/TypeScript clients, and app-facing TypeScript wrappers. Domain packages stay free to use native Go types such as `uint64`, `int64`, service-local aliases, and richer business structs; this package owns only the transfer shape that another service, generated client, protobuf consumer, or frontend consumes.
+`src/domain-transfer-objects` owns shared data-transfer contracts used at service boundaries: Go DTO types, committed OpenAPI-compatible wire schemas, future protobuf schemas, generated-client contract types, and app-facing TypeScript wrapper contracts. Domain packages stay free to use native Go types such as `uint64`, `int64`, service-local aliases, and richer business structs; this package owns only the transfer shape that another service, generated client, protobuf consumer, or frontend consumes.
 
 ## Ownership
 
@@ -56,7 +56,7 @@ Generated clients are the supported SDK surface. Server functions and service-si
 
 ## Verification
 
-- Run `go test ./...` from `src/sdks/domain-transfer-objects/go` after changes in the Go DTO package.
+- Run `go test ./...` from `src/domain-transfer-objects/go` after changes in the Go DTO package.
 - Regenerate affected OpenAPI specs and generated clients when a DTO shape changes.
 - Run affected service tests and frontend typechecks for wrappers consuming the regenerated clients.
 - For behavior-affecting contract changes, prove the deployed path through ClickHouse traces/logs, not just local tests.

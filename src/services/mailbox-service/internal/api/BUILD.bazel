@@ -13,7 +13,7 @@ go_library(
     visibility = ["//src/services/mailbox-service:__subpackages__"],
     deps = [
         "//src/services/auth-middleware",
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/services/mailbox-service/internal/app",
         "//src/services/mailbox-service/internal/jmap",
         "//src/services/mailbox-service/internal/mailstore",

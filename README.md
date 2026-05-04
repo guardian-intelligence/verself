@@ -219,7 +219,7 @@ High-signal documents to read directly:
 - VM execution control plane (sandbox-rental-service ↔ vm-orchestrator): [`src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`](src/services/sandbox-rental-service/docs/vm-execution-control-plane.md)
 - vm-orchestrator privilege boundary, Firecracker networking, jailer: [`src/substrate/vm-orchestrator/AGENTS.md`](src/substrate/vm-orchestrator/AGENTS.md)
 - ZFS volume lifecycle (zvol, clone, snapshot, checkpoint, restore): [`src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`](src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md)
-- Wire contracts and DTO patterns: [`src/sdks/domain-transfer-objects/docs/wire-contracts.md`](src/sdks/domain-transfer-objects/docs/wire-contracts.md)
+- Wire contracts and DTO patterns: [`src/domain-transfer-objects/docs/wire-contracts.md`](src/domain-transfer-objects/docs/wire-contracts.md)
 - Inbound mail (Stalwart, JMAP/SMTP, tenant isolation): [`src/services/mailbox-service/docs/inbound-mail.md`](src/services/mailbox-service/docs/inbound-mail.md)
 - Audit data contract (HMAC chain, OCSF, SIEM export): [`src/services/governance-service/docs/audit-data-contract.md`](src/services/governance-service/docs/audit-data-contract.md)
 - Secrets service (OIDC provider role, KMS alternative): [`src/platform/docs/secrets-service.md`](src/platform/docs/secrets-service.md)

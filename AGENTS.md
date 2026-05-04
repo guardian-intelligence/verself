@@ -103,7 +103,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/services/mailbox-service/docs/inbound-mail.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/substrate/vm-orchestrator/AGENTS.md`
 - **ZFS volume lifecycle, zvol, clone, snapshot, checkpoint, restore:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
-- **Wire contracts, DTO patterns, protobuf schemas, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract gate:** `src/sdks/domain-transfer-objects/docs/wire-contracts.md`
+- **Wire contracts, DTO patterns, protobuf schemas, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract gate:** `src/domain-transfer-objects/docs/wire-contracts.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, OIDC discovery, Verself policy split:** `src/platform/docs/identity-and-iam.md`
 - **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`

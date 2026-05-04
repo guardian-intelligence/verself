@@ -350,7 +350,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 }
 ```
 
-The service owns its own `Bundle` (e.g. `src/services/billing-service/internal/billing/versions.go`). Cross-service shared changes — when a DTO in `domain-transfer-objects` evolves and multiple services consume it — live in `src/sdks/domain-transfer-objects/go/versions/<dto-area>.go` and are imported into each service's bundle. The generated contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
+The service owns its own `Bundle` (e.g. `src/services/billing-service/internal/billing/versions.go`). Cross-service shared changes — when a DTO in `domain-transfer-objects` evolves and multiple services consume it — live in `src/domain-transfer-objects/go/versions/<dto-area>.go` and are imported into each service's bundle. The generated contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
 
 ## 14. Generated Client Implications
 

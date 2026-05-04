@@ -10,7 +10,7 @@ go_library(
         "//src/services/auth-middleware",
         "//src/services/auth-middleware/workload",
         "//src/services/billing-service/client",
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/tools/observability/go/otel",
         "//src/services/sandbox-rental-service/internal/api",
         "//src/services/sandbox-rental-service/internal/jobs",

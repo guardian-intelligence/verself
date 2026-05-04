@@ -17,7 +17,7 @@ go_library(
     deps = [
         "//src/services/auth-middleware",
         "//src/services/auth-middleware/workload",
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internalclient",
         "//src/services/profile-service/internal/profile",
         "@com_github_danielgtaylor_huma_v2//:huma",

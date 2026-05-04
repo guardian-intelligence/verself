@@ -656,7 +656,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 
 	client := newAPIClient(apiSockHost)
 	// Kernel cmdline rendered from the canonical dto flag list plus any
-	// lease-specific overrides. See src/sdks/domain-transfer-objects/go/vmresources.go for why each
+	// lease-specific overrides. See src/domain-transfer-objects/go/vmresources.go for why each
 	// flag is on the base list (or deliberately off).
 	bootArgs := dto.RenderCmdline(dto.DefaultKernelCmdlineBase)
 	apiSteps := []firecrackerStep{

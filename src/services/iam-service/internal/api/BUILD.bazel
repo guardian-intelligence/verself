@@ -19,7 +19,7 @@ go_library(
     deps = [
         "//src/services/auth-middleware",
         "//src/services/auth-middleware/workload",
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internalclient",
         "//src/services/iam-service/internal/authz",
         "//src/services/iam-service/internal/identity",

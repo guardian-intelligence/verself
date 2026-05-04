@@ -11,7 +11,7 @@ go_library(
     visibility = ["//src/services/notifications-service:__subpackages__"],
     deps = [
         "//src/services/auth-middleware",
-        "//src/sdks/domain-transfer-objects/go:dto",
+        "//src/domain-transfer-objects/go:dto",
         "//src/services/notifications-service/internal/notifications",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
