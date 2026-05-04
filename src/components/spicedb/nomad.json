@@ -64,21 +64,10 @@
           {
             "Config": {
               "args": [
-                "serve",
-                "--datastore-engine=postgres",
-                "--datastore-conn-uri=postgres://spicedb@/spicedb?host=/var/run/postgresql\u0026sslmode=disable\u0026application_name=spicedb",
-                "--datastore-conn-pool-read-max-open=8",
-                "--datastore-conn-pool-read-min-open=1",
-                "--datastore-conn-pool-write-max-open=4",
-                "--datastore-conn-pool-write-min-open=1",
-                "--grpc-addr=127.0.0.1:${NOMAD_PORT_grpc}",
-                "--metrics-addr=127.0.0.1:${NOMAD_PORT_metrics}",
-                "--http-enabled=false",
-                "--telemetry-endpoint=",
-                "--skip-release-check",
-                "--log-format=json"
+                "-ec",
+                "set -a\n. /etc/spicedb/spicedb.env\nset +a\nexec /opt/verself/profile/bin/spicedb serve \\\n  --datastore-engine=postgres \\\n  --datastore-conn-uri='postgres://spicedb@/spicedb?host=/var/run/postgresql\u0026sslmode=disable\u0026application_name=spicedb' \\\n  --datastore-conn-pool-read-max-open=8 \\\n  --datastore-conn-pool-read-min-open=1 \\\n  --datastore-conn-pool-write-max-open=4 \\\n  --datastore-conn-pool-write-min-open=1 \\\n  --grpc-addr=\"127.0.0.1:${NOMAD_PORT_grpc}\" \\\n  --metrics-addr=\"127.0.0.1:${NOMAD_PORT_metrics}\" \\\n  --http-enabled=false \\\n  --telemetry-endpoint= \\\n  --skip-release-check \\\n  --log-format=json\n"
               ],
-              "command": "/opt/verself/profile/bin/spicedb"
+              "command": "/bin/sh"
             },
             "Driver": "raw_exec",
             "Env": {
@@ -131,14 +120,6 @@
                 "Name": "spicedb-metrics",
                 "PortLabel": "metrics",
                 "Provider": "nomad"
-              }
-            ],
-            "Templates": [
-              {
-                "ChangeMode": "restart",
-                "DestPath": "secrets/spicedb.env",
-                "Envvars": true,
-                "SourcePath": "/etc/spicedb/spicedb.env"
               }
             ],
             "User": "spicedb"
