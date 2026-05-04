@@ -38,11 +38,20 @@ genrule(
     tools = ["//src/tools/dev/cmd/aspect-operator"],
 )
 
+genrule(
+    name = "edge_nomad_upstreams_template",
+    srcs = _EDGE_INPUTS,
+    outs = ["__generated/edge/nomad-upstreams.ctmpl"],
+    cmd = "$(location //src/tools/dev/cmd/aspect-operator) edge artifact --repo-root=$$(pwd) --site=prod --artifact=nomad-upstreams-template > $@",
+    tools = ["//src/tools/dev/cmd/aspect-operator"],
+)
+
 write_source_files(
     name = "edge_generated",
     files = {
         "ansible/roles/haproxy/templates/__generated/haproxy.cfg.j2": ":edge_haproxy_template",
         "ansible/roles/haproxy/templates/__generated/nomad-upstreams.cfg.j2": ":edge_nomad_upstreams_config",
+        "ansible/roles/haproxy/templates/__generated/nomad-upstreams.ctmpl": ":edge_nomad_upstreams_template",
         "ansible/roles/haproxy/templates/__generated/public-hosts.map.j2": ":edge_public_hosts_map",
     },
 )

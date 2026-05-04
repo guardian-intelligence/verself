@@ -27,9 +27,10 @@ type Inputs struct {
 }
 
 type Outputs struct {
-	HAProxyTemplate      string `json:"haproxy_template" yaml:"haproxy_template"`
-	PublicHostsMap       string `json:"public_hosts_map" yaml:"public_hosts_map"`
-	NomadUpstreamsConfig string `json:"nomad_upstreams_config" yaml:"nomad_upstreams_config"`
+	HAProxyTemplate        string `json:"haproxy_template" yaml:"haproxy_template"`
+	PublicHostsMap         string `json:"public_hosts_map" yaml:"public_hosts_map"`
+	NomadUpstreamsConfig   string `json:"nomad_upstreams_config" yaml:"nomad_upstreams_config"`
+	NomadUpstreamsTemplate string `json:"nomad_upstreams_template" yaml:"nomad_upstreams_template"`
 }
 
 func (o Outputs) GeneratedArtifacts(artifacts Artifacts) []GeneratedArtifact {
@@ -37,6 +38,7 @@ func (o Outputs) GeneratedArtifacts(artifacts Artifacts) []GeneratedArtifact {
 		{Name: "HAProxy template", Path: o.HAProxyTemplate, Content: artifacts.HAProxyTemplate},
 		{Name: "public hosts map", Path: o.PublicHostsMap, Content: artifacts.PublicHostsMap},
 		{Name: "Nomad upstreams config", Path: o.NomadUpstreamsConfig, Content: artifacts.NomadUpstreamsConfig},
+		{Name: "Nomad upstreams template", Path: o.NomadUpstreamsTemplate, Content: artifacts.NomadUpstreamsTemplate},
 	}
 }
 
@@ -100,9 +102,10 @@ type HAProxyDefaults struct {
 }
 
 type Artifacts struct {
-	HAProxyTemplate      string
-	PublicHostsMap       string
-	NomadUpstreamsConfig string
+	HAProxyTemplate        string
+	PublicHostsMap         string
+	NomadUpstreamsConfig   string
+	NomadUpstreamsTemplate string
 }
 
 type GeneratedArtifact struct {

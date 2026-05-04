@@ -100,6 +100,11 @@
       ]
     },
     {
+      "component": "haproxy_upstreams",
+      "job_id": "haproxy-upstreams",
+      "artifacts": []
+    },
+    {
       "component": "secrets_service",
       "job_id": "secrets-service",
       "bazel_label": "//src/services/secrets-service/cmd/secrets-service:secrets-service",

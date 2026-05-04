@@ -24,7 +24,6 @@ go_library(
         "//src/tools/deployment/internal/bazelbuild",
         "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/garage",
-        "//src/tools/deployment/internal/haproxyupstreams",
         "//src/tools/deployment/internal/identity",
         "//src/tools/deployment/internal/nomadclient",
         "//src/tools/deployment/internal/render",

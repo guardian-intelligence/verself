@@ -26,16 +26,26 @@ def _nomad_resolved_jobs_impl(ctx):
         override_files.append(files[0])
         override_args.append("%s=%s" % (job_id, files[0].path))
 
+    embedded_template_files = []
+    embedded_template_args = []
+    for target, placeholder in ctx.attr.embedded_templates.items():
+        files = target.files.to_list()
+        if len(files) != 1:
+            fail("%s must produce exactly one embedded template file, got %d" % (target.label, len(files)))
+        embedded_template_files.append(files[0])
+        embedded_template_args.append("%s=%s" % (placeholder, files[0].path))
+
     args = ctx.actions.args()
     args.add("--jobs-index", index_file.path)
     args.add("--out-dir", out_dir.path)
     args.add_all(artifact_args, before_each = "--artifact")
     args.add_all(override_args, before_each = "--override")
+    args.add_all(embedded_template_args, before_each = "--embedded-template")
 
     ctx.actions.run(
         executable = ctx.executable._resolver,
         arguments = [args],
-        inputs = depset(ctx.files.job_specs + artifact_files + override_files + [
+        inputs = depset(ctx.files.job_specs + artifact_files + override_files + embedded_template_files + [
             index_file,
             ctx.executable._resolver,
         ]),
@@ -61,6 +71,10 @@ nomad_resolved_jobs = rule(
             allow_single_file = True,
             mandatory = True,
             doc = "Authored jobs/index.json describing the Nomad-supervised component set.",
+        ),
+        "embedded_templates": attr.label_keyed_string_dict(
+            allow_files = True,
+            doc = "Map of generated template labels to placeholder strings replaced in authored Nomad specs before digest stamping.",
         ),
         "job_specs": attr.label_list(
             allow_files = True,

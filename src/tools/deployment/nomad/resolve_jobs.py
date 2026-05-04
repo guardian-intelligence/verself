@@ -24,6 +24,12 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="job_id=path to a per-component nomad-overrides.json carrying the service's check and rollout-policy blocks.",
     )
+    parser.add_argument(
+        "--embedded-template",
+        action="append",
+        default=[],
+        help="placeholder=path; replaces exact placeholder string values inside authored Nomad specs before digest stamping.",
+    )
     return parser.parse_args()
 
 
@@ -60,6 +66,35 @@ def parse_overrides(values: list[str]) -> dict[str, Path]:
             raise ValueError(f"duplicate override registered for job_id {name!r}")
         out[name] = Path(raw_path)
     return out
+
+
+def parse_embedded_templates(values: list[str]) -> dict[str, Path]:
+    out: dict[str, Path] = {}
+    for item in values:
+        placeholder, sep, raw_path = item.partition("=")
+        if not sep or not placeholder or not raw_path:
+            raise ValueError(f"embedded template must be placeholder=path, got {item!r}")
+        if placeholder in out:
+            raise ValueError(f"duplicate embedded template placeholder {placeholder!r}")
+        out[placeholder] = Path(raw_path)
+    return out
+
+
+def replace_embedded_templates(value: object, templates: dict[str, str], used: set[str]) -> object:
+    if isinstance(value, str):
+        replacement = templates.get(value)
+        if replacement is None:
+            return value
+        used.add(value)
+        return replacement
+    if isinstance(value, list):
+        return [replace_embedded_templates(item, templates, used) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: replace_embedded_templates(item, templates, used)
+            for key, item in value.items()
+        }
+    return value
 
 
 # Mirrors Nomad's duration-string vocabulary so override authors can write
@@ -326,6 +361,12 @@ def main() -> int:
     args = parse_args()
     artifacts_by_output = parse_artifacts(args.artifact)
     overrides_by_job = parse_overrides(args.override)
+    embedded_template_paths = parse_embedded_templates(args.embedded_template)
+    embedded_templates = {
+        placeholder: path.read_text(encoding="utf-8")
+        for placeholder, path in embedded_template_paths.items()
+    }
+    used_embedded_templates: set[str] = set()
     out_dir = Path(args.out_dir)
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -391,6 +432,7 @@ def main() -> int:
         job_id = component["job_id"]
         spec_path = authored_jobs_dir / f"{job_id}.nomad.json"
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        spec = replace_embedded_templates(spec, embedded_templates, used_embedded_templates)
         seen = resolve_artifacts(spec, artifact_bindings)
         referenced.update(seen)
         override_path = overrides_by_job[job_id]
@@ -420,6 +462,9 @@ def main() -> int:
     extras = sorted(set(artifact_bindings) - referenced)
     if extras:
         raise ValueError(f"artifacts were provided but not referenced by authored jobs: {', '.join(extras)}")
+    unused_templates = sorted(set(embedded_templates) - used_embedded_templates)
+    if unused_templates:
+        raise ValueError(f"embedded template placeholders were provided but not used: {', '.join(unused_templates)}")
 
     publish_manifest = {
         "artifact_delivery": index["artifact_delivery"],

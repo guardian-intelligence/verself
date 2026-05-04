@@ -33,11 +33,15 @@ nomad_resolved_jobs(
         "//src/services/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service_nomad_artifact": "source-code-hosting-service",
         "//src/frontends/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact": "verself-web",
     },
+    embedded_templates = {
+        "//src/host-configuration:edge_nomad_upstreams_template": "__VERSELF_HAPROXY_NOMAD_UPSTREAMS_TEMPLATE__",
+    },
     index = "sites/prod/jobs/index.json",
     job_specs = [":prod_nomad_job_specs"],
     overrides = {
         "//src/services/billing-service/cmd/billing-service:nomad-overrides.json": "billing",
         "//src/services/governance-service/cmd/governance-service:nomad-overrides.json": "governance-service",
+        "//src/tools/deployment/nomad:sites/prod/jobs/haproxy-upstreams.nomad-overrides.json": "haproxy-upstreams",
         "//src/services/iam-service/cmd/iam-service:nomad-overrides.json": "iam-service",
         "//src/services/mailbox-service/cmd/mailbox-service:nomad-overrides.json": "mailbox-service",
         "//src/services/notifications-service/cmd/notifications-service:nomad-overrides.json": "notifications-service",

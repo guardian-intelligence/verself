@@ -1,0 +1,92 @@
+{
+  "Job": {
+    "Datacenters": [
+      "dc1"
+    ],
+    "ID": "haproxy-upstreams",
+    "Meta": {},
+    "Name": "haproxy-upstreams",
+    "TaskGroups": [
+      {
+        "Count": 1,
+        "Name": "haproxy-upstreams",
+        "Tasks": [
+          {
+            "Config": {
+              "args": [
+                "--source",
+                "local/nomad-upstreams.cfg",
+                "--dest",
+                "/etc/haproxy/nomad-upstreams.cfg",
+                "--haproxy-bin",
+                "/opt/verself/profile/bin/haproxy",
+                "--haproxy-config",
+                "/etc/haproxy/haproxy.cfg",
+                "--haproxy-config",
+                "/etc/haproxy/nomad-upstreams.cfg",
+                "--haproxy-ld-library-path",
+                "/opt/aws-lc/lib/x86_64-linux-gnu",
+                "--reload-unit",
+                "haproxy.service",
+                "--daemon"
+              ],
+              "command": "/opt/verself/profile/bin/haproxy-upstreams-apply"
+            },
+            "Driver": "raw_exec",
+            "KillSignal": "SIGTERM",
+            "KillTimeout": 5000000000,
+            "Name": "haproxy-upstreams",
+            "Resources": {
+              "CPU": 50,
+              "MemoryMB": 64
+            },
+            "RestartPolicy": {
+              "Attempts": 3,
+              "Delay": 5000000000,
+              "Interval": 60000000000,
+              "Mode": "delay"
+            },
+            "Templates": [
+              {
+                "ChangeMode": "script",
+                "ChangeScript": {
+                  "Args": [
+                    "--source",
+                    "local/nomad-upstreams.cfg",
+                    "--dest",
+                    "/etc/haproxy/nomad-upstreams.cfg",
+                    "--haproxy-bin",
+                    "/opt/verself/profile/bin/haproxy",
+                    "--haproxy-config",
+                    "/etc/haproxy/haproxy.cfg",
+                    "--haproxy-config",
+                    "/etc/haproxy/nomad-upstreams.cfg",
+                    "--haproxy-ld-library-path",
+                    "/opt/aws-lc/lib/x86_64-linux-gnu",
+                    "--reload-unit",
+                    "haproxy.service"
+                  ],
+                  "Command": "/opt/verself/profile/bin/haproxy-upstreams-apply",
+                  "FailOnError": true,
+                  "Timeout": 5000000000
+                },
+                "DestPath": "local/nomad-upstreams.cfg",
+                "EmbeddedTmpl": "__VERSELF_HAPROXY_NOMAD_UPSTREAMS_TEMPLATE__",
+                "LeftDelim": "[[",
+                "Perms": "0640",
+                "RightDelim": "]]",
+                "Wait": {
+                  "Max": 1000000000,
+                  "Min": 100000000
+                }
+              }
+            ],
+            "User": "root"
+          }
+        ],
+        "Update": null
+      }
+    ],
+    "Type": "service"
+  }
+}

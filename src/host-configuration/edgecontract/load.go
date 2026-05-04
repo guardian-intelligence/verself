@@ -35,9 +35,10 @@ func DefaultInputs(cfg Config) Inputs {
 func DefaultOutputs(cfg Config) Outputs {
 	generatedDir := filepath.Join(cfg.RepoRoot, "src/host-configuration/ansible/roles/haproxy/templates/__generated")
 	return Outputs{
-		HAProxyTemplate:      filepath.Join(generatedDir, "haproxy.cfg.j2"),
-		PublicHostsMap:       filepath.Join(generatedDir, "public-hosts.map.j2"),
-		NomadUpstreamsConfig: filepath.Join(generatedDir, "nomad-upstreams.cfg.j2"),
+		HAProxyTemplate:        filepath.Join(generatedDir, "haproxy.cfg.j2"),
+		PublicHostsMap:         filepath.Join(generatedDir, "public-hosts.map.j2"),
+		NomadUpstreamsConfig:   filepath.Join(generatedDir, "nomad-upstreams.cfg.j2"),
+		NomadUpstreamsTemplate: filepath.Join(generatedDir, "nomad-upstreams.ctmpl"),
 	}
 }
 
@@ -53,9 +54,10 @@ func Build(cfg Config) (*Bundle, error) {
 		return nil, err
 	}
 	artifacts := Artifacts{
-		HAProxyTemplate:      RenderHAProxyTemplate(plan),
-		PublicHostsMap:       RenderPublicHostsMap(plan),
-		NomadUpstreamsConfig: RenderInitialNomadUpstreamsConfig(plan),
+		HAProxyTemplate:        RenderHAProxyTemplate(plan),
+		PublicHostsMap:         RenderPublicHostsMap(plan),
+		NomadUpstreamsConfig:   RenderInitialNomadUpstreamsConfig(plan),
+		NomadUpstreamsTemplate: RenderNomadUpstreamsTemplate(plan),
 	}
 	manifest := BuildManifest(inputPaths, outputPaths, plan)
 	sort.Strings(issues)

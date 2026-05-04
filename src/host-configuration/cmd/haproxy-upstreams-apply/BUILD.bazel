@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "haproxy-upstreams-apply_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/host-configuration/cmd/haproxy-upstreams-apply",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "haproxy-upstreams-apply",
+    embed = [":haproxy-upstreams-apply_lib"],
+    visibility = ["//visibility:public"],
+)

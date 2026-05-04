@@ -19,7 +19,6 @@ import (
 
 	"github.com/verself/deployment-tools/internal/bazelbuild"
 	"github.com/verself/deployment-tools/internal/garage"
-	"github.com/verself/deployment-tools/internal/haproxyupstreams"
 	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/render"
 	"github.com/verself/deployment-tools/internal/runtime"
@@ -194,24 +193,16 @@ func submitResolvedEntries(ctx context.Context, rt *runtime.Runtime, site, repoR
 	if err != nil {
 		return err
 	}
-	haproxyOpts := haproxyupstreams.Options{RepoRoot: repoRoot, Site: site}
 
 	for _, entry := range entries {
-		if err := submitOneEntry(ctx, rt.Tracer, client, rt.SSH, haproxyOpts, jobsDir, entry); err != nil {
+		if err := submitOneEntry(ctx, rt.Tracer, client, jobsDir, entry); err != nil {
 			return fmt.Errorf("%s: %w", entry.JobID, err)
 		}
-	}
-	// The per-job loop reconciles during rollouts so healthy canaries
-	// become routable before Nomad stops the prior allocation. This
-	// final pass catches no-op deployments and any catalog changes that
-	// landed after the last monitor tick.
-	if _, err := haproxyupstreams.Reconcile(ctx, client, rt.SSH, haproxyOpts); err != nil {
-		return fmt.Errorf("reconcile haproxy upstreams: %w", err)
 	}
 	return nil
 }
 
-func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclient.Client, sshClient *sshtun.Client, haproxyOpts haproxyupstreams.Options, jobsDir string, entry render.SubmitEntry) error {
+func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclient.Client, jobsDir string, entry render.SubmitEntry) error {
 	ctx, span := tracer.Start(ctx, "verself_deploy.nomad.submit",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
@@ -225,54 +216,12 @@ func submitOneEntry(ctx context.Context, tracer trace.Tracer, client *nomadclien
 	timeoutCtx, cancel := context.WithTimeout(ctx, deployAffectedSubmitTimeout)
 	defer cancel()
 
-	stopReconciler, err := startHAProxyReconcileLoop(timeoutCtx, client, sshClient, haproxyOpts)
-	if err != nil {
-		recordFailure(span, err)
-		return err
-	}
 	if err := submitOnce(timeoutCtx, span, client, specPath); err != nil {
-		_ = stopReconciler()
-		recordFailure(span, err)
-		return err
-	}
-	if err := stopReconciler(); err != nil {
 		recordFailure(span, err)
 		return err
 	}
 	span.SetStatus(codes.Ok, "")
 	return nil
-}
-
-func startHAProxyReconcileLoop(ctx context.Context, client *nomadclient.Client, sshClient *sshtun.Client, opts haproxyupstreams.Options) (func() error, error) {
-	if _, err := haproxyupstreams.Reconcile(ctx, client, sshClient, opts); err != nil {
-		return nil, fmt.Errorf("initial haproxy upstream reconcile: %w", err)
-	}
-	loopCtx, cancel := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-loopCtx.Done():
-				done <- nil
-				return
-			case <-ticker.C:
-				if _, err := haproxyupstreams.Reconcile(loopCtx, client, sshClient, opts); err != nil {
-					if loopCtx.Err() != nil {
-						done <- nil
-						return
-					}
-					done <- fmt.Errorf("periodic haproxy upstream reconcile: %w", err)
-					return
-				}
-			}
-		}
-	}()
-	return func() error {
-		cancel()
-		return <-done
-	}, nil
 }
 
 // commonParentDir returns the longest path that is a directory

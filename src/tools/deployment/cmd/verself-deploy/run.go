@@ -17,9 +17,7 @@ import (
 
 	"github.com/verself/deployment-tools/internal/ansible"
 	"github.com/verself/deployment-tools/internal/deploydb"
-	"github.com/verself/deployment-tools/internal/haproxyupstreams"
 	"github.com/verself/deployment-tools/internal/identity"
-	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/runtime"
 	"github.com/verself/deployment-tools/internal/supplychain"
 )
@@ -182,14 +180,6 @@ func runDeployBody(
 	}
 	span.SetAttributes(attribute.String("host_configuration.decision", hostDecision.Reason))
 	if hostDecision.Run {
-		if hostDecision.BaseRunKey != "" {
-			if err := stageHAProxyUpstreamsForHostConfiguration(ctx, rt, site, repoRoot); err != nil {
-				msg := fmt.Sprintf("stage HAProxy Nomad upstreams before host configuration: %v", err)
-				fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-				writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
-				return 1
-			}
-		}
 		if len(hostDecision.ChangedPaths) > 0 {
 			fmt.Fprintf(os.Stderr, "verself-deploy: host configuration inputs changed since %s (%s); running %s\n",
 				hostDecision.BaseRunKey, shortSHA(hostDecision.BaseSHA), hostConfigurationSitePlaybook)
@@ -254,19 +244,6 @@ func runDeployBody(
 		return 1
 	}
 	return 0
-}
-
-func stageHAProxyUpstreamsForHostConfiguration(ctx context.Context, rt *runtime.Runtime, site, repoRoot string) error {
-	forward, err := rt.SSH.Forward(ctx, "nomad", defaultNomadRemotePort)
-	if err != nil {
-		return err
-	}
-	client, err := nomadclient.New("http://" + forward.ListenAddr)
-	if err != nil {
-		return err
-	}
-	_, err = haproxyupstreams.Stage(ctx, client, rt.SSH, haproxyupstreams.Options{RepoRoot: repoRoot, Site: site})
-	return err
 }
 
 func hostConfigurationAnsibleArgs(decision hostConfigurationDecision) []string {

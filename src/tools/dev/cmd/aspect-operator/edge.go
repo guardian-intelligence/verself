@@ -113,8 +113,10 @@ func cmdEdgeArtifact(args []string) error {
 		content = bundle.Artifacts.PublicHostsMap
 	case "nomad-upstreams-config":
 		content = bundle.Artifacts.NomadUpstreamsConfig
+	case "nomad-upstreams-template":
+		content = bundle.Artifacts.NomadUpstreamsTemplate
 	default:
-		return fmt.Errorf("edge artifact: --artifact must be haproxy-template, public-hosts-map, or nomad-upstreams-config")
+		return fmt.Errorf("edge artifact: --artifact must be haproxy-template, public-hosts-map, nomad-upstreams-config, or nomad-upstreams-template")
 	}
 	_, err = io.WriteString(os.Stdout, content)
 	return err
@@ -198,7 +200,7 @@ Common flags:
   --repo-root <path>  verself-sh checkout root
   --site <site>       deployment site (default: prod)
   --format <format>   manifest format: text, json, yaml
-  --artifact <name>   artifact name for artifact: haproxy-template, public-hosts-map, nomad-upstreams-config
+  --artifact <name>   artifact name for artifact: haproxy-template, public-hosts-map, nomad-upstreams-config, nomad-upstreams-template
 `)
 }
 

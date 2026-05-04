@@ -99,6 +99,7 @@ SERVER_TOOL_DEPS = [
 
 HOST_GO_TOOLS = [
     ("//src/host-configuration/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
+    ("//src/host-configuration/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
     ("//src/host-configuration/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
     ("//src/components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
     ("//src/components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),

@@ -1,0 +1,13 @@
+{
+  "tasks": {},
+  "update": {
+    "AutoPromote": true,
+    "AutoRevert": true,
+    "Canary": 0,
+    "HealthCheck": "task_states",
+    "HealthyDeadline": "30s",
+    "MaxParallel": 1,
+    "MinHealthyTime": "1s",
+    "ProgressDeadline": "1m"
+  }
+}
