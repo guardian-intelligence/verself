@@ -12,11 +12,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/sdk/worker"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 	"github.com/verself/sandbox-rental-service/internal/sourceworkflow"
 	"github.com/verself/service-runtime/envconfig"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"github.com/verself/temporal-platform/sdkclient"
 )
 

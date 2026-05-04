@@ -15,14 +15,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	governanceapi "github.com/verself/governance-service/internal/api"
 	"github.com/verself/governance-service/internal/governance"
 	"github.com/verself/governance-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 func main() {

@@ -19,7 +19,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (

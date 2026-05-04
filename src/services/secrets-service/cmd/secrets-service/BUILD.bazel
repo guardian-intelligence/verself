@@ -7,15 +7,15 @@ go_library(
     importpath = "github.com/verself/secrets-service/cmd/secrets-service",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/services/auth-middleware",
-        "//src/services/auth-middleware/workload",
         "//src/services/billing-service/client",
-        "//src/tools/observability/go/otel",
         "//src/services/secrets-service/client",
         "//src/services/secrets-service/internal/api",
         "//src/services/secrets-service/internal/secrets",
+        "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
     ],
 )

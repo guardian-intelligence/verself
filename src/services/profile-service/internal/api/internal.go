@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type dataRightsInput struct {

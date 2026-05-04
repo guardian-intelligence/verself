@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/secrets-service/internal/secrets"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )

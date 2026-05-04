@@ -15,8 +15,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/verself/auth-middleware"
 	"github.com/verself/profile-service/internal/profile"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 type permission string

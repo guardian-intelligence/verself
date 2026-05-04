@@ -19,8 +19,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/verself/auth-middleware"
 	"github.com/verself/governance-service/internal/governance"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 type permission string

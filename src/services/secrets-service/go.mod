@@ -7,7 +7,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/billing-service v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
@@ -51,7 +50,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/verself/auth-middleware => ../auth-middleware
 
 replace github.com/verself/billing-service => ../billing-service
 

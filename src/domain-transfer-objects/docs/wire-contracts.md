@@ -36,7 +36,7 @@ Do not use hand-written `strconv.FormatUint` string fields in service-local DTOs
 
 Go services consume other Go services through generated `oapi-codegen` clients from committed OpenAPI 3.0 specs. Use the public `client` package for customer-authenticated API shapes and the `internalclient` package for SPIFFE-only operations. The generated client owns URL construction, request/response JSON, and problem parsing; the caller owns only the base URL and the `http.Client`.
 
-For repo-owned service-to-service traffic, construct the `http.Client` with `auth-middleware/workload.MTLSClientForService` and pass it via the generated client's `WithHTTPClient` option. Do not hand-write service calls with `http.NewRequest`, `Do`, `json.Marshal`, or `json.NewDecoder`; if the generated package cannot express the operation, add or correct the Huma route/OpenAPI source and regenerate.
+For repo-owned service-to-service traffic, construct the `http.Client` with `service-runtime/workload.MTLSClientForService` and pass it via the generated client's `WithHTTPClient` option. Do not hand-write service calls with `http.NewRequest`, `Do`, `json.Marshal`, or `json.NewDecoder`; if the generated package cannot express the operation, add or correct the Huma route/OpenAPI source and regenerate.
 
 ## TypeScript Boundary Pattern
 

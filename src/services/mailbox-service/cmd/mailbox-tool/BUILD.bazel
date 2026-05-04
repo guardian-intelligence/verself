@@ -5,7 +5,6 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/mailbox-service/cmd/mailbox-tool",
     visibility = ["//visibility:private"],
-    deps = ["//src/services/mailbox-service/client"],
 )
 
 go_binary(

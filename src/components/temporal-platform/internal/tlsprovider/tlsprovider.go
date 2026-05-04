@@ -11,7 +11,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	workloadauth "github.com/verself/auth-middleware/workload"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"go.temporal.io/server/common/rpc/encryption"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	auth "github.com/verself/auth-middleware"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {

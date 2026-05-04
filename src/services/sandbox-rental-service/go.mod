@@ -14,7 +14,6 @@ require (
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/billing-service v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
@@ -115,7 +114,6 @@ require (
 )
 
 replace (
-	github.com/verself/auth-middleware => ../auth-middleware
 	github.com/verself/billing-service => ../billing-service
 	github.com/verself/governance-service => ../governance-service
 	github.com/verself/secrets-service => ../secrets-service

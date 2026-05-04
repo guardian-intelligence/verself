@@ -6,7 +6,6 @@ go_library(
         "agent.go",
         "cli.go",
         "fault_injection_off.go",
-        "fault_injection_on.go",
         "local_control.go",
         "main.go",
         "overlays.go",

@@ -145,7 +145,7 @@ Zitadel client-credential JWTs. Reintroducing either is a security regression;
 see Failure Semantics.
 
 Public customer and user API boundaries validate Zitadel JWTs through
-`auth-middleware`. SPIFFE is for workload identity; Zitadel is for human,
+`service-runtime/auth`. SPIFFE is for workload identity; Zitadel is for human,
 organization, and API credential identity.
 
 ## Request Context Propagation
@@ -163,7 +163,7 @@ as explicit typed fields (`org_id`, `actor_id`, external task IDs, and
 idempotency keys) unless the downstream service must independently re-enforce
 customer IAM from the original token. If the downstream service does need that
 customer IAM decision, the caller forwards the original Zitadel JWT and the
-downstream service re-validates it through `auth-middleware` before using any
+downstream service re-validates it through `service-runtime/auth` before using any
 subject claim.
 
 Governance audit rows written by downstream services carry both the caller

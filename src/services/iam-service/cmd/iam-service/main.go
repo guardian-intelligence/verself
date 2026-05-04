@@ -16,8 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/iam-service/internal/api"
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
@@ -26,8 +24,10 @@ import (
 	"github.com/verself/iam-service/migrations"
 	iamschema "github.com/verself/iam-service/schema"
 	verselfotel "github.com/verself/observability/otel"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (

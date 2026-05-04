@@ -8,10 +8,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/verself/auth-middleware"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {

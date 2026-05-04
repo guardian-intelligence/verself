@@ -17,7 +17,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	workloadauth "github.com/verself/auth-middleware/workload"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"

@@ -12,3 +12,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
 )
+
+alias(
+    name = "go_default_library",
+    actual = ":edgecontract",
+    visibility = ["//visibility:public"],
+)

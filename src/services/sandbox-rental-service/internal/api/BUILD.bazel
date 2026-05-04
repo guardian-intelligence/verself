@@ -17,13 +17,13 @@ go_library(
     importpath = "github.com/verself/sandbox-rental-service/internal/api",
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
     deps = [
-        "//src/services/auth-middleware",
-        "//src/services/auth-middleware/workload",
-        "//src/services/billing-service/client",
         "//src/domain-transfer-objects/go:dto",
+        "//src/services/billing-service/client",
         "//src/services/governance-service/internalclient",
         "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/sandbox-rental-service/internal/recurring",
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_google_uuid//:uuid",
@@ -40,7 +40,7 @@ go_test(
     srcs = ["security_test.go"],
     embed = [":api"],
     deps = [
-        "//src/services/auth-middleware",
+        "//src/services/service-runtime/go/auth",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

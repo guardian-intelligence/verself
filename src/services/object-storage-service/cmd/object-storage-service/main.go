@@ -20,13 +20,13 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	objectstorageapi "github.com/verself/object-storage-service/internal/api"
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	"github.com/verself/object-storage-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const serviceVersion = "1.0.0"

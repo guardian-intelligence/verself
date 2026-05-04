@@ -10,10 +10,10 @@ go_library(
     importpath = "github.com/verself/observability/cmd/observe",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/service-runtime/go/envconfig",
         "//src/tools/operator-runtime/go/clickhouse",
         "//src/tools/operator-runtime/go/evidence",
         "//src/tools/operator-runtime/go/runtime",
-        "//src/services/service-runtime/go/envconfig",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",

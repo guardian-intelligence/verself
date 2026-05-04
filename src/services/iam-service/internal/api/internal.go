@@ -12,10 +12,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/iam-service/internal/identity"
+	auth "github.com/verself/service-runtime/auth"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 var internalAPITracer = otel.Tracer("iam-service/internal/api/internal")

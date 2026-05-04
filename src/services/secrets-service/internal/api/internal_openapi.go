@@ -8,9 +8,9 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"gopkg.in/yaml.v3"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type resolveInjectionOpenAPIInput struct {

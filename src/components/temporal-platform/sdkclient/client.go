@@ -8,8 +8,8 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/service-runtime/envconfig"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"github.com/verself/temporal-platform/internal/temporallog"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"

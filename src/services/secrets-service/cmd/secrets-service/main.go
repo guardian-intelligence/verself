@@ -12,15 +12,15 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	billingclient "github.com/verself/billing-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
 	secretsapi "github.com/verself/secrets-service/internal/api"
 	"github.com/verself/secrets-service/internal/secrets"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (

@@ -9,7 +9,6 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.4.0
-	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/projects-service v0.0.0
@@ -60,7 +59,6 @@ require (
 )
 
 replace (
-	github.com/verself/auth-middleware => ../auth-middleware
 	github.com/verself/iam-service => ../iam-service
 	github.com/verself/projects-service => ../projects-service
 	github.com/verself/sandbox-rental-service => ../sandbox-rental-service

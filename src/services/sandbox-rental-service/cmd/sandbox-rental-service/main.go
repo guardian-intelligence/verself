@@ -23,14 +23,14 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/domain-transfer-objects"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 
 	sandboxapi "github.com/verself/sandbox-rental-service/internal/api"

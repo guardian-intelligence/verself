@@ -12,12 +12,12 @@ go_library(
     importpath = "github.com/verself/mailbox-service/internal/api",
     visibility = ["//src/services/mailbox-service:__subpackages__"],
     deps = [
-        "//src/services/auth-middleware",
         "//src/domain-transfer-objects/go:dto",
         "//src/services/mailbox-service/internal/app",
         "//src/services/mailbox-service/internal/jmap",
         "//src/services/mailbox-service/internal/mailstore",
         "//src/services/mailbox-service/internal/sync",
+        "//src/services/service-runtime/go/auth",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
     ],

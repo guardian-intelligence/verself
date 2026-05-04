@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/verself/auth-middleware"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/mailstore"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 type mailEmailPathInput struct {

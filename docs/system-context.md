@@ -49,7 +49,7 @@ Hard product requirement: everything self-hosted. Exceptions:
 
 ## Auth and IAM
 
-Zitadel is the sole IdP for humans, organizations, and customer/API credentials. All public Go service APIs import `src/services/auth-middleware/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE (see [workload-identity.md](architecture/workload-identity.md)); Zitadel machine users are not used for repo-owned service-to-service calls.
+Zitadel is the sole IdP for humans, organizations, and customer/API credentials. All public Go service APIs import `src/services/service-runtime/go/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE (see [workload-identity.md](architecture/workload-identity.md)); Zitadel machine users are not used for repo-owned service-to-service calls.
 
 Auth at the web application level is treated only as a UX concern. Authentication and authorization happen in services validating JWTs and calling out to Zitadel, and sometimes at the DB level. Any violation of this principle is a critical security concern.
 

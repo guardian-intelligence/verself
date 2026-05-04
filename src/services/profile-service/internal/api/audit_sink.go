@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	governanceinternalclient "github.com/verself/governance-service/internalclient"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type auditSinkConfig struct {

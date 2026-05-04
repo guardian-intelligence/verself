@@ -13,8 +13,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
+	auth "github.com/verself/service-runtime/auth"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"github.com/verself/source-code-hosting-service/internal/source"
 )
 

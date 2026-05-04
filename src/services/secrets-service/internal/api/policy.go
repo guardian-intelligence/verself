@@ -20,10 +20,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/verself/auth-middleware"
 	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 type permission string

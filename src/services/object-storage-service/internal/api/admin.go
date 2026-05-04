@@ -13,9 +13,9 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/object-storage-service/internal/objectstorage"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type bucketListOutput struct {

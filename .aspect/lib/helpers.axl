@@ -21,11 +21,10 @@ HOST_CONFIGURATION_DIR = "src/host-configuration"
 PROVISION_DIR = "src/tools/provisioning"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
-    "src/services/auth-middleware",
     "src/services/billing-service",
     "src/tools/deployment",
     "src/tools/dev",
-    "src/sdks/domain-transfer-objects/go",
+    "src/domain-transfer-objects/go",
     "src/services/governance-service",
     "src/host-configuration",
     "src/services/iam-service",

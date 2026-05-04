@@ -13,9 +13,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	auth "github.com/verself/auth-middleware"
 	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/domain-transfer-objects"
+	auth "github.com/verself/service-runtime/auth"
 
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"github.com/verself/sandbox-rental-service/internal/recurring"

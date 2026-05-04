@@ -15,11 +15,11 @@ go_library(
     importpath = "github.com/verself/profile-service/internal/api",
     visibility = ["//src/services/profile-service:__subpackages__"],
     deps = [
-        "//src/services/auth-middleware",
-        "//src/services/auth-middleware/workload",
         "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internalclient",
         "//src/services/profile-service/internal/profile",
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_spiffe_go_spiffe_v2//workloadapi",

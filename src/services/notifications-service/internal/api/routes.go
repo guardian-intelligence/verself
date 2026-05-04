@@ -12,9 +12,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	auth "github.com/verself/auth-middleware"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/notifications-service/internal/notifications"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 const (

@@ -11,8 +11,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/verself/auth-middleware"
 	"github.com/verself/iam-service/internal/identity"
+	auth "github.com/verself/service-runtime/auth"
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {

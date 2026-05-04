@@ -9,7 +9,6 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.4.0
-	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -55,7 +54,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/verself/auth-middleware => ../auth-middleware
 
 replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 

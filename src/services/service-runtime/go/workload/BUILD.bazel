@@ -8,7 +8,7 @@ go_library(
         "tls_external.go",
         "workload.go",
     ],
-    importpath = "github.com/verself/auth-middleware/workload",
+    importpath = "github.com/verself/service-runtime/workload",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_spiffe_go_spiffe_v2//spiffeid",

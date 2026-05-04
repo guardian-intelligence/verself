@@ -14,15 +14,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	iaminternalclient "github.com/verself/iam-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
 	profileapi "github.com/verself/profile-service/internal/api"
 	"github.com/verself/profile-service/internal/profile"
 	"github.com/verself/profile-service/migrations"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (

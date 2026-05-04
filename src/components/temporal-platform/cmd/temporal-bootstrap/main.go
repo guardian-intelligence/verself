@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	verselfotel "github.com/verself/observability/otel"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"github.com/verself/temporal-platform/internal/namespaceadmin"
 	"github.com/verself/temporal-platform/sdkclient"
 )

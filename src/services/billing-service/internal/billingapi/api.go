@@ -12,9 +12,9 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/domain-transfer-objects"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (

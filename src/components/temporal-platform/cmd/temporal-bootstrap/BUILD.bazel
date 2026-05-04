@@ -6,10 +6,10 @@ go_library(
     importpath = "github.com/verself/temporal-platform/cmd/temporal-bootstrap",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/services/auth-middleware/workload",
-        "//src/tools/observability/go/otel",
         "//src/components/temporal-platform/internal/namespaceadmin",
         "//src/components/temporal-platform/sdkclient",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
     ],
 )
 

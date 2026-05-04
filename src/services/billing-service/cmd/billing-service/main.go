@@ -19,16 +19,16 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	auth "github.com/verself/auth-middleware"
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/billing-service/internal/billing/ledger"
 	"github.com/verself/billing-service/internal/billingapi"
 	"github.com/verself/billing-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const serviceVersion = "2.0.0"

@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/verself/vm-orchestrator/cmd/vm-orchestrator",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/tools/observability/go/otel",
         "//src/substrate/vm-orchestrator",
         "//src/substrate/vm-orchestrator/proto/v1:proto",
+        "//src/tools/observability/go/otel",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@io_opentelemetry_go_otel//:otel",
         "@org_golang_google_grpc//:grpc",

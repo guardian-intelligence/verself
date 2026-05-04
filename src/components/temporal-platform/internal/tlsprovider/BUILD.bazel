@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/verself/temporal-platform/internal/tlsprovider",
     visibility = ["//src/components/temporal-platform:__subpackages__"],
     deps = [
-        "//src/services/auth-middleware/workload",
+        "//src/services/service-runtime/go/workload",
         "@com_github_spiffe_go_spiffe_v2//spiffeid",
         "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
         "@com_github_spiffe_go_spiffe_v2//workloadapi",

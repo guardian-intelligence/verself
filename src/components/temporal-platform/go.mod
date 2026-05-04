@@ -7,7 +7,6 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/auth-middleware v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0
 	go.opentelemetry.io/otel v1.43.0
 	go.temporal.io/api v1.62.8
@@ -161,7 +160,6 @@ require (
 	modernc.org/sqlite v1.39.1 // indirect
 )
 
-replace github.com/verself/auth-middleware => ../../services/auth-middleware
 
 replace go.temporal.io/api => go.temporal.io/api v1.62.2
 

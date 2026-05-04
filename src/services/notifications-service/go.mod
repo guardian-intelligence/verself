@@ -16,7 +16,6 @@ require (
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -86,7 +85,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/verself/auth-middleware => ../auth-middleware
 
 replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 

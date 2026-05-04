@@ -35,6 +35,13 @@ go_test(
 
 alias(
     name = "go_default_library",
-    actual = ":dto",
+    actual = ":domain-transfer-objects",
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "domain-transfer-objects_test",
+    srcs = ["decimal_test.go"],
+    embed = [":domain-transfer-objects"],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
 )
