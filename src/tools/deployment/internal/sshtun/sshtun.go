@@ -296,6 +296,14 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		conn     net.Conn
 		agentErr error
 	)
+	// Freshly provisioned hosts accept the cloud-init default key before
+	// Pomerium/Zitadel exists, so prefer it over unrelated agent identities.
+	if signer, label, err := loadDefaultKeySigner(true); err == nil {
+		methods = append(methods, ssh.PublicKeys(signer))
+		labels = append(labels, label)
+	} else if !errors.Is(err, errNoDefaultKey) {
+		return nil, nil, "", err
+	}
 	// Some access proxies end auth negotiation after an invalid SSH cert,
 	// so offer ordinary identities before the legacy certificate path.
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
@@ -322,15 +330,6 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 				labels = append(labels, "ssh-agent")
 			}
 		}
-	}
-	if signer, label, err := loadDefaultKeySigner(len(methods) > 0); err == nil {
-		methods = append(methods, ssh.PublicKeys(signer))
-		labels = append(labels, label)
-	} else if !errors.Is(err, errNoDefaultKey) {
-		if conn != nil {
-			_ = conn.Close()
-		}
-		return nil, nil, "", err
 	}
 	if signer, err := loadVerselfCertSigner(); err == nil {
 		methods = append(methods, ssh.PublicKeys(signer))
