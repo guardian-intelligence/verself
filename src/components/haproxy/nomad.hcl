@@ -159,7 +159,7 @@ backend be_route_product_git_source_code_hosting_service_git_smart_http
   guid be_route_product_git_source_code_hosting_service_git_smart_http
   balance random
   acl source_git method GET POST
-  acl source_git_path path_reg ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack|git-receive-pack)$
+  acl source_git_path path_reg ^/[^/]+/[^/]+(\.git)?/(info/refs|git-upload-pack|git-receive-pack)$
   http-request return status 404 unless source_git source_git_path
   http-request set-header X-Forwarded-Host git.verself.sh
   http-request set-header X-Forwarded-Proto https

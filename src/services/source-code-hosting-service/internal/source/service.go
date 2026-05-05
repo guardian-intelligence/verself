@@ -117,7 +117,7 @@ func (s *Service) AuthenticateGitCredential(ctx context.Context, username string
 	defer span.End()
 	username = strings.TrimSpace(username)
 	token = strings.TrimSpace(token)
-	if username != GitCredentialUsername || token == "" || orgID == 0 {
+	if !isSourceGitUsername(username) || token == "" || orgID == 0 {
 		return GitPrincipal{}, ErrUnauthorized
 	}
 	if s.Credentials == nil {
@@ -143,6 +143,15 @@ func (s *Service) AuthenticateGitCredential(ctx context.Context, username string
 		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
 	)
 	return principal, nil
+}
+
+func isSourceGitUsername(username string) bool {
+	switch username {
+	case GitCredentialUsername, GitCredentialCheckoutUsername:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipal, projectID uuid.UUID) (Repository, bool, error) {

@@ -134,7 +134,7 @@ frontend fe_firecracker_host_http
   acl method_post method POST
   acl forgejo_actions path -i /api/actions
   acl forgejo_actions_prefix path_beg /api/actions/
-  acl forgejo_smart_http path_reg ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack)$
+  acl forgejo_smart_http path_reg ^/[^/]+/[^/]+(\.git)?/(info/refs|git-upload-pack)$
   use_backend be_firecracker_sandbox_h2c if method_get { path -i /internal/sandbox/v1/github-runner-jit }
   use_backend be_firecracker_sandbox_h2c if method_get { path -i /internal/sandbox/v1/runner-bootstrap }
   use_backend be_firecracker_sandbox_h2c if { path_beg /internal/sandbox/v1/stickydisk/ }
@@ -143,8 +143,8 @@ frontend fe_firecracker_host_http
   use_backend be_firecracker_forgejo if method_post forgejo_actions
   use_backend be_firecracker_forgejo if method_get forgejo_actions_prefix
   use_backend be_firecracker_forgejo if method_post forgejo_actions_prefix
-  use_backend be_firecracker_forgejo if method_get forgejo_smart_http
-  use_backend be_firecracker_forgejo if method_post forgejo_smart_http
+  use_backend be_route_product_git_source_code_hosting_service_git_smart_http if method_get forgejo_smart_http
+  use_backend be_route_product_git_source_code_hosting_service_git_smart_http if method_post forgejo_smart_http
   default_backend be_forbidden
 
 frontend fe_firecracker_npm_registry

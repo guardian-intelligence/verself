@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,8 +27,11 @@ var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 const (
 	BackendForgejo = "forgejo"
 
-	GitCredentialUsername = "verself"
-	GitCredentialKind     = "source_git_https"
+	GitCredentialUsername         = "verself"
+	GitCredentialCheckoutUsername = "x-access-token"
+	GitCredentialKind             = "source_git_https"
+	GitScopeRepoRead              = "repo:read"
+	GitScopeRepoWrite             = "repo:write"
 
 	WorkflowRunStateDispatching = "dispatching"
 	WorkflowRunStateDispatched  = "dispatched"
@@ -99,6 +103,7 @@ type GitCredential struct {
 type CreateGitCredentialRequest struct {
 	Label            string
 	ExpiresInSeconds int64
+	Scopes           []string
 }
 
 type GitPrincipal struct {
@@ -281,7 +286,7 @@ func NormalizeCreate(input CreateRepositoryRequest) (CreateRepositoryRequest, er
 func NormalizeCreateGitCredential(input CreateGitCredentialRequest) (CreateGitCredentialRequest, error) {
 	input.Label = strings.TrimSpace(input.Label)
 	if input.Label == "" {
-		input.Label = "git push"
+		input.Label = "source git credential"
 	}
 	if input.ExpiresInSeconds == 0 {
 		input.ExpiresInSeconds = int64((30 * 24 * time.Hour).Seconds())
@@ -289,10 +294,41 @@ func NormalizeCreateGitCredential(input CreateGitCredentialRequest) (CreateGitCr
 	if input.ExpiresInSeconds < 60 || input.ExpiresInSeconds > int64((90*24*time.Hour).Seconds()) {
 		return CreateGitCredentialRequest{}, ErrInvalid
 	}
+	scopes, err := NormalizeGitCredentialScopes(input.Scopes)
+	if err != nil {
+		return CreateGitCredentialRequest{}, err
+	}
+	input.Scopes = scopes
 	if len(input.Label) > 128 {
 		return CreateGitCredentialRequest{}, ErrInvalid
 	}
 	return input, nil
+}
+
+func NormalizeGitCredentialScopes(scopes []string) ([]string, error) {
+	if len(scopes) == 0 {
+		return nil, ErrInvalid
+	}
+	out := make([]string, 0, len(scopes))
+	seen := map[string]struct{}{}
+	for _, scope := range scopes {
+		scope = strings.TrimSpace(scope)
+		switch scope {
+		case GitScopeRepoRead, GitScopeRepoWrite:
+		default:
+			return nil, ErrInvalid
+		}
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	if len(out) == 0 {
+		return nil, ErrInvalid
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func NormalizeWorkflowDispatch(input WorkflowDispatchRequest, defaultRef string) (WorkflowDispatchRequest, error) {

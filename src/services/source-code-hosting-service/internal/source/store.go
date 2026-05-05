@@ -270,6 +270,9 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, cre
 	if credential.CredentialID == uuid.Nil || credential.OrgID != principal.OrgID || credential.ActorID == "" || credential.TokenPrefix == "" || credential.ExpiresAt.IsZero() {
 		return GitCredential{}, ErrInvalid
 	}
+	if len(credential.Scopes) == 0 {
+		return GitCredential{}, ErrInvalid
+	}
 	if credential.Username == "" {
 		credential.Username = GitCredentialUsername
 	}

@@ -57,9 +57,10 @@ type CreateCheckoutGrantRequest struct {
 // CreateGitCredentialRequest defines model for CreateGitCredentialRequest.
 type CreateGitCredentialRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string `json:"$schema,omitempty"`
-	ExpiresInSeconds *int64  `json:"expires_in_seconds,omitempty"`
-	Label            *string `json:"label,omitempty"`
+	Schema           *string   `json:"$schema,omitempty"`
+	ExpiresInSeconds *int64    `json:"expires_in_seconds,omitempty"`
+	Label            *string   `json:"label,omitempty"`
+	Scopes           *[]string `json:"scopes"`
 }
 
 // CreateRepositoryRequest defines model for CreateRepositoryRequest.

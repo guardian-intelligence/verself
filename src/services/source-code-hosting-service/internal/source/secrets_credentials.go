@@ -48,6 +48,7 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 	if err != nil {
 		return GitCredential{}, err
 	}
+	scopes := append([]string(nil), input.Scopes...)
 	expiresAt := time.Now().UTC().Add(time.Duration(input.ExpiresInSeconds) * time.Second)
 	orgID := strconv.FormatUint(principal.OrgID, 10)
 	metadata := map[string]string{
@@ -63,7 +64,7 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 		Kind:        GitCredentialKind,
 		Metadata:    &metadata,
 		OrgId:       orgID,
-		Scopes:      []string{"repo:read", "repo:write"},
+		Scopes:      scopes,
 	})
 	if err != nil {
 		return GitCredential{}, fmt.Errorf("%w: create secrets credential: %v", ErrStoreUnavailable, err)
@@ -160,9 +161,12 @@ func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire se
 	if err != nil {
 		return GitCredential{}, err
 	}
-	scopes := []string{"repo:read", "repo:write"}
-	if wire.Scopes != nil && len(*wire.Scopes) > 0 {
-		scopes = append([]string(nil), (*wire.Scopes)...)
+	if wire.Scopes == nil || len(*wire.Scopes) == 0 {
+		return GitCredential{}, ErrStoreUnavailable
+	}
+	scopes, err := NormalizeGitCredentialScopes(*wire.Scopes)
+	if err != nil {
+		return GitCredential{}, err
 	}
 	return GitCredential{
 		CredentialID: credentialID,

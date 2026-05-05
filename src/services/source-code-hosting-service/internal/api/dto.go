@@ -41,8 +41,9 @@ type CreateRepositoryRequest struct {
 }
 
 type CreateGitCredentialRequest struct {
-	Label            string `json:"label,omitempty" maxLength:"128"`
-	ExpiresInSeconds int64  `json:"expires_in_seconds,omitempty" minimum:"60" maximum:"7776000"`
+	Label            string   `json:"label,omitempty" maxLength:"128"`
+	ExpiresInSeconds int64    `json:"expires_in_seconds,omitempty" minimum:"60" maximum:"7776000"`
+	Scopes           []string `json:"scopes" required:"true" minItems:"1" maxItems:"2"`
 }
 
 type GitCredential struct {

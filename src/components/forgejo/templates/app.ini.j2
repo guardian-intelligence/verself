@@ -40,8 +40,8 @@ INSTALL_LOCK = true
 DISABLE_REGISTRATION = true
 ALLOW_ONLY_EXTERNAL_REGISTRATION = false
 REQUIRE_SIGNIN_VIEW = true
-; Git smart HTTP and Forgejo Actions checkout use token-bearing Basic auth.
-ENABLE_BASIC_AUTHENTICATION = true
+; source-code-hosting-service owns public and runner Git authentication.
+ENABLE_BASIC_AUTHENTICATION = false
 ENABLE_INTERNAL_SIGNIN = false
 
 [oauth2]

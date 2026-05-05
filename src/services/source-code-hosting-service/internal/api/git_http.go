@@ -56,9 +56,9 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 			challengeGitBasicAuth(w)
 			return
 		}
-		requiredScopes := []string{"repo:read"}
+		requiredScopes := []string{source.GitScopeRepoRead}
 		if gitPath.ReceivePack {
-			requiredScopes = []string{"repo:write"}
+			requiredScopes = []string{source.GitScopeRepoWrite}
 		}
 		principal, err := svc.AuthenticateGitCredential(ctx, username, token, org.OrgID, requiredScopes)
 		if err != nil {
@@ -72,11 +72,11 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 			http.Error(w, "git credential is not valid for this organization", http.StatusForbidden)
 			return
 		}
-		if gitPath.ReceivePack && !hasScope(principal, "repo:write") {
+		if gitPath.ReceivePack && !hasScope(principal, source.GitScopeRepoWrite) {
 			http.Error(w, "git credential cannot push", http.StatusForbidden)
 			return
 		}
-		if gitPath.UploadPack && !hasScope(principal, "repo:read") {
+		if gitPath.UploadPack && !hasScope(principal, source.GitScopeRepoRead) {
 			http.Error(w, "git credential cannot fetch", http.StatusForbidden)
 			return
 		}
@@ -145,11 +145,11 @@ func parseGitSmartHTTPPath(r *http.Request) (gitSmartHTTPPath, error) {
 	}
 	orgSlug, _ := url.PathUnescape(parts[0])
 	repoPart, _ := url.PathUnescape(parts[1])
-	if !strings.HasSuffix(repoPart, ".git") {
-		return gitSmartHTTPPath{}, errors.New("git repository path must end in .git")
+	projectSlug := strings.TrimSpace(strings.TrimSuffix(repoPart, ".git"))
+	if projectSlug == "" {
+		return gitSmartHTTPPath{}, errors.New("git repository path is required")
 	}
-	projectSlug := strings.TrimSuffix(repoPart, ".git")
-	if projectSlug == "" || source.NormalizeSlug(projectSlug) != projectSlug || orgSlug == "" || source.NormalizeSlug(orgSlug) != orgSlug {
+	if source.NormalizeSlug(projectSlug) != projectSlug || orgSlug == "" || source.NormalizeSlug(orgSlug) != orgSlug {
 		return gitSmartHTTPPath{}, errors.New("invalid git repository path")
 	}
 	endpoint := ""
@@ -226,7 +226,7 @@ func proxyGitToForgejo(w http.ResponseWriter, r *http.Request, svc *source.Servi
 			out.URL.RawQuery = r.URL.RawQuery
 			out.Host = base.Host
 			out.Header.Del("Cookie")
-			out.SetBasicAuth(svc.Forgejo.Owner, svc.Forgejo.Token)
+			out.Header.Set("Authorization", "token "+svc.Forgejo.Token)
 		},
 		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, proxyErr error) {
 			span.RecordError(proxyErr)

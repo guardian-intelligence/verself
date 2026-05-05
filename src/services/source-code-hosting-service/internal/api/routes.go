@@ -391,6 +391,7 @@ func createGitCredential(svc *source.Service) func(context.Context, source.Princ
 		credential, err := svc.CreateGitCredential(ctx, principal, source.CreateGitCredentialRequest{
 			Label:            input.Body.Label,
 			ExpiresInSeconds: input.Body.ExpiresInSeconds,
+			Scopes:           input.Body.Scopes,
 		})
 		if err != nil {
 			return nil, sourceError(ctx, err)
