@@ -14,7 +14,7 @@ table inet verself_host {
         iifname "lo" accept
         iifname "wg-ops" accept
         iifname "wg0" accept
-        iifname "fc-tap-*" ip saddr 172.16.0.0/16 ip daddr 10.255.0.1 tcp dport { 4873, 18080 } accept
+        iifname "fc-tap-*" ip saddr 172.16.0.0/16 ip daddr 10.255.0.1 tcp dport { 443, 4873, 18080 } accept
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
         # Public :22 is Pomerium; recovery SSH is reachable only over wg-ops.

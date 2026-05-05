@@ -20,6 +20,15 @@ mailbox_service_subdomain: mail.api
 mailbox_service_domain: "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
 notifications_service_subdomain: notifications.api
 notifications_service_domain: "{{ notifications_service_subdomain }}.{{ verself_domain }}"
+npm_registry_subdomain: npm
+npm_registry_domain: "{{ npm_registry_subdomain }}.{{ verself_domain }}"
+npm_registry_trusted_cidrs:
+  - "206.223.228.101/32"
+  - "10.0.0.0/16"
+  - "10.66.66.0/24"
+  - "172.16.0.0/16"
+  - "127.0.0.1/32"
+  - "::1/128"
 pomerium_subdomain: access
 pomerium_domain: "{{ pomerium_subdomain }}.{{ verself_domain }}"
 profile_service_subdomain: profile.api
@@ -95,6 +104,9 @@ cloudflare_dns_records:
     zone: product
   - kind: protocol_origin
     record: mail
+    zone: product
+  - kind: protocol_origin
+    record: npm
     zone: product
 
 # Host bootstrap substrate. These values are the manual, non-Nomad surface

@@ -23,6 +23,10 @@ haproxy_public_rate_window: 10s
 haproxy_public_rate_limit: 300
 haproxy_auth_rate_limit: 40
 haproxy_webhook_rate_limit: 120
+haproxy_npm_registry_domain: "{{ npm_registry_domain | default('npm.' ~ verself_domain) }}"
+haproxy_npm_registry_trusted_cidrs: "{{ npm_registry_trusted_cidrs | default([]) }}"
+haproxy_npm_registry_bearer_tokens_path: "{{ haproxy_credstore_dir }}/npm-registry-bearer-tokens"
+haproxy_npm_registry_rate_limit: 2000
 haproxy_stick_table_size: 100k
 haproxy_stick_table_expire: 10m
 

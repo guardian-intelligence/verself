@@ -56,8 +56,12 @@ frontend fe_https
   acl host_zitadel var(txn.host) -m str auth.verself.sh
   acl host_zitadel_actions var(txn.host) -m str zitadel-actions.verself.sh
   acl host_mail var(txn.host) -m str mail.verself.sh
+  acl host_npm var(txn.host) -m str {{ haproxy_npm_registry_domain }}
   acl method_get method GET
   acl method_post method POST
+  acl npm_registry_read_method method GET HEAD OPTIONS
+  acl npm_registry_source src {{ haproxy_npm_registry_trusted_cidrs | join(' ') }}
+  acl npm_registry_bearer req.hdr(authorization) -m str -f {{ haproxy_npm_registry_bearer_tokens_path }}
   acl zitadel_action_api_credentials path -i /internal/zitadel/actions/api-credential-claims
   acl jmap_session path -i /jmap/session
   acl stripe_webhook path -i /webhooks/stripe
@@ -68,18 +72,23 @@ frontend fe_https
   acl edge_public_rate_limited sc_http_req_rate(0,be_edge_public_rates) gt {{ haproxy_public_rate_limit }}
   acl edge_auth_rate_limited sc_http_req_rate(1,be_edge_auth_rates) gt {{ haproxy_auth_rate_limit }}
   acl edge_webhook_rate_limited sc_http_req_rate(2,be_edge_webhook_rates) gt {{ haproxy_webhook_rate_limit }}
+  acl edge_npm_registry_rate_limited sc_http_req_rate(3,be_edge_npm_registry_rates) gt {{ haproxy_npm_registry_rate_limit }}
 
-  http-request track-sc0 src table be_edge_public_rates
+  http-request track-sc0 src table be_edge_public_rates unless host_npm
   http-request track-sc1 src table be_edge_auth_rates if host_verself auth_path
   http-request track-sc2 src table be_edge_webhook_rates if host_billing stripe_webhook
   http-request track-sc2 src table be_edge_webhook_rates if host_sandbox sandbox_actions_webhook
   http-request track-sc2 src table be_edge_webhook_rates if host_source source_forgejo_webhook
+  http-request track-sc3 src table be_edge_npm_registry_rates if host_npm
   http-request return status 429 content-type text/plain string "rate limit exceeded" if edge_public_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_path edge_auth_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_billing stripe_webhook edge_webhook_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_sandbox sandbox_actions_webhook edge_webhook_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_source source_forgejo_webhook edge_webhook_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_npm edge_npm_registry_rate_limited
 
+  http-request return status 403 if host_npm !npm_registry_source !npm_registry_bearer
+  http-request return status 405 if host_npm !npm_registry_read_method
   http-request return status 403 if host_billing stripe_webhook method_post !stripe_source
   http-request return status 405 if host_billing stripe_webhook !method_post
   http-request return status 405 if host_sandbox { path -i /webhooks/github/actions } !method_post
@@ -99,6 +108,7 @@ frontend fe_https
   use_backend be_zitadel_action_api_credentials if host_zitadel method_post zitadel_action_api_credentials
   use_backend be_zitadel_action_api_credentials if host_zitadel_actions method_post zitadel_action_api_credentials
   use_backend be_mailbox_jmap_session if host_mail jmap_session
+  use_backend be_route_product_npm_registry_verdaccio if host_npm
 
   acl route_1_host var(txn.host) -m str verself.sh
   acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/logout
@@ -136,6 +146,16 @@ frontend fe_firecracker_host_http
   use_backend be_firecracker_forgejo if method_post forgejo_smart_http
   default_backend be_forbidden
 
+frontend fe_firecracker_npm_registry
+  guid fe_firecracker_npm_registry
+  maxconn {{ haproxy_internal_frontend_maxconn }}
+  bind 10.255.0.1:4873
+  http-request set-var(txn.host) str({{ haproxy_npm_registry_domain }})
+  http-request set-header Host {{ haproxy_npm_registry_domain }}
+  http-request set-header X-Forwarded-Host {{ haproxy_npm_registry_domain }}
+  http-request set-header X-Forwarded-Proto http
+  default_backend be_route_product_npm_registry_verdaccio
+
 frontend fe_nomad_artifacts
   guid fe_nomad_artifacts
   maxconn {{ haproxy_internal_frontend_maxconn }}
@@ -153,6 +173,10 @@ backend be_edge_auth_rates
 
 backend be_edge_webhook_rates
   guid be_edge_webhook_rates
+  stick-table type ip size {{ haproxy_stick_table_size }} expire {{ haproxy_stick_table_expire }} store http_req_rate({{ haproxy_public_rate_window }}),http_err_rate({{ haproxy_public_rate_window }})
+
+backend be_edge_npm_registry_rates
+  guid be_edge_npm_registry_rates
   stick-table type ip size {{ haproxy_stick_table_size }} expire {{ haproxy_stick_table_expire }} store http_req_rate({{ haproxy_public_rate_window }}),http_err_rate({{ haproxy_public_rate_window }})
 
 backend be_not_found
@@ -175,6 +199,13 @@ backend be_garage_nomad_artifacts
   server garage_0 127.0.0.1:3900 guid be_garage_nomad_artifacts_srv_garage_0
   server garage_1 127.0.0.1:3910 guid be_garage_nomad_artifacts_srv_garage_1
   server garage_2 127.0.0.1:3920 guid be_garage_nomad_artifacts_srv_garage_2
+
+backend be_route_product_npm_registry_verdaccio
+  guid be_route_product_npm_registry_verdaccio
+  http-request del-header Authorization
+  http-request set-header X-Forwarded-Host %[req.hdr(host)]
+  http-request set-header X-Forwarded-Proto https if { ssl_fc }
+  server verdaccio 127.0.0.1:4873 guid be_route_product_npm_registry_verdaccio_srv_verdaccio
 
 backend be_route_product_access_pomerium_access_portal
   guid be_route_product_access_pomerium_access_portal

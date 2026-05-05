@@ -23,7 +23,8 @@ uplinks:
 packages:
   '**':
     access: $all
-    publish: $authenticated
+    publish: $nobody
+    unpublish: $nobody
     proxy: npmjs
 
 max_body_size: 100mb

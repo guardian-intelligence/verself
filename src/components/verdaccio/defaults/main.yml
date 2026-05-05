@@ -2,6 +2,7 @@
 verdaccio_install_prefix: /opt/verself/verdaccio
 verdaccio_nodejs_install_dir: /opt/verself/nodejs
 verdaccio_host: 127.0.0.1
-verdaccio_listen_host: 0.0.0.0
+verdaccio_listen_host: 127.0.0.1
 verdaccio_http_port: 4873
 verdaccio_http_address: "{{ verdaccio_host }}:{{ verdaccio_http_port }}"
+verdaccio_public_url: "https://{{ npm_registry_domain | default('npm.' ~ verself_domain) }}/"
