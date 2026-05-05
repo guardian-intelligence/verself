@@ -1,0 +1,28 @@
+# Authored substrate host file.
+# Source: src/host/ansible/host-files
+# nftables ruleset garage.
+table inet verself_garage
+delete table inet verself_garage
+
+table inet verself_garage {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport { 3900, 3901, 3903, 3910, 3911, 3913, 3920, 3921, 3923 } iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        oifname "lo" tcp dport { 3903, 3913, 3923 } meta skuid 0 accept
+        oifname "lo" tcp dport { 3903, 3913, 3923 } meta skuid 961 accept
+        oifname "lo" tcp dport { 3903, 3913, 3923 } drop
+        oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid 960 accept
+        oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid 961 accept
+        oifname "lo" tcp dport { 3900, 3910, 3920 } meta skuid haproxy accept
+        oifname "lo" tcp dport { 3900, 3910, 3920 } drop
+        oifname "lo" tcp dport { 3901, 3911, 3921 } meta skuid garage accept
+        oifname "lo" tcp dport { 3901, 3911, 3921 } drop
+    }
+}

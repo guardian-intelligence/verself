@@ -1,7 +1,7 @@
-"""aspect host-configuration edit-secrets
+"""aspect host edit-secrets
 
 Host convergence and guest-image staging are deploy internals owned by
-`aspect deploy`. The host-configuration group only exposes source maintenance
+`aspect deploy`. The host group only exposes source maintenance
 that does not mutate the provisioned host.
 """
 
@@ -11,13 +11,13 @@ def _edit_secrets_impl(ctx):
     return checked_spawn(
         ctx,
         "sops",
-        [ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/prod/secrets.sops.yml")],
-        label = "sops edit host-configuration secrets",
+        [ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/prod/secrets/host.sops.yml")],
+        label = "sops edit host secrets",
     )
 
 edit_secrets = task(
     implementation = _edit_secrets_impl,
     name = "edit-secrets",
-    group = ["host-configuration"],
+    group = ["host"],
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
 )

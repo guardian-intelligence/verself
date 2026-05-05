@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "haproxy-lego-renew_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/host/cmd/haproxy-lego-renew",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "haproxy-lego-renew",
+    embed = [":haproxy-lego-renew_lib"],
+    visibility = ["//visibility:public"],
+)

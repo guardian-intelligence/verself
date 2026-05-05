@@ -1,0 +1,18 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "*/defaults/**",
+            "*/files/**",
+            "*/handlers/**",
+            "*/meta/**",
+            "*/migrations/**",
+            "*/tasks/**",
+            "*/templates/**",
+            "*/vars/**",
+        ],
+        allow_empty = True,
+    ),
+)

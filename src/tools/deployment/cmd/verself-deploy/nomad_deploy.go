@@ -45,6 +45,10 @@ type nomadComponentDescriptor struct {
 	JobID         string                    `json:"job_id"`
 	JobSpec       string                    `json:"job_spec"`
 	JobSpecPath   string                    `json:"job_spec_path"`
+	Provides      []string                  `json:"provides"`
+	Requires      []string                  `json:"requires"`
+	Sites         []string                  `json:"sites"`
+	UnitID        string                    `json:"unit_id"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
 }
 
@@ -274,7 +278,7 @@ func assembleNomadDeployment(ctx context.Context, parser authoredNomadSpecParser
 		jobs = append(jobs, deploymodel.NomadJob{
 			JobID:          component.JobID,
 			Component:      component.Component,
-			DependsOn:      append([]string(nil), component.DependsOn...),
+			DependsOn:      append([]string(nil), component.Requires...),
 			SpecSHA256:     specSHA,
 			ArtifactSHA256: artifactDigest,
 			Spec:           specBody,
@@ -314,11 +318,26 @@ func loadNomadComponentDescriptors(paths []string) ([]nomadComponentDescriptor, 
 		if err := json.Unmarshal(body, &component); err != nil {
 			return nil, fmt.Errorf("decode %s: %w", path, err)
 		}
-		if component.SchemaVersion != 1 {
+		if component.SchemaVersion != 1 && component.SchemaVersion != 2 {
 			return nil, fmt.Errorf("%s: unsupported component descriptor schema_version=%d", path, component.SchemaVersion)
 		}
 		if component.Label == "" || component.Component == "" || component.JobID == "" || component.JobSpec == "" || component.JobSpecPath == "" {
 			return nil, fmt.Errorf("%s: component descriptor must include label, component, job_id, job_spec, and job_spec_path", path)
+		}
+		if component.UnitID == "" {
+			component.UnitID = component.JobID
+		}
+		if len(component.Provides) == 0 {
+			component.Provides = []string{"nomad:job:" + component.JobID}
+		}
+		if len(component.Requires) == 0 && len(component.DependsOn) > 0 {
+			for _, dep := range component.DependsOn {
+				if strings.HasPrefix(dep, "nomad:job:") {
+					component.Requires = append(component.Requires, dep)
+				} else {
+					component.Requires = append(component.Requires, "nomad:job:"+dep)
+				}
+			}
 		}
 		if seenLabels[component.Label] {
 			return nil, fmt.Errorf("duplicate Nomad component descriptor label %s", component.Label)
@@ -336,11 +355,18 @@ func loadNomadComponentDescriptors(paths []string) ([]nomadComponentDescriptor, 
 
 func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadComponentDescriptor, error) {
 	byJobID := make(map[string]nomadComponentDescriptor, len(components))
+	providerByResource := map[string]string{}
 	for _, component := range components {
 		if _, exists := byJobID[component.JobID]; exists {
 			return nil, fmt.Errorf("duplicate Nomad job_id %s", component.JobID)
 		}
 		byJobID[component.JobID] = component
+		for _, provided := range component.Provides {
+			if prior := providerByResource[provided]; prior != "" && prior != component.JobID {
+				return nil, fmt.Errorf("resource %q is provided by both %s and %s", provided, prior, component.JobID)
+			}
+			providerByResource[provided] = component.JobID
+		}
 	}
 	var out []nomadComponentDescriptor
 	temporary := map[string]bool{}
@@ -358,11 +384,29 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 			return fmt.Errorf("unknown Nomad job dependency %q", jobID)
 		}
 		temporary[jobID] = true
-		deps := append([]string(nil), component.DependsOn...)
+		depJobs := map[string]bool{}
+		for _, dep := range component.DependsOn {
+			depJob := strings.TrimPrefix(dep, "nomad:job:")
+			if depJob != "" {
+				depJobs[depJob] = true
+			}
+		}
+		for _, required := range component.Requires {
+			if provider := providerByResource[required]; provider != "" {
+				depJobs[provider] = true
+			}
+		}
+		deps := make([]string, 0, len(depJobs))
+		for dep := range depJobs {
+			deps = append(deps, dep)
+		}
 		sort.Strings(deps)
 		for _, dep := range deps {
 			if _, exists := byJobID[dep]; !exists {
-				return fmt.Errorf("%s.depends_on references unknown Nomad job %q", jobID, dep)
+				return fmt.Errorf("%s requires unknown Nomad dependency %q", jobID, dep)
+			}
+			if dep == jobID {
+				return fmt.Errorf("%s depends on itself", jobID)
 			}
 			if err := visit(dep, append(stack, jobID)); err != nil {
 				return err

@@ -47,7 +47,7 @@ func runSecurityPatchPlaybook(ctx context.Context, site, repoRoot, runKey string
 	if _, err := os.Stat(inventoryPath); err != nil {
 		return nil, fmt.Errorf("inventory missing at %s: %w", inventoryPath, err)
 	}
-	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
+	ansibleDir := filepath.Join(repoRoot, "src", "host", "ansible")
 	// Security patching may reboot the target, so it uses the direct bootstrap
 	// SSH listener instead of the Pomerium-owned port 22 path.
 	return ansible.Run(ctx, nil, ansible.Options{

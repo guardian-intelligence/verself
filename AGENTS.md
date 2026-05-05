@@ -27,9 +27,9 @@ Tech Stack:
 Invariant patterns:
 
 * Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `scripts/bootstrap-*`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
-* Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host-configuration concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
+* Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
-* New server tools such as SpiceDB enter through the host-configuration server-tools catalog and artifact admission flow, with policy/evidence recorded before Ansible installs them; see `docs/architecture/artifact-admission.md`.
+* New server tools such as SpiceDB enter through the host server-tools catalog and artifact admission flow, with policy/evidence recorded before Ansible installs them; see `docs/architecture/artifact-admission.md`.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. Despite having a notion of internal and external clients, the only difference is the auth method (SPIFFE mTLS for internal clients, Zitadel-based auth for public)
 * Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
@@ -41,7 +41,7 @@ Boundary components that sit outside the usual service shape:
 
 - `src/substrate/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/substrate/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/host-configuration/` — host and daemon convergence: Ansible runner, host scripts, controller OTLP agent, and ClickHouse schema.
+- `src/host/` — host and daemon convergence: Ansible runner, host scripts, controller OTLP agent, and ClickHouse schema.
 - `src/tools/provisioning/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
 
 Top-level landmarks:
@@ -123,7 +123,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
-- **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/host-configuration/ansible/group_vars/all/topology/` plus service-owned Nomad metadata.
+- **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/host/ansible/group_vars/all/topology/` plus service-owned Nomad metadata.
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 
@@ -204,14 +204,14 @@ Planned Upcoming Projects
 
 ## Adding a site
 
-Site names are `prod`, `beta`, `gamma`, or `dev-<operator>`. The apex domain, Pomerium route name, Cloudflare zone scope, and allowed Stripe environment are site-level facts in `src/host-configuration/sites/<site>/vars.yml`.
+Site names are `prod`, `beta`, `gamma`, or `dev-<operator>`. The apex domain, Pomerium route name, Cloudflare zone scope, and allowed Stripe environment are site-level facts in `src/host/sites/<site>/vars.yml`.
 
 Each site has exactly three stage directories:
 
-- `src/tools/provisioning/sites/<site>/`
-- `src/host-configuration/sites/<site>/`
-- `src/tools/deployment/sites/<site>/`
+- `src/host/sites/<site>/`
+- `src/host/sites/<site>/`
+- `src/host/sites/<site>/`
 
-Each stage owns one independently decryptable SOPS bag. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host-configuration bag contains host bootstrap and component-install secrets and must exist before `aspect deploy --site=<site>`. The deployment bag contains product/runtime integration secrets; it may be empty while the site's `enabled_components` allowlist excludes components that require those values.
+Each stage owns one independently decryptable SOPS bag. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host bag contains host bootstrap and component-install secrets and must exist before `aspect deploy --site=<site>`. The deployment bag contains product/runtime integration secrets; it may be empty while the site's `enabled_components` allowlist excludes components that require those values.
 
-To add a site, copy the three `sites/prod/` directories to the new site name, replace the three SOPS bags, update `src/host-configuration/sites/<site>/vars.yml`, and set `enabled_components` to the exact component set that should converge for that site. Components absent from `enabled_components` are skipped by `playbooks/site.yml`; after component-role rollout, they are also omitted from Nomad registration by the deploy runner.
+To add a site, copy the three `sites/prod/` directories to the new site name, replace the three SOPS bags, update `src/host/sites/<site>/vars.yml`, and set `enabled_components` to the exact component set that should converge for that site. Components absent from `enabled_components` are skipped by `playbooks/site.yml`; after component-role rollout, they are also omitted from Nomad registration by the deploy runner.

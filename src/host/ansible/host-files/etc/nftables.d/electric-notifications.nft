@@ -1,0 +1,14 @@
+# Authored substrate host file.
+# Source: src/host/ansible/host-files
+# nftables ruleset electric_notifications.
+table inet verself_electric_notifications
+delete table inet verself_electric_notifications
+
+table inet verself_electric_notifications {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 3012 iifname != "lo" drop
+    }
+
+}

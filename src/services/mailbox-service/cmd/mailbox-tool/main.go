@@ -35,7 +35,7 @@ func run(ctx context.Context, args []string) error {
 		return usageError()
 	}
 
-	inventoryDefault := filepath.Join("..", "host-configuration", "sites", "prod", "inventory.ini")
+	inventoryDefault := filepath.Join("..", "host", "sites", "prod", "inventory.ini")
 	rootFlags := flag.NewFlagSet("mailbox-tool", flag.ContinueOnError)
 	rootFlags.SetOutput(io.Discard)
 	inventoryPath := rootFlags.String("inventory", inventoryDefault, "Path to ansible inventory")

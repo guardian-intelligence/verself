@@ -5,8 +5,59 @@ DeployUnitInfo = provider(
     fields = {
         "descriptor": "Deploy unit descriptor JSON file.",
         "executor": "Unit executor key.",
-        "payload_kind": "Executor-local payload kind.",
+        "provides": "Logical resources this unit provides.",
+        "requires": "Logical resources this unit requires.",
         "unit_id": "Stable unit identifier.",
+    },
+)
+
+def _deployable_unit_impl(ctx):
+    if not ctx.attr.unit_id:
+        fail("unit_id is required")
+    if not ctx.attr.executor:
+        fail("executor is required")
+
+    sources = ctx.files.inputs
+    payload_files = ctx.files.payload
+    descriptor = ctx.actions.declare_file(ctx.label.name + ".deployable_unit.json")
+    descriptor_data = {
+        "schema_version": 2,
+        "executor": ctx.attr.executor,
+        "inputs": _source_rows(sources),
+        "label": _repo_label(ctx.label),
+        "payload": {
+            "files": _source_rows(payload_files),
+            "kind": ctx.attr.payload_kind,
+        },
+        "provides": ctx.attr.provides,
+        "requires": ctx.attr.requires,
+        "sites": ctx.attr.sites,
+        "unit_id": ctx.attr.unit_id,
+    }
+    _write_descriptor(ctx, descriptor, json.encode(descriptor_data) + "\n", sources + payload_files)
+
+    return [
+        DefaultInfo(files = depset([descriptor], transitive = [depset(sources), depset(payload_files)])),
+        DeployUnitInfo(
+            descriptor = descriptor,
+            executor = ctx.attr.executor,
+            provides = ctx.attr.provides,
+            requires = ctx.attr.requires,
+            unit_id = ctx.attr.unit_id,
+        ),
+    ]
+
+deployable_unit = rule(
+    implementation = _deployable_unit_impl,
+    attrs = {
+        "executor": attr.string(mandatory = True),
+        "inputs": attr.label_list(allow_files = True),
+        "payload": attr.label_list(allow_files = True, mandatory = True),
+        "payload_kind": attr.string(mandatory = True),
+        "provides": attr.string_list(),
+        "requires": attr.string_list(),
+        "sites": attr.string_list(),
+        "unit_id": attr.string(mandatory = True),
     },
 )
 
@@ -47,7 +98,7 @@ def _deploy_unit_impl(ctx):
     inputs = ctx.files.srcs
     descriptor = ctx.actions.declare_file(ctx.label.name + ".deploy_unit.json")
     descriptor_data = {
-        "schema_version": 1,
+        "schema_version": 2,
         "args": ctx.attr.args,
         "executor": ctx.attr.executor,
         "label": _repo_label(ctx.label),
@@ -56,6 +107,8 @@ def _deploy_unit_impl(ctx):
             "playbook": ctx.attr.playbook,
         },
         "payload_kind": ctx.attr.payload_kind,
+        "provides": ctx.attr.provides,
+        "requires": ctx.attr.requires,
         "sources": _source_rows(inputs),
         "unit_id": ctx.attr.unit_id,
     }
@@ -66,7 +119,8 @@ def _deploy_unit_impl(ctx):
         DeployUnitInfo(
             descriptor = descriptor,
             executor = ctx.attr.executor,
-            payload_kind = ctx.attr.payload_kind,
+            provides = ctx.attr.provides,
+            requires = ctx.attr.requires,
             unit_id = ctx.attr.unit_id,
         ),
     ]
@@ -91,7 +145,13 @@ deploy_unit = rule(
         ),
         "playbook": attr.string(
             mandatory = True,
-            doc = "Ansible playbook path relative to src/host-configuration/ansible.",
+            doc = "Ansible playbook path relative to src/host/ansible.",
+        ),
+        "provides": attr.string_list(
+            doc = "Logical resources this unit provides.",
+        ),
+        "requires": attr.string_list(
+            doc = "Logical resources this unit requires.",
         ),
         "srcs": attr.label_list(
             allow_files = True,

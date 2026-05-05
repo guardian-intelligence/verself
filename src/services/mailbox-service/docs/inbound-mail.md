@@ -203,7 +203,7 @@ aspect mail list --mailbox=ceo                # Switch to ceo@
 - `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
 - `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
 - `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
-- `src/host-configuration/ansible/host-files/etc/nftables.d/stalwart.nft` — Stalwart nftables contract copied to `/etc/nftables.d/` by the role
+- `src/host/ansible/host-files/etc/nftables.d/stalwart.nft` — Stalwart nftables contract copied to `/etc/nftables.d/` by the role
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
 - `cmd/mailbox-openapi/` + `client/` — generated operator/mutation API client surface

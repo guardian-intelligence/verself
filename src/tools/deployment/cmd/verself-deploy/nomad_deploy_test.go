@@ -24,7 +24,7 @@ func testString(s string) *string {
 
 func TestAssembleNomadDeploymentBindsOnlyArtifactStanzas(t *testing.T) {
 	repoRoot := t.TempDir()
-	siteDir := filepath.Join(repoRoot, "src", "tools", "deployment", "sites", "prod")
+	siteDir := filepath.Join(repoRoot, "src", "host", "sites", "prod")
 	if err := os.MkdirAll(siteDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

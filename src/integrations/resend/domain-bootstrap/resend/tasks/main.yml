@@ -1,0 +1,170 @@
+---
+# Register a sending domain with Resend, create DNS verification records
+# in Cloudflare, and verify the domain. All API calls run on the Ansible
+# controller (localhost), not the remote host.
+
+# --- Preflight ---
+
+- name: Validate Resend API key is configured
+  ansible.builtin.fail:
+    msg: >-
+      resend_api_key is empty. Add it via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/external.sops.yml
+  when: resend_api_key | default('', true) | length == 0
+
+# --- Domain registration ---
+
+- name: List Resend domains
+  ansible.builtin.uri:
+    url: "{{ resend_api_url }}/domains"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ resend_api_key }}"
+    return_content: true
+    status_code: 200
+  register: resend_domains_list
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Check if domain already exists in Resend
+  ansible.builtin.set_fact:
+    resend_existing_domain: >-
+      {{ resend_domains_list.json.data
+         | selectattr('name', 'equalto', resend_domain)
+         | list | first | default(None) }}
+
+- name: Create domain in Resend
+  ansible.builtin.uri:
+    url: "{{ resend_api_url }}/domains"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ resend_api_key }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ resend_domain }}"
+      region: "{{ resend_region }}"
+    return_content: true
+    status_code: [200, 201]
+  register: resend_created_domain
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: resend_existing_domain is none
+
+- name: Set domain ID
+  ansible.builtin.set_fact:
+    resend_domain_id: >-
+      {{ (resend_existing_domain.id
+          if resend_existing_domain is not none
+          else resend_created_domain.json.id) | trim }}
+
+# --- DNS records ---
+
+- name: Get domain details from Resend
+  ansible.builtin.uri:
+    url: "{{ resend_api_url }}/domains/{{ resend_domain_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ resend_api_key }}"
+    return_content: true
+    status_code: 200
+  register: resend_domain_details
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Set domain records and status
+  ansible.builtin.set_fact:
+    resend_dns_records: "{{ resend_domain_details.json.records }}"
+    resend_domain_status: "{{ resend_domain_details.json.status }}"
+
+- name: Display domain status
+  ansible.builtin.debug:
+    msg: "Resend domain {{ resend_domain }}: {{ resend_domain_status }}"
+
+- name: Create DNS records in Cloudflare
+  community.general.cloudflare_dns:
+    zone: "{{ verself_domain }}"
+    record: "{{ item.name }}.{{ verself_domain }}"
+    type: "{{ item.type }}"
+    value: "{{ item.value | regex_replace('^\"|\"$', '') }}"
+    priority: "{{ item.priority | default(omit) }}"
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  loop: "{{ resend_dns_records }}"
+  loop_control:
+    label: "{{ item.type }} {{ item.name }}.{{ verself_domain }}"
+  delegate_to: localhost
+  become: false
+  when: resend_domain_status != 'verified'
+
+# --- Verification ---
+
+- name: Trigger domain verification
+  ansible.builtin.uri:
+    url: "{{ resend_api_url }}/domains/{{ resend_domain_id }}/verify"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ resend_api_key }}"
+    status_code: [200, 202]
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: resend_domain_status != 'verified'
+
+- name: Wait for domain verification
+  ansible.builtin.uri:
+    url: "{{ resend_api_url }}/domains/{{ resend_domain_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ resend_api_key }}"
+    return_content: true
+    status_code: 200
+  register: resend_verify_poll
+  delegate_to: localhost
+  become: false
+  no_log: true
+  retries: 18
+  delay: 10
+  until: resend_verify_poll.json.status == 'verified'
+  when: resend_domain_status != 'verified'
+
+- name: Confirm domain is verified
+  ansible.builtin.debug:
+    msg: "Resend domain {{ resend_domain }} is verified and ready to send."
+  when: >-
+    resend_domain_status == 'verified'
+    or (resend_verify_poll.json.status | default('')) == 'verified'
+
+# --- DMARC ---
+# Enforce sender alignment for the transactional subdomain and root domain.
+# p=reject is safe here: single sender (Resend), no third-party mail to break.
+
+- name: Create DMARC record for sending subdomain
+  community.general.cloudflare_dns:
+    zone: "{{ verself_domain }}"
+    record: "_dmarc.{{ resend_domain }}"
+    type: TXT
+    value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false
+
+- name: Create DMARC record for root domain
+  community.general.cloudflare_dns:
+    zone: "{{ verself_domain }}"
+    record: "_dmarc.{{ verself_domain }}"
+    type: TXT
+    value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false

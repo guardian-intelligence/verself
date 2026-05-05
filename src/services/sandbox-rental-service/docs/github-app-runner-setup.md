@@ -80,7 +80,7 @@ startup code.
 Then redeploy:
 
 ```bash
-cd src/host-configuration/ansible
+cd src/host/ansible
 aspect deploy --site=prod
 ```
 

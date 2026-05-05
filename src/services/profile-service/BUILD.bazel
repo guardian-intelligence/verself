@@ -11,7 +11,7 @@ spire_identity(
     key = "profile_service.default",
     path = "/svc/profile-service",
     user = "profile_service",
-    visibility = ["//src/host-configuration:__pkg__"],
+    visibility = ["//src/host:__pkg__"],
 )
 
 nomad_component(
@@ -35,5 +35,5 @@ component_substrate_json(
         "nftables/profile-service.nft",
     ],
     definition_json = """{"component":"profile_service","kind":"service","nftables_rulesets":[{"name":"profile_service","table":"verself_profile_service","target":"/etc/nftables.d/profile-service.nft","source":"src/services/profile-service/nftables/profile-service.nft"}],"nomad_component_label":"//src/services/profile-service:nomad_component","order":30,"postgres":{"database":"profile","owner":"profile_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"directories":[{"group":"profile_service","mode":"0750","owner":"root","path":"/etc/credstore/profile-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"profile_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/profile-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}}],"units":[{"name":"profile-service","supplementary_groups":["spire_workload"],"user":"profile_service"}]}}""",
-    visibility = ["//src/host-configuration:__pkg__"],
+    visibility = ["//src/host:__pkg__"],
 )

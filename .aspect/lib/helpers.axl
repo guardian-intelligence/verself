@@ -17,7 +17,7 @@ Conventions:
     non-zero exit code. They never silently coerce errors to no-ops.
 """
 
-HOST_CONFIGURATION_DIR = "src/host-configuration"
+HOST_CONFIGURATION_DIR = "src/host"
 PROVISION_DIR = "src/tools/provisioning"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
@@ -27,7 +27,7 @@ GO_DIRS = [
     "src/tools/operator",
     "src/domain-transfer-objects/go",
     "src/services/governance-service",
-    "src/host-configuration",
+    "src/host",
     "src/services/iam-service",
     "src/services/mailbox-service",
     "src/services/notifications-service",
@@ -40,7 +40,7 @@ GO_DIRS = [
     "src/services/secrets-service",
     "src/services/service-runtime/go",
     "src/services/source-code-hosting-service",
-    "src/host-configuration/components/temporal-platform",
+    "src/components/temporal-platform",
     "src/substrate/vm-orchestrator",
 ]
 

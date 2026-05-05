@@ -11,10 +11,10 @@ src/tools/provisioning/terraform/terraform.tfstate.backup
 src/tools/provisioning/terraform/*.tfvars.json
 
 # Ansible
-src/host-configuration/ansible/*.retry
-src/host-configuration/ansible/.cache/
-src/host-configuration/ansible/*.ini
-!src/host-configuration/ansible/*.example
+src/host/ansible/*.retry
+src/host/ansible/.cache/
+src/host/ansible/*.ini
+!src/host/ansible/*.example
 
 # Legacy renderer cache.
 .cache/

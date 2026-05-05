@@ -1,0 +1,14 @@
+# Authored substrate host file.
+# Source: src/host/ansible/host-files
+# nftables ruleset electric.
+table inet verself_electric
+delete table inet verself_electric
+
+table inet verself_electric {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 3010 iifname != "lo" drop
+    }
+
+}

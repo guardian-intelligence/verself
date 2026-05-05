@@ -1,0 +1,15 @@
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "otelcol",
+    entry_id = "verself-otelcol",
+    key = "otelcol.default",
+    path = "/svc/otelcol",
+    restart_units = [
+        "otelcol-clickhouse-spiffe-helper",
+        "otelcol",
+    ],
+    user = "otelcol",
+    visibility = ["//src/host:__pkg__"],
+)

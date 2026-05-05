@@ -18,7 +18,7 @@ use (
 	./src/services/secrets-service
 	./src/services/source-code-hosting-service
 	./src/services/service-runtime/go
-	./src/host-configuration
-	./src/host-configuration/components/temporal-platform
+	./src/host
+	./src/components/temporal-platform
 	./src/substrate/vm-orchestrator
 )

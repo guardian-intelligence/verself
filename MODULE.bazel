@@ -14,7 +14,7 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
-include("//src/host-configuration/binaries:server_tools.MODULE.bazel")
+include("//src/host/binaries:server_tools.MODULE.bazel")
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
 include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
 

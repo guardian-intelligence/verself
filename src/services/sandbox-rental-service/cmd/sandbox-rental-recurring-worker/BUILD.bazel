@@ -7,7 +7,7 @@ go_library(
     importpath = "github.com/verself/sandbox-rental-service/cmd/sandbox-rental-recurring-worker",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/host-configuration/components/temporal-platform/sdkclient",
+        "//src/components/temporal-platform/sdkclient",
         "//src/services/sandbox-rental-service/internal/recurring",
         "//src/services/sandbox-rental-service/internal/sourceworkflow",
         "//src/services/service-runtime/go/envconfig",

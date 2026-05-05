@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "temporallog",
+    srcs = ["logger.go"],
+    importpath = "github.com/verself/temporal-platform/internal/temporallog",
+    visibility = ["//src/components/temporal-platform:__subpackages__"],
+    deps = ["@io_temporal_go_sdk//log"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":temporallog",
+    visibility = ["//src/components/temporal-platform:__subpackages__"],
+)

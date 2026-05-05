@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "integration_sources",
+    srcs = glob(["**"]),
+)

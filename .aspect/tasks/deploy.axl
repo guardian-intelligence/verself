@@ -65,7 +65,7 @@ def _deploy_in_worktree(ctx, site, sha):
         ctx.std.io.stderr.write("ERROR: " + inv_rel + " not found. Run: aspect provision apply\n")
         _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
         return 1
-    rc = checked_spawn(ctx, "mkdir", ["-p", wt + "/src/host-configuration/sites/" + site], label = "mkdir worktree inventory dir")
+    rc = checked_spawn(ctx, "mkdir", ["-p", wt + "/src/host/sites/" + site], label = "mkdir worktree inventory dir")
     if rc != 0:
         _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
         return rc

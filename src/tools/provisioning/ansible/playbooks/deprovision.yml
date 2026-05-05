@@ -11,9 +11,9 @@
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
     tofu_binary_path: "{{ lookup('env', 'TOFU_BIN') | default('/home/ubuntu/.nix-profile/bin/tofu', true) }}"
-    provisioning_site_dir: "{{ playbook_dir }}/../../sites/{{ verself_site }}"
-    sops_secrets_file: "{{ provisioning_site_dir }}/secrets.sops.yml"
-    deprovision_inventory_file: "{{ playbook_dir }}/../../../../host-configuration/sites/{{ verself_site }}/inventory.ini"
+    provisioning_site_dir: "{{ playbook_dir }}/../../../../host/sites/{{ verself_site }}"
+    sops_secrets_file: "{{ provisioning_site_dir }}/secrets/provisioning.sops.yml"
+    deprovision_inventory_file: "{{ playbook_dir }}/../../../../host/sites/{{ verself_site }}/inventory.ini"
   tasks:
     - name: Require verself_site to be set
       ansible.builtin.assert:
@@ -36,7 +36,7 @@
         state: absent
         binary_path: "{{ tofu_binary_path }}"
         variables_files:
-          - "{{ provisioning_site_dir }}/terraform.tfvars.json"
+          - "{{ provisioning_site_dir }}/provisioning.tfvars.json"
       environment:
         LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
 

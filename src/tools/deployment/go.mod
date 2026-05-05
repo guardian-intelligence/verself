@@ -63,6 +63,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/verself/host-configuration => ../../host-configuration
+replace github.com/verself/host => ../../host
 
 replace github.com/verself/observability => ../observability/go

@@ -232,7 +232,7 @@ func (rt *Runtime) TraceID() string {
 }
 
 func InventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini")
+	return filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
 }
 
 func SecretsPath(repoRoot string) string {
@@ -240,9 +240,9 @@ func SecretsPath(repoRoot string) string {
 }
 
 func HostConfigurationSecretsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "secrets.sops.yml")
+	return filepath.Join(repoRoot, "src", "host", "sites", site, "secrets", "host.sops.yml")
 }
 
 func DeploymentSecretsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "tools", "deployment", "sites", site, "secrets.sops.yml")
+	return filepath.Join(repoRoot, "src", "host", "sites", site, "secrets", "external.sops.yml")
 }

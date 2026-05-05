@@ -314,7 +314,7 @@ func (rt *Runtime) OTLPEndpoint() string {
 // resolveInfraHost reads the authored per-site substrate inventory just far
 // enough to bootstrap SSH. Full Ansible inventory semantics stay with Ansible.
 func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
-	path := filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini")
+	path := filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open inventory: %w", err)

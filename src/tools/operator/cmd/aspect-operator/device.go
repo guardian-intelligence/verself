@@ -99,7 +99,7 @@ func configureOperatorDevice(opts deviceOptions) error {
 		Alias:     strings.TrimSpace(ops.BareMetalHostAlias),
 		Access:    accessHost,
 		SSHRoute:  route,
-		Inventory: filepath.Join(repoRoot, "src", "host-configuration", "ansible", opts.site+".ini"),
+		Inventory: filepath.Join(repoRoot, "src", "host", "ansible", opts.site+".ini"),
 		KeyPath:   filepath.Join(home, ".ssh", defaultSSHKeyName),
 		PubPath:   filepath.Join(home, ".ssh", defaultSSHKeyName+".pub"),
 	}
@@ -120,7 +120,7 @@ func configureOperatorDevice(opts deviceOptions) error {
 }
 
 func loadDeviceOps(repoRoot string) (deviceOpsVars, error) {
-	path := filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "topology", "ops.yml")
+	path := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "topology", "ops.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return deviceOpsVars{}, fmt.Errorf("read %s: %w", path, err)

@@ -7,11 +7,11 @@ import (
 )
 
 func authoredInventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini")
+	return filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
 }
 
 func deploymentSiteConfigPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "tools", "deployment", "sites", site, "site.json")
+	return filepath.Join(repoRoot, "src", "host", "sites", site, "site.json")
 }
 
 func resolveRepoRoot(prefix, repoRoot string) (string, bool) {

@@ -182,7 +182,7 @@ func resolvePersona(repoRoot, name string) (personaDefinition, error) {
 }
 
 func loadVerselfDomain(repoRoot string) (string, error) {
-	path := filepath.Join(repoRoot, "src", "host-configuration", "ansible", "group_vars", "all", "topology", "ops.yml")
+	path := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "topology", "ops.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)

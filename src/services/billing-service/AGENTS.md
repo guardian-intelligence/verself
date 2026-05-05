@@ -24,4 +24,4 @@ The 3-node evolution should introduce NATS JetStream or Kafka + Debezium for pro
 
 Live in `migrations/`. Platform provisions PostgreSQL database `billing` and
 role `billing`; deploy-time migration orchestration is owned by the deployment
-surface, not host-configuration reset playbooks.
+surface, not host reset playbooks.

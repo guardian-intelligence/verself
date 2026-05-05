@@ -30,7 +30,7 @@ type Options struct {
 	// the playbook is independent of process cwd.
 	Inventory string
 	// AnsibleDir is the working directory ansible-playbook runs in
-	// (typically src/host-configuration/ansible). Required so include/import
+	// (typically src/host/ansible). Required so include/import
 	// paths resolve.
 	AnsibleDir string
 	// ExtraArgs are appended to the ansible-playbook command line.

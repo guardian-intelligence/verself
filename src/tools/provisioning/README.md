@@ -15,4 +15,4 @@ aspect provision destroy --confirm
 ```
 
 Provisioning stops after inventory exists. Host and daemon convergence is
-`src/host-configuration/`; application rollout is Nomad through `aspect deploy`.
+`src/host/`; application rollout is Nomad through `aspect deploy`.

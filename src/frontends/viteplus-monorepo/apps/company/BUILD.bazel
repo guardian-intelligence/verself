@@ -24,7 +24,7 @@ component_substrate_json(
         "nftables/company.nft",
     ],
     definition_json = """{"component":"company","kind":"frontend","nftables_rulesets":[{"name":"company","table":"verself_company","target":"/etc/nftables.d/company.nft","source":"src/frontends/viteplus-monorepo/apps/company/nftables/company.nft"}],"nomad_component_label":"//src/frontends/viteplus-monorepo/apps/company:nomad_component","order":120,"postgres":{},"workload":{"directories":[{"group":"company","mode":"0700","owner":"company","path":"/var/lib/company"}],"units":[{"home":"/var/lib/company","name":"company","user":"company"}]}}""",
-    visibility = ["//src/host-configuration:__pkg__"],
+    visibility = ["//src/host:__pkg__"],
 )
 
 FIRST_LIGHT_SHADER_SRC_MAP = [

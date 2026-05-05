@@ -27,7 +27,7 @@ component_substrate_json(
         "nftables/verself-web.nft",
     ],
     definition_json = """{"component":"verself_web","kind":"frontend","nftables_rulesets":[{"name":"verself_web","table":"verself_web","target":"/etc/nftables.d/verself-web.nft","source":"src/frontends/viteplus-monorepo/apps/verself-web/nftables/verself-web.nft"}],"nomad_component_label":"//src/frontends/viteplus-monorepo/apps/verself-web:nomad_component","order":110,"postgres":{},"workload":{"directories":[{"group":"verself-web","mode":"0750","owner":"root","path":"/etc/credstore/verself-web"},{"group":"verself-web","mode":"0700","owner":"verself-web","path":"/var/lib/verself-web"}],"secret_refs":[{"group":"verself-web","mode":"0640","name":"electric-api-secret","no_log":true,"owner":"root","path":"/etc/credstore/verself-web/electric-api-secret","source":{"kind":"remote_src","remote_src":"/etc/credstore/electric/api-secret"}},{"group":"verself-web","mode":"0640","name":"electric-notifications-api-secret","no_log":true,"owner":"root","path":"/etc/credstore/verself-web/electric-notifications-api-secret","source":{"kind":"remote_src","remote_src":"/etc/credstore/electric-notifications/api-secret"}}],"units":[{"home":"/var/lib/verself-web","name":"verself-web","user":"verself-web"}]}}""",
-    visibility = ["//src/host-configuration:__pkg__"],
+    visibility = ["//src/host:__pkg__"],
 )
 
 viteplus_app(

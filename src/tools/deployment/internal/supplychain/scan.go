@@ -101,7 +101,7 @@ func shouldScanFile(rel string) bool {
 	if strings.HasPrefix(rel, "src/tools/deployment/internal/supplychain/") {
 		return false
 	}
-	if strings.HasPrefix(rel, "src/host-configuration/supply-chain/") {
+	if strings.HasPrefix(rel, "src/host/supply-chain/") {
 		return false
 	}
 	if rel == "src/substrate/vm-orchestrator/guest-images/substrate/build_substrate.go" {
@@ -546,7 +546,7 @@ func classifySurface(rel, kind, artifact string) string {
 		return "developer-only"
 	case isBootstrapScript(rel):
 		return "host-bootstrap"
-	case strings.Contains(rel, "host-configuration") || strings.Contains(artifact, "server_tool"):
+	case strings.Contains(rel, "host") || strings.Contains(artifact, "server_tool"):
 		return "host-bootstrap"
 	case strings.Contains(kind, "registry"):
 		return "runtime"

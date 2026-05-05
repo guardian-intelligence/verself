@@ -84,7 +84,7 @@ Versions of record live as constants at the top of each `scripts/bootstrap-*` en
 | `apply` | Provision bare metal through OpenTofu and write host inventory. |
 | `destroy` | Destroy OpenTofu-managed bare metal and remove host inventory. |
 
-### `aspect host-configuration`
+### `aspect host`
 
 | Task | Description |
 | --- | --- |
@@ -173,9 +173,9 @@ Supply-chain admission and content-addressed artifact publishing.
 Artifact admission and install verification are deploy-flow internals. The
 operator-facing checks assert the ClickHouse evidence emitted by that flow.
 The supply-chain policy is generated output and lives under
-`src/host-configuration/supply-chain/__generated/policy.json` (gitignored).
+`src/host/supply-chain/__generated/policy.json` (gitignored).
 Supply-chain checks regenerate it on demand if missing; rerun
-`aspect artifacts inventory --format=policy --write-policy=src/host-configuration/supply-chain/__generated/policy.json`
+`aspect artifacts inventory --format=policy --write-policy=src/host/supply-chain/__generated/policy.json`
 after changing inventory inputs.
 
 ### `aspect bazel`

@@ -1,0 +1,8 @@
+---
+# Global variables for all nodes. Authored topology defaults live in
+# group_vars/all/topology and are intentionally kept out of this file.
+
+# Host file contracts are authored under src/host/ansible/host-files.
+# playbook_dir is <repo>/src/host/ansible/playbooks during convergence.
+platform_host_files_dir: "{{ playbook_dir }}/../host-files"
+postgresql_log_dir: /var/log/postgresql

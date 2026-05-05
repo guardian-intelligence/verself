@@ -26,9 +26,9 @@ import (
 const (
 	hostConfigurationSitePlaybook    = "playbooks/site.yml"
 	hostConfigurationPhase           = "host_configuration_site"
-	hostConfigurationComponent       = "host-configuration"
-	spireIdentityRegistryTarget      = "//src/host-configuration:spire_identity_registry"
-	componentSubstrateRegistryTarget = "//src/host-configuration:component_substrate_registry"
+	hostConfigurationComponent       = "host"
+	spireIdentityRegistryTarget      = "//src/host:spire_identity_registry"
+	componentSubstrateRegistryTarget = "//src/host:component_substrate_registry"
 	canonicalDeployScope             = "affected"
 )
 
@@ -405,7 +405,7 @@ func runHostConfigurationSitePlaybook(ctx context.Context, rt *runtime.Runtime, 
 	if _, err := os.Stat(inventoryPath); err != nil {
 		return nil, fmt.Errorf("inventory missing at %s: %w", inventoryPath, err)
 	}
-	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
+	ansibleDir := filepath.Join(repoRoot, "src", "host", "ansible")
 	args := append([]string{}, extraArgs...)
 	args = append(args, "-e", "verself_site="+site)
 	if rt.SSHPort > 0 {

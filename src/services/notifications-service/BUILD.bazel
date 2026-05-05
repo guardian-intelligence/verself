@@ -11,7 +11,7 @@ spire_identity(
     key = "notifications_service.default",
     path = "/svc/notifications-service",
     user = "notifications_service",
-    visibility = ["//src/host-configuration:__pkg__"],
+    visibility = ["//src/host:__pkg__"],
 )
 
 nomad_component(
@@ -31,5 +31,5 @@ component_substrate_json(
         "nftables/notifications-service.nft",
     ],
     definition_json = """{"component":"notifications_service","kind":"service","nftables_rulesets":[{"name":"notifications_service","table":"verself_notifications_service","target":"/etc/nftables.d/notifications-service.nft","source":"src/services/notifications-service/nftables/notifications-service.nft"}],"nomad_component_label":"//src/services/notifications-service:nomad_component","order":40,"postgres":{"database":"notifications_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"clickhouse":{"grants":[{"action":"INSERT","table":"verself.notification_events"},{"action":"SELECT","table":"verself.notification_events"}],"spiffe_identity_key":"notifications_service.default","user":"notifications_service"},"directories":[{"group":"notifications_service","mode":"0750","owner":"root","path":"/etc/credstore/notifications-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"notifications_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/notifications-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"notifications_service","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/notifications-service/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}}],"units":[{"name":"notifications-service","supplementary_groups":["spire_workload"],"user":"notifications_service"}]}}""",
-    visibility = ["//src/host-configuration:__pkg__"],
+    visibility = ["//src/host:__pkg__"],
 )

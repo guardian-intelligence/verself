@@ -1,0 +1,15 @@
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "nats",
+    entry_id = "verself-nats",
+    key = "nats.default",
+    path = "/svc/nats",
+    restart_units = [
+        "nats-spiffe-helper",
+        "nats",
+    ],
+    user = "nats",
+    visibility = ["//src/host:__pkg__"],
+)

@@ -1,0 +1,16 @@
+---
+- name: Reconcile Cloudflare DNS
+  ansible.builtin.command:
+    argv:
+      - bazelisk
+      - run
+      - --noshow_progress
+      - --ui_event_filters=-info
+      - //src/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns
+      - --
+      - "--site={{ verself_site }}"
+      - "--ansible-dir={{ playbook_dir }}/.."
+      - "--secrets={{ playbook_dir }}/../../sites/{{ verself_site }}/secrets/host.sops.yml"
+    chdir: "{{ playbook_dir }}/../../../.."
+  register: cloudflare_dns_reconcile
+  changed_when: cloudflare_dns_reconcile.stdout is search('applied=[1-9][0-9]*')
