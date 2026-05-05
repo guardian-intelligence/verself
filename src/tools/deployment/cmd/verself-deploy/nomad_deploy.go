@@ -216,10 +216,11 @@ func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]str
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolve %s descriptor output: %w", label, err)
 		}
-		if len(outputs) != 1 {
-			return nil, nil, fmt.Errorf("%s must produce exactly one component descriptor output, got %d: %v", label, len(outputs), outputs)
+		descriptorPath, err := selectBazelOutput(label, outputs, ".nomad_component.json")
+		if err != nil {
+			return nil, nil, err
 		}
-		descriptorPaths = append(descriptorPaths, outputs[0])
+		descriptorPaths = append(descriptorPaths, descriptorPath)
 	}
 	return labels, descriptorPaths, nil
 }
