@@ -94,13 +94,3 @@ deploy_unit(
     playbook = "playbooks/site.yml",
     unit_id = "host",
 )
-
-deploy_unit(
-    name = "security_patch_unit",
-    srcs = ["ansible/playbooks/security-patch.yml"],
-    executor = "security_patch",
-    payload_kind = "ansible_security_patch_playbook",
-    phase = "security_patch",
-    playbook = "playbooks/security-patch.yml",
-    unit_id = "security-patch",
-)

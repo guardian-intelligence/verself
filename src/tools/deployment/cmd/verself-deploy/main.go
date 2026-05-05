@@ -1,21 +1,4 @@
-// Command verself-deploy is the typed orchestrator for verself
-// deploys. It owns Bazel-driven artifact discovery (via BEP),
-// SSH-tunneled Garage publish, Nomad submit/monitor, and
-// ansible-playbook supervision.
-//
-// The operator-facing deployment surface is `aspect deploy`. The subcommands
-// here are implementation seams for typed AXL tasks and evidence assertions:
-//
-//	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
-//	verself-deploy supply-chain check --repo-root=<path>
-//	verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
-//
-// Every subcommand routes through internal/runtime.Init, which owns
-// the start ordering: SSH dial -> OTLP forward channel -> OTel SDK
-// init -> optional ClickHouse evidence client. Shutdown reverses
-// that order so the SDK's BatchSpanProcessor flushes through the
-// SSH-forwarded OTLP channel to the bare-metal otelcol before the
-// tunnel closes.
+// Command verself-deploy is the Bazel-to-Nomad deploy adapter.
 package main
 
 import (
@@ -25,7 +8,7 @@ import (
 
 const (
 	serviceName    = "verself-deploy"
-	serviceVersion = "0.4.0"
+	serviceVersion = "0.5.0"
 )
 
 func main() {
@@ -36,14 +19,6 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		os.Exit(runRun(os.Args[2:]))
-	case "nomad":
-		os.Exit(runNomad(os.Args[2:]))
-	case "artifacts":
-		os.Exit(runArtifacts(os.Args[2:]))
-	case "supply-chain":
-		os.Exit(runSupplyChain(os.Args[2:]))
-	case "with-otel":
-		os.Exit(runWithOTel(os.Args[2:]))
 	case "-h", "--help", "help":
 		usage()
 		os.Exit(0)
@@ -55,31 +30,13 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `verself-deploy — typed orchestrator for verself deploys
+	fmt.Fprint(os.Stderr, `verself-deploy
 
 usage:
-	  verself-deploy run                  --site=<site> [--sha=<rev>]
-	  verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
-  verself-deploy artifacts assert-evidence --run-key=<deploy-run-key> [--site=<site>]
-  verself-deploy supply-chain check   [--repo-root=<path>] [--policy=<path>]
-  verself-deploy supply-chain record  --site=<site> [--repo-root=<path>]
-  verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
-  verself-deploy with-otel            --site=<site> -- <cmd> [args...]
+  verself-deploy run --site=<site> [--sha=<rev>] [--repo-root=<path>]
 
-`+
-		"`run` is the AXL deploy entry point: identity, deploy evidence,\nAnsible site convergence, artifact publication, and Nomad submission happen\ninside this single process. Spans land in default.otel_traces under\nservice.name=verself-deploy.\n")
-}
-
-func runNomad(args []string) int {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "verself-deploy nomad: missing subcommand (try `submit`)")
-		return 2
-	}
-	switch args[0] {
-	case "submit":
-		return runNomadSubmit(args[1:])
-	default:
-		fmt.Fprintf(os.Stderr, "verself-deploy nomad: unknown subcommand: %s\n", args[0])
-		return 2
-	}
+The run command assumes host bootstrap is complete. It discovers Bazel
+nomad_component targets, builds their artifacts, publishes missing artifacts,
+submits changed Nomad jobs, monitors deployments, and writes deploy evidence.
+`)
 }

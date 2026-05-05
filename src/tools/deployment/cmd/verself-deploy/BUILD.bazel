@@ -1,23 +1,20 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "verself-deploy_lib",
     srcs = [
         "artifacts.go",
+        "bazel.go",
+        "evidence.go",
         "main.go",
-        "nomad_deploy.go",
-        "nomad_submit.go",
-        "paths.go",
+        "nomad.go",
+        "plan.go",
         "run.go",
         "safeconv.go",
-        "security_patch.go",
-        "supply_chain.go",
-        "with_otel.go",
     ],
     importpath = "github.com/verself/deployment-tools/cmd/verself-deploy",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/tools/deployment/internal/ansible",
         "//src/tools/deployment/internal/bazelbuild",
         "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/deploymodel",
@@ -26,18 +23,10 @@ go_library(
         "//src/tools/deployment/internal/nomadclient",
         "//src/tools/deployment/internal/runtime",
         "//src/tools/deployment/internal/sshtun",
-        "//src/tools/deployment/internal/supplychain",
         "@com_github_hashicorp_nomad_api//:api",
-        "@com_github_opencontainers_go_digest//:go-digest",
-        "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
-        "@land_oras_oras_go_v2//:oras-go",
-        "@land_oras_oras_go_v2//content",
-        "@land_oras_oras_go_v2//registry/remote",
-        "@land_oras_oras_go_v2//registry/remote/auth",
-        "@land_oras_oras_go_v2//registry/remote/retry",
     ],
 )
 
@@ -45,12 +34,4 @@ go_binary(
     name = "verself-deploy",
     embed = [":verself-deploy_lib"],
     visibility = ["//visibility:public"],
-)
-
-go_test(
-    name = "verself-deploy_test",
-    srcs = [
-        "nomad_deploy_test.go",
-    ],
-    embed = [":verself-deploy_lib"],
 )

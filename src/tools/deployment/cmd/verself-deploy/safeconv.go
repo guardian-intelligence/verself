@@ -1,40 +1,42 @@
 package main
 
 import (
-	"fmt"
+	"math"
 	"time"
 )
 
-const (
-	maxInt64AsUint64 = uint64(1<<63 - 1)
-	maxUint32AsInt64 = int64(1<<32 - 1)
-	maxUint16AsInt   = int(^uint16(0))
-)
-
-func int64FromUint64(value uint64, field string) int64 {
-	if value > maxInt64AsUint64 {
-		panic(fmt.Sprintf("%s exceeds int64 range: %d", field, value))
+func durationMillis(d time.Duration) uint32 {
+	if d <= 0 {
+		return 0
 	}
-	return int64(value) // #nosec G115 -- value is checked against MaxInt64 above.
+	ms := d.Milliseconds()
+	if ms > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(ms)
 }
 
-func durationMillis(value time.Duration, field string) uint32 {
-	if value < 0 || value.Milliseconds() > maxUint32AsInt64 {
-		panic(fmt.Sprintf("%s exceeds uint32 milliseconds range: %s", field, value))
+func uint16FromInt(v int) uint16 {
+	if v <= 0 {
+		return 0
 	}
-	return uint32(value.Milliseconds()) // #nosec G115 -- duration is checked against uint32 milliseconds above.
+	if v > math.MaxUint16 {
+		return math.MaxUint16
+	}
+	return uint16(v)
 }
 
-func uint16FromInt(value int, field string) uint16 {
-	if value < 0 || value > maxUint16AsInt {
-		panic(fmt.Sprintf("%s exceeds uint16 range: %d", field, value))
+func truncateError(err error) string {
+	if err == nil {
+		return ""
 	}
-	return uint16(value) // #nosec G115 -- value is checked against MaxUint16 above.
+	return truncateErrorString(err.Error())
 }
 
-func uint64FromInt(value int, field string) uint64 {
-	if value < 0 {
-		panic(fmt.Sprintf("%s cannot be negative: %d", field, value))
+func truncateErrorString(msg string) string {
+	const max = 4000
+	if len(msg) <= max {
+		return msg
 	}
-	return uint64(value) // #nosec G115 -- value is checked to be non-negative above.
+	return msg[:max]
 }

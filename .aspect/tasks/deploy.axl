@@ -3,9 +3,10 @@
 The single deploy verb. Resolves --sha (falling back to a temporary
 worktree when non-HEAD) and shells out to `verself-deploy run`.
 Environment seeding is an explicit operator task, not part of deploy.
-The binary owns identity derivation, deploy_events writes, Ansible site
-convergence, and affected Nomad fan-out inside one process sharing one SSH
-session and one SSH-forwarded OTLP channel to the bare-metal otelcol.
+The binary owns identity derivation, deploy_events writes, Bazel
+nomad_component discovery, artifact publication, and affected Nomad fan-out
+inside one process sharing one SSH session and one SSH-forwarded OTLP channel
+to the bare-metal otelcol.
 
 Correlation: rows in verself.deploy_events, verself.ansible_task_events, and
 the ansible.* / verself_deploy.* span families in default.otel_traces all join on
