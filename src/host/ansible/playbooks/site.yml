@@ -171,10 +171,71 @@
       tags:
         - garage
         - artifacts
+    - role: bazel_remote
+      tags:
+        - bazel-remote
+        - cache
+    - role: clickhouse
+      tags:
+        - clickhouse
+        - telemetry
+        - evidence
+    - role: nats
+      tags:
+        - nats
+        - messaging
+    - role: openbao
+      tags:
+        - openbao
+        - secrets
+    - role: zitadel
+      tags:
+        - zitadel
+        - identity
+    - role: zot
+      tags:
+        - zot
+        - registry
+    - role: tigerbeetle
+      tags:
+        - tigerbeetle
+        - ledger
+    - role: verdaccio
+      tags:
+        - verdaccio
+        - package-registry
+    - role: stalwart
+      tags:
+        - stalwart
+        - mail
+    - role: spicedb
+      tags:
+        - spicedb
+        - authorization
+    - role: temporal-platform
+      tags:
+        - temporal
+        - workflows
+    - role: forgejo
+      tags:
+        - forgejo
+        - git
+    - role: grafana
+      tags:
+        - grafana
+        - observability
+    - role: haproxy
+      tags:
+        - haproxy
+        - edge
     - role: nomad
       tags:
         - nomad
         - scheduler
+    - role: otelcol
+      tags:
+        - otelcol
+        - telemetry
 
 - name: "Transitional workload substrate bindings"
   hosts: infra
