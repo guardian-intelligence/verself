@@ -115,7 +115,7 @@ def _deploy_unit_impl(ctx):
     _write_descriptor(ctx, descriptor, json.encode(descriptor_data) + "\n", inputs)
 
     return [
-        DefaultInfo(files = depset([descriptor])),
+        DefaultInfo(files = depset([descriptor], transitive = [depset(inputs)])),
         DeployUnitInfo(
             descriptor = descriptor,
             executor = ctx.attr.executor,
