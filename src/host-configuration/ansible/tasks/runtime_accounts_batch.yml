@@ -8,15 +8,27 @@
 # union supplementary_groups across all units that target the same user so
 # later units do not drop required groups.
 
+- name: Load service-owned component substrate registry
+  ansible.builtin.set_fact:
+    component_substrate_registry: "{{ lookup('ansible.builtin.file', component_substrate_registry_file) | from_json }}"
+
+- name: Assert component substrate registry schema
+  ansible.builtin.assert:
+    that:
+      - component_substrate_registry.schema_version == 1
+      - component_substrate_registry.components is iterable
+    fail_msg: "component substrate registry must be a schema_version=1 descriptor"
+
 - name: Compute every Nomad-supervised component's workload units
   ansible.builtin.set_fact:
     all_application_components: >-
       {{
-        topology_components
+        component_substrate_registry.components
         | selectattr('deployment', 'defined')
         | selectattr('deployment.supervisor', 'equalto', 'nomad')
         | selectattr('workload', 'defined')
         | selectattr('workload.units', 'defined')
+        | sort(attribute='order')
         | list
       }}
 

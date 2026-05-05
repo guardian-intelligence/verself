@@ -24,11 +24,12 @@ import (
 )
 
 const (
-	hostConfigurationSitePlaybook = "playbooks/site.yml"
-	hostConfigurationPhase        = "host_configuration_site"
-	hostConfigurationComponent    = "host-configuration"
-	spireIdentityRegistryTarget   = "//src/host-configuration:spire_identity_registry"
-	canonicalDeployScope          = "affected"
+	hostConfigurationSitePlaybook    = "playbooks/site.yml"
+	hostConfigurationPhase           = "host_configuration_site"
+	hostConfigurationComponent       = "host-configuration"
+	spireIdentityRegistryTarget      = "//src/host-configuration:spire_identity_registry"
+	componentSubstrateRegistryTarget = "//src/host-configuration:component_substrate_registry"
+	canonicalDeployScope             = "affected"
 )
 
 // runRun is the `verself-deploy run` entry point. It owns identity,
@@ -205,16 +206,22 @@ func runDeployBody(
 	if bootstrapHost != nil {
 		components = append(components, hostConfigurationComponent)
 	} else {
-		spireRegistryPath, err := buildSpireIdentityRegistry(ctx, repoRoot)
+		hostInputs, err := buildHostGeneratedInputs(ctx, repoRoot)
 		if err != nil {
-			msg := fmt.Sprintf("SPIRE identity registry build failed: %v", err)
+			msg := fmt.Sprintf("host generated input build failed: %v", err)
 			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
 			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
 			return 1
 		}
-		span.SetAttributes(attribute.String("spire.identity_registry.path", spireRegistryPath))
+		span.SetAttributes(
+			attribute.String("component.substrate_registry.path", hostInputs.ComponentSubstrateRegistry),
+			attribute.String("spire.identity_registry.path", hostInputs.SpireIdentityRegistry),
+		)
 		hostStarted := time.Now()
-		hostRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{"-e", "spire_registrations_file=" + spireRegistryPath})
+		hostRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{
+			"-e", "spire_registrations_file=" + hostInputs.SpireIdentityRegistry,
+			"-e", "component_substrate_registry_file=" + hostInputs.ComponentSubstrateRegistry,
+		})
 		if err != nil || hostRes == nil || hostRes.ExitCode != 0 {
 			msg := fmt.Sprintf("host configuration failed: %v", err)
 			if err == nil {
@@ -270,19 +277,37 @@ func runDeployBody(
 	return 0
 }
 
-func buildSpireIdentityRegistry(ctx context.Context, repoRoot string) (string, error) {
-	build, err := bazelbuild.Build(ctx, repoRoot, []string{spireIdentityRegistryTarget}, "--config=remote-writer")
+type hostGeneratedInputs struct {
+	ComponentSubstrateRegistry string
+	SpireIdentityRegistry      string
+}
+
+func buildHostGeneratedInputs(ctx context.Context, repoRoot string) (hostGeneratedInputs, error) {
+	build, err := bazelbuild.Build(ctx, repoRoot, []string{
+		componentSubstrateRegistryTarget,
+		spireIdentityRegistryTarget,
+	}, "--config=remote-writer")
 	if err != nil {
-		return "", err
+		return hostGeneratedInputs{}, err
 	}
-	outputs, err := build.Stream.ResolveOutputs(spireIdentityRegistryTarget, repoRoot)
+	spireOutputs, err := build.Stream.ResolveOutputs(spireIdentityRegistryTarget, repoRoot)
 	if err != nil {
-		return "", fmt.Errorf("resolve %s output: %w", spireIdentityRegistryTarget, err)
+		return hostGeneratedInputs{}, fmt.Errorf("resolve %s output: %w", spireIdentityRegistryTarget, err)
 	}
-	if len(outputs) != 1 {
-		return "", fmt.Errorf("%s must produce exactly one output, got %d: %v", spireIdentityRegistryTarget, len(outputs), outputs)
+	if len(spireOutputs) != 1 {
+		return hostGeneratedInputs{}, fmt.Errorf("%s must produce exactly one output, got %d: %v", spireIdentityRegistryTarget, len(spireOutputs), spireOutputs)
 	}
-	return outputs[0], nil
+	componentOutputs, err := build.Stream.ResolveOutputs(componentSubstrateRegistryTarget, repoRoot)
+	if err != nil {
+		return hostGeneratedInputs{}, fmt.Errorf("resolve %s output: %w", componentSubstrateRegistryTarget, err)
+	}
+	if len(componentOutputs) != 1 {
+		return hostGeneratedInputs{}, fmt.Errorf("%s must produce exactly one output, got %d: %v", componentSubstrateRegistryTarget, len(componentOutputs), componentOutputs)
+	}
+	return hostGeneratedInputs{
+		ComponentSubstrateRegistry: componentOutputs[0],
+		SpireIdentityRegistry:      spireOutputs[0],
+	}, nil
 }
 
 type hostConfigurationBootstrapResult struct {
@@ -324,14 +349,20 @@ func runHostConfigurationBootstrap(ctx context.Context, site, repoRoot string) (
 	)
 	defer span.End()
 
-	spireRegistryPath, err := buildSpireIdentityRegistry(ctx, repoRoot)
+	hostInputs, err := buildHostGeneratedInputs(ctx, repoRoot)
 	if err != nil {
 		return nil, err
 	}
-	span.SetAttributes(attribute.String("spire.identity_registry.path", spireRegistryPath))
+	span.SetAttributes(
+		attribute.String("component.substrate_registry.path", hostInputs.ComponentSubstrateRegistry),
+		attribute.String("spire.identity_registry.path", hostInputs.SpireIdentityRegistry),
+	)
 
 	startedAt := time.Now()
-	res, runErr := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{"-e", "spire_registrations_file=" + spireRegistryPath})
+	res, runErr := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{
+		"-e", "spire_registrations_file=" + hostInputs.SpireIdentityRegistry,
+		"-e", "component_substrate_registry_file=" + hostInputs.ComponentSubstrateRegistry,
+	})
 	endedAt := time.Now()
 	result := &hostConfigurationBootstrapResult{
 		StartedAt: startedAt,

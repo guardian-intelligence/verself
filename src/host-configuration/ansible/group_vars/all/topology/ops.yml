@@ -75,10 +75,10 @@ temporal_namespace_retention: 24h
 temporal_namespace_role_bindings:
   - namespace: '{{ temporal_sandbox_namespace }}'
     role: admin
-    spiffe_id: "{{ spire_identity_spiffe_ids['sandbox_rental.default'] }}"
+    spiffe_id: "{{ spire_registrations_spiffe_ids['sandbox_rental.default'] }}"
   - namespace: '{{ temporal_billing_namespace }}'
     role: admin
-    spiffe_id: "{{ spire_identity_spiffe_ids['billing.default'] }}"
+    spiffe_id: "{{ spire_registrations_spiffe_ids['billing.default'] }}"
 temporal_sandbox_namespace: sandbox-rental-service
 topology_artifacts:
   nomad:

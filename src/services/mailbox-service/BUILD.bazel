@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/mailbox-service
 
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
@@ -23,4 +24,10 @@ nomad_component(
     job_id = "mailbox-service",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    definition_json = """{"component":"mailbox_service","kind":"service","nftables_rulesets":[{"name":"mailbox_service","table":"verself_mailbox_service","target":"/etc/nftables.d/mailbox-service.nft"}],"nomad_component_label":"//src/services/mailbox-service:nomad_component","order":100,"postgres":{"database":"mailbox_service","password_ref":{"kind":"ansible_var","name":"postgresql_mailbox_service_password","no_log":true}},"workload":{"auth":{"kind":"owned_project","project_name":"mailbox-service","project_role_assertion":true,"project_role_check":true,"roles":[{"display_name":"Mailbox User","group":"mailbox","key":"mailbox_user"}]},"directories":[{"group":"mailbox_service","mode":"0750","owner":"root","path":"/etc/credstore/mailbox-service"},{"group":"mailbox_service","mode":"0750","owner":"mailbox_service","path":"/var/lib/mailbox-service"}],"secret_refs":[{"group":"mailbox_service","mode":"0640","name":"stalwart-ceo-password","no_log":true,"owner":"root","path":"/etc/credstore/mailbox-service/stalwart-ceo-password","restart_units":["mailbox-service"],"source":{"ansible_var":"stalwart_ceo_password","kind":"ansible_var"}},{"group":"mailbox_service","mode":"0640","name":"stalwart-agents-password","no_log":true,"owner":"root","path":"/etc/credstore/mailbox-service/stalwart-agents-password","restart_units":["mailbox-service"],"source":{"ansible_var":"stalwart_agents_password","kind":"ansible_var"}},{"group":"mailbox_service","mode":"0640","name":"forward-to","no_log":true,"owner":"root","path":"/etc/credstore/mailbox-service/forward-to","restart_units":["mailbox-service"],"source":{"ansible_var":"stalwart_operator_forward_to","kind":"ansible_var"}}],"units":[{"name":"mailbox-service","supplementary_groups":["spire_workload"],"user":"mailbox_service"}]}}""",
+    visibility = ["//src/host-configuration:__pkg__"],
 )

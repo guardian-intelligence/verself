@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/billing-service
 
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
@@ -23,4 +24,10 @@ nomad_component(
     job_id = "billing",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    definition_json = """{"component":"billing","kind":"service","nftables_rulesets":[{"name":"billing","table":"verself_billing","target":"/etc/nftables.d/billing.nft"}],"nomad_component_label":"//src/services/billing-service:nomad_component","order":80,"postgres":{"connection_limit":30,"database":"billing","password_ref":{"kind":"ansible_var","name":"postgresql_billing_password","no_log":true}},"workload":{"auth":{"audience":"370208441207143780","kind":"owned_project","project_name":"billing","project_role_assertion":false,"project_role_check":false,"roles":[]},"bootstrap":[{"class":"external_provider","name":"billing_stripe_webhook","reason":"Reconciles the Stripe webhook endpoint and runtime provider secret outside the generic service shape."}],"clickhouse":{"grants":[{"action":"INSERT","table":"verself.billing_events"},{"action":"INSERT","table":"verself.metering"}],"spiffe_identity_key":"billing.default","user":"billing_service"},"directories":[{"group":"billing","mode":"0750","owner":"root","path":"/etc/credstore/billing"}],"secret_refs":[{"group":"billing","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/billing/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}},{"group":"billing","mode":"0640","name":"stripe-test-publishable-key","no_log":true,"owner":"root","path":"/etc/credstore/billing/stripe-test-publishable-key","restart_units":[],"source":{"ansible_var":"stripe_publishable_key","kind":"ansible_var"}},{"group":"billing","mode":"0640","name":"stripe-test-webhook-endpoint-id","no_log":true,"owner":"root","path":"/etc/credstore/billing/stripe-test-webhook-endpoint-id","restart_units":[],"source":{"ansible_var":"stripe_test_webhook_endpoint_id","kind":"ansible_var"}}],"units":[{"name":"billing-service","supplementary_groups":["spire_workload"],"user":"billing"}]}}""",
+    visibility = ["//src/host-configuration:__pkg__"],
 )

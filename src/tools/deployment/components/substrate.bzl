@@ -24,6 +24,13 @@ def _write_json(ctx, out, content, mnemonic):
         progress_message = "Writing component substrate descriptor %{label}",
     )
 
+def _normalize_postgres(name, postgres):
+    normalized = dict(postgres)
+    if normalized.get("database", ""):
+        normalized["owner"] = normalized.get("owner", name)
+        normalized["connection_limit"] = normalized.get("connection_limit", 10)
+    return normalized
+
 def _component_substrate_impl(ctx):
     if not ctx.attr.component:
         fail("component is required")
@@ -37,7 +44,7 @@ def _component_substrate_impl(ctx):
         "name": ctx.attr.component,
         "nftables_rulesets": json.decode(ctx.attr.nftables_rulesets_json),
         "order": ctx.attr.order,
-        "postgres": json.decode(ctx.attr.postgres_json),
+        "postgres": _normalize_postgres(ctx.attr.component, json.decode(ctx.attr.postgres_json)),
         "schema_version": 1,
         "workload": json.decode(ctx.attr.workload_json),
     }
@@ -80,7 +87,7 @@ def _component_substrate_json_impl(ctx):
     definition["name"] = definition.pop("component")
     definition["nftables_rulesets"] = definition.get("nftables_rulesets", [])
     definition["order"] = definition.get("order", 0)
-    definition["postgres"] = definition.get("postgres", {})
+    definition["postgres"] = _normalize_postgres(definition["name"], definition.get("postgres", {}))
     definition["schema_version"] = 1
     encoded = json.encode(definition)
     descriptor = ctx.actions.declare_file(ctx.label.name + ".component_substrate.json")

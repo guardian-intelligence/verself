@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_route_tree")
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -15,6 +16,12 @@ nomad_component(
     job_id = "company",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    definition_json = """{"component":"company","kind":"frontend","nftables_rulesets":[{"name":"company","table":"verself_company","target":"/etc/nftables.d/company.nft"}],"nomad_component_label":"//src/frontends/viteplus-monorepo/apps/company:nomad_component","order":120,"postgres":{},"workload":{"directories":[{"group":"company","mode":"0700","owner":"company","path":"/var/lib/company"}],"units":[{"home":"/var/lib/company","name":"company","user":"company"}]}}""",
+    visibility = ["//src/host-configuration:__pkg__"],
 )
 
 FIRST_LIGHT_SHADER_SRC_MAP = [

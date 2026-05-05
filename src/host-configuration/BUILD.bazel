@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/host-configuration
 
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_registry")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 load("//src/tools/deployment/units:unit.bzl", "deploy_unit")
 
@@ -29,9 +30,29 @@ spire_identity_registry(
     ],
 )
 
+component_substrate_registry(
+    name = "component_substrate_registry",
+    components = [
+        "//src/frontends/viteplus-monorepo/apps/company:component_substrate",
+        "//src/frontends/viteplus-monorepo/apps/verself-web:component_substrate",
+        "//src/services/billing-service:component_substrate",
+        "//src/services/governance-service:component_substrate",
+        "//src/services/iam-service:component_substrate",
+        "//src/services/mailbox-service:component_substrate",
+        "//src/services/notifications-service:component_substrate",
+        "//src/services/object-storage-service:component_substrate",
+        "//src/services/profile-service:component_substrate",
+        "//src/services/projects-service:component_substrate",
+        "//src/services/sandbox-rental-service:component_substrate",
+        "//src/services/secrets-service:component_substrate",
+        "//src/services/source-code-hosting-service:component_substrate",
+    ],
+)
+
 filegroup(
     name = "converge_sources",
     srcs = [
+        ":component_substrate_registry",
         ":service_migration_sources",
         ":spire_identity_registry",
         ":substrate_sources",

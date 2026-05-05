@@ -38,7 +38,7 @@
         <!-- Config-defined users default to ALL ... WITH GRANT OPTION unless explicit grants are set; clickhouse_operator uses that bootstrap path. -->
         <{{ clickhouse_operator_db_user }}>
             <ssl_certificates>
-                <subject_alt_name>URI:{{ spire_identity_spiffe_ids['clickhouse.operator'] }}</subject_alt_name>
+                <subject_alt_name>URI:{{ spire_registrations_spiffe_ids['clickhouse.operator'] }}</subject_alt_name>
             </ssl_certificates>
             <networks>
                 <ip>127.0.0.1</ip>

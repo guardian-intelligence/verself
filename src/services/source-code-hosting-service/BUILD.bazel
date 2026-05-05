@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/source-code-hosting-service
 
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
@@ -26,4 +27,10 @@ nomad_component(
     job_id = "source-code-hosting-service",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    definition_json = """{"component":"source_code_hosting_service","kind":"service","nftables_rulesets":[{"name":"source_code_hosting_service","table":"verself_source_code_hosting_service","target":"/etc/nftables.d/source-code-hosting-service.nft"}],"nomad_component_label":"//src/services/source-code-hosting-service:nomad_component","order":75,"postgres":{"database":"source_code_hosting","owner":"source_code_hosting_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"directories":[{"group":"source_code_hosting_service","mode":"0750","owner":"root","path":"/etc/credstore/source-code-hosting-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"source_code_hosting_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/source-code-hosting-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"source_code_hosting_service","mode":"0640","name":"forgejo-token","no_log":true,"owner":"root","path":"/etc/credstore/source-code-hosting-service/forgejo-token","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/credstore/forgejo/automation-token"}},{"group":"source_code_hosting_service","mode":"0640","name":"webhook-secret","no_log":true,"owner":"root","path":"/etc/credstore/source-code-hosting-service/webhook-secret","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}}],"units":[{"name":"source-code-hosting-service","supplementary_groups":["spire_workload"],"user":"source_code_hosting_service"}]}}""",
+    visibility = ["//src/host-configuration:__pkg__"],
 )

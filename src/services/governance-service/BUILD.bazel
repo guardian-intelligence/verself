@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/governance-service
 
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
@@ -22,4 +23,10 @@ nomad_component(
     job_id = "governance-service",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    definition_json = """{"component":"governance_service","kind":"service","nftables_rulesets":[{"name":"governance_service","table":"verself_governance_service","target":"/etc/nftables.d/governance-service.nft"}],"nomad_component_label":"//src/services/governance-service:nomad_component","order":20,"postgres":{"connection_limit":15,"database":"governance_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"clickhouse":{"grants":[{"action":"INSERT","table":"verself.audit_events"},{"action":"SELECT","table":"verself.audit_events"}],"spiffe_identity_key":"governance_service.default","user":"governance_service"},"directories":[{"group":"governance_service","mode":"0750","owner":"root","path":"/etc/credstore/governance-service"},{"group":"governance_service","mode":"0750","owner":"governance_service","path":"/var/lib/governance-service"},{"group":"governance_service","mode":"0750","owner":"governance_service","path":"/var/lib/governance-service/exports"}],"secret_refs":[{"expose_as":"postgres_password","group":"governance_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/governance-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"governance_service","mode":"0640","name":"audit-hmac-key","no_log":true,"owner":"root","path":"/etc/credstore/governance-service/audit-hmac-key","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"governance_service","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/governance-service/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}}],"units":[{"name":"governance-service","supplementary_groups":["spire_workload"],"user":"governance_service"}]}}""",
+    visibility = ["//src/host-configuration:__pkg__"],
 )

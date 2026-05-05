@@ -34,7 +34,7 @@
 
 - name: Publish SPIFFE IDs by identity key
   ansible.builtin.set_fact:
-    spire_identity_spiffe_ids: >-
+    spire_registrations_spiffe_ids: >-
       {{
         dict(
           spire_registrations_identities | map(attribute='key')

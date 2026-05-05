@@ -156,8 +156,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
-    CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_identity_spiffe_ids["grafana.default"] }}' HOST LOCAL;
-    ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_identity_spiffe_ids["grafana.default"] }}' HOST LOCAL;
+    CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_registrations_spiffe_ids["grafana.default"] }}' HOST LOCAL;
+    ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_registrations_spiffe_ids["grafana.default"] }}' HOST LOCAL;
     GRANT SELECT ON default.* TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON verself.* TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.query_log TO {{ grafana_clickhouse_user }};
