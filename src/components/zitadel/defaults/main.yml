@@ -3,6 +3,12 @@
 zitadel_config_dir: /etc/zitadel
 zitadel_subdomain: auth
 zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
+zitadel_host: 127.0.0.1
+zitadel_http_port: 8085
+zitadel_http_address: "{{ zitadel_host }}:{{ zitadel_http_port }}"
+zitadel_postgresql_host: "{{ postgresql_host }}"
+zitadel_postgresql_port: "{{ postgresql_port }}"
+zitadel_otelcol_otlp_grpc_address: 127.0.0.1:4317
 
 # SMTP (Resend)
 zitadel_smtp_host: "smtp.resend.com:465"

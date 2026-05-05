@@ -10,7 +10,7 @@ User=pomerium
 Group=pomerium
 WorkingDirectory={{ pomerium_data_dir }}
 Environment=OTEL_TRACES_EXPORTER=otlp
-Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
+Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ pomerium_otelcol_otlp_grpc_address }}
 Environment=OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 Environment=OTEL_RESOURCE_ATTRIBUTES=service.name=pomerium,service.namespace=verself-substrate
 ExecStart={{ verself_bin }}/pomerium --config {{ pomerium_config_path }}

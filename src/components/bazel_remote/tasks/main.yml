@@ -59,12 +59,12 @@
 
 - name: Wait for bazel-remote gRPC listener
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.bazel_remote.host }}"
-    port: "{{ topology_endpoints.bazel_remote.endpoints.grpc.port }}"
+    host: "{{ bazel_remote_host }}"
+    port: "{{ bazel_remote_grpc_port }}"
     timeout: 30
 
 - name: Wait for bazel-remote HTTP listener
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.bazel_remote.host }}"
-    port: "{{ topology_endpoints.bazel_remote.endpoints.http.port }}"
+    host: "{{ bazel_remote_host }}"
+    port: "{{ bazel_remote_http_port }}"
     timeout: 30

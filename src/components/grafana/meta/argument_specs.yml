@@ -4,7 +4,7 @@ argument_specs:
     short_description: "Grafana observability UI"
     description:
       - "Deploys unmodified Grafana OSS against the existing ClickHouse and PostgreSQL services."
-      - "Service ports come from authored topology, not from this role."
+      - "Service ports are component defaults or Nomad service registrations."
     options:
       grafana_domain:
         type: str

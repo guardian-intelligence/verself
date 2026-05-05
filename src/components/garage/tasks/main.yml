@@ -146,7 +146,7 @@
     owner: root
     group: garage
     mode: "0640"
-  loop: "{{ topology_clusters.garage.nodes }}"
+  loop: "{{ garage_cluster.nodes }}"
   loop_control:
     loop_var: garage_node
     label: "garage-{{ garage_node.instance }}"
@@ -196,18 +196,18 @@
     enabled: true
     state: started
     daemon_reload: true
-  loop: "{{ topology_clusters.garage.nodes }}"
+  loop: "{{ garage_cluster.nodes }}"
   loop_control:
     label: "garage@{{ item.instance }}"
 
 - name: Wait for garage admin ports
   ansible.builtin.wait_for:
-    host: "{{ topology_clusters.garage.host }}"
+    host: "{{ garage_cluster.host }}"
     port: "{{ item.admin_port }}"
     timeout: 30
-  loop: "{{ topology_clusters.garage.nodes }}"
+  loop: "{{ garage_cluster.nodes }}"
   loop_control:
-    label: "{{ topology_clusters.garage.host }}:{{ item.admin_port }}"
+    label: "{{ garage_cluster.host }}:{{ item.admin_port }}"
 
 - name: Bootstrap garage cluster and layout
   ansible.builtin.command:
@@ -369,9 +369,9 @@
               raise SystemExit(f"garage layout did not settle: {current}")
           time.sleep(1)
   environment:
-    GARAGE_HOST: "{{ topology_clusters.garage.host }}"
+    GARAGE_HOST: "{{ garage_cluster.host }}"
     GARAGE_BIN: "{{ verself_bin }}/garage"
-    GARAGE_NODES: "{{ topology_clusters.garage.nodes | to_json }}"
+    GARAGE_NODES: "{{ garage_cluster.nodes | to_json }}"
     GARAGE_CAPACITY_BYTES: "{{ garage_capacity_bytes | string }}"
     GARAGE_ZONE_REDUNDANCY: "{{ garage_zone_redundancy | string }}"
   register: garage_bootstrap
@@ -386,8 +386,8 @@
     mode: "{{ item.mode }}"
   loop:
     - { path: /etc/garage/nomad-artifacts, mode: "0700" }
-    - { path: "{{ topology_artifacts.nomad.nomad_getter.credentials.environment_file | dirname }}", mode: "0750" }
-    - { path: "{{ topology_artifacts.nomad.publisher.credentials.environment_file | dirname }}", mode: "0700" }
+    - { path: "{{ nomad_artifact_getter_s3_environment_file | dirname }}", mode: "0750" }
+    - { path: "{{ nomad_artifact_publisher_s3_environment_file | dirname }}", mode: "0700" }
 
 - name: Bootstrap private Nomad artifact bucket and keys
   ansible.builtin.command:
@@ -503,9 +503,9 @@
 
       print(json.dumps({"changed": changed, "reader": reader, "publisher": publisher}, sort_keys=True))
   environment:
-    GARAGE_ADMIN_URL: "http://{{ topology_clusters.garage.host }}:{{ topology_clusters.garage.nodes[0].admin_port }}"
+    GARAGE_ADMIN_URL: "http://{{ garage_cluster.host }}:{{ garage_cluster.nodes[0].admin_port }}"
     GARAGE_ADMIN_TOKEN: "{{ garage_admin_token }}"
-    GARAGE_ARTIFACT_BUCKET: "{{ topology_artifacts.nomad.storage.bucket }}"
+    GARAGE_ARTIFACT_BUCKET: "{{ nomad_artifact_bucket }}"
   register: garage_artifact_bootstrap_raw
   changed_when: "(garage_artifact_bootstrap_raw.stdout | from_json).changed"
   no_log: true
@@ -517,24 +517,24 @@
 
 - name: Deploy Nomad artifact reader environment
   ansible.builtin.copy:
-    dest: "{{ topology_artifacts.nomad.nomad_getter.credentials.environment_file }}"
+    dest: "{{ nomad_artifact_getter_s3_environment_file }}"
     owner: root
     group: root
     mode: "0600"
     content: |
-      {{ topology_artifacts.nomad.nomad_getter.credentials.access_key_id_env }}={{ garage_artifact_bootstrap.reader.accessKeyId }}
-      {{ topology_artifacts.nomad.nomad_getter.credentials.secret_access_key_env }}={{ garage_artifact_bootstrap.reader.secretAccessKey }}
-      AWS_REGION={{ topology_artifacts.nomad.storage.region }}
+      {{ nomad_artifact_getter_s3_access_key_env_var }}={{ garage_artifact_bootstrap.reader.accessKeyId }}
+      {{ nomad_artifact_getter_s3_secret_key_env_var }}={{ garage_artifact_bootstrap.reader.secretAccessKey }}
+      AWS_REGION={{ nomad_artifact_region }}
       AWS_EC2_METADATA_DISABLED=true
   no_log: true
 
 - name: Deploy Nomad artifact publisher environment
   ansible.builtin.copy:
-    dest: "{{ topology_artifacts.nomad.publisher.credentials.environment_file }}"
+    dest: "{{ nomad_artifact_publisher_s3_environment_file }}"
     owner: root
     group: root
     mode: "0600"
     content: |
-      {{ topology_artifacts.nomad.publisher.credentials.access_key_id_env }}={{ garage_artifact_bootstrap.publisher.accessKeyId }}
-      {{ topology_artifacts.nomad.publisher.credentials.secret_access_key_env }}={{ garage_artifact_bootstrap.publisher.secretAccessKey }}
+      {{ nomad_artifact_publisher_s3_access_key_env_var }}={{ garage_artifact_bootstrap.publisher.accessKeyId }}
+      {{ nomad_artifact_publisher_s3_secret_key_env_var }}={{ garage_artifact_bootstrap.publisher.secretAccessKey }}
   no_log: true

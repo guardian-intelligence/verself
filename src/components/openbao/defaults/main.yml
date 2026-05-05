@@ -8,6 +8,13 @@ openbao_log_dir: /var/log/openbao
 openbao_audit_log: /var/log/openbao/audit.log
 openbao_credstore_dir: /etc/credstore/openbao
 openbao_node_id: verself-single-node
+openbao_host: 127.0.0.1
+openbao_api_port: 8200
+openbao_cluster_port: 8201
+openbao_api_address: "{{ openbao_host }}:{{ openbao_api_port }}"
+openbao_cluster_address: "{{ openbao_host }}:{{ openbao_cluster_port }}"
+openbao_api_bind_address: "0.0.0.0:{{ openbao_api_port }}"
+openbao_cluster_bind_address: "{{ openbao_cluster_address }}"
 openbao_rebootstrap: false
 openbao_rebootstrap_confirm: ""
 openbao_key_shares: 3

@@ -6,9 +6,12 @@ pomerium_credstore_dir: /etc/credstore/pomerium
 pomerium_data_dir: /var/lib/pomerium
 pomerium_log_dir: /var/log/pomerium
 
-pomerium_listen_address: "{{ topology_endpoints.pomerium.endpoints.http.address }}"
+pomerium_host: 127.0.0.1
+pomerium_http_port: 4180
+pomerium_listen_address: "{{ pomerium_host }}:{{ pomerium_http_port }}"
 pomerium_grpc_address: "127.0.0.1:5443"
 pomerium_health_address: "127.0.0.1:28080"
+pomerium_otelcol_otlp_grpc_address: 127.0.0.1:4317
 pomerium_cookie_name: _pomerium_operator
 
 pomerium_shared_secret_path: "{{ pomerium_credstore_dir }}/shared-secret"
@@ -35,6 +38,9 @@ pomerium_oidc_scopes: "openid, profile, email, offline_access"
 pomerium_operator_allowed_domains: []
 pomerium_operator_allowed_emails:
   - "ceo@{{ verself_domain }}"
+pomerium_operator_http_routes:
+  - from: "https://{{ grafana_domain | default('dashboard.' ~ verself_domain) }}"
+    to: "http://{{ grafana_http_address | default('127.0.0.1:4300') }}"
 
 pomerium_ssh_address: "{{ ansible_host }}:22"
 pomerium_ssh_route_name: prod

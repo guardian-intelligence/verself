@@ -6,7 +6,7 @@ ca_path="{{ grafana_clickhouse_server_ca_cred }}"
 cert_path="{{ grafana_clickhouse_spiffe_dir }}/svid.pem"
 key_path="{{ grafana_clickhouse_spiffe_dir }}/svid_key.pem"
 admin_password_path="{{ grafana_credstore_dir }}/admin-password"
-grafana_local_url="http://{{ topology_endpoints.grafana.endpoints.http.address }}"
+grafana_local_url="http://{{ grafana_http_address }}"
 tmp_path="$(mktemp "${datasource_path}.tmp.XXXXXX")"
 
 cleanup() {
@@ -34,8 +34,8 @@ datasources:
     editable: false
     jsonData:
       defaultDatabase: default
-      host: {{ topology_endpoints.clickhouse.host }}
-      port: {{ topology_endpoints.clickhouse.endpoints.native_tls.port }}
+      host: {{ grafana_clickhouse_host }}
+      port: {{ grafana_clickhouse_native_tls_port }}
       protocol: native
       secure: true
       username: {{ grafana_clickhouse_user }}

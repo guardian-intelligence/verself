@@ -1,11 +1,11 @@
 ---
-# Shared across instances. Instance-specific topology is passed as
-# electric_config comes from authored topology vars.
+# Shared across instances. Instance-specific config is supplied by the owning
+# component or service.
 electric_version: "1.5.0"
 electric_image: "docker.io/electricsql/electric:{{ electric_version }}"
 
 # Handler names are templated when the role loads; expose only the value needed
-# for handler registration here and load the rest from topology in tasks.
+# for handler registration here and load the rest from electric_config in tasks.
 electric_service_name: "{{ electric_config.electric_service_name }}"
 
 # Derived defaults — paths live under the caller's electric_credstore_dir.

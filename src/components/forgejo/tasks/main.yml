@@ -74,8 +74,8 @@
 
 - name: Wait for Forgejo to be ready
   ansible.builtin.wait_for:
-    port: "{{ topology_endpoints.forgejo.endpoints.http.port }}"
-    host: "{{ topology_endpoints.forgejo.host }}"
+    port: "{{ forgejo_http_port }}"
+    host: "{{ forgejo_host }}"
     timeout: 60
 
 - name: Set up Forgejo Zitadel OIDC application

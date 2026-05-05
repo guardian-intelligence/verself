@@ -2,9 +2,9 @@ receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 127.0.0.1:{{ topology_endpoints.otelcol.endpoints.otlp_grpc.port }}
+        endpoint: 127.0.0.1:{{ otelcol_otlp_grpc_port }}
       http:
-        endpoint: 127.0.0.1:{{ topology_endpoints.otelcol.endpoints.otlp_http.port }}
+        endpoint: 127.0.0.1:{{ otelcol_otlp_http_port }}
   journald/haproxy:
     units: [haproxy]
     resource:
@@ -121,10 +121,10 @@ receivers:
         to: body
   # Capture lifecycle / handshake messages for every WireGuard tunnel so an
   # operator can confirm `wg-quick@<iface>` came up on each deploy. Driven
-  # off the topology so adding a tunnel doesn't require editing this list.
+  # off site-owned host tunnel definitions.
   journald/wireguard:
     units:
-{% for tunnel_name, tunnel in (topology_wireguard.tunnels | dictsort) %}
+{% for tunnel_name, tunnel in (host_wireguard_tunnels | dictsort) %}
       - wg-quick@{{ tunnel.interface }}
 {% endfor %}
     resource:
@@ -346,7 +346,7 @@ receivers:
         field: attributes.bytes
         if: attributes.bytes != nil
   postgresql:
-    endpoint: "{{ topology_endpoints.postgresql.endpoints.postgres.address }}"
+    endpoint: "{{ otelcol_postgresql_address }}"
     username: postgres
     password: "{{ postgresql_admin_password }}"
     databases: [sandbox_rental]
@@ -402,7 +402,7 @@ receivers:
       disk: {}
       network: {}
   statsd:
-    endpoint: "{{ topology_endpoints.otelcol.endpoints.statsd.address }}"
+    endpoint: "{{ otelcol_statsd_address }}"
     aggregation_interval: 10s
   prometheus/openbao:
     config:
@@ -416,21 +416,21 @@ receivers:
           tls_config:
             insecure_skip_verify: true
           static_configs:
-            - targets: ["{{ topology_endpoints.openbao.endpoints.api.address }}"]
+            - targets: ["{{ otelcol_openbao_api_address }}"]
   prometheus/temporal:
     config:
       scrape_configs:
         - job_name: temporal
           scrape_interval: 10s
           static_configs:
-            - targets: ["{{ topology_endpoints.temporal.endpoints.metrics.address }}"]
+            - targets: ["{{ otelcol_temporal_metrics_address }}"]
   prometheus/bazel-remote:
     config:
       scrape_configs:
         - job_name: bazel-remote
           scrape_interval: 10s
           static_configs:
-            - targets: ["{{ topology_endpoints.bazel_remote.endpoints.http.address }}"]
+            - targets: ["{{ otelcol_bazel_remote_http_address }}"]
   prometheus/nomad:
     config:
       scrape_configs:
@@ -440,7 +440,7 @@ receivers:
           params:
             format: [prometheus]
           static_configs:
-            - targets: ["{{ topology_endpoints.nomad.endpoints.http.address }}"]
+            - targets: ["{{ otelcol_nomad_http_address }}"]
   prometheus/haproxy:
     config:
       scrape_configs:
@@ -448,7 +448,7 @@ receivers:
           scrape_interval: 10s
           metrics_path: /metrics
           static_configs:
-            - targets: ["{{ topology_endpoints.haproxy.endpoints.metrics.address }}"]
+            - targets: ["{{ otelcol_haproxy_metrics_address }}"]
 
 processors:
   batch:
@@ -481,7 +481,7 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}?secure=true&dial_timeout=10s
+    endpoint: tcp://{{ otelcol_clickhouse_native_tls_address }}?secure=true&dial_timeout=10s
     username: {{ otelcol_clickhouse_user }}
     database: default
     logs_table_name: otel_logs
@@ -500,7 +500,7 @@ exporters:
 
 extensions:
   health_check:
-    endpoint: 127.0.0.1:13133  # not in topology artifacts — no cross-service consumers
+    endpoint: 127.0.0.1:13133  # local collector health endpoint
   file_storage:
     directory: /var/lib/otelcol/storage
 

@@ -6,7 +6,7 @@ Log:
   Formatter:
     Format: json
 
-Port: {{ topology_endpoints.zitadel.endpoints.http.port }}
+Port: {{ zitadel_http_port }}
 ExternalDomain: {{ zitadel_domain }}
 ExternalPort: 443
 ExternalSecure: true
@@ -16,8 +16,8 @@ TLS:
 
 Database:
   postgres:
-    Host: {{ topology_endpoints.postgresql.host }}
-    Port: {{ topology_endpoints.postgresql.endpoints.postgres.port }}
+    Host: {{ postgresql_host }}
+    Port: {{ postgresql_port }}
     Database: zitadel
     User:
       Username: zitadel
@@ -67,7 +67,7 @@ Instrumentation:
   Trace:
     Exporter:
       Type: grpc
-      Endpoint: {{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
+      Endpoint: {{ zitadel_otelcol_otlp_grpc_address }}
       Insecure: true
     Fraction: 1
   Metrics:

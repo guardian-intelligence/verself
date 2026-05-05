@@ -63,9 +63,9 @@
       User=tigerbeetle
       Group=tigerbeetle
       ExecStart={{ verself_bin }}/tigerbeetle start \
-        --addresses={{ topology_endpoints.tigerbeetle.endpoints.client.address }} \
+        --addresses={{ tigerbeetle_client_address }} \
         --experimental \
-        --statsd={{ topology_endpoints.otelcol.endpoints.statsd.address }} \
+        --statsd={{ tigerbeetle_statsd_address }} \
         {{ tigerbeetle_data_file }}
       Restart=on-failure
       RestartSec=5
@@ -111,6 +111,6 @@
 
 - name: Wait for TigerBeetle to be ready
   ansible.builtin.wait_for:
-    port: "{{ topology_endpoints.tigerbeetle.endpoints.client.port }}"
-    host: "{{ topology_endpoints.tigerbeetle.host }}"
+    port: "{{ tigerbeetle_client_port }}"
+    host: "{{ tigerbeetle_host }}"
     timeout: 30

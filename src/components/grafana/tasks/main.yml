@@ -98,21 +98,21 @@
 - name: Ensure Grafana PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres
       trust_input: false
     community.postgresql.postgresql_owner:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
@@ -186,7 +186,7 @@
     that:
       - grafana_clickhouse_plugin_marker is succeeded
       - grafana_clickhouse_plugin_dir.stat.exists
-      - (grafana_clickhouse_plugin_marker.content | b64decode | trim) == topology_versions.production.grafanaClickhouseDatasource
+      - (grafana_clickhouse_plugin_marker.content | b64decode | trim) == grafana_clickhouse_datasource_version
     quiet: true
     fail_msg: >-
       Grafana ClickHouse datasource plugin is missing or stale. Run substrate_profile so Bazel unpacks server_tools.tar.zst.
@@ -303,8 +303,8 @@
 
 - name: Wait for Grafana HTTP listener
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.grafana.host }}"
-    port: "{{ topology_endpoints.grafana.endpoints.http.port }}"
+    host: "{{ grafana_host }}"
+    port: "{{ grafana_http_port }}"
     timeout: 30
 
 - name: Converge Grafana admin password

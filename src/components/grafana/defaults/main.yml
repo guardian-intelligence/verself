@@ -2,6 +2,13 @@
 # Grafana defaults.
 grafana_subdomain: dashboard
 grafana_domain: "{{ grafana_subdomain }}.{{ verself_domain }}"
+grafana_host: 127.0.0.1
+grafana_http_port: 4300
+grafana_http_address: "{{ grafana_host }}:{{ grafana_http_port }}"
+grafana_postgresql_address: "{{ postgresql_address }}"
+grafana_clickhouse_host: 127.0.0.1
+grafana_clickhouse_native_tls_port: 9440
+grafana_clickhouse_datasource_version: 4.14.1
 
 grafana_install_dir: /opt/verself/grafana
 grafana_config_dir: /etc/grafana

@@ -4,3 +4,6 @@ nats_data_dir: /var/lib/nats
 nats_jetstream_dir: /var/lib/nats/jetstream
 nats_spiffe_dir: /var/lib/nats/spiffe
 nats_helper_config_path: /etc/nats/nats-spiffe-helper.conf
+nats_host: 127.0.0.1
+nats_client_port: 4222
+nats_monitoring_port: 8222

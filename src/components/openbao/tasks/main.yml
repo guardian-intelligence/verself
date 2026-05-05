@@ -100,7 +100,7 @@
       {{
         not openbao_cert_check.stat.exists
         or (openbao_cert_san_raw.stdout | default(''))
-        is not search('IP Address:' ~ topology_wireguard.tunnels.ops.address)
+        is not search('IP Address:' ~ host_wireguard_tunnels.ops.address)
       }}
 
 - name: Remove OpenBao TLS cert with stale SANs to force regeneration
@@ -124,7 +124,7 @@
       -keyout {{ openbao_tls_dir }}/key.pem
       -out {{ openbao_tls_dir }}/cert.pem
       -subj "/CN=127.0.0.1"
-      -addext "subjectAltName=IP:127.0.0.1,IP:{{ topology_wireguard.tunnels.ops.address }},DNS:localhost"
+      -addext "subjectAltName=IP:127.0.0.1,IP:{{ host_wireguard_tunnels.ops.address }},DNS:localhost"
     creates: "{{ openbao_tls_dir }}/cert.pem"
   when: not openbao_cert_check.stat.exists or (openbao_cert_san_drift | bool)
   changed_when: true
@@ -184,9 +184,9 @@
       User=openbao
       Group=openbao
       BindReadOnlyPaths={{ openbao_hosts_file }}:/etc/hosts
-      Environment=BAO_ADDR=https://{{ topology_endpoints.openbao.endpoints.api.address }}
+      Environment=BAO_ADDR=https://{{ openbao_api_address }}
       Environment=BAO_CACERT={{ openbao_tls_dir }}/cert.pem
-      Environment=VAULT_ADDR=https://{{ topology_endpoints.openbao.endpoints.api.address }}
+      Environment=VAULT_ADDR=https://{{ openbao_api_address }}
       Environment=VAULT_CACERT={{ openbao_tls_dir }}/cert.pem
       ExecStart={{ verself_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
       ExecReload=/bin/kill -HUP $MAINPID
@@ -233,15 +233,15 @@
 
 - name: Wait for OpenBao listener
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.openbao.host }}"
-    port: "{{ topology_endpoints.openbao.endpoints.api.port }}"
+    host: "{{ openbao_host }}"
+    port: "{{ openbao_api_port }}"
     timeout: 45
 
 - name: Check OpenBao status
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/bao status -format=json"
   environment:
-    BAO_ADDR: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
+    BAO_ADDR: "https://{{ openbao_api_address }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_status_raw
   changed_when: false
@@ -263,7 +263,7 @@
       -key-threshold={{ openbao_key_threshold }}
       -format=json
   environment:
-    BAO_ADDR: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
+    BAO_ADDR: "https://{{ openbao_api_address }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_init_raw
   changed_when: true
@@ -334,7 +334,7 @@
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/bao status -format=json"
   environment:
-    BAO_ADDR: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
+    BAO_ADDR: "https://{{ openbao_api_address }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_status_after_init_raw
   changed_when: false
@@ -354,7 +354,7 @@
 
 - name: Submit OpenBao unseal keys
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/unseal"
+    url: "https://{{ openbao_api_address }}/v1/sys/unseal"
     method: POST
     body_format: json
     body:
@@ -376,7 +376,7 @@
 
 - name: List OpenBao auth mounts for SPIFFE JWT auth
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth"
+    url: "https://{{ openbao_api_address }}/v1/sys/auth"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -389,7 +389,7 @@
 
 - name: Enable OpenBao SPIFFE JWT auth mount
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth/{{ openbao_spiffe_jwt_mount }}"
+    url: "https://{{ openbao_api_address }}/v1/sys/auth/{{ openbao_spiffe_jwt_mount }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -405,7 +405,7 @@
 
 - name: Read OpenBao SPIFFE JWT auth config
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
+    url: "https://{{ openbao_api_address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -424,7 +424,7 @@
 
 - name: Configure OpenBao SPIFFE JWT auth JWKS validation
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
+    url: "https://{{ openbao_api_address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -446,7 +446,7 @@
 
 - name: Configure OpenBao audited request headers
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
+    url: "https://{{ openbao_api_address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -461,7 +461,7 @@
 
 - name: Probe OpenBao authenticated sys/mounts to exercise audit device
   ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts"
+    url: "https://{{ openbao_api_address }}/v1/sys/mounts"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"

@@ -1,3 +1,18 @@
 ---
 garage_capacity_bytes: 50000000000
 garage_zone_redundancy: 3
+garage_cluster:
+  host: 127.0.0.1
+  nodes:
+    - instance: 0
+      s3_port: 3900
+      rpc_port: 3901
+      admin_port: 3903
+    - instance: 1
+      s3_port: 3910
+      rpc_port: 3911
+      admin_port: 3913
+    - instance: 2
+      s3_port: 3920
+      rpc_port: 3921
+      admin_port: 3923

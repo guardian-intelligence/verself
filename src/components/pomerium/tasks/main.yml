@@ -35,14 +35,14 @@
   ansible.builtin.assert:
     that:
       - (pomerium_operator_allowed_domains | length) + (pomerium_operator_allowed_emails | length) > 0
-      - (topology_routes | selectattr('kind', 'equalto', 'operator_origin') | rejectattr('to.component', 'equalto', 'pomerium') | list | length) > 0
+      - pomerium_operator_http_routes | length > 0
       - pomerium_ssh_address | length > 0
       - pomerium_ssh_route_name | length > 0
       - pomerium_ssh_upstream | length > 0
       - pomerium_ssh_allowed_user | length > 0
     fail_msg: >-
       Pomerium operator access needs at least one allowed email domain or
-      explicit email, at least one topology operator_origin upstream, and an
+      explicit email, at least one operator HTTP upstream, and an
       SSH route definition.
 
 - name: Check Pomerium shared secret
@@ -251,21 +251,21 @@
 - name: Ensure Pomerium PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres
       trust_input: false
     community.postgresql.postgresql_owner:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
@@ -297,7 +297,7 @@
   ansible.builtin.copy:
     content: >-
       postgresql://{{ pomerium_db_user }}:{{ pomerium_db_password }}@{{
-      topology_endpoints.postgresql.endpoints.postgres.address }}/{{ pomerium_db_name }}?sslmode=disable
+      postgresql_address }}/{{ pomerium_db_name }}?sslmode=disable
     dest: "{{ pomerium_db_connection_string_path }}"
     owner: root
     group: pomerium
@@ -339,8 +339,8 @@
 
 - name: Wait for Pomerium HTTP listener
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.pomerium.host }}"
-    port: "{{ topology_endpoints.pomerium.endpoints.http.port }}"
+    host: "{{ pomerium_host }}"
+    port: "{{ pomerium_http_port }}"
     timeout: 30
 
 - name: Check Pomerium health

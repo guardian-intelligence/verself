@@ -336,8 +336,7 @@
 
 # --- Composable image seeding ---
 # vm-orchestrator-seed.service is a systemd oneshot that issues one
-# SeedImage RPC per entry in firecracker_seed_images (sourced from authored topology
-# config.firecracker.images). The daemon owns staging zvol creation,
+# SeedImage RPC per entry in firecracker_seed_images. The daemon owns staging zvol creation,
 # dd/mkfs, snapshot, dependent-clone teardown, and idempotency via
 # vs:source_digest user properties on the @ready snapshot. Ansible
 # carries no zfs(8)/dd/mkfs.ext4 invocations for these images.

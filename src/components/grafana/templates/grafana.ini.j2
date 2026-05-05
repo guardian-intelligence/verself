@@ -6,15 +6,15 @@ provisioning = {{ grafana_provisioning_dir }}
 
 [server]
 protocol = http
-http_addr = {{ topology_endpoints.grafana.host }}
-http_port = {{ topology_endpoints.grafana.endpoints.http.port }}
+http_addr = {{ grafana_host }}
+http_port = {{ grafana_http_port }}
 domain = {{ grafana_domain }}
 root_url = https://{{ grafana_domain }}/
 serve_from_sub_path = false
 
 [database]
 type = postgres
-host = {{ topology_endpoints.postgresql.endpoints.postgres.address }}
+host = {{ grafana_postgresql_address }}
 name = {{ grafana_db_name }}
 user = {{ grafana_db_user }}
 password = $__env{GF_DATABASE_PASSWORD}

@@ -24,21 +24,21 @@
 - name: Ensure zitadel PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres
       trust_input: false
     community.postgresql.postgresql_owner:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
@@ -172,8 +172,8 @@
 
 - name: Check if Zitadel database schema exists
   community.postgresql.postgresql_query:
-    login_host: "{{ topology_endpoints.postgresql.host }}"
-    login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+    login_host: "{{ postgresql_host }}"
+    login_port: "{{ postgresql_port }}"
     login_user: zitadel
     login_password: "{{ zitadel_db_password }}"
     login_db: zitadel
@@ -301,8 +301,8 @@
 
 - name: Wait for Zitadel to be ready
   ansible.builtin.wait_for:
-    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
-    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ zitadel_http_port }}"
+    host: "{{ zitadel_host }}"
     timeout: 60
 
 # --- Login V2 bootstrap ---
@@ -317,8 +317,8 @@
 
 - name: Check if Login V2 is currently required
   community.postgresql.postgresql_query:
-    login_host: "{{ topology_endpoints.postgresql.host }}"
-    login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+    login_host: "{{ postgresql_host }}"
+    login_port: "{{ postgresql_port }}"
     login_user: zitadel
     login_password: "{{ zitadel_db_password }}"
     login_db: zitadel
@@ -332,8 +332,8 @@
 
 - name: Disable Login V2 via event store (use embedded Login V1)
   community.postgresql.postgresql_query:
-    login_host: "{{ topology_endpoints.postgresql.host }}"
-    login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+    login_host: "{{ postgresql_host }}"
+    login_port: "{{ postgresql_port }}"
     login_user: zitadel
     login_password: "{{ zitadel_db_password }}"
     login_db: zitadel
@@ -371,8 +371,8 @@
 
 - name: Wait for Zitadel to be ready after Login V2 disable
   ansible.builtin.wait_for:
-    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
-    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ zitadel_http_port }}"
+    host: "{{ zitadel_host }}"
     timeout: 60
   when: >-
     (zitadel_login_v2_state.query_result | default([]))
@@ -381,7 +381,7 @@
 
 - name: Wait for Zitadel projections to rebuild
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/debug/healthz"
+    url: "http://{{ zitadel_http_address }}/debug/healthz"
     return_content: true
   register: zitadel_post_restart_health
   retries: 10
@@ -402,7 +402,7 @@
 
 - name: Check for existing SMTP provider
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/admin/v1/smtp"
+    url: "http://{{ zitadel_http_address }}/admin/v1/smtp"
     method: GET
     headers:
       Authorization: "Bearer {{ zitadel_admin_pat }}"
@@ -420,7 +420,7 @@
 
 - name: Create SMTP provider via Admin API
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/admin/v1/smtp"
+    url: "http://{{ zitadel_http_address }}/admin/v1/smtp"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_admin_pat }}"
@@ -446,7 +446,7 @@
 - name: Activate SMTP provider
   ansible.builtin.uri:
     url: >-
-      http://{{ topology_endpoints.zitadel.endpoints.http.address }}/admin/v1/smtp/{{ zitadel_smtp_created.json.id }}/_activate
+      http://{{ zitadel_http_address }}/admin/v1/smtp/{{ zitadel_smtp_created.json.id }}/_activate
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_admin_pat }}"

@@ -100,10 +100,22 @@ cloudflare_dns_records:
 # in Nomad job specs and service registration instead.
 postgresql_host: 127.0.0.1
 postgresql_port: 5432
+postgresql_address: "{{ postgresql_host }}:{{ postgresql_port }}"
 nomad_host: 127.0.0.1
 nomad_http_port: 4646
 nomad_http_address: "{{ nomad_host }}:{{ nomad_http_port }}"
-nomad_artifact_getter_environment_file: /etc/nomad/nomad-artifacts.env
+nomad_artifact_bucket: nomad-artifacts
+nomad_artifact_region: garage
+# Nomad's go-getter S3 transport requires AWS_* variable names even though
+# Garage is the backing S3-compatible store.
+nomad_artifact_getter_s3_environment_file: /etc/nomad/nomad-artifacts.env
+nomad_artifact_getter_s3_access_key_env_var: AWS_ACCESS_KEY_ID
+nomad_artifact_getter_s3_secret_key_env_var: AWS_SECRET_ACCESS_KEY
+nomad_artifact_publisher_s3_environment_file: /etc/garage/nomad-artifacts/publisher.env
+nomad_artifact_publisher_s3_access_key_env_var: VERSELF_NOMAD_ARTIFACTS_S3_ACCESS_KEY_ID
+nomad_artifact_publisher_s3_secret_key_env_var: VERSELF_NOMAD_ARTIFACTS_S3_SECRET_ACCESS_KEY
+nomad_artifact_origin_hostname: artifacts.internal.verself.sh
+nomad_artifact_origin_ca_bundle_path: /etc/verself/pki/nomad-artifacts-ca.pem
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
 firecracker_host_service_port: 18080
@@ -136,22 +148,6 @@ firecracker_seed_images:
     strategy: mkfs_ext4
     tier: platform_toolchain
     volblocksize: 16K
-
-garage_cluster:
-  host: 127.0.0.1
-  nodes:
-    - instance: 0
-      s3_port: 3900
-      rpc_port: 3901
-      admin_port: 3903
-    - instance: 1
-      s3_port: 3910
-      rpc_port: 3911
-      admin_port: 3913
-    - instance: 2
-      s3_port: 3920
-      rpc_port: 3921
-      admin_port: 3923
 
 spire_agent_id: spiffe://spiffe.verself.sh/node/single-node
 spire_agent_socket_path: /run/spire-agent/sockets/agent.sock

@@ -9,10 +9,10 @@
 
 - name: Assert SpiceDB version matches expected
   ansible.builtin.assert:
-    that: spicedb_version_output.stdout | trim == "spicedb v" ~ (topology_versions.production.spicedb | string)
+    that: spicedb_version_output.stdout | trim == "spicedb v" ~ (spicedb_version | string)
     fail_msg: >-
-      Expected SpiceDB {{ topology_versions.production.spicedb }}, got: {{ spicedb_version_output.stdout }}.
-      Update topology/catalog and the pinned server tool together.
+      Expected SpiceDB {{ spicedb_version }}, got: {{ spicedb_version_output.stdout }}.
+      Update the component defaults and pinned server tool together.
 
 - name: Capture zed version
   ansible.builtin.command:
@@ -24,10 +24,10 @@
 
 - name: Assert zed version matches expected
   ansible.builtin.assert:
-    that: "'client: zed v' ~ (topology_versions.production.zed | string) in spicedb_zed_version_output.stdout"
+    that: "'client: zed v' ~ (spicedb_zed_version | string) in spicedb_zed_version_output.stdout"
     fail_msg: >-
-      Expected zed {{ topology_versions.production.zed }}, got: {{ spicedb_zed_version_output.stdout }}.
-      Update topology/catalog and the pinned server tool together.
+      Expected zed {{ spicedb_zed_version }}, got: {{ spicedb_zed_version_output.stdout }}.
+      Update the component defaults and pinned server tool together.
 
 - name: Create SpiceDB system group
   ansible.builtin.group:

@@ -8,7 +8,7 @@
     argv:
       - "{{ verself_bin }}/stalwart-cli"
       - -u
-      - "http://{{ topology_endpoints.stalwart.endpoints.http.address }}"
+      - "http://{{ stalwart_http_address }}"
       - server
       - add-config
       - "{{ item.key }}"
@@ -26,7 +26,7 @@
     - key: metrics.open-telemetry.transport
       value: grpc
     - key: metrics.open-telemetry.endpoint
-      value: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
+      value: "http://{{ stalwart_otelcol_otlp_grpc_address }}"
     - key: metrics.open-telemetry.interval
       value: 30s
   environment:
@@ -39,7 +39,7 @@
     argv:
       - "{{ verself_bin }}/stalwart-cli"
       - -u
-      - "http://{{ topology_endpoints.stalwart.endpoints.http.address }}"
+      - "http://{{ stalwart_http_address }}"
       - server
       - reload-config
   environment:

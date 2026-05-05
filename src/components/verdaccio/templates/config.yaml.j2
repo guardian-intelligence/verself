@@ -27,7 +27,7 @@ packages:
     proxy: npmjs
 
 max_body_size: 100mb
-listen: {{ topology_endpoints.verdaccio.endpoints.http.listen_host }}:{{ topology_endpoints.verdaccio.endpoints.http.port }}
+listen: {{ verdaccio_listen_host }}:{{ verdaccio_http_port }}
 
 # Supply-chain gating via @verdaccio/package-filter (bundled with Verdaccio
 # >= 6.4.0). The plugin rewrites uplink manifests before they reach clients:

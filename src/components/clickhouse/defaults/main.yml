@@ -2,6 +2,9 @@
 # ClickHouse defaults.
 clickhouse_data_path: /var/lib/clickhouse
 clickhouse_force_schema_reset: false
+clickhouse_host: 127.0.0.1
+clickhouse_native_tls_port: 9440
+clickhouse_native_tls_address: "{{ clickhouse_host }}:{{ clickhouse_native_tls_port }}"
 clickhouse_system_user: clickhouse
 clickhouse_system_group: clickhouse
 clickhouse_server_spiffe_dir: /var/lib/clickhouse/spiffe

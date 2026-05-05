@@ -60,7 +60,7 @@
 
 - name: Point npm at local Verdaccio
   ansible.builtin.copy:
-    content: "registry=http://{{ topology_endpoints.verdaccio.endpoints.http.address }}\n"
+    content: "registry=http://{{ verdaccio_http_address }}\n"
     dest: "{{ verdaccio_nodejs_install_dir }}/etc/npmrc"
     mode: "0644"
 

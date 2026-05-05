@@ -3,3 +3,4 @@ nomad_user: root
 nomad_group: root
 nomad_config_dir: /etc/nomad
 nomad_data_dir: /var/lib/nomad
+nomad_expected_version: 1.11.3

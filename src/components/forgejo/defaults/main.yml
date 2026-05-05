@@ -6,6 +6,9 @@ forgejo_subdomain: git
 
 # Full domain: auto-derived as <subdomain>.<verself_domain>.
 forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
+forgejo_host: 127.0.0.1
+forgejo_http_port: 3000
+forgejo_http_address: "{{ forgejo_host }}:{{ forgejo_http_port }}"
 
 # Zitadel OIDC integration
 forgejo_auth_project_name: forgejo

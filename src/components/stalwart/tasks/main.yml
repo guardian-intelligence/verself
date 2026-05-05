@@ -190,14 +190,14 @@
 
 - name: Wait for stalwart HTTP to be ready
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.stalwart.host }}"
-    port: "{{ topology_endpoints.stalwart.endpoints.http.port }}"
+    host: "{{ stalwart_host }}"
+    port: "{{ stalwart_http_port }}"
     timeout: 120
 
 - name: Wait for stalwart SMTP to be ready
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.stalwart.host }}"
-    port: "{{ topology_endpoints.stalwart.endpoints.smtp.port }}"
+    host: "{{ stalwart_host }}"
+    port: "{{ stalwart_smtp_port }}"
     timeout: 120
 
 # --- Database settings (session, relay, metrics) ---
@@ -211,7 +211,7 @@
 
 - name: Check if domain exists in Stalwart
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal/{{ verself_domain }}"
+    url: "http://{{ stalwart_http_address }}/api/principal/{{ verself_domain }}"
     method: GET
     url_username: admin
     url_password: "{{ stalwart_admin_password }}"
@@ -223,7 +223,7 @@
 
 - name: Create domain in Stalwart
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal"
+    url: "http://{{ stalwart_http_address }}/api/principal"
     method: POST
     url_username: admin
     url_password: "{{ stalwart_admin_password }}"

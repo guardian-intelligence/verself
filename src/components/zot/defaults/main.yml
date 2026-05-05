@@ -4,7 +4,10 @@ zot_group: zot
 zot_config_dir: /etc/zot
 zot_config_path: "{{ zot_config_dir }}/config.json"
 zot_storage_dir: /var/lib/zot
-zot_endpoint: "{{ topology_endpoints.zot.endpoints.http }}"
+zot_endpoint:
+  host: 127.0.0.1
+  port: 5080
+  address: 127.0.0.1:5080
 zot_log_level: info
 zot_realm: verself-artifacts
 zot_htpasswd_path: "{{ zot_config_dir }}/htpasswd"

@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys otelcol-contrib, configures OTLP"
       - "receivers plus host and HAProxy scraping, and exports logs, traces,"
       - "and metrics into ClickHouse."
-      - "Service ports come from authored topology, not from this role."
+      - "Service ports are component defaults or Nomad service registrations."
     options:
       verself_bin:
         type: path

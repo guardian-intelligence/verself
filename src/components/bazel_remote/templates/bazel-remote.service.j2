@@ -15,8 +15,8 @@ ExecStart={{ verself_bin }}/bazel-remote \
     --dir {{ bazel_remote_state_dir }} \
     --max_size {{ bazel_remote_max_size_gib }} \
     --max_size_hard_limit {{ bazel_remote_max_size_hard_limit_gib }} \
-    --grpc_address 0.0.0.0:{{ topology_endpoints.bazel_remote.endpoints.grpc.port }} \
-    --http_address 0.0.0.0:{{ topology_endpoints.bazel_remote.endpoints.http.port }} \
+    --grpc_address 0.0.0.0:{{ bazel_remote_grpc_port }} \
+    --http_address 0.0.0.0:{{ bazel_remote_http_port }} \
     --enable_endpoint_metrics \
     --http_metrics_prefix
 Restart=on-failure

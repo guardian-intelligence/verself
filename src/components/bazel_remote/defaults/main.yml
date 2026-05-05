@@ -3,6 +3,9 @@ bazel_remote_state_dir: /var/lib/bazel-remote
 bazel_remote_config_dir: /etc/bazel-remote
 bazel_remote_user: bazel_remote
 bazel_remote_group: bazel_remote
+bazel_remote_host: 127.0.0.1
+bazel_remote_grpc_port: 9092
+bazel_remote_http_port: 8080
 # 100 GiB lets the cache absorb a few full clean builds with headroom; ZFS
 # compression (lz4 on vspool) further trims real disk use.
 bazel_remote_max_size_gib: 100

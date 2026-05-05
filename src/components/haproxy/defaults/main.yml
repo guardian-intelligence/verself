@@ -82,7 +82,8 @@ haproxy_cloudflare_trusted_proxies:
   - 2a06:98c0::/29
   - 2c0f:f248::/32
 
-haproxy_firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_service.host }}"
+haproxy_firecracker_host_service_ip: "{{ firecracker_host_service_ip }}"
+haproxy_metrics_address: 127.0.0.1:8404
 
 haproxy_h2c_components:
   - billing

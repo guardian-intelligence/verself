@@ -10,7 +10,7 @@ Type=notify
 User={{ nomad_user }}
 Group={{ nomad_group }}
 Environment=OTEL_SERVICE_NAME=nomad
-EnvironmentFile=-{{ nomad_artifact_getter_environment_file }}
+EnvironmentFile=-{{ nomad_artifact_getter_s3_environment_file }}
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStart={{ verself_bin }}/nomad agent -config={{ nomad_config_dir }}/nomad.hcl
 KillMode=process

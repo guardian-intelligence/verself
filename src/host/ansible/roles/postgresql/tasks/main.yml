@@ -13,7 +13,7 @@
     that: "'16.' in postgresql_version_output.stdout"
     fail_msg: >-
       Expected PostgreSQL 16.x, got: {{ postgresql_version_output.stdout }}.
-      Update topology/catalog/versions.cue or adjust the version assertion.
+      Update the host PostgreSQL role and pinned server tool together.
 
 # --- System user ---
 

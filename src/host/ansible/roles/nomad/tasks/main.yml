@@ -13,9 +13,9 @@
 
 - name: Assert Nomad version matches server-tools pin
   ansible.builtin.assert:
-    that: "'Nomad v' + topology_versions.production.nomad in nomad_version_output.stdout"
+    that: "'Nomad v' + nomad_expected_version in nomad_version_output.stdout"
     fail_msg: >-
-      Expected Nomad v{{ topology_versions.production.nomad }},
+      Expected Nomad v{{ nomad_expected_version }},
       got: {{ nomad_version_output.stdout_lines[0] }}
 
 - name: Create Nomad configuration directory

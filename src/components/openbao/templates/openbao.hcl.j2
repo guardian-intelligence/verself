@@ -1,7 +1,7 @@
 ui = false
 
-api_addr = "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
-cluster_addr = "https://{{ topology_endpoints.openbao.endpoints.cluster.address }}"
+api_addr = "https://{{ openbao_api_address }}"
+cluster_addr = "https://{{ openbao_cluster_address }}"
 
 storage "raft" {
   path = "{{ openbao_raft_dir }}"
@@ -9,14 +9,14 @@ storage "raft" {
 }
 
 listener "tcp" {
-  // bind_address reflects the topology endpoint's listen_host (0.0.0.0
-  // when the API is exposed to wg-ops, 127.0.0.1 otherwise). The
-  // companion nftables rule on verself_openbao restricts which iifname
+  // bind_address reflects the component API listener (0.0.0.0 when the API
+  // is exposed to wg-ops, 127.0.0.1 otherwise). The companion nftables rule
+  // on verself_openbao restricts which iifname
   // can reach the bound socket so substrate workloads continue to talk
   // to it loopback while operator laptops on wg-ops can run
   // `bao login -method=oidc` for SSH cert issuance.
-  address = "{{ topology_endpoints.openbao.endpoints.api.bind_address }}"
-  cluster_address = "{{ topology_endpoints.openbao.endpoints.cluster.bind_address }}"
+  address = "{{ openbao_api_bind_address }}"
+  cluster_address = "{{ openbao_cluster_bind_address }}"
   tls_cert_file = "{{ openbao_tls_dir }}/cert.pem"
   tls_key_file = "{{ openbao_tls_dir }}/key.pem"
   tls_min_version = "tls13"

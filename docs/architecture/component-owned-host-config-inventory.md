@@ -2,6 +2,8 @@
 
 - `src/host` is reserved for non-deployable bootstrap substrate: OS baseline, break-glass SSH, base nftables policy, ZFS/storage pools, WireGuard host networking, containerd, Nomad agent, SPIRE server/agent bootstrap, Firecracker host plumbing, and the minimum database/artifact transport needed to recover or first-start the box.
 
+- Beyond `src/host/sites/<environment>`, components do not know which environment they are in.
+
 - Normal CI deploys should not mutate `src/host` state. Host bootstrap is a manual operator action used for first boot, reprovisioning, or deliberate substrate maintenance.
 
 - Platform daemons live under `src/components/<name>`, even when they are foundational to the product. ClickHouse, Garage, OpenBao, Zitadel, Pomerium, Grafana, Otelcol, NATS, Forgejo, Verdaccio, Zot, Stalwart, TigerBeetle, Electric, HAProxy, SpiceDB, and Temporal are deployable platform components, not host bootstrap.
@@ -35,6 +37,10 @@
 - OpenBao is a platform component with a bootstrap edge. Manual host state should cover only the minimum root/unseal/recovery path; runtime secret seeding and workload policies are deployable component/integration units.
 
 - The centralized topology directory is gone. Former topology data is dissolved into site bootstrap config, component-local metadata, service-local metadata, frontend-local metadata, and integration units.
+
+- The retired deployment topology variable API includes `topology_endpoints`, `topology_routes`, `topology_clusters`, `topology_wireguard`, and `topology_artifacts`. New code must not recreate those names as compatibility shims.
+
+- Endpoint facts are represented in three places: host bootstrap listeners in `src/host/sites/<site>/vars.yml`, component-local listener defaults in `src/components/<name>/`, and dynamic workload endpoints in Nomad service registrations.
 
 - `components.yml` becomes component/service-local deployment metadata.
 

@@ -1,7 +1,7 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|buildifier|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|topology|buildifier|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: buildifier → supply-chain → ansible → conversions → vet → lint → test.
+fast-failure order: buildifier → topology → supply-chain → ansible → conversions → vet → lint → test.
 """
 
 load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "build_verself_deploy", "checked_spawn", "ws_path")
@@ -92,6 +92,18 @@ def _supply_chain(ctx):
         label = "verself-deploy supply-chain check",
     )
 
+def _legacy_topology_api(ctx):
+    return checked_spawn(
+        ctx,
+        "bash",
+        [
+            "-lc",
+            "if rg -n 'topology_(endpoints|routes|clusters|wireguard|artifacts)\\b' src .aspect AGENTS.md; then echo 'ERROR: legacy deployment topology variables remain' >&2; exit 1; fi",
+        ],
+        cwd = ws_path(ctx),
+        label = "legacy deployment topology variable check",
+    )
+
 _CHECKERS = {
     "go-test": _go_test,
     "go-vet": _go_vet,
@@ -99,11 +111,12 @@ _CHECKERS = {
     "conversions": _conversions,
     "ansible": _ansible_lint,
     "supply-chain": _supply_chain,
+    "topology": _legacy_topology_api,
     "buildifier": _buildifier,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "supply-chain", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "topology", "supply-chain", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -121,7 +134,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|buildifier|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|topology|buildifier|all).",
     args = {
         "kind": args.string(
             default = "all",

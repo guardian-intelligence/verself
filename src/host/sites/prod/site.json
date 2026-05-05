@@ -16,8 +16,8 @@
     "publisher_credentials": {
       "source": "controller_environment",
       "environment_file": "/etc/garage/nomad-artifacts/publisher.env",
-      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_AWS_ACCESS_KEY_ID",
-      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_AWS_SECRET_ACCESS_KEY"
+      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_S3_ACCESS_KEY_ID",
+      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_S3_SECRET_ACCESS_KEY"
     },
     "checksum_algorithm": "sha256",
     "public": false,

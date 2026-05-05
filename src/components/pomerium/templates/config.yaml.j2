@@ -41,11 +41,9 @@ databroker_storage_type: postgres
 databroker_storage_connection_string_file: "{{ pomerium_db_connection_string_path }}"
 
 routes:
-{% for route in topology_routes | selectattr('kind', 'equalto', 'operator_origin') | rejectattr('to.component', 'equalto', 'pomerium') %}
-{% set interface = topology_endpoints[route.to.component].interfaces[route.to.interface] %}
-{% set endpoint = topology_endpoints[route.to.component].endpoints[interface.endpoint] %}
-  - from: "https://{{ route_fqdn(route) }}"
-    to: "{{ endpoint.protocol }}://{{ endpoint.address }}"
+{% for route in pomerium_operator_http_routes %}
+  - from: "{{ route.from }}"
+    to: "{{ route.to }}"
     pass_identity_headers: true
     preserve_host_header: true
     policy:

@@ -19,8 +19,8 @@
 
 - name: "Create PostgreSQL role for {{ electric_service_name }}"
   community.postgresql.postgresql_user:
-    login_host: "{{ topology_endpoints.postgresql.host }}"
-    login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+    login_host: "{{ postgresql_host }}"
+    login_port: "{{ postgresql_port }}"
     login_user: postgres
     login_password: "{{ postgresql_admin_password }}"
     name: "{{ electric_pg_role }}"
@@ -32,7 +32,7 @@
 
 - name: "Stage transient pgpass for reconcile of {{ electric_service_name }}"
   ansible.builtin.copy:
-    content: "{{ topology_endpoints.postgresql.endpoints.postgres.address }}:{{ electric_db }}:postgres:{{ postgresql_admin_password }}\n"
+    content: "{{ postgresql_address }}:{{ electric_db }}:postgres:{{ postgresql_admin_password }}\n"
     dest: "{{ electric_transient_pgpass_file }}"
     owner: root
     group: root
@@ -47,8 +47,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ topology_endpoints.postgresql.host }}
-      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
+      -h {{ postgresql_host }}
+      -p {{ postgresql_port }}
       -U postgres
       -d {{ electric_db }}
       -v ON_ERROR_STOP=1
