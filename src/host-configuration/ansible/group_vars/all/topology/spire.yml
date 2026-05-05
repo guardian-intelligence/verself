@@ -12,33 +12,3 @@ spire_server_bind_port: 8081
 spire_server_socket_path: /run/spire-server/private/api.sock
 spire_trust_domain: spiffe.verself.sh
 spire_workload_group: spire_workload
-topology_spire:
-  edges:
-  - from: sandbox_rental
-    to:
-      component: billing
-      interface: internal_api
-  - from: sandbox_rental
-    to:
-      component: governance_service
-      interface: internal_api
-  - from: sandbox_rental
-    to:
-      component: secrets_service
-      interface: internal_api
-  - from: secrets_service
-    to:
-      component: openbao
-      interface: api
-  - from: source_code_hosting_service
-    to:
-      component: projects_service
-      interface: internal_api
-  - from: source_code_hosting_service
-    to:
-      component: iam_service
-      interface: internal_api
-  - from: object_storage_service
-    to:
-      component: garage
-      interface: s3

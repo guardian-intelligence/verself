@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/governance-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "governance_service",
+    entry_id = "verself-governance-service",
+    key = "governance_service.default",
+    path = "/svc/governance-service",
+    user = "governance_service",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

@@ -4,20 +4,7 @@
 topology_components:
 - kind: resource
   name: bazel_remote
-- identities:
-    operator:
-      entry_id: verself-clickhouse-operator
-      path: /svc/clickhouse-operator
-      restart_units:
-      - clickhouse-operator-spiffe-helper
-      user: clickhouse_operator
-    server:
-      entry_id: verself-clickhouse-server
-      path: /svc/clickhouse-server
-      restart_units:
-      - clickhouse-server-spiffe-helper
-      user: clickhouse
-  kind: resource
+- kind: resource
   name: clickhouse
 - kind: resource
   name: electric
@@ -41,27 +28,11 @@ topology_components:
   - name: garage
     table: verself_garage
     target: /etc/nftables.d/garage.nft
-- identities:
-    default:
-      entry_id: verself-grafana
-      path: /svc/grafana
-      restart_units:
-      - grafana-clickhouse-spiffe-helper
-      - grafana
-      user: grafana
-  kind: protocol_backend
+- kind: protocol_backend
   name: grafana
   postgres:
     database: grafana
-- identities:
-    default:
-      entry_id: verself-nats
-      path: /svc/nats
-      restart_units:
-      - nats-spiffe-helper
-      - nats
-      user: nats
-  kind: resource
+- kind: resource
   name: nats
   nftables_rulesets:
   - name: nats
@@ -79,15 +50,7 @@ topology_components:
   - name: openbao
     table: verself_openbao
     target: /etc/nftables.d/openbao.nft
-- identities:
-    default:
-      entry_id: verself-otelcol
-      path: /svc/otelcol
-      restart_units:
-      - otelcol-clickhouse-spiffe-helper
-      - otelcol
-      user: otelcol
-  kind: resource
+- kind: resource
   name: otelcol
 - kind: resource
   name: postgresql
@@ -115,12 +78,7 @@ topology_components:
     target: /etc/nftables.d/stalwart.nft
   postgres:
     database: stalwart
-- identities:
-    server:
-      entry_id: verself-temporal-server
-      path: /svc/temporal-server
-      user: temporal_server
-  kind: resource
+- kind: resource
   name: temporal
   deployment:
     supervisor: nomad
@@ -138,11 +96,6 @@ topology_components:
     database: zitadel
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-iam-service
-      path: /svc/iam-service
-      user: iam_service
   kind: service
   name: iam_service
   nftables_rulesets:
@@ -248,11 +201,6 @@ topology_components:
       user: iam_service
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-governance-service
-      path: /svc/governance-service
-      user: governance_service
   kind: service
   name: governance_service
   nftables_rulesets:
@@ -338,11 +286,6 @@ topology_components:
       user: governance_service
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-profile-service
-      path: /svc/profile-service
-      user: profile_service
   kind: service
   name: profile_service
   nftables_rulesets:
@@ -389,11 +332,6 @@ topology_components:
       user: profile_service
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-notifications-service
-      path: /svc/notifications-service
-      user: notifications_service
   kind: service
   name: notifications_service
   nftables_rulesets:
@@ -457,11 +395,6 @@ topology_components:
       user: notifications_service
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-projects-service
-      path: /svc/projects-service
-      user: projects_service
   kind: service
   name: projects_service
   nftables_rulesets:
@@ -507,11 +440,6 @@ topology_components:
       user: projects_service
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-secrets-service
-      path: /svc/secrets-service
-      user: secrets_service
   kind: service
   name: secrets_service
   nftables_rulesets:
@@ -559,21 +487,6 @@ topology_components:
       user: secrets_service
 - deployment:
     supervisor: nomad
-  identities:
-    admin:
-      entry_id: verself-object-storage-admin
-      path: /svc/object-storage-admin
-      uid_policy:
-        kind: fixed
-        value: 961
-      user: object_storage_admin
-    service:
-      entry_id: verself-object-storage-service
-      path: /svc/object-storage-service
-      uid_policy:
-        kind: fixed
-        value: 960
-      user: object_storage_service
   kind: service
   name: object_storage_service
   nftables_rulesets:
@@ -720,11 +633,6 @@ topology_components:
       user: object_storage_admin
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-source-code-hosting-service
-      path: /svc/source-code-hosting-service
-      user: source_code_hosting_service
   kind: service
   name: source_code_hosting_service
   nftables_rulesets:
@@ -794,11 +702,6 @@ topology_components:
       user: source_code_hosting_service
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-billing-service
-      path: /svc/billing-service
-      user: billing
   kind: service
   name: billing
   nftables_rulesets:
@@ -876,11 +779,6 @@ topology_components:
       user: billing
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-sandbox-rental-service
-      path: /svc/sandbox-rental-service
-      user: sandbox_rental
   kind: service
   name: sandbox_rental
   nftables_rulesets:
@@ -1005,11 +903,6 @@ topology_components:
       user: sandbox_rental
 - deployment:
     supervisor: nomad
-  identities:
-    default:
-      entry_id: verself-mailbox-service
-      path: /svc/mailbox-service
-      user: mailbox_service
   kind: service
   name: mailbox_service
   nftables_rulesets:

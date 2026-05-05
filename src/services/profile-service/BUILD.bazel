@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/profile-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "profile_service",
+    entry_id = "verself-profile-service",
+    key = "profile_service.default",
+    path = "/svc/profile-service",
+    user = "profile_service",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

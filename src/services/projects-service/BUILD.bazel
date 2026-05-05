@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/projects-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "projects_service",
+    entry_id = "verself-projects-service",
+    key = "projects_service.default",
+    path = "/svc/projects-service",
+    user = "projects_service",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

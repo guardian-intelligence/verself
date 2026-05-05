@@ -4,7 +4,7 @@
     name: "{{ item }}"
     system: true
     state: present
-  loop: "{{ topology_spire.identities | map(attribute='group') | unique | list }}"
+  loop: "{{ spire_registrations_identities | map(attribute='group') | unique | list }}"
 
 - name: Ensure SPIRE identity runtime users exist
   ansible.builtin.user:
@@ -18,7 +18,7 @@
     shell: /usr/sbin/nologin
     create_home: false
     state: present
-  loop: "{{ topology_spire.identities }}"
+  loop: "{{ spire_registrations_identities }}"
   loop_control:
     label: "{{ item.key }}"
 
@@ -30,7 +30,7 @@
       - "{{ item.user }}"
   register: spire_registrations_uids
   changed_when: false
-  loop: "{{ topology_spire.identities }}"
+  loop: "{{ spire_registrations_identities }}"
   loop_control:
     label: "{{ item.key }}"
 
@@ -49,7 +49,7 @@
   register: spire_registrations_entries
   failed_when: false
   changed_when: false
-  loop: "{{ topology_spire.identities }}"
+  loop: "{{ spire_registrations_identities }}"
   loop_control:
     label: "{{ item.entry_id }}"
 
@@ -75,7 +75,7 @@
         else {}
       }}
   changed_when: false
-  loop: "{{ topology_spire.identities }}"
+  loop: "{{ spire_registrations_identities }}"
   loop_control:
     label: "{{ item.entry_id }}"
     extended: true
@@ -101,7 +101,7 @@
   register: spire_registrations_create_results
   when: spire_registrations_existing[ansible_loop.index0] == {}
   changed_when: true
-  loop: "{{ topology_spire.identities }}"
+  loop: "{{ spire_registrations_identities }}"
   loop_control:
     label: "{{ item.entry_id }}"
     extended: true
@@ -144,7 +144,7 @@
         | length
       ) == 0
   changed_when: true
-  loop: "{{ topology_spire.identities }}"
+  loop: "{{ spire_registrations_identities }}"
   loop_control:
     label: "{{ item.entry_id }}"
     extended: true

@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/secrets-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "secrets_service",
+    entry_id = "verself-secrets-service",
+    key = "secrets_service.default",
+    path = "/svc/secrets-service",
+    user = "secrets_service",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

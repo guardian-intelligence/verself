@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/iam-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "iam_service",
+    entry_id = "verself-iam-service",
+    key = "iam_service.default",
+    path = "/svc/iam-service",
+    user = "iam_service",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

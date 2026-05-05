@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tools/internal/ansible"
+	"github.com/verself/deployment-tools/internal/bazelbuild"
 	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/runtime"
@@ -26,6 +27,7 @@ const (
 	hostConfigurationSitePlaybook = "playbooks/site.yml"
 	hostConfigurationPhase        = "host_configuration_site"
 	hostConfigurationComponent    = "host-configuration"
+	spireIdentityRegistryTarget   = "//src/host-configuration:spire_identity_registry"
 	canonicalDeployScope          = "affected"
 )
 
@@ -166,7 +168,7 @@ func runRun(args []string) int {
 		return 1
 	}
 
-	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, securityPatchRes, bootstrapHost)
+	exitCode := runDeployBody(ctx, rt, rt.DeployDB, *site, resolvedSha, canonicalDeployScope, rr, span, startedAt, snap, bootstrapHost)
 	span.SetAttributes(attribute.Int("verself.exit_code", exitCode))
 	if exitCode != 0 {
 		span.SetStatus(codes.Error, fmt.Sprintf("verself-deploy run exited %d", exitCode))
@@ -184,7 +186,6 @@ func runDeployBody(
 	span trace.Span,
 	startedAt time.Time,
 	snap identity.Snapshot,
-	securityPatchRes securityPatchResult,
 	bootstrapHost *hostConfigurationBootstrapResult,
 ) int {
 	// 1. Supply-chain policy gate. The gate is intentionally before host
@@ -197,63 +198,42 @@ func runDeployBody(
 		return 1
 	}
 
-	// 2. Host configuration convergence. Ansible owns ordering via play order
-	// and role order inside the canonical site playbook. The deploy controller
-	// skips this layer when the committed host inputs are unchanged since the
-	// previous successful deploy; out-of-band host mutation is handled by the
-	// explicit full host convergence path instead of every routine deploy.
+	// 2. Host configuration convergence. Bazel materializes generated inputs
+	// such as the SPIRE identity registry; Ansible applies the site playbook.
+	// Nomad-component digests remain owned by the Nomad path below.
 	components := []string{securityPatchComponent, supplyChainComponent}
-	deployUnitLabels, deployUnitDescriptorPaths, err := buildDeployUnitDescriptors(ctx, repoRoot)
-	if err != nil {
-		msg := fmt.Sprintf("deploy unit discovery failed: %v", err)
-		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
-		return 1
-	}
-	span.SetAttributes(
-		attribute.String("verself.deploy_units_query", deployUnitsQuery),
-		attribute.Int("verself.deploy_unit_count", len(deployUnitLabels)),
-	)
-	deployUnits, err := loadDeployUnitDescriptors(deployUnitDescriptorPaths)
-	if err != nil {
-		msg := fmt.Sprintf("deploy unit descriptor load failed: %v", err)
-		fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
-		return 1
-	}
-	var hostRan bool
 	if bootstrapHost != nil {
-		if err := recordBootstrappedHostConfigurationUnit(ctx, rt, site, repoRoot, deployUnits, bootstrapHost); err != nil {
-			msg := fmt.Sprintf("host configuration bootstrap evidence failed: %v", err)
-			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
-			return 1
-		}
-		hostRan = true
-	} else {
-		hostRan, err = convergeHostConfigurationUnit(ctx, rt, span, site, repoRoot, deployUnits)
-		if err != nil {
-			msg := fmt.Sprintf("host configuration failed: %v", err)
-			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
-			return 1
-		}
-	}
-	if hostRan {
 		components = append(components, hostConfigurationComponent)
-	}
-	if err := recordSecurityPatchDeployUnit(ctx, rt, site, repoRoot, deployUnits, securityPatchRes); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: security patch deploy unit evidence insert failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
-		return 1
+	} else {
+		spireRegistryPath, err := buildSpireIdentityRegistry(ctx, repoRoot)
+		if err != nil {
+			msg := fmt.Sprintf("SPIRE identity registry build failed: %v", err)
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
+			return 1
+		}
+		span.SetAttributes(attribute.String("spire.identity_registry.path", spireRegistryPath))
+		hostStarted := time.Now()
+		hostRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{"-e", "spire_registrations_file=" + spireRegistryPath})
+		if err != nil || hostRes == nil || hostRes.ExitCode != 0 {
+			msg := fmt.Sprintf("host configuration failed: %v", err)
+			if err == nil {
+				msg = ansibleFailureMessage(hostConfigurationSitePlaybook, hostRes, nil)
+			}
+			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+			return 1
+		}
+		components = append(components, hostConfigurationComponent)
+		span.SetAttributes(
+			attribute.Int("ansible.task_count", hostRes.TaskCount),
+			attribute.Int("ansible.changed_total", hostRes.ChangedCount),
+			attribute.Int("ansible.failed_count", hostRes.FailedCount),
+			attribute.Int64("ansible.duration_ms", time.Since(hostStarted).Milliseconds()),
+		)
 	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
-		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
-		return 1
-	}
-	if err := recordSupplyChainDeployUnit(ctx, rt, site, repoRoot); err != nil {
-		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain deploy unit evidence insert failed: %v\n", err)
 		writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, err.Error())
 		return 1
 	}
@@ -288,6 +268,21 @@ func runDeployBody(
 		return 1
 	}
 	return 0
+}
+
+func buildSpireIdentityRegistry(ctx context.Context, repoRoot string) (string, error) {
+	build, err := bazelbuild.Build(ctx, repoRoot, []string{spireIdentityRegistryTarget}, "--config=remote-writer")
+	if err != nil {
+		return "", err
+	}
+	outputs, err := build.Stream.ResolveOutputs(spireIdentityRegistryTarget, repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s output: %w", spireIdentityRegistryTarget, err)
+	}
+	if len(outputs) != 1 {
+		return "", fmt.Errorf("%s must produce exactly one output, got %d: %v", spireIdentityRegistryTarget, len(outputs), outputs)
+	}
+	return outputs[0], nil
 }
 
 type hostConfigurationBootstrapResult struct {
@@ -329,8 +324,14 @@ func runHostConfigurationBootstrap(ctx context.Context, site, repoRoot string) (
 	)
 	defer span.End()
 
+	spireRegistryPath, err := buildSpireIdentityRegistry(ctx, repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	span.SetAttributes(attribute.String("spire.identity_registry.path", spireRegistryPath))
+
 	startedAt := time.Now()
-	res, runErr := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, nil)
+	res, runErr := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{"-e", "spire_registrations_file=" + spireRegistryPath})
 	endedAt := time.Now()
 	result := &hostConfigurationBootstrapResult{
 		StartedAt: startedAt,

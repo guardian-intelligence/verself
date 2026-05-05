@@ -20,9 +20,8 @@ import (
 // tunnel verself-deploy uses for its own spans.
 //
 // This is the generic verb for "run something controller-side and
-// keep its OTel traces on the same path." Subcommand-specific OTel
-// wiring (ansible run, Nomad release submission) goes through runtime.Init
-// directly.
+// keep its OTel traces on the same path." Deploy-owned subprocesses use
+// runtime.Init directly.
 //
 // Usage:
 //

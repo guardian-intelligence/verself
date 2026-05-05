@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/sandbox-rental-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "sandbox_rental",
+    entry_id = "verself-sandbox-rental-service",
+    key = "sandbox_rental.default",
+    path = "/svc/sandbox-rental-service",
+    user = "sandbox_rental",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

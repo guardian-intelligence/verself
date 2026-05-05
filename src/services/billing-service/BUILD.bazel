@@ -1,6 +1,17 @@
 # gazelle:prefix github.com/verself/billing-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "billing",
+    entry_id = "verself-billing-service",
+    key = "billing.default",
+    path = "/svc/billing-service",
+    user = "billing",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

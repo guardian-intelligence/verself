@@ -4,6 +4,34 @@
     path: "{{ spire_server_socket_path }}"
     timeout: 30
 
+- name: Load component-owned SPIRE identity registry
+  ansible.builtin.set_fact:
+    spire_registrations_registry: "{{ lookup('ansible.builtin.file', spire_registrations_file) | from_json }}"
+
+- name: Assert SPIRE identity registry schema
+  ansible.builtin.assert:
+    that:
+      - spire_registrations_registry.schema_version == 1
+      - spire_registrations_registry.identities is iterable
+    fail_msg: "SPIRE identity registry must be a schema_version=1 descriptor"
+
+- name: Initialize SPIRE registration identity list
+  ansible.builtin.set_fact:
+    spire_registrations_identities: []
+
+- name: Bind SPIRE registration identities to the site trust domain
+  ansible.builtin.set_fact:
+    spire_registrations_identities: >-
+      {{ spire_registrations_identities + [
+        spire_identity | combine({
+          'spiffe_id': 'spiffe://' ~ spire_trust_domain ~ spire_identity.path,
+        })
+      ] }}
+  loop: "{{ spire_registrations_registry.identities }}"
+  loop_control:
+    loop_var: spire_identity
+    label: "{{ spire_identity.key }}"
+
 - name: Probe SPIRE registration convergence once
   ansible.builtin.script: >-
     {{ role_path }}/files/spire_registration_convergence.py
@@ -12,7 +40,7 @@
     --parent-id {{ spire_agent_id }}
     --workload-group {{ spire_workload_group }}
   environment:
-    SPIRE_REGISTRATIONS_DESIRED: "{{ topology_spire.identities | to_json }}"
+    SPIRE_REGISTRATIONS_DESIRED: "{{ spire_registrations_identities | to_json }}"
   register: spire_registrations_convergence_raw
   changed_when: false
 

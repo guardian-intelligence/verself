@@ -1,6 +1,31 @@
 # gazelle:prefix github.com/verself/object-storage-service
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity_service",
+    component = "object_storage_service",
+    entry_id = "verself-object-storage-service",
+    key = "object_storage_service.service",
+    path = "/svc/object-storage-service",
+    uid_policy_kind = "fixed",
+    uid_policy_value = 960,
+    user = "object_storage_service",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
+
+spire_identity(
+    name = "spiffe_identity_admin",
+    component = "object_storage_service",
+    entry_id = "verself-object-storage-admin",
+    key = "object_storage_service.admin",
+    path = "/svc/object-storage-admin",
+    uid_policy_kind = "fixed",
+    uid_policy_value = 961,
+    user = "object_storage_admin",
+    visibility = ["//src/host-configuration:__pkg__"],
+)
 
 nomad_component(
     name = "nomad_component",

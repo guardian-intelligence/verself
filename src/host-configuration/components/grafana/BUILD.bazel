@@ -1,0 +1,15 @@
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "grafana",
+    entry_id = "verself-grafana",
+    key = "grafana.default",
+    path = "/svc/grafana",
+    restart_units = [
+        "grafana-clickhouse-spiffe-helper",
+        "grafana",
+    ],
+    user = "grafana",
+    visibility = ["//src/host-configuration:__pkg__"],
+)

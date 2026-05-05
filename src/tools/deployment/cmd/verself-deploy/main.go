@@ -7,7 +7,6 @@
 // here are implementation seams for typed AXL tasks and evidence assertions:
 //
 //	verself-deploy nomad submit     --spec=<path> [--nomad-addr=<url>] [--site=<site>]
-//	verself-deploy ansible run      --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
 //	verself-deploy supply-chain check --repo-root=<path>
 //	verself-deploy supply-chain assert-evidence --run-key=<deploy-run-key> [--site=<site>]
 //
@@ -39,8 +38,6 @@ func main() {
 		os.Exit(runRun(os.Args[2:]))
 	case "nomad":
 		os.Exit(runNomad(os.Args[2:]))
-	case "ansible":
-		os.Exit(runAnsible(os.Args[2:]))
 	case "artifacts":
 		os.Exit(runArtifacts(os.Args[2:]))
 	case "supply-chain":
@@ -63,7 +60,6 @@ func usage() {
 usage:
 	  verself-deploy run                  --site=<site> [--sha=<rev>]
 	  verself-deploy nomad submit         --spec=<path> [--nomad-addr=<url>] [--site=<site>] [--timeout=5m]
-	  verself-deploy ansible run          --site=<site> [--phase=<phase>] --playbook=<path> --inventory=<dir>
   verself-deploy artifacts assert-evidence --run-key=<deploy-run-key> [--site=<site>]
   verself-deploy supply-chain check   [--repo-root=<path>] [--policy=<path>]
   verself-deploy supply-chain record  --site=<site> [--repo-root=<path>]
