@@ -189,28 +189,6 @@ wireguard_host_tunnel_groups:
   workers:
     - worker
 
-# Components absent from this allowlist are excluded from site-level convergence
-# and, after component-role rollout, from Nomad registration for this site.
-enabled_components:
-  - bazel_remote
-  - clickhouse
-  - electric
-  - forgejo
-  - garage
-  - grafana
-  - haproxy
-  - nats
-  - openbao
-  - otelcol
-  - pomerium
-  - spicedb
-  - stalwart
-  - temporal-platform
-  - tigerbeetle
-  - verdaccio
-  - zitadel
-  - zot
-
 platform_org_id: "370200542594579812"
 platform_company_slug: guardian-intelligence
 platform_company_display_name: Guardian Intelligence
