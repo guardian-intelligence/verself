@@ -16,9 +16,15 @@ import (
 )
 
 const (
-	aptGetUpdateCommand  = "apt-get update"
-	aptGetInstallCommand = "apt-get install"
-	substrateSizeMiB     = 2048
+	substrateSizeMiB = 2048
+	aptAcquireConfig = `Acquire::http::Timeout "5";
+Acquire::https::Timeout "5";
+Acquire::ftp::Timeout "5";
+Acquire::Retries "1";
+Acquire::ForceIPv4 "true";
+Acquire::Queue-Mode "access";
+DPkg::Lock::Timeout "60";
+`
 )
 
 var substratePackages = []string{
@@ -145,15 +151,18 @@ func run() error {
 	if err := writeFile(filepath.Join(rootfs, "usr/sbin/policy-rc.d"), "#!/bin/sh\nexit 101\n", 0o755); err != nil {
 		return err
 	}
+	if err := configureChrootApt(rootfs); err != nil {
+		return err
+	}
 	if err := mounts.mountChroot(rootfs); err != nil {
 		return err
 	}
 
 	fmt.Println("-> installing minimal Ubuntu userspace")
-	if err := runChroot(rootfs, strings.Fields(aptGetUpdateCommand)...); err != nil {
+	if err := runChroot(rootfs, aptGet("update")...); err != nil {
 		return err
 	}
-	installArgs := append(strings.Fields(aptGetInstallCommand), "-y", "--no-install-recommends")
+	installArgs := aptGet("install", "-y", "--no-install-recommends")
 	installArgs = append(installArgs, substratePackages...)
 	if err := runChroot(rootfs, installArgs...); err != nil {
 		return err
@@ -191,7 +200,7 @@ func run() error {
 	if err := runChroot(rootfs, "git", "config", "--system", "--add", "safe.directory", "*"); err != nil {
 		return err
 	}
-	if err := runChroot(rootfs, "apt-get", "clean"); err != nil {
+	if err := runChroot(rootfs, aptGet("clean")...); err != nil {
 		return err
 	}
 	if err := removeContents(filepath.Join(rootfs, "var/lib/apt/lists")); err != nil {
@@ -368,6 +377,51 @@ func validateKernelConfig(path string) error {
 		}
 	}
 	return nil
+}
+
+func configureChrootApt(rootfs string) error {
+	if err := writeFile(filepath.Join(rootfs, "etc/apt/apt.conf.d/90verself-acquire-timeouts"), aptAcquireConfig, 0o644); err != nil {
+		return err
+	}
+	replacer := strings.NewReplacer(
+		"http://archive.ubuntu.com/ubuntu", "https://archive.ubuntu.com/ubuntu",
+		"http://security.ubuntu.com/ubuntu", "https://security.ubuntu.com/ubuntu",
+	)
+	for _, rel := range []string{
+		"etc/apt/sources.list",
+		"etc/apt/sources.list.d/ubuntu.sources",
+	} {
+		path := filepath.Join(rootfs, rel)
+		raw, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		updated := replacer.Replace(string(raw))
+		if updated == string(raw) {
+			continue
+		}
+		if err := writeFile(path, updated, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func aptGet(args ...string) []string {
+	base := []string{
+		"apt-get",
+		"-o", "Acquire::http::Timeout=5",
+		"-o", "Acquire::https::Timeout=5",
+		"-o", "Acquire::ftp::Timeout=5",
+		"-o", "Acquire::Retries=1",
+		"-o", "Acquire::ForceIPv4=true",
+		"-o", "Acquire::Queue-Mode=access",
+		"-o", "DPkg::Lock::Timeout=60",
+	}
+	return append(base, args...)
 }
 
 type mountStack []string
