@@ -17,7 +17,6 @@
         | selectattr('deployment.supervisor', 'equalto', 'nomad')
         | selectattr('workload', 'defined')
         | selectattr('workload.units', 'defined')
-        | sort(attribute='workload.order')
         | list
       }}
 
