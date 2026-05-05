@@ -38,14 +38,32 @@
     - name: Run apt security patch check when cache is stale
       when: security_patch_check_due | bool
       block:
+        - name: Configure bounded apt network operations
+          ansible.builtin.copy:
+            dest: /etc/apt/apt.conf.d/90verself-acquire-timeouts
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              Acquire::http::Timeout "5";
+              Acquire::https::Timeout "5";
+              Acquire::ftp::Timeout "5";
+              Acquire::Retries "1";
+              DPkg::Lock::Timeout "60";
+
         - name: Update apt cache
           ansible.builtin.apt:
             update_cache: true
             cache_valid_time: 3600
+            force_apt_get: true
+            update_cache_retries: 2
+            update_cache_retry_max_delay: 5
 
         - name: Upgrade security packages
           ansible.builtin.apt:
             upgrade: safe
+            force_apt_get: true
+            lock_timeout: 60
             policy_rc_d: 101
 
         - name: Check whether package upgrades require reboot
