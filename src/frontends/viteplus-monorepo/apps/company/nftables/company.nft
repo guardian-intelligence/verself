@@ -1,5 +1,5 @@
-# Authored substrate host file.
-# Source: src/host-configuration/ansible/host-files
+# Service-owned substrate file.
+# Source: component substrate descriptor
 # nftables ruleset company.
 table inet verself_company
 delete table inet verself_company

@@ -17,9 +17,13 @@
     mode: "0644"
   notify: reload nftables
 
-- name: Collect rendered nftables rulesets
+- name: Load service-owned component substrate registry for nftables
   ansible.builtin.set_fact:
-    nftables_rendered_rulesets: >-
+    nftables_component_substrate_registry: "{{ lookup('ansible.builtin.file', component_substrate_registry_file) | from_json }}"
+
+- name: Collect platform nftables source files
+  ansible.builtin.set_fact:
+    nftables_platform_ruleset_paths: >-
       {{
         lookup('ansible.builtin.fileglob', platform_host_files_dir + '/etc/nftables.d/*.nft', wantlist=True)
         | reject('search', '/firecracker\\.nft$')
@@ -27,17 +31,86 @@
         | list
       }}
 
+- name: Initialize nftables desired rulesets
+  ansible.builtin.set_fact:
+    nftables_rendered_rulesets: []
+
+- name: Add platform-owned nftables rulesets
+  ansible.builtin.set_fact:
+    nftables_rendered_rulesets: >-
+      {{
+        nftables_rendered_rulesets + [{
+          'basename': item | basename,
+          'dest': '/etc/nftables.d/' ~ (item | basename),
+          'source': item,
+        }]
+      }}
+  loop: "{{ nftables_platform_ruleset_paths }}"
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Collect service-owned nftables ruleset records
+  ansible.builtin.set_fact:
+    nftables_service_rulesets: >-
+      {{
+        nftables_component_substrate_registry.components
+        | selectattr('nftables_rulesets', 'defined')
+        | map(attribute='nftables_rulesets')
+        | flatten
+        | list
+      }}
+
+- name: Assert service-owned nftables rulesets declare source and target
+  ansible.builtin.assert:
+    that:
+      - item.source is defined
+      - item.source | default('') | length > 0
+      - item.target is defined
+      - (item.target | default('')) is match('^/etc/nftables\\.d/[^/]+\\.nft$')
+    fail_msg: "component nftables rulesets must declare workspace-relative source and /etc/nftables.d target"
+  loop: "{{ nftables_service_rulesets }}"
+  loop_control:
+    label: "{{ item.name | default(item.target | default('unknown')) }}"
+
+- name: Add service-owned nftables rulesets
+  ansible.builtin.set_fact:
+    nftables_rendered_rulesets: >-
+      {{
+        nftables_rendered_rulesets + [{
+          'basename': item.target | basename,
+          'dest': item.target,
+          'source': verself_repo_root ~ '/' ~ item.source,
+        }]
+      }}
+  loop: "{{ nftables_service_rulesets }}"
+  loop_control:
+    label: "{{ item.target | basename }}"
+
+- name: Assert nftables ruleset filenames are unique
+  ansible.builtin.assert:
+    that:
+      - (nftables_rendered_rulesets | map(attribute='basename') | list | unique | length) == (nftables_rendered_rulesets | length)
+    fail_msg: "nftables ruleset filenames must be unique across platform and service-owned inputs"
+
+- name: Set nftables desired ruleset names
+  ansible.builtin.set_fact:
+    nftables_rendered_ruleset_names: "{{ nftables_rendered_rulesets | map(attribute='basename') | list }}"
+
+- name: Initialize nftables derived inventories
+  ansible.builtin.set_fact:
+    nftables_rendered_ruleset_checksums: {}
+    nftables_required_users: []
+
 - name: Build rendered nftables ruleset checksum inventory
   ansible.builtin.set_fact:
     nftables_rendered_ruleset_checksums: >-
       {{
         (nftables_rendered_ruleset_checksums | default({}))
-        | combine({(item | basename): ((lookup('ansible.builtin.file', item, rstrip=False) | hash('sha1')) ~ ':0644')})
+        | combine({item.basename: ((lookup('ansible.builtin.file', item.source, rstrip=False) | hash('sha1')) ~ ':0644')})
       }}
   loop: "{{ nftables_rendered_rulesets }}"
   loop_control:
-    label: "{{ item | basename }}"
-  when: (item | basename) != "firecracker.nft"
+    label: "{{ item.basename }}"
 
 - name: Extract symbolic nftables skuid users
   ansible.builtin.set_fact:
@@ -46,7 +119,7 @@
         (
           nftables_required_users | default([])
           + (
-            lookup('ansible.builtin.file', item, rstrip=False)
+            lookup('ansible.builtin.file', item.source, rstrip=False)
             | regex_findall('meta\s+skuid\s+(?:!=\s*)?([A-Za-z_][A-Za-z0-9_-]*)')
           )
         )
@@ -55,7 +128,7 @@
       }}
   loop: "{{ nftables_rendered_rulesets }}"
   loop_control:
-    label: "{{ item | basename }}"
+    label: "{{ item.basename }}"
 
 - name: Ensure nftables skuid groups exist before ruleset validation
   ansible.builtin.group:
@@ -114,20 +187,19 @@
   loop: "{{ nftables_deployed_rulesets.files }}"
   loop_control:
     label: "{{ item.path | basename }}"
-  when: (item.path | basename) not in (nftables_rendered_rulesets | map('basename') | list)
+  when: (item.path | basename) not in nftables_rendered_ruleset_names
   notify: reload nftables
 
 - name: Deploy rendered nftables rulesets
   ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: "/etc/nftables.d/{{ item | basename }}"
+    src: "{{ item.source }}"
+    dest: "{{ item.dest }}"
     mode: "0644"
   loop: "{{ nftables_rendered_rulesets }}"
   loop_control:
-    label: "{{ item | basename }}"
+    label: "{{ item.basename }}"
   when:
-    - (item | basename) != "firecracker.nft"
-    - nftables_deployed_ruleset_checksums.get(item | basename, '') != nftables_rendered_ruleset_checksums[item | basename]
+    - nftables_deployed_ruleset_checksums.get(item.basename, '') != nftables_rendered_ruleset_checksums[item.basename]
   notify: reload nftables
 
 - name: Enable and start nftables service

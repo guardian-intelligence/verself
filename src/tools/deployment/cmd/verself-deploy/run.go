@@ -219,6 +219,7 @@ func runDeployBody(
 		)
 		hostStarted := time.Now()
 		hostRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{
+			"-e", "verself_repo_root=" + repoRoot,
 			"-e", "spire_registrations_file=" + hostInputs.SpireIdentityRegistry,
 			"-e", "component_substrate_registry_file=" + hostInputs.ComponentSubstrateRegistry,
 		})
@@ -301,13 +302,27 @@ func buildHostGeneratedInputs(ctx context.Context, repoRoot string) (hostGenerat
 	if err != nil {
 		return hostGeneratedInputs{}, fmt.Errorf("resolve %s output: %w", componentSubstrateRegistryTarget, err)
 	}
-	if len(componentOutputs) != 1 {
-		return hostGeneratedInputs{}, fmt.Errorf("%s must produce exactly one output, got %d: %v", componentSubstrateRegistryTarget, len(componentOutputs), componentOutputs)
+	componentRegistry, err := selectBazelOutput(componentSubstrateRegistryTarget, componentOutputs, ".component_substrate_registry.json")
+	if err != nil {
+		return hostGeneratedInputs{}, err
 	}
 	return hostGeneratedInputs{
-		ComponentSubstrateRegistry: componentOutputs[0],
+		ComponentSubstrateRegistry: componentRegistry,
 		SpireIdentityRegistry:      spireOutputs[0],
 	}, nil
+}
+
+func selectBazelOutput(label string, outputs []string, suffix string) (string, error) {
+	matches := make([]string, 0, 1)
+	for _, output := range outputs {
+		if strings.HasSuffix(output, suffix) {
+			matches = append(matches, output)
+		}
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("%s must produce exactly one %s output, got %d from %d outputs: %v", label, suffix, len(matches), len(outputs), outputs)
+	}
+	return matches[0], nil
 }
 
 type hostConfigurationBootstrapResult struct {
@@ -360,6 +375,7 @@ func runHostConfigurationBootstrap(ctx context.Context, site, repoRoot string) (
 
 	startedAt := time.Now()
 	res, runErr := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{
+		"-e", "verself_repo_root=" + repoRoot,
 		"-e", "spire_registrations_file=" + hostInputs.SpireIdentityRegistry,
 		"-e", "component_substrate_registry_file=" + hostInputs.ComponentSubstrateRegistry,
 	})

@@ -25,7 +25,7 @@
   when: not (component_filesystem_convergence.converged | default(false) | bool)
 
 - name: Run pre-credential component substrate bootstrap hooks
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/bootstrap/{{ component_bootstrap_hook.name }}.yml"
+  ansible.builtin.include_tasks: "{{ verself_repo_root }}/{{ component_bootstrap_hook.source }}"
   loop: "{{ component.workload.bootstrap | default([]) }}"
   loop_control:
     loop_var: component_bootstrap_hook
@@ -60,7 +60,7 @@
     - component_zitadel_admin_pat is defined
 
 - name: Run component substrate bootstrap hooks
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/bootstrap/{{ component_bootstrap_hook.name }}.yml"
+  ansible.builtin.include_tasks: "{{ verself_repo_root }}/{{ component_bootstrap_hook.source }}"
   loop: "{{ component.workload.bootstrap | default([]) }}"
   loop_control:
     loop_var: component_bootstrap_hook

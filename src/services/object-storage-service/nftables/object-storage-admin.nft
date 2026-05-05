@@ -1,5 +1,5 @@
-# Authored substrate host file.
-# Source: src/host-configuration/ansible/host-files
+# Service-owned substrate file.
+# Source: component substrate descriptor
 # nftables ruleset object_storage_admin.
 table inet verself_object_storage_admin
 delete table inet verself_object_storage_admin
