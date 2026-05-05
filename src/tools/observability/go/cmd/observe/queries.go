@@ -772,31 +772,75 @@ LIMIT {row_limit:UInt32}`
 
 const deployTasksSQL = `
 SELECT
-  formatDateTime(Timestamp, '%H:%i:%S') AS time,
-  extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
-  SpanAttributes['ansible.task.name'] AS task,
-  StatusCode AS status,
-  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
-  TraceId AS trace_id
-FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName = 'ansible'
-  AND SpanName = 'ansible.task'
-ORDER BY Timestamp DESC
+  formatDateTime(event_at, '%Y-%m-%d %H:%i:%S') AS time,
+  deploy_run_key,
+  site,
+  event_kind,
+  sha,
+  duration_ms,
+  left(error_message, 160) AS error
+FROM verself.deploy_events
+WHERE event_at > now() - toIntervalMinute({minutes:UInt32})
+ORDER BY event_at DESC
 LIMIT {row_limit:UInt32}`
 
 const deployRunSQL = `
 SELECT
-  Timestamp,
-  extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
-  SpanAttributes['ansible.task.name'] AS task,
-  StatusCode AS status,
-  TraceId AS trace_id
-FROM default.otel_traces
-WHERE ServiceName = 'ansible'
-  AND SpanName = 'ansible.task'
-  AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
-ORDER BY Timestamp
+  formatDateTime(event_at, '%H:%i:%S') AS time,
+  source,
+  item,
+  event_kind,
+  no_op,
+  status,
+  duration_ms,
+  trace_id,
+  span_id,
+  left(error_message, 160) AS error
+FROM
+(
+  SELECT
+    event_at,
+    'deploy' AS source,
+    site AS item,
+    event_kind,
+    '' AS no_op,
+    sha AS status,
+    duration_ms,
+    '' AS trace_id,
+    '' AS span_id,
+    error_message
+  FROM verself.deploy_events
+  WHERE deploy_run_key = {run_key:String}
+  UNION ALL
+  SELECT
+    event_at,
+    executor AS source,
+    unit_id AS item,
+    event_kind,
+    if(no_op = 1, 'true', 'false') AS no_op,
+    payload_kind AS status,
+    duration_ms,
+    trace_id,
+    span_id,
+    error_message
+  FROM verself.deploy_unit_events
+  WHERE deploy_run_key = {run_key:String}
+  UNION ALL
+  SELECT
+    event_at,
+    'nomad_job' AS source,
+    job_id AS item,
+    event_kind,
+    if(no_op = 1, 'true', 'false') AS no_op,
+    terminal_status AS status,
+    duration_ms,
+    trace_id,
+    span_id,
+    error_message
+  FROM verself.nomad_job_events
+  WHERE deploy_run_key = {run_key:String}
+)
+ORDER BY event_at, source, item
 LIMIT {row_limit:UInt32}`
 
 // deployBazelCacheSQL totals bazel-remote hit and miss counts in the lookback

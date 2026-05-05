@@ -510,7 +510,7 @@ var queryDocs = []queryDoc{
 		ID:      "deploy.tasks",
 		Family:  "deploy",
 		Title:   "Deploy Tasks",
-		Purpose: "Explicit recent Ansible task spans or all tasks for one deploy_run_key.",
+		Purpose: "Recent deploy run start/success/failure rows, or the full deploy/unit/Nomad evidence timeline for one deploy_run_key.",
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--minutes=<lookback>",
