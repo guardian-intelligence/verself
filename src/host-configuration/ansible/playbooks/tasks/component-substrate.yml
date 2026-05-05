@@ -12,8 +12,10 @@
     application_components: >-
       {{
         topology_components
+        | selectattr('deployment', 'defined')
         | selectattr('deployment.supervisor', 'equalto', 'nomad')
-        | selectattr('workload.units')
+        | selectattr('workload', 'defined')
+        | selectattr('workload.units', 'defined')
         | sort(attribute='workload.order')
         | list
       }}
