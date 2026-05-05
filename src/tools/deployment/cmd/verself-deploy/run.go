@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/verself/deployment-tools/internal/ansible"
 	"github.com/verself/deployment-tools/internal/bazelbuild"
 	"github.com/verself/deployment-tools/internal/deploydb"
+	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/runtime"
 	"github.com/verself/deployment-tools/internal/supplychain"
@@ -27,6 +30,7 @@ const (
 	hostConfigurationSitePlaybook    = "playbooks/site.yml"
 	hostConfigurationPhase           = "host_configuration_site"
 	hostConfigurationComponent       = "host"
+	hostConfigurationUnitTarget      = "//src/host:host_convergence_unit"
 	spireIdentityRegistryTarget      = "//src/host:spire_identity_registry"
 	componentSubstrateRegistryTarget = "//src/host:component_substrate_registry"
 	canonicalDeployScope             = "affected"
@@ -206,39 +210,72 @@ func runDeployBody(
 	if bootstrapHost != nil {
 		components = append(components, hostConfigurationComponent)
 	} else {
-		hostInputs, err := buildHostGeneratedInputs(ctx, repoRoot)
+		hostInputs, err := buildHostDeployInputs(ctx, repoRoot)
 		if err != nil {
 			msg := fmt.Sprintf("host generated input build failed: %v", err)
 			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
 			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
 			return 1
 		}
-		span.SetAttributes(
-			attribute.String("component.substrate_registry.path", hostInputs.ComponentSubstrateRegistry),
-			attribute.String("spire.identity_registry.path", hostInputs.SpireIdentityRegistry),
-		)
-		hostStarted := time.Now()
-		hostRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{
-			"-e", "verself_repo_root=" + repoRoot,
-			"-e", "spire_registrations_file=" + hostInputs.SpireIdentityRegistry,
-			"-e", "component_substrate_registry_file=" + hostInputs.ComponentSubstrateRegistry,
-		})
-		if err != nil || hostRes == nil || hostRes.ExitCode != 0 {
-			msg := fmt.Sprintf("host configuration failed: %v", err)
-			if err == nil {
-				msg = ansibleFailureMessage(hostConfigurationSitePlaybook, hostRes, nil)
-			}
+		noop, err := decideDeployUnit(ctx, db, site, snap.RunKey(), &hostInputs.Unit)
+		if err != nil {
+			msg := fmt.Sprintf("host deploy unit decision failed: %v", err)
 			fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
-			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+			writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
 			return 1
 		}
-		components = append(components, hostConfigurationComponent)
 		span.SetAttributes(
-			attribute.Int("ansible.task_count", hostRes.TaskCount),
-			attribute.Int("ansible.changed_total", hostRes.ChangedCount),
-			attribute.Int("ansible.failed_count", hostRes.FailedCount),
-			attribute.Int64("ansible.duration_ms", time.Since(hostStarted).Milliseconds()),
+			attribute.String("component.substrate_registry.path", hostInputs.ComponentSubstrateRegistry),
+			attribute.Bool("host_configuration.noop", noop),
+			attribute.String("host_configuration.desired_digest", hostInputs.Unit.DesiredDigest),
+			attribute.String("spire.identity_registry.path", hostInputs.SpireIdentityRegistry),
 		)
+		if noop {
+			if err := recordDeployUnitSkipped(ctx, db, site, snap.RunKey(), hostInputs.Unit); err != nil {
+				msg := fmt.Sprintf("host deploy unit skip evidence failed: %v", err)
+				fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+				writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
+				return 1
+			}
+			components = append(components, hostConfigurationComponent)
+		} else {
+			hostStarted := time.Now()
+			if err := recordDeployUnitApplied(ctx, db, site, snap.RunKey(), hostInputs.Unit); err != nil {
+				msg := fmt.Sprintf("host deploy unit apply evidence failed: %v", err)
+				fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+				writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, components, msg)
+				return 1
+			}
+			hostRes, err := runHostConfigurationSitePlaybook(ctx, rt, site, repoRoot, []string{
+				"-e", "verself_repo_root=" + repoRoot,
+				"-e", "spire_registrations_file=" + hostInputs.SpireIdentityRegistry,
+				"-e", "component_substrate_registry_file=" + hostInputs.ComponentSubstrateRegistry,
+			})
+			duration := time.Since(hostStarted)
+			if err != nil || hostRes == nil || hostRes.ExitCode != 0 {
+				msg := fmt.Sprintf("host configuration failed: %v", err)
+				if err == nil {
+					msg = ansibleFailureMessage(hostConfigurationSitePlaybook, hostRes, nil)
+				}
+				_ = recordDeployUnitFailed(ctx, db, site, snap.RunKey(), hostInputs.Unit, duration, msg)
+				fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+				writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+				return 1
+			}
+			if err := recordDeployUnitSucceeded(ctx, db, site, snap.RunKey(), hostInputs.Unit, false, duration); err != nil {
+				msg := fmt.Sprintf("host deploy unit success evidence failed: %v", err)
+				fmt.Fprintf(os.Stderr, "verself-deploy run: %s\n", msg)
+				writeFailedDeployEvent(ctx, db, site, sha, scope, snap, startedAt, append(components, hostConfigurationComponent), msg)
+				return 1
+			}
+			components = append(components, hostConfigurationComponent)
+			span.SetAttributes(
+				attribute.Int("ansible.task_count", hostRes.TaskCount),
+				attribute.Int("ansible.changed_total", hostRes.ChangedCount),
+				attribute.Int("ansible.failed_count", hostRes.FailedCount),
+				attribute.Int64("ansible.duration_ms", duration.Milliseconds()),
+			)
+		}
 	}
 	if err := recordSupplyChainEvaluation(ctx, rt, site, snap.RunKey(), supplyChainEval); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: supply-chain evidence insert failed: %v\n", err)
@@ -281,10 +318,34 @@ func runDeployBody(
 type hostGeneratedInputs struct {
 	ComponentSubstrateRegistry string
 	SpireIdentityRegistry      string
+	Unit                       deployUnitDecisionInput
 }
 
-func buildHostGeneratedInputs(ctx context.Context, repoRoot string) (hostGeneratedInputs, error) {
+type deployUnitDecisionInput struct {
+	Executor       string
+	UnitID         string
+	PayloadKind    string
+	DesiredDigest  string
+	ObservedDigest string
+	Requires       []string
+}
+
+type deployUnitDescriptor struct {
+	Executor    string      `json:"executor"`
+	PayloadKind string      `json:"payload_kind"`
+	Requires    []string    `json:"requires"`
+	Sources     []sourceRow `json:"sources"`
+	UnitID      string      `json:"unit_id"`
+}
+
+type sourceRow struct {
+	Path      string `json:"path"`
+	ShortPath string `json:"short_path"`
+}
+
+func buildHostDeployInputs(ctx context.Context, repoRoot string) (hostGeneratedInputs, error) {
 	build, err := bazelbuild.Build(ctx, repoRoot, []string{
+		hostConfigurationUnitTarget,
 		componentSubstrateRegistryTarget,
 		spireIdentityRegistryTarget,
 	}, "--config=remote-writer")
@@ -306,9 +367,22 @@ func buildHostGeneratedInputs(ctx context.Context, repoRoot string) (hostGenerat
 	if err != nil {
 		return hostGeneratedInputs{}, err
 	}
+	unitOutputs, err := build.Stream.ResolveOutputs(hostConfigurationUnitTarget, repoRoot)
+	if err != nil {
+		return hostGeneratedInputs{}, fmt.Errorf("resolve %s output: %w", hostConfigurationUnitTarget, err)
+	}
+	unitDescriptor, err := selectBazelOutput(hostConfigurationUnitTarget, unitOutputs, ".deploy_unit.json")
+	if err != nil {
+		return hostGeneratedInputs{}, err
+	}
+	unit, err := loadDeployUnitDecisionInput(unitDescriptor)
+	if err != nil {
+		return hostGeneratedInputs{}, err
+	}
 	return hostGeneratedInputs{
 		ComponentSubstrateRegistry: componentRegistry,
 		SpireIdentityRegistry:      spireOutputs[0],
+		Unit:                       unit,
 	}, nil
 }
 
@@ -364,7 +438,7 @@ func runHostConfigurationBootstrap(ctx context.Context, site, repoRoot string) (
 	)
 	defer span.End()
 
-	hostInputs, err := buildHostGeneratedInputs(ctx, repoRoot)
+	hostInputs, err := buildHostDeployInputs(ctx, repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -398,6 +472,150 @@ func runHostConfigurationBootstrap(ctx context.Context, site, repoRoot string) (
 	)
 	span.SetStatus(codes.Ok, "")
 	return result, nil
+}
+
+func loadDeployUnitDecisionInput(path string) (deployUnitDecisionInput, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return deployUnitDecisionInput{}, fmt.Errorf("read deploy unit descriptor %s: %w", path, err)
+	}
+	var desc deployUnitDescriptor
+	if err := json.Unmarshal(body, &desc); err != nil {
+		return deployUnitDecisionInput{}, fmt.Errorf("parse deploy unit descriptor %s: %w", path, err)
+	}
+	if desc.Executor == "" || desc.UnitID == "" || desc.PayloadKind == "" {
+		return deployUnitDecisionInput{}, fmt.Errorf("%s: deploy unit descriptor requires executor, unit_id, payload_kind", path)
+	}
+	digest, err := digestDeployUnitSources(desc.Sources)
+	if err != nil {
+		return deployUnitDecisionInput{}, fmt.Errorf("%s: digest sources: %w", path, err)
+	}
+	return deployUnitDecisionInput{
+		Executor:      desc.Executor,
+		UnitID:        desc.UnitID,
+		PayloadKind:   desc.PayloadKind,
+		DesiredDigest: digest,
+		Requires:      append([]string(nil), desc.Requires...),
+	}, nil
+}
+
+func digestDeployUnitSources(sources []sourceRow) (string, error) {
+	if len(sources) == 0 {
+		return "", fmt.Errorf("deploy unit descriptor has no sources")
+	}
+	rows := append([]sourceRow(nil), sources...)
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].ShortPath < rows[j].ShortPath
+	})
+	digestInput := make([]byte, 0)
+	for _, row := range rows {
+		if row.Path == "" || row.ShortPath == "" {
+			return "", fmt.Errorf("source row must include path and short_path")
+		}
+		body, err := os.ReadFile(row.Path)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", row.Path, err)
+		}
+		digestInput = append(digestInput, row.ShortPath...)
+		digestInput = append(digestInput, 0)
+		digestInput = append(digestInput, body...)
+		digestInput = append(digestInput, 0)
+	}
+	return deploymodel.SHA256(digestInput), nil
+}
+
+func decideDeployUnit(ctx context.Context, db *deploydb.Client, site, runKey string, unit *deployUnitDecisionInput) (bool, error) {
+	last, ok, err := db.LastSucceededDeployUnit(ctx, site, unit.Executor, unit.UnitID)
+	if err != nil {
+		return false, err
+	}
+	observed := ""
+	if ok {
+		observed = last.DesiredDigest
+	}
+	unit.ObservedDigest = observed
+	noop := ok && observed == unit.DesiredDigest
+	if err := db.RecordDeployUnitEvent(ctx, deploydb.DeployUnitEvent{
+		RunKey:          runKey,
+		Site:            site,
+		Executor:        unit.Executor,
+		UnitID:          unit.UnitID,
+		Kind:            deploydb.DeployUnitEventDecided,
+		DesiredDigest:   unit.DesiredDigest,
+		ObservedDigest:  observed,
+		NoOp:            noop,
+		DependencyUnits: unit.Requires,
+		PayloadKind:     unit.PayloadKind,
+	}); err != nil {
+		return false, err
+	}
+	return noop, nil
+}
+
+func recordDeployUnitSkipped(ctx context.Context, db *deploydb.Client, site, runKey string, unit deployUnitDecisionInput) error {
+	if err := db.RecordDeployUnitEvent(ctx, deploydb.DeployUnitEvent{
+		RunKey:          runKey,
+		Site:            site,
+		Executor:        unit.Executor,
+		UnitID:          unit.UnitID,
+		Kind:            deploydb.DeployUnitEventSkipped,
+		DesiredDigest:   unit.DesiredDigest,
+		ObservedDigest:  unit.DesiredDigest,
+		NoOp:            true,
+		DependencyUnits: unit.Requires,
+		PayloadKind:     unit.PayloadKind,
+	}); err != nil {
+		return err
+	}
+	return recordDeployUnitSucceeded(ctx, db, site, runKey, unit, true, 0)
+}
+
+func recordDeployUnitApplied(ctx context.Context, db *deploydb.Client, site, runKey string, unit deployUnitDecisionInput) error {
+	return db.RecordDeployUnitEvent(ctx, deploydb.DeployUnitEvent{
+		RunKey:          runKey,
+		Site:            site,
+		Executor:        unit.Executor,
+		UnitID:          unit.UnitID,
+		Kind:            deploydb.DeployUnitEventApplied,
+		DesiredDigest:   unit.DesiredDigest,
+		ObservedDigest:  unit.ObservedDigest,
+		NoOp:            false,
+		DependencyUnits: unit.Requires,
+		PayloadKind:     unit.PayloadKind,
+	})
+}
+
+func recordDeployUnitSucceeded(ctx context.Context, db *deploydb.Client, site, runKey string, unit deployUnitDecisionInput, noop bool, duration time.Duration) error {
+	return db.RecordDeployUnitEvent(ctx, deploydb.DeployUnitEvent{
+		RunKey:          runKey,
+		Site:            site,
+		Executor:        unit.Executor,
+		UnitID:          unit.UnitID,
+		Kind:            deploydb.DeployUnitEventSucceeded,
+		DesiredDigest:   unit.DesiredDigest,
+		ObservedDigest:  unit.DesiredDigest,
+		NoOp:            noop,
+		DependencyUnits: unit.Requires,
+		PayloadKind:     unit.PayloadKind,
+		DurationMs:      durationMillis(duration, "deploy unit duration"),
+	})
+}
+
+func recordDeployUnitFailed(ctx context.Context, db *deploydb.Client, site, runKey string, unit deployUnitDecisionInput, duration time.Duration, message string) error {
+	return db.RecordDeployUnitEvent(ctx, deploydb.DeployUnitEvent{
+		RunKey:          runKey,
+		Site:            site,
+		Executor:        unit.Executor,
+		UnitID:          unit.UnitID,
+		Kind:            deploydb.DeployUnitEventFailed,
+		DesiredDigest:   unit.DesiredDigest,
+		ObservedDigest:  unit.ObservedDigest,
+		NoOp:            false,
+		DependencyUnits: unit.Requires,
+		PayloadKind:     unit.PayloadKind,
+		DurationMs:      durationMillis(duration, "deploy unit duration"),
+		ErrorMessage:    truncateError(message),
+	})
 }
 
 func runHostConfigurationSitePlaybook(ctx context.Context, rt *runtime.Runtime, site, repoRoot string, extraArgs []string) (*ansible.Result, error) {

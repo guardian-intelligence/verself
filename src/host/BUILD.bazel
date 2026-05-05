@@ -53,11 +53,20 @@ filegroup(
     name = "converge_sources",
     srcs = [
         ":component_substrate_registry",
+        ":site_sources",
         ":spire_identity_registry",
         ":substrate_sources",
         "//src/host/binaries:server_tools_archive",
         "//src/host/binaries:substrate_go_tools",
     ],
+)
+
+filegroup(
+    name = "site_sources",
+    srcs = glob(
+        ["sites/**"],
+        allow_empty = False,
+    ),
 )
 
 filegroup(
