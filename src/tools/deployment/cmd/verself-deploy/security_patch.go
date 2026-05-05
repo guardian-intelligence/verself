@@ -21,6 +21,7 @@ const (
 	securityPatchPlaybook  = "playbooks/security-patch.yml"
 	securityPatchPhase     = "security_patch"
 	securityPatchComponent = "security-patch"
+	securityPatchSSHPort   = 2222
 )
 
 type securityPatchResult struct {
@@ -47,12 +48,13 @@ func runSecurityPatchPlaybook(ctx context.Context, site, repoRoot, runKey string
 		return nil, fmt.Errorf("inventory missing at %s: %w", inventoryPath, err)
 	}
 	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
-	// Security patching may reboot the target, which invalidates deploy runtime SSH and ClickHouse forwards.
+	// Security patching may reboot the target, so it uses the direct bootstrap
+	// SSH listener instead of the Pomerium-owned port 22 path.
 	return ansible.Run(ctx, nil, ansible.Options{
 		Playbook:      securityPatchPlaybook,
 		Inventory:     inventoryPath,
 		AnsibleDir:    ansibleDir,
-		ExtraArgs:     []string{"-e", "verself_site=" + site},
+		ExtraArgs:     []string{"-e", "verself_site=" + site, "-e", fmt.Sprintf("ansible_port=%d", securityPatchSSHPort)},
 		Site:          site,
 		Phase:         securityPatchPhase,
 		RunKey:        runKey,
