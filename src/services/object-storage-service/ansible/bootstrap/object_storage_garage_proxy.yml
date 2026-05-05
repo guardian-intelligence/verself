@@ -4,24 +4,25 @@
     component_object_storage_garage_s3_urls: "{{ component_object_storage_garage_s3_endpoints }}"
     component_object_storage_garage_admin_urls: "{{ component_object_storage_garage_admin_endpoints }}"
   vars:
+    object_storage_garage_host: 127.0.0.1
+    object_storage_garage_s3_ports: [3900, 3910, 3920]
+    object_storage_garage_admin_ports: [3903, 3913, 3923]
     component_object_storage_garage_s3_endpoints: >-
       {{
-        'http://' ~ garage_cluster.host ~ ':'
+        'http://' ~ object_storage_garage_host ~ ':'
         ~ (
-          garage_cluster.nodes
-          | map(attribute='s3_port')
+          object_storage_garage_s3_ports
           | map('string')
-          | join(',http://' ~ garage_cluster.host ~ ':')
+          | join(',http://' ~ object_storage_garage_host ~ ':')
         )
       }}
     component_object_storage_garage_admin_endpoints: >-
       {{
-        'http://' ~ garage_cluster.host ~ ':'
+        'http://' ~ object_storage_garage_host ~ ':'
         ~ (
-          garage_cluster.nodes
-          | map(attribute='admin_port')
+          object_storage_garage_admin_ports
           | map('string')
-          | join(',http://' ~ garage_cluster.host ~ ':')
+          | join(',http://' ~ object_storage_garage_host ~ ':')
         )
       }}
 
@@ -42,7 +43,7 @@
 
 - name: Create object-storage-service Garage proxy key
   ansible.builtin.uri:
-    url: "http://{{ garage_cluster.host }}:{{ garage_cluster.nodes[0].admin_port }}/v2/CreateKey"
+    url: "http://127.0.0.1:3903/v2/CreateKey"
     method: POST
     headers:
       Authorization: "Bearer {{ object_storage_service_garage_admin_token_raw.content | b64decode | trim }}"
