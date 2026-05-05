@@ -28,11 +28,12 @@ import (
 )
 
 const (
-	platformActor                   = "system:platform-seed"
-	platformManifestVersion         = "verself.platform.v1"
-	platformDefaultForgejoRemote    = "127.0.0.1:3000"
-	platformDefaultForgejoTokenPath = "/etc/credstore/forgejo/automation-token"
-	platformDefaultBranch           = "main"
+	platformActor                                  = "system:platform-seed"
+	platformManifestVersion                        = "verself.platform.v1"
+	platformDefaultForgejoRemote                   = "127.0.0.1:3000"
+	platformDefaultForgejoTokenPath                = "/etc/credstore/forgejo/automation-token"
+	platformDefaultSandboxForgejoWebhookSecretPath = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
+	platformDefaultBranch                          = "main"
 )
 
 var platformSlugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$`)
@@ -45,6 +46,7 @@ type platformOptions struct {
 	pgUser             string
 	pgRemotePort       int
 	forgejoTokenPath   string
+	forgejoWebhookPath string
 	forgejoRemoteAddr  string
 	forgejoRepoPrivate bool
 }
@@ -73,6 +75,7 @@ type platformConfig struct {
 	RepoDescription    string `json:"repo_description"`
 	ForgejoDomain      string `json:"forgejo_domain"`
 	CanonicalGitURL    string `json:"canonical_git_url"`
+	ForgejoWebhookURL  string `json:"forgejo_webhook_url"`
 }
 
 type platformReport struct {
@@ -144,6 +147,12 @@ type platformForgejoRepo struct {
 	Private       bool   `json:"private"`
 }
 
+type platformForgejoHook struct {
+	ID     int64             `json:"id"`
+	Active bool              `json:"active"`
+	Config map[string]string `json:"config"`
+}
+
 type forgejoStatusError struct {
 	Method string
 	Path   string
@@ -161,6 +170,7 @@ func cmdPlatform(args []string) error {
 		action:             "check",
 		format:             "text",
 		forgejoTokenPath:   platformDefaultForgejoTokenPath,
+		forgejoWebhookPath: platformDefaultSandboxForgejoWebhookSecretPath,
 		forgejoRemoteAddr:  platformDefaultForgejoRemote,
 		forgejoRepoPrivate: true,
 	}
@@ -173,6 +183,7 @@ func cmdPlatform(args []string) error {
 	fs.StringVar(&opts.pgUser, "pg-user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.pgRemotePort, "pg-remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port on the worker loopback")
 	fs.StringVar(&opts.forgejoTokenPath, "forgejo-token-path", opts.forgejoTokenPath, "Remote Forgejo automation token path")
+	fs.StringVar(&opts.forgejoWebhookPath, "forgejo-webhook-secret-path", opts.forgejoWebhookPath, "Remote sandbox-rental Forgejo webhook secret path")
 	fs.StringVar(&opts.forgejoRemoteAddr, "forgejo-remote-addr", opts.forgejoRemoteAddr, "Remote Forgejo HTTP address reached over SSH")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -223,6 +234,9 @@ func (opts *platformOptions) validate() error {
 	if strings.TrimSpace(opts.forgejoTokenPath) == "" {
 		return fmt.Errorf("platform: --forgejo-token-path is required")
 	}
+	if strings.TrimSpace(opts.forgejoWebhookPath) == "" {
+		return fmt.Errorf("platform: --forgejo-webhook-secret-path is required")
+	}
 	if strings.TrimSpace(opts.forgejoRemoteAddr) == "" {
 		return fmt.Errorf("platform: --forgejo-remote-addr is required")
 	}
@@ -243,6 +257,7 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 		RepoDisplayName:    strings.TrimSpace(mainVars.PlatformRepoDisplayName),
 		RepoDescription:    strings.TrimSpace(mainVars.PlatformRepoDescription),
 		ForgejoDomain:      resolveForgejoDomain(mainVars),
+		ForgejoWebhookURL:  resolveForgejoWebhookURL(mainVars),
 	}
 	if err := cfg.validate(); err != nil {
 		return platformConfig{}, err
@@ -277,6 +292,9 @@ func (cfg *platformConfig) validate() error {
 	if cfg.ForgejoDomain == "" || strings.Contains(cfg.ForgejoDomain, "{{") {
 		return fmt.Errorf("platform config: forgejo_domain or forgejo_subdomain + verself_domain is required")
 	}
+	if cfg.ForgejoWebhookURL == "" || strings.Contains(cfg.ForgejoWebhookURL, "{{") {
+		return fmt.Errorf("platform config: verself_domain is required for the sandbox Forgejo webhook URL")
+	}
 	return nil
 }
 
@@ -293,6 +311,14 @@ func resolveForgejoDomain(ops platformMainVars) string {
 	return subdomain + "." + verselfDomain
 }
 
+func resolveForgejoWebhookURL(ops platformMainVars) string {
+	verselfDomain := strings.TrimSpace(ops.VerselfDomain)
+	if verselfDomain == "" {
+		return ""
+	}
+	return "https://sandbox.api." + verselfDomain + "/webhooks/forgejo/actions"
+}
+
 func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIdentityOrganization(); err != nil {
 		return platformReport{}, err
@@ -305,6 +331,12 @@ func (r *platformRunner) seed() (platformReport, error) {
 		return platformReport{}, err
 	}
 	if err := r.ensureSourceRepository(strconv.FormatInt(forgejoRepo.ID, 10)); err != nil {
+		return platformReport{}, err
+	}
+	if err := r.ensureSandboxRunnerRepository(forgejoRepo.ID); err != nil {
+		return platformReport{}, err
+	}
+	if err := r.ensureForgejoActionsWebhook(); err != nil {
 		return platformReport{}, err
 	}
 	report, err := r.check()
@@ -330,6 +362,7 @@ func (r *platformRunner) check() (platformReport, error) {
 	report.ForgejoRepoID = forgejoRepoID
 	report.BoundaryResults = append(report.BoundaryResults, forgejoRow)
 	report.BoundaryResults = append(report.BoundaryResults, r.checkSourceRepository(forgejoRepoID, &issues))
+	report.BoundaryResults = append(report.BoundaryResults, r.checkSandboxRunnerRepository(forgejoRepoID, &issues))
 	if len(issues) > 0 {
 		sort.Strings(issues)
 		return report, platformIssueError{issues: issues}
@@ -809,6 +842,97 @@ WHERE backend_id = $1 AND repo_id = $2`,
 	return nil
 }
 
+func (r *platformRunner) ensureSandboxRunnerRepository(forgejoRepoID int64) error {
+	if forgejoRepoID <= 0 {
+		return fmt.Errorf("sandbox runner repository: forgejo repo id is required")
+	}
+	return r.withSpan("platform.sandbox_runner.ensure", []attribute.KeyValue{
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.name", "sandbox_rental"),
+		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.Int64("forgejo.repository_id", forgejoRepoID),
+	}, func(ctx context.Context) error {
+		conn, err := r.openPG(ctx, "sandbox_rental")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close(context.Background()) }()
+		ids := r.ids()
+		now := time.Now().UTC()
+		tag, err := conn.Exec(ctx, `
+INSERT INTO runner_provider_repositories (
+    provider, provider_repository_id, org_id, project_id, source_repository_id,
+    provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
+)
+VALUES ('forgejo', $1, $2, $3, $4, $5, $6, $7, true, $8, $8)
+ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
+    org_id = EXCLUDED.org_id,
+    project_id = EXCLUDED.project_id,
+    source_repository_id = EXCLUDED.source_repository_id,
+    provider_owner = EXCLUDED.provider_owner,
+    provider_repo = EXCLUDED.provider_repo,
+    repository_full_name = EXCLUDED.repository_full_name,
+    active = true,
+    updated_at = EXCLUDED.updated_at`,
+			forgejoRepoID,
+			r.cfg.OrgIDPG,
+			ids.ProjectID,
+			ids.RepoID,
+			r.cfg.CompanySlug,
+			r.cfg.RepoSlug,
+			r.cfg.CompanySlug+"/"+r.cfg.RepoSlug,
+			now,
+		)
+		if err != nil {
+			return fmt.Errorf("sandbox runner repository: upsert: %w", err)
+		}
+		if tag.RowsAffected() > 0 {
+			r.markChanged("sandbox.runner_repository.upserted")
+		}
+		return nil
+	})
+}
+
+func (r *platformRunner) ensureForgejoActionsWebhook() error {
+	return r.withSpan("platform.forgejo.actions_webhook.ensure", []attribute.KeyValue{
+		attribute.String("forgejo.org", r.cfg.CompanySlug),
+		attribute.String("forgejo.repo", r.cfg.RepoSlug),
+		attribute.String("forgejo.webhook_url", r.cfg.ForgejoWebhookURL),
+	}, func(ctx context.Context) error {
+		rawSecret, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, r.opts.forgejoWebhookPath)
+		if err != nil {
+			return fmt.Errorf("forgejo webhook: read secret: %w", err)
+		}
+		secret := strings.TrimSpace(string(rawSecret))
+		if secret == "" {
+			return fmt.Errorf("forgejo webhook: secret is empty")
+		}
+		client, closeFn, err := r.forgejoClient(ctx)
+		if err != nil {
+			return err
+		}
+		defer closeFn()
+		hooks, err := client.ListRepoHooks(ctx, r.cfg.CompanySlug, r.cfg.RepoSlug)
+		if err != nil {
+			return err
+		}
+		for _, hook := range hooks {
+			if hook.Config != nil && strings.TrimSpace(hook.Config["url"]) == r.cfg.ForgejoWebhookURL {
+				if err := client.PatchRepoHook(ctx, r.cfg.CompanySlug, r.cfg.RepoSlug, hook.ID, platformForgejoHookBody(r.cfg.ForgejoWebhookURL, secret, false)); err != nil {
+					return err
+				}
+				r.markChanged("forgejo.actions_webhook.updated")
+				return nil
+			}
+		}
+		if err := client.CreateRepoHook(ctx, r.cfg.CompanySlug, r.cfg.RepoSlug, platformForgejoHookBody(r.cfg.ForgejoWebhookURL, secret, true)); err != nil {
+			return err
+		}
+		r.markChanged("forgejo.actions_webhook.created")
+		return nil
+	})
+}
+
 func (r *platformRunner) checkIdentityOrganization(issues *[]string) platformBoundaryRow {
 	row := platformBoundaryRow{Boundary: "iam_service.iam_organizations", Status: "ok"}
 	err := r.withSpan("platform.iam.check", []attribute.KeyValue{
@@ -1125,6 +1249,83 @@ WHERE r.org_id = $1 AND r.repo_id = $2`,
 	return row
 }
 
+func (r *platformRunner) checkSandboxRunnerRepository(forgejoRepoID string, issues *[]string) platformBoundaryRow {
+	row := platformBoundaryRow{Boundary: "sandbox_rental.runner_provider_repositories", Status: "ok"}
+	if strings.TrimSpace(forgejoRepoID) == "" {
+		*issues = append(*issues, "sandbox runner repository cannot be checked without forgejo repo id")
+		row.Status = "missing"
+		return row
+	}
+	err := r.withSpan("platform.sandbox_runner.check", []attribute.KeyValue{
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.name", "sandbox_rental"),
+		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+	}, func(ctx context.Context) error {
+		conn, err := r.openPG(ctx, "sandbox_rental")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close(context.Background()) }()
+		ids := r.ids()
+		providerRepoID, err := strconv.ParseInt(forgejoRepoID, 10, 64)
+		if err != nil || providerRepoID <= 0 {
+			return fmt.Errorf("sandbox runner repository: invalid forgejo repo id %q", forgejoRepoID)
+		}
+		var orgID int64
+		var projectID, sourceRepositoryID uuid.UUID
+		var providerOwner, providerRepo, repositoryFullName string
+		var active bool
+		err = conn.QueryRow(ctx, `
+SELECT org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active
+FROM runner_provider_repositories
+WHERE provider = 'forgejo' AND provider_repository_id = $1`, providerRepoID).Scan(
+			&orgID,
+			&projectID,
+			&sourceRepositoryID,
+			&providerOwner,
+			&providerRepo,
+			&repositoryFullName,
+			&active,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			*issues = append(*issues, "sandbox runner repository mapping is missing")
+			row.Status = "missing"
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("sandbox runner repository: query: %w", err)
+		}
+		var mismatches []string
+		if orgID != r.cfg.OrgIDPG {
+			mismatches = append(mismatches, fmt.Sprintf("org_id=%d", orgID))
+		}
+		if projectID != ids.ProjectID {
+			mismatches = append(mismatches, fmt.Sprintf("project_id=%s", projectID))
+		}
+		if sourceRepositoryID != ids.RepoID {
+			mismatches = append(mismatches, fmt.Sprintf("source_repository_id=%s", sourceRepositoryID))
+		}
+		if providerOwner != r.cfg.CompanySlug || providerRepo != r.cfg.RepoSlug || repositoryFullName != r.cfg.CompanySlug+"/"+r.cfg.RepoSlug {
+			mismatches = append(mismatches, "forgejo repository identity mismatch")
+		}
+		if !active {
+			mismatches = append(mismatches, "active=false")
+		}
+		if len(mismatches) > 0 {
+			*issues = append(*issues, "sandbox runner repository mismatch: "+strings.Join(mismatches, ", "))
+			row.Status = "mismatch"
+			row.Detail = strings.Join(mismatches, ", ")
+		}
+		return nil
+	})
+	if err != nil {
+		row.Status = "error"
+		row.Detail = err.Error()
+		*issues = append(*issues, err.Error())
+	}
+	return row
+}
+
 func (r *platformRunner) openPG(ctx context.Context, dbName string) (*pgx.Conn, error) {
 	return oppg.OpenOverSSH(ctx, r.rt, oppg.Config{
 		Database:     dbName,
@@ -1205,6 +1406,40 @@ func (c platformForgejoClient) PatchRepo(ctx context.Context, owner, repo string
 	var out platformForgejoRepo
 	err := c.doJSON(ctx, http.MethodPatch, "/api/v1/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo), body, &out, http.StatusOK)
 	return out, err
+}
+
+func (c platformForgejoClient) ListRepoHooks(ctx context.Context, owner, repo string) ([]platformForgejoHook, error) {
+	var out []platformForgejoHook
+	err := c.doJSON(ctx, http.MethodGet, "/api/v1/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/hooks", nil, &out, http.StatusOK)
+	return out, err
+}
+
+func (c platformForgejoClient) CreateRepoHook(ctx context.Context, owner, repo string, body map[string]any) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/v1/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/hooks", body, nil, http.StatusCreated)
+}
+
+func (c platformForgejoClient) PatchRepoHook(ctx context.Context, owner, repo string, hookID int64, body map[string]any) error {
+	if hookID <= 0 {
+		return fmt.Errorf("forgejo hook id is required")
+	}
+	return c.doJSON(ctx, http.MethodPatch, "/api/v1/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/hooks/"+strconv.FormatInt(hookID, 10), body, nil, http.StatusOK)
+}
+
+func platformForgejoHookBody(targetURL, secret string, includeType bool) map[string]any {
+	body := map[string]any{
+		"config": map[string]string{
+			"url":          targetURL,
+			"content_type": "json",
+			"http_method":  "post",
+			"secret":       secret,
+		},
+		"events": []string{"push", "pull_request", "schedule", "workflow_dispatch", "action_run_failure", "action_run_recover", "action_run_success"},
+		"active": true,
+	}
+	if includeType {
+		body["type"] = "forgejo"
+	}
+	return body
 }
 
 func (c platformForgejoClient) doJSON(ctx context.Context, method, path string, body any, out any, expected ...int) error {

@@ -50,6 +50,7 @@ func (s bridgeState) String() string {
 type outboundFrame struct {
 	envelope vmproto.Envelope
 	logBytes uint64
+	done     chan error
 }
 
 type agentSession struct {
@@ -225,6 +226,9 @@ func (s *agentSession) writeLoop(ctx context.Context) {
 		}
 
 		if err := s.codec.WriteEnvelope(frame.envelope); err != nil {
+			if frame.done != nil {
+				frame.done <- err
+			}
 			if s.jobCancel != nil {
 				s.jobCancel()
 			}
@@ -233,6 +237,9 @@ func (s *agentSession) writeLoop(ctx context.Context) {
 			default:
 			}
 			return
+		}
+		if frame.done != nil {
+			frame.done <- nil
 		}
 	}
 }
@@ -526,6 +533,29 @@ func (s *agentSession) enqueueControl(env vmproto.Envelope) error {
 		return nil
 	case err := <-s.errCh:
 		return err
+	}
+}
+
+func (s *agentSession) sendControlSync(msgType vmproto.MessageType, payload any) error {
+	env, err := s.nextEnvelope(msgType, payload)
+	if err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	select {
+	case s.controlQ <- outboundFrame{envelope: env, done: done}:
+	case err := <-s.errCh:
+		return err
+	}
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case err := <-s.errCh:
+		return err
+	case <-timer.C:
+		return fmt.Errorf("flush %s control frame timed out", msgType)
 	}
 }
 
@@ -936,7 +966,8 @@ func (s *agentSession) fail(err error) error {
 	if err == nil {
 		return nil
 	}
-	_ = s.sendControl(vmproto.TypeFatal, vmproto.Fatal{Message: err.Error()})
+	// Fatal frames must be flushed before PID 1 exits or the host only sees EOF.
+	_ = s.sendControlSync(vmproto.TypeFatal, vmproto.Fatal{Message: err.Error()})
 	return err
 }
 
