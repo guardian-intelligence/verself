@@ -32,6 +32,16 @@
     loop_var: spire_identity
     label: "{{ spire_identity.key }}"
 
+- name: Publish SPIFFE IDs by identity key
+  ansible.builtin.set_fact:
+    spire_identity_spiffe_ids: >-
+      {{
+        dict(
+          spire_registrations_identities | map(attribute='key')
+          | zip(spire_registrations_identities | map(attribute='spiffe_id'))
+        )
+      }}
+
 - name: Probe SPIRE registration convergence once
   ansible.builtin.script: >-
     {{ role_path }}/files/spire_registration_convergence.py

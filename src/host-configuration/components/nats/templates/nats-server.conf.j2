@@ -22,7 +22,7 @@ tls {
 authorization {
   users = [
     {
-      user: "{{ topology_spiffe_ids.notifications_service.default }}"
+      user: "{{ spire_identity_spiffe_ids['notifications_service.default'] }}"
       permissions: {
         publish: {
           allow: ["events.>", "$JS.API.>", "$JS.ACK.>"]
