@@ -33,6 +33,7 @@ spire_identity_registry(
 component_substrate_registry(
     name = "component_substrate_registry",
     components = [
+        "//src/components:electric_component_substrate",
         "//src/frontends/viteplus-monorepo/apps/company:component_substrate",
         "//src/frontends/viteplus-monorepo/apps/verself-web:component_substrate",
         "//src/services/billing-service:component_substrate",

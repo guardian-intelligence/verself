@@ -18,15 +18,13 @@
       - component_substrate_registry.components is iterable
     fail_msg: "component substrate registry must be a schema_version=1 descriptor"
 
-- name: Select Nomad application components for substrate configuration
+- name: Select component substrates for host configuration
   ansible.builtin.set_fact:
     application_components: >-
       {{
         component_substrate_registry.components
         | selectattr('deployment', 'defined')
-        | selectattr('deployment.supervisor', 'equalto', 'nomad')
         | selectattr('workload', 'defined')
-        | selectattr('workload.units', 'defined')
         | sort(attribute='order')
         | list
       }}

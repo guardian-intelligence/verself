@@ -1,4 +1,44 @@
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
+
 package(default_visibility = ["//visibility:public"])
+
+component_substrate_json(
+    name = "electric_component_substrate",
+    definition_json = """
+{
+  "component": "electric",
+  "kind": "platform_component",
+  "deployment": {"supervisor": "systemd"},
+  "order": 35,
+  "workload": {
+    "directories": [
+      {"group": "root", "mode": "0750", "owner": "root", "path": "/etc/credstore/electric"},
+      {"group": "root", "mode": "0750", "owner": "root", "path": "/etc/credstore/electric-notifications"}
+    ],
+    "secret_refs": [
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric/api-secret",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 48}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-notifications-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric-notifications/api-secret",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 48}, "kind": "generated"}
+      }
+    ]
+  }
+}
+""",
+)
 
 filegroup(
     name = "role_sources",

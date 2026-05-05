@@ -107,14 +107,22 @@ _component_substrate = rule(
 
 def _component_substrate_json_impl(ctx):
     definition = json.decode(ctx.attr.definition_json)
-    for field in ["component", "kind", "nomad_component_label", "workload"]:
+    for field in ["component", "kind", "workload"]:
         if field not in definition:
             fail("definition_json must include %s" % field)
     definition = dict(definition)
-    definition["deployment"] = {
-        "nomad_component_label": definition.pop("nomad_component_label"),
-        "supervisor": "nomad",
-    }
+    deployment = definition.get("deployment")
+    nomad_component_label = definition.pop("nomad_component_label", "")
+    if deployment == None:
+        if not nomad_component_label:
+            fail("definition_json must include either deployment or nomad_component_label")
+        deployment = {
+            "nomad_component_label": nomad_component_label,
+            "supervisor": "nomad",
+        }
+    elif nomad_component_label:
+        fail("definition_json must not include both deployment and nomad_component_label")
+    definition["deployment"] = deployment
     definition["label"] = _repo_label(ctx.label)
     definition["name"] = definition.pop("component")
     definition["nftables_rulesets"] = definition.get("nftables_rulesets", [])
