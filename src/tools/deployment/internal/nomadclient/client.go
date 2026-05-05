@@ -147,10 +147,12 @@ func (c *Client) ParseJobHCL(ctx context.Context, body []byte, source string) (*
 }
 
 // SubmitResult is the handle returned from a successful Register call.
-// DeploymentID may be empty if the job has no update stanza (system
-// jobs, batch jobs); Monitor is a no-op in that case.
+// DeploymentID may be empty if the job has no update stanza. Monitor watches
+// batch jobs through their eval allocations and treats non-batch jobs without
+// deployments as successfully registered.
 type SubmitResult struct {
 	JobID          string
+	JobType        string
 	EvalID         string
 	JobModifyIndex uint64
 	DeploymentID   string
@@ -170,6 +172,7 @@ func (c *Client) Submit(ctx context.Context, spec *Spec, priorModifyIndex uint64
 	}
 	return &SubmitResult{
 		JobID:          spec.JobID(),
+		JobType:        spec.JobType(),
 		EvalID:         regResp.EvalID,
 		JobModifyIndex: regResp.JobModifyIndex,
 		DeploymentID:   c.findDeploymentID(ctx, spec.JobID(), regResp.JobModifyIndex),

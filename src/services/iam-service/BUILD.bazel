@@ -23,6 +23,7 @@ nomad_component(
     depends_on = ["spicedb"],
     job_id = "iam-service",
     job_spec = "nomad.hcl",
+    requires = ["clickhouse:migrations"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

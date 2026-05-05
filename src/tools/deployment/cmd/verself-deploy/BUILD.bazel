@@ -16,7 +16,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/tools/deployment/internal/bazelbuild",
-        "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/deploymodel",
         "//src/tools/deployment/internal/garage",
         "//src/tools/deployment/internal/identity",

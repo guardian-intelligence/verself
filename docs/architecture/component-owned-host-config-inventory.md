@@ -30,7 +30,7 @@
 
 - Postgres has two layers: host bootstrap may install and configure the server; each component or service owns its databases, roles, connection limits, grants, and migrations.
 
-- ClickHouse is a platform component. It should not be required before the deploy controller can deploy components; deploy evidence must support local buffering or delayed flush until ClickHouse is healthy.
+- ClickHouse has a bootstrap and deployable split. Host bootstrap starts the server and applies only `001_initial_schema.up.sql`, which contains the minimum OTLP and deploy-observation schema needed during first boot. Later ClickHouse migrations are deployable Nomad batch units and component/service jobs that write ClickHouse require the migration resource.
 
 - Garage is a platform component. Because Garage currently backs Nomad artifact delivery, first deploy needs a bootstrap artifact transport that does not depend on Garage already running. After Garage is healthy, artifact delivery can move to Garage.
 

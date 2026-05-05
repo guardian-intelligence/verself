@@ -346,7 +346,7 @@ func loadAuthoredNomadSpec(ctx context.Context, parser authoredNomadSpecParser, 
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	if parser == nil {
-		return nil, fmt.Errorf("Nomad HCL parser is required for %s", path)
+		return nil, fmt.Errorf("nomad HCL parser is required for %s", path)
 	}
 	return parser.ParseJobHCL(ctx, body, path)
 }

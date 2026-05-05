@@ -1,3 +1,5 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 filegroup(
@@ -16,6 +18,29 @@ filegroup(
         allow_empty = True,
     ),
     visibility = ["//src/components:__pkg__"],
+)
+
+pkg_tar(
+    name = "migration_artifact",
+    srcs = glob(
+        ["migrations/*.up.sql"],
+        exclude = ["migrations/001_initial_schema.up.sql"],
+    ),
+    out = "clickhouse-migrations.tar",
+    package_dir = "/",
+    strip_prefix = ".",
+)
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        ":migration_artifact": "clickhouse-migrations",
+    },
+    component = "clickhouse_migrations",
+    job_id = "clickhouse-migrations",
+    job_spec = "nomad.hcl",
+    provides = ["clickhouse:migrations"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
 spire_identity(

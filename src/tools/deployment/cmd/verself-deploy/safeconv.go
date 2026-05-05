@@ -2,28 +2,13 @@ package main
 
 import (
 	"math"
-	"time"
 )
 
-func durationMillis(d time.Duration) uint32 {
-	if d <= 0 {
-		return 0
+func int64FromUint64(value uint64, _ string) int64 {
+	if value > math.MaxInt64 {
+		return math.MaxInt64
 	}
-	ms := d.Milliseconds()
-	if ms > math.MaxUint32 {
-		return math.MaxUint32
-	}
-	return uint32(ms)
-}
-
-func uint16FromInt(v int) uint16 {
-	if v <= 0 {
-		return 0
-	}
-	if v > math.MaxUint16 {
-		return math.MaxUint16
-	}
-	return uint16(v)
+	return int64(value)
 }
 
 func truncateError(err error) string {

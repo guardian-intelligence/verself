@@ -1,8 +1,8 @@
 # deployment
 
 The typed Go orchestrator for verself deploys. It owns the Bazel-to-Nomad
-adapter layer: Nomad submit/monitor, Bazel artifact resolution, and deploy
-evidence writes. Operator database access is owned by
+adapter layer: Nomad submit/monitor and Bazel artifact resolution. Operator
+database access is owned by
 `src/tools/operator/cmd/aspect-operator` and the shared `src/tools/operator-runtime/go`
 packages, not this deployment orchestrator.
 
@@ -25,8 +25,9 @@ packages, not this deployment orchestrator.
 ## Phase boundaries
 
 This module owns deploy orchestration: Bazel component discovery, Garage
-artifact publication, Nomad submit/monitor, identity propagation, and
-ClickHouse deploy evidence rows. Host bootstrap and patching are outside this
+artifact publication, Nomad submit/monitor, and identity propagation. It emits
+OpenTelemetry spans and stdout. ClickHouse is an observability backend, not a
+runtime dependency of this binary. Host bootstrap and patching are outside this
 binary.
 
 ## Conventions

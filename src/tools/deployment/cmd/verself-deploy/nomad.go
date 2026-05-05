@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/api"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/verself/deployment-tools/internal/deploymodel"
@@ -160,18 +161,14 @@ func applyNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient
 	decisionStarted := time.Now()
 	decision, err := client.Decide(ctx, spec)
 	if err != nil {
-		_ = recordNomadSubmitFailed(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted), err)
+		recordNomadSubmitFailed(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted), err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return false, err
 	}
-	if err := recordNomadDecision(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted)); err != nil {
-		return false, err
-	}
+	recordNomadDecision(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted))
 	if decision.NoOp {
-		if err := recordNomadSkipped(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision); err != nil {
-			return false, err
-		}
+		recordNomadSkipped(span, rt.Identity.RunKey(), rt.Site, job, decision)
 		fmt.Printf("verself-deploy: %s already at desired digests; no submit\n", job.JobID)
 		span.SetStatus(codes.Ok, "")
 		return false, nil
@@ -179,28 +176,25 @@ func applyNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient
 	submitStarted := time.Now()
 	submitted, err := client.Submit(ctx, spec, decision.PriorJobModifyIndex)
 	if err != nil {
-		_ = recordNomadSubmitFailed(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(submitStarted), err)
+		recordNomadSubmitFailed(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(submitStarted), err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return true, err
 	}
 	fmt.Printf("verself-deploy: %s submitted job_modify_index=%d eval_id=%s deployment_id=%s\n",
 		submitted.JobID, submitted.JobModifyIndex, submitted.EvalID, submitted.DeploymentID)
-	if err := recordNomadSubmitted(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision, submitted, time.Since(submitStarted)); err != nil {
-		return true, err
-	}
+	recordNomadSubmitted(span, rt.Identity.RunKey(), rt.Site, job, decision, submitted, time.Since(submitStarted))
 	monitorStarted := time.Now()
 	monitor, err := client.Monitor(ctx, submitted)
 	if err != nil {
-		_ = recordNomadDeploymentFailed(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision, submitted, monitor, time.Since(monitorStarted), err)
+		recordNomadDeploymentFailed(span, rt.Identity.RunKey(), rt.Site, job, submitted, monitor, time.Since(monitorStarted), err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return true, err
 	}
-	if err := recordNomadDeploymentSucceeded(ctx, rt.DeployDB, rt.Identity.RunKey(), rt.Site, job, decision, submitted, monitor, time.Since(monitorStarted)); err != nil {
-		return true, err
-	}
+	recordNomadDeploymentSucceeded(span, rt.Identity.RunKey(), rt.Site, job, submitted, monitor, time.Since(monitorStarted))
 	fmt.Printf("verself-deploy: %s healthy\n", submitted.JobID)
+	span.SetAttributes(attribute.String("nomad.terminal_status", monitor.TerminalStatus))
 	span.SetStatus(codes.Ok, "")
 	return true, nil
 }

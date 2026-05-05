@@ -12,12 +12,6 @@ is enforced by absence: do not reintroduce shortcut tasks for things
 """
 
 load(
-    ".aspect/tasks/artifacts.axl",
-    artifacts_admission_evidence = "admission_evidence",
-    artifacts_evidence = "evidence",
-    artifacts_inventory = "inventory",
-)
-load(
     ".aspect/tasks/bazel.axl",
     bazel_gazelle = "gazelle",
     bazel_tidy = "tidy",
@@ -88,9 +82,6 @@ load(".aspect/tasks/tidy.axl", "tidy")
 def config(ctx):
     # Top-level tasks.
     ctx.tasks.add(deploy)
-    ctx.tasks.add(artifacts_inventory)
-    ctx.tasks.add(artifacts_evidence)
-    ctx.tasks.add(artifacts_admission_evidence)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
     ctx.tasks.add(tidy)

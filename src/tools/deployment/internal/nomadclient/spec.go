@@ -70,6 +70,15 @@ func (s *Spec) JobID() string {
 	return *s.Job.ID
 }
 
+// JobType returns the Nomad job type, defaulting to service to match Nomad's
+// own jobspec default.
+func (s *Spec) JobType() string {
+	if s == nil || s.Job == nil || s.Job.Type == nil || *s.Job.Type == "" {
+		return "service"
+	}
+	return *s.Job.Type
+}
+
 // shortDigest is the operator-friendly tail used in log lines and span
 // attributes. Full digests stay in Job.Meta where they belong.
 func shortDigest(d string) string {

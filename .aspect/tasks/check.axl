@@ -1,10 +1,10 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|topology|buildifier|all
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|ansible|topology|buildifier|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: buildifier → topology → supply-chain → ansible → conversions → vet → lint → test.
+fast-failure order: buildifier → topology → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "build_verself_deploy", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "checked_spawn", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
     for d in GO_DIRS:
@@ -80,18 +80,6 @@ def _buildifier(ctx):
         label = "buildifier -mode=check -lint=warn",
     )
 
-def _supply_chain(ctx):
-    bin = build_verself_deploy(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
-        ctx,
-        bin,
-        ["supply-chain", "check", "--repo-root", ws_path(ctx)],
-        cwd = ws_path(ctx),
-        label = "verself-deploy supply-chain check",
-    )
-
 def _legacy_topology_api(ctx):
     return checked_spawn(
         ctx,
@@ -110,13 +98,12 @@ _CHECKERS = {
     "go-lint": _go_lint,
     "conversions": _conversions,
     "ansible": _ansible_lint,
-    "supply-chain": _supply_chain,
     "topology": _legacy_topology_api,
     "buildifier": _buildifier,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "topology", "supply-chain", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "topology", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -134,7 +121,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|ansible|supply-chain|topology|buildifier|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|ansible|topology|buildifier|all).",
     args = {
         "kind": args.string(
             default = "all",

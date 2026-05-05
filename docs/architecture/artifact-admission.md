@@ -109,16 +109,15 @@ source metadata and upstream provenance pointers when available.
 
 ## Enforcement
 
-`verself-deploy supply-chain check` scans the repo for install/fetch paths and
-compares the result with the policy file. `aspect check --kind=supply-chain`
-runs that gate in review and is also the first gate in `aspect check --kind=all`.
+Supply-chain admission is a separate control surface from deployment
+orchestration. `verself-deploy` does not own policy evaluation or ClickHouse
+evidence writes; it is the Bazel-to-Nomad adapter. The supply-chain surface
+should be implemented as `aspect supply-chain check|admit|inventory|assert`
+with its own binary, policy inputs, spans, and ClickHouse evidence rows.
 
-`aspect deploy` is the deployment entry point. `verself-deploy run` evaluates
-the same policy gate before host convergence and records the evaluation after
-host convergence so first-run ClickHouse migrations can create the evidence
-table. During the admission rollout, deploy uses provisional mode: unknown or
-rejected sources fail the deploy, while tracked-but-not-yet-admitted artifacts
-continue as provisional rows. It inserts one row per source into
+During admission rollout, the policy mode is provisional: unknown or rejected
+sources fail the gate, while tracked-but-not-yet-admitted artifacts continue as
+provisional rows. The evidence stream inserts one row per source into
 `verself.supply_chain_policy_events`, with the deploy run key, source surface,
 policy result, admission state, distribution references, storage URI, and
 trace/span IDs.
@@ -143,12 +142,11 @@ GROUP BY deploy_run_key, site, surface, source_kind, policy_result, admission_st
 ORDER BY surface, source_kind, policy_result;
 ```
 
-`aspect artifacts evidence --run-key=<deploy-run-key>` is the post-deploy
-assertion gate. It recomputes the local policy evaluation, then verifies that
-ClickHouse contains exactly the expected number of policy rows for the deploy
-run, zero rejected rows, non-empty trace IDs, one supply-chain trace ID, OK
-`policy_check` and `policy_record` spans, and a succeeded deploy event without a
-failed deploy event. Provisional rows are expected until admission metadata is
+`aspect supply-chain assert --run-key=<deploy-run-key>` is the assertion gate.
+It recomputes the local policy evaluation, then verifies that ClickHouse
+contains exactly the expected number of policy rows for the run, zero rejected
+rows, non-empty trace IDs, one supply-chain trace ID, and OK `policy_check` and
+`policy_record` spans. Provisional rows are expected until admission metadata is
 complete.
 
 Artifact admission and install verification are deploy-flow internals rather
@@ -163,9 +161,9 @@ digests, and records the installer, surface, artifact, OCI reference, policy
 result, and trace/span IDs in
 `verself.artifact_install_verification_events`.
 
-`aspect artifacts admission-evidence --run-key=<deploy-run-key>` verifies the
-artifact admission and install verification rows and the corresponding
-`artifacts.admit` and `artifacts.install_verify` spans.
+`aspect supply-chain assert --run-key=<deploy-run-key>` verifies the artifact
+admission and install verification rows and the corresponding `artifacts.admit`
+and `artifacts.install_verify` spans.
 
 Installers emit verification events with artifact name, OCI reference, manifest
 digest, signature digest, attestation digest, policy result, deploy run key, and

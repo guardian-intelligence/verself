@@ -134,20 +134,17 @@ func Generate(opts GenerateOptions) (Snapshot, error) {
 	return Snapshot{values: values}, nil
 }
 
-// ApplyEnv exports each value from the snapshot onto the parent
-// process environment. Used by `verself-deploy identity emit` so the
-// AXL caller (or a developer running the binary directly) can source
-// the resulting env into the surrounding shell.
+// ApplyEnv exports each value from the snapshot onto the parent process
+// environment so child processes share the same deploy identity.
 func (s Snapshot) ApplyEnv() {
 	for k, v := range s.values {
 		_ = os.Setenv(k, v)
 	}
 }
 
-// FormatEnvLines prints the snapshot's exports as KEY=VALUE\n lines
-// suitable for `source <(verself-deploy identity emit)` semantics.
-// Values are NUL-byte-free and shell-safe (no embedded newlines, no
-// quoting needed because identity values are 7-bit ASCII).
+// FormatEnvLines prints the snapshot's exports as KEY=VALUE\n lines. Values
+// are NUL-byte-free and shell-safe: identity values are 7-bit ASCII with no
+// embedded newlines.
 func (s Snapshot) FormatEnvLines() string {
 	var buf bytes.Buffer
 	for _, f := range Fields {

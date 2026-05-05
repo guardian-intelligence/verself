@@ -28,6 +28,7 @@ nomad_component(
     ],
     job_id = "sandbox-rental",
     job_spec = "nomad.hcl",
+    requires = ["clickhouse:migrations"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

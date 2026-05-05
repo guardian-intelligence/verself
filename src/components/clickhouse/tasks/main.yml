@@ -391,50 +391,39 @@
     --query 'SYSTEM FLUSH LOGS'
   changed_when: false
 
-- name: Compute local migrations fingerprint
+- name: Compute local bootstrap migration fingerprint
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.shell:
-    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    cmd: "sha256sum 001_initial_schema.up.sql"
     chdir: "{{ role_path }}/migrations"
-    executable: /bin/bash
   register: clickhouse_migrations_local_hash
   changed_when: false
 
-- name: Read remote migrations fingerprint
+- name: Read remote bootstrap migration fingerprint
   ansible.builtin.slurp:
-    src: /opt/verself/migrations/.applied-hash
+    src: /opt/verself/migrations/.bootstrap-applied-hash
   register: clickhouse_migrations_remote_hash
   failed_when: false
 
-- name: Probe for expected tables (fingerprint can survive a wipe if /opt/verself is recreated before deploy)
+- name: Probe for bootstrap tables (fingerprint can survive a wipe if /opt/verself is recreated before deploy)
   ansible.builtin.shell: >
     {{ clickhouse_operator_client_command }}
     --query "
       SELECT count()
       FROM system.tables
-      WHERE (database = 'default' AND name = 'otel_metrics_sum')
+      WHERE (database = 'default' AND name IN ('otel_traces', 'otel_logs', 'otel_metrics_sum'))
          OR (
            database = 'verself'
            AND name IN (
-             'metering',
-             'billing_events',
-             'audit_events',
-             'notification_events',
-             'domain_update_ledger',
-             'operator_command_runs',
-             'supply_chain_policy_events',
-             'artifact_admission_events',
-             'artifact_install_verification_events',
-             'nomad_job_events',
-             'deploy_unit_events'
+             'deploy_events'
            )
          )"
   register: clickhouse_expected_table_probe
   changed_when: false
 
-- name: Determine whether ClickHouse schema reset is required
+- name: Determine whether ClickHouse bootstrap schema apply is required
   ansible.builtin.set_fact:
     clickhouse_should_reset_schema: >-
       {{
@@ -442,10 +431,10 @@
         or (clickhouse_migrations_remote_hash is failed)
         or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
            != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
-        or ((clickhouse_expected_table_probe.stdout | trim) != '12')
+        or ((clickhouse_expected_table_probe.stdout | trim) != '4')
       }}
 
-- name: Apply ClickHouse migrations
+- name: Apply ClickHouse bootstrap migration
   when: clickhouse_should_reset_schema
   block:
     - name: Remove deployed migrations directory
@@ -463,8 +452,8 @@
 
     - name: Upload migrations
       ansible.builtin.copy:
-        src: "{{ role_path }}/migrations/"
-        dest: /opt/verself/migrations/
+        src: "{{ role_path }}/migrations/001_initial_schema.up.sql"
+        dest: /opt/verself/migrations/001_initial_schema.up.sql
         mode: "0644"
 
     - name: Stop ClickHouse writers before force schema reset
@@ -524,25 +513,17 @@
         --query 'CREATE DATABASE IF NOT EXISTS verself'
       changed_when: false
 
-    - name: Apply migration files
+    - name: Apply bootstrap migration file
       ansible.builtin.shell: >
         {{ clickhouse_operator_client_command }}
         --database verself --multiquery
-        --queries-file /opt/verself/migrations/{{ item }}
-      loop: >-
-        {{
-          query('ansible.builtin.fileglob', role_path + '/migrations/[0-9][0-9][0-9]_*.up.sql')
-          | map('basename')
-          | sort
-        }}
-      loop_control:
-        label: "{{ item }}"
+        --queries-file /opt/verself/migrations/001_initial_schema.up.sql
       changed_when: false
 
-    - name: Record migrations fingerprint
+    - name: Record bootstrap migration fingerprint
       ansible.builtin.copy:
         content: "{{ clickhouse_migrations_local_hash.stdout.split()[0] }}\n"
-        dest: /opt/verself/migrations/.applied-hash
+        dest: /opt/verself/migrations/.bootstrap-applied-hash
         mode: "0644"
 
     - name: Start ClickHouse writers after force schema reset

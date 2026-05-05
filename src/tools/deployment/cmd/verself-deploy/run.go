@@ -13,7 +13,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
@@ -96,29 +95,13 @@ func run(ctx context.Context, opts runOptions) error {
 	defer span.End()
 
 	startedAt := time.Now()
-	if err := rt.DeployDB.RecordDeployEvent(runCtx, deploydb.DeployEvent{
-		EventAt: startedAt,
-		RunKey:  snap.RunKey(),
-		Site:    opts.Site,
-		Sha:     resolvedSHA,
-		Actor:   snap.Get("VERSELF_AUTHOR"),
-		Scope:   deployScope,
-		Kind:    deploydb.EventStarted,
-	}); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return fmt.Errorf("record deploy start: %w", err)
-	}
+	recordDeployStarted(span, snap.RunKey(), opts.Site, resolvedSHA, snap.Get("VERSELF_AUTHOR"), startedAt)
 
 	plan, err := buildDeployPlan(runCtx, rt, opts.RepoRoot, opts.Site, resolvedSHA, snap)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		_ = recordDeployFailed(runCtx, rt.DeployDB, &deployPlan{
-			Identity: snap,
-			SHA:      resolvedSHA,
-			Site:     opts.Site,
-		}, startedAt, err)
+		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
 		return err
 	}
 	span.SetAttributes(
@@ -129,7 +112,7 @@ func run(ctx context.Context, opts runOptions) error {
 	if err := publishPlanArtifacts(runCtx, rt, plan); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		_ = recordDeployFailed(runCtx, rt.DeployDB, plan, startedAt, err)
+		recordDeployFailed(span, plan, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
 		return err
 	}
 
@@ -137,15 +120,11 @@ func run(ctx context.Context, opts runOptions) error {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		_ = recordDeployFailed(runCtx, rt.DeployDB, plan, startedAt, err)
+		recordDeployFailed(span, plan, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
 		return err
 	}
 
-	if err := recordDeploySucceeded(runCtx, rt.DeployDB, plan, results, startedAt); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
+	recordDeploySucceeded(span, plan, results, startedAt)
 	span.SetStatus(codes.Ok, "")
 	return nil
 }

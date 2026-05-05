@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/verself/deployment-tools/internal/runtime",
     visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
-        "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/identity",
         "//src/tools/deployment/internal/sshtun",
         "//src/tools/observability/go/otel",

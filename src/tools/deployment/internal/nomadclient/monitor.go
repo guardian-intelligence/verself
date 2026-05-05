@@ -25,9 +25,9 @@ const MonitorWaitTime = 10 * time.Second
 // same way no further waiting helps.
 const FailFastDeadAllocs = 3
 
-// MonitorResult is the terminal deployment shape that deploy evidence writes
-// to ClickHouse. It mirrors the operator-relevant fields from Nomad's
-// deployment object rather than exposing the full API type downstream.
+// MonitorResult is the terminal Nomad execution shape surfaced by deploy
+// spans. It mirrors the operator-relevant fields from Nomad deployments and
+// batch allocations rather than exposing the full API type downstream.
 type MonitorResult struct {
 	DeploymentExists  bool
 	DeploymentID      string
@@ -40,8 +40,8 @@ type MonitorResult struct {
 }
 
 // Monitor mirrors the upstream `nomad deployment status -monitor`
-// blocking-query loop on Deployments.Info. It returns the terminal deployment
-// state and a *TerminalError when the deployment ends unsuccessfully.
+// blocking-query loop on Deployments.Info. Batch jobs have no deployment row,
+// so they are gated on eval-scoped allocation completion.
 func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult, error) {
 	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.deployment_monitor",
 		trace.WithSpanKind(trace.SpanKindClient),
@@ -59,8 +59,11 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult,
 		sub.DeploymentID = c.findDeploymentID(ctx, sub.JobID, sub.JobModifyIndex)
 	}
 	if sub.DeploymentID == "" {
+		if sub.JobType == "batch" {
+			return c.monitorBatchEvaluation(ctx, sub)
+		}
 		span.SetAttributes(attribute.Bool("nomad.deployment.exists", false))
-		span.SetStatus(codes.Ok, "no deployment created (system/batch job)")
+		span.SetStatus(codes.Ok, "no deployment created")
 		return MonitorResult{TerminalStatus: "none"}, nil
 	}
 	span.SetAttributes(attribute.String("nomad.deployment_id", sub.DeploymentID))
@@ -159,6 +162,155 @@ func monitorResult(dep *api.Deployment, status string) MonitorResult {
 	}
 }
 
+func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) (MonitorResult, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.batch_monitor",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("nomad.job_id", sub.JobID),
+			attribute.String("nomad.eval_id", sub.EvalID),
+			attribute.Int64("nomad.job_modify_index", int64FromUint64(sub.JobModifyIndex, "job modify index")),
+		),
+	)
+	defer span.End()
+
+	if sub.EvalID == "" {
+		err := fmt.Errorf("batch job %s register response did not include eval_id", sub.JobID)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return MonitorResult{TerminalStatus: "missing_eval"}, err
+	}
+
+	q := (&api.QueryOptions{
+		AllowStale: true,
+		WaitTime:   MonitorWaitTime,
+	}).WithContext(ctx)
+
+	evalID := sub.EvalID
+	for {
+		ev, meta, err := c.api.Evaluations().Info(evalID, q)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return MonitorResult{TerminalStatus: "eval_query_failed"}, fmt.Errorf("evaluation info %s: %w", evalID, err)
+		}
+		if ev == nil {
+			err := fmt.Errorf("evaluation %s not found", evalID)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return MonitorResult{TerminalStatus: "eval_missing"}, err
+		}
+
+		span.SetAttributes(
+			attribute.String("nomad.eval_status", ev.Status),
+			attribute.String("nomad.eval_status_description", ev.StatusDescription),
+		)
+
+		switch ev.Status {
+		case api.EvalStatusComplete:
+			result, err := c.monitorBatchAllocations(ctx, span, evalID)
+			if err != nil {
+				return result, err
+			}
+			span.SetStatus(codes.Ok, "")
+			return result, nil
+		case api.EvalStatusFailed, api.EvalStatusCancelled, api.EvalStatusBlocked:
+			err := &TerminalError{
+				Status:            ev.Status,
+				StatusDescription: ev.StatusDescription,
+			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return MonitorResult{TerminalStatus: ev.Status, StatusDescription: ev.StatusDescription}, err
+		}
+
+		if ev.NextEval != "" {
+			evalID = ev.NextEval
+			q.WaitIndex = 0
+			continue
+		}
+		q.WaitIndex = meta.LastIndex
+		if err := ctx.Err(); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return MonitorResult{TerminalStatus: ev.Status, StatusDescription: ev.StatusDescription}, err
+		}
+	}
+}
+
+func (c *Client) monitorBatchAllocations(ctx context.Context, span trace.Span, evalID string) (MonitorResult, error) {
+	q := (&api.QueryOptions{
+		AllowStale: true,
+		WaitTime:   MonitorWaitTime,
+	}).WithContext(ctx)
+
+	for {
+		allocs, meta, err := c.api.Evaluations().Allocations(evalID, q)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return MonitorResult{TerminalStatus: "alloc_query_failed"}, fmt.Errorf("evaluation allocations %s: %w", evalID, err)
+		}
+		total, complete, failed, running, pending := batchAllocTotals(allocs)
+		span.SetAttributes(
+			attribute.Int("nomad.batch.alloc_total", total),
+			attribute.Int("nomad.batch.alloc_complete", complete),
+			attribute.Int("nomad.batch.alloc_failed", failed),
+			attribute.Int("nomad.batch.alloc_running", running),
+			attribute.Int("nomad.batch.alloc_pending", pending),
+		)
+
+		result := MonitorResult{
+			DeploymentExists: false,
+			DesiredTotal:     total,
+			HealthyTotal:     complete,
+			UnhealthyTotal:   failed,
+			PlacedTotal:      total,
+		}
+		if total > 0 && complete == total {
+			result.TerminalStatus = "complete"
+			return result, nil
+		}
+		if failed > 0 {
+			reason := c.latestAllocListFailure(ctx, allocs)
+			err := &TerminalError{
+				Status:            "batch_failed",
+				StatusDescription: fmt.Sprintf("%d batch allocs failed", failed),
+				Reason:            reason,
+			}
+			result.TerminalStatus = "batch_failed"
+			result.StatusDescription = err.StatusDescription
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return result, err
+		}
+
+		q.WaitIndex = meta.LastIndex
+		if err := ctx.Err(); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			result.TerminalStatus = "batch_wait_interrupted"
+			return result, err
+		}
+	}
+}
+
+func batchAllocTotals(allocs []*api.AllocationListStub) (total, complete, failed, running, pending int) {
+	total = len(allocs)
+	for _, alloc := range allocs {
+		switch alloc.ClientStatus {
+		case api.AllocClientStatusComplete:
+			complete++
+		case api.AllocClientStatusFailed, api.AllocClientStatusLost:
+			failed++
+		case api.AllocClientStatusRunning:
+			running++
+		default:
+			pending++
+		}
+	}
+	return total, complete, failed, running, pending
+}
+
 func (c *Client) recordTerminalAttributes(span trace.Span, dep *api.Deployment, status string) {
 	desired, healthy, unhealthy, placed := tgTotals(dep)
 	span.SetAttributes(
@@ -208,6 +360,10 @@ func (c *Client) latestAllocFailure(ctx context.Context, deploymentID string) st
 	if err != nil {
 		return ""
 	}
+	return c.latestAllocListFailure(ctx, allocs)
+}
+
+func (c *Client) latestAllocListFailure(ctx context.Context, allocs []*api.AllocationListStub) string {
 	var newest *api.AllocationListStub
 	for _, a := range allocs {
 		if a.ClientStatus != api.AllocClientStatusFailed && a.ClientStatus != api.AllocClientStatusLost {
@@ -220,7 +376,11 @@ func (c *Client) latestAllocFailure(ctx context.Context, deploymentID string) st
 	if newest == nil {
 		return ""
 	}
-	full, _, err := c.api.Allocations().Info(newest.ID, (&api.QueryOptions{}).WithContext(ctx))
+	return c.allocFailureReason(ctx, newest.ID)
+}
+
+func (c *Client) allocFailureReason(ctx context.Context, allocID string) string {
+	full, _, err := c.api.Allocations().Info(allocID, (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil || full == nil {
 		return ""
 	}
@@ -255,12 +415,16 @@ type TerminalError struct {
 }
 
 func (e *TerminalError) Error() string {
+	target := e.DeploymentID
+	if target == "" {
+		target = "batch"
+	}
 	if e.Reason != "" {
 		return fmt.Sprintf("deployment %s ended with status=%s: %s; last alloc failure: %s",
-			e.DeploymentID, e.Status, e.StatusDescription, e.Reason)
+			target, e.Status, e.StatusDescription, e.Reason)
 	}
 	return fmt.Sprintf("deployment %s ended with status=%s: %s",
-		e.DeploymentID, e.Status, e.StatusDescription)
+		target, e.Status, e.StatusDescription)
 }
 
 // IsTerminal returns true when the error chain contains a *TerminalError.

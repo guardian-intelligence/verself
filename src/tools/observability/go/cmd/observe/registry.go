@@ -597,7 +597,7 @@ var queryDocs = []queryDoc{
 			"aspect observe --what=supply-chain --minutes=1440",
 		},
 		Next: []string{
-			"aspect artifacts inventory --format=json",
+			"aspect supply-chain inventory --format=json",
 			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
