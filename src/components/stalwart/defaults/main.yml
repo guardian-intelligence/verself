@@ -15,3 +15,7 @@ stalwart_spam_filter_local_path: "{{ stalwart_data_dir }}/spam-filter.toml"
 
 # TLS certificate paths populated by the HAProxy lego renewal unit.
 stalwart_tls_cert_dir: /etc/stalwart/certs
+
+stalwart_db_name: stalwart
+stalwart_db_user: stalwart
+stalwart_db_connection_limit: 10

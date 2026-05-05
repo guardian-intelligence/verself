@@ -71,12 +71,12 @@ type = "postgresql"
 # maps that to the `stalwart` PG role. No password is sent; the role has no
 # password set, so TCP/SCRAM auth against this role is rejected by PostgreSQL.
 host = "/var/run/postgresql"
-database = "stalwart"
-user = "stalwart"
+database = "{{ stalwart_db_name }}"
+user = "{{ stalwart_db_user }}"
 timeout = "15s"
 
 [store."postgresql".pool]
-max-connections = 10
+max-connections = {{ stalwart_db_connection_limit }}
 
 [storage]
 data = "postgresql"
