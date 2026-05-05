@@ -21,7 +21,7 @@ job "clickhouse-migrations" {
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do\n  /opt/verself/profile/bin/clickhouse-client \\\n    --config-file /etc/clickhouse-client/operator.xml \\\n    --user clickhouse_operator \\\n    --database verself \\\n    --multiquery \\\n    --queries-file \"$${migration}\"\ndone\n"]
+        args = ["-ec", "for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do\n  /opt/verself/profile/bin/clickhouse-client \\\n    --config-file /etc/clickhouse-client/operator.xml \\\n    --user clickhouse_operator \\\n    --database verself \\\n    --multiquery \\\n    --queries-file \"$migration\"\ndone\n"]
       }
 
       env {
