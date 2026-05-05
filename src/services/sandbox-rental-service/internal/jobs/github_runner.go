@@ -1115,7 +1115,14 @@ fi
 curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERVICE_HTTP_ORIGIN:?}${VERSELF_GITHUB_JIT_PATH:?}" -o "$jit_file"
 unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
-cd /opt/actions-runner
+export RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+export AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
+export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
+runtime_dir="/workspace/.verself/actions-runner"
+rm -rf "$runtime_dir"
+mkdir -p "$runtime_dir"
+cp -a /opt/actions-runner/. "$runtime_dir"/
+cd "$runtime_dir"
 mkdir -p _work _diag _temp
 exec ./run.sh --jitconfig "$(cat "$jit_file")"`
 }
