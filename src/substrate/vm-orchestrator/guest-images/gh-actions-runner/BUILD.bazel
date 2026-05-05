@@ -29,6 +29,11 @@ genrule(
 # version bumps without resizing.
 toolchain_ext4_image(
     name = "gh-actions-runner",
+    empty_dirs = [
+        "_diag",
+        "_temp",
+        "_work",
+    ],
     files = {
         "etc-overlay/passwd": "//src/substrate/vm-orchestrator/guest-images/runner-overlay-common:passwd",
         "etc-overlay/group": "//src/substrate/vm-orchestrator/guest-images/runner-overlay-common:group",
