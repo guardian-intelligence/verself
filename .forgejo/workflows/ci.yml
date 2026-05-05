@@ -20,6 +20,7 @@ jobs:
       - name: Check out repository
         uses: https://data.forgejo.org/actions/checkout@v6
         with:
+          token: ${{ secrets.VERSELF_FORGEJO_CHECKOUT_TOKEN }}
           persist-credentials: false
 
       # Self-hosted runner; Bazel disk + repo caches are already on the host's
