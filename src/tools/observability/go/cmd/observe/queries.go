@@ -220,7 +220,7 @@ func emptyHintFor(id string) string {
 	case "describe.field.resource_attributes":
 		return "No ResourceAttribute with this name across traces or logs."
 	case "catalog.deploys":
-		return "No ansible.task spans have been recorded. Run `aspect deploy` to populate deploy traces."
+		return "No verself-deploy spans have been recorded. Run `aspect deploy` to populate deploy traces."
 	default:
 		return ""
 	}
@@ -281,16 +281,15 @@ FROM
   WHERE Timestamp > now() - toIntervalDay(7)
   UNION ALL
   SELECT 'deploys',
-         toUInt64(1),
-         countDistinct(SpanAttributes['verself.deploy_run_key']),
+         countDistinct(ServiceName),
+         countDistinct(ResourceAttributes['verself.deploy_run_key']),
          'deploy run keys',
          count(),
          'aspect observe --what=catalog --signal=deploys',
          5
   FROM default.otel_traces
-  WHERE ServiceName = 'ansible'
-    AND SpanName = 'ansible.task'
-    AND Timestamp > now() - toIntervalDay(7)
+  WHERE Timestamp > now() - toIntervalDay(7)
+    AND ResourceAttributes['verself.deploy_run_key'] != ''
 )
 ORDER BY sort_key`
 
@@ -377,22 +376,22 @@ LIMIT {row_limit:UInt32}`
 
 const deployCatalogSQL = `
 SELECT
-  extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
-  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
-  count() AS tasks,
+  ServiceName AS service,
+  ResourceAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  count() AS spans,
   countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
   min(Timestamp) AS first_seen,
   max(Timestamp) AS last_seen
 FROM default.otel_traces
-WHERE ServiceName = 'ansible'
-  AND SpanName = 'ansible.task'
+WHERE ResourceAttributes['verself.deploy_run_key'] != ''
   AND (
     {search:String} = ''
-    OR positionCaseInsensitive(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :'), {search:String}) > 0
-    OR positionCaseInsensitive(SpanAttributes['verself.deploy_run_key'], {search:String}) > 0
+    OR positionCaseInsensitive(ServiceName, {search:String}) > 0
+    OR positionCaseInsensitive(SpanName, {search:String}) > 0
+    OR positionCaseInsensitive(ResourceAttributes['verself.deploy_run_key'], {search:String}) > 0
   )
-GROUP BY role, deploy_run_key
-ORDER BY deploy_run_key DESC, role
+GROUP BY service, deploy_run_key
+ORDER BY deploy_run_key DESC, service
 LIMIT {row_limit:UInt32}`
 
 const describeMetricSummarySQL = `
@@ -772,75 +771,47 @@ LIMIT {row_limit:UInt32}`
 
 const deployTasksSQL = `
 SELECT
-  formatDateTime(event_at, '%Y-%m-%d %H:%i:%S') AS time,
-  deploy_run_key,
-  site,
-  event_kind,
-  sha,
-  duration_ms,
-  left(error_message, 160) AS error
-FROM verself.deploy_events
-WHERE event_at > now() - toIntervalMinute({minutes:UInt32})
-ORDER BY event_at DESC
+  formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S') AS time,
+  ResourceAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  ResourceAttributes['verself.site'] AS site,
+  StatusCode AS status,
+  SpanAttributes['verself.deploy_sha'] AS sha,
+  toUInt64OrZero(SpanAttributes['verself.deploy.duration_ms']) AS duration_ms,
+  SpanAttributes['verself.changed_job_count'] AS changed_jobs,
+  SpanAttributes['verself.changed_jobs'] AS changed_job_ids,
+  TraceId AS trace_id,
+  left(StatusMessage, 160) AS error
+FROM default.otel_traces
+WHERE ServiceName = 'verself-deploy'
+  AND SpanName = 'verself_deploy.run'
+  AND Timestamp > now() - toIntervalMinute({minutes:UInt32})
+ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
 const deployRunSQL = `
 SELECT
-  formatDateTime(event_at, '%H:%i:%S') AS time,
-  source,
-  item,
-  event_kind,
-  no_op,
-  status,
-  duration_ms,
-  trace_id,
-  span_id,
-  left(error_message, 160) AS error
-FROM
-(
-  SELECT
-    event_at,
-    'deploy' AS source,
-    site AS item,
-    event_kind,
-    '' AS no_op,
-    sha AS status,
-    duration_ms,
-    '' AS trace_id,
-    '' AS span_id,
-    error_message
-  FROM verself.deploy_events
-  WHERE deploy_run_key = {run_key:String}
-  UNION ALL
-  SELECT
-    event_at,
-    executor AS source,
-    unit_id AS item,
-    event_kind,
-    if(no_op = 1, 'true', 'false') AS no_op,
-    payload_kind AS status,
-    duration_ms,
-    trace_id,
-    span_id,
-    error_message
-  FROM verself.deploy_unit_events
-  WHERE deploy_run_key = {run_key:String}
-  UNION ALL
-  SELECT
-    event_at,
-    'nomad_job' AS source,
-    job_id AS item,
-    event_kind,
-    if(no_op = 1, 'true', 'false') AS no_op,
-    terminal_status AS status,
-    duration_ms,
-    trace_id,
-    span_id,
-    error_message
-  FROM verself.nomad_job_events
-  WHERE deploy_run_key = {run_key:String}
-)
-ORDER BY event_at, source, item
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  if(
+    SpanAttributes['nomad.job_id'] != '',
+    SpanAttributes['nomad.job_id'],
+    if(SpanAttributes['bazel.target_label'] != '', SpanAttributes['bazel.target_label'], SpanAttributes['verself.changed_jobs'])
+  ) AS item,
+  StatusCode AS status,
+  SpanAttributes['nomad.eval_id'] AS eval_id,
+  SpanAttributes['nomad.terminal_status'] AS terminal_status,
+  SpanAttributes['nomad.batch.alloc_total'] AS alloc_total,
+  SpanAttributes['nomad.batch.alloc_complete'] AS alloc_complete,
+  SpanAttributes['nomad.batch.alloc_failed'] AS alloc_failed,
+  toUInt64OrZero(if(SpanAttributes['verself.duration_ms'] != '', SpanAttributes['verself.duration_ms'], SpanAttributes['verself.deploy.duration_ms'])) AS duration_ms,
+  TraceId AS trace_id,
+  SpanId AS span_id,
+  left(StatusMessage, 160) AS error
+FROM default.otel_traces
+WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND (ServiceName = 'verself-deploy' OR ServiceName = 'bazel')
+ORDER BY Timestamp, ServiceName, SpanName
 LIMIT {row_limit:UInt32}`
 
 // deployBazelCacheSQL totals bazel-remote hit and miss counts in the lookback
@@ -966,7 +937,7 @@ SELECT
   round(Duration / 1000000, 2) AS ms,
   SpanAttributes['http.method'] AS method,
   SpanAttributes['http.target'] AS target,
-  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key
+  if(ResourceAttributes['verself.deploy_run_key'] != '', ResourceAttributes['verself.deploy_run_key'], SpanAttributes['verself.deploy_run_key']) AS deploy_run_key
 FROM default.otel_traces
 WHERE TraceId = {trace_id:String}
 ORDER BY Timestamp
@@ -1045,18 +1016,16 @@ LIMIT {row_limit:UInt32}`
 
 const overviewDeploysSQL = `
 SELECT
-  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
-  countDistinct(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :')) AS roles,
-  count() AS tasks,
+  ResourceAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  countDistinct(ServiceName) AS services,
+  count() AS spans,
   countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
   min(Timestamp) AS first_seen,
   max(Timestamp) AS last_seen,
   dateDiff('second', min(Timestamp), max(Timestamp)) AS duration_seconds
 FROM default.otel_traces
-WHERE ServiceName = 'ansible'
-  AND SpanName = 'ansible.task'
-  AND Timestamp > now() - toIntervalDay(7)
-  AND SpanAttributes['verself.deploy_run_key'] != ''
+WHERE Timestamp > now() - toIntervalDay(7)
+  AND ResourceAttributes['verself.deploy_run_key'] != ''
 GROUP BY deploy_run_key
 ORDER BY last_seen DESC
 LIMIT {row_limit:UInt32}`

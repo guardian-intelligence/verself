@@ -42,7 +42,7 @@ var families = []family{
 	{Name: "trace", Purpose: "Inspect a single trace by TraceId."},
 	{Name: "logs", Purpose: "Discover or query structured log attributes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events."},
-	{Name: "deploy", Purpose: "Inspect Ansible deploy traces and deploy_run_key-correlated tasks."},
+	{Name: "deploy", Purpose: "Inspect verself-deploy, Bazel, and Nomad spans correlated by deploy_run_key."},
 	{Name: "supply-chain", Purpose: "Inspect artifact policy results recorded during deploy runs."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
 	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
@@ -72,7 +72,7 @@ var queryDocs = []queryDoc{
 		ID:      "overview.deploys",
 		Family:  "overview",
 		Title:   "Overview: Recent Deploys",
-		Purpose: "Deploy_run_keys observed in the last 7 days with their role count, task count, error count, and elapsed time.",
+		Purpose: "Deploy_run_keys observed in the last 7 days with service/span counts, error count, and elapsed time.",
 		Optional: []string{
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -191,8 +191,8 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"aspect observe --what=catalog --signal=traces",
-			"aspect observe --what=catalog --signal=traces --service=ansible",
-			"aspect observe --what=describe --span=ansible.task",
+			"aspect observe --what=catalog --signal=traces --service=verself-deploy",
+			"aspect observe --what=describe --span=verself_deploy.run",
 		},
 		Next: []string{
 			"aspect observe --what=describe --span=<span>",
@@ -243,7 +243,7 @@ var queryDocs = []queryDoc{
 		ID:      "catalog.deploys",
 		Family:  "catalog",
 		Title:   "Deploy Trace Catalog",
-		Purpose: "Discover deploy roles and deploy_run_key values represented in Ansible spans.",
+		Purpose: "Discover deploy_run_key values and services represented in deploy-correlated spans.",
 		Optional: []string{
 			"--search=<role-or-run-key-substring>",
 			"--limit=<rows>",
@@ -309,7 +309,7 @@ var queryDocs = []queryDoc{
 			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"aspect observe --what=describe --span=ansible.task",
+			"aspect observe --what=describe --span=verself_deploy.run",
 		},
 		Next: []string{
 			"aspect observe --what=catalog --signal=traces --service=<service>",
@@ -509,8 +509,8 @@ var queryDocs = []queryDoc{
 	{
 		ID:      "deploy.tasks",
 		Family:  "deploy",
-		Title:   "Deploy Tasks",
-		Purpose: "Recent deploy run start/success/failure rows, or the full deploy/unit/Nomad evidence timeline for one deploy_run_key.",
+		Title:   "Deploy Runs",
+		Purpose: "Recent verself-deploy run spans, or the deploy/Bazel/Nomad timeline for one deploy_run_key.",
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--minutes=<lookback>",
@@ -605,7 +605,7 @@ var queryDocs = []queryDoc{
 		ID:      "supply_chain.policy_findings",
 		Family:  "supply-chain",
 		Title:   "Supply-Chain Policy Findings",
-		Purpose: "Show the per-source deploy evidence rows written by verself-deploy for the supply-chain policy gate.",
+		Purpose: "Show per-source supply-chain policy evidence rows for a deploy_run_key or lookback window.",
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--minutes=<lookback>",
