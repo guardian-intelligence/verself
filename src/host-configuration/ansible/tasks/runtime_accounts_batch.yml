@@ -20,15 +20,23 @@
         | list
       }}
 
-- name: Compute the union of every component's units
+- name: Initialize component runtime account unit list
+  ansible.builtin.set_fact:
+    all_component_units: []
+
+- name: Normalize every component runtime account unit
   ansible.builtin.set_fact:
     all_component_units: >-
-      {{
-        all_application_components
-        | map(attribute='workload.units')
-        | flatten
-        | list
-      }}
+      {{ all_component_units + [
+        runtime_unit | combine({
+          'group': runtime_unit.group | default(runtime_unit.user),
+          'supplementary_groups': runtime_unit.supplementary_groups | default([]),
+        })
+      ] }}
+  loop: "{{ all_application_components | map(attribute='workload.units') | flatten | list }}"
+  loop_control:
+    loop_var: runtime_unit
+    label: "{{ runtime_unit.name }}"
 
 - name: Probe component runtime account convergence once
   ansible.builtin.script: >-
