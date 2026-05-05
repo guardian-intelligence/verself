@@ -151,6 +151,9 @@ func run() error {
 	if err := writeFile(filepath.Join(rootfs, "usr/sbin/policy-rc.d"), "#!/bin/sh\nexit 101\n", 0o755); err != nil {
 		return err
 	}
+	if err := seedChrootCABundle(rootfs); err != nil {
+		return err
+	}
 	if err := configureChrootApt(rootfs); err != nil {
 		return err
 	}
@@ -408,6 +411,14 @@ func configureChrootApt(rootfs string) error {
 		}
 	}
 	return nil
+}
+
+func seedChrootCABundle(rootfs string) error {
+	src := "/etc/ssl/certs/ca-certificates.crt"
+	if err := requireFile("host CA bundle", src); err != nil {
+		return err
+	}
+	return copyFile(src, filepath.Join(rootfs, "etc/ssl/certs/ca-certificates.crt"), 0o644)
 }
 
 func aptGet(args ...string) []string {
