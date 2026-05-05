@@ -73,13 +73,30 @@ def _deploy_in_worktree(ctx, site, sha):
     if rc != 0:
         _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
         return rc
-    inner_args = ["deploy", "--site=" + site]
+    target = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
+    rc = checked_spawn(
+        ctx,
+        "bazelisk",
+        ["build", target],
+        cwd = wt,
+        label = "bazelisk build " + target + " (worktree " + sha[:12] + ")",
+    )
+    if rc != 0:
+        _ = checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
+        return rc
+    bin = wt + "/bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
+    deploy_args = [
+        "run",
+        "--site=" + site,
+        "--sha=" + sha,
+        "--repo-root=" + wt,
+    ]
     deploy_rc = checked_spawn(
         ctx,
-        "aspect",
-        inner_args,
+        bin,
+        deploy_args,
         cwd = wt,
-        label = "aspect deploy (worktree " + sha[:12] + ")",
+        label = "verself-deploy run --site=" + site + " (worktree " + sha[:12] + ")",
     )
     _ = checked_spawn(
         ctx,
