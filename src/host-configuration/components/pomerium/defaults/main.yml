@@ -36,7 +36,7 @@ pomerium_operator_allowed_domains: []
 pomerium_operator_allowed_emails:
   - "ceo@{{ verself_domain }}"
 
-pomerium_ssh_address: "{{ bare_metal_public_ipv4 }}:22"
+pomerium_ssh_address: "{{ ansible_host }}:22"
 pomerium_ssh_route_name: prod
 pomerium_ssh_upstream: "127.0.0.1:22"
 pomerium_ssh_allowed_user: ubuntu

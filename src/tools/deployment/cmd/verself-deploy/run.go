@@ -360,6 +360,9 @@ func runHostConfigurationSitePlaybook(ctx context.Context, rt *runtime.Runtime, 
 	ansibleDir := filepath.Join(repoRoot, "src", "host-configuration", "ansible")
 	args := append([]string{}, extraArgs...)
 	args = append(args, "-e", "verself_site="+site)
+	if rt.SSHPort > 0 {
+		args = append(args, "-e", fmt.Sprintf("ansible_port=%d", rt.SSHPort))
+	}
 	return ansible.Run(ctx, rt.DeployDB, ansible.Options{
 		Playbook:      hostConfigurationSitePlaybook,
 		Inventory:     inventoryPath,

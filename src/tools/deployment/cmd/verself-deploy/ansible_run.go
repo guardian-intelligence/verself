@@ -98,7 +98,7 @@ func runAnsibleRun(args []string) int {
 		Site:         *site,
 		Phase:        *phase,
 		RunKey:       rt.Identity.RunKey(),
-		ExtraArgs:    extraArgs,
+		ExtraArgs:    append(extraArgs, "-e", fmt.Sprintf("ansible_port=%d", rt.SSHPort)),
 		OTLPEndpoint: rt.OTLPEndpoint(),
 	})
 	if err != nil {

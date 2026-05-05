@@ -1,19 +1,7 @@
 ---
-# containerd + gVisor (runsc) configuration for worker nodes.
-# containerd provided by substrate_profile role (pinned static binary).
-# gVisor (runsc) downloaded as pinned static binary (Go version sensitive).
-
-- name: Download gVisor runsc (pinned release)
-  ansible.builtin.get_url:
-    url: "https://storage.googleapis.com/gvisor/releases/release/{{ gvisor_version | default('20251110.0') }}/x86_64/runsc"
-    dest: /usr/local/bin/runsc
-    mode: "0755"
-
-- name: Download gVisor containerd-shim (pinned release)
-  ansible.builtin.get_url:
-    url: "https://storage.googleapis.com/gvisor/releases/release/{{ gvisor_version | default('20251110.0') }}/x86_64/containerd-shim-runsc-v1"
-    dest: /usr/local/bin/containerd-shim-runsc-v1
-    mode: "0755"
+# containerd hosts OCI workloads that do not fit Nomad's artifact model.
+# The runc v2 shim is part of the pinned containerd archive and is started on
+# demand per container; it is not a separate host daemon.
 
 - name: Create containerd config directory
   ansible.builtin.file:
@@ -21,9 +9,14 @@
     state: directory
     mode: "0755"
 
-- name: Configure containerd to use runsc runtime
-  ansible.builtin.template:
-    src: containerd-runsc.toml.j2
+- name: Configure containerd
+  ansible.builtin.copy:
+    content: |
+      version = 2
+
+      [plugins]
+        [plugins."io.containerd.snapshotter.v1.zfs"]
+          root_path = "/{{ zfs_pool }}"
     dest: /etc/containerd/config.toml
     mode: "0644"
   notify: restart containerd
@@ -38,6 +31,7 @@
 
       [Service]
       Type=notify
+      Environment=PATH={{ verself_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       ExecStart={{ verself_bin }}/containerd --config /etc/containerd/config.toml
       Restart=always
       RestartSec=5

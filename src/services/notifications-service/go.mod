@@ -85,7 +85,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-
 replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go

@@ -194,47 +194,19 @@
 
 - name: Ensure PostgreSQL roles and databases match desired state
   vars:
-    postgresql_managed_roles:
-      - name: billing
-        password: "{{ postgresql_billing_password }}"
-        role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.billing }}"
-      - name: sandbox_rental
-        password: "{{ postgresql_sandbox_rental_password }}"
-        role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.sandbox_rental }}"
-      # Stalwart authenticates via Unix-socket peer auth (pg_ident: stalwart ->
-      # stalwart). The role is deliberately password-less so TCP/SCRAM auth
-      # cannot reach it even from the loopback interface.
-      - name: stalwart
-        role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.stalwart }}"
-      # Temporal connects over the local Unix socket with peer auth only. The
-      # role is password-less so no loopback SCRAM secret can linger after a reset.
-      - name: temporal
-        role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.temporal }}"
-      # SpiceDB connects over the local Unix socket with peer auth only. The
-      # gRPC preshared key is the API credential; Postgres should not get a
-      # second loopback password credential for the same daemon.
-      - name: spicedb
-        role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.spicedb }}"
-    postgresql_managed_databases:
-      - name: "{{ billing_service_pg_database | default('billing') }}"
-        owner: billing
-      - name: storefront
-        owner: billing
-      - name: sandbox_rental
-        owner: sandbox_rental
-      - name: stalwart
-        owner: stalwart
-      - name: temporal
-        owner: temporal
-      - name: temporal_visibility
-        owner: temporal
-      - name: spicedb
-        owner: spicedb
+    postgresql_role_passwords:
+      billing: "{{ postgresql_billing_password }}"
+      iam_service: "{{ postgresql_iam_service_password }}"
+      mailbox_service: "{{ postgresql_mailbox_service_password }}"
+      sandbox_rental: "{{ postgresql_sandbox_rental_password }}"
+    postgresql_peer_only_roles:
+      # These daemons authenticate only over Unix-socket peer auth. Leaving the
+      # roles password-less keeps loopback SCRAM from becoming a second credential.
+      - spicedb
+      - stalwart
+      - temporal
+    postgresql_managed_role_names: "{{ topology_postgres.databases | map(attribute='owner') | unique | sort | list }}"
+    postgresql_managed_databases: "{{ topology_postgres.databases | sort(attribute='database') | list }}"
   module_defaults:
     community.postgresql.postgresql_user:
       login_host: "{{ topology_endpoints.postgresql.host }}"
@@ -272,13 +244,13 @@
   block:
     - name: Ensure application PostgreSQL roles exist
       community.postgresql.postgresql_user:
-        name: "{{ item.name }}"
-        password: "{{ item.password | default(omit) }}"
-        role_attr_flags: "{{ item.role_attr_flags }}"
-        conn_limit: "{{ item.conn_limit }}"
-      loop: "{{ postgresql_managed_roles }}"
+        name: "{{ item }}"
+        password: "{{ postgresql_role_passwords.get(item, omit) }}"
+        role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits[item] }}"
+      loop: "{{ postgresql_managed_role_names }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item }}"
       no_log: true
 
     # postgresql_user will not clear omitted passwords; query first so a clean
@@ -291,7 +263,7 @@
           WHERE rolname = ANY(%s)
             AND rolpassword IS NOT NULL
         positional_args:
-          - ["stalwart", "temporal", "spicedb"]
+          - "{{ postgresql_peer_only_roles }}"
       register: postgresql_peer_roles_with_password
 
     - name: Clear password on peer-auth-only PostgreSQL roles
@@ -308,20 +280,20 @@
 
     - name: Ensure application PostgreSQL databases exist
       community.postgresql.postgresql_db:
-        name: "{{ item.name }}"
+        name: "{{ item.database }}"
         owner: "{{ item.owner }}"
         state: present
       loop: "{{ postgresql_managed_databases }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.database }}"
       no_log: true
 
     - name: Ensure application PostgreSQL database ownership
       community.postgresql.postgresql_owner:
-        obj_name: "{{ item.name }}"
+        obj_name: "{{ item.database }}"
         obj_type: database
         new_owner: "{{ item.owner }}"
       loop: "{{ postgresql_managed_databases }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.database }}"
       no_log: true

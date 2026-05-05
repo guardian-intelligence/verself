@@ -177,7 +177,7 @@ func requireCloudflareCredential(provider string) error {
 		os.Getenv("CLOUDFLARE_DNS_API_TOKEN") != "" || os.Getenv("CLOUDFLARE_DNS_API_TOKEN_FILE") != "" {
 		return nil
 	}
-	return errors.New("Cloudflare DNS-01 requires CF_DNS_API_TOKEN or CF_DNS_API_TOKEN_FILE")
+	return errors.New("cloudflare DNS-01 requires CF_DNS_API_TOKEN or CF_DNS_API_TOKEN_FILE")
 }
 
 func lockLegoState(path string) (func(), error) {

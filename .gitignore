@@ -91,6 +91,7 @@ src/*/client/client.gen.go
 src/*/internalclient/client.gen.go
 *.pb.go
 *_grpc.pb.go
+!src/substrate/vm-orchestrator/proto/v1/*.pb.go
 
 # E2E smoke-test bundles, personas, Playwright traces, and query evidence
 smoke-artifacts/

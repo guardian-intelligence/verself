@@ -1,7 +1,12 @@
 ---
+- name: Reload Pomerium systemd unit
+  listen: restart pomerium
+  ansible.builtin.command:
+    cmd: systemctl daemon-reload
+  changed_when: false
+
 - name: Restart Pomerium
   listen: restart pomerium
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: pomerium
-    state: restarted
+  ansible.builtin.command:
+    cmd: systemctl restart pomerium.service
+  changed_when: true

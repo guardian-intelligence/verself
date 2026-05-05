@@ -12,19 +12,6 @@
     - name: Run controller preflight checks
       ansible.builtin.import_tasks: tasks/controller-preflight.yml
 
-- name: "Topology normalization"
-  hosts: all
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - always
-  tasks:
-    - name: Normalize authored topology
-      ansible.builtin.import_tasks: tasks/topology-normalize.yml
-      tags:
-        - always
-
 - name: "Runtime accounts"
   hosts: all
   become: true
@@ -193,6 +180,11 @@
       tags:
         - postgresql
         - database
+    - role: postgres_service_migrations
+      tags:
+        - postgresql
+        - database
+        - service-migrations
     - role: spicedb
       tags:
         - spicedb
@@ -224,6 +216,22 @@
         - secrets
         - components
 
+- name: "External reconciler: Cloudflare DNS"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - external-dns
+    - cloudflare-dns
+  tasks:
+    - name: Run Cloudflare DNS reconciler
+      ansible.builtin.import_tasks: tasks/cloudflare-dns.yml
+      tags:
+        - external-dns
+        - cloudflare-dns
+
 - name: "Substrate edge daemons"
   hosts: infra
   become: true
@@ -233,6 +241,9 @@
   tags:
     - daemons
   roles:
+    - role: containerd
+      tags:
+        - containerd
     - role: wireguard
       tags:
         - network
@@ -278,14 +289,6 @@
       tags:
         - grafana
         - observability
-    - role: pomerium
-      tags:
-        - pomerium
-        - access
-    - role: operator_ssh_access
-      tags:
-        - ssh
-        - access
     - role: verdaccio
       tags:
         - verdaccio
@@ -319,18 +322,19 @@
       tags:
         - components
 
-- name: "External reconciler: Cloudflare DNS"
-  hosts: localhost
-  connection: local
+- name: "Operator access handoff"
+  hosts: infra
+  become: true
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
-    - external-dns
-    - cloudflare-dns
-  tasks:
-    - name: Run Cloudflare DNS reconciler
-      ansible.builtin.import_tasks: tasks/cloudflare-dns.yml
+    - access
+    - operator-access
+    - pomerium
+  roles:
+    - role: pomerium
       tags:
-        - external-dns
-        - cloudflare-dns
+        - access
+        - operator-access
+        - pomerium

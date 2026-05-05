@@ -97,6 +97,7 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		Command:  opts.Command,
 	}
 
+	sshPorts := []int{}
 	if opts.NeedSSH || opts.NeedOTel {
 		target := InventoryTarget{}
 		if opts.InfraHost != "" || opts.InfraUser != "" {
@@ -122,9 +123,11 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		if target.User == "" {
 			return nil, errors.New("operator runtime: SSH user is required")
 		}
+		sshPorts = target.SSHPorts()
 		ssh, err := DialSSH(ctx, SSHOptions{
-			User: target.User,
-			Host: target.Host,
+			User:           target.User,
+			Host:           target.Host,
+			PortCandidates: sshPorts,
 		})
 		if err != nil {
 			return nil, err
@@ -164,6 +167,8 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 				attribute.String("verself.command", opts.Command),
 				attribute.String("ssh.auth_method", rt.SSHAuthMethod),
 				attribute.String("ssh.host", rt.Target.Host),
+				attribute.Int("ssh.port", rt.SSH.Port()),
+				attribute.IntSlice("ssh.port_candidates", sshPorts),
 				attribute.String("ssh.user", rt.Target.User),
 			),
 		)

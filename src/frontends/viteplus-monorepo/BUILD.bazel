@@ -1,6 +1,6 @@
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@npm//:defs.bzl", "npm_link_all_packages")
-load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_input_sbom", "viteplus_node_runtime_artifact")
+load("//src/frontends/viteplus-monorepo:viteplus_rules.bzl", "viteplus_input_sbom", "viteplus_node_runtime_artifact", "viteplus_workspace_install")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -63,6 +63,10 @@ filegroup(
     ] + glob([
         "patches/**/*",
     ]),
+)
+
+viteplus_workspace_install(
+    name = "workspace_install",
 )
 
 viteplus_input_sbom(

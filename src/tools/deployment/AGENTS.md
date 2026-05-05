@@ -3,7 +3,7 @@
 The typed Go orchestrator for verself deploys. It owns the orchestration layer:
 Nomad submit/monitor, Bazel artifact resolution, Ansible run wrapping, and
 deploy evidence writes. Operator database access is owned by
-`src/tools/dev/cmd/aspect-operator` and the shared `src/tools/operator-runtime/go`
+`src/tools/operator/cmd/aspect-operator` and the shared `src/tools/operator-runtime/go`
 packages, not this deployment orchestrator.
 
 ## Layout

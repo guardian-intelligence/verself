@@ -1,13 +1,9 @@
 """aspect dev <action> — controller development helpers."""
 
-load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "build_aspect_operator", "checked_spawn", "inventory_check", "ws_path")
 
 def _aspect_operator_bin(ctx):
-    target = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
-    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
-    if rc != 0:
-        return ""
-    return ws_path(ctx, "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    return build_aspect_operator(ctx)
 
 def _ansible_local(ctx, playbook, *extra_args):
     args_list = [playbook] + list(extra_args)

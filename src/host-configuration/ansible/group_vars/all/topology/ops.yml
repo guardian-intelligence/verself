@@ -2,7 +2,6 @@
 # Source: src/host-configuration/ansible/group_vars/all/topology
 ---
 bare_metal_host_alias: fm-dev-w0
-bare_metal_public_ipv4: 64.34.84.75
 billing_service_domain: '{{ billing_service_subdomain }}.{{ verself_domain }}'
 billing_service_subdomain: billing.api
 company_domain: guardianintelligence.org

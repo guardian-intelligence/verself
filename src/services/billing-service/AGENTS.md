@@ -23,16 +23,5 @@ The 3-node evolution should introduce NATS JetStream or Kafka + Debezium for pro
 ## Migrations
 
 Live in `migrations/`. Platform provisions PostgreSQL database `billing` and
-role `billing`; the service's Ansible role applies migrations on deploy. During
-pre-customer phase, prefer `billing-reset.yml` or `verification-reset.yml` over
-crafting tricky migrations.
-
-## Reset
-
-```bash
-ansible-playbook playbooks/billing-reset.yml
-```
-
-Wipes billing PostgreSQL database `billing`, recreates the TigerBeetle data
-file, and restarts billing callers. Use this instead of ad hoc mutations when
-changing ledger schema or account taxonomy.
+role `billing`; deploy-time migration orchestration is owned by the deployment
+surface, not host-configuration reset playbooks.

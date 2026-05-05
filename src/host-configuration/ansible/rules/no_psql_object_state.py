@@ -28,7 +28,6 @@ ALLOWED_TASKS = {
 
 PROTECTED_FILES = {
     "roles/postgresql/tasks/main.yml",
-    "roles/postgresql_db_reset/tasks/main.yml",
     "roles/mailbox_service/tasks/database.yml",
     "roles/zitadel/tasks/main.yml",
     "roles/electric/tasks/pg_setup.yml",

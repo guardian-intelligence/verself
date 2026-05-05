@@ -54,6 +54,9 @@ topology_dns_records:
     record: auth
     zone: product
   - kind: protocol_origin
+    record: zitadel-actions
+    zone: product
+  - kind: protocol_origin
     record: mail
     zone: product
   - kind: protocol_origin

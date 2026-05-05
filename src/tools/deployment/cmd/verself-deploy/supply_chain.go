@@ -449,7 +449,7 @@ func supplyChainPolicyRows(site, runKey string, eval supplychain.Evaluation, spa
 }
 
 func printSupplyChainSummary(w *os.File, report supplychain.Report, eval supplychain.Evaluation) {
-	fmt.Fprintf(w, "supply-chain findings: %d accepted=%d provisional=%d rejected=%d\n", len(report.Findings), eval.Accepted, eval.Provisional, eval.Rejected)
+	_, _ = fmt.Fprintf(w, "supply-chain findings: %d accepted=%d provisional=%d rejected=%d\n", len(report.Findings), eval.Accepted, eval.Provisional, eval.Rejected)
 	if eval.Rejected == 0 {
 		return
 	}
@@ -458,6 +458,6 @@ func printSupplyChainSummary(w *os.File, report supplychain.Report, eval supplyc
 			continue
 		}
 		f := result.Finding
-		fmt.Fprintf(w, "REJECTED %s:%d %s %s: %s\n", f.SourcePath, f.Line, f.SourceKind, f.Artifact, result.PolicyReason)
+		_, _ = fmt.Fprintf(w, "REJECTED %s:%d %s %s: %s\n", f.SourcePath, f.Line, f.SourceKind, f.Artifact, result.PolicyReason)
 	}
 }

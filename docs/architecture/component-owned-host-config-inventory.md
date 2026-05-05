@@ -1,6 +1,6 @@
 # Package-Owned Host Configuration Inventory
 
-Centralized workload and platform-component configuration remains in `src/host-configuration/ansible/group_vars/all/topology/*.yml`. The post-bootstrap boundary should move authored declarations to the system that applies them:
+Centralized workload and platform-component configuration is being removed from `src/host-configuration/ansible/group_vars/all/topology/*.yml`. The post-bootstrap boundary should move authored declarations to the system that applies them:
 
 - Product API service code, migrations, generated API contracts, artifact targets, and authored Nomad jobspecs stay in `src/services/<service>/`.
 - Frontend deployment files stay in their app packages under `src/frontends/`.
@@ -15,7 +15,7 @@ There is no cross-directory rendering layer. A platform component under `src/hos
 |---|---|---|
 | `routes.yml` | Public/browser/operator/protocol/guest routes, body limits, WAF mode, CORS mode, route path allowlists | Direct HAProxy/DNS host config under `src/host-configuration/`; platform component routes live with their host-configuration component role where practical. |
 | `dns.yml` | DNS records duplicating route hostnames | Direct DNS reconciler inputs under `src/host-configuration/`. |
-| `endpoints.yml` | Ports, bind addresses, exposure class, protocol, interface auth, path prefixes, health probes | Nomad jobs for runtime service registration; host-exposed listeners remain direct host config. |
+| site `topology_endpoints` | Ports, bind addresses, exposure class, protocol, interface auth, path prefixes, health probes | Component role defaults for host-owned listeners; Nomad component descriptors for runtime services. |
 | `postgres.yml` | Per-workload or platform-component database, owner, role connection limit | Component-local Ansible roles for component databases; shared PostgreSQL server invariants remain under the PostgreSQL host role. Service migrations remain with service code. |
 | `spire.yml` | Workload-to-workload SPIFFE authorization edges | Component-local Ansible roles or shared SPIRE role inputs under `src/host-configuration/`. |
 | `components.yml` | Deployment supervisor, identities, nftables files, component order, workload auth/bootstrap, ClickHouse grants, credstore dirs, secret refs, runtime users/units | Split by executor: Nomad deployment specs in owner packages; durable host concerns in `src/host-configuration/`. |
@@ -554,8 +554,7 @@ src/host-configuration/
       security-patch.yml
       setup-dev.yml
       setup-sops.yml
-      verification-reset.yml
-      wipe-pg-db.yml
+      operator mutation tooling
     roles/
       base/
       firecracker/

@@ -28,6 +28,10 @@ TAR_SINGLE_BINARIES = [
     ("spicedb", "@server_tool_spicedb//file", "z", "spicedb", "spicedb"),
     ("zed", "@server_tool_zed//file", "z", "zed", "zed"),
     ("containerd", "@server_tool_containerd//file", "z", "bin/containerd", "containerd"),
+    # Electric runs OCI images through `ctr --runtime io.containerd.runc.v2`.
+    # containerd starts this shim per container; systemd never manages it.
+    ("containerd_shim_runc_v2", "@server_tool_containerd//file", "z", "bin/containerd-shim-runc-v2", "containerd-shim-runc-v2"),
+    ("ctr", "@server_tool_containerd//file", "z", "bin/ctr", "ctr"),
     ("lego", "@server_tool_lego//file", "z", "lego", "lego"),
 ]
 
@@ -66,6 +70,8 @@ SERVER_TOOL_DEPS = [
     ":bazel_remote",
     ":clickhouse",
     ":containerd",
+    ":containerd_shim_runc_v2",
+    ":ctr",
     ":forgejo",
     ":garage",
     ":grafana",
@@ -92,6 +98,7 @@ SERVER_TOOL_DEPS = [
     ":temporal_server",
     ":temporal_sql_tool",
     ":tigerbeetle",
+    "//src/host-configuration/components/verdaccio:verdaccio_runtime",
     ":zed",
     ":zitadel",
     ":zot",

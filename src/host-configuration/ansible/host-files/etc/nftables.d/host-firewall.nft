@@ -17,7 +17,8 @@ table inet verself_host {
         iifname "fc-tap-*" ip saddr 172.16.0.0/16 ip daddr 10.255.0.1 tcp dport { 4873, 18080 } accept
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
-        tcp dport { 22, 25, 80, 443 } accept
+        # 2222 is direct bootstrap SSH after Pomerium owns public :22.
+        tcp dport { 22, 25, 80, 443, 2222 } accept
         udp dport { 51820, 51821 } accept
     }
 }

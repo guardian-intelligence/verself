@@ -160,9 +160,8 @@ require (
 	modernc.org/sqlite v1.39.1 // indirect
 )
 
-
 replace go.temporal.io/api => go.temporal.io/api v1.62.2
 
-replace github.com/verself/service-runtime => ../../services/service-runtime/go
+replace github.com/verself/service-runtime => ../../../services/service-runtime/go
 
-replace github.com/verself/observability => ../../tools/observability/go
+replace github.com/verself/observability => ../../../tools/observability/go

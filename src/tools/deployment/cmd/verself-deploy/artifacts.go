@@ -507,7 +507,7 @@ func fetchUpstreamArtifact(ctx context.Context, rawURL, expectedDigest string) (
 	if err != nil {
 		return fetchedArtifact{}, nil, fmt.Errorf("fetch upstream bytes: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fetchedArtifact{}, nil, fmt.Errorf("fetch upstream bytes: %s", resp.Status)
 	}
@@ -630,7 +630,7 @@ func pushORASBlob(ctx context.Context, repo *remote.Repository, blob blobContent
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("open OCI blob content: %w", err)
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	if err := repo.Push(ctx, desc, body); err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("push OCI blob with ORAS: digest=%s media_type=%s: %w", desc.Digest, desc.MediaType, err)
 	}

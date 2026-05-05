@@ -135,12 +135,6 @@ func (d *nomadDeployment) jobByID(jobID string) (deploymodel.NomadJob, bool) {
 }
 
 func deployNomadComponents(ctx context.Context, rt *runtime.Runtime, span trace.Span, site, repoRoot string) error {
-	closeViteplusRegistry, err := prepareViteplusWorkspace(ctx, rt, repoRoot)
-	if err != nil {
-		return err
-	}
-	defer closeViteplusRegistry()
-
 	componentLabels, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot)
 	if err != nil {
 		return err
@@ -357,7 +351,7 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 			return nil
 		}
 		if temporary[jobID] {
-			return fmt.Errorf("Nomad job dependency cycle: %s", strings.Join(append(stack, jobID), " -> "))
+			return fmt.Errorf("nomad job dependency cycle: %s", strings.Join(append(stack, jobID), " -> "))
 		}
 		component, exists := byJobID[jobID]
 		if !exists {
@@ -423,7 +417,7 @@ func bindNomadArtifacts(repoRoot string, policy nomadArtifactDeliveryPolicy, com
 		for _, declared := range component.Artifacts {
 			if prior, exists := bindings[declared.Output]; exists {
 				if prior.Label != declared.Label || prior.Path != declared.Path {
-					return nil, nil, fmt.Errorf("Nomad artifact output %q is provided by both %s and %s", declared.Output, prior.Label, declared.Label)
+					return nil, nil, fmt.Errorf("nomad artifact output %q is provided by both %s and %s", declared.Output, prior.Label, declared.Label)
 				}
 				continue
 			}
@@ -473,7 +467,7 @@ func loadAuthoredNomadSpec(ctx context.Context, parser authoredNomadSpecParser, 
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	if parser == nil {
-		return nil, fmt.Errorf("Nomad HCL parser is required for %s", path)
+		return nil, fmt.Errorf("nomad HCL parser is required for %s", path)
 	}
 	return parser.ParseJobHCL(ctx, body, path)
 }

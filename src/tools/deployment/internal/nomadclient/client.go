@@ -113,7 +113,7 @@ func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {
 // ParseJobHCL asks the target Nomad agent to parse an authored HCL2 jobspec.
 // This keeps deploy behavior aligned with the server version that will run the job.
 func (c *Client) ParseJobHCL(ctx context.Context, body []byte, source string) (*api.Job, error) {
-	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.parse_hcl",
+	_, span := c.tracer.Start(ctx, "verself_deploy.nomad.parse_hcl",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attribute.String("nomad.jobspec_source", source)),
 	)

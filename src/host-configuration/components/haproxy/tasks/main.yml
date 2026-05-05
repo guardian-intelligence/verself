@@ -34,16 +34,7 @@
     - { path: /var/lib/haproxy, owner: haproxy, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_log_dir }}", owner: haproxy, group: adm, mode: "2750" }
 
-# HAProxy -c creates shm-stats-file when missing; precreate it so root validation cannot leave it root-owned.
-- name: Create HAProxy shared-memory stats file
-  ansible.builtin.file:
-    path: "{{ haproxy_shm_stats_file }}"
-    state: touch
-    owner: haproxy
-    group: haproxy
-    mode: "0600"
-    access_time: preserve
-    modification_time: preserve
+# HAProxy creates shm-stats-file during validation; an empty precreated file SIGBUSes in 3.3.7.
 
 - name: Create well-known publication directory
   ansible.builtin.file:

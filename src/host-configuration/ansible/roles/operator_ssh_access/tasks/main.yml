@@ -12,7 +12,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: reload operator sshd
+  register: operator_ssh_access_user_ca
 
 - name: Render sshd Pomerium upstream configuration
   ansible.builtin.template:
@@ -21,9 +21,47 @@
     owner: root
     group: root
     mode: "0644"
-  notify: reload operator sshd
+  register: operator_ssh_access_config
 
 - name: Validate merged sshd configuration
   ansible.builtin.command:
     cmd: /usr/sbin/sshd -t
   changed_when: false
+
+# Ubuntu 24 enables ssh.socket, which otherwise keeps owning public :22.
+- name: Disable OpenSSH socket activation
+  ansible.builtin.systemd:
+    name: ssh.socket
+    enabled: false
+    state: stopped
+  register: operator_ssh_access_socket
+
+- name: Restart sshd with Pomerium upstream listeners
+  ansible.builtin.systemd:
+    name: ssh.service
+    state: restarted
+  when: >
+    operator_ssh_access_user_ca.changed
+    or operator_ssh_access_config.changed
+    or operator_ssh_access_socket.changed
+
+- name: Wait for local SSH upstream
+  ansible.builtin.wait_for:
+    host: "{{ operator_ssh_access_upstream_address }}"
+    port: "{{ operator_ssh_access_upstream_port }}"
+    timeout: 5
+
+- name: Wait for direct bootstrap SSH
+  ansible.builtin.wait_for:
+    host: "{{ operator_ssh_access_bootstrap_address }}"
+    port: "{{ operator_ssh_access_bootstrap_port }}"
+    timeout: 5
+
+- name: Publish SSH access handoff result
+  ansible.builtin.set_fact:
+    operator_ssh_access_changed: >-
+      {{
+        operator_ssh_access_user_ca.changed
+        or operator_ssh_access_config.changed
+        or operator_ssh_access_socket.changed
+      }}

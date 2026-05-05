@@ -54,9 +54,11 @@ frontend fe_https
   acl host_sandbox var(txn.host) -m str sandbox.api.verself.sh
   acl host_source var(txn.host) -m str source.api.verself.sh
   acl host_zitadel var(txn.host) -m str auth.verself.sh
+  acl host_zitadel_actions var(txn.host) -m str zitadel-actions.verself.sh
   acl host_mail var(txn.host) -m str mail.verself.sh
   acl method_get method GET
   acl method_post method POST
+  acl zitadel_action_api_credentials path -i /internal/zitadel/actions/api-credential-claims
   acl jmap_session path -i /jmap/session
   acl stripe_webhook path -i /webhooks/stripe
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
@@ -83,7 +85,8 @@ frontend fe_https
   http-request return status 405 if host_sandbox { path -i /webhooks/github/actions } !method_post
   http-request return status 405 if host_sandbox { path -i /webhooks/forgejo/actions } !method_post
   http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get
-  http-request return status 405 if host_zitadel { path -i /internal/zitadel/actions/api-credential-claims } !method_post
+  http-request return status 405 if host_zitadel zitadel_action_api_credentials !method_post
+  http-request return status 405 if host_zitadel_actions zitadel_action_api_credentials !method_post
 
   use_backend be_billing_stripe_webhook if host_billing stripe_webhook method_post stripe_source
   use_backend be_sandbox_github_actions_webhook if host_sandbox method_post { path -i /webhooks/github/actions }
@@ -93,7 +96,8 @@ frontend fe_https
   use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
   use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
-  use_backend be_zitadel_action_api_credentials if host_zitadel method_post { path -i /internal/zitadel/actions/api-credential-claims }
+  use_backend be_zitadel_action_api_credentials if host_zitadel method_post zitadel_action_api_credentials
+  use_backend be_zitadel_action_api_credentials if host_zitadel_actions method_post zitadel_action_api_credentials
   use_backend be_mailbox_jmap_session if host_mail jmap_session
 
   acl route_1_host var(txn.host) -m str verself.sh

@@ -19,6 +19,7 @@ operator ssh client -> access.<domain>:22 -> Pomerium -> 127.0.0.1:22 sshd
 The upstream sshd configuration is intentionally narrow:
 
 - `ListenAddress 127.0.0.1`
+- direct bootstrap/recovery `ListenAddress <host-ip>:2222`
 - `TrustedUserCAKeys /etc/ssh/verself-pomerium-user-ca.pub`
 - `AuthorizedKeysFile none`
 - password and keyboard-interactive authentication disabled
@@ -28,6 +29,11 @@ The SSH route name is `prod`, so a standard client connects with:
 ```bash
 ssh ubuntu@prod@access.<domain>
 ```
+
+Pomerium is reconciled by the operator access handoff play after IAM/Zitadel
+component substrate binding has completed. Before that handoff, bootstrap uses
+direct host SSH. After the handoff, public `:22` is Pomerium-owned and direct
+host recovery moves to `:2222`.
 
 ## Device Enrollment
 
@@ -83,10 +89,11 @@ different upstreams and carry different allowed subjects.
 
 ## Detection
 
-After the cutover, accepted sshd sessions should have a loopback source address
-because only Pomerium reaches upstream sshd. `aspect detect-intrusions` queries
-`verself.host_auth_events` for accepted events with `source_ip` outside
-`127.0.0.1` and `::1`.
+After the cutover, accepted sshd sessions for normal operator access should
+have a loopback source address because only Pomerium reaches upstream sshd.
+`aspect detect-intrusions` queries `verself.host_auth_events` for accepted
+events with `source_ip` outside `127.0.0.1` and `::1`. Matches should line up
+with intentional bootstrap/recovery use of direct host SSH on `:2222`.
 
 ```sql
 SELECT recorded_at, outcome, auth_method, cert_id, user, source_ip, body
@@ -98,14 +105,16 @@ WHERE event_date >= today() - 31
 ORDER BY recorded_at DESC;
 ```
 
-The expected result is zero rows.
+The expected result is zero rows outside active bootstrap/recovery work.
 
 ## Recovery
 
-Lockout recovery is host reprovisioning. During pre-release operation this is
-preferable to preserving a second production SSH authority or static host key
-path. The Pomerium SSH user CA key lives in `/etc/credstore/pomerium/`; deleting
-that credstore and rerunning host convergence rotates operator SSH trust.
+Recovery starts with direct host SSH on `:2222`. Reprovisioning remains the
+fallback when host-level state is not worth preserving. The direct listener is a
+bootstrap/recovery path, not a second production SSH certificate authority.
+
+The Pomerium SSH user CA key lives in `/etc/credstore/pomerium/`; deleting that
+credstore and rerunning host convergence rotates operator SSH trust.
 
 OpenBao recovery remains independent of operator SSH. OpenBao runtime-secret
 bindings are reconciled by the `openbao_runtime_secrets` role after the OpenBao

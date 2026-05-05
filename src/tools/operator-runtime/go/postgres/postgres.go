@@ -70,7 +70,7 @@ func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.C
 	if err != nil {
 		return nil, fmt.Errorf("postgres: parse config: %w", err)
 	}
-	pgxCfg.Config.DialFunc = rt.SSH.DialContext
+	pgxCfg.DialFunc = rt.SSH.DialContext
 	conn, err := pgx.ConnectConfig(ctx, pgxCfg)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: connect: %w", err)

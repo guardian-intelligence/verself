@@ -12,10 +12,14 @@
 package runtime
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -29,7 +33,6 @@ import (
 
 	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
-	"github.com/verself/deployment-tools/internal/inventory"
 	"github.com/verself/deployment-tools/internal/sshtun"
 )
 
@@ -95,6 +98,7 @@ type Runtime struct {
 	Tracer   trace.Tracer
 	Identity identity.Snapshot
 	SSH      *sshtun.Client
+	SSHPort  int
 	DeployDB *deploydb.Client
 	Site     string
 	RepoRoot string
@@ -104,6 +108,33 @@ type Runtime struct {
 
 	bootstrapSpan  trace.Span
 	bootstrapStart time.Time
+}
+
+type infraHost struct {
+	Alias string
+	Host  string
+	User  string
+	Port  int
+}
+
+func (h infraHost) sshPorts() []int {
+	ports := []int{}
+	if h.Port > 0 {
+		ports = append(ports, h.Port)
+	}
+	for _, port := range []int{2222, 22} {
+		seen := false
+		for _, existing := range ports {
+			if existing == port {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			ports = append(ports, port)
+		}
+	}
+	return ports
 }
 
 // Init brings up SSH, the OTLP forward, and the OTel SDK in that
@@ -128,6 +159,7 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	bootstrapStart := time.Now()
 
 	host, user := opts.InfraHost, opts.InfraUser
+	sshPorts := []int{22}
 	if host == "" || user == "" {
 		resolved, err := resolveInfraHost(repoRoot, site)
 		if err != nil {
@@ -139,6 +171,7 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		if user == "" {
 			user = resolved.User
 		}
+		sshPorts = resolved.sshPorts()
 	}
 
 	rt := &Runtime{
@@ -147,11 +180,12 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		bootstrapStart: bootstrapStart,
 	}
 
-	sshClient, err := sshtun.Dial(ctx, host, user)
+	sshClient, err := sshtun.Dial(ctx, host, user, sshPorts)
 	if err != nil {
 		return nil, err
 	}
 	rt.SSH = sshClient
+	rt.SSHPort = sshClient.Port()
 
 	if !opts.SkipOTLPForward {
 		forward, err := sshClient.Forward(ctx, "otlp", otlpForwardRemotePort)
@@ -277,7 +311,85 @@ func (rt *Runtime) OTLPEndpoint() string {
 	return rt.otlpForward.ListenAddr
 }
 
-// resolveInfraHost reads the authored per-site substrate inventory.
-func resolveInfraHost(repoRoot, site string) (*inventory.Host, error) {
-	return inventory.LoadInfra(filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini"))
+// resolveInfraHost reads the authored per-site substrate inventory just far
+// enough to bootstrap SSH. Full Ansible inventory semantics stay with Ansible.
+func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
+	path := filepath.Join(repoRoot, "src", "host-configuration", "sites", site, "inventory.ini")
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open inventory: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	var (
+		section     string
+		ansibleUser string
+		first       *infraHost
+	)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.Trim(line, "[]")
+			continue
+		}
+		if strings.HasSuffix(section, ":vars") {
+			if k, v, ok := splitInventoryKV(line); ok && k == "ansible_user" {
+				ansibleUser = v
+			}
+			continue
+		}
+		if section != "infra" || first != nil {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		alias := fields[0]
+		host := alias
+		user := ""
+		port := 0
+		for _, field := range fields[1:] {
+			if k, v, ok := splitInventoryKV(field); ok {
+				switch k {
+				case "ansible_host":
+					host = v
+				case "ansible_user":
+					user = v
+				case "ansible_port":
+					parsed, err := strconv.Atoi(v)
+					if err != nil || parsed <= 0 || parsed > 65535 {
+						return nil, fmt.Errorf("inventory: invalid ansible_port %q for %s", v, alias)
+					}
+					port = parsed
+				}
+			}
+		}
+		first = &infraHost{Alias: alias, Host: host, User: user, Port: port}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read inventory: %w", err)
+	}
+	if first == nil {
+		return nil, fmt.Errorf("inventory %s has no entries under [infra]", path)
+	}
+	if first.User == "" {
+		first.User = ansibleUser
+	}
+	if first.User == "" {
+		return nil, errors.New("inventory: no ansible_user set on the [infra] host or in [all:vars]")
+	}
+	return first, nil
+}
+
+func splitInventoryKV(s string) (key, value string, ok bool) {
+	idx := strings.Index(s, "=")
+	if idx < 0 {
+		return "", "", false
+	}
+	return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+1:]), true
 }

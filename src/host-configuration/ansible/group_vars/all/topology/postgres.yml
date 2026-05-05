@@ -33,6 +33,9 @@ topology_postgres:
     - component: temporal
       database: temporal
       owner: temporal
+    - component: temporal
+      database: temporal_visibility
+      owner: temporal
     - component: billing
       database: billing
       owner: billing

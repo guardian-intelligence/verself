@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,12 +26,14 @@ const sshDialTimeout = 5 * time.Second
 var remoteStagingPrefixRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type SSHOptions struct {
-	User string
-	Host string
+	User           string
+	Host           string
+	PortCandidates []int
 }
 
 type SSHClient struct {
 	host       string
+	port       int
 	user       string
 	authMethod string
 	client     *ssh.Client
@@ -63,30 +66,68 @@ func DialSSH(ctx context.Context, opts SSHOptions) (*SSHClient, error) {
 		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519},
 		Timeout:           sshDialTimeout,
 	}
-	addr := net.JoinHostPort(opts.Host, "22")
+	ports := normalizeSSHPortCandidates(opts.PortCandidates)
 	dialer := net.Dialer{Timeout: sshDialTimeout}
-	tcpConn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		for _, closer := range authClosers {
-			_ = closer.Close()
+	var connectErrs []error
+	for _, port := range ports {
+		addr := net.JoinHostPort(opts.Host, strconv.Itoa(port))
+		tcpConn, err := dialer.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			connectErrs = append(connectErrs, fmt.Errorf("%s tcp dial: %w", addr, err))
+			continue
 		}
-		return nil, fmt.Errorf("ssh tcp dial %s: %w", addr, err)
-	}
-	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, config)
-	if err != nil {
-		_ = tcpConn.Close()
-		for _, closer := range authClosers {
-			_ = closer.Close()
+		conn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, config)
+		if err != nil {
+			_ = tcpConn.Close()
+			connectErrs = append(connectErrs, fmt.Errorf("%s handshake: %w", addr, err))
+			continue
 		}
-		return nil, fmt.Errorf("ssh handshake %s: %w", addr, err)
+		return &SSHClient{
+			host:       opts.Host,
+			port:       port,
+			user:       opts.User,
+			authMethod: authMethod,
+			client:     ssh.NewClient(conn, chans, reqs),
+			closers:    authClosers,
+		}, nil
 	}
-	return &SSHClient{
-		host:       opts.Host,
-		user:       opts.User,
-		authMethod: authMethod,
-		client:     ssh.NewClient(conn, chans, reqs),
-		closers:    authClosers,
-	}, nil
+	for _, closer := range authClosers {
+		_ = closer.Close()
+	}
+	return nil, fmt.Errorf("operator ssh connect %s ports %v: %w", opts.Host, ports, errors.Join(connectErrs...))
+}
+
+func normalizeSSHPortCandidates(candidates []int) []int {
+	if len(candidates) == 0 {
+		return []int{22}
+	}
+	ports := make([]int, 0, len(candidates))
+	for _, port := range candidates {
+		if port <= 0 || port > 65535 {
+			continue
+		}
+		seen := false
+		for _, existing := range ports {
+			if existing == port {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			ports = append(ports, port)
+		}
+	}
+	if len(ports) == 0 {
+		return []int{22}
+	}
+	return ports
+}
+
+func (c *SSHClient) Port() int {
+	if c == nil || c.port == 0 {
+		return 22
+	}
+	return c.port
 }
 
 func (c *SSHClient) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
@@ -413,28 +454,11 @@ func ShellWord(s string) (string, error) {
 
 func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 	var (
-		methods []ssh.AuthMethod
-		closers []io.Closer
-		labels  []string
+		methods           []ssh.AuthMethod
+		closers           []io.Closer
+		labels            []string
+		passphraseKeyPath string
 	)
-	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-		conn, err := net.Dial("unix", sock)
-		if err != nil {
-			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
-		}
-		signers, err := agent.NewClient(conn).Signers()
-		if err != nil {
-			_ = conn.Close()
-			return nil, nil, "", fmt.Errorf("ssh agent signers: %w", err)
-		}
-		if len(signers) == 0 {
-			_ = conn.Close()
-		} else {
-			methods = append(methods, ssh.PublicKeys(signers...))
-			closers = append(closers, conn)
-			labels = append(labels, "ssh-agent")
-		}
-	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -453,7 +477,8 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 		if err != nil {
 			var passphraseMissing *ssh.PassphraseMissingError
 			// Passphrase-protected default keys are expected on laptops; use the agent signer instead.
-			if errors.As(err, &passphraseMissing) && len(methods) > 0 {
+			if errors.As(err, &passphraseMissing) {
+				passphraseKeyPath = path
 				continue
 			}
 			return nil, nil, "", fmt.Errorf("parse SSH identity %s: %w", path, err)
@@ -462,11 +487,33 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 		labels = append(labels, name)
 		break
 	}
+
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		conn, err := net.Dial("unix", sock)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
+		}
+		signers, err := agent.NewClient(conn).Signers()
+		if err != nil {
+			_ = conn.Close()
+			return nil, nil, "", fmt.Errorf("ssh agent signers: %w", err)
+		}
+		if len(signers) == 0 {
+			_ = conn.Close()
+		} else {
+			methods = append(methods, ssh.PublicKeys(signers...))
+			closers = append(closers, conn)
+			labels = append(labels, "ssh-agent")
+		}
+	}
 	if len(methods) > 0 {
 		methods = append(methods, ssh.KeyboardInteractive(operatorKeyboardInteractiveChallenge))
 		labels = append(labels, "keyboard-interactive")
 	}
 	if len(methods) == 0 {
+		if passphraseKeyPath != "" {
+			return nil, nil, "", fmt.Errorf("operator ssh: default SSH identity %s is passphrase-protected; run ssh-add %s", passphraseKeyPath, passphraseKeyPath)
+		}
 		return nil, nil, "", errors.New("operator ssh: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
 	}
 	return methods, closers, strings.Join(labels, "+"), nil

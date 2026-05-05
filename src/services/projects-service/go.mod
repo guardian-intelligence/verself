@@ -54,7 +54,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-
 replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go

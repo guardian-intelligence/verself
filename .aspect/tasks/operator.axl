@@ -3,7 +3,7 @@
   aspect operator platform --action=check|seed [--format=text|json]
   aspect operator device [--site=prod]
 
-The implementation lives in src/tools/dev/cmd/aspect-operator.
+The implementation lives in src/tools/operator/cmd/aspect-operator.
 """
 
 load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")

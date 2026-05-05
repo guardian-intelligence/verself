@@ -192,6 +192,7 @@
 - name: Initialize owned component Zitadel project index
   ansible.builtin.set_fact:
     component_zitadel_projects_by_name: {}
+    component_auth_project_ids_by_name: {}
   no_log: true
   when: component_owned_auth_components | length > 0
 
@@ -204,6 +205,14 @@
       }}
   loop: "{{ component_zitadel_projects_raw.json.result | default([]) }}"
   no_log: true
+  when: component_owned_auth_components | length > 0
+
+- name: Reconcile owned component Zitadel projects before bootstrap hooks
+  ansible.builtin.include_tasks: ../../tasks/component/auth_owned_project_api.yml
+  loop: "{{ component_owned_auth_components }}"
+  loop_control:
+    loop_var: component_auth_component
+    label: "{{ component_auth_component.workload.auth.project_name }}"
   when: component_owned_auth_components | length > 0
 
 - name: Configure Nomad application substrate state

@@ -12,6 +12,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,6 +40,7 @@ func main() {
 type config struct {
 	site        string
 	ansibleDir  string
+	inventory   string
 	secretsPath string
 	timeout     time.Duration
 	concurrency int
@@ -49,6 +52,7 @@ func run(args []string) error {
 	cfg := config{}
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host-configuration Ansible root (defaults to src/host-configuration/ansible).")
+	fs.StringVar(&cfg.inventory, "inventory", "", "Path to the site Ansible inventory (defaults to src/host-configuration/sites/<site>/inventory.ini).")
 	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted secrets.yml (defaults to src/host-configuration/sites/<site>/secrets.sops.yml).")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
@@ -59,11 +63,14 @@ func run(args []string) error {
 	if cfg.ansibleDir == "" {
 		cfg.ansibleDir = "src/host-configuration/ansible"
 	}
+	if cfg.inventory == "" {
+		cfg.inventory = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "inventory.ini"))
+	}
 	if cfg.secretsPath == "" {
 		cfg.secretsPath = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "secrets.sops.yml"))
 	}
 
-	desired, err := loadDesired(cfg.ansibleDir)
+	desired, err := loadDesired(cfg.ansibleDir, cfg.site, cfg.inventory)
 	if err != nil {
 		return err
 	}
@@ -191,7 +198,7 @@ type desiredRecord struct {
 	zoneName string // verself.sh / guardianintelligence.org
 	record   string // "@" or "billing.api"
 	fqdn     string // record + "." + zoneName, or zoneName when record == "@"
-	targetIP string // bare_metal_public_ipv4
+	targetIP string // inventory/site public IP
 	ttl      int    // 1 = Cloudflare automatic
 	proxied  bool
 }
@@ -223,12 +230,13 @@ func (d *desiredState) byZone(zone string) []desiredRecord {
 	return out
 }
 
-// loadDesired reads authored substrate vars that drive Cloudflare DNS shape:
-// topology/dns.yml (topology_dns_records) and topology/ops.yml
-// (verself_domain, company_domain, bare_metal_public_ipv4).
-func loadDesired(ansibleDir string) (*desiredState, error) {
+// loadDesired reads authored substrate vars that drive Cloudflare DNS shape.
+// The public IP follows site inventory so reprovisioning cannot strand DNS on a
+// previous server.
+func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) {
 	dnsPath := ansibleDir + "/group_vars/all/topology/dns.yml"
 	opsPath := ansibleDir + "/group_vars/all/topology/ops.yml"
+	siteVarsPath := filepath.Clean(filepath.Join(ansibleDir, "..", "sites", site, "vars.yml"))
 
 	var dnsDoc struct {
 		Records []struct {
@@ -244,11 +252,28 @@ func loadDesired(ansibleDir string) (*desiredState, error) {
 	if err := readYAML(opsPath, &opsDoc); err != nil {
 		return nil, fmt.Errorf("read %s: %w", opsPath, err)
 	}
-	verself, _ := opsDoc["verself_domain"].(string)
-	company, _ := opsDoc["company_domain"].(string)
-	publicIP, _ := opsDoc["bare_metal_public_ipv4"].(string)
+	var siteVars map[string]any
+	if err := readYAML(siteVarsPath, &siteVars); err != nil {
+		return nil, fmt.Errorf("read %s: %w", siteVarsPath, err)
+	}
+	verself := stringValue(siteVars, "verself_domain")
+	if verself == "" {
+		verself = stringValue(opsDoc, "verself_domain")
+	}
+	company := stringValue(siteVars, "company_domain")
+	if company == "" {
+		company = stringValue(opsDoc, "company_domain")
+	}
+	publicIP := stringValue(siteVars, "bare_metal_public_ipv4")
+	if publicIP == "" {
+		var err error
+		publicIP, err = inventoryInfraHost(inventoryPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if verself == "" || company == "" || publicIP == "" {
-		return nil, fmt.Errorf("missing verself_domain / company_domain / bare_metal_public_ipv4 in %s", opsPath)
+		return nil, fmt.Errorf("missing verself_domain / company_domain / inventory public IP")
 	}
 
 	out := &desiredState{}
@@ -282,6 +307,55 @@ func loadDesired(ansibleDir string) (*desiredState, error) {
 		})
 	}
 	return out, nil
+}
+
+func stringValue(doc map[string]any, key string) string {
+	v, _ := doc[key].(string)
+	return strings.TrimSpace(v)
+}
+
+func inventoryInfraHost(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open inventory %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	section := ""
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.Trim(line, "[]")
+			continue
+		}
+		if section != "infra" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		host := fields[0]
+		for _, field := range fields[1:] {
+			key, value, ok := strings.Cut(field, "=")
+			if ok && key == "ansible_host" {
+				host = value
+				break
+			}
+		}
+		if host == "" {
+			return "", fmt.Errorf("inventory %s has an empty [infra] host", path)
+		}
+		return host, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read inventory %s: %w", path, err)
+	}
+	return "", fmt.Errorf("inventory %s has no [infra] host", path)
 }
 
 func readYAML(path string, into any) error {

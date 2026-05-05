@@ -24,6 +24,7 @@ GO_DIRS = [
     "src/services/billing-service",
     "src/tools/deployment",
     "src/tools/dev",
+    "src/tools/operator",
     "src/domain-transfer-objects/go",
     "src/services/governance-service",
     "src/host-configuration",
@@ -45,8 +46,8 @@ GO_DIRS = [
 
 VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
 VERSELF_DEPLOY_BIN = "bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
-ASPECT_OPERATOR_TARGET = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
-ASPECT_OPERATOR_BIN = "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator"
+ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operator"
+ASPECT_OPERATOR_BIN = "bazel-bin/src/tools/operator/cmd/aspect-operator/aspect-operator_/aspect-operator"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""

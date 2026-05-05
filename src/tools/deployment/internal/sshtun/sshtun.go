@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ const (
 // commands with Exec, and Close at end of life.
 type Client struct {
 	host      string
+	port      int
 	user      string
 	conn      *ssh.Client
 	tracer    trace.Tracer
@@ -57,13 +59,14 @@ type Client struct {
 // agent. Strict host-key checking is disabled to match the existing
 // bash behaviour (the controller is on a private wireguard mesh; the
 // hardening of host-key pinning is a Phase 4 follow-up).
-func Dial(ctx context.Context, host, user string) (*Client, error) {
+func Dial(ctx context.Context, host, user string, ports []int) (*Client, error) {
 	tracer := otel.Tracer(tracerName)
 	ctx, span := tracer.Start(ctx, "verself_deploy.ssh.connect",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("ssh.host", host),
 			attribute.String("ssh.user", user),
+			attribute.IntSlice("ssh.port_candidates", normalizePorts(ports)),
 		),
 	)
 	defer span.End()
@@ -74,6 +77,7 @@ func Dial(ctx context.Context, host, user string) (*Client, error) {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
+	ports = normalizePorts(ports)
 
 	authMethods, agentConn, authSpanAttr, err := buildAuthMethods()
 	if err != nil {
@@ -91,36 +95,76 @@ func Dial(ctx context.Context, host, user string) (*Client, error) {
 	}
 
 	dialer := net.Dialer{Timeout: cfg.Timeout}
-	tcpConn, err := dialer.DialContext(ctx, "tcp", host+":22")
-	if err != nil {
-		closeAgentConn(agentConn)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("ssh tcp dial: %w", err)
+	var connectErrs []error
+	for _, port := range ports {
+		addr := net.JoinHostPort(host, strconv.Itoa(port))
+		tcpConn, err := dialer.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			connectErrs = append(connectErrs, fmt.Errorf("%s tcp dial: %w", addr, err))
+			continue
+		}
+		cc, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, cfg)
+		if err != nil {
+			_ = tcpConn.Close()
+			connectErrs = append(connectErrs, fmt.Errorf("%s handshake: %w", addr, err))
+			continue
+		}
+		span.SetAttributes(attribute.Int("ssh.port", port))
+		span.SetStatus(codes.Ok, "")
+		c := &Client{
+			host:      host,
+			port:      port,
+			user:      user,
+			conn:      ssh.NewClient(cc, chans, reqs),
+			tracer:    tracer,
+			agentConn: agentConn,
+		}
+		return c, nil
 	}
-	cc, chans, reqs, err := ssh.NewClientConn(tcpConn, host+":22", cfg)
-	if err != nil {
-		_ = tcpConn.Close()
-		closeAgentConn(agentConn)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("ssh handshake: %w", err)
+	closeAgentConn(agentConn)
+	err = fmt.Errorf("ssh connect %s ports %v: %w", host, ports, errors.Join(connectErrs...))
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	return nil, err
+}
+
+func normalizePorts(ports []int) []int {
+	if len(ports) == 0 {
+		return []int{22}
 	}
-	span.SetStatus(codes.Ok, "")
-	c := &Client{
-		host:      host,
-		user:      user,
-		conn:      ssh.NewClient(cc, chans, reqs),
-		tracer:    tracer,
-		agentConn: agentConn,
+	out := make([]int, 0, len(ports))
+	for _, port := range ports {
+		if port <= 0 || port > 65535 {
+			continue
+		}
+		seen := false
+		for _, existing := range out {
+			if existing == port {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			out = append(out, port)
+		}
 	}
-	return c, nil
+	if len(out) == 0 {
+		return []int{22}
+	}
+	return out
 }
 
 func closeAgentConn(conn net.Conn) {
 	if conn != nil {
 		_ = conn.Close()
 	}
+}
+
+func (c *Client) Port() int {
+	if c == nil || c.port == 0 {
+		return 22
+	}
+	return c.port
 }
 
 // Forward is one role-tagged local-port forward. ListenAddr is the

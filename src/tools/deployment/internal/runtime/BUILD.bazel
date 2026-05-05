@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/identity",
-        "//src/tools/deployment/internal/inventory",
         "//src/tools/deployment/internal/sshtun",
         "//src/tools/observability/go/otel",
         "@io_opentelemetry_go_otel//:otel",

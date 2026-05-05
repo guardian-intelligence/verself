@@ -436,26 +436,26 @@ func printEmptyHint(cfg config, q query) {
 }
 
 func printMarkdownTable(w *os.File, table opruntime.Table) {
-	fmt.Fprint(w, "|")
+	_, _ = fmt.Fprint(w, "|")
 	for _, header := range table.Headers {
-		fmt.Fprintf(w, " %s |", markdownCell(header))
+		_, _ = fmt.Fprintf(w, " %s |", markdownCell(header))
 	}
-	fmt.Fprintln(w)
-	fmt.Fprint(w, "|")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprint(w, "|")
 	for range table.Headers {
-		fmt.Fprint(w, " --- |")
+		_, _ = fmt.Fprint(w, " --- |")
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 	for _, row := range table.Rows {
-		fmt.Fprint(w, "|")
+		_, _ = fmt.Fprint(w, "|")
 		for i := range table.Headers {
 			value := ""
 			if i < len(row) {
 				value = row[i]
 			}
-			fmt.Fprintf(w, " %s |", markdownCell(value))
+			_, _ = fmt.Fprintf(w, " %s |", markdownCell(value))
 		}
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w)
 	}
 }
 

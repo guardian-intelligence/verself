@@ -121,7 +121,7 @@ func scanFile(path, rel string) ([]Finding, error) {
 	if err != nil {
 		return nil, fmt.Errorf("supplychain: open %s: %w", rel, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	raw, err := io.ReadAll(f)
 	if err != nil {
 		return nil, fmt.Errorf("supplychain: read %s: %w", rel, err)
@@ -598,7 +598,7 @@ func ReadLines(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	var lines []string
 	for scanner.Scan() {

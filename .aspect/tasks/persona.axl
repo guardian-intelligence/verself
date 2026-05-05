@@ -5,16 +5,12 @@ There are intentionally no per-persona shortcut tasks; pass the persona name
 as the positional argument (`aspect persona assume platform-admin`).
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "inventory_check", "ws_path")
 
 _VALID_PERSONAS = ["platform-admin", "acme-admin", "acme-member"]
 
 def _aspect_operator_bin(ctx):
-    target = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
-    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
-    if rc != 0:
-        return ""
-    return ws_path(ctx, "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    return build_aspect_operator(ctx)
 
 def _assume_impl(ctx):
     if inventory_check(ctx) != 0:
@@ -51,18 +47,30 @@ def _user_state_impl(ctx):
     if bin == "":
         return 1
     cli_args = [
-        "--email", ctx.args.email,
-        "--org", ctx.args.org,
-        "--org-id", ctx.args.org_id,
-        "--org-name", ctx.args.org_name,
-        "--state", ctx.args.state,
-        "--plan-id", ctx.args.plan_id,
-        "--product-id", ctx.args.product_id,
-        "--balance-units", ctx.args.balance_units,
-        "--balance-cents", ctx.args.balance_cents,
-        "--business-now", ctx.args.business_now,
-        "--overage-policy", ctx.args.overage_policy,
-        "--trust-tier", ctx.args.trust_tier,
+        "--email",
+        ctx.args.email,
+        "--org",
+        ctx.args.org,
+        "--org-id",
+        ctx.args.org_id,
+        "--org-name",
+        ctx.args.org_name,
+        "--state",
+        ctx.args.state,
+        "--plan-id",
+        ctx.args.plan_id,
+        "--product-id",
+        ctx.args.product_id,
+        "--balance-units",
+        ctx.args.balance_units,
+        "--balance-cents",
+        ctx.args.balance_cents,
+        "--business-now",
+        ctx.args.business_now,
+        "--overage-policy",
+        ctx.args.overage_policy,
+        "--trust-tier",
+        ctx.args.trust_tier,
     ]
     return checked_spawn(
         ctx,

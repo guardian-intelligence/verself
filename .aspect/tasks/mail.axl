@@ -6,6 +6,7 @@ not preserved; use `aspect mail send --to=ceo` / `--to=agents`.
 
 load(
     ".aspect/lib/helpers.axl",
+    "build_aspect_operator",
     "checked_spawn",
     "inventory_check",
     "require_arg",
@@ -17,11 +18,7 @@ _MS = "src/services/mailbox-service"
 _SITE = "prod"
 
 def _aspect_operator_bin(ctx):
-    target = "//src/tools/dev/cmd/aspect-operator:aspect-operator"
-    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
-    if rc != 0:
-        return ""
-    return ws_path(ctx, "bazel-bin/src/tools/dev/cmd/aspect-operator/aspect-operator_/aspect-operator")
+    return build_aspect_operator(ctx)
 
 def _mailbox_tool(ctx, *args):
     if inventory_check(ctx, _SITE) != 0:
@@ -30,7 +27,8 @@ def _mailbox_tool(ctx, *args):
     cli_args = [
         "run",
         "./cmd/mailbox-tool",
-        "--inventory", inv_abs,
+        "--inventory",
+        inv_abs,
     ] + list(args)
     return checked_spawn(
         ctx,

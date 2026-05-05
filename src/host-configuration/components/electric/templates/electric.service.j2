@@ -1,31 +1,36 @@
 [Unit]
 Description=ElectricSQL sync ({{ electric_instance }})
-After=verself-firewall.target network.target postgresql.service
+After=verself-firewall.target network.target postgresql.service containerd.service
 
-Requires=verself-firewall.target
+Requires=verself-firewall.target containerd.service
 Wants=postgresql.service
 
 
 [Service]
 Type=simple
 # Electric auto-publishes shape tables by default; Ansible owns the curated publication list.
-ExecStart=/usr/bin/podman run --rm --replace \
-  --name {{ electric_service_name }} \
-  --network=host \
+ExecStartPre=-{{ verself_bin }}/ctr tasks delete --force {{ electric_service_name }}
+ExecStartPre=-{{ verself_bin }}/ctr containers delete {{ electric_service_name }}
+ExecStart={{ verself_bin }}/ctr run --rm --net-host \
+  --runtime io.containerd.runc.v2 \
+  --runc-binary /usr/bin/crun \
   --env-file {{ electric_runtime_env_file }} \
-  -e ELECTRIC_PORT={{ electric_service_port }} \
-  -e ELECTRIC_STORAGE_DIR=/data \
-  -e ELECTRIC_DB_POOL_SIZE={{ electric_db_pool_size }} \
-  -e ELECTRIC_INSTANCE_ID={{ electric_service_name }} \
-  -e ELECTRIC_REPLICATION_STREAM_ID={{ electric_replication_stream_id }} \
-  -e ELECTRIC_MANUAL_TABLE_PUBLISHING=true \
-  -e RELEASE_NAME={{ electric_service_name }}@127.0.0.1 \
-  -e RELEASE_DISTRIBUTION=none \
-  -v {{ electric_storage_dir }}:/data \
-  {{ electric_image }}
-ExecStop=/usr/bin/podman stop {{ electric_service_name }}
+  --env ELECTRIC_PORT={{ electric_service_port }} \
+  --env ELECTRIC_STORAGE_DIR=/data \
+  --env ELECTRIC_DB_POOL_SIZE={{ electric_db_pool_size }} \
+  --env ELECTRIC_INSTANCE_ID={{ electric_service_name }} \
+  --env ELECTRIC_REPLICATION_STREAM_ID={{ electric_replication_stream_id }} \
+  --env ELECTRIC_MANUAL_TABLE_PUBLISHING=true \
+  --env RELEASE_NAME={{ electric_service_name }}@127.0.0.1 \
+  --env RELEASE_DISTRIBUTION=none \
+  --mount type=bind,src={{ electric_storage_dir }},dst=/data,options=rbind:rw \
+  {{ electric_image }} {{ electric_service_name }}
+ExecStop=-{{ verself_bin }}/ctr tasks kill --signal SIGTERM {{ electric_service_name }}
+ExecStopPost=-{{ verself_bin }}/ctr tasks delete --force {{ electric_service_name }}
+ExecStopPost=-{{ verself_bin }}/ctr containers delete {{ electric_service_name }}
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

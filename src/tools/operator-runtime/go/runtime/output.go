@@ -43,15 +43,15 @@ func PrintTable(w io.Writer, table Table) error {
 func printTableRow(w io.Writer, row []string, widths []int) {
 	for i, value := range row {
 		if i > 0 {
-			fmt.Fprint(w, " | ")
+			_, _ = fmt.Fprint(w, " | ")
 		}
 		width := 0
 		if i < len(widths) {
 			width = widths[i]
 		}
-		fmt.Fprintf(w, "%-*s", width, value)
+		_, _ = fmt.Fprintf(w, "%-*s", width, value)
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 }
 
 func FormatValue(value any) string {

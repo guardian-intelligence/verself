@@ -459,7 +459,7 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dst, err)
@@ -492,7 +492,7 @@ func appendFile(path, content string) error {
 	if err != nil {
 		return fmt.Errorf("open append %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.WriteString(content); err != nil {
 		return fmt.Errorf("append %s: %w", path, err)
 	}
@@ -523,7 +523,7 @@ func truncateFile(path string, size int64) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := f.Truncate(size); err != nil {
 		return fmt.Errorf("truncate %s: %w", path, err)
 	}
@@ -535,7 +535,7 @@ func fileDigest(path string) (string, int64, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("open digest %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	n, err := io.Copy(h, f)
 	if err != nil {

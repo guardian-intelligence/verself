@@ -199,6 +199,10 @@
     label: "{{ item.path }}"
   no_log: true
 
+- name: Configure sshd as the Pomerium native-SSH upstream
+  ansible.builtin.include_role:
+    name: operator_ssh_access
+
 - name: Ensure Pomerium PostgreSQL password exists
   ansible.builtin.copy:
     content: "{{ lookup('community.general.random_string', length=64, upper=true, lower=true, numbers=true, special=false) }}\n"
@@ -326,6 +330,12 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Restart Pomerium after SSH listener handoff
+  ansible.builtin.command:
+    cmd: systemctl restart pomerium.service
+  changed_when: true
+  when: operator_ssh_access_changed | default(false) | bool
 
 - name: Wait for Pomerium HTTP listener
   ansible.builtin.wait_for:

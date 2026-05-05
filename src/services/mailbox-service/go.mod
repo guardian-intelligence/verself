@@ -55,7 +55,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-
 replace github.com/verself/secrets-service => ../secrets-service
 
 replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go

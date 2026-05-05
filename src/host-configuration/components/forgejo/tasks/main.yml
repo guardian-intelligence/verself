@@ -35,6 +35,21 @@
   notify:
     - restart forgejo
 
+- name: Apply Forgejo database migrations
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/forgejo"
+      - migrate
+      - --config
+      - /etc/forgejo/app.ini
+      - --work-path
+      - /var/lib/forgejo
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  changed_when: false
+
 - name: Regenerate Forgejo authorized_keys projection
   ansible.builtin.command:
     argv:

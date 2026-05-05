@@ -100,22 +100,22 @@
     owner: root
     group: root
     mode: "0640"
-  notify: restart electric instances
+  register: electric_runtime_env_result
   no_log: true
 
 - name: "Check for local container image for {{ electric_service_name }}"
   ansible.builtin.command:
-    cmd: "podman image exists {{ electric_image }}"
+    cmd: "{{ verself_bin }}/ctr images inspect {{ electric_image }}"
   register: electric_image_probe
   changed_when: false
   failed_when: electric_image_probe.rc not in [0, 1]
 
 # Systemd restarts must not pull from Docker Hub; unauthenticated rate limits
-# can block recovery. Pre-pull here so ExecStart's podman run serves from the
+# can block recovery. Pre-pull here so ExecStart serves from containerd's
 # local image store.
 - name: "Pull container image for {{ electric_service_name }}"
   ansible.builtin.command:
-    cmd: "podman pull {{ electric_image }}"
+    cmd: "{{ verself_bin }}/ctr images pull --platform linux/amd64 {{ electric_image }}"
   changed_when: true
   when: electric_image_probe.rc != 0
 
@@ -124,7 +124,7 @@
     src: electric.service.j2
     dest: "/etc/systemd/system/{{ electric_service_name }}.service"
     mode: "0644"
-  notify: restart electric instances
+  register: electric_systemd_unit_result
 
 - name: "Deploy nftables rules for {{ electric_service_name }}"
   ansible.builtin.copy:
@@ -139,9 +139,16 @@
     enabled: true
     state: started
     daemon_reload: true
+  register: electric_start_result
 
-- name: "Apply pending Electric unit changes before publication reconcile"
-  ansible.builtin.meta: flush_handlers
+- name: "Restart {{ electric_service_name }} after runtime input changes"
+  ansible.builtin.systemd:
+    name: "{{ electric_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when:
+    - not electric_start_result.changed
+    - electric_runtime_env_result.changed or electric_systemd_unit_result.changed
 
 - name: "Reconcile PostgreSQL publication after startup for {{ electric_service_name }}"
   # Electric starts by restoring persisted shape filters; reconcile after restart

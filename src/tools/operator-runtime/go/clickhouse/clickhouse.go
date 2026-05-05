@@ -123,7 +123,7 @@ func (c *Client) QueryTableParams(ctx context.Context, query string, params map[
 	if err != nil {
 		return opruntime.Table{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	columns := rows.Columns()
 	columnTypes := rows.ColumnTypes()
 	vars := make([]any, len(columnTypes))
@@ -162,7 +162,7 @@ func (c *Client) QuerySingleStringColumnParams(ctx context.Context, query string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var value string

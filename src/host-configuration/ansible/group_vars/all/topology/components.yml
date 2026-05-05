@@ -594,6 +594,7 @@ topology_components:
     bootstrap:
     - class: storage_provider
       name: object_storage_tls
+      phase: before_credentials
       reason: Creates the local S3 TLS CA, server certificate, and operator CA bundle for Garage proxy traffic.
     - class: storage_provider
       name: object_storage_garage_proxy

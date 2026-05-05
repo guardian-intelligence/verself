@@ -17,6 +17,43 @@ _JQ_BINARY = "@dev_tool_jq//file"
 _NODEJS_ARCHIVE = "@server_tool_nodejs//file"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
 
+def viteplus_workspace_install(name):
+    """Materialize the Vite+ workspace dependency tree through Bazel.
+
+    The app build still runs as a source-tree action because TanStack Start's
+    route splitting is sensitive to sandbox path layout. This target makes the
+    dependency install an explicit input of every packaged frontend artifact, so
+    deploy orchestration does not perform a hidden `vp install` preflight.
+    """
+    native.genrule(
+        name = name,
+        srcs = [
+            ":workspace_sources",
+        ],
+        outs = [name + ".stamp"],
+        cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+home="$${HOME:-}"
+if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
+  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
+fi
+test -n "$$home"
+vp="$$home/.vite-plus/bin/vp"
+test -x "$$vp"
+cd "src/frontends/viteplus-monorepo"
+"$$vp" install --frozen-lockfile
+printf 'viteplus install %s\\n' "$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')" > "$$out"
+""",
+        local = True,
+        tags = [
+            "local",
+            "no-remote",
+            "no-sandbox",
+        ],
+    )
+
 def viteplus_source_package(npm_name, srcs, name = "pkg"):
     """Source-only workspace package linked into the rules_js npm graph.
 
@@ -49,9 +86,9 @@ def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
     """Bazel surface for a viteplus app.
 
     `:node_app_nomad_artifact` runs `vp build` from the source tree as a local,
-    unsandboxed action. Deploy preflights materialize the Vite+ workspace with
-    `vp install --frozen-lockfile`; Bazel declares the app/workspace input set
-    and decides when the packaging action reruns.
+    unsandboxed action. The root `:workspace_install` target materializes
+    dependencies before artifact packaging; Bazel declares the app/workspace
+    input set and decides when the packaging action reruns.
 
     Putting Vite/Rolldown inside a Bazel action sandbox breaks TanStack Start's
     route-level code splitting: the compiler plugin computes route filenames
@@ -211,6 +248,7 @@ def viteplus_node_app_artifact(name, output, migration_entry = None, migration_d
     srcs = [
         ":instrumentation_bundle",
         ":sources",
+        "//src/frontends/viteplus-monorepo:workspace_install",
         "//src/frontends/viteplus-monorepo:workspace_sources",
     ] + generated_srcs
     migration_cmds = ""
@@ -271,6 +309,9 @@ for generated in {generated_locations}; do
     *) echo "generated source $$generated is not under {package_dir}" >&2; exit 1 ;;
   esac
   generated_dest="$$execroot/{package_dir}/$$generated_rel"
+  if [ -e "$$generated_dest" ]; then
+    chmod -R u+w "$$generated_dest"
+  fi
   rm -rf "$$generated_dest"
   mkdir -p "$$(dirname "$$generated_dest")"
   cp -a "$$generated_abs" "$$generated_dest"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,22 @@ type InventoryTarget struct {
 	Alias string
 	Host  string
 	User  string
+	Port  int
+}
+
+func (t InventoryTarget) SSHPorts() []int {
+	defaults := []int{2222, 22}
+	if strings.Contains(t.User, "@") {
+		defaults = []int{22}
+	}
+	ports := make([]int, 0, len(defaults)+1)
+	if t.Port > 0 {
+		ports = appendUniquePort(ports, t.Port)
+	}
+	for _, port := range defaults {
+		ports = appendUniquePort(ports, port)
+	}
+	return ports
 }
 
 func LoadInfraTarget(path string) (InventoryTarget, error) {
@@ -63,6 +80,12 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 				target.Host = value
 			case "ansible_user":
 				target.User = value
+			case "ansible_port":
+				port, err := parseInventoryPort(value)
+				if err != nil {
+					return InventoryTarget{}, fmt.Errorf("inventory %s has invalid ansible_port for %s: %w", path, target.Alias, err)
+				}
+				target.Port = port
 			}
 		}
 		first = &target
@@ -83,6 +106,26 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 		return InventoryTarget{}, fmt.Errorf("inventory resolved invalid [infra] host %q: %w", first.Host, err)
 	}
 	return *first, nil
+}
+
+func parseInventoryPort(value string) (int, error) {
+	port, err := strconv.Atoi(value)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0, fmt.Errorf("%q is not a TCP port", value)
+	}
+	return port, nil
+}
+
+func appendUniquePort(ports []int, port int) []int {
+	if port <= 0 || port > 65535 {
+		return ports
+	}
+	for _, existing := range ports {
+		if existing == port {
+			return ports
+		}
+	}
+	return append(ports, port)
 }
 
 func stripInventoryComment(line string) string {

@@ -24,6 +24,14 @@
     label: "{{ item.path }}"
   when: not (component_filesystem_convergence.converged | default(false) | bool)
 
+- name: Run pre-credential component substrate bootstrap hooks
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/bootstrap/{{ component_bootstrap_hook.name }}.yml"
+  loop: "{{ component.workload.bootstrap }}"
+  loop_control:
+    loop_var: component_bootstrap_hook
+    label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"
+  when: component_bootstrap_hook.phase | default("after_credentials") == "before_credentials"
+
 - name: Configure component credentials
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/secrets.yml"
   when: not (component_filesystem_convergence.converged | default(false) | bool)
@@ -52,3 +60,4 @@
   loop_control:
     loop_var: component_bootstrap_hook
     label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"
+  when: component_bootstrap_hook.phase | default("after_credentials") == "after_credentials"
