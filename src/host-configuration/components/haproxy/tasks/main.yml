@@ -236,7 +236,30 @@
     owner: root
     group: root
     mode: "0644"
-  notify: update ca certificates
+  register: haproxy_nomad_artifacts_ca_trust_copy
+
+- name: Update system trust for Nomad artifact local CA
+  ansible.builtin.command:
+    cmd: update-ca-certificates
+  register: haproxy_nomad_artifacts_update_ca
+  changed_when: >-
+    haproxy_nomad_artifacts_ca_trust_copy.changed
+    or '0 added, 0 removed' not in
+      (haproxy_nomad_artifacts_update_ca.stdout ~ haproxy_nomad_artifacts_update_ca.stderr)
+
+- name: Restart Nomad after Nomad artifact CA trust changes
+  ansible.builtin.systemd:
+    name: nomad
+    state: restarted
+  when: haproxy_nomad_artifacts_update_ca.changed
+
+- name: Wait for Nomad after Nomad artifact CA trust changes
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ topology_endpoints.nomad.endpoints.http.port }}"
+    state: started
+    timeout: 30
+  when: haproxy_nomad_artifacts_update_ca.changed
 
 - name: Require billing webhook DNS to remain DNS-only
   ansible.builtin.assert:
