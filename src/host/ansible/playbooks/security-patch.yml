@@ -13,6 +13,7 @@
   vars:
     security_patch_current_fact_schema: 1
     security_patch_check_ttl_seconds: 86400
+    security_patch_reboot_timeout_seconds: 600
     # ansible_date_time comes from cached setup facts, so use the controller clock for TTL math.
     security_patch_now_epoch: "{{ now(utc=true).timestamp() | int }}"
     security_patch_cached_epoch: "{{ ansible_facts.security_patch_checked_epoch | default(0) | int }}"
@@ -32,7 +33,7 @@
 
     - name: Reboot before package check if required
       ansible.builtin.reboot:
-        reboot_timeout: 300
+        reboot_timeout: "{{ security_patch_reboot_timeout_seconds }}"
       when: security_patch_initial_reboot_required.stat.exists
 
     - name: Run apt security patch check when cache is stale
@@ -87,7 +88,7 @@
 
         - name: Reboot after package upgrades if required
           ansible.builtin.reboot:
-            reboot_timeout: 300
+            reboot_timeout: "{{ security_patch_reboot_timeout_seconds }}"
           when: security_patch_post_reboot_required.stat.exists
 
         - name: Cache successful security patch check
