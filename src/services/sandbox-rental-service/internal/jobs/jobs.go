@@ -664,6 +664,9 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
 		state = StateFailed
 		reason = "exec_failed"
+		if finalExec.TerminalReason != "" {
+			reason = "exec_failed: " + finalExec.TerminalReason
+		}
 	}
 	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
 		return err

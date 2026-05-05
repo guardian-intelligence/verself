@@ -791,7 +791,8 @@ func (s *agentSession) runExecCommand(ctx context.Context, req vmproto.ExecReque
 	}
 
 	if err := cmd.Start(); err != nil {
-		return 0, 127, err
+		s.sendLogString(req.ExecID, "system", fmt.Sprintf("%s start command: %v\n", logPrefix, err))
+		return time.Since(start), 127, nil
 	}
 	s.activeChildPID.Store(int64(cmd.Process.Pid))
 
