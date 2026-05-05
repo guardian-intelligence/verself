@@ -2,7 +2,42 @@
 
 verself_site: prod
 verself_domain: verself.sh
+verself_version: 0.1.0
+verself_bin: /opt/verself/profile/bin
 company_domain: guardianintelligence.org
+
+billing_service_subdomain: billing.api
+billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
+forgejo_subdomain: git
+forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
+governance_service_subdomain: governance.api
+governance_service_domain: "{{ governance_service_subdomain }}.{{ verself_domain }}"
+iam_service_subdomain: iam.api
+iam_service_domain: "{{ iam_service_subdomain }}.{{ verself_domain }}"
+mailbox_service_subdomain: mail.api
+mailbox_service_domain: "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
+notifications_service_subdomain: notifications.api
+notifications_service_domain: "{{ notifications_service_subdomain }}.{{ verself_domain }}"
+pomerium_subdomain: access
+pomerium_domain: "{{ pomerium_subdomain }}.{{ verself_domain }}"
+profile_service_subdomain: profile.api
+profile_service_domain: "{{ profile_service_subdomain }}.{{ verself_domain }}"
+projects_service_subdomain: projects.api
+projects_service_domain: "{{ projects_service_subdomain }}.{{ verself_domain }}"
+resend_subdomain: notify
+resend_domain: "{{ resend_subdomain }}.{{ verself_domain }}"
+resend_sender_address: "noreply@{{ resend_domain }}"
+resend_sender_name: verself
+sandbox_rental_service_subdomain: sandbox.api
+sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
+secrets_service_subdomain: secrets.api
+secrets_service_domain: "{{ secrets_service_subdomain }}.{{ verself_domain }}"
+source_code_hosting_service_subdomain: source.api
+source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
+stalwart_subdomain: mail
+stalwart_domain: "{{ stalwart_subdomain }}.{{ verself_domain }}"
+zitadel_subdomain: auth
+zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
 
 cloudflare_dns_records:
   - kind: browser_origin
@@ -72,6 +107,35 @@ nomad_artifact_getter_environment_file: /etc/nomad/nomad-artifacts.env
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
 firecracker_host_service_port: 18080
+firecracker_seed_images:
+  - filesystem_label: ""
+    ref: substrate
+    size_bytes: 2147483648
+    source_path: /var/lib/verself/guest-images/substrate.ext4
+    strategy: dd_from_file
+    tier: substrate
+    volblocksize: 16K
+  - filesystem_label: ""
+    ref: gh-actions-runner
+    size_bytes: 1073741824
+    source_path: /var/lib/verself/guest-images/toolchains/gh-actions-runner.ext4
+    strategy: dd_from_file
+    tier: platform_toolchain
+    volblocksize: 16K
+  - filesystem_label: ""
+    ref: forgejo-runner
+    size_bytes: 268435456
+    source_path: /var/lib/verself/guest-images/toolchains/forgejo-runner.ext4
+    strategy: dd_from_file
+    tier: platform_toolchain
+    volblocksize: 16K
+  - filesystem_label: stickydisk
+    ref: sticky-empty
+    size_bytes: 8589934592
+    source_path: ""
+    strategy: mkfs_ext4
+    tier: platform_toolchain
+    volblocksize: 16K
 
 garage_cluster:
   host: 127.0.0.1
