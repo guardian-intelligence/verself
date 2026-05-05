@@ -88,7 +88,7 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 
 - Only Ubuntu 24.04 on the bare-metal box.
 - `vm-orchestrator` is the privileged Go host daemon managing Firecracker lifecycle (ZFS, TAP, jailer) and aggregating guest telemetry. `vm-guest-telemetry` is the Zig guest agent streaming 60Hz health frames over vsock port 10790.
-- Current working bare-metal box: `ssh ubuntu@64.34.84.75`.
+- Current working bare-metal box: `ssh ubuntu@206.223.228.101`.
 - Auth: Zitadel (Stalwart JMAP has a separate auth path).
 - Payments: Stripe + TigerBeetle + PostgreSQL.
 - `otelcol-config.yaml.j2` contains the custom otel collection config.

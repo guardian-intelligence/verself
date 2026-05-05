@@ -93,9 +93,9 @@ ssh ubuntu@prod@access.verself.sh
 - ubuntu: the upstream Linux account Pomerium is allowed to request from sshd.
 
 During bootstrap before IAM, Zitadel, and Pomerium are healthy, use direct host
-SSH. Before the operator access handoff this is `ssh ubuntu@64.34.84.83`; after
-the handoff public `:22` belongs to Pomerium and direct recovery is
-`ssh -p 2222 ubuntu@64.34.84.83`.
+SSH. Before the operator access handoff this is `ssh ubuntu@206.223.228.101`;
+after the handoff public `:22` belongs to Pomerium and direct recovery is
+`ssh -p 2222 ubuntu@206.223.228.101`.
 
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
