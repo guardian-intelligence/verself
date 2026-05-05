@@ -1,5 +1,3 @@
-# gazelle:prefix github.com/verself/host
-
 load("//src/tools/deployment/components:substrate.bzl", "component_substrate_registry")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 load("//src/tools/deployment/units:unit.bzl", "deploy_unit")

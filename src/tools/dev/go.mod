@@ -44,8 +44,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/verself/host => ../../host
-
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
 	4d63.com/gochecknoglobals v0.2.2 // indirect

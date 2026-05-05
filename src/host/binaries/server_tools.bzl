@@ -104,10 +104,10 @@ SERVER_TOOL_DEPS = [
     ":zot",
 ]
 
-HOST_GO_TOOLS = [
-    ("//src/host/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
-    ("//src/host/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
-    ("//src/host/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
+PROFILE_GO_TOOLS = [
+    ("//src/components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
+    ("//src/components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
+    ("//src/components/zot/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
     ("//src/components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
     ("//src/components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
     ("//src/components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
@@ -351,14 +351,14 @@ def server_tools_archive(name = "server_tools_archive"):
     )
 
 def substrate_go_tools_archive(name = "substrate_go_tools"):
-    """Bundle the host-side Go binaries into a content-addressed tarball for Ansible installation.
+    """Bundle Go binaries installed into the server profile for Ansible installation.
 
     Args:
       name: name of the produced `pkg_tar` target. Defaults to `substrate_go_tools`.
     """
     files = {}
     modes = {}
-    for label, output in HOST_GO_TOOLS:
+    for label, output in PROFILE_GO_TOOLS:
         dest = "opt/verself/profile/bin/" + output
         files[label] = dest
         modes[dest] = "0755"

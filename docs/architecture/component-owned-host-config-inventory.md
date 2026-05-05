@@ -46,7 +46,7 @@
 
 - `postgres.yml` splits into host Postgres server tuning plus owner-local database/role/grant declarations.
 
-- `spire.yml` splits into host SPIRE server/agent config plus owner-local workload identity declarations.
+- SPIRE configuration is split into host SPIRE server/agent bootstrap plus owner-local workload identity declarations.
 
 - `dns.yml` becomes Cloudflare integration unit inputs.
 

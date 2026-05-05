@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "haproxy-upstreams-apply_lib",
     srcs = ["main.go"],
-    importpath = "github.com/verself/host/cmd/haproxy-upstreams-apply",
+    importpath = "github.com/verself/components/haproxy/cmd/haproxy-upstreams-apply",
     visibility = ["//visibility:private"],
     deps = [
         "//src/tools/observability/go/otel",

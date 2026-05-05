@@ -27,7 +27,6 @@ GO_DIRS = [
     "src/tools/operator",
     "src/domain-transfer-objects/go",
     "src/services/governance-service",
-    "src/host",
     "src/services/iam-service",
     "src/services/mailbox-service",
     "src/services/notifications-service",

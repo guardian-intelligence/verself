@@ -125,7 +125,7 @@ func initTelemetry() (func(context.Context) error, error) {
 }
 
 func applyOnceWithTelemetry(ctx context.Context, cfg config) (bool, error) {
-	tracer := otel.Tracer("github.com/verself/host/cmd/haproxy-upstreams-apply")
+	tracer := otel.Tracer("github.com/verself/components/haproxy/cmd/haproxy-upstreams-apply")
 	_, span := tracer.Start(ctx, "haproxy_upstreams.apply",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
