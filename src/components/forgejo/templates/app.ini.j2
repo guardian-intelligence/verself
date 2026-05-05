@@ -40,8 +40,8 @@ INSTALL_LOCK = true
 DISABLE_REGISTRATION = true
 ALLOW_ONLY_EXTERNAL_REGISTRATION = false
 REQUIRE_SIGNIN_VIEW = true
-; Disable both HTTP basic auth and Forgejo's built-in password sign-in UI.
-ENABLE_BASIC_AUTHENTICATION = false
+; Git smart HTTP and Forgejo Actions checkout use token-bearing Basic auth.
+ENABLE_BASIC_AUTHENTICATION = true
 ENABLE_INTERNAL_SIGNIN = false
 
 [oauth2]

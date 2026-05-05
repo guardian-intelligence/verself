@@ -1121,7 +1121,11 @@ export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
 runtime_dir="/workspace/.verself/actions-runner"
 rm -rf "$runtime_dir"
 mkdir -p "$runtime_dir"
-cp -a /opt/actions-runner/. "$runtime_dir"/
+for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runner/..?*; do
+  [ -e "$entry" ] || continue
+  [ "$(basename "$entry")" = "lost+found" ] && continue
+  cp -a "$entry" "$runtime_dir"/
+done
 cd "$runtime_dir"
 mkdir -p _work _diag _temp
 exec ./run.sh --jitconfig "$(cat "$jit_file")"`
