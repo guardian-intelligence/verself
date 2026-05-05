@@ -1116,8 +1116,7 @@ curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERV
 unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
 cd /opt/actions-runner
-rm -rf _work
-ln -s /workspace _work
+mkdir -p _work _diag _temp
 exec ./run.sh --jitconfig "$(cat "$jit_file")"`
 }
 

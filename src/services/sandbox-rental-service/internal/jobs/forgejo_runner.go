@@ -973,7 +973,7 @@ job_handle="$(jq -er '.job_handle' "$bootstrap_file")"
 printf '%s' "$runner_token" > "$token_file"
 chmod 0600 "$token_file"
 cd /workspace
-set -- forgejo-runner one-job --url "$server_url" --uuid "$runner_uuid" --token-url "file://$token_file"
+set -- /opt/forgejo-runner/bin/forgejo-runner one-job --url "$server_url" --uuid "$runner_uuid" --token-url "file://$token_file"
 while IFS= read -r runner_label; do
   [ -n "$runner_label" ] || continue
   set -- "$@" --label "${runner_label}:host"

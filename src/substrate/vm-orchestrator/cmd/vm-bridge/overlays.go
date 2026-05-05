@@ -213,6 +213,9 @@ func (s *agentSession) applyWritableOverlays(mountPath string) error {
 		if err := syscall.Mount("tmpfs", clean, "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
 			return fmt.Errorf("tmpfs mount writable-overlay %s: %w", clean, err)
 		}
+		if err := os.Chown(clean, runnerUID, runnerGID); err != nil {
+			return fmt.Errorf("chown writable-overlay %s: %w", clean, err)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read %s: %w", manifest, err)
