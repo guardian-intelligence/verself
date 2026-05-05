@@ -237,6 +237,20 @@
         - otelcol
         - telemetry
 
+- name: "Platform runtime secrets"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - openbao
+    - secrets
+    - runtime-secrets
+  tasks:
+    - name: Converge OpenBao platform runtime-secret state
+      ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
+
 - name: "Transitional workload substrate bindings"
   hosts: infra
   become: true
