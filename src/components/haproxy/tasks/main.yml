@@ -247,11 +247,27 @@
     or '0 added, 0 removed' not in
       (haproxy_nomad_artifacts_update_ca.stdout ~ haproxy_nomad_artifacts_update_ca.stderr)
 
+- name: Inspect Nomad service load state before artifact CA restart
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - -p
+      - LoadState
+      - --value
+      - nomad.service
+  register: haproxy_nomad_service_load_state
+  changed_when: false
+  failed_when: false
+  when: haproxy_nomad_artifacts_update_ca.changed
+
 - name: Restart Nomad after Nomad artifact CA trust changes
   ansible.builtin.systemd:
     name: nomad
     state: restarted
-  when: haproxy_nomad_artifacts_update_ca.changed
+  when:
+    - haproxy_nomad_artifacts_update_ca.changed
+    - haproxy_nomad_service_load_state.stdout | trim == "loaded"
 
 - name: Wait for Nomad after Nomad artifact CA trust changes
   ansible.builtin.wait_for:
@@ -259,7 +275,9 @@
     port: "{{ nomad_http_port }}"
     state: started
     timeout: 30
-  when: haproxy_nomad_artifacts_update_ca.changed
+  when:
+    - haproxy_nomad_artifacts_update_ca.changed
+    - haproxy_nomad_service_load_state.stdout | trim == "loaded"
 
 - name: Require billing webhook DNS to remain DNS-only
   ansible.builtin.assert:

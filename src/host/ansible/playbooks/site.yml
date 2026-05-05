@@ -208,6 +208,10 @@
       tags:
         - stalwart
         - mail
+    - role: haproxy
+      tags:
+        - haproxy
+        - edge
     - role: spicedb
       tags:
         - spicedb
@@ -224,10 +228,6 @@
       tags:
         - grafana
         - observability
-    - role: haproxy
-      tags:
-        - haproxy
-        - edge
     - role: nomad
       tags:
         - nomad
