@@ -6,22 +6,22 @@
   vars:
     component_object_storage_garage_s3_endpoints: >-
       {{
-        'http://' ~ topology_clusters.garage.host ~ ':'
+        'http://' ~ garage_cluster.host ~ ':'
         ~ (
-          topology_clusters.garage.nodes
+          garage_cluster.nodes
           | map(attribute='s3_port')
           | map('string')
-          | join(',http://' ~ topology_clusters.garage.host ~ ':')
+          | join(',http://' ~ garage_cluster.host ~ ':')
         )
       }}
     component_object_storage_garage_admin_endpoints: >-
       {{
-        'http://' ~ topology_clusters.garage.host ~ ':'
+        'http://' ~ garage_cluster.host ~ ':'
         ~ (
-          topology_clusters.garage.nodes
+          garage_cluster.nodes
           | map(attribute='admin_port')
           | map('string')
-          | join(',http://' ~ topology_clusters.garage.host ~ ':')
+          | join(',http://' ~ garage_cluster.host ~ ':')
         )
       }}
 
@@ -42,7 +42,7 @@
 
 - name: Create object-storage-service Garage proxy key
   ansible.builtin.uri:
-    url: "http://{{ topology_clusters.garage.host }}:{{ topology_clusters.garage.nodes[0].admin_port }}/v2/CreateKey"
+    url: "http://{{ garage_cluster.host }}:{{ garage_cluster.nodes[0].admin_port }}/v2/CreateKey"
     method: POST
     headers:
       Authorization: "Bearer {{ object_storage_service_garage_admin_token_raw.content | b64decode | trim }}"

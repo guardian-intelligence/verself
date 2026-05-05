@@ -2,21 +2,21 @@
 # Single-node Nomad: server + client co-resident. Listens on loopback only;
 # remote operator access is via wg-ops or SSH-forwarded loopback. raw_exec
 # is the only enabled task driver — workloads run as host processes under
-# the topology-declared uid so they keep peer-auth access to the Postgres
+# owner-declared runtime users so they keep peer-auth access to the Postgres
 # Unix socket and the SPIRE workload-API socket. The exec driver's
 # chroot/PID-namespace isolation would cut both.
 
 data_dir  = "{{ nomad_data_dir }}"
 log_level = "INFO"
 
-bind_addr = "{{ topology_endpoints.nomad.host }}"
+bind_addr = "{{ nomad_host }}"
 
-# HTTP is the only port mirrored into topology — operators connect here
+# HTTP is the only host-bootstrap Nomad port — operators connect here
 # over wg-ops or SSH-forwarded loopback. RPC (4647) and Serf (4648) stay
 # on Nomad's defaults; both are loopback-only on a single-node deploy
 # and the host firewall already drops non-loopback ingress.
 ports {
-  http = {{ topology_endpoints.nomad.endpoints.http.port }}
+  http = {{ nomad_http_port }}
 }
 
 # Nomad refuses to advertise loopback automatically (it considers
@@ -24,7 +24,7 @@ ports {
 # what we want. Spell it out per-protocol so the client/server pair
 # inside the same process can talk RPC on 4647 and gossip on 4648.
 advertise {
-  http = "{{ topology_endpoints.nomad.endpoints.http.address }}"
+  http = "{{ nomad_http_address }}"
   rpc  = "127.0.0.1:4647"
   serf = "127.0.0.1:4648"
 }

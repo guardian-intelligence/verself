@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: false
   vars_files:
-    - "../../sites/{{ verself_site }}/vars.yml"
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
     - always
   tasks:
@@ -23,7 +23,7 @@
     - name: Run controller preflight checks
       ansible.builtin.import_tasks: tasks/controller-preflight.yml
 
-- name: "Runtime accounts"
+- name: "Transitional workload accounts"
   hosts: all
   become: true
   gather_facts: false
@@ -31,20 +31,21 @@
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
     - runtime_accounts
+    - workload-bindings
   tasks:
-    # nftables resolves symbolic skuid names while loading rules, so service users must exist before firewall convergence.
+    # Nomad raw_exec tasks still run as host users. Until runtime accounts are
+    # applied by per-owner deployable units, keep this Bazel-descriptor bridge.
     - name: Configure runtime accounts
       ansible.builtin.import_tasks: tasks/runtime_accounts.yml
-      tags:
-        - runtime_accounts
 
-- name: "Host foundation"
+- name: "Host bootstrap foundation"
   hosts: all
   become: true
   gather_facts: true
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
+    - bootstrap
     - foundation
   roles:
     - role: substrate_profile
@@ -70,6 +71,7 @@
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
+    - bootstrap
     - worker
     - firecracker
     - guest_rootfs
@@ -91,18 +93,15 @@
   tasks:
     - name: Run Firecracker worker preflight checks
       ansible.builtin.import_tasks: tasks/firecracker-preflight.yml
-      tags:
-        - preflight
-        - worker
-        - firecracker
 
-- name: "Worker substrate"
+- name: "Worker bootstrap substrate"
   hosts: workers
   become: true
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
+    - bootstrap
     - worker
   roles:
     - role: containerd
@@ -115,21 +114,22 @@
       vars:
         wireguard_tunnels: >-
           {{
-            topology_wireguard.host_groups.workers
-            | map('extract', topology_wireguard.tunnels)
+            wireguard_host_tunnel_groups.workers
+            | map('extract', host_wireguard_tunnels)
             | list
           }}
     - role: firecracker
       tags:
         - firecracker
 
-- name: "Infrastructure host networking"
+- name: "Infrastructure bootstrap networking"
   hosts: infra
   become: true
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
+    - bootstrap
     - infra
     - network
   roles:
@@ -139,20 +139,25 @@
       vars:
         wireguard_tunnels: >-
           {{
-            topology_wireguard.host_groups.infra
-            | map('extract', topology_wireguard.tunnels)
+            wireguard_host_tunnel_groups.infra
+            | map('extract', host_wireguard_tunnels)
             | list
           }}
 
-- name: "Substrate daemons"
+- name: "Host bootstrap daemons"
   hosts: infra
   become: true
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
+    - bootstrap
     - daemons
   roles:
+    - role: postgresql
+      tags:
+        - postgresql
+        - database
     - role: spire
       tags:
         - spire
@@ -161,186 +166,23 @@
       tags:
         - spire-registrations
         - identity
-    - role: garage
-      tags:
-        - garage
-        - object-storage
-    - role: zot
-      tags:
-        - zot
-        - artifacts
-        - oci-registry
-    - role: bazel_remote
-      tags:
-        - bazel-remote
-        - build-cache
+        - workload-bindings
     - role: nomad
       tags:
         - nomad
         - scheduler
-    - role: clickhouse
-      tags:
-        - clickhouse
-        - database
-        - observability
-    - role: tigerbeetle
-      tags:
-        - tigerbeetle
-        - ledger
-    - role: postgresql
-      tags:
-        - postgresql
-        - database
-    - role: spicedb
-      tags:
-        - spicedb
-        - authz
-        - database
-    - role: zitadel
-      tags:
-        - zitadel
-        - auth
-    - role: openbao
-      tags:
-        - openbao
-        - secrets
 
-- name: "OpenBao platform bindings"
+- name: "Transitional workload substrate bindings"
   hosts: infra
   become: true
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
-    - openbao-bindings
-    - platform-bindings
+    - workload-bindings
   tasks:
-    - name: Import OpenBao platform runtime-secret bindings
-      ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
-      tags:
-        - openbao-runtime-secrets
-        - secrets
-        - components
-
-- name: "External reconciler: Cloudflare DNS"
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - external-dns
-    - cloudflare-dns
-  tasks:
-    - name: Run Cloudflare DNS reconciler
-      ansible.builtin.import_tasks: tasks/cloudflare-dns.yml
-      tags:
-        - external-dns
-        - cloudflare-dns
-
-- name: "Substrate edge daemons"
-  hosts: infra
-  become: true
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - daemons
-  roles:
-    - role: containerd
-      tags:
-        - containerd
-    - role: wireguard
-      tags:
-        - network
-        - wireguard
-        - ops-network
-      vars:
-        wireguard_tunnels: >-
-          {{
-            ['ops']
-            | map('extract', topology_wireguard.tunnels)
-            | list
-          }}
-    - role: nats
-      tags:
-        - nats
-        - messaging
-    - role: temporal-platform
-      tags:
-        - temporal
-        - workflow
-    - role: stalwart
-      tags:
-        - stalwart
-        - mail
-    - role: electric
-      tags:
-        - electric
-        - sync
-        - notifications
-      vars:
-        electric_config: "{{ topology_electric_instances.notifications }}"
-    - role: electric
-      tags:
-        - electric
-        - sync
-      vars:
-        electric_config: "{{ topology_electric_instances.default }}"
-    - role: otelcol
-      tags:
-        - otelcol
-        - observability
-    - role: grafana
-      tags:
-        - grafana
-        - observability
-    - role: verdaccio
-      tags:
-        - verdaccio
-        - package-registry
-    - role: haproxy
-      tags:
-        - haproxy
-        - ingress
-    - role: forgejo
-      tags:
-        - forgejo
-        - scm
-
-- name: "External APIs and per-component substrate bindings"
-  hosts: infra
-  become: true
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - components
-  roles:
-    - role: resend
-      tags:
-        - resend
-        - external-api
-
-  tasks:
-    - name: Configure Nomad application substrate bindings
+    # This is the remaining bridge from service/component-local Bazel metadata
+    # to host state. It is intentionally isolated from bootstrap so it can be
+    # replaced by per-owner deployable units without touching the host roles.
+    - name: Configure Nomad workload substrate bindings
       ansible.builtin.import_tasks: tasks/component-substrate.yml
-      tags:
-        - components
-
-- name: "Operator access handoff"
-  hosts: infra
-  become: true
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - access
-    - operator-access
-    - pomerium
-  roles:
-    - role: pomerium
-      tags:
-        - access
-        - operator-access
-        - pomerium

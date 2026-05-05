@@ -4,7 +4,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology — components, ports, SPIRE identities, runtime users — is authored in `src/host-configuration/ansible/group_vars/all/topology/` and service-owned Nomad metadata under each deployable package. Host firewall files are authored in `src/host-configuration/ansible/host-files/`. HAProxy public edge templates are authored in `src/host-configuration/components/haproxy/templates/`. Bazel-input artefacts are authored in their owner packages: `src/host-configuration/binaries/`, `src/tools/dev/binaries/`, and `src/substrate/vm-orchestrator/guest-images/`.
+Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall files are authored in `src/host/ansible/host-files/`; service/component nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages, including `src/host/binaries/` and `src/substrate/vm-orchestrator/guest-images/`.
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and written into root-owned host credential files. Systemd units consume them with `LoadCredential=` where they still run under systemd; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 

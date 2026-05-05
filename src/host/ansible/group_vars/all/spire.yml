@@ -1,2 +1,4 @@
 ---
-# SPIRE topology vars are authored in group_vars/all/topology/spire.yml.
+# SPIRE bootstrap defaults live in the site vars file because the SPIRE
+# server/agent are host substrate. Workload registrations are component-owned
+# Bazel metadata and are passed to the role as a generated descriptor.

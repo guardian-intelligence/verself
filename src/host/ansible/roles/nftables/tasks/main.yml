@@ -19,7 +19,12 @@
 
 - name: Load service-owned component substrate registry for nftables
   ansible.builtin.set_fact:
-    nftables_component_substrate_registry: "{{ lookup('ansible.builtin.file', component_substrate_registry_file) | from_json }}"
+    nftables_component_substrate_registry: >-
+      {{
+        lookup('ansible.builtin.file', component_substrate_registry_file) | from_json
+        if component_substrate_registry_file is defined
+        else {"schema_version": 1, "components": []}
+      }}
 
 - name: Collect platform nftables source files
   ansible.builtin.set_fact:

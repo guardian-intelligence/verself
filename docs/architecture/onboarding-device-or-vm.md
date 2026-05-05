@@ -63,10 +63,10 @@ public-key source and re-evaluate Pomerium policy on each connection.
 
 ## HTTP Operator Routes
 
-Operator HTTP routes are derived from `topology_routes` entries whose kind is
-`operator_origin`. HAProxy terminates public TLS and forwards those origins to
-Pomerium's loopback HTTP listener. Pomerium injects signed identity headers for
-upstreams that can consume them.
+Operator HTTP routes are owned by the components that expose them and are
+published through the edge component. HAProxy terminates public TLS and
+forwards those origins to Pomerium's loopback HTTP listener. Pomerium injects
+signed identity headers for upstreams that can consume them.
 
 Grafana uses Grafana's JWT auth provider with `X-Pomerium-Jwt-Assertion` and
 Pomerium's JWKS endpoint. Grafana's local admin remains enabled for host-level

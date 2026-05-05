@@ -2,7 +2,7 @@
 # WireGuard mesh networking. Handles every tunnel attached to this host:
 # wg0 (worker mesh between platform nodes) and wg-ops (operator mesh for
 # private substrate access). Driven by `wireguard_tunnels`, a list of
-# tunnel definitions sourced from topology_wireguard.
+# tunnel definitions sourced from the site bootstrap vars.
 #
 # wireguard-tools is laid down by substrate_profile (apt). The kernel module
 # is built-in on Linux 6.8+, so the role only needs to manage userspace
@@ -16,7 +16,7 @@
     quiet: true
     fail_msg: >-
       wireguard_tunnels must be a non-empty list of tunnel definitions.
-      Plays should pass the appropriate slice of topology_wireguard.tunnels.
+      Plays should pass the appropriate slice of site-owned wireguard_tunnels.
 
 - name: Create WireGuard config directory
   ansible.builtin.file:

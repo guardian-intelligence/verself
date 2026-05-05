@@ -82,7 +82,6 @@ filegroup(
             "ansible/*.ini",
         ],
     ) + [
-        "//src/components:role_sources",
         "//src/integrations:integration_sources",
     ],
 )

@@ -4,8 +4,8 @@ argument_specs:
     short_description: "WireGuard tunnel converger"
     description:
       - "Brings up one or more WireGuard tunnels on the host."
-      - "Plays pass `wireguard_tunnels` — a slice of topology_wireguard.tunnels"
-      - "selected via topology_wireguard.host_groups — so different host groups"
+      - "Plays pass `wireguard_tunnels` — a slice of site-owned tunnel definitions"
+      - "selected via `wireguard_host_tunnel_groups` — so different host groups"
       - "can run different combinations of tunnels (workers run wg0; the infra"
       - "node also runs wg-ops for operator access to private substrate)."
     options:

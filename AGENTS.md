@@ -123,7 +123,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
-- **Service topology, port assignments, SPIRE identities, runtime users, Ansible inputs:** `src/host/ansible/group_vars/all/topology/` plus service-owned Nomad metadata.
+- **Deployment ownership boundary:** `docs/architecture/component-owned-host-config-inventory.md`; host bootstrap lives in `src/host`, workload identity and runtime inputs live with the owning component/service/frontend.
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 

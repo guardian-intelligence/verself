@@ -1,5 +1,5 @@
 // Command reconcile-cloudflare-dns drives Cloudflare zone state to match the
-// authored substrate topology.
+// site-owned DNS record inventory.
 //
 // Replaces the cloudflare_dns Ansible role, which sequentially called
 // community.general.cloudflare_dns once per record (~870ms each, ~40s total
@@ -230,41 +230,28 @@ func (d *desiredState) byZone(zone string) []desiredRecord {
 	return out
 }
 
-// loadDesired reads authored substrate vars that drive Cloudflare DNS shape.
+// loadDesired reads site vars that drive Cloudflare DNS shape.
 // The public IP follows site inventory so reprovisioning cannot strand DNS on a
 // previous server.
 func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) {
-	dnsPath := ansibleDir + "/group_vars/all/topology/dns.yml"
-	opsPath := ansibleDir + "/group_vars/all/topology/ops.yml"
 	siteVarsPath := filepath.Clean(filepath.Join(ansibleDir, "..", "sites", site, "vars.yml"))
 
-	var dnsDoc struct {
-		Records []struct {
+	var siteVars struct {
+		VerselfDomain       string `yaml:"verself_domain"`
+		CompanyDomain       string `yaml:"company_domain"`
+		BareMetalPublicIPv4 string `yaml:"bare_metal_public_ipv4"`
+		Records             []struct {
 			Kind   string `yaml:"kind"`
 			Record string `yaml:"record"`
 			Zone   string `yaml:"zone"` // "product" | "company"
-		} `yaml:"topology_dns_records"`
+		} `yaml:"cloudflare_dns_records"`
 	}
-	if err := readYAML(dnsPath, &dnsDoc); err != nil {
-		return nil, fmt.Errorf("read %s: %w", dnsPath, err)
-	}
-	var opsDoc map[string]any
-	if err := readYAML(opsPath, &opsDoc); err != nil {
-		return nil, fmt.Errorf("read %s: %w", opsPath, err)
-	}
-	var siteVars map[string]any
 	if err := readYAML(siteVarsPath, &siteVars); err != nil {
 		return nil, fmt.Errorf("read %s: %w", siteVarsPath, err)
 	}
-	verself := stringValue(siteVars, "verself_domain")
-	if verself == "" {
-		verself = stringValue(opsDoc, "verself_domain")
-	}
-	company := stringValue(siteVars, "company_domain")
-	if company == "" {
-		company = stringValue(opsDoc, "company_domain")
-	}
-	publicIP := stringValue(siteVars, "bare_metal_public_ipv4")
+	verself := strings.TrimSpace(siteVars.VerselfDomain)
+	company := strings.TrimSpace(siteVars.CompanyDomain)
+	publicIP := strings.TrimSpace(siteVars.BareMetalPublicIPv4)
 	if publicIP == "" {
 		var err error
 		publicIP, err = inventoryInfraHost(inventoryPath)
@@ -278,7 +265,7 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 
 	out := &desiredState{}
 	seen := map[string]struct{}{}
-	for _, r := range dnsDoc.Records {
+	for _, r := range siteVars.Records {
 		var zone string
 		switch r.Zone {
 		case "product":
@@ -286,7 +273,7 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 		case "company":
 			zone = company
 		default:
-			return nil, fmt.Errorf("unknown topology_dns_records[].zone: %q", r.Zone)
+			return nil, fmt.Errorf("unknown cloudflare_dns_records[].zone: %q", r.Zone)
 		}
 		fqdn := zone
 		if r.Record != "@" {
@@ -294,7 +281,7 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 		}
 		key := zone + "|" + fqdn
 		if _, dup := seen[key]; dup {
-			continue // ansible role used `topology_dns_records | unique`
+			continue
 		}
 		seen[key] = struct{}{}
 		out.records = append(out.records, desiredRecord{
@@ -307,11 +294,6 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 		})
 	}
 	return out, nil
-}
-
-func stringValue(doc map[string]any, key string) string {
-	v, _ := doc[key].(string)
-	return strings.TrimSpace(v)
 }
 
 func inventoryInfraHost(path string) (string, error) {

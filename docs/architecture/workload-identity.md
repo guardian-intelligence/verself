@@ -395,8 +395,8 @@ Smoke-test queries assert:
 - Secrets service code: [`src/services/secrets-service/`](../../src/services/secrets-service/).
 - Audit actor fields:
   [audit-data-contract.md](../../src/services/governance-service/docs/audit-data-contract.md).
-- Listener and port inventory:
-  `src/host-configuration/ansible/group_vars/all/topology/`.
+- Listener and port ownership:
+  Nomad job specs and owner-local deployment metadata.
 - Trust domain exclusion for the privileged host daemon:
   [`src/substrate/vm-orchestrator/AGENTS.md`](../../src/substrate/vm-orchestrator/AGENTS.md).
 - SPIRE trust domains and attestation:

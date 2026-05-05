@@ -175,8 +175,8 @@
 
 - name: Wait for PostgreSQL to be ready
   ansible.builtin.wait_for:
-    port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-    host: "{{ topology_endpoints.postgresql.host }}"
+    port: "{{ postgresql_port }}"
+    host: "{{ postgresql_host }}"
     timeout: 30
 
 # --- Set admin password (idempotent — always update to match credential file) ---
@@ -191,103 +191,3 @@
   become: true
   become_user: postgres
   no_log: true
-
-- name: Ensure PostgreSQL roles and databases match desired state
-  vars:
-    postgresql_peer_only_roles:
-      # These daemons authenticate only over Unix-socket peer auth. Leaving the
-      # roles password-less keeps loopback SCRAM from becoming a second credential.
-      - spicedb
-      - stalwart
-      - temporal
-    postgresql_managed_role_names: "{{ topology_postgres.databases | map(attribute='owner') | unique | sort | list }}"
-    postgresql_managed_databases: "{{ topology_postgres.databases | sort(attribute='database') | list }}"
-  module_defaults:
-    community.postgresql.postgresql_user:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-      login_user: postgres
-      login_password: "{{ postgresql_admin_password }}"
-      trust_input: false
-    community.postgresql.postgresql_db:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-      login_user: postgres
-      login_password: "{{ postgresql_admin_password }}"
-      maintenance_db: postgres
-      trust_input: false
-    community.postgresql.postgresql_owner:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-      login_user: postgres
-      login_password: "{{ postgresql_admin_password }}"
-      login_db: postgres
-      trust_input: false
-    community.postgresql.postgresql_ping:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-      login_user: postgres
-      login_password: "{{ postgresql_admin_password }}"
-      login_db: postgres
-    community.postgresql.postgresql_query:
-      login_host: "{{ topology_endpoints.postgresql.host }}"
-      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-      login_user: postgres
-      login_password: "{{ postgresql_admin_password }}"
-      login_db: postgres
-      trust_input: false
-  block:
-    - name: Ensure application PostgreSQL roles exist
-      community.postgresql.postgresql_user:
-        name: "{{ item }}"
-        role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits[item] }}"
-      loop: "{{ postgresql_managed_role_names }}"
-      loop_control:
-        label: "{{ item }}"
-      no_log: true
-
-    # postgresql_user will not clear omitted passwords; query first so a clean
-    # peer-auth-only role does not report changed forever.
-    - name: Read peer-auth-only PostgreSQL roles with lingering passwords
-      community.postgresql.postgresql_query:
-        query: >-
-          SELECT rolname
-          FROM pg_authid
-          WHERE rolname = ANY(%s)
-            AND rolpassword IS NOT NULL
-        positional_args:
-          - "{{ postgresql_peer_only_roles }}"
-      register: postgresql_peer_roles_with_password
-
-    - name: Clear password on peer-auth-only PostgreSQL roles
-      community.postgresql.postgresql_query:
-        query: "ALTER ROLE {{ item.rolname }} PASSWORD NULL"
-      loop: >-
-        {{
-          postgresql_peer_roles_with_password.query_result
-          if (postgresql_peer_roles_with_password.rowcount | int) > 0
-          else []
-        }}
-      loop_control:
-        label: "{{ item.rolname }}"
-
-    - name: Ensure application PostgreSQL databases exist
-      community.postgresql.postgresql_db:
-        name: "{{ item.database }}"
-        owner: "{{ item.owner }}"
-        state: present
-      loop: "{{ postgresql_managed_databases }}"
-      loop_control:
-        label: "{{ item.database }}"
-      no_log: true
-
-    - name: Ensure application PostgreSQL database ownership
-      community.postgresql.postgresql_owner:
-        obj_name: "{{ item.database }}"
-        obj_type: database
-        new_owner: "{{ item.owner }}"
-      loop: "{{ postgresql_managed_databases }}"
-      loop_control:
-        label: "{{ item.database }}"
-      no_log: true

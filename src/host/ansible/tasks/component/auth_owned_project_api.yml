@@ -8,7 +8,7 @@
 
 - name: Create owned component Zitadel project if missing
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects"
     method: POST
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"
@@ -34,7 +34,7 @@
 
 - name: Ensure owned component Zitadel project settings are current
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ component_auth_project_id }}"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{ component_auth_project_id }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"

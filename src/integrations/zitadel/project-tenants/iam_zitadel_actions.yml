@@ -1,7 +1,7 @@
 ---
 - name: List Zitadel Actions V2 targets for iam-service API credentials
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/targets/search"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/v2/actions/targets/search"
     method: POST
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"
@@ -30,7 +30,7 @@
 
 - name: Create iam-service API credential Actions V2 target if missing
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/targets"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/v2/actions/targets"
     method: POST
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"
@@ -72,7 +72,7 @@
 
 - name: Wire iam-service API credential target into pre-access-token execution
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/executions"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/v2/actions/executions"
     method: PUT
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"

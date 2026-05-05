@@ -9,7 +9,7 @@
 
 - name: List existing Zitadel project roles
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/zitadel.project.v2.ProjectService/ListProjectRoles"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/zitadel.project.v2.ProjectService/ListProjectRoles"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_project_roles_admin_pat }}"
@@ -37,7 +37,7 @@
 
 - name: Add missing Zitadel project roles
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/zitadel.project.v2.ProjectService/AddProjectRole"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/zitadel.project.v2.ProjectService/AddProjectRole"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_project_roles_admin_pat }}"

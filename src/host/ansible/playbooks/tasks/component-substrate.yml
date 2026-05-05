@@ -116,8 +116,8 @@
 - name: Probe component PostgreSQL convergence once
   ansible.builtin.script: >-
     {{ playbook_dir }}/../files/component_postgres_convergence.py
-    --host {{ topology_endpoints.postgresql.host }}
-    --port {{ topology_endpoints.postgresql.endpoints.postgres.port }}
+    --host {{ postgresql_host }}
+    --port {{ postgresql_port }}
     --admin-user postgres
   environment:
     COMPONENT_POSTGRES_DESIRED: "{{ component_postgres_bindings | to_json }}"
@@ -175,8 +175,8 @@
 
 - name: Wait for Zitadel before owned component auth reconciliation
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.zitadel.host }}"
-    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
+    host: "{{ zitadel_host | default('127.0.0.1') }}"
+    port: "{{ zitadel_http_port | default(8085) }}"
     timeout: 60
   when: component_owned_auth_components | length > 0
 
@@ -195,7 +195,7 @@
 
 - name: List Zitadel projects for owned component auth once
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ component_zitadel_admin_pat }}"

@@ -71,13 +71,13 @@
 
 - name: Wait for Nomad HTTP API
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.nomad.host }}"
-    port: "{{ topology_endpoints.nomad.endpoints.http.port }}"
+    host: "{{ nomad_host }}"
+    port: "{{ nomad_http_port }}"
     timeout: 30
 
 - name: Wait for Nomad to leave bootstrapping
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.nomad.endpoints.http.address }}/v1/agent/health"
+    url: "http://{{ nomad_http_address }}/v1/agent/health"
     method: GET
     status_code: 200
   register: nomad_health

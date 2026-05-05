@@ -6,8 +6,8 @@
 
 - name: Wait for Zitadel listener for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.zitadel.host }}"
-    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
+    host: "{{ zitadel_host | default('127.0.0.1') }}"
+    port: "{{ zitadel_http_port | default(8085) }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for OAuth app {{ zitadel_oauth_app_name }}
@@ -25,7 +25,7 @@
 
 - name: Search for Zitadel project {{ zitadel_oauth_app_project_name }}
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -42,7 +42,7 @@
 
 - name: Create Zitadel project if missing — {{ zitadel_oauth_app_project_name }}
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -80,7 +80,7 @@
 # deploy.
 - name: Reconcile Zitadel project flags — {{ zitadel_oauth_app_project_name }}
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -106,7 +106,7 @@
 
 - name: Search for existing Zitadel app — {{ zitadel_oauth_app_name }}
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/_search"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -172,7 +172,7 @@
 - name: Delete incompatible Zitadel OIDC app — {{ zitadel_oauth_app_name }}
   ansible.builtin.uri:
     url: >-
-      http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{
+      http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{
       zitadel_oauth_app_out_project_id }}/apps/{{ zitadel_oauth_app_existing.id }}
     method: DELETE
     headers:
@@ -186,7 +186,7 @@
 
 - name: Create Zitadel OIDC application — {{ zitadel_oauth_app_name }}
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/oidc"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/oidc"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -221,7 +221,7 @@
 
 - name: Re-query Zitadel app — {{ zitadel_oauth_app_name }}
   ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/_search"
+    url: "http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -270,7 +270,7 @@
 - name: Ensure role assertions are enabled on OIDC app — {{ zitadel_oauth_app_name }}
   ansible.builtin.uri:
     url: >-
-      http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{
+      http://{{ zitadel_http_address | default('127.0.0.1:8085') }}/management/v1/projects/{{
       zitadel_oauth_app_out_project_id }}/apps/{{ zitadel_oauth_app_out_id }}/oidc_config
     method: PUT
     headers:

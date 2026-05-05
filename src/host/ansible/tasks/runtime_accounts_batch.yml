@@ -10,7 +10,12 @@
 
 - name: Load service-owned component substrate registry
   ansible.builtin.set_fact:
-    component_substrate_registry: "{{ lookup('ansible.builtin.file', component_substrate_registry_file) | from_json }}"
+    component_substrate_registry: >-
+      {{
+        lookup('ansible.builtin.file', component_substrate_registry_file) | from_json
+        if component_substrate_registry_file is defined
+        else {"schema_version": 1, "components": []}
+      }}
 
 - name: Assert component substrate registry schema
   ansible.builtin.assert:

@@ -84,7 +84,9 @@ They do not converge host packages or deploy services.
 - `components/clickhouse/migrations/` — host convergence ClickHouse schema.
 - `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
   persona, billing, mail, database access, observability, and host evidence.
-Topology vars are authored in `src/host-configuration/ansible/group_vars/all/topology/`.
+The former centralized topology vars have been split: host bootstrap facts live
+under `src/host/sites/<site>/`, while component/service/frontend deployment
+metadata lives with the owning package.
 Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
 Nomad jobs live with their owning service, frontend, or component as
 `nomad.hcl`. The deploy runner wires owner-local jobs to artifact delivery and

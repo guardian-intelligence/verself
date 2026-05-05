@@ -18,7 +18,8 @@ firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
 firecracker_state_db_path: /var/lib/verself/vm-orchestrator/state.db
 firecracker_host_uplink_interface: ""
 firecracker_host_service_interface: verself-host0
-firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_service.host }}"
+firecracker_host_service_ip: 10.255.0.1
+firecracker_host_service_port: 18080
 firecracker_vm_orchestrator_binary_path: "{{ verself_bin }}/vm-orchestrator"
 firecracker_vm_orchestrator_cli_path: "{{ verself_bin }}/vm-orchestrator-cli"
 firecracker_vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock
