@@ -2,6 +2,7 @@ common --enable_bzlmod
 common --noenable_workspace
 common --announce_rc
 common --lockfile_mode=error
+common --credential_helper=npm.verself.sh=%workspace%/src/tools/npm-registry-credential-helper
 
 # 30 min keeps the JVM warm across a typical edit-build-test cycle without
 # letting Skyframe accumulate a day's worth of drift. The previous 24h value

@@ -8,6 +8,7 @@ global
   maxconn {{ haproxy_global_maxconn }}
   strict-limits
   hard-stop-after 5s
+  tune.stick-counters 4
   # Required for shm-stats-file. URI normalization remains disabled while HAProxy marks normalizers experimental.
   expose-experimental-directives
   shm-stats-file {{ haproxy_shm_stats_file }}

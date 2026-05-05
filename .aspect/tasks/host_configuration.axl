@@ -1,11 +1,11 @@
-"""aspect host edit-secrets | operator-access-handoff
+"""aspect host edit-secrets | npm-edge | operator-access-handoff
 
 Bootstrap convergence and Nomad deployments do not own the operator-access
 handoff. Pomerium is a manual host action because a bad change can move SSH
 listeners and lock operators out.
 """
 
-load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "HOST_CONFIGURATION_DIR", "checked_spawn", "inventory_check", "ws_path")
 
 def _edit_secrets_impl(ctx):
     return checked_spawn(
@@ -20,6 +20,43 @@ edit_secrets = task(
     name = "edit-secrets",
     group = ["host"],
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
+)
+
+def _host_playbook(ctx, site, playbook):
+    rc = inventory_check(ctx, site)
+    if rc != 0:
+        return rc
+    ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    return checked_spawn(
+        ctx,
+        "ansible-playbook",
+        [
+            "-i",
+            ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
+            "playbooks/" + playbook,
+            "-e",
+            "verself_site=" + site,
+        ],
+        cwd = ansible_dir,
+        label = "ansible-playbook " + playbook + " --site " + site,
+    )
+
+def _npm_edge_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    for playbook in ["verdaccio.yml", "nftables.yml", "haproxy.yml"]:
+        rc = _host_playbook(ctx, site, playbook)
+        if rc != 0:
+            return rc
+    return 0
+
+npm_edge = task(
+    implementation = _npm_edge_impl,
+    name = "npm-edge",
+    group = ["host"],
+    summary = "Converge Verdaccio, nftables, and HAProxy for the public npm registry edge.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
 )
 
 def _operator_access_handoff_impl(ctx):

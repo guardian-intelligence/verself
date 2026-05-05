@@ -1222,9 +1222,6 @@
     }
   },
   "facts": {
-    "@@aspect_rules_js+//npm:extensions.bzl%pnpm": {
-      "10.33.0": "sha512-EFaLtKavtYyes2MNqQzJUWQXq+vT+rvmc58K55VyjaFJHp21pUTHatjrdXD1xLs9bGN7LLQb/c20f6gjyGSTGQ=="
-    },
     "@@rules_go+//go:extensions.bzl%go_sdk": {
       "1.25.0": {
         "aix_ppc64": [

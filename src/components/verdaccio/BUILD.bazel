@@ -13,7 +13,10 @@ filegroup(
         ],
         allow_empty = True,
     ),
-    visibility = ["//src/components:__pkg__"],
+    visibility = [
+        "//src/components:__pkg__",
+        "//src/host:__pkg__",
+    ],
 )
 
 genrule(

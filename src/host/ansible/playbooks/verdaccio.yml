@@ -1,0 +1,9 @@
+---
+- name: "Host service: Verdaccio"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  roles:
+    - role: verdaccio

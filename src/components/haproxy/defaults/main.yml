@@ -20,13 +20,13 @@ haproxy_internal_frontend_maxconn: 2000
 haproxy_metrics_frontend_maxconn: 20
 haproxy_hsts_header: "max-age=31536000"
 haproxy_public_rate_window: 10s
-haproxy_public_rate_limit: 300
-haproxy_auth_rate_limit: 40
-haproxy_webhook_rate_limit: 120
+haproxy_public_rate_limit: 30000
+haproxy_auth_rate_limit: 4000
+haproxy_webhook_rate_limit: 12000
 haproxy_npm_registry_domain: "{{ npm_registry_domain | default('npm.' ~ verself_domain) }}"
 haproxy_npm_registry_trusted_cidrs: "{{ npm_registry_trusted_cidrs | default([]) }}"
 haproxy_npm_registry_bearer_tokens_path: "{{ haproxy_credstore_dir }}/npm-registry-bearer-tokens"
-haproxy_npm_registry_rate_limit: 2000
+haproxy_npm_registry_rate_limit: 200000
 haproxy_stick_table_size: 100k
 haproxy_stick_table_expire: 10m
 

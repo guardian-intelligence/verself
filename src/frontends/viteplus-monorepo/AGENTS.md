@@ -85,7 +85,7 @@ On a local laptop without the hosted Verdaccio mirror, temporarily set
 registry=https://registry.npmjs.org/
 ```
 
-Restore the registry to `http://127.0.0.1:4873/` before committing unless the
+Restore the registry to `https://npm.verself.sh/` before committing unless the
 registry change is the intended patch.
 
 ## Local Frontend Development

@@ -14,6 +14,8 @@ jobs:
     name: Build + test
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 20
+    env:
+      VERSELF_NPM_REGISTRY_TOKEN: ${{ secrets.VERSELF_NPM_REGISTRY_TOKEN_FORGEJO }}
     steps:
       - name: Check out repository
         uses: https://data.forgejo.org/actions/checkout@v6
@@ -23,7 +25,10 @@ jobs:
       # Self-hosted runner; Bazel disk + repo caches are already on the host's
       # ~/.cache/bazel-* and survive between jobs without an explicit cache step.
       - name: Bootstrap toolchain
-        run: scripts/bootstrap
+        run: scripts/bootstrap-linux-amd64
+
+      - name: Restart Bazel server
+        run: bazelisk shutdown
 
       - name: bazelisk build //...
         run: bazelisk build //...

@@ -89,9 +89,18 @@ Versions of record live as constants at the top of each `scripts/bootstrap-*` en
 | Task | Description |
 | --- | --- |
 | `edit-secrets` | Open encrypted host configuration secrets in `$EDITOR` via sops. |
+| `npm-edge` | Converge Verdaccio, nftables, and HAProxy for the public npm registry edge. |
+| `operator-access-handoff` | Manually hand public SSH :22 to Pomerium and keep direct recovery on :2222. |
 
-Host convergence, OS security patching, guest-image staging, and Nomad fan-out
-are deploy internals of `aspect deploy`.
+### `aspect integrations`
+
+| Task | Description |
+| --- | --- |
+| `cloudflare-dns` | Reconcile Cloudflare DNS records from site integration inputs. |
+
+Nomad fan-out is the deploy internal of `aspect deploy`. Host convergence,
+OS security patching, guest-image staging, and external integration
+reconciliation are explicit operator tasks.
 
 ### `aspect db`
 

@@ -1,0 +1,9 @@
+---
+- name: "Host firewall"
+  hosts: all
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  roles:
+    - role: nftables

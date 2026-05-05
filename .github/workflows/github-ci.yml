@@ -15,8 +15,10 @@ permissions:
 jobs:
   build:
     name: Build + test
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
+    env:
+      VERSELF_NPM_REGISTRY_TOKEN: ${{ secrets.VERSELF_NPM_REGISTRY_TOKEN_GITHUB_ACTIONS }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -35,6 +37,9 @@ jobs:
 
       - name: Bootstrap toolchain
         run: scripts/bootstrap-linux-amd64
+
+      - name: Restart Bazel server
+        run: bazelisk shutdown
 
       - name: bazelisk build //...
         run: bazelisk build //...

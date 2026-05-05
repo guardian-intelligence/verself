@@ -14,13 +14,9 @@
 
 - Third-party SaaS reconciliation lives under `src/integrations/<vendor>/<purpose>`. Cloudflare DNS, Resend domain setup, Zitadel project/application bootstrap, Stripe webhooks, and GitHub App setup are deployable reconcilers, not host Ansible tasks.
 
-- The long-term unit abstraction is `deployable_unit(...)`: one Bazel-owned descriptor with an executor, payload, digest inputs, logical `requires`, logical `provides`, and optional site scope.
+- Deployable units use the native control surface for their boundary. Nomad jobs declare service runtime shape and allocation-local prerequisites in HCL. External integrations use integration-owned reconcilers or OpenTofu roots. Privileged host substrate changes remain explicit operator actions.
 
-- Executors are implementation details behind the same unit contract. Expected executors include `nomad`, `ansible`, `migration`, `external_saas`, and `provision_terraform`.
-
-- `requires` and `provides` form the deployment graph. The graph should describe resources such as `nomad:job:<name>`, `postgres:db:<name>`, `spire:identity:<name>`, `clickhouse:user:<name>`, `dns:cloudflare:<host>`, or `zitadel:project:<name>`.
-
-- Bazel validates and materializes descriptors. The deploy controller walks the descriptor graph, asks each executor whether the unit is already at the desired digest, applies only changed units, and records evidence per unit.
+- Bazel validates and materializes build artifacts and Nomad descriptors. The deploy controller submits the Bazel-discovered Nomad components for the requested SHA and records Nomad deploy evidence; it does not own an executor graph for Ansible, migrations, external SaaS, or provisioning.
 
 - Bazel cache state is local to the invoking controller via `.bazelrc` `--disk_cache` and `--repository_cache`. There is no shared `bazel-remote` host service, remote-writer build profile, or ZFS-backed build-cache dataset.
 
@@ -52,7 +48,7 @@
 
 - SPIRE configuration is split into host SPIRE server/agent bootstrap plus owner-local workload identity declarations.
 
-- `dns.yml` becomes Cloudflare integration unit inputs.
+- DNS records become Cloudflare integration inputs.
 
 - `routes.yml` becomes route metadata owned by the service/frontend/component that exposes the route.
 

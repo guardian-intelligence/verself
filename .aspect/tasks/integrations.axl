@@ -1,0 +1,38 @@
+"""aspect integrations cloudflare-dns — reconcile external integration state."""
+
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "HOST_CONFIGURATION_DIR", "checked_spawn", "ws_path")
+
+_CLOUDFLARE_DNS_TARGET = "//src/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
+
+def _cloudflare_dns_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    args_list = [
+        "run",
+        "--noshow_progress",
+        "--ui_event_filters=-info",
+        _CLOUDFLARE_DNS_TARGET,
+        "--",
+        "--site=" + site,
+        "--ansible-dir=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
+        "--secrets=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/secrets/host.sops.yml"),
+    ]
+    if ctx.args.dry_run:
+        args_list.append("--dry-run")
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        args_list,
+        cwd = ws_path(ctx),
+        label = "reconcile-cloudflare-dns --site " + site,
+    )
+
+cloudflare_dns = task(
+    implementation = _cloudflare_dns_impl,
+    name = "cloudflare-dns",
+    group = ["integrations"],
+    summary = "Reconcile Cloudflare DNS records from site integration inputs.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
+    },
+)

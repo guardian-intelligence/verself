@@ -6,7 +6,6 @@ go_library(
         "ansible_task_events.go",
         "client.go",
         "deploy_events.go",
-        "deploy_unit_events.go",
         "nomad_job_events.go",
         "open_operator.go",
         "operator_config.go",

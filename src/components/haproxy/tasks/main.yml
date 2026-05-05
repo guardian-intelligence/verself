@@ -58,14 +58,16 @@
     that:
       - haproxy_npm_registry_domain | length > 0
       - haproxy_npm_registry_trusted_cidrs | length > 0
-      - npm_registry_read_token | default('') | length > 0
+      - npm_registry_read_tokens is mapping
+      - npm_registry_read_tokens | length > 0
+      - npm_registry_read_tokens | dict2items | map(attribute='value') | map('length') | min > 0
     fail_msg: >-
       npm registry ingress requires a domain, trusted CIDRs, and
-      npm_registry_read_token in host SOPS secrets.
+      npm_registry_read_tokens in host SOPS secrets.
 
 - name: Store npm registry bearer token list for HAProxy
   ansible.builtin.copy:
-    content: "Bearer {{ npm_registry_read_token }}\n"
+    content: "{{ (npm_registry_read_tokens | dict2items | sort(attribute='key') | map(attribute='value') | map('regex_replace', '^(.*)$', 'Bearer \\1') | join('\n')) ~ '\n' }}"
     dest: "{{ haproxy_npm_registry_bearer_tokens_path }}"
     owner: root
     group: haproxy

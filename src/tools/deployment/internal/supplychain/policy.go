@@ -386,7 +386,9 @@ func isAcceptedPolicyControl(f Finding, artifact PolicyArtifact, policy Policy) 
 		return true
 	}
 	if f.SourceKind == "registry_url" {
-		return isLocalRegistryURL(f.UpstreamURL) || isVerdaccioUpstreamRegistry(f)
+		return isVerselfNPMRegistryURL(f.UpstreamURL) ||
+			isVerdaccioUpstreamRegistry(f) ||
+			isBazelDownloaderRegistryRewrite(f)
 	}
 	if (f.SourceKind == "curl_fetch" || f.SourceKind == "wget_fetch") && strings.Contains(f.SourcePath, "/scripts/security/") {
 		return true
@@ -398,16 +400,19 @@ func isAcceptedPolicyControl(f Finding, artifact PolicyArtifact, policy Policy) 
 	return false
 }
 
-func isLocalRegistryURL(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	return strings.HasPrefix(raw, "http://127.0.0.1:") ||
-		strings.HasPrefix(raw, "https://127.0.0.1:") ||
-		strings.HasPrefix(raw, "http://localhost:") ||
-		strings.HasPrefix(raw, "https://localhost:")
+func isVerselfNPMRegistryURL(raw string) bool {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	return raw == "https://npm.verself.sh" || raw == "http://10.255.0.1:4873"
 }
 
 func isVerdaccioUpstreamRegistry(f Finding) bool {
 	return strings.Contains(f.SourcePath, "/verdaccio/templates/") &&
+		f.Artifact == "npmjs-registry" &&
+		strings.TrimRight(f.UpstreamURL, "/") == "https://registry.npmjs.org"
+}
+
+func isBazelDownloaderRegistryRewrite(f Finding) bool {
+	return strings.Contains(f.SourcePath, "/bazel/downloader-registry.cfg") &&
 		f.Artifact == "npmjs-registry" &&
 		strings.TrimRight(f.UpstreamURL, "/") == "https://registry.npmjs.org"
 }

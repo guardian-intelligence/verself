@@ -1,6 +1,5 @@
 load("//src/tools/deployment/components:substrate.bzl", "component_substrate_registry")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
-load("//src/tools/deployment/units:unit.bzl", "deploy_unit")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -62,6 +61,42 @@ filegroup(
 )
 
 filegroup(
+    name = "haproxy_sources",
+    srcs = [
+        "ansible/playbooks/haproxy.yml",
+        "ansible/playbooks/tasks/site-secrets.yml",
+        "sites/prod/secrets/host.sops.yml",
+        "sites/prod/vars.yml",
+        "//src/components/haproxy:role_sources",
+    ],
+)
+
+filegroup(
+    name = "verdaccio_sources",
+    srcs = [
+        "ansible/playbooks/verdaccio.yml",
+        "sites/prod/vars.yml",
+        "//src/components/verdaccio:role_sources",
+    ],
+)
+
+filegroup(
+    name = "nftables_sources",
+    srcs = [
+        "ansible/host-files/etc/nftables.conf",
+        "ansible/host-files/etc/systemd/system/verself-firewall.target",
+        "ansible/playbooks/nftables.yml",
+        ":component_substrate_registry",
+    ] + glob(
+        [
+            "ansible/host-files/etc/nftables.d/**",
+            "ansible/roles/nftables/**",
+        ],
+        allow_empty = False,
+    ),
+)
+
+filegroup(
     name = "site_sources",
     srcs = glob(
         ["sites/**"],
@@ -84,13 +119,4 @@ filegroup(
     ) + [
         "//src/integrations:integration_sources",
     ],
-)
-
-deploy_unit(
-    name = "host_convergence_unit",
-    srcs = [":converge_sources"],
-    payload_kind = "ansible_site_playbook",
-    phase = "host_configuration_site",
-    playbook = "playbooks/site.yml",
-    unit_id = "host",
 )
