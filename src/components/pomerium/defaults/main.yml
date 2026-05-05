@@ -27,7 +27,7 @@ pomerium_oidc_client_secret_path: "{{ pomerium_credstore_dir }}/oidc-client-secr
 
 pomerium_db_name: pomerium
 pomerium_db_user: pomerium
-pomerium_db_connection_limit: "{{ postgresql_role_connection_limits.pomerium | default(20) }}"
+pomerium_db_connection_limit: 20
 
 pomerium_oidc_project_name: operator-access
 pomerium_oidc_app_name: pomerium-operator-access

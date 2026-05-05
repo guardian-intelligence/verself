@@ -49,7 +49,7 @@
         name: zitadel
         password: "{{ zitadel_db_password }}"
         role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.zitadel }}"
+        conn_limit: "{{ zitadel_db_connection_limit }}"
       no_log: true
 
     - name: Ensure zitadel database exists

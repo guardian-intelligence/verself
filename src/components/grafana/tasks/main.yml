@@ -123,7 +123,7 @@
         name: "{{ grafana_db_user }}"
         password: "{{ grafana_db_password }}"
         role_attr_flags: LOGIN
-        conn_limit: "{{ postgresql_role_connection_limits.grafana }}"
+        conn_limit: "{{ grafana_db_connection_limit }}"
       no_log: true
 
     - name: Ensure Grafana PostgreSQL database exists

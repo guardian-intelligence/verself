@@ -8,6 +8,7 @@ zitadel_http_port: 8085
 zitadel_http_address: "{{ zitadel_host }}:{{ zitadel_http_port }}"
 zitadel_postgresql_host: "{{ postgresql_host }}"
 zitadel_postgresql_port: "{{ postgresql_port }}"
+zitadel_db_connection_limit: 15
 zitadel_otelcol_otlp_grpc_address: 127.0.0.1:4317
 
 # SMTP (Resend)

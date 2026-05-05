@@ -20,6 +20,7 @@ grafana_credstore_dir: /etc/credstore/grafana
 
 grafana_db_name: grafana
 grafana_db_user: grafana
+grafana_db_connection_limit: 10
 
 grafana_clickhouse_user: grafana_observer
 grafana_clickhouse_spiffe_dir: "{{ grafana_data_dir }}/clickhouse-spiffe"
