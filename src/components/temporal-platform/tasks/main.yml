@@ -27,3 +27,49 @@
     - { path: "{{ temporal_state_dir }}", owner: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", mode: "0750" }
   loop_control:
     label: "{{ item.path }}"
+
+- name: Ensure Temporal PostgreSQL role and databases exist
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ postgresql_host }}"
+      login_port: "{{ postgresql_port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+  block:
+    - name: Ensure Temporal PostgreSQL role exists
+      community.postgresql.postgresql_user:
+        name: "{{ temporal_postgres_role }}"
+        role_attr_flags: LOGIN
+        conn_limit: "{{ temporal_db_connection_limit }}"
+      no_log: true
+
+    - name: Ensure Temporal PostgreSQL databases exist
+      community.postgresql.postgresql_db:
+        name: "{{ item }}"
+        owner: "{{ temporal_postgres_role }}"
+        state: present
+      loop: "{{ temporal_postgres_databases }}"
+      no_log: true
+
+    - name: Ensure Temporal PostgreSQL database ownership
+      community.postgresql.postgresql_owner:
+        obj_name: "{{ item }}"
+        obj_type: database
+        new_owner: "{{ temporal_postgres_role }}"
+      loop: "{{ temporal_postgres_databases }}"
+      no_log: true

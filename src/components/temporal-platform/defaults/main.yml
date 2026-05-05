@@ -3,3 +3,9 @@ temporal_system_user: temporal_server
 temporal_system_group: temporal_server
 
 temporal_state_dir: /var/lib/temporal
+
+temporal_postgres_role: temporal
+temporal_postgres_databases:
+  - temporal
+  - temporal_visibility
+temporal_db_connection_limit: 40
