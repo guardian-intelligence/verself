@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -54,7 +52,7 @@ func cmdDevice(args []string) error {
 	fs.StringVar(&opts.site, "site", opts.site, "deployment site")
 	fs.StringVar(&opts.accessHost, "access-host", "", "Pomerium SSH host; defaults to access.<verself_domain>")
 	fs.StringVar(&opts.sshRoute, "ssh-route", "", "Pomerium native-SSH route name; defaults to --site")
-	fs.BoolVar(&opts.force, "force", false, "overwrite an existing different local inventory")
+	fs.BoolVar(&opts.force, "force", false, "overwrite an existing different site inventory")
 	fs.BoolVar(&opts.dryRun, "dry-run", false, "print the derived configuration without writing files")
 	fs.BoolVar(&opts.generateKey, "generate-key", true, "run ssh-keygen when ~/.ssh/id_ed25519 is missing")
 	if err := fs.Parse(args); err != nil {
@@ -74,7 +72,7 @@ func configureOperatorDevice(opts deviceOptions) error {
 	if strings.TrimSpace(opts.site) == "" {
 		return errors.New("device: --site is required")
 	}
-	ops, err := loadDeviceOps(repoRoot)
+	ops, err := loadDeviceOps(repoRoot, opts.site)
 	if err != nil {
 		return err
 	}
@@ -99,12 +97,12 @@ func configureOperatorDevice(opts deviceOptions) error {
 		Alias:     strings.TrimSpace(ops.BareMetalHostAlias),
 		Access:    accessHost,
 		SSHRoute:  route,
-		Inventory: filepath.Join(repoRoot, "src", "host", "ansible", opts.site+".ini"),
+		Inventory: filepath.Join(repoRoot, "src", "host", "sites", opts.site, "inventory.ini"),
 		KeyPath:   filepath.Join(home, ".ssh", defaultSSHKeyName),
 		PubPath:   filepath.Join(home, ".ssh", defaultSSHKeyName+".pub"),
 	}
 	if cfg.Alias == "" {
-		return errors.New("device: ops.yml must define bare_metal_host_alias")
+		return fmt.Errorf("device: %s must define bare_metal_host_alias", siteVarsPath(repoRoot, opts.site))
 	}
 	if strings.ContainsAny(cfg.Alias, " \t\r\n[]") {
 		return fmt.Errorf("device: invalid bare_metal_host_alias %q", cfg.Alias)
@@ -119,15 +117,11 @@ func configureOperatorDevice(opts deviceOptions) error {
 	return nil
 }
 
-func loadDeviceOps(repoRoot string) (deviceOpsVars, error) {
-	path := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "topology", "ops.yml")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return deviceOpsVars{}, fmt.Errorf("read %s: %w", path, err)
-	}
+func loadDeviceOps(repoRoot, site string) (deviceOpsVars, error) {
+	path := siteVarsPath(repoRoot, site)
 	var out deviceOpsVars
-	if err := yaml.Unmarshal(raw, &out); err != nil {
-		return deviceOpsVars{}, fmt.Errorf("parse %s: %w", path, err)
+	if err := readYAMLFile(path, &out); err != nil {
+		return deviceOpsVars{}, err
 	}
 	return out, nil
 }
@@ -142,7 +136,7 @@ func derivePomeriumAccessHost(ops deviceOpsVars) (string, error) {
 	}
 	domain := strings.TrimSpace(ops.VerselfDomain)
 	if domain == "" {
-		return "", errors.New("device: ops.yml must define verself_domain or concrete pomerium_domain")
+		return "", errors.New("device: site vars must define verself_domain or concrete pomerium_domain")
 	}
 	return subdomain + "." + domain, nil
 }
@@ -230,7 +224,7 @@ func writeDeviceInventory(cfg deviceConfig, opts deviceOptions) error {
 			return nil
 		}
 		if !opts.force {
-			return fmt.Errorf("device: %s already exists and differs; pass --force to replace the device-local ignored inventory", cfg.Inventory)
+			return fmt.Errorf("device: %s already exists and differs; pass --force to replace the site inventory", cfg.Inventory)
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("read %s: %w", cfg.Inventory, err)
@@ -251,7 +245,7 @@ func renderDeviceInventory(cfg deviceConfig) string {
 [all:vars]
 ansible_user=%s@%s
 ansible_python_interpreter=/usr/bin/python3
-ansible_ssh_extra_args=-o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes
+ansible_ssh_extra_args=-o IdentitiesOnly=yes
 `, cfg.Alias, cfg.Access, cfg.Alias, cfg.Access, defaultOperatorSSHUser, cfg.SSHRoute)
 }
 

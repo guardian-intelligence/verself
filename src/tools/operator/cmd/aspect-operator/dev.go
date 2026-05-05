@@ -124,7 +124,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 	}
 	domain := envOr("VERSELF_DOMAIN", jobEnv["VERSELF_DOMAIN"])
 	if domain == "" {
-		domain, err = loadVerselfDomain(rt.RepoRoot)
+		domain, err = loadVerselfDomain(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return nil, nil, err
 		}

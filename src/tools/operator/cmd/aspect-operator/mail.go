@@ -8,13 +8,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
-	"gopkg.in/yaml.v3"
 )
 
 type mailOptions struct {
@@ -64,7 +62,7 @@ func cmdMailSend(args []string) error {
 		return errors.New("mail send: --body is required")
 	}
 	return runOperatorRuntime("mail.send", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		cfg, err := loadMailConfig(rt.RepoRoot)
+		cfg, err := loadMailConfig(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return err
 		}
@@ -129,7 +127,7 @@ func cmdMailPasswords(args []string) error {
 		return err
 	}
 	return runOperatorRuntime("mail.passwords", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		cfg, err := loadMailConfig(rt.RepoRoot)
+		cfg, err := loadMailConfig(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return err
 		}
@@ -144,15 +142,11 @@ func cmdMailPasswords(args []string) error {
 	})
 }
 
-func loadMailConfig(repoRoot string) (mailMainVars, error) {
-	path := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "topology", "ops.yml")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return mailMainVars{}, fmt.Errorf("read %s: %w", path, err)
-	}
+func loadMailConfig(repoRoot, site string) (mailMainVars, error) {
+	path := siteVarsPath(repoRoot, site)
 	var cfg mailMainVars
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
-		return mailMainVars{}, fmt.Errorf("parse %s: %w", path, err)
+	if err := readYAMLFile(path, &cfg); err != nil {
+		return mailMainVars{}, err
 	}
 	missing := []string{}
 	if cfg.VerselfDomain == "" {

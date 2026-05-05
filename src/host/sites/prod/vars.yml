@@ -1,6 +1,7 @@
 ---
 
 verself_site: prod
+bare_metal_host_alias: vs-dev-w0
 verself_domain: verself.sh
 verself_version: 0.1.0
 verself_bin: /opt/verself/profile/bin

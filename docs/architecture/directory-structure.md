@@ -75,19 +75,16 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 Provisioning tools own physical machine allocation and inventory production.
 They do not converge host packages or deploy services.
 
-## Host Configuration (`src/host-configuration/`)
+## Host Configuration (`src/host/`)
 
-- `ansible/` — current private runner for host, daemon, and per-component
-  prerequisite convergence.
-- `components/` — platform component Ansible roles and optional
-  component-owned Nomad jobs.
-- `components/clickhouse/migrations/` — host convergence ClickHouse schema.
-- `scripts/` — founder/agent wrappers invoked by AXL tasks for deploy,
-  persona, billing, mail, database access, observability, and host evidence.
+- `ansible/` — host bootstrap roles and manual host playbooks.
+- `binaries/` — Bazel-owned host/server tool catalog inputs.
+- `sites/<site>/` — site facts, inventory, provisioning input, and SOPS bags.
+- `migrations/` — bootstrap ClickHouse schema needed before the deploy evidence path exists.
 The former centralized topology vars have been split: host bootstrap facts live
 under `src/host/sites/<site>/`, while component/service/frontend deployment
 metadata lives with the owning package.
-Host firewall files are authored in `src/host-configuration/ansible/host-files/`.
+Host firewall files are authored in `src/host/ansible/host-files/`.
 Nomad jobs live with their owning service, frontend, or component as
 `nomad.hcl`. The deploy runner wires owner-local jobs to artifact delivery and
 rollout inputs directly through Bazel and Nomad.

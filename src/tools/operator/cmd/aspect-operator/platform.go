@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -58,12 +57,9 @@ type platformMainVars struct {
 	PlatformRepoSlug            string `yaml:"platform_repo_slug"`
 	PlatformRepoDisplayName     string `yaml:"platform_repo_display_name"`
 	PlatformRepoDescription     string `yaml:"platform_repo_description"`
-}
-
-type platformOpsVars struct {
-	ForgejoDomain    string `yaml:"forgejo_domain"`
-	ForgejoSubdomain string `yaml:"forgejo_subdomain"`
-	VerselfDomain    string `yaml:"verself_domain"`
+	ForgejoDomain               string `yaml:"forgejo_domain"`
+	ForgejoSubdomain            string `yaml:"forgejo_subdomain"`
+	VerselfDomain               string `yaml:"verself_domain"`
 }
 
 type platformConfig struct {
@@ -189,7 +185,7 @@ func cmdPlatform(args []string) error {
 	}
 	command := "platform." + opts.action
 	return runOperatorRuntime(command, opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		cfg, err := loadPlatformConfig(rt.RepoRoot)
+		cfg, err := loadPlatformConfig(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return err
 		}
@@ -233,15 +229,10 @@ func (opts *platformOptions) validate() error {
 	return nil
 }
 
-func loadPlatformConfig(repoRoot string) (platformConfig, error) {
-	mainPath := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "main.yml")
+func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
+	mainPath := siteVarsPath(repoRoot, site)
 	var mainVars platformMainVars
 	if err := readYAMLFile(mainPath, &mainVars); err != nil {
-		return platformConfig{}, err
-	}
-	opsPath := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "topology", "ops.yml")
-	var ops platformOpsVars
-	if err := readYAMLFile(opsPath, &ops); err != nil {
 		return platformConfig{}, err
 	}
 	cfg := platformConfig{
@@ -251,7 +242,7 @@ func loadPlatformConfig(repoRoot string) (platformConfig, error) {
 		RepoSlug:           strings.TrimSpace(mainVars.PlatformRepoSlug),
 		RepoDisplayName:    strings.TrimSpace(mainVars.PlatformRepoDisplayName),
 		RepoDescription:    strings.TrimSpace(mainVars.PlatformRepoDescription),
-		ForgejoDomain:      resolveForgejoDomain(ops),
+		ForgejoDomain:      resolveForgejoDomain(mainVars),
 	}
 	if err := cfg.validate(); err != nil {
 		return platformConfig{}, err
@@ -289,7 +280,7 @@ func (cfg *platformConfig) validate() error {
 	return nil
 }
 
-func resolveForgejoDomain(ops platformOpsVars) string {
+func resolveForgejoDomain(ops platformMainVars) string {
 	domain := strings.TrimSpace(ops.ForgejoDomain)
 	if domain != "" && !strings.Contains(domain, "{{") {
 		return domain

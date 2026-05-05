@@ -97,6 +97,13 @@ SSH. Before the operator access handoff this is `ssh ubuntu@206.223.228.101`;
 after the handoff public `:22` belongs to Pomerium and direct recovery is
 `ssh -p 2222 ubuntu@206.223.228.101`.
 
+Pomerium is a manual operator-access handoff, outside bootstrap convergence and
+regular Nomad deploys:
+
+```shell
+aspect host operator-access-handoff --site=prod --confirm
+```
+
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
 Nomad deploys are driven directly by the checked-in `nomad_component` targets for the requested SHA:

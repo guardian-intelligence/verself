@@ -1,8 +1,8 @@
-"""aspect host edit-secrets
+"""aspect host edit-secrets | operator-access-handoff
 
-Host convergence and guest-image staging are deploy internals owned by
-`aspect deploy`. The host group only exposes source maintenance
-that does not mutate the provisioned host.
+Bootstrap convergence and Nomad deployments do not own the operator-access
+handoff. Pomerium is a manual host action because a bad change can move SSH
+listeners and lock operators out.
 """
 
 load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "checked_spawn", "ws_path")
@@ -20,4 +20,35 @@ edit_secrets = task(
     name = "edit-secrets",
     group = ["host"],
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
+)
+
+def _operator_access_handoff_impl(ctx):
+    if not ctx.args.confirm:
+        ctx.std.io.stderr.write("ERROR: pass --confirm to run the Pomerium operator-access handoff\n")
+        return 1
+    site = ctx.args.site or "prod"
+    ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    return checked_spawn(
+        ctx,
+        "ansible-playbook",
+        [
+            "-i",
+            ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
+            "playbooks/operator-access-handoff.yml",
+            "-e",
+            "verself_site=" + site,
+        ],
+        cwd = ansible_dir,
+        label = "ansible-playbook operator-access-handoff --site " + site,
+    )
+
+operator_access_handoff = task(
+    implementation = _operator_access_handoff_impl,
+    name = "operator-access-handoff",
+    group = ["host"],
+    summary = "Manually hand public SSH :22 to Pomerium and keep direct recovery on :2222.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "confirm": args.boolean(default = False, description = "Required confirmation for SSH listener handoff."),
+    },
 )

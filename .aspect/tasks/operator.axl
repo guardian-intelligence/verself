@@ -66,7 +66,7 @@ device = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "access_host": args.string(default = "", description = "Override Pomerium SSH host. Defaults to access.<verself_domain>."),
         "ssh_route": args.string(default = "", description = "Override Pomerium native-SSH route. Defaults to --site."),
-        "force": args.boolean(default = False, description = "Overwrite an existing different local inventory."),
+        "force": args.boolean(default = False, description = "Overwrite an existing different site inventory."),
         "dry_run": args.boolean(default = False, description = "Print the derived inventory and summary without writing files."),
         "generate_key": args.boolean(default = True, description = "Generate ~/.ssh/id_ed25519 when no default SSH key exists."),
     },

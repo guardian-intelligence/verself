@@ -50,6 +50,7 @@ load(
 load(
     ".aspect/tasks/host_configuration.axl",
     host_configuration_edit_secrets = "edit_secrets",
+    host_configuration_operator_access_handoff = "operator_access_handoff",
 )
 load(
     ".aspect/tasks/mail.axl",
@@ -97,6 +98,7 @@ def config(ctx):
 
     # aspect host ...
     ctx.tasks.add(host_configuration_edit_secrets)
+    ctx.tasks.add(host_configuration_operator_access_handoff)
 
     # aspect db pg|ch|tb ...
     ctx.tasks.add(db_pg_list)

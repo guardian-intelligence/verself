@@ -6,7 +6,9 @@
 
 - Normal CI deploys should not mutate `src/host` state. Host bootstrap is a manual operator action used for first boot, reprovisioning, or deliberate substrate maintenance.
 
-- Platform daemons live under `src/components/<name>`, even when they are foundational to the product. ClickHouse, Garage, OpenBao, Zitadel, Pomerium, Grafana, Otelcol, NATS, Forgejo, Verdaccio, Zot, Stalwart, TigerBeetle, Electric, HAProxy, SpiceDB, and Temporal are deployable platform components, not host bootstrap.
+- Platform daemons live under `src/components/<name>`, even when they are foundational to the product. ClickHouse, Garage, OpenBao, Zitadel, Grafana, Otelcol, NATS, Forgejo, Verdaccio, Zot, Stalwart, TigerBeetle, Electric, HAProxy, SpiceDB, and Temporal are deployable platform components, not host bootstrap.
+
+- Pomerium is an operator-access handoff component. Its role source lives under `src/components/pomerium`, but applying it is a manual host playbook outside bootstrap and outside regular deploy because it changes the SSH listener boundary.
 
 - Product services live under `src/services/<name>`, and frontends live under `src/frontends/<name>`. Their runtime users, directories, secrets, firewall snippets, SPIRE workload identities, database ownership, ClickHouse grants, migrations, and route metadata are owned locally by that service or frontend.
 
@@ -24,7 +26,7 @@
 
 - Host Ansible may reserve only substrate ports: SSH, Nomad, SPIRE, WireGuard, base Postgres if host-managed, and other true bootstrap listeners. Product and platform component listeners belong in Nomad jobs.
 
-- HAProxy and Pomerium should be deployed components. Their route configuration should be generated from component/service route metadata plus Nomad service discovery.
+- HAProxy should be a deployed component. Route configuration should be generated from component/service route metadata plus Nomad service discovery. Pomerium route policy is reconciled by the manual operator-access handoff until the lockout risk has a stronger recovery model.
 
 - SPIRE has two layers: host bootstrap installs and starts the SPIRE server/agent and establishes node identity; each component or service owns its workload identities in its own Bazel metadata.
 

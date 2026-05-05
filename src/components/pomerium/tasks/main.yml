@@ -199,10 +199,6 @@
     label: "{{ item.path }}"
   no_log: true
 
-- name: Configure sshd as the Pomerium native-SSH upstream
-  ansible.builtin.include_role:
-    name: operator_ssh_access
-
 - name: Ensure Pomerium PostgreSQL password exists
   ansible.builtin.copy:
     content: "{{ lookup('community.general.random_string', length=64, upper=true, lower=true, numbers=true, special=false) }}\n"
@@ -320,6 +316,10 @@
     dest: /etc/systemd/system/pomerium.service
     mode: "0644"
   notify: restart pomerium
+
+- name: Configure sshd as the Pomerium native-SSH upstream
+  ansible.builtin.include_role:
+    name: operator_ssh_access
 
 - name: Apply Pomerium unit and config changes before readiness
   ansible.builtin.meta: flush_handlers

@@ -1,0 +1,72 @@
+---
+- name: "Operator access secrets"
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - always
+  tasks:
+    - name: Load site secrets
+      ansible.builtin.import_tasks: tasks/site-secrets.yml
+
+- name: "Operator access handoff"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - operator-access
+    - pomerium
+  pre_tasks:
+    - name: Assert operator access handoff inputs
+      ansible.builtin.assert:
+        that:
+          - ansible_host | length > 0
+          - pomerium_domain | length > 0
+          - zitadel_domain | length > 0
+          - postgresql_address | length > 0
+        fail_msg: >-
+          Operator access handoff needs an infra inventory host plus Pomerium,
+          Zitadel, and PostgreSQL site facts.
+
+    - name: Wait for Zitadel local listener before configuring Pomerium OIDC
+      ansible.builtin.wait_for:
+        host: "{{ zitadel_host | default('127.0.0.1') }}"
+        port: "{{ zitadel_http_port | default(8085) }}"
+        timeout: 5
+
+  roles:
+    - role: pomerium
+
+  post_tasks:
+    - name: Wait for public Pomerium SSH listener from controller
+      ansible.builtin.wait_for:
+        host: "{{ pomerium_domain }}"
+        port: 22
+        timeout: 5
+      delegate_to: localhost
+      become: false
+
+    - name: Wait for direct SSH recovery listener from controller
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 2222
+        timeout: 5
+      delegate_to: localhost
+      become: false
+
+    - name: Check Pomerium HTTPS route through the public edge
+      ansible.builtin.uri:
+        url: "https://{{ pomerium_domain }}/"
+        method: GET
+        status_code:
+          - 200
+          - 302
+          - 303
+          - 401
+          - 403
+        validate_certs: true
+      delegate_to: localhost
+      become: false

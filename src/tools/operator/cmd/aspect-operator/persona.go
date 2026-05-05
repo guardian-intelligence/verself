@@ -17,7 +17,6 @@ import (
 
 	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -130,7 +129,7 @@ func cmdPersonaAssume(args []string) error {
 	}
 	name := fs.Arg(0)
 	return runOperatorRuntime("persona.assume", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		def, err := resolvePersona(rt.RepoRoot, name)
+		def, err := resolvePersona(rt.RepoRoot, rt.Site, name)
 		if err != nil {
 			return err
 		}
@@ -141,8 +140,8 @@ func cmdPersonaAssume(args []string) error {
 	})
 }
 
-func resolvePersona(repoRoot, name string) (personaDefinition, error) {
-	domain, err := loadVerselfDomain(repoRoot)
+func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
+	domain, err := loadVerselfDomain(repoRoot, site)
 	if err != nil {
 		return personaDefinition{}, err
 	}
@@ -181,15 +180,11 @@ func resolvePersona(repoRoot, name string) (personaDefinition, error) {
 	}
 }
 
-func loadVerselfDomain(repoRoot string) (string, error) {
-	path := filepath.Join(repoRoot, "src", "host", "ansible", "group_vars", "all", "topology", "ops.yml")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
+func loadVerselfDomain(repoRoot, site string) (string, error) {
+	path := siteVarsPath(repoRoot, site)
 	var vars hostMainVars
-	if err := yaml.Unmarshal(raw, &vars); err != nil {
-		return "", fmt.Errorf("parse %s: %w", path, err)
+	if err := readYAMLFile(path, &vars); err != nil {
+		return "", err
 	}
 	if strings.TrimSpace(vars.VerselfDomain) == "" {
 		return "", fmt.Errorf("%s did not define verself_domain", path)
@@ -198,7 +193,7 @@ func loadVerselfDomain(repoRoot string) (string, error) {
 }
 
 func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath string, printEnv bool) error {
-	domain, err := loadVerselfDomain(rt.RepoRoot)
+	domain, err := loadVerselfDomain(rt.RepoRoot, rt.Site)
 	if err != nil {
 		return err
 	}

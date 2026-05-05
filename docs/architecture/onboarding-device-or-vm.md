@@ -30,17 +30,24 @@ The SSH route name is `prod`, so a standard client connects with:
 ssh ubuntu@prod@access.<domain>
 ```
 
-Pomerium is reconciled by the operator access handoff play after IAM/Zitadel
-component substrate binding has completed. Before that handoff, bootstrap uses
-direct host SSH. After the handoff, public `:22` is Pomerium-owned and direct
-host recovery moves to `:2222`.
+Pomerium is reconciled only by the manual operator-access handoff play after
+IAM/Zitadel component substrate binding has completed. It is outside host
+bootstrap and outside Nomad deployment because it changes the SSH access
+boundary. Before that handoff, bootstrap uses direct host SSH. After the
+handoff, public `:22` is Pomerium-owned and direct host recovery moves to
+`:2222`.
+
+```bash
+aspect host operator-access-handoff --site=prod --confirm
+```
 
 ## Device Enrollment
 
 `aspect operator device --site=prod` configures a checkout to use the native SSH
-route. It derives the Pomerium access host from `ops.yml`, writes the ignored
-per-site Ansible inventory under `src/host-configuration/ansible/`,
-and ensures a default OpenSSH key exists at `~/.ssh/id_ed25519`.
+route. It derives the Pomerium access host from
+`src/host/sites/<site>/vars.yml`, writes the authored per-site inventory at
+`src/host/sites/<site>/inventory.ini`, and ensures a default OpenSSH key exists
+at `~/.ssh/id_ed25519`.
 
 Passphrase-protected device keys are supported through `ssh-agent`. Load the
 key before running non-interactive operator commands:
