@@ -9,3 +9,7 @@ spicedb_env_file: "{{ spicedb_config_dir }}/spicedb.env"
 spicedb_preshared_key_file: "{{ spicedb_credstore_dir }}/grpc-preshared-key"
 spicedb_version: 1.51.1
 spicedb_zed_version: 0.36.1
+
+spicedb_postgres_database: spicedb
+spicedb_postgres_role: spicedb
+spicedb_db_connection_limit: 20
