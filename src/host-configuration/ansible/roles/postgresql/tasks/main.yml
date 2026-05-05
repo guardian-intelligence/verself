@@ -194,11 +194,6 @@
 
 - name: Ensure PostgreSQL roles and databases match desired state
   vars:
-    postgresql_role_passwords:
-      billing: "{{ postgresql_billing_password }}"
-      iam_service: "{{ postgresql_iam_service_password }}"
-      mailbox_service: "{{ postgresql_mailbox_service_password }}"
-      sandbox_rental: "{{ postgresql_sandbox_rental_password }}"
     postgresql_peer_only_roles:
       # These daemons authenticate only over Unix-socket peer auth. Leaving the
       # roles password-less keeps loopback SCRAM from becoming a second credential.
@@ -245,7 +240,6 @@
     - name: Ensure application PostgreSQL roles exist
       community.postgresql.postgresql_user:
         name: "{{ item }}"
-        password: "{{ postgresql_role_passwords.get(item, omit) }}"
         role_attr_flags: LOGIN
         conn_limit: "{{ postgresql_role_connection_limits[item] }}"
       loop: "{{ postgresql_managed_role_names }}"

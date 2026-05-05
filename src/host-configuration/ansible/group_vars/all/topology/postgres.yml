@@ -3,20 +3,10 @@
 ---
 postgresql_max_connections: 300
 postgresql_role_connection_limits:
-  billing: 30
   electric: 25
   electric_notifications: 15
-  governance_service: 15
   grafana: 10
-  iam_service: 10
-  mailbox_service: 10
-  notifications_service: 10
-  object_storage_service: 10
   pomerium: 20
-  profile_service: 10
-  projects_service: 10
-  sandbox_rental: 30
-  source_code_hosting_service: 10
   spicedb: 20
   stalwart: 10
   temporal: 80
@@ -36,36 +26,6 @@ topology_postgres:
     - component: temporal
       database: temporal_visibility
       owner: temporal
-    - component: billing
-      database: billing
-      owner: billing
-    - component: sandbox_rental
-      database: sandbox_rental
-      owner: sandbox_rental
-    - component: iam_service
-      database: iam_service
-      owner: iam_service
-    - component: governance_service
-      database: governance_service
-      owner: governance_service
-    - component: profile_service
-      database: profile
-      owner: profile_service
-    - component: mailbox_service
-      database: mailbox_service
-      owner: mailbox_service
-    - component: notifications_service
-      database: notifications_service
-      owner: notifications_service
-    - component: object_storage_service
-      database: object_storage_service
-      owner: object_storage_service
-    - component: projects_service
-      database: projects_service
-      owner: projects_service
-    - component: source_code_hosting_service
-      database: source_code_hosting
-      owner: source_code_hosting_service
     - component: spicedb
       database: spicedb
       owner: spicedb

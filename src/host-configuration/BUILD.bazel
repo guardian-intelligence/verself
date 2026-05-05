@@ -53,27 +53,10 @@ filegroup(
     name = "converge_sources",
     srcs = [
         ":component_substrate_registry",
-        ":service_migration_sources",
         ":spire_identity_registry",
         ":substrate_sources",
         "//src/host-configuration/binaries:server_tools_archive",
         "//src/host-configuration/binaries:substrate_go_tools",
-    ],
-)
-
-filegroup(
-    name = "service_migration_sources",
-    srcs = [
-        "//src/services/billing-service/migrations:sql_files",
-        "//src/services/governance-service/migrations:sql_files",
-        "//src/services/iam-service/migrations:sql_files",
-        "//src/services/mailbox-service/migrations:sql_files",
-        "//src/services/notifications-service/migrations:sql_files",
-        "//src/services/object-storage-service/migrations:sql_files",
-        "//src/services/profile-service/migrations:sql_files",
-        "//src/services/projects-service/migrations:sql_files",
-        "//src/services/sandbox-rental-service/migrations:sql_files",
-        "//src/services/source-code-hosting-service/migrations:sql_files",
     ],
 )
 

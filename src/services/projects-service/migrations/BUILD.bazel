@@ -19,9 +19,3 @@ alias(
     actual = ":migrations",
     visibility = ["//visibility:public"],
 )
-
-filegroup(
-    name = "sql_files",
-    srcs = glob(["*.up.sql"]),
-    visibility = ["//src/host-configuration:__pkg__"],
-)

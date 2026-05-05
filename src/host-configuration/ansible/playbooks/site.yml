@@ -180,11 +180,6 @@
       tags:
         - postgresql
         - database
-    - role: postgres_service_migrations
-      tags:
-        - postgresql
-        - database
-        - service-migrations
     - role: spicedb
       tags:
         - spicedb
