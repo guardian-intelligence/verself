@@ -87,7 +87,7 @@ def _nomad_component_impl(ctx):
     _write_descriptor(ctx, descriptor, json.encode(descriptor_data) + "\n", inputs)
 
     return [
-        DefaultInfo(files = depset([descriptor])),
+        DefaultInfo(files = depset([descriptor], transitive = [depset(inputs)])),
         NomadComponentInfo(
             artifacts = ctx.attr.artifacts,
             component = ctx.attr.component,
