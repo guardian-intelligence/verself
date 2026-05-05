@@ -39,6 +39,8 @@ import (
 const (
 	tracerName            = "github.com/verself/deployment-tools/internal/sshtun"
 	sshAgentSignerTimeout = 2 * time.Second
+	sshConnectTimeout     = 5 * time.Second
+	sshHandshakeTimeout   = 5 * time.Second
 )
 
 // Client is a deploy-scoped SSH connection. Open it once with Dial,
@@ -91,7 +93,7 @@ func Dial(ctx context.Context, host, user string, ports []int) (*Client, error) 
 		User:            user,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		Timeout:         sshConnectTimeout,
 	}
 
 	dialer := net.Dialer{Timeout: cfg.Timeout}
@@ -103,12 +105,16 @@ func Dial(ctx context.Context, host, user string, ports []int) (*Client, error) 
 			connectErrs = append(connectErrs, fmt.Errorf("%s tcp dial: %w", addr, err))
 			continue
 		}
+		// Pomerium native SSH can keep auth open while it waits for an
+		// out-of-band browser session; treat that as this candidate failing.
+		_ = tcpConn.SetDeadline(time.Now().Add(sshHandshakeTimeout))
 		cc, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, cfg)
 		if err != nil {
 			_ = tcpConn.Close()
 			connectErrs = append(connectErrs, fmt.Errorf("%s handshake: %w", addr, err))
 			continue
 		}
+		_ = tcpConn.SetDeadline(time.Time{})
 		span.SetAttributes(attribute.Int("ssh.port", port))
 		span.SetStatus(codes.Ok, "")
 		c := &Client{

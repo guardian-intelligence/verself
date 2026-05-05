@@ -95,31 +95,20 @@ type Runtime struct {
 	bootstrapStart time.Time
 }
 
-type infraHost struct {
+type sshAccessTarget struct {
+	Label string
 	Alias string
 	Host  string
 	User  string
-	Port  int
+	Ports []int
 }
 
-func (h infraHost) sshPorts() []int {
-	ports := []int{}
-	if h.Port > 0 {
-		ports = append(ports, h.Port)
+func (t sshAccessTarget) display() string {
+	label := t.Label
+	if label == "" {
+		label = "ssh"
 	}
-	for _, port := range []int{2222, 22} {
-		seen := false
-		for _, existing := range ports {
-			if existing == port {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			ports = append(ports, port)
-		}
-	}
-	return ports
+	return fmt.Sprintf("%s %s@%s ports %v", label, t.User, t.Host, t.Ports)
 }
 
 // Init brings up SSH, the OTLP forward, and the OTel SDK in that order. The
@@ -143,20 +132,23 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	bootstrapStart := time.Now()
 
-	host, user := opts.InfraHost, opts.InfraUser
-	sshPorts := []int{22}
-	if host == "" || user == "" {
-		resolved, err := resolveInfraHost(repoRoot, site)
+	var accessTargets []sshAccessTarget
+	if opts.InfraHost != "" || opts.InfraUser != "" {
+		if opts.InfraHost == "" || opts.InfraUser == "" {
+			return nil, fmt.Errorf("runtime: InfraHost and InfraUser must be set together")
+		}
+		accessTargets = []sshAccessTarget{{
+			Label: "override",
+			Host:  opts.InfraHost,
+			User:  opts.InfraUser,
+			Ports: []int{22},
+		}}
+	} else {
+		resolved, err := resolveInfraSSHAccess(repoRoot, site)
 		if err != nil {
 			return nil, err
 		}
-		if host == "" {
-			host = resolved.Host
-		}
-		if user == "" {
-			user = resolved.User
-		}
-		sshPorts = resolved.sshPorts()
+		accessTargets = resolved
 	}
 
 	rt := &Runtime{
@@ -165,7 +157,7 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		bootstrapStart: bootstrapStart,
 	}
 
-	sshClient, err := sshtun.Dial(ctx, host, user, sshPorts)
+	sshClient, selected, err := dialSSHAccess(ctx, accessTargets)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +212,9 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		trace.WithTimestamp(bootstrapStart),
 		trace.WithAttributes(
 			attribute.String("verself.site", site),
-			attribute.String("ssh.host", host),
-			attribute.String("ssh.user", user),
+			attribute.String("ssh.access_label", selected.Label),
+			attribute.String("ssh.host", selected.Host),
+			attribute.String("ssh.user", selected.User),
 			attribute.Bool("verself.skip_otlp_forward", opts.SkipOTLPForward),
 		),
 	)
@@ -272,9 +265,27 @@ func (rt *Runtime) OTLPEndpoint() string {
 	return rt.otlpForward.ListenAddr
 }
 
-// resolveInfraHost reads the authored per-site substrate inventory just far
+func dialSSHAccess(ctx context.Context, targets []sshAccessTarget) (*sshtun.Client, sshAccessTarget, error) {
+	if len(targets) == 0 {
+		return nil, sshAccessTarget{}, errors.New("runtime: no SSH access targets resolved")
+	}
+	failures := make([]string, 0, len(targets))
+	for _, target := range targets {
+		client, err := sshtun.Dial(ctx, target.Host, target.User, target.Ports)
+		if err == nil {
+			return client, target, nil
+		}
+		failures = append(failures, fmt.Sprintf("%s: %v", target.display(), err))
+	}
+	return nil, sshAccessTarget{}, fmt.Errorf(
+		"runtime: unable to establish operator SSH access; tried targets in order: %s",
+		strings.Join(failures, "; "),
+	)
+}
+
+// resolveInfraSSHAccess reads the authored per-site substrate inventory just far
 // enough to bootstrap SSH. Full Ansible inventory semantics stay with Ansible.
-func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
+func resolveInfraSSHAccess(repoRoot, site string) ([]sshAccessTarget, error) {
 	path := filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
 	f, err := os.Open(path)
 	if err != nil {
@@ -285,7 +296,8 @@ func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
 	var (
 		section     string
 		ansibleUser string
-		first       *infraHost
+		first       *sshAccessTarget
+		recovery    *sshAccessTarget
 	)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -314,6 +326,9 @@ func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
 		host := alias
 		user := ""
 		port := 0
+		recoveryHost := ""
+		recoveryUser := ""
+		recoveryPort := 0
 		for _, field := range fields[1:] {
 			if k, v, ok := splitInventoryKV(field); ok {
 				switch k {
@@ -327,10 +342,42 @@ func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
 						return nil, fmt.Errorf("inventory: invalid ansible_port %q for %s", v, alias)
 					}
 					port = parsed
+				case "verself_recovery_ssh_host":
+					recoveryHost = v
+				case "verself_recovery_ssh_user":
+					recoveryUser = v
+				case "verself_recovery_ssh_port":
+					parsed, err := strconv.Atoi(v)
+					if err != nil || parsed <= 0 || parsed > 65535 {
+						return nil, fmt.Errorf("inventory: invalid verself_recovery_ssh_port %q for %s", v, alias)
+					}
+					recoveryPort = parsed
 				}
 			}
 		}
-		first = &infraHost{Alias: alias, Host: host, User: user, Port: port}
+		ports := []int{22}
+		if port > 0 {
+			ports = []int{port}
+		}
+		first = &sshAccessTarget{
+			Label: "pomerium",
+			Alias: alias,
+			Host:  host,
+			User:  user,
+			Ports: ports,
+		}
+		if recoveryHost != "" || recoveryUser != "" || recoveryPort != 0 {
+			if recoveryHost == "" || recoveryUser == "" || recoveryPort == 0 {
+				return nil, fmt.Errorf("inventory: %s recovery SSH requires verself_recovery_ssh_host, verself_recovery_ssh_user, and verself_recovery_ssh_port", alias)
+			}
+			recovery = &sshAccessTarget{
+				Label: "recovery",
+				Alias: alias,
+				Host:  recoveryHost,
+				User:  recoveryUser,
+				Ports: []int{recoveryPort},
+			}
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read inventory: %w", err)
@@ -344,7 +391,11 @@ func resolveInfraHost(repoRoot, site string) (*infraHost, error) {
 	if first.User == "" {
 		return nil, errors.New("inventory: no ansible_user set on the [infra] host or in [all:vars]")
 	}
-	return first, nil
+	targets := []sshAccessTarget{*first}
+	if recovery != nil {
+		targets = append(targets, *recovery)
+	}
+	return targets, nil
 }
 
 func splitInventoryKV(s string) (key, value string, ok bool) {

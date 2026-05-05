@@ -2,6 +2,7 @@
 
 verself_site: prod
 bare_metal_host_alias: vs-dev-w0
+bare_metal_public_ipv4: 206.223.228.101
 verself_domain: verself.sh
 verself_version: 0.1.0
 verself_bin: /opt/verself/profile/bin

@@ -104,6 +104,9 @@ regular Nomad deploys:
 aspect host operator-access-handoff --site=prod --confirm
 ```
 
+The handoff connects through direct recovery SSH on `:2222` because it mutates
+Pomerium and sshd listeners. Pomerium operator sessions expire after 48 hours.
+
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
 Nomad deploys are driven directly by the checked-in `nomad_component` targets for the requested SHA:

@@ -5,5 +5,5 @@ operator_ssh_access_pomerium_user_ca_pubkey_path: "{{ pomerium_ssh_user_ca_pubke
 operator_ssh_access_sshd_config_path: /etc/ssh/sshd_config.d/60-operator-access.conf
 operator_ssh_access_upstream_address: 127.0.0.1
 operator_ssh_access_upstream_port: 22
-operator_ssh_access_bootstrap_address: "{{ ansible_host }}"
+operator_ssh_access_bootstrap_address: "{{ bare_metal_public_ipv4 }}"
 operator_ssh_access_bootstrap_port: 2222

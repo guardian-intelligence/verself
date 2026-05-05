@@ -13,6 +13,7 @@ pomerium_grpc_address: "127.0.0.1:5443"
 pomerium_health_address: "127.0.0.1:28080"
 pomerium_otelcol_otlp_grpc_address: 127.0.0.1:4317
 pomerium_cookie_name: _pomerium_operator
+pomerium_cookie_expire: 48h
 
 pomerium_shared_secret_path: "{{ pomerium_credstore_dir }}/shared-secret"
 pomerium_cookie_secret_path: "{{ pomerium_credstore_dir }}/cookie-secret"
@@ -42,7 +43,8 @@ pomerium_operator_http_routes:
   - from: "https://{{ grafana_domain | default('dashboard.' ~ verself_domain) }}"
     to: "http://{{ grafana_http_address | default('127.0.0.1:4300') }}"
 
-pomerium_ssh_address: "{{ ansible_host }}:22"
+pomerium_ssh_bind_address: "{{ bare_metal_public_ipv4 }}"
+pomerium_ssh_address: "{{ pomerium_ssh_bind_address }}:22"
 pomerium_ssh_route_name: prod
 pomerium_ssh_upstream: "127.0.0.1:22"
 pomerium_ssh_allowed_user: ubuntu

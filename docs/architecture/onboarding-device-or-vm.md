@@ -35,7 +35,8 @@ IAM/Zitadel component substrate binding has completed. It is outside host
 bootstrap and outside Nomad deployment because it changes the SSH access
 boundary. Before that handoff, bootstrap uses direct host SSH. After the
 handoff, public `:22` is Pomerium-owned and direct host recovery moves to
-`:2222`.
+`:2222`. The handoff itself connects through the recovery listener so Pomerium
+and sshd can restart without invalidating the Ansible control connection.
 
 ```bash
 aspect host operator-access-handoff --site=prod --confirm
@@ -67,6 +68,7 @@ access host, with `ansible_user=ubuntu@prod` selecting the Pomerium SSH route.
 
 Subsequent SSH, SCP, SFTP, Ansible, and Go SSH connections use the same
 public-key source and re-evaluate Pomerium policy on each connection.
+The operator Pomerium session cookie expires after 48 hours.
 
 ## HTTP Operator Routes
 
