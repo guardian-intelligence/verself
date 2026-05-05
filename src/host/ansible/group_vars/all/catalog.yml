@@ -271,7 +271,7 @@ topology_guest_versions:
     version: 24.04.4
 topology_server_tools:
   bazel_label: //src/host/binaries:server_tools.tar.zst
-  version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_pomerium-0.32.6_spicedb-1.51.1_zed-0.36.1_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_bazel-remote-2.6.1_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_containerd-shim-runc-v2-2.2.2_ctr-2.2.2_nodejs-22.22.2_verdaccio-6.5.2_stalwart-0.15.5_stalwart-cli-0.15.5_stalwart-webadmin-0.1.37_stalwart-spam-filter-2.0.5_haproxy-awslc-3.3.7_lego-4.35.2_haproxy-lego-renew-20260502f_haproxy-upstreams-apply-20260504a_nomad-1.11.3_zot-2.1.16
+  version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_pomerium-0.32.6_spicedb-1.51.1_zed-0.36.1_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_containerd-shim-runc-v2-2.2.2_ctr-2.2.2_nodejs-22.22.2_verdaccio-6.5.2_stalwart-0.15.5_stalwart-cli-0.15.5_stalwart-webadmin-0.1.37_stalwart-spam-filter-2.0.5_haproxy-awslc-3.3.7_lego-4.35.2_haproxy-lego-renew-20260502f_haproxy-upstreams-apply-20260504a_nomad-1.11.3_zot-2.1.16
 topology_substrate_tools:
   bazel_label: //src/host/binaries:substrate_go_tools
   version: 0.1.1_zot-htpasswd-20260502a

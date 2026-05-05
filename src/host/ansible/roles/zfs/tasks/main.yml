@@ -44,10 +44,3 @@
     state: present
     extra_zfs_properties:
       mountpoint: /var/lib/verdaccio/storage
-
-- name: Create bazel-remote cache dataset
-  community.general.zfs:
-    name: "{{ zfs_pool }}/{{ zfs_bazel_remote_dataset }}"
-    state: present
-    extra_zfs_properties:
-      mountpoint: /var/lib/bazel-remote

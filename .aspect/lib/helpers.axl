@@ -159,19 +159,10 @@ def build_verself_deploy(ctx):
     rc = checked_spawn(
         ctx,
         "bazelisk",
-        ["build", "--config=remote-writer", VERSELF_DEPLOY_TARGET],
+        ["build", VERSELF_DEPLOY_TARGET],
         cwd = ws_path(ctx),
         label = "bazelisk build " + VERSELF_DEPLOY_TARGET,
     )
-    if rc != 0:
-        ctx.std.io.stderr.write("WARN: remote-writer build failed; retrying with local Bazel cache only\n")
-        rc = checked_spawn(
-            ctx,
-            "bazelisk",
-            ["build", VERSELF_DEPLOY_TARGET],
-            cwd = ws_path(ctx),
-            label = "bazelisk build " + VERSELF_DEPLOY_TARGET + " (local fallback)",
-        )
     if rc != 0:
         return ""
     return ws_path(ctx, VERSELF_DEPLOY_BIN)

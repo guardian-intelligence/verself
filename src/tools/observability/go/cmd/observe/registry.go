@@ -527,23 +527,6 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
-		ID:      "deploy.bazel_cache",
-		Family:  "deploy",
-		Title:   "Deploy Bazel Cache Hit/Miss Totals",
-		Purpose: "Total bazel-remote action-cache and CAS lookups in the lookback window broken down by hit/miss. Sums the per-(kind, method, status) counter delta of bazel_remote_incoming_requests_total.",
-		Optional: []string{
-			"--minutes=<lookback>",
-			"--format=table|json|markdown",
-		},
-		Examples: []string{
-			"aspect observe --what=deploy",
-			"aspect observe --what=deploy --minutes=1440",
-		},
-		Next: []string{
-			"aspect observe --what=deploy --run-key=<deploy-run-key>",
-		},
-	},
-	{
 		ID:      "deploy.codegen_actions",
 		Family:  "deploy",
 		Title:   "Deploy Codegen Actions",

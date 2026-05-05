@@ -80,24 +80,9 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 
 	effectiveFlags := extraFlags
 	if err := run(extraFlags); err != nil {
-		if !hasRemoteWriterConfig(extraFlags) {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, fmt.Errorf("bazelisk build: %w", err)
-		}
-		fallbackFlags := withoutRemoteWriterConfig(extraFlags)
-		span.AddEvent("verself_deploy.bazel.remote_writer_fallback")
-		if removeErr := os.Remove(bepPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			span.RecordError(removeErr)
-			span.SetStatus(codes.Error, removeErr.Error())
-			return nil, fmt.Errorf("remove stale bep before local fallback: %w", removeErr)
-		}
-		if fallbackErr := run(fallbackFlags); fallbackErr != nil {
-			span.RecordError(fallbackErr)
-			span.SetStatus(codes.Error, fallbackErr.Error())
-			return nil, fmt.Errorf("bazelisk build local fallback: %w", fallbackErr)
-		}
-		effectiveFlags = fallbackFlags
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("bazelisk build: %w", err)
 	}
 	span.SetAttributes(attribute.StringSlice("bazel.effective_flags", effectiveFlags))
 
@@ -137,24 +122,4 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 	)
 	span.SetStatus(codes.Ok, "")
 	return &Result{Stream: stream, BEPath: bepPath}, nil
-}
-
-func hasRemoteWriterConfig(flags []string) bool {
-	for _, flag := range flags {
-		if flag == "--config=remote-writer" {
-			return true
-		}
-	}
-	return false
-}
-
-func withoutRemoteWriterConfig(flags []string) []string {
-	out := make([]string, 0, len(flags))
-	for _, flag := range flags {
-		if flag == "--config=remote-writer" {
-			continue
-		}
-		out = append(out, flag)
-	}
-	return out
 }

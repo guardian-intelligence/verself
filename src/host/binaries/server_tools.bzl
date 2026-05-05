@@ -52,7 +52,6 @@ DEB_DIRECTORY_SPECS = [
 RAW_BINARY_SPECS = [
     ("garage", "@server_tool_garage//file", "garage"),
     ("forgejo", "@server_tool_forgejo//file", "forgejo"),
-    ("bazel_remote", "@server_tool_bazel_remote//file", "bazel-remote"),
     ("zot", "@server_tool_zot//file", "zot"),
 ]
 
@@ -67,7 +66,6 @@ ARCHIVE_DIRECTORIES = [
 ]
 
 SERVER_TOOL_DEPS = [
-    ":bazel_remote",
     ":clickhouse",
     ":containerd",
     ":containerd_shim_runc_v2",

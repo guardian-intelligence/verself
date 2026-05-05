@@ -41,7 +41,7 @@ func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]str
 	if err != nil {
 		return nil, nil, err
 	}
-	build, err := bazelbuild.Build(ctx, repoRoot, labels, "--config=remote-writer")
+	build, err := bazelbuild.Build(ctx, repoRoot, labels)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -12,6 +12,8 @@ common --lockfile_mode=error
 # repos under continuous parallel editing.
 startup --max_idle_secs=1800
 
+# Bazel caching is local-only. A shared remote cache couples bootstrap and deploy
+# to a host service; keep cache state inside the invoking user's home directory.
 build --disk_cache=~/.cache/bazel-disk
 build --repository_cache=~/.cache/bazel-repo
 build --incompatible_strict_action_env
@@ -25,18 +27,3 @@ test --test_output=errors
 test --test_summary=terse
 
 build:ci --build_metadata=ROLE=CI
-
-# bazel-remote build cache reachable over the wg-ops operator mesh. Plain
-# grpc:// (no TLS) is fine here — WireGuard already encrypts and authenticates
-# every byte that transits the tunnel.
-#
-# :remote is the read-mostly profile for laptop / dev workflows: pull cached
-# actions, never poison the shared cache with local results. :remote-writer
-# inherits :remote and re-enables uploads, used only by trusted contexts (the
-# bare-metal deploy_profile path that runs the canonical build).
-build:remote --remote_cache=grpc://10.66.66.1:9092
-build:remote --remote_timeout=10
-build:remote --noremote_upload_local_results
-
-build:remote-writer --config=remote
-build:remote-writer --remote_upload_local_results

@@ -22,6 +22,8 @@
 
 - Bazel validates and materializes descriptors. The deploy controller walks the descriptor graph, asks each executor whether the unit is already at the desired digest, applies only changed units, and records evidence per unit.
 
+- Bazel cache state is local to the invoking controller via `.bazelrc` `--disk_cache` and `--repository_cache`. There is no shared `bazel-remote` host service, remote-writer build profile, or ZFS-backed build-cache dataset.
+
 - Nomad owns service and component port allocation. Service-to-service and edge routing should consume Nomad service registration instead of static endpoint maps.
 
 - Host Ansible may reserve only substrate ports: SSH, Nomad, SPIRE, WireGuard, base Postgres if host-managed, and other true bootstrap listeners. Product and platform component listeners belong in Nomad jobs.

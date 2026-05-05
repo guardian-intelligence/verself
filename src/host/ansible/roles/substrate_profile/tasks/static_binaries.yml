@@ -17,7 +17,6 @@
     argv:
       - "{{ substrate_profile_bazelisk }}"
       - build
-      - --config=remote-writer
       - "{{ substrate_profile_server_tools_artifact.bazel_label }}"
     chdir: "{{ substrate_profile_repo_root }}"
   changed_when: false
@@ -124,7 +123,6 @@
     argv:
       - "{{ substrate_profile_bazelisk }}"
       - build
-      - --config=remote-writer
       - "{{ topology_substrate_tools.bazel_label }}"
     chdir: "{{ substrate_profile_repo_root }}"
   changed_when: false

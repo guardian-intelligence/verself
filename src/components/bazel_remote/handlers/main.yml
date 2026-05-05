@@ -1,7 +1,0 @@
----
-- name: Restart bazel-remote
-  listen: restart bazel-remote
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: bazel-remote
-    state: restarted

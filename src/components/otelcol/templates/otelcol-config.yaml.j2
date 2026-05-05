@@ -257,14 +257,6 @@ receivers:
       - type: remove
         field: attributes.level
         if: attributes.level != nil
-  journald/bazel-remote:
-    units: [bazel-remote]
-    resource:
-      service.name: bazel-remote
-    operators:
-      - type: move
-        from: body.MESSAGE
-        to: body
   journald/verdaccio:
     units: [verdaccio]
     resource:
@@ -424,13 +416,6 @@ receivers:
           scrape_interval: 10s
           static_configs:
             - targets: ["{{ otelcol_temporal_metrics_address }}"]
-  prometheus/bazel-remote:
-    config:
-      scrape_configs:
-        - job_name: bazel-remote
-          scrape_interval: 10s
-          static_configs:
-            - targets: ["{{ otelcol_bazel_remote_http_address }}"]
   prometheus/nomad:
     config:
       scrape_configs:
@@ -508,7 +493,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, journald/haproxy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
+      receivers: [otlp, journald/haproxy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
@@ -516,6 +501,6 @@ service:
       processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal, prometheus/bazel-remote, prometheus/nomad, prometheus/haproxy]
+      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal, prometheus/nomad, prometheus/haproxy]
       processors: [batch]
       exporters: [clickhouse]

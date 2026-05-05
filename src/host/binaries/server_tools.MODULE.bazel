@@ -85,13 +85,6 @@ http_file(
 )
 
 http_file(
-    name = "server_tool_bazel_remote",
-    downloaded_file_path = "bazel-remote-2.6.1-linux-amd64",
-    sha256 = "025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784",
-    url = "https://github.com/buchgr/bazel-remote/releases/download/v2.6.1/bazel-remote-2.6.1-linux-amd64",
-)
-
-http_file(
     name = "server_tool_otelcol_contrib",
     downloaded_file_path = "otelcol-contrib_0.149.0_linux_amd64.tar.gz",
     sha256 = "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",

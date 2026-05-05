@@ -7,7 +7,6 @@ otelcol_statsd_address: 127.0.0.1:8125
 otelcol_postgresql_address: "{{ postgresql_address }}"
 otelcol_openbao_api_address: 127.0.0.1:8200
 otelcol_temporal_metrics_address: 127.0.0.1:9001
-otelcol_bazel_remote_http_address: 127.0.0.1:8080
 otelcol_nomad_http_address: "{{ nomad_http_address }}"
 otelcol_haproxy_metrics_address: 127.0.0.1:8404
 otelcol_clickhouse_native_tls_address: 127.0.0.1:9440

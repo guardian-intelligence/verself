@@ -72,7 +72,6 @@ func buildQueries(cfg config) ([]query, error) {
 		}
 		return []query{
 			newQuery("deploy.tasks", deployTasksSQL, params),
-			newQuery("deploy.bazel_cache", deployBazelCacheSQL, params),
 		}, nil
 	case "supply-chain":
 		return []query{
@@ -813,29 +812,6 @@ WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
   AND (ServiceName = 'verself-deploy' OR ServiceName = 'bazel')
 ORDER BY Timestamp, ServiceName, SpanName
 LIMIT {row_limit:UInt32}`
-
-// deployBazelCacheSQL totals bazel-remote hit and miss counts in the lookback
-// window by summing the per-(kind, method, status) counter delta. Counter
-// resets (process restarts) make max-min slightly understate the true total
-// across the window — close enough for the magnitudes we look at here.
-const deployBazelCacheSQL = `
-SELECT
-  status,
-  sum(delta) AS total
-FROM (
-  SELECT
-    Attributes['status'] AS status,
-    Attributes['kind'] AS kind,
-    Attributes['method'] AS method,
-    max(Value) - min(Value) AS delta
-  FROM default.otel_metrics_sum
-  WHERE ServiceName = 'bazel-remote'
-    AND MetricName = 'bazel_remote_incoming_requests_total'
-    AND TimeUnix > now() - toIntervalMinute({minutes:UInt32})
-  GROUP BY status, kind, method
-)
-GROUP BY status
-ORDER BY status`
 
 // deployCodegenActionsSQL surfaces every codegen Bazel spawn that ran
 // for one deploy. The spans are emitted by
