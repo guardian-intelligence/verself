@@ -18,10 +18,15 @@ jobs:
       VERSELF_NPM_REGISTRY_TOKEN: ${{ secrets.VERSELF_NPM_REGISTRY_TOKEN_FORGEJO }}
     steps:
       - name: Check out repository
-        uses: https://data.forgejo.org/actions/checkout@v6
-        with:
-          token: ${{ secrets.VERSELF_FORGEJO_CHECKOUT_TOKEN }}
-          persist-credentials: false
+        env:
+          VERSELF_FORGEJO_CHECKOUT_TOKEN: ${{ secrets.VERSELF_FORGEJO_CHECKOUT_TOKEN }}
+        run: |
+          set -eu
+          auth="$(printf 'x-access-token:%s' "$VERSELF_FORGEJO_CHECKOUT_TOKEN" | base64 | tr -d '\n')"
+          git init .
+          git remote add origin http://10.255.0.1:18080/guardian-intelligence/verself.git
+          git -c "http.http://10.255.0.1:18080/.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "${GITHUB_SHA:?}"
+          git checkout --detach FETCH_HEAD
 
       # Self-hosted runner; Bazel disk + repo caches are already on the host's
       # ~/.cache/bazel-* and survive between jobs without an explicit cache step.
