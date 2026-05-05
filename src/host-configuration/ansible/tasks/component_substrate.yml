@@ -10,7 +10,7 @@
 - name: Initialize component substrate context
   ansible.builtin.set_fact:
     component_secret_values: "{{ (component_filesystem_convergence.exposed_values | default({})).get(component.name, {}) }}"
-    component_units: "{{ component.workload.units }}"
+    component_units: "{{ component.workload.units | default([]) }}"
 
 - name: Create component directories
   ansible.builtin.file:
@@ -19,14 +19,14 @@
     owner: "{{ item.owner }}"
     group: "{{ item.group }}"
     mode: "{{ item.mode }}"
-  loop: "{{ component.workload.directories }}"
+  loop: "{{ component.workload.directories | default([]) }}"
   loop_control:
     label: "{{ item.path }}"
   when: not (component_filesystem_convergence.converged | default(false) | bool)
 
 - name: Run pre-credential component substrate bootstrap hooks
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/bootstrap/{{ component_bootstrap_hook.name }}.yml"
-  loop: "{{ component.workload.bootstrap }}"
+  loop: "{{ component.workload.bootstrap | default([]) }}"
   loop_control:
     loop_var: component_bootstrap_hook
     label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"
@@ -34,11 +34,15 @@
 
 - name: Configure component credentials
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/secrets.yml"
-  when: not (component_filesystem_convergence.converged | default(false) | bool)
+  when:
+    - component.workload.secret_refs is defined
+    - not (component_filesystem_convergence.converged | default(false) | bool)
 
 - name: Configure component PostgreSQL binding
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/postgres.yml"
   when:
+    - component.postgres is defined
+    - component.postgres.database is defined
     - component.postgres.database | length > 0
     - not (component_postgres_convergence.converged | default(false) | bool)
 
@@ -51,12 +55,13 @@
 - name: Reconcile owned component Zitadel auth
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/component/auth_owned_project.yml"
   when:
+    - component.workload.auth is defined
     - component.workload.auth.kind == "owned_project"
     - component_zitadel_admin_pat is defined
 
 - name: Run component substrate bootstrap hooks
   ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/bootstrap/{{ component_bootstrap_hook.name }}.yml"
-  loop: "{{ component.workload.bootstrap }}"
+  loop: "{{ component.workload.bootstrap | default([]) }}"
   loop_control:
     loop_var: component_bootstrap_hook
     label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"

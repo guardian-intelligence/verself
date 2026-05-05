@@ -2,6 +2,11 @@
 - name: Resolve owned component auth project ID
   ansible.builtin.set_fact:
     component_auth_project_id: "{{ component_auth_project_ids_by_name.get(component.workload.auth.project_name, '') }}"
+    component_auth_credential_group: >-
+      {{
+        component.workload.auth.credstore_group
+        | default(component.workload.units[0].group | default(component.workload.units[0].user))
+      }}
   no_log: true
 
 - name: Assert owned component auth project was reconciled
@@ -16,6 +21,6 @@
     content: "{{ component_auth_project_id }}\n"
     dest: "/etc/credstore/{{ component.workload.auth.project_name }}/auth-audience"
     owner: root
-    group: "{{ component.identities.default.group }}"
+    group: "{{ component_auth_credential_group }}"
     mode: "0640"
   no_log: true

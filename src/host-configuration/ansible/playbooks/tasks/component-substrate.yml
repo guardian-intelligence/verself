@@ -24,6 +24,7 @@
     component_secret_ansible_var_names: >-
       {{
         application_components
+        | selectattr('workload.secret_refs', 'defined')
         | map(attribute='workload.secret_refs')
         | flatten
         | selectattr('source.kind', 'equalto', 'ansible_var')
@@ -34,6 +35,8 @@
     component_postgres_ansible_var_names: >-
       {{
         application_components
+        | selectattr('postgres', 'defined')
+        | selectattr('postgres.password_ref', 'defined')
         | selectattr('postgres.password_ref.kind', 'equalto', 'ansible_var')
         | map(attribute='postgres.password_ref.name')
         | unique
@@ -42,7 +45,8 @@
     component_postgres_bindings: >-
       {{
         application_components
-        | selectattr('postgres.database')
+        | selectattr('postgres', 'defined')
+        | selectattr('postgres.database', 'defined')
         | list
       }}
     component_clickhouse_bindings: >-
@@ -54,6 +58,7 @@
     component_owned_auth_components: >-
       {{
         application_components
+        | selectattr('workload.auth', 'defined')
         | selectattr('workload.auth.kind', 'equalto', 'owned_project')
         | list
       }}
@@ -135,7 +140,7 @@
     cmd: "{{ clickhouse_operator_client_command }} --multiquery"
     stdin: |
       {% for component in component_clickhouse_bindings %}
-      {% set spiffe_uri = component.identities[component.workload.clickhouse.spiffe_identity].spiffe_id %}
+      {% set spiffe_uri = spire_identity_spiffe_ids[component.workload.clickhouse.spiffe_identity_key] %}
       CREATE USER IF NOT EXISTS {{ component.workload.clickhouse.user }}
         IDENTIFIED WITH ssl_certificate
         SAN 'URI:{{ spiffe_uri }}'
