@@ -65,15 +65,15 @@ func bindNomadArtifacts(repoRoot string, policy artifactDeliveryPolicy, componen
 	return bindings, artifacts, nil
 }
 
-func publishPlanArtifacts(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) error {
-	if len(plan.Artifacts) == 0 {
+func publishArtifacts(ctx context.Context, rt *runtime.Runtime, delivery deploymodel.ArtifactDelivery, artifacts []deploymodel.Artifact) error {
+	if len(artifacts) == 0 {
 		return nil
 	}
-	pub, err := newGaragePublisher(ctx, rt.SSH, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery)
+	pub, err := newGaragePublisher(ctx, rt.SSH, delivery)
 	if err != nil {
 		return err
 	}
-	return pub.PublishAll(ctx, plan.Artifacts, rt.RepoRoot)
+	return pub.PublishAll(ctx, artifacts, rt.RepoRoot)
 }
 
 func newGaragePublisher(ctx context.Context, sshClient *sshtun.Client, delivery deploymodel.ArtifactDelivery) (*garage.Publisher, error) {

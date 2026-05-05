@@ -313,6 +313,7 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 			return nil, fmt.Errorf("%s: encode artifact digest input: %w", component.JobID, err)
 		}
 		artifactDigest := deploymodel.SHA256(artifactDigestInput)
+		artifactOutputs := sortedArtifactOutputs(seen)
 		specSHA, err := stampNomadSpecMeta(job, artifactDigest, runKey, sha)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", component.JobID, err)
@@ -324,12 +325,13 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 			return nil, fmt.Errorf("%s: encode bound Nomad spec: %w", component.JobID, err)
 		}
 		jobs = append(jobs, deploymodel.NomadJob{
-			JobID:          component.JobID,
-			Component:      component.Component,
-			DependsOn:      append([]string(nil), component.Requires...),
-			SpecSHA256:     specSHA,
-			ArtifactSHA256: artifactDigest,
-			Spec:           specBody,
+			JobID:           component.JobID,
+			Component:       component.Component,
+			DependsOn:       append([]string(nil), component.Requires...),
+			ArtifactOutputs: artifactOutputs,
+			SpecSHA256:      specSHA,
+			ArtifactSHA256:  artifactDigest,
+			Spec:            specBody,
 		})
 	}
 	for output := range bindings {
@@ -338,6 +340,15 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		}
 	}
 	return jobs, nil
+}
+
+func sortedArtifactOutputs(seen map[string]bool) []string {
+	outputs := make([]string, 0, len(seen))
+	for output := range seen {
+		outputs = append(outputs, output)
+	}
+	sortStrings(outputs)
+	return outputs
 }
 
 func loadAuthoredNomadSpec(ctx context.Context, parser authoredNomadSpecParser, path string) (*api.Job, error) {

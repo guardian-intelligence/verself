@@ -41,12 +41,13 @@ type Artifact struct {
 }
 
 type NomadJob struct {
-	JobID          string          `json:"job_id"`
-	Component      string          `json:"component"`
-	DependsOn      []string        `json:"depends_on,omitempty"`
-	SpecSHA256     string          `json:"spec_sha256"`
-	ArtifactSHA256 string          `json:"artifact_sha256"`
-	Spec           json.RawMessage `json:"spec"`
+	JobID           string          `json:"job_id"`
+	Component       string          `json:"component"`
+	DependsOn       []string        `json:"depends_on,omitempty"`
+	ArtifactOutputs []string        `json:"artifact_outputs,omitempty"`
+	SpecSHA256      string          `json:"spec_sha256"`
+	ArtifactSHA256  string          `json:"artifact_sha256"`
+	Spec            json.RawMessage `json:"spec"`
 }
 
 func (a Artifact) ResolveLocalPath(repoRoot string) string {

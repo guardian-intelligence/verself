@@ -109,13 +109,6 @@ func run(ctx context.Context, opts runOptions) error {
 		attribute.Int("verself.nomad_job_count", len(plan.Jobs)),
 	)
 
-	if err := publishPlanArtifacts(runCtx, rt, plan); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		recordDeployFailed(span, plan, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
-		return err
-	}
-
 	results, err := applyNomadPlan(runCtx, rt, plan)
 	if err != nil {
 		span.RecordError(err)
