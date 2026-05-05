@@ -210,6 +210,6 @@ Each site has one checked-in directory:
 
 - `src/host/sites/<site>/`
 
-The site directory owns `vars.yml`, `inventory.ini`, `provisioning.tfvars.json`, and three independently decryptable SOPS bags under `secrets/`. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host bag contains host bootstrap secrets and must exist before host convergence. The external bag contains third-party integration secrets for product/runtime bootstrappers.
+The site directory owns checked-in `vars.yml`, checked-in `inventory.ini`, local-only `provisioning.tfvars.json`, and three independently decryptable SOPS bags under `secrets/`. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host bag contains host bootstrap secrets and must exist before host convergence. The external bag contains third-party integration secrets for product/runtime bootstrappers. Do not commit `provisioning.tfvars.json`; keep it as operator-local provisioning input.
 
 To add a site, copy `src/host/sites/prod/` to the new site name, replace the three SOPS bags, update `src/host/sites/<site>/vars.yml`, and let Bazel-discovered deployable units declare their own `site_scope`, `requires`, and `provides` relationships. Site variables do not decide which Nomad jobs exist.
