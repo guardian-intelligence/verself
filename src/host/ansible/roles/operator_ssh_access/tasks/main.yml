@@ -51,10 +51,10 @@
     port: "{{ operator_ssh_access_upstream_port }}"
     timeout: 5
 
-- name: Wait for direct bootstrap SSH
+- name: Wait for WireGuard recovery SSH
   ansible.builtin.wait_for:
-    host: "{{ operator_ssh_access_bootstrap_address }}"
-    port: "{{ operator_ssh_access_bootstrap_port }}"
+    host: "{{ operator_ssh_access_recovery_address }}"
+    port: "{{ operator_ssh_access_recovery_port }}"
     timeout: 5
 
 - name: Publish SSH access handoff result

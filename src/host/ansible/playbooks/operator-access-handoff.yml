@@ -5,7 +5,7 @@
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   vars:
-    ansible_host: "{{ verself_recovery_ssh_host | default(bare_metal_public_ipv4) }}"
+    ansible_host: "{{ verself_recovery_ssh_host | default(host_wireguard_tunnels.ops.address) }}"
     ansible_port: "{{ verself_recovery_ssh_port | default(2222) }}"
     ansible_user: "{{ verself_recovery_ssh_user | default('ubuntu') }}"
   tags:
@@ -21,7 +21,7 @@
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   vars:
-    ansible_host: "{{ verself_recovery_ssh_host | default(bare_metal_public_ipv4) }}"
+    ansible_host: "{{ verself_recovery_ssh_host | default(host_wireguard_tunnels.ops.address) }}"
     ansible_port: "{{ verself_recovery_ssh_port | default(2222) }}"
     ansible_user: "{{ verself_recovery_ssh_user | default('ubuntu') }}"
   tags:
@@ -33,12 +33,13 @@
         that:
           - ansible_host | length > 0
           - bare_metal_public_ipv4 | length > 0
+          - host_wireguard_tunnels.ops.address | length > 0
           - pomerium_domain | length > 0
           - zitadel_domain | length > 0
           - postgresql_address | length > 0
         fail_msg: >-
-          Operator access handoff needs an infra inventory host plus Pomerium,
-          Zitadel, and PostgreSQL site facts.
+          Operator access handoff needs WireGuard recovery plus Pomerium,
+          Zitadel, PostgreSQL, and public host site facts.
 
     - name: Wait for Zitadel local listener before configuring Pomerium OIDC
       ansible.builtin.wait_for:
@@ -58,7 +59,7 @@
       delegate_to: localhost
       become: false
 
-    - name: Wait for direct SSH recovery listener from controller
+    - name: Wait for WireGuard SSH recovery listener from controller
       ansible.builtin.wait_for:
         host: "{{ ansible_host }}"
         port: "{{ ansible_port }}"

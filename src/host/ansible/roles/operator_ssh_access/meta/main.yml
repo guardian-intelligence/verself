@@ -2,7 +2,7 @@
 galaxy_info:
   author: verself
   role_name: operator_ssh_access
-  description: Configure sshd as the Pomerium native-SSH upstream.
+  description: Configure sshd as Pomerium upstream plus WireGuard recovery.
   license: UNLICENSED
   min_ansible_version: "2.18"
   platforms:

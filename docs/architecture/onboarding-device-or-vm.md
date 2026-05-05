@@ -19,7 +19,7 @@ operator ssh client -> access.<domain>:22 -> Pomerium -> 127.0.0.1:22 sshd
 The upstream sshd configuration is intentionally narrow:
 
 - `ListenAddress 127.0.0.1`
-- direct bootstrap/recovery `ListenAddress <host-ip>:2222`
+- WireGuard recovery `ListenAddress 10.66.66.1:2222`
 - `TrustedUserCAKeys /etc/ssh/verself-pomerium-user-ca.pub`
 - `AuthorizedKeysFile none`
 - password and keyboard-interactive authentication disabled
@@ -34,9 +34,10 @@ Pomerium is reconciled only by the manual operator-access handoff play after
 IAM/Zitadel component substrate binding has completed. It is outside host
 bootstrap and outside Nomad deployment because it changes the SSH access
 boundary. Before that handoff, bootstrap uses direct host SSH. After the
-handoff, public `:22` is Pomerium-owned and direct host recovery moves to
-`:2222`. The handoff itself connects through the recovery listener so Pomerium
-and sshd can restart without invalidating the Ansible control connection.
+handoff, public `:22` is Pomerium-owned and recovery SSH is reachable only over
+the `wg-ops` tunnel at `10.66.66.1:2222`. The handoff itself connects through
+the WireGuard recovery listener so Pomerium and sshd can restart without
+invalidating the Ansible control connection.
 
 ```bash
 aspect host operator-access-handoff --site=prod --confirm
@@ -70,6 +71,10 @@ Subsequent SSH, SCP, SFTP, Ansible, and Go SSH connections use the same
 public-key source and re-evaluate Pomerium policy on each connection.
 The operator Pomerium session cookie expires after 48 hours.
 
+The generated inventory also records the WireGuard recovery target. Deployment
+tooling attempts Pomerium first, then `10.66.66.1:2222`, and fails loudly with
+the attempted targets if neither access path works.
+
 ## HTTP Operator Routes
 
 Operator HTTP routes are owned by the components that expose them and are
@@ -102,7 +107,7 @@ After the cutover, accepted sshd sessions for normal operator access should
 have a loopback source address because only Pomerium reaches upstream sshd.
 `aspect detect-intrusions` queries `verself.host_auth_events` for accepted
 events with `source_ip` outside `127.0.0.1` and `::1`. Matches should line up
-with intentional bootstrap/recovery use of direct host SSH on `:2222`.
+with intentional recovery use over `wg-ops`.
 
 ```sql
 SELECT recorded_at, outcome, auth_method, cert_id, user, source_ip, body
@@ -114,13 +119,17 @@ WHERE event_date >= today() - 31
 ORDER BY recorded_at DESC;
 ```
 
-The expected result is zero rows outside active bootstrap/recovery work.
+The expected result is zero rows outside active WireGuard recovery work.
 
 ## Recovery
 
-Recovery starts with direct host SSH on `:2222`. Reprovisioning remains the
-fallback when host-level state is not worth preserving. The direct listener is a
-bootstrap/recovery path, not a second production SSH certificate authority.
+Recovery starts with WireGuard SSH on `10.66.66.1:2222`. The `wg-ops` listener
+uses normal sshd public-key auth and exists for operator recovery when Pomerium,
+Zitadel, or browser session state is unavailable.
+
+IPMI is the emergency path when WireGuard is unavailable. Use it to restore the
+WireGuard listener, repair Pomerium, or reprovision when host-level state is not
+worth preserving. Public direct SSH is a first-bootstrap path only.
 
 The Pomerium SSH user CA key lives in `/etc/credstore/pomerium/`; deleting that
 credstore and rerunning host convergence rotates operator SSH trust.
