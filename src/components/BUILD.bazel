@@ -54,5 +54,14 @@ filegroup(
             "*/vars/**",
         ],
         allow_empty = True,
-    ),
+    ) + [
+        "//src/components/clickhouse:role_sources",
+        "//src/components/grafana:role_sources",
+        "//src/components/haproxy:role_sources",
+        "//src/components/nats:role_sources",
+        "//src/components/otelcol:role_sources",
+        "//src/components/spicedb:role_sources",
+        "//src/components/temporal-platform:role_sources",
+        "//src/components/verdaccio:role_sources",
+    ],
 )

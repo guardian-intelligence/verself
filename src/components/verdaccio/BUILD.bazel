@@ -1,3 +1,21 @@
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/components:__pkg__"],
+)
+
 genrule(
     name = "verdaccio_runtime",
     srcs = [

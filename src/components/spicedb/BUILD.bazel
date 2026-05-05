@@ -1,5 +1,23 @@
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/components:__pkg__"],
+)
+
 nomad_component(
     name = "nomad_component",
     component = "spicedb",

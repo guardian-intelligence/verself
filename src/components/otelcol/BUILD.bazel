@@ -1,5 +1,23 @@
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/components:__pkg__"],
+)
+
 spire_identity(
     name = "spiffe_identity",
     component = "otelcol",
