@@ -167,6 +167,10 @@
         - spire-registrations
         - identity
         - workload-bindings
+    - role: garage
+      tags:
+        - garage
+        - artifacts
     - role: nomad
       tags:
         - nomad
