@@ -21,8 +21,9 @@ const (
 	securityPatchPlaybook  = "playbooks/security-patch.yml"
 	securityPatchPhase     = "security_patch"
 	securityPatchComponent = "security-patch"
-	securityPatchSSHPort   = 2222
 )
+
+var securityPatchSSHPorts = []int{2222, 22}
 
 type securityPatchResult struct {
 	StartedAt time.Time
@@ -33,33 +34,58 @@ type securityPatchResult struct {
 
 func runSecurityPatchPreflight(ctx context.Context, site, repoRoot, runKey string) securityPatchResult {
 	startedAt := time.Now()
-	res, err := runSecurityPatchPlaybook(ctx, site, repoRoot, runKey)
-	return securityPatchResult{
-		StartedAt: startedAt,
-		EndedAt:   time.Now(),
-		Result:    res,
-		Err:       err,
+	var last securityPatchResult
+	for idx, port := range securityPatchSSHPorts {
+		res, err := runSecurityPatchPlaybook(ctx, site, repoRoot, runKey, port)
+		last = securityPatchResult{
+			StartedAt: startedAt,
+			EndedAt:   time.Now(),
+			Result:    res,
+			Err:       err,
+		}
+		if securityPatchOK(last) {
+			return last
+		}
+		if idx == len(securityPatchSSHPorts)-1 || !securityPatchUnreachable(last) {
+			return last
+		}
 	}
+	return last
 }
 
-func runSecurityPatchPlaybook(ctx context.Context, site, repoRoot, runKey string) (*ansible.Result, error) {
+func runSecurityPatchPlaybook(ctx context.Context, site, repoRoot, runKey string, sshPort int) (*ansible.Result, error) {
 	inventoryPath := authoredInventoryPath(repoRoot, site)
 	if _, err := os.Stat(inventoryPath); err != nil {
 		return nil, fmt.Errorf("inventory missing at %s: %w", inventoryPath, err)
 	}
 	ansibleDir := filepath.Join(repoRoot, "src", "host", "ansible")
-	// Security patching may reboot the target, so it uses the direct bootstrap
-	// SSH listener instead of the Pomerium-owned port 22 path.
+	// Port 2222 exists after operator_ssh_access runs; fresh cloud-init hosts
+	// only have public 22 until the bootstrap role creates the recovery socket.
 	return ansible.Run(ctx, nil, ansible.Options{
 		Playbook:      securityPatchPlaybook,
 		Inventory:     inventoryPath,
 		AnsibleDir:    ansibleDir,
-		ExtraArgs:     []string{"-e", "verself_site=" + site, "-e", fmt.Sprintf("ansible_port=%d", securityPatchSSHPort)},
+		ExtraArgs:     []string{"-e", "verself_site=" + site, "-e", fmt.Sprintf("ansible_port=%d", sshPort)},
 		Site:          site,
 		Phase:         securityPatchPhase,
 		RunKey:        runKey,
 		AdditionalEnv: []string{"VERSELF_SITE=" + site},
 	})
+}
+
+func securityPatchUnreachable(res securityPatchResult) bool {
+	if res.Err != nil {
+		return false
+	}
+	if res.Result == nil {
+		return false
+	}
+	for _, stats := range res.Result.Recap.Hosts {
+		if stats.Unreachable > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func securityPatchOK(res securityPatchResult) bool {
