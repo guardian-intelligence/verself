@@ -15,6 +15,7 @@
     provisioning_site_dir: "{{ playbook_dir }}/../../../../host/sites/{{ provision_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets/provisioning.sops.yml"
     inventory_path: "{{ playbook_dir }}/../../../../host/sites/{{ provision_site }}/inventory.ini"
+    ansible_fact_cache_path: "{{ playbook_dir }}/../../../../host/ansible/.cache/facts"
   tasks:
     - name: Verify provisioning.tfvars.json exists
       ansible.builtin.stat:
@@ -131,3 +132,8 @@
           [all:vars]
           ansible_user=ubuntu
           ansible_python_interpreter=/usr/bin/python3
+
+    - name: Clear controller Ansible fact cache for regenerated inventory
+      ansible.builtin.file:
+        path: "{{ ansible_fact_cache_path }}"
+        state: absent

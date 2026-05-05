@@ -11,6 +11,8 @@
     state: present
     update_cache: true
     cache_valid_time: 3600
+    force_apt_get: true
+    lock_timeout: 60
 
 - name: Block algif_aead autoload for Copy Fail
   ansible.builtin.copy:

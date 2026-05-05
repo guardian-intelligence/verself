@@ -14,6 +14,7 @@
     provisioning_site_dir: "{{ playbook_dir }}/../../../../host/sites/{{ verself_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets/provisioning.sops.yml"
     deprovision_inventory_file: "{{ playbook_dir }}/../../../../host/sites/{{ verself_site }}/inventory.ini"
+    ansible_fact_cache_path: "{{ playbook_dir }}/../../../../host/ansible/.cache/facts"
   tasks:
     - name: Require verself_site to be set
       ansible.builtin.assert:
@@ -43,4 +44,9 @@
     - name: Remove generated inventory file
       ansible.builtin.file:
         path: "{{ deprovision_inventory_file }}"
+        state: absent
+
+    - name: Clear controller Ansible fact cache for destroyed inventory
+      ansible.builtin.file:
+        path: "{{ ansible_fact_cache_path }}"
         state: absent

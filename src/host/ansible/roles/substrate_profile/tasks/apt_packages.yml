@@ -3,11 +3,27 @@
 
 # ── PostgreSQL 16 (PGDG repo) ────────────────────────────────────────────────
 
+- name: Bound apt network and lock waits
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/90verself-acquire-timeouts
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Acquire::http::Timeout "5";
+      Acquire::https::Timeout "5";
+      Acquire::ftp::Timeout "5";
+      Acquire::Retries "1";
+      Acquire::ForceIPv4 "true";
+      Acquire::Queue-Mode "access";
+      DPkg::Lock::Timeout "60";
+
 - name: Install PGDG apt signing key
   ansible.builtin.get_url:
     url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
     dest: /usr/share/keyrings/pgdg.asc
     mode: "0644"
+    timeout: 5
 
 - name: Add PGDG apt repository
   ansible.builtin.apt_repository:
@@ -40,6 +56,8 @@
     state: present
     update_cache: "{{ substrate_profile_pgdg_repository.changed }}"
     cache_valid_time: 3600
+    force_apt_get: true
+    lock_timeout: 60
 
 # Disable the auto-started PostgreSQL cluster — we manage our own data directory.
 - name: Stop default PostgreSQL cluster
