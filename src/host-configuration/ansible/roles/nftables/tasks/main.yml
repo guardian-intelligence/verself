@@ -48,6 +48,7 @@
   loop: "{{ nftables_platform_ruleset_paths }}"
   loop_control:
     label: "{{ item | basename }}"
+  when: (item | basename) != "firecracker.nft"
 
 - name: Collect service-owned nftables ruleset records
   ansible.builtin.set_fact:
