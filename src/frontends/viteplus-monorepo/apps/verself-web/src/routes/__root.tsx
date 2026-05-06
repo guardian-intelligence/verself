@@ -2,23 +2,12 @@ import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanst
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 import { AuthProvider } from "@verself/auth-web/react";
-import {
-  type Auth,
-  type AuthSnapshot,
-  authCacheKey,
-  parseAuthSnapshot,
-  syncAuthPartitionedCache,
-} from "@verself/auth-web/isomorphic";
+import { type Auth, type AuthSnapshot, anonymousAuth } from "@verself/auth-web/isomorphic";
 import { BrandTelemetryProvider } from "@verself/brand";
-import { getClientAuthSnapshot } from "~/server-fns/auth";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
 import "~/styles/app.css";
-
-async function loadAuthSnapshot(): Promise<AuthSnapshot> {
-  return getClientAuthSnapshot();
-}
 
 const authNavigationClient = {
   getSignInRedirectURL: async ({ data }: { data: { redirectTo?: string | null } }) => {
@@ -32,16 +21,22 @@ const authNavigationClient = {
   getSignOutRedirectURL: async () => "/api/v1/auth/logout",
 };
 
+// Root provides an anonymous AuthProvider so public surfaces (docs, policy,
+// /login) render without a server round-trip. Routes that need the real
+// snapshot (the signed-in shell, /login's redirect-if-already-signed-in
+// guard) fetch it themselves and re-wrap their subtree in `AuthProvider`.
+const anonymousSnapshot: AuthSnapshot = {
+  isSignedIn: false,
+  auth: anonymousAuth,
+  user: null,
+  session: null,
+};
+
 export const Route = createRootRouteWithContext<{
   auth: Auth;
   queryClient: QueryClient;
 }>()({
   component: RootComponent,
-  beforeLoad: async ({ context }) => {
-    const authSnapshot = await loadAuthSnapshot();
-    syncAuthPartitionedCache(context.queryClient, authSnapshot);
-    return authSnapshot;
-  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -77,16 +72,16 @@ export const Route = createRootRouteWithContext<{
   }),
 });
 
-// __root.tsx owns the document and global providers (auth + query + brand
-// telemetry). Visual chrome lives in pathless route layers: signed-in surfaces
-// nest under _shell/_authenticated; public docs + policy nest under _workshop.
-// Auth entry routes render with no chrome; iam-service owns the OIDC callback.
+// __root.tsx owns the document and global providers (anonymous auth + query +
+// brand telemetry). Visual chrome lives in pathless route layers: signed-in
+// surfaces nest under _shell and re-wrap with the authenticated AuthProvider;
+// public docs + policy nest under _workshop and inherit anonymous auth from
+// here. iam-service owns the OIDC callback.
 function RootComponent() {
   const routeContext = Route.useRouteContext();
-  const authSnapshot = parseAuthSnapshot(routeContext);
   return (
-    <AuthProvider client={authNavigationClient} snapshot={authSnapshot}>
-      <QueryClientProvider client={routeContext.queryClient} key={authCacheKey(authSnapshot)}>
+    <AuthProvider client={authNavigationClient} snapshot={anonymousSnapshot}>
+      <QueryClientProvider client={routeContext.queryClient}>
         <BrandTelemetryProvider emitSpan={emitSpan}>
           <RootDocument>
             <Outlet />
