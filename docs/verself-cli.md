@@ -350,10 +350,17 @@ verself auth login --token-file /run/secrets/verself-token
 Token files must be regular files with owner-only permissions. The CLI refuses
 world-readable token files.
 
-## Vercel-Compatible Product UX
+## Public Command Surface
 
-The first public command surface should feel familiar to Vercel users while
-remaining aligned with Verself's organization and service model:
+The CLI borrows command grammar from Vercel — `auth login`, `whoami`, `link`,
+`env pull`, `orgs use` — because the ergonomics are good and operators arrive
+with that vocabulary. Product semantics differ. Verself does not run an
+application-hosting product, so commands such as `verself deploy` do not push a
+customer-authored application to `verself.sh`; they run against the active
+profile's installation, which is `verself.sh` for sandbox-rental customers and
+the operator's own apex for cloned installations. Deploys against a cloned
+installation are still executed by that installation's repo-local
+`aspect deploy`; the CLI surfaces it as a single command for ergonomics.
 
 ```text
 verself login

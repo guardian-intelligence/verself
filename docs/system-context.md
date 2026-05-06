@@ -2,6 +2,14 @@
 
 How the platform is currently wired together. Direction and target state are in `docs/product-direction.md`; when the two disagree, this doc describes what exists today.
 
+## Product Surface
+
+What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see `docs/product-direction.md`).
+
+Verself does not run customer-authored applications as managed long-lived services. The sandbox products rent compute time; they do not host applications. There is no PaaS surface and no roadmap toward one.
+
+The platform itself is open-source and clone-deployable. The bootstrap CLI (`docs/verself-cli.md`) renders a configured copy of this repo onto operator-supplied Latitude.sh bare metal. A cloned installation has no runtime coupling to `verself.sh` — it is a peer installation operating its own substrate, not a managed tenant.
+
 ## Service Architecture
 
 Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall files are authored in `src/host/ansible/host-files/`; service/component nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages, including `src/host/binaries/` and `src/substrate/vm-orchestrator/guest-images/`.

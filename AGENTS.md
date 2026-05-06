@@ -1,5 +1,15 @@
 <repo_overview>
-Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
+Set of services + console + marketing page for a sandbox-compute business (Firecracker-based Blacksmith.sh-style CI runner today; Lambda-style workloads and persistent dev VMs planned).
+
+Verself sells compute time, not application hosting — customer code runs in short-lived sandboxes the customer rents.
+
+The platform is also clone-deployable: operators can stand up their own installation on their own Latitude.sh bare metal via the bootstrap CLI (`docs/verself-cli.md`); a cloned installation has no runtime coupling to verself.sh. Almost entirely self-hosted on a single bare metal node.
+
+product: verself.sh
+auth portal: auth.verself.sh
+services: <service>.api.verself.sh
+
+company website: guardianintelligence.org
 
 * `aspect` contains lots of helpful commands under .aspect/.
 * Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output)
@@ -54,7 +64,9 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 </repo_overview>
 
 <product_context>
-- Initial product: Drop in GitHub Actions/Blacksmith.sh replacement. On merges to main we run CI on our internal platform, Blacksmith.sh, and GitHub Actions and regularly compare to make sure we're faster.
+- The customer-facing product is sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement: customers point CI at Verself and workflows run on Verself Firecracker VMs for a 2–10x speedup. We dogfood it on every merge to main, comparing against Blacksmith.sh and GitHub Actions to verify we are faster.
+- Verself does not host customer applications. Customer code runs only inside short-lived sandboxes the customer rents (CI workflow runs today; Lambda-style invocations and persistent dev VMs later) on the same isolation, billing, and telemetry substrate.
+- The bootstrap CLI is a separate offering. It renders a configured clone of this repo onto operator-supplied Latitude.sh bare metal so an operator can stand up their own installation. After download a cloned installation has no runtime coupling to verself.sh — it is a peer installation, not a managed tenant. See `docs/verself-cli.md`.
 </product_context>
 
 <product_policy>
@@ -235,23 +247,6 @@ To add a site, copy `src/host/sites/prod/` to the new site name, replace the thr
 
 Product pitch:
 
-"The solo-founder's superweapon"
+"The solo-founder's superweapon" — "Your software company, an API call away" demonstrates a software company being constructed from just a Latitude API key. The pitch is about the bootstrap/clone surface: hand Verself a few provider keys and walk away with a configured repo that builds and deploys an opinionated platform on the operator's own bare metal.
 
-"Your software company, an API call away" -- demonstration of a software company being constructed from just a Latitude API key
-
-I wanted to think about our offerings as an SDK + CLI + Services -- what
-  if we built an industry standard CLI over a (initially Golang) SDK over
-  our Services? Like vercel we'd have auth login and creating
-  organizations and so on. We'd simply call the same CLI to bootstrap our
-  system with our guardian-intelligence organization and manage our org
-  using the same CLI as our customers do
-
-  My thinking
-  was we become a drop-in vercel CLI replacemen (`aspect persona assume` just becomes `verself auth login ...`)t but expose a bootstrap
-  command that takes a cloudflare API key, a latitude-sh API key, some
-  configuration like the company name, name, alias, we can even have a
-  bootstrap service people can call in order to bootstrap their own clone
-  of the repo.
-
-  And then everyone can call our service to create a clone of verself which, itself, has a bootstrap API which will clone the company (code + infrastructure, BYO-API keys).
-
+CLI shape borrows ergonomics from Vercel — `verself auth login`, `verself orgs use`, `verself env pull` — because the grammar is good. Semantics are different: Verself does not deploy customer applications. `verself deploy` runs the customer's own `aspect deploy` against their cloned installation, not against verself.sh. The same binary covers operating verself.sh, operating a cloned installation, and consuming the sandbox-rental API as a customer; auth context decides which surface a given command targets.

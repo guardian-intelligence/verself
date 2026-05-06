@@ -1,6 +1,10 @@
 # Verself
 
-Set of services + console + marketing page for a PaaS software business (that builds itself through dogfooding), almost entirely self-hosted on bare-metal with Forgejo, fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general purpose RDBMS.
+Verself sells sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement; Lambda-style workloads and persistent dev VMs are planned on the same isolation substrate. Customer code runs inside short-lived sandboxes the customer rents — Verself does not host customer applications as managed long-lived services.
+
+The platform itself is open-source and clone-deployable. A separate bootstrap CLI renders a configured copy of this repo onto operator-supplied Latitude.sh bare metal; a cloned installation has no runtime coupling to verself.sh and is not a managed tenant. See [`docs/verself-cli.md`](docs/verself-cli.md).
+
+The repo holds services, console, marketing site, and operator tooling, almost entirely self-hosted on bare metal: Forgejo for source, fast CI via Firecracker + ZFS, Grafana + ClickHouse observability (logs, traces, metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general-purpose RDBMS.
 
 The unified product app lives at `https://<domain>` (authenticated browser console, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://iam.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`. See [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
 
