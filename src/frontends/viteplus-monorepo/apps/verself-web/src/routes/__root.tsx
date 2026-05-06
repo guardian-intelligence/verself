@@ -42,7 +42,7 @@ export const Route = createRootRouteWithContext<{
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { name: "theme-color", content: "#ffffff" },
+      { name: "theme-color", content: "#000000" },
       { property: "og:site_name", content: "Verself" },
       { title: "Verself" },
       // Emit the product domain into SSR HTML once so workshop pages can
@@ -99,7 +99,7 @@ function RootComponent() {
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
