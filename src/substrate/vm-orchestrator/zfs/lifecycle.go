@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -105,7 +106,7 @@ func (vl *VolumeLifecycle) ResizeLeaseRootExt4(ctx context.Context, lease Lease,
 	resizeCtx, endResize := startSpan(ctx, "vmorchestrator.zfs.root_resize",
 		attribute.String("lease.id", lease.ID()),
 		attribute.String("zfs.dataset", target),
-		attribute.Int64("zfs.volume_requested_bytes", int64(sizeBytes)),
+		attribute.String("zfs.volume_requested_bytes", strconv.FormatUint(sizeBytes, 10)),
 	)
 	resizeErr := vl.ops.ZFSEnsureVolumeSizeExt4(resizeCtx, target, sizeBytes)
 	endResize(resizeErr)

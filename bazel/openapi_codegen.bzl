@@ -86,6 +86,7 @@ def verself_oapi_go_client(
     suffix_flag = ""
     if response_type_suffix:
         suffix_flag = " -response-type-suffix %s" % response_type_suffix
+
     # oapi-codegen shells out to go; use rules_go's SDK instead of the runner image.
     native.genrule(
         name = "client_gen",

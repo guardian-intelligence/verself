@@ -25,6 +25,7 @@ GO_DIRS = [
     "src/tools/deployment",
     "src/tools/dev",
     "src/tools/operator",
+    "src/cli/verself",
     "src/domain-transfer-objects/go",
     "src/services/governance-service",
     "src/services/iam-service",
