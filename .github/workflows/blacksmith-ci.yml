@@ -38,7 +38,15 @@ jobs:
           path: /home/runner/.cache/bazel-repo
 
       - name: Bootstrap toolchain
-        run: scripts/bootstrap-linux-amd64
+        env:
+          BOOTSTRAP_INSTALL_DIR: ${{ runner.temp }}/bootstrap-bin
+        run: |
+          mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
+          scripts/bootstrap-linux-amd64
+          {
+            echo "${BOOTSTRAP_INSTALL_DIR}"
+            echo "${HOME}/.vite-plus/bin"
+          } >> "${GITHUB_PATH}"
 
       - name: Restart Bazel server
         run: bazelisk shutdown

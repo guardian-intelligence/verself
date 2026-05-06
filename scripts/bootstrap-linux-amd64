@@ -23,7 +23,8 @@ aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspe
 viteplus_version="0.1.19"
 viteplus_install_url="https://vite.plus"
 
-install_dir="${BOOTSTRAP_INSTALL_DIR:-/usr/local/bin}"
+explicit_install_dir="${BOOTSTRAP_INSTALL_DIR:-}"
+install_dir="${explicit_install_dir:-/usr/local/bin}"
 last_installed_path=""
 
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
@@ -74,8 +75,8 @@ PY
 
 # install_pivot <name> <version> <sha256> <url>
 #
-# Idempotent: short-circuits when the binary already exists on PATH with the
-# expected sha256. Falls back to ${HOME}/.local/bin if
+# Idempotent: short-circuits when the binary already exists in an explicit
+# BOOTSTRAP_INSTALL_DIR or on PATH with the expected sha256. Falls back to ${HOME}/.local/bin if
 # install_dir is non-writable and sudo is unavailable, and warns when that
 # directory is not on PATH.
 install_pivot() {
@@ -85,9 +86,13 @@ install_pivot() {
   local url="$4"
   last_installed_path=""
 
-  if command -v "${name}" >/dev/null 2>&1; then
-    local existing_path
+  local existing_path=""
+  if [[ -n "${explicit_install_dir}" && -x "${install_dir}/${name}" ]]; then
+    existing_path="${install_dir}/${name}"
+  elif [[ -z "${explicit_install_dir}" ]] && command -v "${name}" >/dev/null 2>&1; then
     existing_path="$(command -v "${name}")"
+  fi
+  if [[ -n "${existing_path}" ]]; then
     if [[ "$(hash_file "${existing_path}")" == "${sha256}" ]]; then
       echo "${name} ${version} already installed at ${existing_path}"
       last_installed_path="${existing_path}"
@@ -180,7 +185,10 @@ install_viteplus() {
 
   if [[ -x "${vp_bin}" ]]; then
     local existing_version
-    existing_version="$("${vp_bin}" --version 2>/dev/null | awk '/^vp v/ {print $NF; exit}' | tr -d 'v')"
+    # vp aborts on SIGPIPE, so capture its full version output before parsing.
+    local version_output
+    version_output="$("${vp_bin}" --version 2>/dev/null)"
+    existing_version="$(printf '%s\n' "${version_output}" | awk '/^vp v/ {print $NF; found=1} found {exit}' | tr -d 'v')"
     if [[ "${existing_version}" == "${viteplus_version}" ]]; then
       echo "vite-plus ${viteplus_version} already installed at ${vp_bin}"
       return 0
