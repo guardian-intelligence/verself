@@ -71,7 +71,7 @@ func run() error {
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4261")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4262")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
 	forgejoToken := cfg.RequireCredential("forgejo-token")

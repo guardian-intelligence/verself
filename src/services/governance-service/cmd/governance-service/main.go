@@ -68,7 +68,7 @@ func run() error {
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())

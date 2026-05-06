@@ -72,7 +72,7 @@ func run() error {
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4258")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	iamInternalURL := cfg.RequireURL("PROFILE_IAM_INTERNAL_URL")
 	governanceAuditURL := cfg.String("PROFILE_GOVERNANCE_AUDIT_URL", "")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)

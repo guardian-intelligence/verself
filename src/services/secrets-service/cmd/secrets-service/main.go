@@ -55,7 +55,7 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
 	governanceAuditURL := cfg.String("SECRETS_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
 	billingURL := cfg.RequireURL("SECRETS_BILLING_URL")

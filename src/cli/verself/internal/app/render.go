@@ -212,16 +212,20 @@ source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}
 zitadel_subdomain: auth
 zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
 
-platform_company_name: %s
+platform_company_slug: %s
+platform_company_display_name: %s
 platform_owner_name: %s
 platform_owner_alias: %s
 platform_owner_email: %s
 platform_organization_name: %s
 platform_trust_tier: %s
+platform_repo_slug: %s
+platform_repo_display_name: %s
+platform_repo_description: %s
 
 bootstrap_seed_codebase: verself-sh
 bootstrap_runtime_substrate: customer_latitude_bare_metal
-`, yamlQuote(company.Site), yamlQuote(domain), yamlQuote(company.CompanyDomain), yamlQuote(company.CompanyName), yamlQuote(company.OwnerName), yamlQuote(company.OwnerAlias), yamlQuote(company.OwnerEmail), yamlQuote(company.OrganizationName), yamlQuote(company.TrustTier)), nil
+`, yamlQuote(company.Site), yamlQuote(domain), yamlQuote(company.CompanyDomain), yamlQuote(company.Name), yamlQuote(company.CompanyName), yamlQuote(company.OwnerName), yamlQuote(company.OwnerAlias), yamlQuote(company.OwnerEmail), yamlQuote(company.OrganizationName), yamlQuote(company.TrustTier), yamlQuote(company.Project), yamlQuote(defaultRepoDisplayName(company)), yamlQuote(defaultRepoDescription(company))), nil
 }
 
 func overlaySiteVars(existing string, company CompanyRecord) string {
@@ -275,9 +279,26 @@ func siteVarOverlay(company CompanyRecord) map[string]string {
 		"platform_owner_email":          yamlQuote(company.OwnerEmail),
 		"platform_organization_name":    yamlQuote(company.OrganizationName),
 		"platform_trust_tier":           yamlQuote(company.TrustTier),
+		"platform_repo_slug":            yamlQuote(company.Project),
+		"platform_repo_display_name":    yamlQuote(defaultRepoDisplayName(company)),
+		"platform_repo_description":     yamlQuote(defaultRepoDescription(company)),
 		"bootstrap_seed_codebase":       yamlQuote("verself-sh"),
 		"bootstrap_runtime_substrate":   yamlQuote("customer_latitude_bare_metal"),
 	}
+}
+
+func defaultRepoDisplayName(company CompanyRecord) string {
+	if strings.TrimSpace(company.Project) == defaultProject {
+		return "Verself"
+	}
+	return strings.TrimSpace(company.Project)
+}
+
+func defaultRepoDescription(company CompanyRecord) string {
+	if strings.TrimSpace(company.Project) == defaultProject {
+		return "Verself platform monorepo."
+	}
+	return strings.TrimSpace(company.Project) + " platform monorepo."
 }
 
 func renderProvisioningTemplate(company CompanyRecord) string {

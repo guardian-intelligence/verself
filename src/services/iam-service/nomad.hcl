@@ -30,7 +30,6 @@ job "iam-service" {
         command = "local/bin/iam-service"
       }
       env {
-        IAM_BROWSER_AUTH_LOGIN_AUDIENCES = "370200928688586084,370200564807548260"
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "https://verself.sh"
         IAM_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
         IAM_ZITADEL_HOST = "auth.verself.sh"
@@ -38,10 +37,11 @@ job "iam-service" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "iam-service-migration"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_AUDIENCE = "370200564807548260"
         VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "iam_service"
+        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/iam-service/auth-audience"
+        VERSELF_CRED_BROWSER_AUTH_LOGIN_AUDIENCES = "/etc/credstore/iam-service/browser-auth-login-audiences"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/iam-service/clickhouse-ca-cert"
         VERSELF_CRED_OIDC_CLIENT_ID = "/etc/credstore/iam-service/oidc-client-id"
         VERSELF_CRED_OIDC_CLIENT_SECRET = "/etc/credstore/iam-service/oidc-client-secret"
@@ -76,7 +76,6 @@ job "iam-service" {
         command = "local/bin/iam-service"
       }
       env {
-        IAM_BROWSER_AUTH_LOGIN_AUDIENCES = "370200928688586084,370200564807548260"
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "https://verself.sh"
         IAM_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
         IAM_ZITADEL_HOST = "auth.verself.sh"
@@ -84,10 +83,11 @@ job "iam-service" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "iam-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_AUDIENCE = "370200564807548260"
         VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "iam_service"
+        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/iam-service/auth-audience"
+        VERSELF_CRED_BROWSER_AUTH_LOGIN_AUDIENCES = "/etc/credstore/iam-service/browser-auth-login-audiences"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/iam-service/clickhouse-ca-cert"
         VERSELF_CRED_OIDC_CLIENT_ID = "/etc/credstore/iam-service/oidc-client-id"
         VERSELF_CRED_OIDC_CLIENT_SECRET = "/etc/credstore/iam-service/oidc-client-secret"

@@ -71,7 +71,7 @@ func run() error {
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4264")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4265")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {

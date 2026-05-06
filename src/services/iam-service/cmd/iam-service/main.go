@@ -85,9 +85,9 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
 	governanceAuditURL := cfg.String("IAM_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
-	browserAuthLoginAudiencesRaw := cfg.RequireString("IAM_BROWSER_AUTH_LOGIN_AUDIENCES")
+	browserAuthLoginAudiencesRaw := cfg.RequireCredential("browser-auth-login-audiences")
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
@@ -96,7 +96,7 @@ func run() error {
 	if err := cfg.Err(); err != nil {
 		return err
 	}
-	browserAuthLoginAudiences, err := splitRequiredCSV("IAM_BROWSER_AUTH_LOGIN_AUDIENCES", browserAuthLoginAudiencesRaw)
+	browserAuthLoginAudiences, err := splitRequiredCSV("browser-auth-login-audiences", browserAuthLoginAudiencesRaw)
 	if err != nil {
 		return err
 	}

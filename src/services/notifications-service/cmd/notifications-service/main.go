@@ -72,7 +72,7 @@ func run() error {
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4260")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	natsURL := cfg.String("NOTIFICATIONS_NATS_URL", notifications.NATSDefaultURL)
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "notifications_service")

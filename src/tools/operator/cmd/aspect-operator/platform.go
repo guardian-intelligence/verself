@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"os"
 	"regexp"
@@ -33,6 +34,8 @@ const (
 	platformDefaultForgejoRemote                   = "127.0.0.1:3000"
 	platformDefaultForgejoTokenPath                = "/etc/credstore/forgejo/automation-token"
 	platformDefaultSandboxForgejoWebhookSecretPath = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
+	platformDefaultZitadelRemote                   = "127.0.0.1:8085"
+	platformDefaultZitadelAdminPATPath             = "/etc/zitadel/admin.pat"
 	platformDefaultBranch                          = "main"
 )
 
@@ -40,40 +43,55 @@ var platformSlugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$`)
 
 type platformOptions struct {
 	operatorRuntimeOptions
-	action             string
-	format             string
-	secretsFile        string
-	pgUser             string
-	pgRemotePort       int
-	forgejoTokenPath   string
-	forgejoWebhookPath string
-	forgejoRemoteAddr  string
-	forgejoRepoPrivate bool
+	action              string
+	format              string
+	secretsFile         string
+	pgUser              string
+	pgRemotePort        int
+	forgejoTokenPath    string
+	forgejoWebhookPath  string
+	forgejoRemoteAddr   string
+	forgejoRepoPrivate  bool
+	zitadelAdminPATPath string
+	zitadelRemoteAddr   string
 }
 
 type platformMainVars struct {
 	PlatformOrgID               string `yaml:"platform_org_id"`
 	SecretsServicePlatformOrgID string `yaml:"secrets_service_platform_org_id"`
+	PlatformOrganizationName    string `yaml:"platform_organization_name"`
 	PlatformCompanySlug         string `yaml:"platform_company_slug"`
 	PlatformCompanyDisplayName  string `yaml:"platform_company_display_name"`
+	PlatformOwnerAlias          string `yaml:"platform_owner_alias"`
+	PlatformOwnerName           string `yaml:"platform_owner_name"`
+	PlatformOwnerEmail          string `yaml:"platform_owner_email"`
+	PlatformTrustTier           string `yaml:"platform_trust_tier"`
 	PlatformRepoSlug            string `yaml:"platform_repo_slug"`
 	PlatformRepoDisplayName     string `yaml:"platform_repo_display_name"`
 	PlatformRepoDescription     string `yaml:"platform_repo_description"`
 	ForgejoDomain               string `yaml:"forgejo_domain"`
 	ForgejoSubdomain            string `yaml:"forgejo_subdomain"`
 	VerselfDomain               string `yaml:"verself_domain"`
+	ZitadelDomain               string `yaml:"zitadel_domain"`
+	ZitadelSubdomain            string `yaml:"zitadel_subdomain"`
 }
 
 type platformConfig struct {
 	OrgIDText          string `json:"org_id"`
 	OrgID              uint64 `json:"-"`
 	OrgIDPG            int64  `json:"-"`
+	OrganizationName   string `json:"organization_name"`
 	CompanySlug        string `json:"company_slug"`
 	CompanyDisplayName string `json:"company_display_name"`
+	OwnerAlias         string `json:"owner_alias"`
+	OwnerName          string `json:"owner_name"`
+	OwnerEmail         string `json:"owner_email"`
+	TrustTier          string `json:"trust_tier"`
 	RepoSlug           string `json:"repo_slug"`
 	RepoDisplayName    string `json:"repo_display_name"`
 	RepoDescription    string `json:"repo_description"`
 	ForgejoDomain      string `json:"forgejo_domain"`
+	ZitadelHost        string `json:"zitadel_host"`
 	CanonicalGitURL    string `json:"canonical_git_url"`
 	ForgejoWebhookURL  string `json:"forgejo_webhook_url"`
 }
@@ -167,12 +185,14 @@ func (e forgejoStatusError) Error() string {
 func cmdPlatform(args []string) error {
 	fs := flagSet("platform")
 	opts := &platformOptions{
-		action:             "check",
-		format:             "text",
-		forgejoTokenPath:   platformDefaultForgejoTokenPath,
-		forgejoWebhookPath: platformDefaultSandboxForgejoWebhookSecretPath,
-		forgejoRemoteAddr:  platformDefaultForgejoRemote,
-		forgejoRepoPrivate: true,
+		action:              "check",
+		format:              "text",
+		forgejoTokenPath:    platformDefaultForgejoTokenPath,
+		forgejoWebhookPath:  platformDefaultSandboxForgejoWebhookSecretPath,
+		forgejoRemoteAddr:   platformDefaultForgejoRemote,
+		forgejoRepoPrivate:  true,
+		zitadelAdminPATPath: platformDefaultZitadelAdminPATPath,
+		zitadelRemoteAddr:   platformDefaultZitadelRemote,
 	}
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.action, "action", opts.action, "Action: check or seed")
@@ -185,6 +205,8 @@ func cmdPlatform(args []string) error {
 	fs.StringVar(&opts.forgejoTokenPath, "forgejo-token-path", opts.forgejoTokenPath, "Remote Forgejo automation token path")
 	fs.StringVar(&opts.forgejoWebhookPath, "forgejo-webhook-secret-path", opts.forgejoWebhookPath, "Remote sandbox-rental Forgejo webhook secret path")
 	fs.StringVar(&opts.forgejoRemoteAddr, "forgejo-remote-addr", opts.forgejoRemoteAddr, "Remote Forgejo HTTP address reached over SSH")
+	fs.StringVar(&opts.zitadelAdminPATPath, "zitadel-admin-pat-path", opts.zitadelAdminPATPath, "Remote Zitadel admin PAT path")
+	fs.StringVar(&opts.zitadelRemoteAddr, "zitadel-remote-addr", opts.zitadelRemoteAddr, "Remote Zitadel HTTP address reached over SSH")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -240,6 +262,12 @@ func (opts *platformOptions) validate() error {
 	if strings.TrimSpace(opts.forgejoRemoteAddr) == "" {
 		return fmt.Errorf("platform: --forgejo-remote-addr is required")
 	}
+	if strings.TrimSpace(opts.zitadelAdminPATPath) == "" {
+		return fmt.Errorf("platform: --zitadel-admin-pat-path is required")
+	}
+	if strings.TrimSpace(opts.zitadelRemoteAddr) == "" {
+		return fmt.Errorf("platform: --zitadel-remote-addr is required")
+	}
 	return nil
 }
 
@@ -251,12 +279,18 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 	}
 	cfg := platformConfig{
 		OrgIDText:          firstNonEmpty(mainVars.PlatformOrgID, mainVars.SecretsServicePlatformOrgID),
+		OrganizationName:   strings.TrimSpace(mainVars.PlatformOrganizationName),
 		CompanySlug:        strings.TrimSpace(mainVars.PlatformCompanySlug),
 		CompanyDisplayName: strings.TrimSpace(mainVars.PlatformCompanyDisplayName),
+		OwnerAlias:         strings.TrimSpace(mainVars.PlatformOwnerAlias),
+		OwnerName:          strings.TrimSpace(mainVars.PlatformOwnerName),
+		OwnerEmail:         strings.TrimSpace(mainVars.PlatformOwnerEmail),
+		TrustTier:          strings.TrimSpace(mainVars.PlatformTrustTier),
 		RepoSlug:           strings.TrimSpace(mainVars.PlatformRepoSlug),
 		RepoDisplayName:    strings.TrimSpace(mainVars.PlatformRepoDisplayName),
 		RepoDescription:    strings.TrimSpace(mainVars.PlatformRepoDescription),
 		ForgejoDomain:      resolveForgejoDomain(mainVars),
+		ZitadelHost:        resolveZitadelHost(mainVars),
 		ForgejoWebhookURL:  resolveForgejoWebhookURL(mainVars),
 	}
 	if err := cfg.validate(); err != nil {
@@ -286,6 +320,24 @@ func (cfg *platformConfig) validate() error {
 	if cfg.CompanyDisplayName == "" {
 		return fmt.Errorf("platform config: platform_company_display_name is required")
 	}
+	if cfg.OrganizationName == "" {
+		return fmt.Errorf("platform config: platform_organization_name is required")
+	}
+	if cfg.OwnerEmail == "" {
+		return fmt.Errorf("platform config: platform_owner_email is required")
+	}
+	if _, err := mail.ParseAddress(cfg.OwnerEmail); err != nil {
+		return fmt.Errorf("platform config: platform_owner_email is invalid: %w", err)
+	}
+	if cfg.OwnerName == "" {
+		return fmt.Errorf("platform config: platform_owner_name is required")
+	}
+	if cfg.OwnerAlias == "" {
+		return fmt.Errorf("platform config: platform_owner_alias is required")
+	}
+	if cfg.TrustTier == "" {
+		return fmt.Errorf("platform config: platform_trust_tier is required")
+	}
 	if cfg.RepoDisplayName == "" {
 		return fmt.Errorf("platform config: platform_repo_display_name is required")
 	}
@@ -294,6 +346,9 @@ func (cfg *platformConfig) validate() error {
 	}
 	if cfg.ForgejoWebhookURL == "" || strings.Contains(cfg.ForgejoWebhookURL, "{{") {
 		return fmt.Errorf("platform config: verself_domain is required for the sandbox Forgejo webhook URL")
+	}
+	if cfg.ZitadelHost == "" || strings.Contains(cfg.ZitadelHost, "{{") {
+		return fmt.Errorf("platform config: zitadel_domain or zitadel_subdomain + verself_domain is required")
 	}
 	return nil
 }
@@ -311,6 +366,22 @@ func resolveForgejoDomain(ops platformMainVars) string {
 	return subdomain + "." + verselfDomain
 }
 
+func resolveZitadelHost(ops platformMainVars) string {
+	domain := strings.TrimSpace(ops.ZitadelDomain)
+	if domain != "" && !strings.Contains(domain, "{{") {
+		return domain
+	}
+	subdomain := strings.TrimSpace(ops.ZitadelSubdomain)
+	verselfDomain := strings.TrimSpace(ops.VerselfDomain)
+	if subdomain == "" {
+		subdomain = "auth"
+	}
+	if verselfDomain == "" {
+		return domain
+	}
+	return subdomain + "." + verselfDomain
+}
+
 func resolveForgejoWebhookURL(ops platformMainVars) string {
 	verselfDomain := strings.TrimSpace(ops.VerselfDomain)
 	if verselfDomain == "" {
@@ -321,6 +392,9 @@ func resolveForgejoWebhookURL(ops platformMainVars) string {
 
 func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIdentityOrganization(); err != nil {
+		return platformReport{}, err
+	}
+	if err := r.ensurePlatformOwner(); err != nil {
 		return platformReport{}, err
 	}
 	if err := r.ensureProject(); err != nil {
@@ -357,6 +431,7 @@ func (r *platformRunner) check() (platformReport, error) {
 	}
 	var issues []string
 	report.BoundaryResults = append(report.BoundaryResults, r.checkIdentityOrganization(&issues))
+	report.BoundaryResults = append(report.BoundaryResults, r.checkPlatformOwner(&issues))
 	report.BoundaryResults = append(report.BoundaryResults, r.checkProject(&issues))
 	forgejoRow, forgejoRepoID := r.checkForgejo(&issues)
 	report.ForgejoRepoID = forgejoRepoID
@@ -396,6 +471,7 @@ func (r *platformRunner) ensureIdentityOrganization() error {
 		attribute.String("db.name", "iam_service"),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
 		attribute.String("verself.org_slug", r.cfg.CompanySlug),
+		attribute.String("verself.org_name", r.cfg.OrganizationName),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "iam_service")
 		if err != nil {
@@ -417,10 +493,26 @@ FOR UPDATE`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
 		now := time.Now().UTC()
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
+			var staleOrgID string
+			staleErr := tx.QueryRow(ctx, `
+SELECT org_id
+FROM iam_organizations
+WHERE slug = $1
+FOR UPDATE`, r.cfg.CompanySlug).Scan(&staleOrgID)
+			if staleErr == nil && staleOrgID != r.cfg.OrgIDText {
+				if _, err := tx.Exec(ctx, `
+DELETE FROM iam_organizations
+WHERE org_id = $1`, staleOrgID); err != nil {
+					return fmt.Errorf("iam organization: delete stale slug owner %s: %w", staleOrgID, err)
+				}
+				r.markChanged("iam.organization.stale_slug_owner_deleted")
+			} else if staleErr != nil && !errors.Is(staleErr, pgx.ErrNoRows) {
+				return fmt.Errorf("iam organization: query stale slug owner: %w", staleErr)
+			}
 			if _, err := tx.Exec(ctx, `
 INSERT INTO iam_organizations (org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
 VALUES ($1, $2, $3, 'active', 1, $4, $4, $5, $5)`,
-				r.cfg.OrgIDText, r.cfg.CompanyDisplayName, r.cfg.CompanySlug, platformActor, now); err != nil {
+				r.cfg.OrgIDText, r.cfg.OrganizationName, r.cfg.CompanySlug, platformActor, now); err != nil {
 				return fmt.Errorf("iam organization: insert: %w", err)
 			}
 			r.markChanged("iam.organization.created")
@@ -435,7 +527,7 @@ ON CONFLICT DO NOTHING`, slug, r.cfg.OrgIDText, now, platformActor); err != nil 
 					return fmt.Errorf("iam organization: insert slug redirect: %w", err)
 				}
 			}
-			if displayName != r.cfg.CompanyDisplayName || slug != r.cfg.CompanySlug || state != "active" {
+			if displayName != r.cfg.OrganizationName || slug != r.cfg.CompanySlug || state != "active" {
 				if _, err := tx.Exec(ctx, `
 UPDATE iam_organizations
 SET display_name = $2,
@@ -445,7 +537,7 @@ SET display_name = $2,
     updated_at = $4,
     updated_by = $5
 WHERE org_id = $1`,
-					r.cfg.OrgIDText, r.cfg.CompanyDisplayName, r.cfg.CompanySlug, now, platformActor); err != nil {
+					r.cfg.OrgIDText, r.cfg.OrganizationName, r.cfg.CompanySlug, now, platformActor); err != nil {
 					return fmt.Errorf("iam organization: update: %w", err)
 				}
 				r.markChanged("iam.organization.updated")
@@ -800,7 +892,12 @@ FROM source_repository_backends
 WHERE backend = 'forgejo' AND backend_owner = $1 AND backend_repo = $2`,
 		r.cfg.CompanySlug, r.cfg.RepoSlug).Scan(&conflictingRepoID, &conflictingBackendID)
 	if conflictErr == nil && (conflictingRepoID != ids.RepoID || conflictingBackendID != ids.BackendID) {
-		return fmt.Errorf("source backend: forgejo %s/%s is already owned by repo_id %s backend_id %s", r.cfg.CompanySlug, r.cfg.RepoSlug, conflictingRepoID, conflictingBackendID)
+		if _, err := tx.Exec(ctx, `
+DELETE FROM source_repositories
+WHERE repo_id = $1`, conflictingRepoID); err != nil {
+			return fmt.Errorf("source backend: replace stale forgejo mapping repo_id %s backend_id %s: %w", conflictingRepoID, conflictingBackendID, err)
+		}
+		r.markChanged("source.repository.stale_mapping_deleted")
 	}
 	if conflictErr != nil && !errors.Is(conflictErr, pgx.ErrNoRows) {
 		return fmt.Errorf("source backend: query backend conflict: %w", conflictErr)
@@ -959,7 +1056,7 @@ WHERE org_id = $1`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
 			return fmt.Errorf("iam organization: query: %w", err)
 		}
 		var mismatches []string
-		if displayName != r.cfg.CompanyDisplayName {
+		if displayName != r.cfg.OrganizationName {
 			mismatches = append(mismatches, fmt.Sprintf("display_name=%q", displayName))
 		}
 		if slug != r.cfg.CompanySlug {

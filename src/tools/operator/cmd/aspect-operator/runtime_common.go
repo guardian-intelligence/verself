@@ -13,7 +13,7 @@ import (
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
 
-const operatorCommandBudget = 30 * time.Second
+const operatorCommandBudget = 90 * time.Second
 
 type operatorRuntimeOptions struct {
 	site     string

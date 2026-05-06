@@ -65,7 +65,7 @@ func run() error {
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
 	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
