@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
+import { rewriteCjsRequireOnCompiled } from "@verself/nitro-plugins/rewrite-cjs-require";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite-plus";
 
@@ -23,7 +24,10 @@ export default defineConfig({
     tailwindcss(),
     tanstackStart({ srcDirectory: "src" }),
     viteReact(),
-    nitro({ plugins: [observabilityPlugin] }),
+    nitro({
+      plugins: [observabilityPlugin],
+      hooks: { compiled: rewriteCjsRequireOnCompiled },
+    }),
   ],
   test: {
     exclude: ["**/node_modules/**", "**/e2e/**", "**/*.spec.ts"],

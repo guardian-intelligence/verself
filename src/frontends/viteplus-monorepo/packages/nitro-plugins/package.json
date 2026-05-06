@@ -19,6 +19,10 @@
       "node": "./src/otel.ts",
       "default": "./src/server-only.ts"
     },
+    "./rewrite-cjs-require": {
+      "types": "./src/rewrite-cjs-require.ts",
+      "default": "./src/rewrite-cjs-require.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
