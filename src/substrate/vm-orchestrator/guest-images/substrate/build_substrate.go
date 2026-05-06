@@ -38,6 +38,7 @@ var substratePackages = []string{
 	"libkrb5-3",
 	"libssl3",
 	"openssh-client",
+	"patch",
 	"python3",
 	"sudo",
 	"tar",

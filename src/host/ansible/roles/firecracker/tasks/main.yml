@@ -364,7 +364,10 @@
   ansible.builtin.systemd:
     name: vm-orchestrator-seed.service
     state: stopped
-  when: firecracker_seed_unit.changed  # noqa: no-handler
+  when: >-
+    firecracker_seed_unit.changed
+    or not (guest_rootfs_substrate_current | default(true) | bool)
+    or not (guest_rootfs_toolchain_current | default(true) | bool)
 
 - name: Run vm-orchestrator-seed oneshot
   ansible.builtin.systemd:
