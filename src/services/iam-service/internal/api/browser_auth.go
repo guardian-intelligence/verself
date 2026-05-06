@@ -80,9 +80,9 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	if strings.TrimSpace(cfg.ClientSecret) == "" {
 		return nil, errors.New("identity browser auth client secret is required")
 	}
-	publicBaseURL, err := url.Parse(cfg.PublicBaseURL)
-	if err != nil || !publicBaseURL.IsAbs() || publicBaseURL.Host == "" {
-		return nil, fmt.Errorf("identity browser auth public base URL must be absolute: %q", cfg.PublicBaseURL)
+	publicBaseURL, err := parseBrowserAuthPublicBaseURL(cfg.PublicBaseURL)
+	if err != nil {
+		return nil, err
 	}
 	loginAudiences := compactUniqueStrings(cfg.LoginAudiences)
 	if len(loginAudiences) == 0 {
@@ -112,7 +112,8 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	}
 	scopes = append(scopes, "urn:zitadel:iam:org:projects:roles")
 	callbackURL := publicBaseURL.ResolveReference(&url.URL{Path: browserAuthCallbackPath}).String()
-	postLogoutURL := publicBaseURL.ResolveReference(&url.URL{Path: "/"}).String()
+	// Zitadel matches post_logout_redirect_uri against the registered string.
+	postLogoutURL := publicBaseURL.String()
 	return &BrowserAuth{
 		q:        identitystore.New(cfg.PG),
 		logger:   cfg.Logger,
@@ -132,6 +133,23 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		postLogoutURL:      postLogoutURL,
 		endSessionEndpoint: strings.TrimSpace(metadata.EndSessionEndpoint),
 	}, nil
+}
+
+func parseBrowserAuthPublicBaseURL(raw string) (*url.URL, error) {
+	publicBaseURL, err := url.Parse(raw)
+	if err != nil || !publicBaseURL.IsAbs() || publicBaseURL.Host == "" {
+		return nil, fmt.Errorf("identity browser auth public base URL must be absolute: %q", raw)
+	}
+	if publicBaseURL.Path != "" && publicBaseURL.Path != "/" {
+		return nil, fmt.Errorf("identity browser auth public base URL must not include a path: %q", raw)
+	}
+	if publicBaseURL.RawQuery != "" || publicBaseURL.Fragment != "" {
+		return nil, fmt.Errorf("identity browser auth public base URL must not include query or fragment: %q", raw)
+	}
+	publicBaseURL.Path = ""
+	publicBaseURL.RawPath = ""
+	publicBaseURL.ForceQuery = false
+	return publicBaseURL, nil
 }
 
 func RegisterBrowserAuthRoutes(mux *http.ServeMux, auth *BrowserAuth) {
