@@ -131,6 +131,34 @@
   }
 }
 
+@layer components {
+  .verself-console-sidebar {
+    --color-sidebar: oklch(0.02 0 0);
+    --color-sidebar-foreground: oklch(0.92 0 0);
+    --color-sidebar-primary: oklch(0.92 0 0);
+    --color-sidebar-primary-foreground: oklch(0.02 0 0);
+    --color-sidebar-accent: oklch(0.19 0 0);
+    --color-sidebar-accent-foreground: oklch(0.98 0 0);
+    --color-sidebar-border: oklch(0.22 0 0);
+    --color-sidebar-ring: oklch(0.62 0 0);
+  }
+
+  .verself-console-sidebar [data-sidebar="menu-button"] {
+    background: transparent;
+    color: color-mix(in oklch, var(--color-sidebar-foreground) 74%, transparent);
+  }
+
+  .verself-console-sidebar [data-sidebar="menu-button"]:hover,
+  .verself-console-sidebar [data-sidebar="menu-button"][data-active="true"] {
+    background: var(--color-sidebar-accent);
+    color: var(--color-sidebar-accent-foreground);
+  }
+
+  .verself-console-sidebar [data-sidebar="menu-button"]::before {
+    display: none;
+  }
+}
+
 @keyframes notification-flash {
   0% {
     background-color: color-mix(in oklch, var(--color-muted) 85%, transparent);

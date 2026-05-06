@@ -58,6 +58,7 @@ function SidebarNavItem({
     <SidebarMenuItem>
       <SidebarMenuButton
         isActive={isPathActive(path, entry)}
+        className="bg-transparent data-active:bg-sidebar-accent"
         {...(tooltip ? { tooltip } : {})}
         render={
           <Link to={entry.to} data-testid={`nav-${entry.id}`}>

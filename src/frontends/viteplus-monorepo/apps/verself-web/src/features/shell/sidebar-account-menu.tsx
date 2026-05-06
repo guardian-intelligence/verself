@@ -1,29 +1,45 @@
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClientOnly, Link, useHydrated, useRouter } from "@tanstack/react-router";
-import { Check, ChevronDown, LoaderCircle, LogOut } from "lucide-react";
+import {
+  BookOpen,
+  Check,
+  ChevronDown,
+  ChevronsUpDown,
+  CircleHelp,
+  Home,
+  LoaderCircle,
+  LogOut,
+  MessageCircle,
+  Monitor,
+  Moon,
+  PencilLine,
+  Plus,
+  Search,
+  Settings,
+  Sun,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@verself/ui/lib/utils";
 import {
   SignedIn,
   SignedOut,
   SignInButton,
   availableOrganizationMetadataQuery,
-  organizationMembersQuery,
   useIAMApi,
   type OrganizationMetadataValue,
 } from "@verself/auth-web/components";
 import { useClerk, useSignedInAuth, useUser } from "@verself/auth-web/react";
 import type { AuthOrganizationContext } from "@verself/auth-web/isomorphic";
 import { Avatar, AvatarFallback } from "@verself/ui/components/ui/avatar";
-import { Button } from "@verself/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@verself/ui/components/ui/dropdown-menu";
+import { useBillingTierLabel } from "~/features/billing/use-billing-account";
 import { profileQuery } from "~/features/profile/queries";
 import { withInteractionSpan } from "~/lib/telemetry/interaction";
 import {
@@ -33,14 +49,13 @@ import {
 } from "./account-chrome";
 import { selectActiveOrganization } from "~/server-fns/auth";
 
-// Header trigger that lives at the top of the rail. Renders a compact "[avatar]
-// Display name ▼" row and opens the org/account dropdown described in
-// Image #4. The signed-out variant is a Sign-in CTA.
-export function SidebarAccountTrigger() {
+// The Vercel-style shell treats organization context as the primary switcher
+// and leaves the personal account menu anchored at the bottom of the rail.
+export function SidebarOrganizationSwitcher() {
   return (
     <>
       <SignedIn>
-        <SidebarAccountMenu />
+        <OrganizationSwitcherMenu />
       </SignedIn>
       <SignedOut>
         <div className="px-1">
@@ -51,191 +66,429 @@ export function SidebarAccountTrigger() {
   );
 }
 
-function SidebarAccountMenu() {
-  const account = useAccountChrome();
+export function SidebarUserMenu() {
+  return (
+    <SignedIn>
+      <ClientOnly fallback={<UserTriggerSkeleton />}>
+        <UserAccountMenu />
+      </ClientOnly>
+    </SignedIn>
+  );
+}
+
+function OrganizationSwitcherMenu() {
   const auth = useSignedInAuth();
   const userState = useUser();
   if (!userState.isSignedIn) {
-    throw new Error("SidebarAccountMenu requires a signed-in user");
+    throw new Error("OrganizationSwitcherMenu requires a signed-in user");
   }
+
   const user = userState.user;
-  const { redirectToSignOut } = useClerk();
+  const organizationProfiles = useAvailableOrganizationProfiles();
+  const organizationSwitcher = useOrganizationSwitcher();
+  const tierLabel = useBillingTierLabel();
+  const [query, setQuery] = useState("");
   const activeOrganization = user.availableOrganizations.find(
     (organization) => organization.orgID === auth.selectedOrgId,
   );
-  const organizationSwitcher = useOrganizationSwitcher();
-  const memberCount = useActiveMemberCount();
-  const organizationProfiles = useAvailableOrganizationProfiles();
-
-  const orgLabel = activeOrganization
-    ? organizationLabel(activeOrganization, organizationProfiles)
-    : null;
-  // Hold the trigger blank until the profile resolves. Falling back to
-  // orgID-derived initials/labels caused a visible flash (e.g. "VE" then the
-  // real "CO") on every page load — empty + invisible looks intentional.
-  const ready = account.source === "profile";
-  const initials = ready
-    ? account.initials || (orgLabel ? orgLabel.slice(0, 2).toUpperCase() : "?")
-    : "";
-  const triggerLabel = ready ? account.displayName || orgLabel || "Account" : "";
+  const activeLabel = activeOrganization
+    ? organizationLabel(activeOrganization, organizationProfiles) || "Organization"
+    : "Organization";
+  const visibleOrganizations = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return user.availableOrganizations;
+    return user.availableOrganizations.filter((organization) => {
+      const label = organizationLabel(organization, organizationProfiles).toLowerCase();
+      const slug = organizationSlug(organization, organizationProfiles).toLowerCase();
+      return label.includes(normalized) || slug.includes(normalized);
+    });
+  }, [organizationProfiles, query, user.availableOrganizations]);
 
   return (
-    <ClientOnly fallback={<TriggerSkeleton />}>
+    <ClientOnly fallback={<OrganizationTriggerSkeleton />}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
             <button
               type="button"
               data-testid="shell-account-trigger"
-              data-account-source={account.source}
-              aria-busy={!ready}
-              className="group/trigger flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground"
+              className="group/trigger flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center"
             >
-              <Avatar className="size-5 shrink-0 rounded-md">
-                <AvatarFallback className="rounded-md text-[10px] font-medium">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <span
-                className="min-w-0 flex-1 truncate text-sm font-medium group-data-[collapsible=icon]:hidden"
-                data-testid="shell-account-display-name"
-              >
-                {triggerLabel}
+              <OrganizationMark label={activeLabel} />
+              <span className="min-w-0 flex-1 truncate font-medium group-data-[collapsible=icon]:hidden">
+                {activeLabel}
               </span>
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+              <PlanBadge label={tierLabel} className="group-data-[collapsible=icon]:hidden" />
+              <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden" />
             </button>
           }
         />
         <DropdownMenuContent
-          data-testid="shell-account-menu"
+          data-testid="shell-organization-menu"
           side="bottom"
           align="start"
-          sideOffset={6}
-          className="w-64"
+          sideOffset={7}
+          className="w-[min(23.5rem,calc(100vw-0.75rem))] overflow-hidden rounded-lg border border-white/10 bg-[#050505] p-0 text-[#ededed] shadow-2xl ring-0"
         >
-          <div className="flex flex-col gap-3 px-2 py-2">
-            <div className="flex items-center gap-2.5">
-              <Avatar className="size-8 shrink-0 rounded-md">
-                <AvatarFallback className="rounded-md text-xs font-medium">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-foreground">
-                  {ready ? orgLabel || account.displayName : ""}
-                </div>
-                <div
-                  className="truncate text-xs text-muted-foreground"
-                  data-testid="shell-active-organization"
+          <div className="grid h-12 grid-cols-[minmax(0,1fr)_9rem] border-b border-white/10">
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-2 px-2.5 text-left transition-colors hover:bg-white/8"
+            >
+              <OrganizationMark label={activeLabel} />
+              <span className="min-w-0 truncate text-sm font-medium">{activeLabel}</span>
+              <PlanBadge label={tierLabel} />
+              <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-white/55" />
+            </button>
+            <Link
+              to="/builds"
+              className="flex items-center justify-center gap-1 border-l border-white/10 px-3 text-xs font-medium text-white/85 transition-colors hover:bg-white/8 hover:text-white"
+            >
+              All Builds
+              <ChevronDown className="size-3.5 text-white/50" />
+            </Link>
+          </div>
+
+          <label className="m-2 flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 text-white/55 focus-within:border-white/20 focus-within:text-white/70">
+            <Search className="size-4 shrink-0" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Find organization..."
+              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/45"
+            />
+            <kbd className="rounded border border-white/15 px-1.5 py-0.5 font-sans text-[10px] font-medium text-white/55">
+              Esc
+            </kbd>
+          </label>
+
+          <div className="max-h-64 overflow-y-auto px-2 pb-2">
+            {visibleOrganizations.map((organization) => {
+              const isActive = organization.orgID === auth.selectedOrgId;
+              const label = organizationLabel(organization, organizationProfiles) || "Organization";
+              const slug = organizationSlug(organization, organizationProfiles);
+              const isSwitchingHere =
+                organizationSwitcher.isPending &&
+                organizationSwitcher.variables === organization.orgID;
+
+              return (
+                <DropdownMenuItem
+                  key={organization.orgID}
+                  data-testid="shell-organization-switch-item"
+                  data-org-id={organization.orgID}
+                  data-active={isActive ? "true" : "false"}
+                  disabled={!isActive && organizationSwitcher.isPending}
+                  onClick={() => {
+                    if (!isActive) {
+                      organizationSwitcher.mutate(organization.orgID);
+                    }
+                  }}
+                  className={cn(
+                    "flex h-10 gap-2 rounded-md px-2 py-0 text-white/75 focus:bg-white/10 focus:text-white",
+                    isActive && "bg-white/10 text-white",
+                  )}
                 >
-                  {ready
-                    ? orgLabel
-                      ? `Organization · ${formatMemberCount(memberCount)}`
-                      : account.email
-                    : ""}
+                  <OrganizationMark label={label} />
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className="block truncate text-sm font-medium"
+                      {...(isActive ? { "data-testid": "shell-active-organization" } : {})}
+                    >
+                      {label}
+                    </span>
+                    {slug ? (
+                      <span className="block truncate text-xs text-white/45">{slug}</span>
+                    ) : null}
+                  </span>
+                  <span className="flex size-4 shrink-0 items-center justify-center text-white/70">
+                    {isSwitchingHere ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : isActive ? (
+                      <Check />
+                    ) : null}
+                  </span>
+                </DropdownMenuItem>
+              );
+            })}
+            {visibleOrganizations.length === 0 ? (
+              <div className="grid min-h-28 place-items-center rounded-md px-6 py-8 text-center text-sm text-white/50">
+                No organizations match this search.
+              </div>
+            ) : null}
+            {user.availableOrganizations.length <= 1 && !query ? (
+              <div className="grid min-h-32 place-items-center rounded-md px-8 py-8 text-center">
+                <div>
+                  <div className="mx-auto mb-3 flex size-9 items-center justify-center rounded-md border border-white/10 text-white/45">
+                    <MessageCircle className="size-4" />
+                  </div>
+                  <p className="text-sm leading-5 text-white/50">
+                    Organizations you create and join appear here for quick context switching.
+                  </p>
                 </div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                render={
-                  <Link to="/settings" data-testid="shell-account-settings">
-                    Settings
-                  </Link>
-                }
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                render={
-                  <Link to="/settings/organization" data-testid="shell-account-invite-members">
-                    Invite members
-                  </Link>
-                }
-              />
-            </div>
+            ) : null}
           </div>
-          {user.availableOrganizations.length > 1 && organizationProfiles ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  Organization
-                </DropdownMenuLabel>
-                {user.availableOrganizations.map((organization) => {
-                  const isActive = organization.orgID === auth.selectedOrgId;
-                  const isSwitchingHere =
-                    organizationSwitcher.isPending &&
-                    organizationSwitcher.variables === organization.orgID;
-                  return (
-                    <DropdownMenuItem
-                      key={organization.orgID}
-                      data-testid="shell-organization-switch-item"
-                      data-org-id={organization.orgID}
-                      data-active={isActive ? "true" : "false"}
-                      // Skip the disabled prop on the active row so it stays full-opacity;
-                      // clicks are still no-ops via the guard below.
-                      disabled={!isActive && organizationSwitcher.isPending}
-                      onClick={() => {
-                        if (!isActive) {
-                          organizationSwitcher.mutate(organization.orgID);
-                        }
-                      }}
-                      className={cn(isActive && "text-foreground")}
-                    >
-                      {/* Fixed-width icon slot so unselected rows align with the
-                          selected row's check/spinner instead of shifting left. */}
-                      <span
-                        className="flex size-4 shrink-0 items-center justify-center"
-                        aria-hidden
-                      >
-                        {isSwitchingHere ? (
-                          <LoaderCircle className="animate-spin" />
-                        ) : isActive ? (
-                          <Check />
-                        ) : null}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {organizationLabel(organization, organizationProfiles)}
-                      </span>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuGroup>
-            </>
-          ) : null}
-          <DropdownMenuSeparator />
+
+          <DropdownMenuSeparator className="mx-0 my-0 bg-white/10" />
           <DropdownMenuItem
-            data-testid="shell-account-sign-out"
-            onClick={withInteractionSpan("sign_out", async () => {
-              await redirectToSignOut();
-            })}
-          >
-            <LogOut />
-            Log out
-          </DropdownMenuItem>
+            render={
+              <Link
+                to="/settings/organization"
+                className="flex h-12 items-center gap-3 px-3 text-white/85 focus:bg-white/10 focus:text-white"
+              >
+                <Plus className="size-4 text-white/70" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">Manage organization</span>
+                  <span className="block truncate text-xs text-white/50">
+                    Members, governance, and organization profile
+                  </span>
+                </span>
+              </Link>
+            }
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     </ClientOnly>
   );
 }
 
-function TriggerSkeleton() {
+function UserAccountMenu() {
+  const account = useAccountChrome();
+  const auth = useSignedInAuth();
+  const userState = useUser();
+  if (!userState.isSignedIn) {
+    throw new Error("UserAccountMenu requires a signed-in user");
+  }
+
+  const { redirectToSignOut } = useClerk();
+  const hydrated = useHydrated();
+  const user = userState.user;
+  const fallbackDisplayName = user.name || user.preferredUsername || user.email || "Account";
+  const displayName = account.displayName || fallbackDisplayName;
+  const email = account.email || user.email || "";
+  const initials = account.initials || initialsFromText(displayName);
+  const { data: profile } = useQuery({
+    ...profileQuery(auth),
+    enabled: hydrated,
+  });
+  const theme = profile?.preferences.theme ?? "system";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            data-testid="shell-user-menu-trigger"
+            className="flex h-9 min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center"
+          >
+            <Avatar size="sm" className="size-5">
+              <AvatarFallback className="bg-[#c084fc] text-[10px] font-semibold text-black">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <span
+              data-testid="shell-account-display-name"
+              data-account-source={account.source}
+              className="min-w-0 flex-1 truncate text-sm font-medium group-data-[collapsible=icon]:hidden"
+            >
+              {displayName}
+            </span>
+            <span className="flex size-6 items-center justify-center rounded-full border border-sidebar-border text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
+              <span aria-hidden="true" className="text-sm leading-none">
+                ...
+              </span>
+            </span>
+          </button>
+        }
+      />
+      <DropdownMenuContent
+        data-testid="shell-user-menu"
+        side="top"
+        align="start"
+        sideOffset={7}
+        className="w-72 overflow-hidden rounded-lg border border-white/10 bg-[#050505] p-0 text-[#ededed] shadow-2xl ring-0"
+      >
+        <div className="flex items-start gap-3 px-3 py-3">
+          <Avatar className="size-8">
+            <AvatarFallback className="bg-[#c084fc] text-xs font-semibold text-black">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{displayName}</div>
+            <div className="truncate text-xs text-white/55">{email}</div>
+          </div>
+          <Link
+            to="/settings/profile"
+            aria-label="Profile settings"
+            className="flex size-6 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Settings className="size-3.5" />
+          </Link>
+        </div>
+
+        <DropdownMenuSeparator className="mx-0 my-0 bg-white/10" />
+        <AccountMenuLink icon={MessageCircle} label="Feedback" to="/docs" />
+        <div className="flex h-10 items-center gap-3 px-3 text-sm text-white/85">
+          <span className="flex size-4 items-center justify-center text-white/60">
+            <Monitor className="size-4" />
+          </span>
+          <span className="flex-1">Theme</span>
+          <div className="flex rounded-full border border-white/15 bg-white/[0.03] p-0.5">
+            <ThemeChip active={theme === "system"} icon={Monitor} label="System theme" />
+            <ThemeChip active={theme === "light"} icon={Sun} label="Light theme" />
+            <ThemeChip active={theme === "dark"} icon={Moon} label="Dark theme" />
+          </div>
+        </div>
+        <AccountMenuLink icon={Home} label="Home Page" to="/executions" />
+        <AccountMenuLink icon={PencilLine} label="Changelog" to="/policy/changelog" />
+        <AccountMenuLink icon={CircleHelp} label="Help" to="/docs" />
+        <AccountMenuLink icon={BookOpen} label="Docs" to="/docs" />
+        <DropdownMenuItem
+          data-testid="shell-account-sign-out"
+          onClick={withInteractionSpan("sign_out", async () => {
+            await redirectToSignOut();
+          })}
+          className="flex h-10 gap-3 rounded-none px-3 py-0 text-white/85 focus:bg-white/10 focus:text-white"
+        >
+          <LogOut className="size-4 text-white/60" />
+          Log Out
+        </DropdownMenuItem>
+
+        <div className="px-2 py-2">
+          <Link
+            to="/settings/billing/subscribe"
+            className="flex h-8 w-full items-center justify-center rounded-md border border-white/15 bg-white px-3 text-xs font-medium text-black transition-colors hover:bg-white/90"
+          >
+            Upgrade plan
+          </Link>
+        </div>
+        <DropdownMenuSeparator className="mx-0 my-0 bg-white/10" />
+        <div className="px-3 py-3">
+          <div className="text-xs text-white/50">Platform Status</div>
+          <div className="mt-1 flex items-center gap-2 text-sm text-white/85">
+            <span>All systems normal.</span>
+            <span className="ml-auto size-2 rounded-full bg-blue-500" aria-hidden />
+          </div>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function AccountMenuLink({
+  icon: Icon,
+  label,
+  to,
+}: {
+  readonly icon: LucideIcon;
+  readonly label: string;
+  readonly to: string;
+}) {
+  return (
+    <DropdownMenuItem
+      render={
+        <Link
+          to={to}
+          className="flex h-10 items-center gap-3 px-3 text-sm text-white/85 focus:bg-white/10 focus:text-white"
+        >
+          <Icon className="size-4 text-white/60" />
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+        </Link>
+      }
+    />
+  );
+}
+
+function ThemeChip({
+  active,
+  icon: Icon,
+  label,
+}: {
+  readonly active: boolean;
+  readonly icon: LucideIcon;
+  readonly label: string;
+}) {
+  return (
+    <Link
+      to="/settings/profile"
+      aria-label={label}
+      className={cn(
+        "flex size-7 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/10 hover:text-white",
+        active && "bg-white text-black hover:bg-white hover:text-black",
+      )}
+    >
+      <Icon className="size-3.5" />
+    </Link>
+  );
+}
+
+function OrganizationMark({ label }: { readonly label: string }) {
+  const initial = label.trim().charAt(0).toUpperCase() || "V";
+  return (
+    <span
+      className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#f5c400] text-[10px] font-semibold text-black"
+      aria-hidden="true"
+    >
+      {initial}
+    </span>
+  );
+}
+
+function PlanBadge({
+  className,
+  label,
+}: {
+  readonly className?: string;
+  readonly label: string | null;
+}) {
+  if (!label) return null;
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white/75",
+        className,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function OrganizationTriggerSkeleton() {
   return (
     <button
       type="button"
       disabled
       aria-busy="true"
       data-testid="shell-account-trigger"
-      className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm"
+      className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm"
     >
-      <Avatar className="size-5 shrink-0 rounded-md">
-        <AvatarFallback className="rounded-md text-[10px] font-medium" />
-      </Avatar>
+      <span className="size-5 shrink-0 rounded-full bg-sidebar-accent" />
       <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden" />
-      <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+      <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden" />
+    </button>
+  );
+}
+
+function UserTriggerSkeleton() {
+  return (
+    <button
+      type="button"
+      disabled
+      aria-busy="true"
+      data-testid="shell-user-menu-trigger"
+      className="flex h-9 min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm"
+    >
+      <Avatar size="sm" className="size-5">
+        <AvatarFallback />
+      </Avatar>
+      <span
+        data-testid="shell-account-display-name"
+        data-account-source="pending"
+        className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"
+      />
     </button>
   );
 }
@@ -275,26 +528,6 @@ function useAccountChrome(): AccountChrome {
   return account ?? pendingAccountChrome;
 }
 
-// "Active members" is the same metric the Members page surfaces — invited
-// users that haven't accepted aren't counted as members yet. Zitadel's user
-// state literal is `USER_STATE_ACTIVE`; matches what organization-profile uses.
-const ACTIVE_MEMBER_STATE = "USER_STATE_ACTIVE";
-
-function useActiveMemberCount(): number | null {
-  const auth = useSignedInAuth();
-  const hydrated = useHydrated();
-  const api = useIAMApi();
-  const { data } = useQuery({
-    ...organizationMembersQuery(auth, api),
-    enabled: hydrated,
-  });
-  if (!data) return null;
-  return data.filter((member) => member.state === ACTIVE_MEMBER_STATE).length;
-}
-
-// Display names live in iam-service (Zitadel only carries the primary
-// domain, which is infra detail and never reaches the browser). One fetch
-// covers every org the actor can switch into.
 function useAvailableOrganizationProfiles(): ReadonlyMap<string, OrganizationMetadataValue> | null {
   const auth = useSignedInAuth();
   const hydrated = useHydrated();
@@ -306,17 +539,29 @@ function useAvailableOrganizationProfiles(): ReadonlyMap<string, OrganizationMet
   return data ?? null;
 }
 
-function formatMemberCount(count: number | null): string {
-  if (count === null) return "Organization";
-  return `${count} member${count === 1 ? "" : "s"}`;
-}
-
 function organizationLabel(
   organization: AuthOrganizationContext,
   profiles: ReadonlyMap<string, OrganizationMetadataValue> | null,
 ): string {
-  // Empty while the iam-service profile is in flight — the surrounding
-  // skeleton/`ready` gating keeps the trigger blank rather than flashing the
-  // raw orgID, which would be a worse UX than nothing.
   return profiles?.get(organization.orgID)?.display_name ?? "";
+}
+
+function organizationSlug(
+  organization: AuthOrganizationContext,
+  profiles: ReadonlyMap<string, OrganizationMetadataValue> | null,
+): string {
+  const slug = profiles?.get(organization.orgID)?.slug;
+  return slug ? `/${slug}` : "";
+}
+
+function initialsFromText(value: string): string {
+  const parts = value
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return initials || "?";
 }

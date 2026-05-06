@@ -5,6 +5,7 @@ import { Toaster } from "@verself/ui/components/ui/sonner";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
@@ -12,7 +13,7 @@ import {
 } from "@verself/ui/components/ui/sidebar";
 import { EVERGREEN_NAV, PRIMARY_NAV } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
-import { SidebarAccountTrigger } from "./sidebar-account-menu";
+import { SidebarOrganizationSwitcher, SidebarUserMenu } from "./sidebar-account-menu";
 import { SidebarNavGroup } from "./sidebar-nav";
 import { ShellTopBar } from "./top-bar";
 
@@ -43,10 +44,10 @@ export function AppShell() {
 
 function AppSidebar() {
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="verself-console-sidebar">
       <SidebarHeader>
         <div className="flex h-10 items-center gap-1 px-1">
-          <SidebarAccountTrigger />
+          <SidebarOrganizationSwitcher />
           {/* Collapse affordance lives here while the rail is expanded. When
               the rail is icon-collapsed, the trigger moves to the top bar
               (see ShellTopBar) so the user has a visible expand control
@@ -62,6 +63,10 @@ function AppSidebar() {
         <SidebarNavGroup entries={PRIMARY_NAV} />
         <SidebarNavGroup entries={EVERGREEN_NAV} anchor="bottom" />
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarUserMenu />
+      </SidebarFooter>
     </Sidebar>
   );
 }
