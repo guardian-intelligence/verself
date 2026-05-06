@@ -16,6 +16,8 @@ export type DocsNavEntry = {
   readonly to: string;
   readonly matchPrefix: string;
   readonly exactMatch?: boolean;
+  readonly status?: "available" | "coming-soon";
+  readonly description?: string;
   readonly children?: readonly DocsNavChild[];
 };
 
@@ -26,12 +28,56 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     to: "/docs",
     matchPrefix: "/docs",
     exactMatch: true,
+    status: "available",
+    description: "Platform orientation and product surface.",
+  },
+  {
+    id: "getting-started",
+    label: "Getting Started",
+    to: "/docs/getting-started",
+    matchPrefix: "/docs/getting-started",
+    status: "coming-soon",
+    description: "First run for the hosted sandbox product and clone bootstrap CLI.",
+  },
+  {
+    id: "cli",
+    label: "CLI",
+    to: "/docs/cli",
+    matchPrefix: "/docs/cli",
+    status: "coming-soon",
+    description: "Command reference for operating Verself and cloned installations.",
+  },
+  {
+    id: "sandboxes",
+    label: "Sandboxes",
+    to: "/docs/sandboxes",
+    matchPrefix: "/docs/sandboxes",
+    status: "coming-soon",
+    description: "Short-lived Firecracker execution environments for customer workloads.",
+  },
+  {
+    id: "functions",
+    label: "Functions",
+    to: "/docs/functions",
+    matchPrefix: "/docs/functions",
+    status: "coming-soon",
+    description: "Lambda-style workload execution on the sandbox substrate.",
+  },
+  {
+    id: "workflows",
+    label: "Workflows",
+    to: "/docs/workflows",
+    matchPrefix: "/docs/workflows",
+    status: "coming-soon",
+    description: "Durable and scheduled execution patterns built on sandbox rentals.",
   },
   {
     id: "secrets-and-keys",
     label: "Secrets & Keys",
     to: "/docs/secrets",
     matchPrefix: "/docs/secrets",
+    status: "available",
+    description: "Secret and key material handling for sandbox workloads.",
     children: [
       { id: "overview", label: "Overview" },
       { id: "shared-responsibility", label: "Shared responsibility" },
@@ -44,10 +90,28 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     ],
   },
   {
+    id: "pricing",
+    label: "Pricing",
+    to: "/docs/pricing",
+    matchPrefix: "/docs/pricing",
+    status: "coming-soon",
+    description: "Compute metering, credits, billing windows, and invoices.",
+  },
+  {
+    id: "security",
+    label: "Security",
+    to: "/docs/security",
+    matchPrefix: "/docs/security",
+    status: "coming-soon",
+    description: "Isolation, workload identity, auditability, and data-retention commitments.",
+  },
+  {
     id: "reference",
     label: "API Reference",
     to: "/docs/reference",
     matchPrefix: "/docs/reference",
+    status: "available",
+    description: "Generated OpenAPI reference for public Verself service APIs.",
     children: REFERENCE_SECTIONS,
   },
 ];

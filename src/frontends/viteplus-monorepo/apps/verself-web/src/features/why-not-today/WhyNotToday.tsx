@@ -32,11 +32,7 @@ export function WhyNotToday({ motion }: WhyNotTodayProps) {
       {fallbackReason ? <WhyNotTodayStill /> : null}
       {live ? (
         <Suspense fallback={null}>
-          <WhyNotTodayCanvas
-            active={active}
-            frame={frame}
-            onDegraded={handleCanvasDegraded}
-          />
+          <WhyNotTodayCanvas active={active} frame={frame} onDegraded={handleCanvasDegraded} />
         </Suspense>
       ) : null}
     </div>
