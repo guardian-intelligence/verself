@@ -7,6 +7,7 @@ import {
   createContractSession,
   createPortalSession,
 } from "~/server-fns/api";
+import { useOrgScopedPath } from "~/features/shell/org-routing";
 import type { BillingPlan } from "~/lib/sandbox-rental-api";
 import { contractsQuery, entitlementsQuery } from "./queries";
 import type { PlanCardIntent } from "./state";
@@ -14,14 +15,16 @@ import type { PlanCardIntent } from "./state";
 const SANDBOX_PRODUCT_ID = "sandbox";
 
 export function useCreateCheckoutSessionMutation() {
+  const billingPath = useOrgScopedPath("/settings/billing");
+  const creditsPath = useOrgScopedPath("/settings/billing/credits");
   return useMutation({
     mutationFn: (amountCents: number) =>
       createCheckoutSession({
         data: {
           product_id: SANDBOX_PRODUCT_ID,
           amount_cents: amountCents,
-          success_url: `${window.location.origin}/settings/billing?purchased=true`,
-          cancel_url: `${window.location.origin}/settings/billing/credits`,
+          success_url: absoluteURL(`${billingPath}?purchased=true`),
+          cancel_url: absoluteURL(creditsPath),
         },
       }),
     onSuccess: (data) => {
@@ -36,10 +39,12 @@ export function useCreateCheckoutSessionMutation() {
 // loudly if it slips through so a regression shows up as a crash rather
 // than a silent no-op.
 export function usePlanCardActionMutation() {
+  const billingPath = useOrgScopedPath("/settings/billing");
+  const subscribePath = useOrgScopedPath("/settings/billing/subscribe");
   return useMutation({
     mutationFn: async ({ intent, plan }: { intent: PlanCardIntent; plan: BillingPlan }) => {
-      const baseSuccessURL = `${window.location.origin}/settings/billing?contracted=true`;
-      const cancelURL = `${window.location.origin}/settings/billing/subscribe`;
+      const baseSuccessURL = absoluteURL(`${billingPath}?contracted=true`);
+      const cancelURL = absoluteURL(subscribePath);
 
       switch (intent.kind) {
         case "start":
@@ -75,17 +80,22 @@ export function usePlanCardActionMutation() {
 }
 
 export function useCreatePortalSessionMutation() {
+  const billingPath = useOrgScopedPath("/settings/billing");
   return useMutation({
     mutationFn: () =>
       createPortalSession({
         data: {
-          return_url: `${window.location.origin}/settings/billing`,
+          return_url: absoluteURL(billingPath),
         },
       }),
     onSuccess: (data) => {
       window.location.assign(data.url);
     },
   });
+}
+
+function absoluteURL(path: string): string {
+  return new URL(path, window.location.origin).toString();
 }
 
 export function useCancelContractMutation() {

@@ -12,7 +12,7 @@ import { Callout } from "~/components/callout";
 import { ExecutionListPanel } from "~/features/executions/components";
 import { loadExecutionsIndex } from "~/features/executions/queries";
 
-export const Route = createFileRoute("/_shell/_authenticated/executions/")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/executions/")({
   loader: ({ context }) => loadExecutionsIndex(context.queryClient, context.auth),
   component: ExecutionsPage,
 });

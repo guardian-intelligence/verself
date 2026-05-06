@@ -28,7 +28,7 @@ const stripDefaultCols: SearchMiddleware<AuditSearch> = ({ search, next }) => {
   return output;
 };
 
-export const Route = createFileRoute("/_shell/_authenticated/settings/governance")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/governance")({
   validateSearch: parseAuditSearch,
   // retainSearchParams carries column visibility, page size, view preset, and
   // sort order across filter/pagination changes so the user's table shape

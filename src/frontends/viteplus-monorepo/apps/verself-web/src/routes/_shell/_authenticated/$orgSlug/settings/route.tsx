@@ -10,6 +10,7 @@ import {
   PageHeaderContent,
   PageTitle,
 } from "@verself/ui/components/ui/page";
+import { orgPath, useOrgRouteParams } from "~/features/shell/org-routing";
 import {
   isPathActive,
   SETTINGS_NAV,
@@ -18,7 +19,7 @@ import {
   type SettingsNavGroup,
 } from "~/features/shell/nav-config";
 
-export const Route = createFileRoute("/_shell/_authenticated/settings")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings")({
   component: SettingsLayout,
 });
 
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/_shell/_authenticated/settings")({
 // their own PageSections directly into the Outlet.
 function SettingsLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const { orgSlug } = useOrgRouteParams();
   const activeEntry = resolveActiveEntry(path);
   const [query, setQuery] = useState("");
 
@@ -43,7 +45,10 @@ function SettingsLayout() {
           <PageHeader>
             <PageHeaderContent>
               <PageEyebrow>
-                <Link to="/settings" className="text-muted-foreground/80 hover:text-foreground">
+                <Link
+                  to={orgPath(orgSlug, "/settings")}
+                  className="text-muted-foreground/80 hover:text-foreground"
+                >
                   Settings
                 </Link>
                 {activeEntry ? (
@@ -79,10 +84,11 @@ function SettingsRail({
   readonly query: string;
   readonly onQueryChange: (value: string) => void;
 }) {
+  const { orgSlug } = useOrgRouteParams();
   return (
     <nav aria-label="Settings sections" className="flex flex-col gap-3 md:w-56 md:shrink-0">
       <Link
-        to="/builds"
+        to={orgPath(orgSlug, "/builds")}
         className="flex items-center gap-1.5 self-start text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         data-testid="settings-back"
       >
@@ -167,10 +173,11 @@ function SettingsRailItem({
   readonly activePath: string;
 }) {
   const active = isPathActive(activePath, entry);
+  const { orgSlug } = useOrgRouteParams();
   return (
     <li>
       <Link
-        to={entry.to}
+        to={orgPath(orgSlug, entry.to as `/${string}`)}
         data-testid={`settings-tab-${entry.id}`}
         data-status={active ? "active" : "inactive"}
         className={cn(

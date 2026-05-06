@@ -2,9 +2,10 @@ import { createFileRoute, redirect, useHydrated } from "@tanstack/react-router";
 import { LogIn } from "lucide-react";
 import { SignInButton } from "@verself/auth-web/components";
 import { Button } from "@verself/ui/components/ui/button";
+import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
 import { getClientAuthSnapshot } from "~/server-fns/auth";
 
-const defaultSignedInRedirect = "/executions";
+const defaultSignedInRedirect = "/login";
 
 function signedInRedirectTarget(redirectTo: string | undefined): string {
   if (!redirectTo) return defaultSignedInRedirect;
@@ -25,10 +26,12 @@ export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
   }),
-  beforeLoad: async ({ search }) => {
+  beforeLoad: async ({ context, search }) => {
     const snapshot = await getClientAuthSnapshot();
     if (snapshot.auth.isAuthenticated) {
-      throw redirect({ href: signedInRedirectTarget(search.redirect), replace: true });
+      const fallback = await resolveDefaultSignedInPath(context.queryClient, snapshot.auth);
+      const target = search.redirect ? signedInRedirectTarget(search.redirect) : fallback;
+      throw redirect({ href: target === defaultSignedInRedirect ? fallback : target, replace: true });
     }
   },
   component: LoginPage,

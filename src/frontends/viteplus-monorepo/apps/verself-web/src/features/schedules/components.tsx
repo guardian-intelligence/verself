@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@verself/ui/components/ui/textarea";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
+import { useOrgScopedPath } from "~/features/shell/org-routing";
 import { formatDateTimeUTC } from "~/lib/format";
 import { sourceRepositoriesQuery } from "~/features/source/queries";
 import { executionScheduleQuery, executionSchedulesQuery } from "./queries";
@@ -49,6 +50,8 @@ import {
 
 export function ExecutionSchedulesPanel() {
   const auth = useSignedInAuth();
+  const newSchedulePath = useOrgScopedPath("/schedules/new");
+  const schedulePath = useOrgScopedPath("/schedules/$scheduleId");
   const schedules = useSuspenseQuery(executionSchedulesQuery(auth)).data;
 
   if (schedules.length === 0) {
@@ -56,7 +59,7 @@ export function ExecutionSchedulesPanel() {
       <EmptyState
         title="No schedules yet"
         body="Recurring schedules dispatch source-hosted workflows on an interval."
-        action={<Button render={<Link to="/schedules/new" />}>New schedule</Button>}
+        action={<Button render={<Link to={newSchedulePath} />}>New schedule</Button>}
       />
     );
   }
@@ -79,7 +82,7 @@ export function ExecutionSchedulesPanel() {
             <TableRow key={schedule.schedule_id}>
               <TableCell>
                 <Link
-                  to="/schedules/$scheduleId"
+                  to={schedulePath}
                   params={{ scheduleId: schedule.schedule_id }}
                   className="font-medium hover:underline"
                 >
@@ -109,6 +112,7 @@ export function ExecutionSchedulesPanel() {
 
 export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: string }) {
   const auth = useSignedInAuth();
+  const schedulesPath = useOrgScopedPath("/schedules");
   const schedule = useSuspenseQuery(executionScheduleQuery(auth, scheduleId)).data;
   const pauseMutation = usePauseExecutionScheduleMutation(scheduleId);
   const resumeMutation = useResumeExecutionScheduleMutation(scheduleId);
@@ -119,7 +123,7 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
       <PageHeader>
         <PageHeaderContent>
           <PageEyebrow>
-            <Link to="/schedules" className="hover:text-foreground">
+            <Link to={schedulesPath} className="hover:text-foreground">
               ← Schedules
             </Link>
           </PageEyebrow>
@@ -261,12 +265,14 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
 
 export function ExecutionScheduleForm() {
   const auth = useSignedInAuth();
+  const buildsPath = useOrgScopedPath("/builds");
+  const schedulePath = useOrgScopedPath("/schedules/$scheduleId");
   const repositories = useSuspenseQuery(sourceRepositoriesQuery(auth)).data.repositories;
   const navigate = useNavigate();
   const mutation = useCreateExecutionScheduleMutation({
     onSuccess: async (schedule) => {
       await navigate({
-        to: "/schedules/$scheduleId",
+        to: schedulePath,
         params: { scheduleId: schedule.schedule_id },
       });
     },
@@ -304,7 +310,7 @@ export function ExecutionScheduleForm() {
       <EmptyState
         title="No repositories"
         body="Create a source repository before scheduling workflow dispatches."
-        action={<Button render={<Link to="/builds" />}>Open builds</Button>}
+        action={<Button render={<Link to={buildsPath} />}>Open builds</Button>}
       />
     );
   }

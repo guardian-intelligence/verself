@@ -30,6 +30,7 @@ import {
 import { loadBillingPage } from "~/features/billing/queries";
 import type { BillingAccount, CreditsProductState } from "~/features/billing/state";
 import { useBillingAccountWithStatement } from "~/features/billing/use-billing-account";
+import { orgPath, useOrgScopedPath } from "~/features/shell/org-routing";
 import {
   formatDateTimeMillisUTC,
   formatDateUTC,
@@ -73,13 +74,14 @@ const DRAIN_SOURCES: readonly DrainSourceSpec[] = [
 
 const SANDBOX_PRODUCT_ID = "sandbox";
 
-export const Route = createFileRoute("/_shell/_authenticated/settings/billing/")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/billing/")({
   validateSearch: parseFlashSearch,
   loader: ({ context }) => loadBillingPage(context.queryClient, context.auth),
   component: BillingPage,
 });
 
 function BillingPage() {
+  const { orgSlug } = Route.useParams();
   const flashSearch = Route.useSearch();
   const flashIntent = useMemo(() => projectFlashIntent(flashSearch), [flashSearch]);
   const initial = Route.useLoaderData();
@@ -114,7 +116,7 @@ function BillingPage() {
           <Button
             variant="default"
             className="w-full sm:w-auto"
-            render={<Link to="/settings/billing/credits" />}
+            render={<Link to={orgPath(orgSlug, "/settings/billing/credits")} />}
           >
             Buy credits
           </Button>
@@ -294,6 +296,7 @@ function PlanHero({
   account: BillingAccount;
   statement: Statement | null;
 }) {
+  const subscribePath = useOrgScopedPath("/settings/billing/subscribe");
   if (account.kind === "no_contract") {
     return (
       <section
@@ -316,7 +319,7 @@ function PlanHero({
         <Button
           data-testid="plan-hero-cta"
           className="w-full sm:w-auto"
-          render={<Link to="/settings/billing/subscribe" />}
+          render={<Link to={subscribePath} />}
         >
           Upgrade plan
         </Button>
@@ -345,7 +348,7 @@ function PlanHero({
         variant="outline"
         data-testid="plan-hero-cta"
         className="w-full sm:w-auto"
-        render={<Link to="/settings/billing/subscribe" />}
+        render={<Link to={subscribePath} />}
       >
         Adjust plan
       </Button>

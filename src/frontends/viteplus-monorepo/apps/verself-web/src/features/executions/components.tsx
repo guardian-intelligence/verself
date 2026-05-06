@@ -36,6 +36,7 @@ import {
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
+import { useOrgScopedPath } from "~/features/shell/org-routing";
 import { type ElectricExecution } from "~/lib/collections";
 import { formatDateTimeUTC } from "~/lib/format";
 import { useExecutionLogs, useExecutionRows } from "./live";
@@ -78,6 +79,7 @@ export function ExecutionDetailPanel({ executionId }: { executionId: string }) {
 
 function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
   const auth = useSignedInAuth();
+  const executionsPath = useOrgScopedPath("/executions");
   const execution = useSuspenseQuery(executionQuery(auth, executionId)).data;
 
   const attempt = execution.latest_attempt;
@@ -88,7 +90,7 @@ function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
       <PageHeader>
         <PageHeaderContent>
           <PageEyebrow>
-            <Link to="/executions" className="hover:text-foreground">
+            <Link to={executionsPath} className="hover:text-foreground">
               ← Executions
             </Link>
           </PageEyebrow>
@@ -120,13 +122,14 @@ function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
 }
 
 function ExecutionDetailLoading({ executionId }: { executionId: string }) {
+  const executionsPath = useOrgScopedPath("/executions");
   const executionPrefix = executionId.slice(0, 8);
   return (
     <Page>
       <PageHeader>
         <PageHeaderContent>
           <PageEyebrow>
-            <Link to="/executions" className="hover:text-foreground">
+            <Link to={executionsPath} className="hover:text-foreground">
               ← Executions
             </Link>
           </PageEyebrow>
@@ -168,6 +171,7 @@ function ExecutionLogsPanel({ attemptId, isRunning }: { attemptId: string; isRun
 const EXECUTIONS_PAGE_SIZE = 25;
 
 function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
+  const executionPath = useOrgScopedPath("/executions/$executionId");
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(executions.length / EXECUTIONS_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -202,7 +206,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
               >
                 <TableCell>
                   <Link
-                    to="/executions/$executionId"
+                    to={executionPath}
                     params={{ executionId: execution.execution_id }}
                     className="font-mono text-sm font-semibold text-foreground group-hover:underline"
                   >
@@ -315,12 +319,13 @@ function ExecutionListLoading() {
 }
 
 function ExecutionListError({ status }: { status: string }) {
+  const executionsPath = useOrgScopedPath("/executions");
   return (
     <ErrorCallout
       title="Could not load executions"
       error={`Execution sync failed (${status}).`}
       action={
-        <Button variant="outline" render={<Link to="/executions" />}>
+        <Button variant="outline" render={<Link to={executionsPath} />}>
           Retry
         </Button>
       }
@@ -329,13 +334,14 @@ function ExecutionListError({ status }: { status: string }) {
 }
 
 function ExecutionListEmpty() {
+  const newSchedulePath = useOrgScopedPath("/schedules/new");
   return (
     <div data-testid="executions-empty">
       <EmptyState
         title="No executions yet"
         body="Executions appear here after a GitHub workflow or a scheduled canary runs."
         action={
-          <Button variant="default" render={<Link to="/schedules/new" />}>
+          <Button variant="default" render={<Link to={newSchedulePath} />}>
             Create schedule
           </Button>
         }

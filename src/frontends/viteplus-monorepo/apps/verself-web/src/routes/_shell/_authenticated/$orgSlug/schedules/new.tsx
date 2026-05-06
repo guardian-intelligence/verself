@@ -9,21 +9,23 @@ import {
   PageSections,
   PageTitle,
 } from "@verself/ui/components/ui/page";
+import { orgPath } from "~/features/shell/org-routing";
 import { ExecutionScheduleForm } from "~/features/schedules/components";
 import { loadSourceRepositories } from "~/features/source/queries";
 
-export const Route = createFileRoute("/_shell/_authenticated/schedules/new")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/schedules/new")({
   loader: ({ context }) => loadSourceRepositories(context.queryClient, context.auth),
   component: NewSchedulePage,
 });
 
 function NewSchedulePage() {
+  const { orgSlug } = Route.useParams();
   return (
     <Page variant="narrow">
       <PageHeader>
         <PageHeaderContent>
           <PageEyebrow>
-            <Link to="/schedules" className="hover:text-foreground">
+            <Link to={orgPath(orgSlug, "/schedules")} className="hover:text-foreground">
               ← Schedules
             </Link>
           </PageEyebrow>

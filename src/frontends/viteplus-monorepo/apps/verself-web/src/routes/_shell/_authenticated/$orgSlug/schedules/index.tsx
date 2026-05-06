@@ -10,15 +10,17 @@ import {
   PageSections,
   PageTitle,
 } from "@verself/ui/components/ui/page";
+import { orgPath } from "~/features/shell/org-routing";
 import { ExecutionSchedulesPanel } from "~/features/schedules/components";
 import { loadExecutionSchedules } from "~/features/schedules/queries";
 
-export const Route = createFileRoute("/_shell/_authenticated/schedules/")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/schedules/")({
   loader: ({ context }) => loadExecutionSchedules(context.queryClient, context.auth),
   component: SchedulesPage,
 });
 
 function SchedulesPage() {
+  const { orgSlug } = Route.useParams();
   return (
     <Page>
       <PageHeader>
@@ -29,7 +31,7 @@ function SchedulesPage() {
           </PageDescription>
         </PageHeaderContent>
         <PageActions>
-          <Button render={<Link to="/schedules/new" />}>New schedule</Button>
+          <Button render={<Link to={orgPath(orgSlug, "/schedules/new")} />}>New schedule</Button>
         </PageActions>
       </PageHeader>
       <PageSections>

@@ -26,6 +26,7 @@ import {
   PageTitle,
 } from "@verself/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
+import { useOrgScopedPath } from "~/features/shell/org-routing";
 import { formatDateTimeUTC } from "~/lib/format";
 import type { Notification } from "~/server-fns/api";
 import { useNotificationInboxState } from "./live";
@@ -196,6 +197,7 @@ function NotificationActions({
   readonly inbox: ReturnType<typeof useNotificationInbox>;
   readonly mode: InboxMode;
 }) {
+  const notificationsPath = useOrgScopedPath("/notifications");
   const markRead = useMarkNotificationReadMutation();
   const clear = useClearNotificationsMutation();
   const test = usePublishTestNotificationMutation();
@@ -211,7 +213,7 @@ function NotificationActions({
           size="icon-xs"
           aria-label="Open notifications"
           title="Open notifications"
-          render={<Link to="/notifications" />}
+          render={<Link to={notificationsPath} />}
         >
           <Inbox />
         </Button>

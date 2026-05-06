@@ -47,6 +47,7 @@ import {
   accountChromeFromProfile,
   pendingAccountChrome,
 } from "./account-chrome";
+import { orgPath, replaceOrgSlugInHref, useOrgRouteParams } from "./org-routing";
 import { selectActiveOrganization } from "~/server-fns/auth";
 
 // The Vercel-style shell treats organization context as the primary switcher
@@ -78,6 +79,7 @@ export function SidebarUserMenu() {
 
 function OrganizationSwitcherMenu() {
   const auth = useSignedInAuth();
+  const { orgSlug } = useOrgRouteParams();
   const userState = useUser();
   if (!userState.isSignedIn) {
     throw new Error("OrganizationSwitcherMenu requires a signed-in user");
@@ -85,7 +87,7 @@ function OrganizationSwitcherMenu() {
 
   const user = userState.user;
   const organizationProfiles = useAvailableOrganizationProfiles();
-  const organizationSwitcher = useOrganizationSwitcher();
+  const organizationSwitcher = useOrganizationSwitcher(organizationProfiles);
   const tierLabel = useBillingTierLabel();
   const [query, setQuery] = useState("");
   const activeOrganization = user.availableOrganizations.find(
@@ -141,10 +143,10 @@ function OrganizationSwitcherMenu() {
               <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-white/55" />
             </button>
             <Link
-              to="/builds"
+              to={orgPath(orgSlug, "/builds")}
               className="flex items-center justify-center gap-1 border-l border-white/10 px-3 text-xs font-medium text-white/85 transition-colors hover:bg-white/8 hover:text-white"
             >
-              All Builds
+              All Projects
               <ChevronDown className="size-3.5 text-white/50" />
             </Link>
           </div>
@@ -233,7 +235,7 @@ function OrganizationSwitcherMenu() {
           <DropdownMenuItem
             render={
               <Link
-                to="/settings/organization"
+                to={orgPath(orgSlug, "/settings/organization")}
                 className="flex h-12 items-center gap-3 px-3 text-white/85 focus:bg-white/10 focus:text-white"
               >
                 <Plus className="size-4 text-white/70" />
@@ -255,6 +257,7 @@ function OrganizationSwitcherMenu() {
 function UserAccountMenu() {
   const account = useAccountChrome();
   const auth = useSignedInAuth();
+  const { orgSlug } = useOrgRouteParams();
   const userState = useUser();
   if (!userState.isSignedIn) {
     throw new Error("UserAccountMenu requires a signed-in user");
@@ -320,7 +323,7 @@ function UserAccountMenu() {
             <div className="truncate text-xs text-white/55">{email}</div>
           </div>
           <Link
-            to="/settings/profile"
+            to={orgPath(orgSlug, "/settings/profile")}
             aria-label="Profile settings"
             className="flex size-6 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
@@ -341,7 +344,7 @@ function UserAccountMenu() {
             <ThemeChip active={theme === "dark"} icon={Moon} label="Dark theme" />
           </div>
         </div>
-        <AccountMenuLink icon={Home} label="Home Page" to="/executions" />
+        <AccountMenuLink icon={Home} label="Home Page" to={orgPath(orgSlug, "/executions")} />
         <AccountMenuLink icon={PencilLine} label="Changelog" to="/policy/changelog" />
         <AccountMenuLink icon={CircleHelp} label="Help" to="/docs" />
         <AccountMenuLink icon={BookOpen} label="Docs" to="/docs" />
@@ -358,7 +361,7 @@ function UserAccountMenu() {
 
         <div className="px-2 py-2">
           <Link
-            to="/settings/billing/subscribe"
+            to={orgPath(orgSlug, "/settings/billing/subscribe")}
             className="flex h-8 w-full items-center justify-center rounded-md border border-white/15 bg-white px-3 text-xs font-medium text-black transition-colors hover:bg-white/90"
           >
             Upgrade plan
@@ -410,9 +413,10 @@ function ThemeChip({
   readonly icon: LucideIcon;
   readonly label: string;
 }) {
+  const { orgSlug } = useOrgRouteParams();
   return (
     <Link
-      to="/settings/profile"
+      to={orgPath(orgSlug, "/settings/profile")}
       aria-label={label}
       className={cn(
         "flex size-7 items-center justify-center rounded-full text-white/55 transition-colors hover:bg-white/10 hover:text-white",
@@ -493,18 +497,22 @@ function UserTriggerSkeleton() {
   );
 }
 
-function useOrganizationSwitcher() {
+function useOrganizationSwitcher(
+  organizationProfiles: ReadonlyMap<string, OrganizationMetadataValue> | null,
+) {
   const router = useRouter();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (orgID: string) => selectActiveOrganization({ data: { orgID } }),
-    onSuccess: async () => {
+    onSuccess: async (_snapshot, orgID) => {
       await queryClient.cancelQueries();
       queryClient.clear();
-      if (typeof window !== "undefined") {
-        // Organization switches are auth partition changes; reload to discard stale client code and caches.
-        window.location.assign(window.location.href);
-        return;
+      const nextSlug = organizationProfiles?.get(orgID)?.slug;
+      if (nextSlug) {
+        await router.navigate({
+          href: replaceOrgSlugInHref(router.state.location.href, nextSlug),
+          replace: true,
+        });
       }
       await router.invalidate();
     },

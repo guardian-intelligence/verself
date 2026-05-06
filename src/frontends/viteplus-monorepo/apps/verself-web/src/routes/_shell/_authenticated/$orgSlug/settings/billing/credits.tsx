@@ -12,8 +12,9 @@ import {
 } from "@verself/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
+import { orgPath } from "~/features/shell/org-routing";
 
-export const Route = createFileRoute("/_shell/_authenticated/settings/billing/credits")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/billing/credits")({
   component: CreditsPage,
 });
 
@@ -25,13 +26,14 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
+  const { orgSlug } = Route.useParams();
   const mutation = useCreateCheckoutSessionMutation();
 
   return (
     <PageSections>
       <PageSection>
         <PageEyebrow>
-          <Link to="/settings/billing" className="hover:text-foreground">
+          <Link to={orgPath(orgSlug, "/settings/billing")} className="hover:text-foreground">
             ← Back to billing
           </Link>
         </PageEyebrow>

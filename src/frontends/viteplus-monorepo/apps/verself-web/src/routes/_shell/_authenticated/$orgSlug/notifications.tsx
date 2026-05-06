@@ -4,7 +4,7 @@ import {
   NotificationsPageFallback,
 } from "~/features/notifications/notification-bell";
 
-export const Route = createFileRoute("/_shell/_authenticated/notifications")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/notifications")({
   component: NotificationsRoute,
 });
 

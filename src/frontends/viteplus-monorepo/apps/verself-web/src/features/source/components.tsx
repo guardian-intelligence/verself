@@ -6,6 +6,7 @@ import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { useExecutionRows, useRunnerProviderRepositoryRows } from "~/features/executions/live";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "~/features/executions/status";
+import { useOrgScopedPath } from "~/features/shell/org-routing";
 import type { ElectricExecution, ElectricRunnerProviderRepository } from "~/lib/collections";
 import { formatDateTimeUTC } from "~/lib/format";
 import type { SourceRepository } from "~/server-fns/api";
@@ -132,6 +133,8 @@ function ActiveBuildCountLink({
   repo: SourceRepository;
   activeBuilds: ElectricExecution[];
 }) {
+  const executionPath = useOrgScopedPath("/executions/$executionId");
+  const buildPath = useOrgScopedPath("/builds/$repoId");
   const label = `${activeBuilds.length} ${activeBuilds.length === 1 ? "active build" : "active builds"}`;
   const className = "shrink-0 text-sm font-medium tabular-nums";
   const onlyBuild = activeBuilds[0];
@@ -139,7 +142,7 @@ function ActiveBuildCountLink({
   if (activeBuilds.length === 1 && onlyBuild) {
     return (
       <Link
-        to="/executions/$executionId"
+        to={executionPath}
         params={{ executionId: onlyBuild.execution_id }}
         className={`${className} text-foreground hover:underline`}
         data-testid="build-active-link"
@@ -152,7 +155,7 @@ function ActiveBuildCountLink({
   if (activeBuilds.length > 1) {
     return (
       <Link
-        to="/builds/$repoId"
+        to={buildPath}
         params={{ repoId: repo.repo_id }}
         className={`${className} text-foreground hover:underline`}
         data-testid="build-active-link"
@@ -170,6 +173,7 @@ function ActiveBuildCountLink({
 }
 
 function BuildRepositoryActiveBuildsLive({ repo }: { repo: SourceRepository }) {
+  const executionPath = useOrgScopedPath("/executions/$executionId");
   const executionRows = useExecutionRows();
   const providerRepositoryRows = useRunnerProviderRepositoryRows();
 
@@ -205,7 +209,7 @@ function BuildRepositoryActiveBuildsLive({ repo }: { repo: SourceRepository }) {
       {activeBuilds.map((execution) => (
         <Link
           key={execution.execution_id}
-          to="/executions/$executionId"
+          to={executionPath}
           params={{ executionId: execution.execution_id }}
           className="flex min-h-12 items-center justify-between gap-4 rounded-md border bg-card px-4 py-3 hover:bg-muted/50"
           data-testid="repository-active-build-row"

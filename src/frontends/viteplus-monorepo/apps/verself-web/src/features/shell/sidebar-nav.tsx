@@ -8,6 +8,7 @@ import {
 } from "@verself/ui/components/ui/sidebar";
 import { cn } from "@verself/ui/lib/utils";
 import { isPathActive, type NavEntry } from "./nav-config";
+import { orgPath, useOrgRouteParams, type OrgScopedPath } from "./org-routing";
 
 export function SidebarNavGroup({
   anchor,
@@ -53,6 +54,8 @@ function SidebarNavItem({
   readonly tooltip: string | undefined;
 }) {
   const Icon = entry.icon;
+  const { orgSlug } = useOrgRouteParams();
+  const to = entry.id === "docs" ? entry.to : orgPath(orgSlug, entry.to as OrgScopedPath);
 
   return (
     <SidebarMenuItem>
@@ -61,7 +64,7 @@ function SidebarNavItem({
         className="bg-transparent data-active:bg-sidebar-accent"
         {...(tooltip ? { tooltip } : {})}
         render={
-          <Link to={entry.to} data-testid={`nav-${entry.id}`}>
+          <Link to={to} data-testid={`nav-${entry.id}`}>
             <Icon />
             <span>{entry.label}</span>
           </Link>

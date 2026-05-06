@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useClerk } from "@verself/auth-web/react";
 import { cn } from "@verself/ui/lib/utils";
 import { EVERGREEN_NAV, PRIMARY_NAV, SETTINGS_NAV } from "./nav-config";
+import { orgPath, useOrgRouteParams, type OrgScopedPath } from "./org-routing";
 
 // Hand-rolled command palette. We deliberately avoid cmdk + Radix Dialog:
 // cmdk transitively depends on @radix-ui/react-dialog, which pulls in the
@@ -24,13 +25,13 @@ type CommandEntry = {
   readonly action: CommandAction;
 };
 
-function buildEntries(): readonly CommandEntry[] {
+function buildEntries(orgSlug: string): readonly CommandEntry[] {
   const navEntries: CommandEntry[] = PRIMARY_NAV.map((product) => ({
     id: `nav:${product.id}`,
     section: "Navigation",
     label: `Go to ${product.label}`,
     keywords: `${product.label} ${product.to}`,
-    action: { kind: "navigate", to: product.to },
+    action: { kind: "navigate", to: orgPath(orgSlug, product.to as OrgScopedPath) },
   }));
   const docsEntries: CommandEntry[] = EVERGREEN_NAV.flatMap((entry) =>
     entry.id === "docs"
@@ -50,7 +51,7 @@ function buildEntries(): readonly CommandEntry[] {
     section: "Settings",
     label: `Settings · ${entry.label}`,
     keywords: `settings ${entry.label} ${entry.to}`,
-    action: { kind: "navigate", to: entry.to },
+    action: { kind: "navigate", to: orgPath(orgSlug, entry.to as OrgScopedPath) },
   }));
   const accountEntries: CommandEntry[] = [
     {
@@ -87,13 +88,14 @@ type CommandPaletteControlProps = {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProps) {
   const navigate = useNavigate();
+  const { orgSlug } = useOrgRouteParams();
   const { redirectToSignOut } = useClerk();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
 
-  const allEntries = useMemo(() => buildEntries(), []);
+  const allEntries = useMemo(() => buildEntries(orgSlug), [orgSlug]);
   const filtered = useMemo(
     () => allEntries.filter((entry) => matchesQuery(entry, query)),
     [allEntries, query],

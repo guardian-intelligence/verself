@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSignedInAuth } from "@verself/auth-web/react";
 import { EmptyState } from "~/components/empty-state";
+import { orgPath } from "~/features/shell/org-routing";
 import {
   BuildRepositoryActiveBuildsPanel,
   buildRepositorySlug,
@@ -20,14 +21,14 @@ import {
   SectionTitle,
 } from "@verself/ui/components/ui/page";
 
-export const Route = createFileRoute("/_shell/_authenticated/builds/$repoId")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/builds/$repoId")({
   loader: ({ context }) => loadSourceRepositories(context.queryClient, context.auth),
   component: BuildRepositoryPage,
 });
 
 function BuildRepositoryPage() {
   const auth = useSignedInAuth();
-  const { repoId } = Route.useParams();
+  const { orgSlug, repoId } = Route.useParams();
   const { repositories } = useSuspenseQuery(sourceRepositoriesQuery(auth)).data;
   const repo = repositories.find((candidate) => candidate.repo_id === repoId);
   const title = repo ? buildRepositorySlug(repo) : "Repository not found";
@@ -37,7 +38,7 @@ function BuildRepositoryPage() {
       <PageHeader>
         <PageHeaderContent>
           <PageEyebrow>
-            <Link to="/builds" className="hover:text-foreground">
+            <Link to={orgPath(orgSlug, "/builds")} className="hover:text-foreground">
               Builds
             </Link>
           </PageEyebrow>

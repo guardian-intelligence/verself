@@ -72,12 +72,12 @@ import {
 // User-facing path used by <Link to=...> and navigate({ to }). The internal
 // flattened route ID (which includes the _shell/_authenticated layout
 // segments) is only used by getRouteApi below.
-const GOVERNANCE_ROUTE = "/settings/governance" as const;
+const GOVERNANCE_ROUTE = "." as const;
 
 // getRouteApi gives us the typed useNavigate() without importing the Route
 // factory from the route module, which would create an import cycle
 // (route → components → route).
-const routeApi = getRouteApi("/_shell/_authenticated/settings/governance");
+const routeApi = getRouteApi("/_shell/_authenticated/$orgSlug/settings/governance");
 
 // Time-zone preference lives in localStorage, not the URL: sharing a link
 // should show timestamps in the recipient's zone, not the sender's.

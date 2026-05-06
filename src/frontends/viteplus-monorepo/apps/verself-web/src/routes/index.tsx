@@ -1,5 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { LandingTopBar } from "~/features/landing/landing-top-bar";
+import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
 import { WhyNotToday } from "~/features/why-not-today";
 import { getClientAuthSnapshot } from "~/server-fns/auth";
 
@@ -7,10 +8,13 @@ import { getClientAuthSnapshot } from "~/server-fns/auth";
 // surface doesn't pick up sidebar/topbar product chrome. Signed-in users are
 // redirected straight to the working surface.
 export const Route = createFileRoute("/")({
-  beforeLoad: async () => {
+  beforeLoad: async ({ context }) => {
     const snapshot = await getClientAuthSnapshot();
     if (snapshot.auth.isAuthenticated) {
-      throw redirect({ to: "/executions" });
+      throw redirect({
+        href: await resolveDefaultSignedInPath(context.queryClient, snapshot.auth),
+        replace: true,
+      });
     }
   },
   component: LandingPage,

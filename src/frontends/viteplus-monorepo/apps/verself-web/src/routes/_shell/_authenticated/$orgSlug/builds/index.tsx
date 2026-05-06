@@ -13,7 +13,7 @@ import {
 import { BuildRepositoriesPanel } from "~/features/source/components";
 import { loadBuildsDashboard } from "~/features/source/queries";
 
-export const Route = createFileRoute("/_shell/_authenticated/builds/")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/builds/")({
   loader: ({ context }) => loadBuildsDashboard(context.queryClient, context.auth),
   component: BuildsPage,
 });

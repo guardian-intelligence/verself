@@ -21,6 +21,7 @@ import {
 import { ErrorCallout } from "~/components/error-callout";
 import { usePlanCardActionMutation } from "~/features/billing/mutations";
 import { loadSubscribePage } from "~/features/billing/queries";
+import { orgPath } from "~/features/shell/org-routing";
 import {
   assertUnreachable,
   deriveAllPlanCards,
@@ -32,12 +33,13 @@ import {
 import { useBillingAccount } from "~/features/billing/use-billing-account";
 import { formatCents, formatDateTimeUTC } from "~/lib/format";
 
-export const Route = createFileRoute("/_shell/_authenticated/settings/billing/subscribe")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/billing/subscribe")({
   loader: ({ context }) => loadSubscribePage(context.queryClient, context.auth),
   component: SubscribePage,
 });
 
 function SubscribePage() {
+  const { orgSlug } = Route.useParams();
   const initial = Route.useLoaderData();
   const { account, snapshot } = useBillingAccount({
     initialPlans: initial.plans,
@@ -52,7 +54,7 @@ function SubscribePage() {
     <PageSections>
       <PageSection>
         <PageEyebrow>
-          <Link to="/settings/billing" className="hover:text-foreground">
+          <Link to={orgPath(orgSlug, "/settings/billing")} className="hover:text-foreground">
             ← Back to billing
           </Link>
         </PageEyebrow>

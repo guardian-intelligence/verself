@@ -42,7 +42,7 @@ const TIMEZONE_OPTIONS = [
 ] as const;
 const DEFAULT_SURFACE_OPTIONS = ["executions", "schedules", "settings/profile"] as const;
 
-export const Route = createFileRoute("/_shell/_authenticated/settings/profile")({
+export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/profile")({
   loader: ({ context }) => loadProfilePage(context.queryClient, context.auth),
   component: ProfileSettings,
 });

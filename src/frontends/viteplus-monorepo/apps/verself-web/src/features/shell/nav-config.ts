@@ -125,5 +125,13 @@ export const SETTINGS_NAV: readonly SettingsNavEntry[] = SETTINGS_NAV_GROUPS.fla
 );
 
 export function isPathActive(currentPath: string, entry: { matchPrefix: string }): boolean {
-  return currentPath === entry.matchPrefix || currentPath.startsWith(`${entry.matchPrefix}/`);
+  const path = stripOrganizationSegment(currentPath);
+  return path === entry.matchPrefix || path.startsWith(`${entry.matchPrefix}/`);
+}
+
+function stripOrganizationSegment(path: string): string {
+  const segments = path.split("/").filter(Boolean);
+  const [first, ...rest] = segments;
+  if (!first || first === "docs") return path;
+  return rest.length > 0 ? `/${rest.join("/")}` : "/";
 }

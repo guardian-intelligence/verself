@@ -1,4 +1,4 @@
-import { createMiddleware, createServerFn } from "@tanstack/react-start";
+import { createMiddleware, createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import * as v from "valibot";
 import type { AuthenticatedAuthSnapshot } from "@verself/auth-web/isomorphic";
 
@@ -39,11 +39,11 @@ export const selectActiveOrganization = createServerFn({ method: "POST" })
     return selectIdentityOrganization(data);
   });
 
-export async function getAccessTokenForAudience(
+export const getAccessTokenForAudience = createServerOnlyFn(async function getAccessTokenForAudience(
   context: ConsoleAuthContext | undefined,
   audience: string,
   options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
 ): Promise<string> {
   const { getIdentityAccessTokenForAudience } = await import("./auth.server");
   return getIdentityAccessTokenForAudience(context, audience, options);
-}
+});
