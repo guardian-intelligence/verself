@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
-import { requireEnv, requireURLFromEnv } from "@verself/web-env";
+import { readFileSync } from "node:fs";
+import { requireURLFromEnv } from "@verself/web-env";
 import {
   IAMApiError,
   getMembers as getMembersRequest,
@@ -186,14 +187,35 @@ const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
   "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
 );
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
-const IAM_SERVICE_AUTH_AUDIENCE = requireEnv("IAM_SERVICE_AUTH_AUDIENCE");
-const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE = requireEnv("SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE");
-const PROFILE_SERVICE_AUTH_AUDIENCE = requireEnv("PROFILE_SERVICE_AUTH_AUDIENCE");
-const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireEnv("NOTIFICATIONS_SERVICE_AUTH_AUDIENCE");
-const PROJECTS_SERVICE_AUTH_AUDIENCE = requireEnv("PROJECTS_SERVICE_AUTH_AUDIENCE");
-const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireEnv(
+const IAM_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("IAM_SERVICE_AUTH_AUDIENCE");
+const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
+  "SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE",
+);
+const PROFILE_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("PROFILE_SERVICE_AUTH_AUDIENCE");
+const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
+  "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE",
+);
+const PROJECTS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("PROJECTS_SERVICE_AUTH_AUDIENCE");
+const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
   "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
 );
+
+function requireCredentialEnv(name: string): string {
+  const inlineValue = process.env[name]?.trim();
+  if (inlineValue) {
+    return inlineValue;
+  }
+  const pathEnvName = `VERSELF_CRED_${name}`;
+  const path = process.env[pathEnvName]?.trim();
+  if (!path) {
+    throw new Error(`${name} or ${pathEnvName} is required`);
+  }
+  const value = readFileSync(path, "utf8").trim();
+  if (!value) {
+    throw new Error(`${pathEnvName} points to an empty credential`);
+  }
+  return value;
+}
 
 export { IAMApiError, isIAMApiError };
 export { GovernanceApiError, isGovernanceApiError };

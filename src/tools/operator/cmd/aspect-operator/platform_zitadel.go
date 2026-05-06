@@ -117,6 +117,12 @@ func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 		{ComponentName: "sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
 		{ComponentName: "secrets-service", ProjectName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
 		{ComponentName: "mailbox-service", ProjectName: "mailbox-service", CredentialPath: "/etc/credstore/mailbox-service/auth-audience", Group: "mailbox_service"},
+		{ComponentName: "verself-web.iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/iam-service-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/notifications-service-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/profile-service-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/projects-service-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/source-code-hosting-service-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/verself-web/sandbox-rental-auth-audience", Group: "verself-web"},
 	}
 }
 
