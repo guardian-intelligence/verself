@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import {
-  AdditiveBlending,
   GLSL3,
   Mesh,
   PerspectiveCamera,
@@ -22,39 +21,55 @@ interface CanvasProps {
 const wavefieldVertex = /* glsl */ `
 uniform float uTime;
 uniform float uMotion;
+uniform float uReveal;
 
 out float vH;
 out vec2 vP;
+out vec2 vQ;
 
-float wellHeight(vec2 p, float t) {
-  // Plane (-1..1, -1..1). After mesh.rotation.x = -PI/2, original local Y maps
-  // to world -Z, so local y = -1 sits closest to the camera at world Z = +1.
-  // The V apex lives there; the two wells diverge as y grows toward +1.
-  float zNorm = clamp((p.y + 1.0) * 0.5, 0.0, 1.0);
-  float spread = mix(0.0, 0.92, pow(zNorm, 0.85));
-  float sigma = mix(0.16, 0.30, zNorm);
-  float depth = mix(1.65, 0.78, zNorm);
+float vTerrain(vec2 p, float t) {
+  // Plane is parameterized in (-1..1, -1..1). After the mesh's -PI/2 X
+  // rotation, local +y maps to world -z (away from camera) and local -y
+  // maps to world +z (closest to the camera). The trough opens toward the
+  // camera: deepest at the back (local y = +1), wider and shallower as y
+  // decreases toward the foreground.
+  float zNorm = clamp((1.0 - p.y) * 0.5, 0.0, 1.0);
 
-  float wellL = exp(-pow((p.x + spread) / sigma, 2.0));
-  float wellR = exp(-pow((p.x - spread) / sigma, 2.0));
-  float h = -depth * (wellL + wellR);
+  // Single soft trough — a wide quadratic basin rather than two sharp
+  // Gaussians. Width grows as the trough comes forward, so its silhouette
+  // reads as a single converging valley instead of a double-V notch.
+  float width = mix(0.32, 1.20, pow(zNorm, 0.55));
+  float depth = mix(0.95, 0.45, zNorm);
+  float trough = -depth * exp(-pow(p.x / width, 2.0));
 
-  float r = length(p - vec2(0.0, -1.0));
-  float falloff = exp(-r * 0.55);
-  h += 0.085 * sin(r * 13.0 - t * 1.4) * falloff;
-  h += 0.04 * sin(r * 6.0 + t * 0.7) * falloff;
-  h += 0.025 * sin(p.y * 3.5 + t * 0.35);
-  return h;
+  // Rolling terrain that scrolls toward the camera (decreasing local y over
+  // time), so the surface reads as a flyover rather than waves pulsing in
+  // place. Multi-octave layered sines stay cheap and tile cleanly.
+  vec2 q = vec2(p.x, p.y + t * 0.32);
+  float terrain =
+      0.18 * sin(q.x * 3.1 + q.y * 1.9)
+    + 0.10 * sin(q.x * 6.4 - q.y * 3.7 + 1.3)
+    + 0.05 * sin(q.x * 12.0 + q.y * 7.5 - 0.6);
+
+  // Suppress terrain inside the trough so the central valley stays clean.
+  float troughMask = exp(-pow(p.x / (width * 1.25), 2.0));
+  terrain *= (1.0 - troughMask * 0.75);
+
+  return trough + terrain;
 }
 
 void main() {
   vec2 p = position.xy;
   float t = uTime * uMotion;
-  float h = wellHeight(p, t);
-  vH = h;
+  float h = vTerrain(p, t);
+  vH = h * uReveal;
   vP = p;
-  // Local Z displacement becomes world Y (up) after the mesh's -PI/2 X rotation.
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position.x, position.y, h, 1.0);
+  // Scrolled coordinate exposed to the fragment shader so contour stripes
+  // running across the direction of motion advance with the terrain.
+  vQ = vec2(p.x, p.y + t * 0.32);
+
+  float revealH = h * uReveal;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position.x, position.y, revealH, 1.0);
 }
 `;
 
@@ -62,60 +77,64 @@ const wavefieldFragment = /* glsl */ `
 precision highp float;
 in float vH;
 in vec2 vP;
-uniform float uTime;
+in vec2 vQ;
 uniform float uActive;
+uniform float uReveal;
 out vec4 fragColor;
 
 void main() {
-  float depthRaw = clamp(-vH, 0.0, 2.4);
-  float depthN = smoothstep(0.0, 1.5, depthRaw);
+  float depthRaw = clamp(-vH, 0.0, 2.0);
+  float depthN = smoothstep(0.0, 1.3, depthRaw);
   vec3 violet = vec3(0.42, 0.30, 0.95);
   vec3 cyan   = vec3(0.30, 0.78, 1.10);
   vec3 base   = mix(violet, cyan, depthN);
 
-  // Concentric rings emanating from the V apex (vP = (0, -1)). The mesh
-  // displaces each vertex by wellHeight, so rings naturally bend down into
-  // the trough and form the gravitational-contour look from the reference.
-  float r_apex = length(vP - vec2(0.0, -1.0));
-  float ringPhase = r_apex * 9.0 - uTime * 0.55;
-  float ring = smoothstep(0.10, 0.0, abs(fract(ringPhase) - 0.5));
+  // Iso-height contour lines: bands of constant elevation. Around the
+  // single trough they curl into concentric rings naturally; out on the
+  // flanking terrain they trace the rolling slopes.
+  float contourPhase = vH * 7.0;
+  float contour = abs(fract(contourPhase) - 0.5);
+  float contourLine = 1.0 - smoothstep(0.0, 0.08, contour);
 
-  // Cross weave at constant x to give the wireframe-grid feel.
-  float xMod = fract(vP.x * 18.0);
+  // Lateral grid: lines parallel to the direction of motion. Anchored to
+  // local x so they don't slide as terrain scrolls, giving the eye a
+  // stationary reference frame.
+  float xMod = fract(vP.x * 12.0);
   float xBand = smoothstep(0.05, 0.0, abs(xMod - 0.5));
 
-  vec3 col = base * (0.18 + ring * 1.55 + xBand * 0.42);
-  col += cyan * smoothstep(0.55, 1.6, depthRaw) * 0.55;
+  // Transverse grid: lines perpendicular to motion, scrolling in vQ so the
+  // grid sweeps toward the camera and reinforces the flyover feel.
+  float yMod = fract(vQ.y * 5.5);
+  float yBand = smoothstep(0.05, 0.0, abs(yMod - 0.5));
 
-  float vy = smoothstep(1.10, -0.20, vP.y);
+  vec3 col = base * (0.18 + contourLine * 1.30 + xBand * 0.45 + yBand * 0.40);
+  col += cyan * smoothstep(0.55, 1.4, depthRaw) * 0.45;
+
+  // Vignette: full intensity at the front (bottom of screen, vP.y = -1) and
+  // fading to black at the back (top of screen, vP.y = +1) so the trough
+  // dissolves into the horizon instead of cutting off at the plane edge.
+  float vy = 1.0 - smoothstep(-0.30, 1.05, vP.y);
   float vx = smoothstep(2.20, 0.10, abs(vP.x));
   float vignette = vx * vy;
-  float alpha = uActive * vignette * clamp(0.30 + ring * 1.10 + depthN * 0.50, 0.0, 1.0);
+
+  // Grow-in curtain — wipes from the front of the plane (bottom of screen)
+  // toward the back as uReveal advances, so the surface appears to rise
+  // into frame from below rather than fade in flat.
+  float curtainEdge = mix(-1.4, 1.4, uReveal);
+  float curtain = 1.0 - smoothstep(curtainEdge - 0.10, curtainEdge + 0.10, vP.y);
+
+  float alpha = uActive * vignette * curtain *
+                clamp(0.28 + contourLine * 0.95 + depthN * 0.40, 0.0, 1.0);
   fragColor = vec4(col, alpha);
 }
 `;
 
-const orbVertex = /* glsl */ `
-out vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
+const REVEAL_DURATION_MS = 1600;
 
-const orbFragment = /* glsl */ `
-precision highp float;
-in vec2 vUv;
-uniform float uActive;
-out vec4 fragColor;
-void main() {
-  float r = length(vUv - 0.5) * 2.0;
-  float core = smoothstep(0.32, 0.0, r);
-  float halo = exp(-r * r * 3.4);
-  vec3 col = vec3(1.0) * core + vec3(0.78, 0.92, 1.10) * halo;
-  fragColor = vec4(col * uActive, clamp(core + halo * 0.65, 0.0, 1.0) * uActive);
+function easeOutCubic(t: number): number {
+  const clamped = Math.min(Math.max(t, 0), 1);
+  return 1 - Math.pow(1 - clamped, 3);
 }
-`;
 
 export function WhyNotTodayCanvas({ active, frame, onDegraded }: CanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -158,14 +177,19 @@ export function WhyNotTodayCanvas({ active, frame, onDegraded }: CanvasProps) {
     host.append(renderer.domElement);
 
     const scene = new Scene();
-    const camera = new PerspectiveCamera(56, 1, 0.1, 50);
-    camera.position.set(0, 1.55, 3.2);
-    camera.lookAt(0, -0.3, 0.1);
+    // Camera tilt is the dominant lever for where the trough's converging
+    // apex lands in screen space. Pitched downward enough that the apex
+    // falls in the upper third of the viewport (just under the headline),
+    // and the front of the trough fills the bottom of the viewport.
+    const camera = new PerspectiveCamera(54, 1, 0.1, 50);
+    camera.position.set(0, 1.45, 3.4);
+    camera.lookAt(0, -1.85, -1.4);
 
     const wavefieldUniforms = {
       uTime: { value: 0 },
       uActive: { value: activeRef.current ? 1 : 0 },
       uMotion: { value: 1 },
+      uReveal: { value: 0 },
     };
     const wavefieldMaterial = new ShaderMaterial({
       vertexShader: wavefieldVertex,
@@ -182,27 +206,9 @@ export function WhyNotTodayCanvas({ active, frame, onDegraded }: CanvasProps) {
     wavefield.frustumCulled = false;
     scene.add(wavefield);
 
-    const orbUniforms = {
-      uActive: { value: activeRef.current ? 1 : 0 },
-    };
-    const orbMaterial = new ShaderMaterial({
-      vertexShader: orbVertex,
-      fragmentShader: orbFragment,
-      uniforms: orbUniforms,
-      glslVersion: GLSL3,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-      blending: AdditiveBlending,
-    });
-    const orbGeometry = new PlaneGeometry(0.55, 0.55);
-    const orb = new Mesh(orbGeometry, orbMaterial);
-    orb.position.set(0, 0.22, 0.95);
-    orb.frustumCulled = false;
-    scene.add(orb);
-
     let animationFrame = 0;
     let lastFrame = performance.now();
+    const startedAt = performance.now();
     let degraded = false;
 
     const markDegraded = (reason: DegradedReason, error?: unknown) => {
@@ -225,8 +231,6 @@ export function WhyNotTodayCanvas({ active, frame, onDegraded }: CanvasProps) {
       renderer.setPixelRatio(dpr);
       camera.aspect = current.viewport.w / Math.max(current.viewport.h, 1);
       camera.updateProjectionMatrix();
-      // Billboard the orb so it always faces the camera.
-      orb.lookAt(camera.position);
     };
 
     const render = (now: number) => {
@@ -234,7 +238,7 @@ export function WhyNotTodayCanvas({ active, frame, onDegraded }: CanvasProps) {
       syncGeometry();
       const isActive = activeRef.current ? 1 : 0;
       wavefieldUniforms.uActive.value = isActive;
-      orbUniforms.uActive.value = isActive;
+      wavefieldUniforms.uReveal.value = easeOutCubic((now - startedAt) / REVEAL_DURATION_MS);
       if (activeRef.current) {
         const deltaMs = Math.min(now - lastFrame, 50);
         wavefieldUniforms.uTime.value += deltaMs / 1000;
@@ -256,11 +260,8 @@ export function WhyNotTodayCanvas({ active, frame, onDegraded }: CanvasProps) {
       window.cancelAnimationFrame(animationFrame);
       renderer.domElement.removeEventListener("webglcontextlost", handleContextLost);
       scene.remove(wavefield);
-      scene.remove(orb);
       wavefieldGeometry.dispose();
       wavefieldMaterial.dispose();
-      orbGeometry.dispose();
-      orbMaterial.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };

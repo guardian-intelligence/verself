@@ -39,6 +39,9 @@ export function WhyNotToday({ motion }: WhyNotTodayProps) {
   );
 }
 
+// SSR / reduced-motion / no-WebGL placeholder. Static cyan/violet wash that
+// matches the live shader's palette so the unauthed surface degrades to a
+// recognizable still rather than a blank black slab.
 function WhyNotTodayStill() {
   return (
     <div
