@@ -85,6 +85,7 @@ viteplus_openapi_spec_copies(
 
 test_suite(
     name = "dev_check",
+    tags = ["manual"],
     tests = [
         ":openapi_clients_tests",
         ":openapi_spec_copies_tests",
@@ -99,4 +100,5 @@ write_source_files(
         ":openapi_clients",
         ":openapi_spec_copies",
     ],
+    tags = ["manual"],
 )

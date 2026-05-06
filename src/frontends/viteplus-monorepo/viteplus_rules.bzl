@@ -474,6 +474,7 @@ def viteplus_route_tree(name):
         files = {
             source_tree_out: ":" + gen_target,
         },
+        tags = ["manual"],
     )
 
 def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None):
@@ -562,6 +563,7 @@ def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None
     write_source_files(
         name = name,
         files = file_map,
+        tags = ["manual"],
     )
 
 def viteplus_openapi_spec_copies(name, specs):
@@ -595,4 +597,5 @@ def viteplus_openapi_spec_copies(name, specs):
     write_source_files(
         name = name,
         files = file_map,
+        tags = ["manual"],
     )

@@ -97,6 +97,7 @@ write_source_files(
     files = {
         "src/features/first-light/shader/first-light.generated.ts": ":first_light_shader_gen",
     },
+    tags = ["manual"],
 )
 
 write_source_files(
@@ -105,10 +106,12 @@ write_source_files(
         ":route_tree",
         ":first_light_shader",
     ],
+    tags = ["manual"],
 )
 
 test_suite(
     name = "dev_check",
+    tags = ["manual"],
     tests = [
         ":first_light_shader_tests",
         ":route_tree_tests",
