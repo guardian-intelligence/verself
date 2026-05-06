@@ -69,7 +69,7 @@ func cmdDevVerselfWeb(args []string) error {
 		summary["state"] = *stateFile
 		printDevSummary(summary)
 		cmd := exec.CommandContext(rt.Ctx, "vp", "run", "@verself/verself-web#dev")
-		cmd.Dir = filepath.Join(rt.RepoRoot, "src", "viteplus-monorepo")
+		cmd.Dir = filepath.Join(rt.RepoRoot, "src", "frontends", "viteplus-monorepo")
 		cmd.Env = envMapToList(env)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
