@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,17 +19,34 @@ import (
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
 
+// Nomad's HTTP API on the worker. We dial through the operator SSH session
+// rather than opening a forwarded local listener — the lookup is one-shot at
+// dev startup and doesn't need a stable port.
+const nomadHTTPRemoteAddr = "127.0.0.1:4646"
+
 type devOptions struct {
 	operatorRuntimeOptions
 }
 
 type tunnelSpec struct {
-	Name      string
-	EnvKey    string
-	Remote    string
-	Choices   []int
-	LocalPort int
+	Name string
+	// EnvKey is the env var that receives the resulting http://127.0.0.1:<localPort>.
+	EnvKey string
+	// NomadService is the Nomad service name to resolve (e.g. iam-service-public-http).
+	// When empty, RemotePort is used as a static target — for components that don't
+	// register with Nomad (Electric, the OTLP collector).
+	NomadService string
+	RemotePort   int
+	Choices      []int
+	LocalPort    int
 }
+
+// placeholderUnreachableURL is what we set an env var to when the backing
+// Nomad service isn't registered (e.g. not yet deployed in this environment).
+// .invalid is reserved by RFC 6761 and never resolves, so any code that
+// actually uses the URL fails loudly at request time instead of silently
+// hitting a stale port.
+const placeholderUnreachableURL = "http://service-not-registered.invalid"
 
 func cmdDev(args []string) error {
 	if len(args) == 0 {
@@ -90,32 +110,55 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 	if err != nil {
 		return nil, nil, err
 	}
+	// Product services register Nomad-allocated ports under stable service
+	// names (see each service's nomad.hcl). verself-web's SSR fetches use the
+	// Zitadel-authed public-http variant, not the SPIFFE-mTLS internal one.
+	// Electric and the OTLP collector aren't Nomad-managed; they keep static
+	// remote ports.
 	tunnels := []tunnelSpec{
-		{Name: "sandbox-rental-service", EnvKey: "SANDBOX_RENTAL_SERVICE_BASE_URL", Remote: "127.0.0.1:4243", Choices: []int{14243, 24243, 34243, 44243, 54243}},
-		{Name: "iam-service", EnvKey: "IAM_SERVICE_BASE_URL", Remote: "127.0.0.1:4248", Choices: []int{14248, 24248, 34248, 44248, 54248}},
-		{Name: "profile-service", EnvKey: "PROFILE_SERVICE_BASE_URL", Remote: "127.0.0.1:4258", Choices: []int{14258, 24258, 34258, 44258, 54258}},
-		{Name: "governance-service", EnvKey: "GOVERNANCE_SERVICE_BASE_URL", Remote: "127.0.0.1:4250", Choices: []int{14250, 24250, 34250, 44250, 54250}},
-		{Name: "notifications-service", EnvKey: "NOTIFICATIONS_SERVICE_BASE_URL", Remote: "127.0.0.1:4260", Choices: []int{14260, 24260, 34260, 44260, 54260}},
-		{Name: "projects-service", EnvKey: "PROJECTS_SERVICE_BASE_URL", Remote: "127.0.0.1:4264", Choices: []int{14264, 24264, 34264, 44264, 54264}},
-		{Name: "source-code-hosting-service", EnvKey: "SOURCE_CODE_HOSTING_SERVICE_BASE_URL", Remote: "127.0.0.1:4261", Choices: []int{14261, 24261, 34261, 44261, 54261}},
-		{Name: "Electric", EnvKey: "ELECTRIC_BASE_URL", Remote: "127.0.0.1:3010", Choices: []int{13010, 23010, 33010, 43010, 53010}},
-		{Name: "Electric notifications", EnvKey: "ELECTRIC_NOTIFICATIONS_BASE_URL", Remote: "127.0.0.1:3012", Choices: []int{13012, 23012, 33012, 43012, 53012}},
-		{Name: "OTLP HTTP", EnvKey: "OTEL_EXPORTER_OTLP_ENDPOINT", Remote: "127.0.0.1:4318", Choices: []int{14318, 24318, 34318, 44318, 54318}},
+		{Name: "sandbox-rental-service", EnvKey: "SANDBOX_RENTAL_SERVICE_BASE_URL", NomadService: "sandbox-rental-public-http", Choices: []int{14243, 24243, 34243, 44243, 54243}},
+		{Name: "iam-service", EnvKey: "IAM_SERVICE_BASE_URL", NomadService: "iam-service-public-http", Choices: []int{14248, 24248, 34248, 44248, 54248}},
+		{Name: "profile-service", EnvKey: "PROFILE_SERVICE_BASE_URL", NomadService: "profile-service-public-http", Choices: []int{14258, 24258, 34258, 44258, 54258}},
+		{Name: "governance-service", EnvKey: "GOVERNANCE_SERVICE_BASE_URL", NomadService: "governance-service-public-http", Choices: []int{14250, 24250, 34250, 44250, 54250}},
+		{Name: "notifications-service", EnvKey: "NOTIFICATIONS_SERVICE_BASE_URL", NomadService: "notifications-service-public-http", Choices: []int{14260, 24260, 34260, 44260, 54260}},
+		{Name: "projects-service", EnvKey: "PROJECTS_SERVICE_BASE_URL", NomadService: "projects-service-public-http", Choices: []int{14264, 24264, 34264, 44264, 54264}},
+		{Name: "source-code-hosting-service", EnvKey: "SOURCE_CODE_HOSTING_SERVICE_BASE_URL", NomadService: "source-code-hosting-service-public-http", Choices: []int{14261, 24261, 34261, 44261, 54261}},
+		{Name: "Electric", EnvKey: "ELECTRIC_BASE_URL", RemotePort: 3010, Choices: []int{13010, 23010, 33010, 43010, 53010}},
+		{Name: "Electric notifications", EnvKey: "ELECTRIC_NOTIFICATIONS_BASE_URL", RemotePort: 3012, Choices: []int{13012, 23012, 33012, 43012, 53012}},
+		{Name: "OTLP HTTP", EnvKey: "OTEL_EXPORTER_OTLP_ENDPOINT", RemotePort: 4318, Choices: []int{14318, 24318, 34318, 44318, 54318}},
 	}
+	missing := map[string]bool{}
 	for i := range tunnels {
-		port, err := chooseLocalPort(devPortEnvName(tunnels[i].EnvKey), tunnels[i].Choices)
+		spec := &tunnels[i]
+		port, err := chooseLocalPort(devPortEnvName(spec.EnvKey), spec.Choices)
 		if err != nil {
 			return nil, nil, err
 		}
-		tunnels[i].LocalPort = port
-		if !printOnly {
-			forward, err := rt.SSH.ForwardLocal(rt.Ctx, tunnels[i].Name, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), tunnels[i].Remote)
-			if err != nil {
-				return nil, nil, err
+		spec.LocalPort = port
+		if printOnly {
+			continue
+		}
+		var remote string
+		if spec.NomadService != "" {
+			addr, lookupErr := lookupNomadService(rt.Ctx, rt.SSH, spec.NomadService)
+			if lookupErr != nil {
+				if errors.Is(lookupErr, errNomadServiceNotRegistered) {
+					fmt.Fprintf(os.Stderr, "warning: Nomad service %q not registered; %s tunnel skipped (env set to placeholder)\n", spec.NomadService, spec.Name)
+					missing[spec.EnvKey] = true
+					continue
+				}
+				return nil, nil, fmt.Errorf("resolve %s: %w", spec.NomadService, lookupErr)
 			}
-			if err := waitForLocalTCP(forward.ListenAddr); err != nil {
-				return nil, nil, err
-			}
+			remote = addr
+		} else {
+			remote = net.JoinHostPort("127.0.0.1", strconv.Itoa(spec.RemotePort))
+		}
+		forward, err := rt.SSH.ForwardLocal(rt.Ctx, spec.Name, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), remote)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := waitForLocalTCP(forward.ListenAddr); err != nil {
+			return nil, nil, err
 		}
 	}
 	appPort, err := chooseLocalPort("CONSOLE_DEV_LOCAL_APP_PORT", []int{4244, 5244, 6244, 7244, 8244})
@@ -155,8 +198,11 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 		env[key] = firstNonEmpty(os.Getenv(key), jobEnv[key])
 	}
 	for _, tunnel := range tunnels {
-		scheme := "http"
-		env[tunnel.EnvKey] = fmt.Sprintf("%s://127.0.0.1:%d", scheme, tunnel.LocalPort)
+		if missing[tunnel.EnvKey] {
+			env[tunnel.EnvKey] = placeholderUnreachableURL
+			continue
+		}
+		env[tunnel.EnvKey] = fmt.Sprintf("http://127.0.0.1:%d", tunnel.LocalPort)
 	}
 	env["ELECTRIC_API_SECRET"] = firstNonEmpty(os.Getenv("ELECTRIC_API_SECRET"), electricSecret)
 	env["ELECTRIC_NOTIFICATIONS_API_SECRET"] = firstNonEmpty(os.Getenv("ELECTRIC_NOTIFICATIONS_API_SECRET"), electricNotificationsSecret)
@@ -260,6 +306,56 @@ func ensureLocalPortFree(port int) error {
 		return fmt.Errorf("local port %d is already in use", port)
 	}
 	return ln.Close()
+}
+
+// errNomadServiceNotRegistered means Nomad's API responded successfully but
+// returned no entries — the service either isn't deployed or its allocations
+// are unhealthy.
+var errNomadServiceNotRegistered = errors.New("nomad service not registered")
+
+type nomadServiceEntry struct {
+	Address string `json:"Address"`
+	Port    int    `json:"Port"`
+}
+
+// lookupNomadService resolves a Nomad service name to a host:port using the
+// Nomad HTTP API at 127.0.0.1:4646, dialed through the operator SSH session.
+// Returns the first registered allocation; multi-allocation services are
+// fronted by HAProxy in production, so the dev shortcut picking one is fine.
+func lookupNomadService(ctx context.Context, ssh *opruntime.SSHClient, service string) (string, error) {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return ssh.DialContext(ctx, "tcp", nomadHTTPRemoteAddr)
+		},
+		DisableKeepAlives: true,
+	}
+	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+
+	url := "http://" + nomadHTTPRemoteAddr + "/v1/service/" + service
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("build nomad request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("query nomad: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("nomad %s returned %d", service, resp.StatusCode)
+	}
+	var entries []nomadServiceEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return "", fmt.Errorf("decode nomad response: %w", err)
+	}
+	if len(entries) == 0 {
+		return "", errNomadServiceNotRegistered
+	}
+	entry := entries[0]
+	if entry.Address == "" || entry.Port == 0 {
+		return "", fmt.Errorf("nomad %s entry missing address/port", service)
+	}
+	return net.JoinHostPort(entry.Address, strconv.Itoa(entry.Port)), nil
 }
 
 func waitForLocalTCP(addr string) error {
