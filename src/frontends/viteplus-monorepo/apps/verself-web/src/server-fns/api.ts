@@ -143,9 +143,11 @@ import {
   getPlans as getPlansRequest,
   getStatement as getStatementRequest,
   getContracts as getContractsRequest,
+  listRuns as listRunsRequest,
   listExecutionSchedules as listExecutionSchedulesRequest,
   pauseSchedule as pauseScheduleRequest,
   resumeSchedule as resumeScheduleRequest,
+  runListQuerySchema,
   statementQuerySchema,
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
@@ -175,6 +177,9 @@ import type {
   PortalRequest,
   ContractRequest,
   ContractsResponse,
+  RunListQuery,
+  RunListQueryInput,
+  RunsPage,
 } from "~/lib/sandbox-rental-api";
 import { consoleAuthMiddleware, getAccessTokenForAudience, type ConsoleAuthContext } from "./auth";
 
@@ -276,6 +281,9 @@ export type {
   ContractRequest,
   ContractChangeRequest,
   ContractsResponse,
+  RunListQuery,
+  RunListQueryInput,
+  RunsPage,
 };
 export type {
   InviteMemberRequest,
@@ -824,6 +832,16 @@ export const getExecution = createServerFn({ method: "GET" })
     return getExecutionRequest({
       ...(await sandboxRentalClientOptions(context)),
       executionId: data.executionId,
+    });
+  });
+
+export const listRuns = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(runListQuerySchema))
+  .handler(async ({ context, data }) => {
+    return listRunsRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      ...(data === undefined ? {} : { query: data }),
     });
   });
 

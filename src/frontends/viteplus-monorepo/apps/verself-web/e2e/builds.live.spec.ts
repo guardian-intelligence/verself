@@ -5,7 +5,7 @@ test.describe("Console Builds", () => {
     await ensureTestUserExists();
   });
 
-  test("shows simple repository build rows", async ({ app }) => {
+  test("shows deployments dashboard rows", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -13,58 +13,34 @@ test.describe("Console Builds", () => {
       app.resetBrowserSignals();
 
       run.detail_url = "/builds";
-      await app.expectSSRHTML("/builds", ["Builds", "Repositories"]);
+      await app.expectSSRHTML("/builds", ["Deployments", "Select Date Range"]);
       await app.assertStableRoute({
         path: "/builds",
-        ready: app.page.getByRole("heading", { name: "Builds", exact: true }),
+        ready: app.page.getByRole("button", { name: "Select Date Range", exact: true }),
         stableContent: app.page.locator("main").last(),
-        expectedText: ["Repositories"],
+        expectedText: ["Deployments", "Select Date Range", "Status"],
       });
+      expect(new URL(app.page.url()).searchParams.get("from")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(new URL(app.page.url()).searchParams.get("to")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-      const emptyState = app.page.getByText("No repositories", { exact: true });
+      const emptyState = app.page.getByText("No deployments found", { exact: true });
       if (await emptyState.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
-        await expect(app.page.getByText("Add a repository to run builds.")).toBeVisible();
-        run.builds_state = "no_repositories";
+        await expect(
+          app.page.getByText("New GitHub runner and scheduled sandbox runs"),
+        ).toBeVisible();
+        run.builds_state = "no_deployments";
       } else {
-        const rows = app.page.getByTestId("build-repository-row");
+        const rows = app.page.getByTestId("build-run-row");
         await expect(rows.first()).toBeVisible();
         const firstRow = rows.first();
-        await expect(firstRow.getByTestId("build-repository-slug")).toContainText("/");
-
-        const repoId = await firstRow.getAttribute("data-repo-id");
-        const repoSlug = await firstRow.getAttribute("data-repo-slug");
-        const activeBuildCountText = await firstRow.getAttribute("data-active-build-count");
-        expect(repoId, "repository row must expose a repo id for the builds route").toBeTruthy();
-        expect(repoSlug, "repository row must expose the slug shown to users").toContain("/");
-        expect(
-          activeBuildCountText,
-          "repository row must expose the live active build count",
-        ).toMatch(/^\d+$/);
-
-        const activeBuildCount = Number.parseInt(activeBuildCountText ?? "", 10);
-        const activeBuildLabel = `${activeBuildCount} ${
-          activeBuildCount === 1 ? "active build" : "active builds"
-        }`;
-        await expect(firstRow).toContainText(activeBuildLabel);
-        const activeLink = firstRow.getByTestId("build-active-link");
-        if (activeBuildCount === 0) {
-          await expect(activeLink).toHaveCount(0);
-        } else if (activeBuildCount === 1) {
-          const href = await activeLink.getAttribute("href");
-          expect(href).toContain("/executions/");
-        } else {
-          const href = await activeLink.getAttribute("href");
-          expect(href).toContain(`/builds/${repoId}`);
-        }
-
-        await app.expectSSRHTML(`/builds/${repoId}`, ["Builds", repoSlug ?? ""]);
-        await app.assertStableRoute({
-          path: `/builds/${repoId}`,
-          ready: app.page.getByRole("heading", { name: repoSlug ?? "", exact: true }),
-          stableContent: app.page.locator("main").last(),
-          expectedText: ["Active Builds"],
-        });
-        run.builds_state = "repositories";
+        await expect(firstRow.getByTestId("build-run-link")).toHaveAttribute(
+          "href",
+          /\/executions\//,
+        );
+        await expect(firstRow.getByTestId("build-run-status")).toContainText(
+          /Ready|Error|Building|Queued|Canceled/i,
+        );
+        run.builds_state = "deployments";
       }
 
       await app.page.screenshot({

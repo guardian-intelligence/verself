@@ -1,6 +1,7 @@
 import * as v from "valibot";
 import { createClient, type Client } from "../__generated/sandbox-rental-api/client/index.js";
 import {
+  type ListRunsData,
   cancelBillingContract,
   createBillingCheckout,
   createBillingContract,
@@ -14,6 +15,7 @@ import {
   listBillingPlans,
   listBillingContracts,
   listExecutionSchedules as listGeneratedExecutionSchedules,
+  listRuns as listGeneratedRuns,
   pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
   resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
 } from "../__generated/sandbox-rental-api/index.js";
@@ -46,6 +48,8 @@ import {
   vListBillingPlansResponse,
   vListBillingContractsResponse,
   vListExecutionSchedulesResponse,
+  vListRunsQuery,
+  vListRunsResponse,
   vPauseExecutionScheduleHeaders,
   vPauseExecutionSchedulePath,
   vPauseExecutionScheduleResponse,
@@ -115,6 +119,10 @@ function createSandboxRentalClient(options: SandboxRentalClientOptions): Client 
     headers: createBearerJSONHeaders(options.accessToken),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
+}
+
+function removeUndefined<T extends Record<string, unknown>>(input: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
 function normalizeAttempt(input: v.InferOutput<typeof vSandboxAttemptRecord>) {
@@ -322,16 +330,102 @@ function parseExecution(input: unknown) {
     $schema: _schema,
     billing_windows,
     latest_attempt,
+    sticky_disk_mounts,
     ...execution
   } = v.parse(vSandboxExecutionRecord, input);
   return {
     ...execution,
-    billing_windows: billing_windows?.map((billingWindow) => normalizeBillingWindow(billingWindow)),
+    billing_windows:
+      billing_windows?.map((billingWindow) => normalizeBillingWindow(billingWindow)) ?? [],
     latest_attempt: normalizeAttempt(latest_attempt),
+    sticky_disk_mounts: sticky_disk_mounts ?? [],
   };
 }
 
 export type Execution = ReturnType<typeof parseExecution>;
+
+type RawRunsPage = v.InferOutput<typeof vListRunsResponse>;
+
+function parseRunsFilters(input: RawRunsPage["filters"]) {
+  return {
+    branch: input.branch ?? "",
+    repository: input.repository ?? "",
+    runnerClass: input.runner_class ?? "",
+    sourceKind: input.source_kind ?? "",
+    status: input.status ?? "",
+    workflow: input.workflow ?? "",
+  };
+}
+
+function parseRunsPage(input: unknown) {
+  const { $schema: _schema, filters, limit, runs, next_cursor } = v.parse(vListRunsResponse, input);
+  return {
+    filters: parseRunsFilters(filters),
+    limit,
+    nextCursor: next_cursor ?? "",
+    runs: runs?.map((run) => parseExecution(run)) ?? [],
+  };
+}
+
+export type RunsPage = ReturnType<typeof parseRunsPage>;
+
+function normalizeRunListFilter(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export const runListQuerySchema = v.pipe(
+  v.strictObject({
+    limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
+    cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
+    sourceKind: v.optional(v.pipe(v.string(), v.maxLength(64))),
+    status: v.optional(v.pipe(v.string(), v.maxLength(64))),
+    repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    workflow: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    runnerClass: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  }),
+  v.transform((query) => {
+    const parsed = v.parse(vListRunsQuery, {
+      limit: query.limit,
+      cursor: normalizeRunListFilter(query.cursor),
+      source_kind: normalizeRunListFilter(query.sourceKind),
+      status: normalizeRunListFilter(query.status),
+      repository: normalizeRunListFilter(query.repository),
+      workflow: normalizeRunListFilter(query.workflow),
+      branch: normalizeRunListFilter(query.branch),
+      runner_class: normalizeRunListFilter(query.runnerClass),
+    });
+    return {
+      ...(parsed.limit === undefined ? {} : { limit: toSafeNumber(parsed.limit, "runs.limit") }),
+      ...(parsed.cursor === undefined ? {} : { cursor: parsed.cursor }),
+      ...(parsed.source_kind === undefined ? {} : { sourceKind: parsed.source_kind }),
+      ...(parsed.status === undefined ? {} : { status: parsed.status }),
+      ...(parsed.repository === undefined ? {} : { repository: parsed.repository }),
+      ...(parsed.workflow === undefined ? {} : { workflow: parsed.workflow }),
+      ...(parsed.branch === undefined ? {} : { branch: parsed.branch }),
+      ...(parsed.runner_class === undefined ? {} : { runnerClass: parsed.runner_class }),
+    };
+  }),
+);
+
+export type RunListQueryInput = v.InferInput<typeof runListQuerySchema>;
+export type RunListQuery = v.InferOutput<typeof runListQuerySchema>;
+
+function toGeneratedRunListQuery(query: RunListQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  const parsed = v.parse(runListQuerySchema, query);
+  return removeUndefined({
+    limit: parsed.limit,
+    cursor: parsed.cursor,
+    source_kind: parsed.sourceKind,
+    status: parsed.status,
+    repository: parsed.repository,
+    workflow: parsed.workflow,
+    branch: parsed.branch,
+    runner_class: parsed.runnerClass,
+  }) as NonNullable<ListRunsData["query"]>;
+}
 
 export const statementQuerySchema = v.pipe(
   v.strictObject({
@@ -706,6 +800,26 @@ export async function getExecution(
   }
 
   return parseExecution(result.data);
+}
+
+export async function listRuns(
+  options: SandboxRentalClientOptions & { query?: RunListQueryInput },
+): Promise<RunsPage> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedRunListQuery(options.query);
+  const path = "/api/v1/runs";
+  const result = await listGeneratedRuns({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseRunsPage(result.data);
 }
 
 export async function listExecutionSchedules(
