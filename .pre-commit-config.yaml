@@ -36,3 +36,24 @@ repos:
         language: system
         files: ^src/host/ansible/
         pass_filenames: true
+
+      # Workspace-local oxlint via the Vite+ wrapper. Lint config (rules,
+      # ignorePatterns, overrides) lives in viteplus-monorepo/vite.config.ts
+      # under the `lint` key — vp lint reads it directly. The hook strips the
+      # viteplus-monorepo/ prefix so paths resolve relative to the workspace.
+      - id: vp-lint
+        name: vp lint (oxlint + type-aware)
+        entry: |
+          bash -lc '
+            set -e
+            vp_bin="$HOME/.vite-plus/bin/vp"
+            [ -x "$vp_bin" ] || { echo "vp not found at $vp_bin; run scripts/bootstrap-*" >&2; exit 1; }
+            cd src/frontends/viteplus-monorepo
+            files=()
+            for f in "$@"; do files+=("${f#src/frontends/viteplus-monorepo/}"); done
+            [ ${#files[@]} -eq 0 ] && exit 0
+            "$vp_bin" lint "${files[@]}"
+          ' --
+        language: system
+        files: ^src/frontends/viteplus-monorepo/.*\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$
+        pass_filenames: true

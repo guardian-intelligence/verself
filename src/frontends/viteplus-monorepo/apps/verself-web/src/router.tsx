@@ -17,7 +17,6 @@ function createQueryClient() {
 
 export function getRouter() {
   const queryClient = createQueryClient();
-  console.info("verself-web deploy timing probe: fast rollout verification");
 
   return createRouter({
     routeTree,

@@ -15,6 +15,17 @@ export default defineConfig({
       "**/playwright.config.ts",
     ],
     options: { typeAware: true, typeCheck: true },
+    rules: {
+      "no-console": ["error", { allow: ["error"] }],
+    },
+    overrides: [
+      {
+        files: ["packages/nitro-plugins/**", "scripts/**"],
+        rules: {
+          "no-console": "off",
+        },
+      },
+    ],
   },
   test: {
     include: [
