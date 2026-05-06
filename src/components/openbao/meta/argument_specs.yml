@@ -64,6 +64,17 @@ argument_specs:
       openbao_runtime_secret_force:
         type: bool
         default: false
+      openbao_credential_org_ids:
+        type: list
+        elements: str
+      openbao_credential_kv_mount_prefix:
+        type: str
+        default: kv
+      openbao_credential_transit_mount_prefix:
+        type: str
+        default: transit
+      openbao_credential_consumer_subject:
+        type: str
       openbao_audit_request_headers:
         type: list
         elements: dict

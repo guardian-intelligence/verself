@@ -246,6 +246,8 @@
   tasks:
     - name: Converge OpenBao platform runtime-secret state
       ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
+    - name: Converge OpenBao credential-store state
+      ansible.builtin.import_tasks: tasks/openbao-credential-store.yml
 
 - name: "Transitional workload substrate bindings"
   hosts: infra
