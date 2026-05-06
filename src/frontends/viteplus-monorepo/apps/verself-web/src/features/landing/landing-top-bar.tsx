@@ -81,7 +81,11 @@ const MENUS: ReadonlyArray<MenuDefinition> = [
       },
       {
         heading: "By use case",
-        links: [{ title: "Faster CI" }, { title: "Self-hosted compute" }, { title: "Forge clones" }],
+        links: [
+          { title: "Faster CI" },
+          { title: "Self-hosted compute" },
+          { title: "Forge clones" },
+        ],
       },
     ],
   },
@@ -226,10 +230,7 @@ export function LandingTopBar() {
         <VerselfWordmark />
       </Link>
 
-      <nav
-        className="hidden flex-1 items-center justify-center gap-1 md:flex"
-        aria-label="Primary"
-      >
+      <nav className="hidden flex-1 items-center justify-center gap-1 md:flex" aria-label="Primary">
         {MENUS.map((menu) => (
           <MenuTrigger
             key={menu.key}

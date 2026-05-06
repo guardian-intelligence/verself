@@ -1,7 +1,7 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { LandingTopBar } from "~/features/landing/landing-top-bar";
+import { LandingScene } from "~/features/scene3d";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
-import { WhyNotToday } from "~/features/why-not-today";
 import { getClientAuthSnapshot } from "~/server-fns/auth";
 
 // Top-level marketing landing — deliberately outside _shell so the unauthed
@@ -26,12 +26,9 @@ export const Route = createFileRoute("/")({
 function LandingPage() {
   return (
     <main className="relative isolate min-h-svh overflow-hidden bg-black text-white">
-      <WhyNotToday />
+      <LandingScene />
       <LandingTopBar />
 
-      {/* Foreground stack: headline + subheading sit above the V, buttons
-          sit just inside the V's top region. The V occupies the full
-          viewport so its perspective doesn't distort. */}
       <div className="relative z-10 mx-auto flex min-h-svh max-w-3xl flex-col items-center px-6 pt-28 text-center md:pt-36">
         <h1
           className="text-5xl font-light leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl"

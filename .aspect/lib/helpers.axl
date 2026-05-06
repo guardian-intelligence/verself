@@ -83,7 +83,7 @@ def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     """Spawn a subprocess attached to the parent's stdio and return its exit code.
 
     Stdio is inherited so long-running interactive scripts (psql, pnpm dev,
-    Playwright canaries) behave the same way they did under Make. The returned
+    browser canaries) behave the same way they did under Make. The returned
     int matches the program's exit code; non-zero is the caller's signal to
     propagate.
     """

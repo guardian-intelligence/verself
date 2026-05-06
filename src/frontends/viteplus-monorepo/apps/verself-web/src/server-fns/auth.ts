@@ -39,11 +39,13 @@ export const selectActiveOrganization = createServerFn({ method: "POST" })
     return selectIdentityOrganization(data);
   });
 
-export const getAccessTokenForAudience = createServerOnlyFn(async function getAccessTokenForAudience(
-  context: ConsoleAuthContext | undefined,
-  audience: string,
-  options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
-): Promise<string> {
-  const { getIdentityAccessTokenForAudience } = await import("./auth.server");
-  return getIdentityAccessTokenForAudience(context, audience, options);
-});
+export const getAccessTokenForAudience = createServerOnlyFn(
+  async function getAccessTokenForAudience(
+    context: ConsoleAuthContext | undefined,
+    audience: string,
+    options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
+  ): Promise<string> {
+    const { getIdentityAccessTokenForAudience } = await import("./auth.server");
+    return getIdentityAccessTokenForAudience(context, audience, options);
+  },
+);

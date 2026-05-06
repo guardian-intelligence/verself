@@ -11,8 +11,6 @@ export default defineConfig({
       "**/node_modules/**",
       "**/__generated/**",
       "**/routeTree.gen.ts",
-      "**/e2e/**",
-      "**/playwright.config.ts",
     ],
     options: { typeAware: true, typeCheck: true },
     rules: {
@@ -34,7 +32,7 @@ export default defineConfig({
       "packages/**/*.test.ts",
       "packages/**/*.test.tsx",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.output/**", "**/e2e/**", "**/*.spec.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.output/**"],
     environment: "node",
   },
   run: {

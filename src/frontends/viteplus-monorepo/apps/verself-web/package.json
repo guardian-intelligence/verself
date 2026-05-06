@@ -10,9 +10,7 @@
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mjs ./.output/server/index.mjs",
     "generate": "bazelisk run //src/frontends/viteplus-monorepo/apps/verself-web:dev_update",
-    "typecheck": "vp exec tsc -p tsconfig.json",
-    "test:e2e": "vp exec playwright test",
-    "test:e2e:headed": "vp exec playwright test --headed"
+    "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
     "@opentelemetry/api": "catalog:",
@@ -25,6 +23,10 @@
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@opentelemetry/sdk-trace-web": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
+    "@react-spring/three": "catalog:",
+    "@react-three/drei": "catalog:",
+    "@react-three/fiber": "catalog:",
+    "@react-three/postprocessing": "catalog:",
     "@tanstack/electric-db-collection": "catalog:",
     "@tanstack/query-db-collection": "catalog:",
     "@tanstack/react-db": "catalog:",
@@ -49,7 +51,6 @@
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "catalog:",
-    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",

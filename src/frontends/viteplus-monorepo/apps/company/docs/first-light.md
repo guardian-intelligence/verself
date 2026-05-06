@@ -65,8 +65,8 @@ DOM measurement.
 ## Debug Modes
 
 `?visual-test=1` renders the final composite with preserved drawing buffer for
-pixel assertions. These deterministic debug channels are available for e2e and
-visual review:
+pixel inspection. These deterministic debug channels are available for visual
+review:
 
 - `?visual-test=shape`: shape SDF, normal color, rim, and black occlusion.
 - `?visual-test=lens`: deflection direction, strength, and photon ring.

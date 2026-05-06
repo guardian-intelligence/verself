@@ -31,7 +31,10 @@ export const Route = createFileRoute("/login")({
     if (snapshot.auth.isAuthenticated) {
       const fallback = await resolveDefaultSignedInPath(context.queryClient, snapshot.auth);
       const target = search.redirect ? signedInRedirectTarget(search.redirect) : fallback;
-      throw redirect({ href: target === defaultSignedInRedirect ? fallback : target, replace: true });
+      throw redirect({
+        href: target === defaultSignedInRedirect ? fallback : target,
+        replace: true,
+      });
     }
   },
   component: LoginPage,

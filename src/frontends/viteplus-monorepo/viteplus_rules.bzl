@@ -104,7 +104,7 @@ def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
     genuinely sandbox-safe (no filesystem-walking plugin involved).
 
     `srcs` is kept as a filegroup so a future Bazel target (e.g. a typecheck
-    test, an e2e harness) can reference the app's input set without
+    test or live canary harness) can reference the app's input set without
     re-globbing.
 
     Args:

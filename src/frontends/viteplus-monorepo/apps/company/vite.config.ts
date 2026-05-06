@@ -59,7 +59,7 @@ export default defineConfig({
     }),
   ],
   test: {
-    exclude: ["**/node_modules/**", "**/e2e/**", "**/*.spec.ts"],
+    exclude: ["**/node_modules/**"],
     passWithNoTests: true,
   },
 });
