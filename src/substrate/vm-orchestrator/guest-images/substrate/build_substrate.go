@@ -29,6 +29,7 @@ DPkg::Lock::Timeout "60";
 
 var substratePackages = []string{
 	"bash",
+	"build-essential",
 	"ca-certificates",
 	"curl",
 	"git",
