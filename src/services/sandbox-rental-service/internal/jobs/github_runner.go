@@ -559,7 +559,7 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 	if err := r.setAllocationState(ctx, allocationID, "jit_creating", ""); err != nil {
 		return err
 	}
-	jit, err := r.createJITConfig(ctx, allocation.InstallationID, allocation.AccountLogin, allocation.RunnerName, allocation.RunnerClass)
+	jit, err := r.createJITConfig(ctx, allocation.InstallationID, allocation.RepositoryFullName, allocation.RunnerName, allocation.RunnerClass)
 	if err != nil {
 		_ = r.setAllocationState(ctx, allocationID, "failed", "jit_config_failed")
 		return err
@@ -599,7 +599,7 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 		RunnerBootstrapPayload: jit.EncodedJITConfig,
 	})
 	if err != nil {
-		_ = r.deleteRunner(ctx, allocation.InstallationID, allocation.AccountLogin, runnerID)
+		_ = r.deleteRunner(ctx, allocation.InstallationID, allocation.RepositoryFullName, runnerID)
 		_ = r.setAllocationState(ctx, allocationID, "failed", "execution_submit_failed")
 		return err
 	}
@@ -702,11 +702,11 @@ func (r *GitHubRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUID
 		return nil
 	}
 	if allocation.GitHubRunnerID != 0 {
-		if err := r.deleteRunner(ctx, allocation.InstallationID, allocation.AccountLogin, allocation.GitHubRunnerID); err != nil {
+		if err := r.deleteRunner(ctx, allocation.InstallationID, allocation.RepositoryFullName, allocation.GitHubRunnerID); err != nil {
 			return err
 		}
 	} else if allocation.RunnerName != "" {
-		if err := r.deleteRunnerByName(ctx, allocation.InstallationID, allocation.AccountLogin, allocation.RunnerName); err != nil {
+		if err := r.deleteRunnerByName(ctx, allocation.InstallationID, allocation.RepositoryFullName, allocation.RunnerName); err != nil {
 			return err
 		}
 	}
@@ -955,8 +955,12 @@ func (r *GitHubRunner) verifyUserInstallationAccess(ctx context.Context, userTok
 	return ErrGitHubInstallationInvalid
 }
 
-func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64, org, runnerName, runnerClass string) (githubJITConfigResponse, error) {
+func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64, repositoryFullName, runnerName, runnerClass string) (githubJITConfigResponse, error) {
 	token, err := r.installationToken(ctx, installationID)
+	if err != nil {
+		return githubJITConfigResponse{}, err
+	}
+	repositoryPath, err := githubRepositoryAPIPath(repositoryFullName)
 	if err != nil {
 		return githubJITConfigResponse{}, err
 	}
@@ -967,7 +971,7 @@ func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64
 		"work_folder":     githubRunnerWorkFolder,
 	}
 	var resp githubJITConfigResponse
-	if err := r.githubRequest(ctx, http.MethodPost, "/orgs/"+url.PathEscape(org)+"/actions/runners/generate-jitconfig", token, body, &resp, http.StatusCreated); err != nil {
+	if err := r.githubRequest(ctx, http.MethodPost, repositoryPath+"/actions/runners/generate-jitconfig", token, body, &resp, http.StatusCreated); err != nil {
 		return githubJITConfigResponse{}, err
 	}
 	if strings.TrimSpace(resp.EncodedJITConfig) == "" {
@@ -976,33 +980,49 @@ func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64
 	return resp, nil
 }
 
-func (r *GitHubRunner) deleteRunner(ctx context.Context, installationID int64, org string, runnerID int64) error {
+func (r *GitHubRunner) deleteRunner(ctx context.Context, installationID int64, repositoryFullName string, runnerID int64) error {
 	token, err := r.installationToken(ctx, installationID)
 	if err != nil {
 		return err
 	}
-	err = r.githubRequest(ctx, http.MethodDelete, fmt.Sprintf("/orgs/%s/actions/runners/%d", url.PathEscape(org), runnerID), token, nil, nil, http.StatusNoContent, http.StatusNotFound)
+	repositoryPath, err := githubRepositoryAPIPath(repositoryFullName)
+	if err != nil {
+		return err
+	}
+	err = r.githubRequest(ctx, http.MethodDelete, fmt.Sprintf("%s/actions/runners/%d", repositoryPath, runnerID), token, nil, nil, http.StatusNoContent, http.StatusNotFound)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (r *GitHubRunner) deleteRunnerByName(ctx context.Context, installationID int64, org, runnerName string) error {
+func (r *GitHubRunner) deleteRunnerByName(ctx context.Context, installationID int64, repositoryFullName, runnerName string) error {
 	token, err := r.installationToken(ctx, installationID)
 	if err != nil {
 		return err
 	}
+	repositoryPath, err := githubRepositoryAPIPath(repositoryFullName)
+	if err != nil {
+		return err
+	}
 	var list githubRunnerListResponse
-	if err := r.githubRequest(ctx, http.MethodGet, "/orgs/"+url.PathEscape(org)+"/actions/runners?per_page=100", token, nil, &list, http.StatusOK); err != nil {
+	if err := r.githubRequest(ctx, http.MethodGet, repositoryPath+"/actions/runners?per_page=100", token, nil, &list, http.StatusOK); err != nil {
 		return err
 	}
 	for _, runner := range list.Runners {
 		if runner.Name == runnerName {
-			return r.deleteRunner(ctx, installationID, org, runner.ID)
+			return r.deleteRunner(ctx, installationID, repositoryFullName, runner.ID)
 		}
 	}
 	return nil
+}
+
+func githubRepositoryAPIPath(repositoryFullName string) (string, error) {
+	owner, repo, ok := strings.Cut(strings.TrimSpace(repositoryFullName), "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", fmt.Errorf("github repository full name must be owner/repo, got %q", repositoryFullName)
+	}
+	return "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo), nil
 }
 
 func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer string, body any, out any, expected ...int) error {
