@@ -53,6 +53,10 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 
 </repo_overview>
 
+<product_context>
+- Initial product: Drop in GitHub Actions/Blacksmith.sh replacement. On merges to main we run CI on our internal platform, Blacksmith.sh, and GitHub Actions and regularly compare to make sure we're faster.
+</product_context>
+
 <product_policy>
 
 Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/frontends/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy`.
@@ -227,3 +231,27 @@ Each site has one checked-in directory:
 The site directory owns checked-in `vars.yml`, checked-in `inventory.ini`, local-only `provisioning.tfvars.json`, and three independently decryptable SOPS bags under `secrets/`. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host bag contains host bootstrap secrets and must exist before host convergence. The external bag contains third-party integration secrets for product/runtime bootstrappers. Do not commit `provisioning.tfvars.json`; keep it as operator-local provisioning input.
 
 To add a site, copy `src/host/sites/prod/` to the new site name, replace the three SOPS bags, update `src/host/sites/<site>/vars.yml`, and let Bazel-discovered deployable units declare their own `site_scope`, `requires`, and `provides` relationships. Site variables do not decide which Nomad jobs exist.
+
+
+Product pitch:
+
+"The solo-founder's superweapon"
+
+"Your software company, an API call away" -- demonstration of a software company being constructed from just a Latitude API key
+
+I wanted to think about our offerings as an SDK + CLI + Services -- what
+  if we built an industry standard CLI over a (initially Golang) SDK over
+  our Services? Like vercel we'd have auth login and creating
+  organizations and so on. We'd simply call the same CLI to bootstrap our
+  system with our guardian-intelligence organization and manage our org
+  using the same CLI as our customers do
+
+  My thinking
+  was we become a drop-in vercel CLI replacemen (`aspect persona assume` just becomes `verself auth login ...`)t but expose a bootstrap
+  command that takes a cloudflare API key, a latitude-sh API key, some
+  configuration like the company name, name, alias, we can even have a
+  bootstrap service people can call in order to bootstrap their own clone
+  of the repo.
+
+  And then everyone can call our service to create a clone of verself which, itself, has a bootstrap API which will clone the company (code + infrastructure, BYO-API keys).
+
