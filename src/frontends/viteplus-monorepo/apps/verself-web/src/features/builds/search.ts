@@ -6,13 +6,13 @@ export type BuildsSearch = {
 
 export const DEFAULT_BUILDS_TIME_ZONE = "America/Los_Angeles";
 
-const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseBuildsSearch(search: Record<string, unknown>): BuildsSearch {
   return {
-    from: parseDateOnly(search.from),
-    to: parseDateOnly(search.to),
-    tz: parseTimeZone(search.tz),
+    from: parseDateOnly(searchValue(search, "from")),
+    to: parseDateOnly(searchValue(search, "to")),
+    tz: parseTimeZone(searchValue(search, "tz")),
   };
 }
 
@@ -52,8 +52,17 @@ export function dateFromDateOnly(value: string): Date {
 }
 
 function parseDateOnly(value: unknown): string {
-  if (typeof value !== "string" || !isValidDateOnly(value)) return "";
-  return value;
+  if (typeof value !== "string") return "";
+  try {
+    return isValidDateOnly(value) ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+function searchValue(search: Record<string, unknown>, key: string): unknown {
+  const value = search[key];
+  return Array.isArray(value) ? value.at(0) : value;
 }
 
 function isValidDateOnly(value: string): boolean {
