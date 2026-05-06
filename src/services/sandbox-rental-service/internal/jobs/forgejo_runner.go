@@ -966,8 +966,10 @@ fi
 curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERVICE_HTTP_ORIGIN:?}${VERSELF_RUNNER_BOOTSTRAP_PATH:?}" -o "$bootstrap_file"
 unset VERSELF_TRACEPARENT
 unset VERSELF_RUNNER_BOOTSTRAP_TOKEN
-export RUNNER_TOOL_CACHE=/opt/hostedtoolcache
-export AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
+tool_cache="/workspace/.verself/hostedtoolcache"
+mkdir -p "$tool_cache"
+export RUNNER_TOOL_CACHE="$tool_cache"
+export AGENT_TOOLSDIRECTORY="$tool_cache"
 export PATH="/opt/actions-runner/externals/node20/bin:/opt/forgejo-runner/bin:$PATH"
 runner_uuid="$(jq -er '.runner_uuid' "$bootstrap_file")"
 runner_token="$(jq -er '.runner_token' "$bootstrap_file")"
