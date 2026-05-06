@@ -87,6 +87,7 @@ register_toolchains("@zig_toolchains//:all")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.8")
+use_repo(go_sdk, "go_host_compatible_sdk_label")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.config(check_direct_dependencies = "error")

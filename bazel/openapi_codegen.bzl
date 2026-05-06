@@ -1,9 +1,11 @@
 """OpenAPI code generation helpers."""
 
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("@go_host_compatible_sdk_label//:defs.bzl", "HOST_COMPATIBLE_SDK")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 OAPI_CODEGEN = "@com_github_oapi_codegen_oapi_codegen_v2//cmd/oapi-codegen"
+HOST_COMPATIBLE_SDK_FILES = HOST_COMPATIBLE_SDK.same_package_label("files")
 
 def _spec_rule(name, out, tool, fmt):
     native.genrule(
@@ -84,12 +86,13 @@ def verself_oapi_go_client(
     suffix_flag = ""
     if response_type_suffix:
         suffix_flag = " -response-type-suffix %s" % response_type_suffix
+    # oapi-codegen shells out to go; use rules_go's SDK instead of the runner image.
     native.genrule(
         name = "client_gen",
         srcs = [spec],
         outs = ["client.gen.go"],
-        cmd = "PATH=/usr/local/go/bin:/usr/bin:/bin $(location %s) -generate types,client%s -package %s -o $@ $(location %s)" % (OAPI_CODEGEN, suffix_flag, package, spec),
-        tools = [OAPI_CODEGEN],
+        cmd = "GOROOT=\"$$PWD/$$(dirname $(location %s))\"; export GOROOT; GOCACHE=$$(mktemp -d); export GOCACHE; trap 'rm -rf \"$$GOCACHE\"' EXIT; PATH=\"$$GOROOT/bin:/usr/bin:/bin\" $(location %s) -generate types,client%s -package %s -o $@ $(location %s)" % (HOST_COMPATIBLE_SDK, OAPI_CODEGEN, suffix_flag, package, spec),
+        tools = [OAPI_CODEGEN, HOST_COMPATIBLE_SDK, HOST_COMPATIBLE_SDK_FILES],
     )
     go_library(
         name = name,
