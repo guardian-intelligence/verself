@@ -23,6 +23,13 @@ type platformOwnerGrantSpec struct {
 	RoleKeys    []string
 }
 
+type platformRuntimeAuthAudienceSpec struct {
+	ComponentName  string
+	ProjectName    string
+	CredentialPath string
+	Group          string
+}
+
 type platformZitadelClient struct {
 	BaseURL    string
 	HostHeader string
@@ -98,6 +105,21 @@ func platformOwnerGrantSpecs() []platformOwnerGrantSpec {
 	}
 }
 
+func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
+	return []platformRuntimeAuthAudienceSpec{
+		{ComponentName: "iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/iam-service/auth-audience", Group: "iam_service"},
+		{ComponentName: "governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
+		{ComponentName: "notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},
+		{ComponentName: "profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/profile-service/auth-audience", Group: "profile_service"},
+		{ComponentName: "projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/projects-service/auth-audience", Group: "projects_service"},
+		{ComponentName: "source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/source-code-hosting-service/auth-audience", Group: "source_code_hosting_service"},
+		{ComponentName: "billing", ProjectName: "billing", CredentialPath: "/etc/credstore/billing/auth-audience", Group: "billing"},
+		{ComponentName: "sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
+		{ComponentName: "secrets-service", ProjectName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
+		{ComponentName: "mailbox-service", ProjectName: "mailbox-service", CredentialPath: "/etc/credstore/mailbox-service/auth-audience", Group: "mailbox_service"},
+	}
+}
+
 func (r *platformRunner) ensurePlatformOwner() error {
 	return r.withSpan("platform.zitadel_owner.ensure", []attribute.KeyValue{
 		attribute.String("zitadel.host", r.cfg.ZitadelHost),
@@ -136,20 +158,25 @@ func (r *platformRunner) ensurePlatformOwner() error {
 			}
 			r.markChanged("zitadel.owner.created")
 		}
-		projectIDs := map[string]string{}
+		projectIDs, err := r.resolvePlatformZitadelProjectIDs(ctx, client)
+		if err != nil {
+			return err
+		}
 		for _, spec := range platformOwnerGrantSpecs() {
-			project, err := client.ProjectByName(ctx, spec.ProjectName)
-			if err != nil {
-				return err
+			projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
+			if projectID == "" {
+				return fmt.Errorf("zitadel project not resolved: %s", spec.ProjectName)
 			}
-			projectIDs[spec.ProjectName] = project.ID
-			changed, err := client.UpsertAuthorization(ctx, r.cfg.OrgIDText, project.ID, user.ID, spec.RoleKeys)
+			changed, err := client.UpsertAuthorization(ctx, r.cfg.OrgIDText, projectID, user.ID, spec.RoleKeys)
 			if err != nil {
 				return err
 			}
 			if changed {
 				r.markChanged("zitadel.owner_grant." + spec.ProjectName + ".upserted")
 			}
+		}
+		if err := r.ensureRuntimeAuthAudienceCredentials(ctx, projectIDs); err != nil {
+			return err
 		}
 		if err := r.ensureBrowserAuthLoginAudienceCredential(ctx, projectIDs); err != nil {
 			return err
@@ -196,13 +223,17 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
 			mismatches = append(mismatches, fmt.Sprintf("owner.resource_owner=%q", user.ResourceOwner))
 		}
+		projectIDs, err := r.resolvePlatformZitadelProjectIDs(ctx, client)
+		if err != nil {
+			return err
+		}
 		for _, spec := range platformOwnerGrantSpecs() {
-			project, err := client.ProjectByName(ctx, spec.ProjectName)
-			if err != nil {
+			projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
+			if projectID == "" {
 				mismatches = append(mismatches, fmt.Sprintf("%s.project_missing", spec.ProjectName))
 				continue
 			}
-			ok, roles, err := client.AuthorizationHasRoles(ctx, r.cfg.OrgIDText, project.ID, user.ID, spec.RoleKeys)
+			ok, roles, err := client.AuthorizationHasRoles(ctx, r.cfg.OrgIDText, projectID, user.ID, spec.RoleKeys)
 			if err != nil {
 				return err
 			}
@@ -210,6 +241,11 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 				mismatches = append(mismatches, fmt.Sprintf("%s.roles=%q", spec.ProjectName, strings.Join(roles, ",")))
 			}
 		}
+		credentialMismatches, err := r.platformRuntimeAuthAudienceCredentialMismatches(ctx, projectIDs)
+		if err != nil {
+			return err
+		}
+		mismatches = append(mismatches, credentialMismatches...)
 		if len(mismatches) > 0 {
 			*issues = append(*issues, "Zitadel platform owner mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
@@ -248,6 +284,48 @@ func (r *platformRunner) zitadelClient(ctx context.Context) (platformZitadelClie
 	return client, closeFn, nil
 }
 
+func (r *platformRunner) resolvePlatformZitadelProjectIDs(ctx context.Context, client platformZitadelClient) (map[string]string, error) {
+	projectNames := map[string]struct{}{}
+	for _, spec := range platformOwnerGrantSpecs() {
+		projectNames[spec.ProjectName] = struct{}{}
+	}
+	for _, spec := range platformRuntimeAuthAudienceSpecs() {
+		projectNames[spec.ProjectName] = struct{}{}
+	}
+	names := make([]string, 0, len(projectNames))
+	for name := range projectNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	projectIDs := make(map[string]string, len(names))
+	for _, name := range names {
+		project, err := client.ProjectByName(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		projectIDs[name] = project.ID
+	}
+	return projectIDs, nil
+}
+
+func (r *platformRunner) ensureRuntimeAuthAudienceCredentials(ctx context.Context, projectIDs map[string]string) error {
+	for _, spec := range platformRuntimeAuthAudienceSpecs() {
+		projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
+		if projectID == "" {
+			return fmt.Errorf("auth audience credential %s requires project %s", spec.ComponentName, spec.ProjectName)
+		}
+		value := projectID + "\n"
+		changed, err := r.writeRootCredential(ctx, spec.CredentialPath, spec.Group, value)
+		if err != nil {
+			return fmt.Errorf("write %s auth audience credential: %w", spec.ComponentName, err)
+		}
+		if changed {
+			r.markChanged("runtime.auth_audience." + spec.ComponentName + ".updated")
+		}
+	}
+	return nil
+}
+
 func (r *platformRunner) ensureBrowserAuthLoginAudienceCredential(ctx context.Context, projectIDs map[string]string) error {
 	iamID := strings.TrimSpace(projectIDs["iam-service"])
 	sandboxID := strings.TrimSpace(projectIDs["sandbox-rental"])
@@ -256,19 +334,88 @@ func (r *platformRunner) ensureBrowserAuthLoginAudienceCredential(ctx context.Co
 	}
 	path := "/etc/credstore/iam-service/browser-auth-login-audiences"
 	value := sandboxID + "," + iamID + "\n"
+	changed, err := r.writeRootCredential(ctx, path, "iam_service", value)
+	if err != nil {
+		return fmt.Errorf("write browser auth login audiences credential: %w", err)
+	}
+	if changed {
+		r.markChanged("iam.browser_auth_login_audiences.updated")
+	}
+	return nil
+}
+
+func (r *platformRunner) writeRootCredential(ctx context.Context, path, group, value string) (bool, error) {
 	existing, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, path)
 	if err == nil && string(existing) == value {
-		return nil
+		stat, statErr := r.remoteCredentialStat(ctx, path)
+		if statErr == nil && stat.Group == group && stat.Mode == "640" {
+			return false, nil
+		}
 	}
 	pathWord, err := opruntime.ShellWord(path)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if err := r.rt.SSH.Run(ctx, "sudo /usr/bin/install -D -o root -g iam_service -m 0640 /dev/stdin "+pathWord, strings.NewReader(value), io.Discard, io.Discard); err != nil {
-		return fmt.Errorf("write browser auth login audiences credential: %w", err)
+	groupWord, err := opruntime.ShellWord(group)
+	if err != nil {
+		return false, err
 	}
-	r.markChanged("iam.browser_auth_login_audiences.updated")
-	return nil
+	if err := r.rt.SSH.Run(ctx, "sudo /usr/bin/install -D -o root -g "+groupWord+" -m 0640 /dev/stdin "+pathWord, strings.NewReader(value), io.Discard, io.Discard); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+type remoteCredentialStat struct {
+	Group string
+	Mode  string
+}
+
+func (r *platformRunner) remoteCredentialStat(ctx context.Context, path string) (remoteCredentialStat, error) {
+	pathWord, err := opruntime.ShellWord(path)
+	if err != nil {
+		return remoteCredentialStat{}, err
+	}
+	raw, err := r.rt.SSH.Exec(ctx, "sudo /usr/bin/stat -c '%G %a' -- "+pathWord)
+	if err != nil {
+		return remoteCredentialStat{}, err
+	}
+	fields := strings.Fields(string(raw))
+	if len(fields) != 2 {
+		return remoteCredentialStat{}, fmt.Errorf("unexpected stat output for %s: %q", path, strings.TrimSpace(string(raw)))
+	}
+	return remoteCredentialStat{Group: fields[0], Mode: fields[1]}, nil
+}
+
+func (r *platformRunner) platformRuntimeAuthAudienceCredentialMismatches(ctx context.Context, projectIDs map[string]string) ([]string, error) {
+	var mismatches []string
+	for _, spec := range platformRuntimeAuthAudienceSpecs() {
+		projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
+		if projectID == "" {
+			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.project_missing", spec.ComponentName))
+			continue
+		}
+		raw, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, spec.CredentialPath)
+		if err != nil {
+			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.read_error=%q", spec.ComponentName, err.Error()))
+			continue
+		}
+		if strings.TrimSpace(string(raw)) != projectID {
+			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience=%q", spec.ComponentName, strings.TrimSpace(string(raw))))
+		}
+		stat, err := r.remoteCredentialStat(ctx, spec.CredentialPath)
+		if err != nil {
+			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.stat_error=%q", spec.ComponentName, err.Error()))
+			continue
+		}
+		if stat.Group != spec.Group {
+			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.group=%q", spec.ComponentName, stat.Group))
+		}
+		if stat.Mode != "640" {
+			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.mode=%q", spec.ComponentName, stat.Mode))
+		}
+	}
+	return mismatches, nil
 }
 
 func (c platformZitadelClient) OrganizationByID(ctx context.Context, orgID string) (platformZitadelOrg, bool, error) {

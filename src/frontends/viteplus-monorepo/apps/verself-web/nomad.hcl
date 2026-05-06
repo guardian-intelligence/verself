@@ -75,15 +75,15 @@ job "verself-web" {
 GOVERNANCE_SERVICE_BASE_URL=http://{{- with nomadService "governance-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 IAM_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/iam-service/auth-audience" }}
 IAM_SERVICE_BASE_URL=http://{{- with nomadService "iam-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-NOTIFICATIONS_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/iam-service/auth-audience" }}
+NOTIFICATIONS_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/notifications-service/auth-audience" }}
 NOTIFICATIONS_SERVICE_BASE_URL=http://{{- with nomadService "notifications-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-PROFILE_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/iam-service/auth-audience" }}
+PROFILE_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/profile-service/auth-audience" }}
 PROFILE_SERVICE_BASE_URL=http://{{- with nomadService "profile-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-PROJECTS_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/iam-service/auth-audience" }}
+PROJECTS_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/projects-service/auth-audience" }}
 PROJECTS_SERVICE_BASE_URL=http://{{- with nomadService "projects-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/sandbox-rental/auth-audience" }}
 SANDBOX_RENTAL_SERVICE_BASE_URL=http://{{- with nomadService "sandbox-rental-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/iam-service/auth-audience" }}
+SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE={{ file "/etc/credstore/source-code-hosting-service/auth-audience" }}
 SOURCE_CODE_HOSTING_SERVICE_BASE_URL=http://{{- with nomadService "source-code-hosting-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
