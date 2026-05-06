@@ -23,6 +23,11 @@ type platformOwnerGrantSpec struct {
 	RoleKeys    []string
 }
 
+type platformOwnerGrantSubject struct {
+	Email string
+	User  platformZitadelUser
+}
+
 type platformRuntimeAuthAudienceSpec struct {
 	ComponentName  string
 	ProjectName    string
@@ -164,21 +169,27 @@ func (r *platformRunner) ensurePlatformOwner() error {
 			}
 			r.markChanged("zitadel.owner.created")
 		}
+		grantSubjects, err := r.platformOwnerGrantSubjects(ctx, client, user)
+		if err != nil {
+			return err
+		}
 		projectIDs, err := r.resolvePlatformZitadelProjectIDs(ctx, client)
 		if err != nil {
 			return err
 		}
-		for _, spec := range platformOwnerGrantSpecs() {
-			projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
-			if projectID == "" {
-				return fmt.Errorf("zitadel project not resolved: %s", spec.ProjectName)
-			}
-			changed, err := client.UpsertAuthorization(ctx, r.cfg.OrgIDText, projectID, user.ID, spec.RoleKeys)
-			if err != nil {
-				return err
-			}
-			if changed {
-				r.markChanged("zitadel.owner_grant." + spec.ProjectName + ".upserted")
+		for _, subject := range grantSubjects {
+			for _, spec := range platformOwnerGrantSpecs() {
+				projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
+				if projectID == "" {
+					return fmt.Errorf("zitadel project not resolved: %s", spec.ProjectName)
+				}
+				changed, err := client.UpsertAuthorization(ctx, r.cfg.OrgIDText, projectID, subject.User.ID, spec.RoleKeys)
+				if err != nil {
+					return err
+				}
+				if changed {
+					r.markChanged("zitadel.owner_grant." + spec.ProjectName + "." + subject.User.ID + ".upserted")
+				}
 			}
 		}
 		if err := r.ensureRuntimeAuthAudienceCredentials(ctx, projectIDs); err != nil {
@@ -233,18 +244,24 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		if err != nil {
 			return err
 		}
-		for _, spec := range platformOwnerGrantSpecs() {
-			projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
-			if projectID == "" {
-				mismatches = append(mismatches, fmt.Sprintf("%s.project_missing", spec.ProjectName))
-				continue
-			}
-			ok, roles, err := client.AuthorizationHasRoles(ctx, r.cfg.OrgIDText, projectID, user.ID, spec.RoleKeys)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				mismatches = append(mismatches, fmt.Sprintf("%s.roles=%q", spec.ProjectName, strings.Join(roles, ",")))
+		grantSubjects, err := r.platformOwnerGrantSubjects(ctx, client, user)
+		if err != nil {
+			return err
+		}
+		for _, subject := range grantSubjects {
+			for _, spec := range platformOwnerGrantSpecs() {
+				projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
+				if projectID == "" {
+					mismatches = append(mismatches, fmt.Sprintf("%s.project_missing", spec.ProjectName))
+					continue
+				}
+				ok, roles, err := client.AuthorizationHasRoles(ctx, r.cfg.OrgIDText, projectID, subject.User.ID, spec.RoleKeys)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					mismatches = append(mismatches, fmt.Sprintf("%s.%s.roles=%q", subject.Email, spec.ProjectName, strings.Join(roles, ",")))
+				}
 			}
 		}
 		credentialMismatches, err := r.platformRuntimeAuthAudienceCredentialMismatches(ctx, projectIDs)
@@ -265,6 +282,32 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		*issues = append(*issues, err.Error())
 	}
 	return row
+}
+
+func (r *platformRunner) platformOwnerGrantSubjects(ctx context.Context, client platformZitadelClient, canonical platformZitadelUser) ([]platformOwnerGrantSubject, error) {
+	subjects := []platformOwnerGrantSubject{{Email: r.cfg.OwnerEmail, User: canonical}}
+	seenUserIDs := map[string]struct{}{canonical.ID: {}}
+	for _, email := range r.cfg.OwnerBootstrapEmails {
+		if strings.EqualFold(email, r.cfg.OwnerEmail) {
+			continue
+		}
+		user, found, err := client.FindHumanByEmail(ctx, email)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("platform bootstrap owner %s is missing in Zitadel", email)
+		}
+		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
+			return nil, fmt.Errorf("platform bootstrap owner %s belongs to Zitadel org %s, expected %s", email, user.ResourceOwner, r.cfg.OrgIDText)
+		}
+		if _, ok := seenUserIDs[user.ID]; ok {
+			continue
+		}
+		seenUserIDs[user.ID] = struct{}{}
+		subjects = append(subjects, platformOwnerGrantSubject{Email: email, User: user})
+	}
+	return subjects, nil
 }
 
 func (r *platformRunner) zitadelClient(ctx context.Context) (platformZitadelClient, func(), error) {

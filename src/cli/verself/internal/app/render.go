@@ -217,6 +217,7 @@ platform_company_display_name: %s
 platform_owner_name: %s
 platform_owner_alias: %s
 platform_owner_email: %s
+platform_owner_bootstrap_emails: []
 platform_organization_name: %s
 platform_trust_tier: %s
 platform_repo_slug: %s
@@ -269,21 +270,22 @@ func overlaySiteVars(existing string, company CompanyRecord) string {
 
 func siteVarOverlay(company CompanyRecord) map[string]string {
 	return map[string]string{
-		"verself_site":                  yamlQuote(company.Site),
-		"verself_domain":                yamlQuote(company.ProductDomain),
-		"company_domain":                yamlQuote(company.CompanyDomain),
-		"platform_company_slug":         yamlQuote(company.Name),
-		"platform_company_display_name": yamlQuote(company.CompanyName),
-		"platform_owner_name":           yamlQuote(company.OwnerName),
-		"platform_owner_alias":          yamlQuote(company.OwnerAlias),
-		"platform_owner_email":          yamlQuote(company.OwnerEmail),
-		"platform_organization_name":    yamlQuote(company.OrganizationName),
-		"platform_trust_tier":           yamlQuote(company.TrustTier),
-		"platform_repo_slug":            yamlQuote(company.Project),
-		"platform_repo_display_name":    yamlQuote(defaultRepoDisplayName(company)),
-		"platform_repo_description":     yamlQuote(defaultRepoDescription(company)),
-		"bootstrap_seed_codebase":       yamlQuote("verself-sh"),
-		"bootstrap_runtime_substrate":   yamlQuote("customer_latitude_bare_metal"),
+		"verself_site":                    yamlQuote(company.Site),
+		"verself_domain":                  yamlQuote(company.ProductDomain),
+		"company_domain":                  yamlQuote(company.CompanyDomain),
+		"platform_company_slug":           yamlQuote(company.Name),
+		"platform_company_display_name":   yamlQuote(company.CompanyName),
+		"platform_owner_name":             yamlQuote(company.OwnerName),
+		"platform_owner_alias":            yamlQuote(company.OwnerAlias),
+		"platform_owner_email":            yamlQuote(company.OwnerEmail),
+		"platform_owner_bootstrap_emails": "[]",
+		"platform_organization_name":      yamlQuote(company.OrganizationName),
+		"platform_trust_tier":             yamlQuote(company.TrustTier),
+		"platform_repo_slug":              yamlQuote(company.Project),
+		"platform_repo_display_name":      yamlQuote(defaultRepoDisplayName(company)),
+		"platform_repo_description":       yamlQuote(defaultRepoDescription(company)),
+		"bootstrap_seed_codebase":         yamlQuote("verself-sh"),
+		"bootstrap_runtime_substrate":     yamlQuote("customer_latitude_bare_metal"),
 	}
 }
 
