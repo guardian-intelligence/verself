@@ -9,11 +9,12 @@ export const DEFAULT_BUILDS_TIME_ZONE = "America/Los_Angeles";
 const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseBuildsSearch(search: Record<string, unknown>): BuildsSearch {
-  return {
+  // TanStack serializes validated search before protected-route auth redirects.
+  return canonicalBuildsSearch({
     from: parseDateOnly(searchValue(search, "from")),
     to: parseDateOnly(searchValue(search, "to")),
     tz: parseTimeZone(searchValue(search, "tz")),
-  };
+  });
 }
 
 export function canonicalBuildsSearch(search: BuildsSearch, now: Date = new Date()): BuildsSearch {
@@ -22,18 +23,6 @@ export function canonicalBuildsSearch(search: BuildsSearch, now: Date = new Date
   const from = search.from || search.to || today;
   const to = search.to || from;
   return from <= to ? { from, to, tz } : { from: to, to: from, tz };
-}
-
-export function sameBuildsSearch(left: BuildsSearch, right: BuildsSearch): boolean {
-  return left.from === right.from && left.to === right.to && left.tz === right.tz;
-}
-
-export function buildsSearchHref(pathname: string, search: BuildsSearch): string {
-  const params = new URLSearchParams();
-  params.set("from", search.from);
-  params.set("to", search.to);
-  params.set("tz", search.tz);
-  return `${pathname}?${params.toString()}`;
 }
 
 export function dateFromDateOnly(value: string): Date {
