@@ -414,6 +414,13 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	}
 	dataset := lease.RootDataset()
 
+	rootBytes := uint64(spec.Resources.RootDiskGiB) * 1024 * 1024 * 1024
+	if resizeErr := o.volumes.ResizeLeaseRootExt4(ctx, lease, rootBytes); resizeErr != nil {
+		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
+		err = resizeErr
+		return nil, err
+	}
+
 	mounts, mountErr := o.prepareFilesystemMounts(ctx, lease, spec.FilesystemMounts)
 	if mountErr != nil {
 		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
@@ -423,16 +430,6 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = mountErr
 		return nil, err
 	}
-
-	// NOTE: per-clone root disk sizing is tracked on the lease record
-	// (spec.Resources.RootDiskGiB) and priced accordingly, but it is not
-	// enforced at the ZFS layer today. The cloned dataset is a zvol, not a
-	// filesystem, so `refquota` is rejected by zfs (`'refquota' does not
-	// apply to datasets of this type`). The correct zvol knob is `volsize`,
-	// but shrinking a zvol below the guest's formatted filesystem size
-	// corrupts the filesystem, and growing is a follow-up feature. For now
-	// the requested RootDiskGiB surfaces on the lease.boot span + billing
-	// row, while hard enforcement waits on a zvol sizing story.
 
 	runtime, bootErr := o.bootDataset(ctx, lease, spec, dataset, mounts, observer)
 	if bootErr != nil {

@@ -65,6 +65,10 @@ func (DirectPrivOps) ZFSMkfs(context.Context, string, string, string) error {
 	return unsupportedHostMutation("zfs mkfs")
 }
 
+func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(context.Context, string, uint64) error {
+	return unsupportedHostMutation("zfs ensure volume size ext4")
+}
+
 func (DirectPrivOps) ZFSRename(context.Context, string, string) error {
 	return unsupportedHostMutation("zfs rename")
 }

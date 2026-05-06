@@ -33,6 +33,7 @@ type PrivZFS interface {
 	ZFSCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error
 	ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sourcePath string) (uint64, error)
 	ZFSMkfs(ctx context.Context, devicePath, fsType, label string) error
+	ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string, sizeBytes uint64) error
 	ZFSRename(ctx context.Context, from, to string) error
 	ZFSListChildren(ctx context.Context, dataset string) ([]string, error)
 	UnmountStaleZvolMounts(ctx context.Context, pool string) (int, error)
@@ -93,6 +94,23 @@ func (vl *VolumeLifecycle) PrepareSubstrateClone(ctx context.Context, lease Leas
 	endClone(cloneErr)
 	if cloneErr != nil {
 		return fmt.Errorf("clone zvol: %w", cloneErr)
+	}
+	return nil
+}
+
+// ResizeLeaseRootExt4 grows the cloned substrate zvol and ext4 filesystem to
+// the requested lease size before Firecracker sees the block device.
+func (vl *VolumeLifecycle) ResizeLeaseRootExt4(ctx context.Context, lease Lease, sizeBytes uint64) error {
+	target := lease.RootDataset()
+	resizeCtx, endResize := startSpan(ctx, "vmorchestrator.zfs.root_resize",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("zfs.dataset", target),
+		attribute.Int64("zfs.volume_requested_bytes", int64(sizeBytes)),
+	)
+	resizeErr := vl.ops.ZFSEnsureVolumeSizeExt4(resizeCtx, target, sizeBytes)
+	endResize(resizeErr)
+	if resizeErr != nil {
+		return fmt.Errorf("resize root zvol %s: %w", target, resizeErr)
 	}
 	return nil
 }

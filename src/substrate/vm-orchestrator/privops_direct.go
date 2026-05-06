@@ -282,6 +282,49 @@ func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label stri
 	return fmt.Errorf("unsupported filesystem %q", fsType)
 }
 
+// ZFSEnsureVolumeSizeExt4 grows a zvol and its ext4 filesystem. It never
+// shrinks because truncating below the formatted filesystem size is unsafe.
+func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string, sizeBytes uint64) error {
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs volume dataset is invalid: %s", dataset)
+	}
+	if sizeBytes == 0 {
+		return fmt.Errorf("zfs volume size must be > 0")
+	}
+	currentText, err := DirectPrivOps{}.ZFSGetProperty(ctx, dataset, "volsize")
+	if err != nil {
+		return err
+	}
+	currentBytes, err := strconv.ParseUint(currentText, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse zfs volsize %q for %s: %w", currentText, dataset, err)
+	}
+	if currentBytes < sizeBytes {
+		setCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+		cmd := exec.CommandContext(setCtx, "zfs", "set", "volsize="+strconv.FormatUint(sizeBytes, 10), dataset)
+		out, setErr := cmd.CombinedOutput()
+		cancel()
+		if setErr != nil {
+			return fmt.Errorf("zfs set volsize=%d on %s: %s: %w", sizeBytes, dataset, strings.TrimSpace(string(out)), setErr)
+		}
+	}
+	devicePath := zvolDevicePath(dataset)
+	waitCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	err = waitForDevice(waitCtx, devicePath)
+	cancel()
+	if err != nil {
+		return err
+	}
+	resizeCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	cmd := exec.CommandContext(resizeCtx, "resize2fs", "-f", devicePath)
+	out, resizeErr := cmd.CombinedOutput()
+	cancel()
+	if resizeErr != nil {
+		return fmt.Errorf("resize2fs %s: %s: %w", devicePath, strings.TrimSpace(string(out)), resizeErr)
+	}
+	return nil
+}
+
 // ZFSRename moves a dataset name. Used by the seed flow to atomically promote
 // a populated `<image>-staging` zvol into place as `<image>` after the staging
 // snapshot has been taken.

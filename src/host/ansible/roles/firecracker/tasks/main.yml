@@ -263,6 +263,13 @@
     state: started
     daemon_reload: true
 
+- name: Restart vm-orchestrator when substrate Go tools changed
+  ansible.builtin.systemd:
+    name: vm-orchestrator.service
+    state: restarted
+    daemon_reload: true
+  when: substrate_profile_go_tools_needs_unpack | default(false) | bool
+
 - name: Flush vm-orchestrator handlers
   ansible.builtin.meta: flush_handlers
 
