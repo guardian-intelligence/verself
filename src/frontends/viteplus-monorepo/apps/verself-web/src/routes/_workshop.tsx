@@ -1,11 +1,9 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { type ReactNode } from "react";
-import { AppChrome } from "@verself/brand";
+import { type CSSProperties, type ReactNode } from "react";
+import { PublicTopBar } from "~/features/public/public-top-bar";
 
-// Workshop chrome — public surface for /docs and /policy. Reads ink-on-argent
-// (Vercel/Linear register), reserves amber for filled CTAs only, paints inline
-// links as ink + underline. The signed-in console shell uses a different chrome
-// (sidebar + command palette) — see _shell/route.tsx.
+// Public workshop surface for /docs and /policy. The signed-in console shell
+// uses its own sidebar chrome — see _shell/route.tsx.
 export const Route = createFileRoute("/_workshop")({
   component: WorkshopLayout,
 });
@@ -15,30 +13,22 @@ function WorkshopLayout() {
     <div
       data-treatment="workshop"
       className="flex min-h-svh flex-col"
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-      }}
+      style={
+        {
+          "--header-h": "4rem",
+          "--header-scroll-offset": "calc(var(--header-h) + 1.5rem)",
+          background: "var(--treatment-ground)",
+          color: "var(--treatment-ink)",
+        } as CSSProperties
+      }
     >
-      <AppChrome treatment="workshop" LinkComponent={LinkAdapter} />
+      <PublicTopBar />
       <main id="main" className="flex-1">
         <Outlet />
       </main>
       <SiteFooter />
     </div>
   );
-}
-
-function LinkAdapter(props: {
-  to: string;
-  className?: string;
-  style?: React.CSSProperties;
-  "aria-label"?: string;
-  onClick?: React.MouseEventHandler;
-  children?: ReactNode;
-}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return <Link {...(props as any)} />;
 }
 
 function SiteFooter() {

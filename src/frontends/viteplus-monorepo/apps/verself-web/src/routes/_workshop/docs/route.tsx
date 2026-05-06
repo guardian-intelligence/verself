@@ -9,7 +9,7 @@ import {
 } from "@verself/ui/components/ui/sheet";
 import { cn } from "@verself/ui/lib/utils";
 import { useActiveAnchor } from "@verself/ui/hooks/use-active-anchor";
-import { BookOpen, Copy, FileText, Menu, MessageSquare } from "lucide-react";
+import { ArrowLeft, BookOpen, Copy, FileText, Menu, MessageSquare } from "lucide-react";
 
 import { DOCS_NAV, type DocsNavChild, type DocsNavEntry, isPathActive } from "~/lib/docs-nav";
 
@@ -30,11 +30,11 @@ function DocsLayout() {
       <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,860px)_260px]">
         <DocsSidebar path={path} />
         <div className="min-w-0 border-border lg:border-l xl:border-r">
-          <div
-            data-docs-article
-            className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 py-8 md:px-6 lg:px-8 lg:py-10"
-          >
-            <Outlet />
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 py-8 md:px-6 lg:px-8 lg:py-10">
+            <DocsArticleToolbar />
+            <div data-docs-article>
+              <Outlet />
+            </div>
             <DocsPagination activeEntry={activeEntry} />
           </div>
         </div>
@@ -81,6 +81,7 @@ function DocsMobileBar({ activeEntry, path }: { activeEntry: DocsNavEntry; path:
               <SheetTitle>Docs</SheetTitle>
             </SheetHeader>
             <nav aria-label="Docs sections" className="overflow-y-auto p-3">
+              <DocsConsoleLink />
               <DocsNavList path={path} variant="drawer" />
             </nav>
           </SheetContent>
@@ -105,9 +106,43 @@ function DocsSidebar({ path }: { path: string }) {
   return (
     <aside className="hidden lg:sticky lg:top-[var(--header-scroll-offset)] lg:block lg:max-h-[calc(100svh-var(--header-scroll-offset))] lg:overflow-y-auto">
       <nav aria-label="Docs sections" className="px-6 py-6">
+        <DocsConsoleLink />
         <DocsNavList path={path} variant="sidebar" />
       </nav>
     </aside>
+  );
+}
+
+function DocsConsoleLink() {
+  return (
+    <Link
+      to="/login"
+      search={{ redirect: undefined }}
+      className="mb-3 inline-flex min-h-8 items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+    >
+      <ArrowLeft className="size-4" aria-hidden="true" />
+      <span>Console</span>
+    </Link>
+  );
+}
+
+function DocsArticleToolbar() {
+  return (
+    <div className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
+      <p className="font-mono text-xs font-medium uppercase tracking-normal text-muted-foreground">
+        PLATFORM DOCS
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={copyCurrentDocsPageAsMarkdown}>
+          <Copy className="size-4" aria-hidden="true" />
+          <span>Copy as Markdown</span>
+        </Button>
+        <Button variant="outline" size="sm" render={<a href={DOCS_FEEDBACK_HREF} />}>
+          <MessageSquare className="size-4" aria-hidden="true" />
+          <span>Give Feedback</span>
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -217,24 +252,6 @@ function DocsRightRail({ activeEntry }: { activeEntry: DocsNavEntry }) {
             </ul>
           </nav>
         )}
-
-        <div className="flex flex-col gap-2 border-t border-border pt-4">
-          <button
-            type="button"
-            onClick={copyCurrentDocsPageAsMarkdown}
-            className="flex items-center gap-2 rounded-md py-1 text-left text-muted-foreground transition-colors hover:text-[var(--treatment-ink)]"
-          >
-            <Copy className="size-4" />
-            <span>Copy as Markdown</span>
-          </button>
-          <a
-            href={DOCS_FEEDBACK_HREF}
-            className="flex items-center gap-2 rounded-md py-1 text-muted-foreground transition-colors hover:text-[var(--treatment-ink)]"
-          >
-            <MessageSquare className="size-4" />
-            <span>Give feedback</span>
-          </a>
-        </div>
       </div>
     </aside>
   );

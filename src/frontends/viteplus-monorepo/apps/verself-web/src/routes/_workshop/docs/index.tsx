@@ -18,9 +18,6 @@ function DocsOverview() {
   return (
     <article className="flex flex-col gap-10">
       <header className="flex flex-col gap-4 border-b border-border pb-8">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Platform Docs
-        </p>
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Verself Platform</h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
