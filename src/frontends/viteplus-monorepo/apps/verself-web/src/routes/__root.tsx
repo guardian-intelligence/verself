@@ -7,6 +7,7 @@ import { BrandTelemetryProvider } from "@verself/brand";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
+import { PRODUCT_DOMAIN_META_NAME, readProductDomain } from "~/lib/product-domain";
 import "~/styles/app.css";
 
 const authNavigationClient = {
@@ -44,6 +45,10 @@ export const Route = createRootRouteWithContext<{
       { name: "theme-color", content: "#ffffff" },
       { property: "og:site_name", content: "Verself" },
       { title: "Verself" },
+      // Emit the product domain into SSR HTML once so workshop pages can
+      // render API/origin examples without a per-route createServerFn round
+      // trip. Read by ~/lib/product-domain.ts on the client.
+      { name: PRODUCT_DOMAIN_META_NAME, content: readProductDomain() },
       ...deployMetaTags(),
     ],
     links: [

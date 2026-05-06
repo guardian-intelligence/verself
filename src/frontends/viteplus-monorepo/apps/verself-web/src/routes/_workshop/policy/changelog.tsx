@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { requireProductDomain } from "@verself/web-env";
+import { readProductDomain } from "~/lib/product-domain";
 
 import { VERSIONS, formatPrettyDate } from "~/lib/policy-catalog";
 import {
@@ -12,11 +11,8 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
-
 export const Route = createFileRoute("/_workshop/policy/changelog")({
   component: PolicyChangelog,
-  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Policy Changelog — Verself Platform" },
@@ -30,7 +26,7 @@ export const Route = createFileRoute("/_workshop/policy/changelog")({
 });
 
 function PolicyChangelog() {
-  const productDomain = Route.useLoaderData();
+  const productDomain = readProductDomain();
   const sorted = [...VERSIONS.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   return (
     <PolicyArticle>

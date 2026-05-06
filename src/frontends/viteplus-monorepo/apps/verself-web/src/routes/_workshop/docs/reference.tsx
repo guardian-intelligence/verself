@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { requireProductDomain } from "@verself/web-env";
+import { readProductDomain } from "~/lib/product-domain";
 
 import { SERVICE_CATALOG } from "~/lib/openapi-catalog";
 import { SchemasSection, ServiceSection } from "~/features/reference/reference-renderer";
@@ -9,18 +8,15 @@ import { SchemasSection, ServiceSection } from "~/features/reference/reference-r
 // and is the base of every service API subdomain surfaced in the reference
 // ("sandbox.api.<domain>", "billing.api.<domain>"). Reading it here rather
 // than hardcoding keeps platform docs portable across deployments.
-const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
-
 export const Route = createFileRoute("/_workshop/docs/reference")({
   component: ReferencePage,
-  loader: () => getProductDomain(),
   head: () => ({
     meta: [{ title: "API Reference — Verself Platform" }],
   }),
 });
 
 function ReferencePage() {
-  const productDomain = Route.useLoaderData();
+  const productDomain = readProductDomain();
 
   return (
     <div className="flex flex-col gap-10">

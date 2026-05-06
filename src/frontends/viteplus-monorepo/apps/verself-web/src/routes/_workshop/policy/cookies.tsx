@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { requireProductDomain } from "@verself/web-env";
+import { readProductDomain } from "~/lib/product-domain";
 
 import {
   ChangesSection,
@@ -13,11 +12,8 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
-
 export const Route = createFileRoute("/_workshop/policy/cookies")({
   component: CookiesPolicy,
-  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Cookie Policy — Verself Platform" },
@@ -31,7 +27,7 @@ export const Route = createFileRoute("/_workshop/policy/cookies")({
 });
 
 function CookiesPolicy() {
-  const productDomain = Route.useLoaderData();
+  const productDomain = readProductDomain();
   return (
     <PolicyArticle>
       <PolicyHeader title="Cookie Policy" policyId="cookies" />

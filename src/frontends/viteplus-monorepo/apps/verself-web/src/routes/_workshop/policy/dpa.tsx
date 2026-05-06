@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { requireProductDomain } from "@verself/web-env";
+import { readProductDomain } from "~/lib/product-domain";
 
 import { SUBPROCESSORS } from "~/lib/policy-catalog";
 import {
@@ -14,11 +13,8 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
-
 export const Route = createFileRoute("/_workshop/policy/dpa")({
   component: DPA,
-  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Data Processing Addendum — Verself Platform" },
@@ -32,7 +28,7 @@ export const Route = createFileRoute("/_workshop/policy/dpa")({
 });
 
 function DPA() {
-  const productDomain = Route.useLoaderData();
+  const productDomain = readProductDomain();
   return (
     <PolicyArticle>
       <PolicyHeader title="Data Processing Addendum" policyId="dpa" />
