@@ -62,7 +62,7 @@ job "otelcol" {
 
       resources {
         cpu = 600
-        memory = 1024
+        memory = 2048
       }
 
       service {
