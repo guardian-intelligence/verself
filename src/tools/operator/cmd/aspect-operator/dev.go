@@ -121,6 +121,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 		{Name: "profile-service", EnvKey: "PROFILE_SERVICE_BASE_URL", NomadService: "profile-service-public-http", Choices: []int{14258, 24258, 34258, 44258, 54258}},
 		{Name: "governance-service", EnvKey: "GOVERNANCE_SERVICE_BASE_URL", NomadService: "governance-service-public-http", Choices: []int{14250, 24250, 34250, 44250, 54250}},
 		{Name: "notifications-service", EnvKey: "NOTIFICATIONS_SERVICE_BASE_URL", NomadService: "notifications-service-public-http", Choices: []int{14260, 24260, 34260, 44260, 54260}},
+		{Name: "billing-service", EnvKey: "BILLING_SERVICE_BASE_URL", NomadService: "billing-public-http", Choices: []int{14262, 24262, 34262, 44262, 54262}},
 		{Name: "projects-service", EnvKey: "PROJECTS_SERVICE_BASE_URL", NomadService: "projects-service-public-http", Choices: []int{14264, 24264, 34264, 44264, 54264}},
 		{Name: "source-code-hosting-service", EnvKey: "SOURCE_CODE_HOSTING_SERVICE_BASE_URL", NomadService: "source-code-hosting-service-public-http", Choices: []int{14261, 24261, 34261, 44261, 54261}},
 		{Name: "Electric", EnvKey: "ELECTRIC_BASE_URL", RemotePort: 3010, Choices: []int{13010, 23010, 33010, 43010, 53010}},
