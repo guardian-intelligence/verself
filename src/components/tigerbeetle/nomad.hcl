@@ -7,7 +7,9 @@ job "tigerbeetle" {
     count = 1
 
     network {
+      mode = "host"
       port "client" {
+        host_network = "loopback"
         static = 3320
         to = 3320
       }

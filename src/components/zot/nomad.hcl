@@ -7,7 +7,9 @@ job "zot" {
     count = 1
 
     network {
+      mode = "host"
       port "http" {
+        host_network = "loopback"
         static = 5080
         to = 5080
       }

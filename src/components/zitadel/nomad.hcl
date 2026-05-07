@@ -7,7 +7,9 @@ job "zitadel" {
     count = 1
 
     network {
+      mode = "host"
       port "http" {
+        host_network = "loopback"
         static = 8085
         to = 8085
       }

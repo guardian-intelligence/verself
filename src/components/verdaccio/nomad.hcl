@@ -7,7 +7,9 @@ job "verdaccio" {
     count = 1
 
     network {
+      mode = "host"
       port "http" {
+        host_network = "loopback"
         static = 4873
         to = 4873
       }

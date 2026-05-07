@@ -7,11 +7,14 @@ job "openbao" {
     count = 1
 
     network {
+      mode = "host"
       port "api" {
+        host_network = "loopback"
         static = 8200
         to = 8200
       }
       port "cluster" {
+        host_network = "loopback"
         static = 8201
         to = 8201
       }

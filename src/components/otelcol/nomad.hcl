@@ -7,15 +7,19 @@ job "otelcol" {
     count = 1
 
     network {
+      mode = "host"
       port "otlp_grpc" {
+        host_network = "loopback"
         static = 4317
         to = 4317
       }
       port "otlp_http" {
+        host_network = "loopback"
         static = 4318
         to = 4318
       }
       port "health" {
+        host_network = "loopback"
         static = 13133
         to = 13133
       }

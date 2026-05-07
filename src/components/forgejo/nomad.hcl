@@ -7,7 +7,9 @@ job "forgejo" {
     count = 1
 
     network {
+      mode = "host"
       port "http" {
+        host_network = "loopback"
         static = 3000
         to = 3000
       }

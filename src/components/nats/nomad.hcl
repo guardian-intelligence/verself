@@ -7,11 +7,14 @@ job "nats" {
     count = 1
 
     network {
+      mode = "host"
       port "client" {
+        host_network = "loopback"
         static = 4222
         to = 4222
       }
       port "monitoring" {
+        host_network = "loopback"
         static = 8222
         to = 8222
       }

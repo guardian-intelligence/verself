@@ -7,7 +7,9 @@ job "grafana" {
     count = 1
 
     network {
+      mode = "host"
       port "http" {
+        host_network = "loopback"
         static = 4300
         to = 4300
       }

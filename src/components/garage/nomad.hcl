@@ -7,15 +7,19 @@ job "garage" {
     count = 1
 
     network {
+      mode = "host"
       port "s3" {
+        host_network = "loopback"
         static = 3900
         to = 3900
       }
       port "rpc" {
+        host_network = "loopback"
         static = 3901
         to = 3901
       }
       port "admin" {
+        host_network = "loopback"
         static = 3903
         to = 3903
       }
@@ -62,15 +66,19 @@ job "garage" {
     count = 1
 
     network {
+      mode = "host"
       port "s3" {
+        host_network = "loopback"
         static = 3910
         to = 3910
       }
       port "rpc" {
+        host_network = "loopback"
         static = 3911
         to = 3911
       }
       port "admin" {
+        host_network = "loopback"
         static = 3913
         to = 3913
       }
@@ -117,15 +125,19 @@ job "garage" {
     count = 1
 
     network {
+      mode = "host"
       port "s3" {
+        host_network = "loopback"
         static = 3920
         to = 3920
       }
       port "rpc" {
+        host_network = "loopback"
         static = 3921
         to = 3921
       }
       port "admin" {
+        host_network = "loopback"
         static = 3923
         to = 3923
       }

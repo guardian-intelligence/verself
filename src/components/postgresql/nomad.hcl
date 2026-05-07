@@ -7,7 +7,9 @@ job "postgresql" {
     count = 1
 
     network {
+      mode = "host"
       port "postgres" {
+        host_network = "loopback"
         static = 5432
         to = 5432
       }

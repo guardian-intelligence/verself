@@ -7,11 +7,15 @@ job "stalwart" {
     count = 1
 
     network {
+      mode = "host"
+      # Stalwart binds SMTP publicly; Nomad service discovery stays in-node.
       port "smtp" {
+        host_network = "loopback"
         static = 25
         to = 25
       }
       port "http" {
+        host_network = "loopback"
         static = 8090
         to = 8090
       }
