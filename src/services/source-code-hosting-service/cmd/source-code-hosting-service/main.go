@@ -77,7 +77,7 @@ func run() error {
 	forgejoToken := cfg.RequireCredential("forgejo-token")
 	sandboxInternalURL := cfg.URL("SOURCE_SANDBOX_INTERNAL_URL", "https://127.0.0.1:4263")
 	secretsInternalURL := cfg.URL("SOURCE_SECRETS_INTERNAL_URL", "https://127.0.0.1:4253")
-	projectsInternalURL := cfg.URL("SOURCE_PROJECTS_INTERNAL_URL", "https://127.0.0.1:4265")
+	projectsServiceURL := cfg.URL("SOURCE_PROJECTS_SERVICE_URL", "https://127.0.0.1:4265")
 	iamInternalURL := cfg.URL("SOURCE_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
 	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
@@ -119,9 +119,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("source projects mtls: %w", err)
 	}
-	projectsClient, err := source.NewProjectsClient(projectsInternalURL, projectsHTTPClient)
+	projectsClient, err := source.NewProjectsClient(projectsServiceURL, projectsHTTPClient)
 	if err != nil {
-		return fmt.Errorf("create projects internal client: %w", err)
+		return fmt.Errorf("create projects service client: %w", err)
 	}
 	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
 	if err != nil {

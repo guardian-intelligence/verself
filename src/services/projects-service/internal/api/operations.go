@@ -9,55 +9,55 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type apiSurface uint8
+type apiProjection uint8
 
 const (
-	apiSurfacePublic apiSurface = 1 << iota
-	apiSurfaceInternal
+	apiProjectionPublic apiProjection = 1 << iota
+	apiProjectionService
 )
 
-var publicInternalPeers = []string{
+var publicServicePeers = []string{
 	workloadauth.ServiceSourceCodeHosting,
 	workloadauth.ServiceSandboxRental,
 }
 
 type projectOperation interface {
 	id() string
-	surfaces() apiSurface
-	register(api huma.API, svc *projects.Service, surface apiSurface)
+	projections() apiProjection
+	register(api huma.API, svc *projects.Service, projection apiProjection)
 }
 
 type projectOperationDef[I, O any] struct {
-	op                  huma.Operation
-	policy              operationPolicy
-	enabledSurfaces     apiSurface
-	internalMirrorPeers []string
-	handler             func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error)
+	op                 huma.Operation
+	policy             operationPolicy
+	enabledProjections apiProjection
+	serviceMirrorPeers []string
+	handler            func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error)
 }
 
 func (o projectOperationDef[I, O]) id() string {
 	return o.op.OperationID
 }
 
-func (o projectOperationDef[I, O]) surfaces() apiSurface {
-	return o.enabledSurfaces
+func (o projectOperationDef[I, O]) projections() apiProjection {
+	return o.enabledProjections
 }
 
-func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, surface apiSurface) {
+func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection) {
 	policy := o.policy
-	if surface == apiSurfaceInternal && !policy.Internal {
-		policy.Internal = true
-		policy.InternalPeers = append([]string(nil), o.internalMirrorPeers...)
+	if projection == apiProjectionService && !policy.Service {
+		policy.Service = true
+		policy.ServicePeers = append([]string(nil), o.serviceMirrorPeers...)
 	}
 	registerProjectsRoute(api, o.op, policy, o.handler(svc))
 }
 
-func registerProjectOperations(api huma.API, svc *projects.Service, surface apiSurface) {
+func registerProjectOperations(api huma.API, svc *projects.Service, projection apiProjection) {
 	for _, op := range projectOperations() {
-		if op.surfaces()&surface == 0 {
+		if op.projections()&projection == 0 {
 			continue
 		}
-		op.register(api, svc, surface)
+		op.register(api, svc, projection)
 	}
 }
 
@@ -67,25 +67,25 @@ func publicProjectOperation[I, O any](
 	handler func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error),
 ) projectOperationDef[I, O] {
 	return projectOperationDef[I, O]{
-		op:                  op,
-		policy:              policy,
-		enabledSurfaces:     apiSurfacePublic | apiSurfaceInternal,
-		internalMirrorPeers: publicInternalPeers,
-		handler:             handler,
+		op:                 op,
+		policy:             policy,
+		enabledProjections: apiProjectionPublic | apiProjectionService,
+		serviceMirrorPeers: publicServicePeers,
+		handler:            handler,
 	}
 }
 
-func internalProjectOperation[I, O any](
+func serviceOnlyProjectOperation[I, O any](
 	op huma.Operation,
 	policy operationPolicy,
 	handler func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error),
 ) projectOperationDef[I, O] {
-	policy.Internal = true
+	policy.Service = true
 	return projectOperationDef[I, O]{
-		op:              op,
-		policy:          policy,
-		enabledSurfaces: apiSurfaceInternal,
-		handler:         handler,
+		op:                 op,
+		policy:             policy,
+		enabledProjections: apiProjectionService,
+		handler:            handler,
 	}
 }
 

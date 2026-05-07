@@ -23,9 +23,9 @@ func main() {
 	)
 	switch format {
 	case "3.0":
-		data, err = api.InternalOpenAPIDowngradeYAML("1.0.0", "https://127.0.0.1:4265")
+		data, err = api.ServiceOpenAPIDowngradeYAML("1.0.0", "https://127.0.0.1:4265")
 	case "3.1":
-		data, err = api.InternalOpenAPIYAML("1.0.0", "https://127.0.0.1:4265")
+		data, err = api.ServiceOpenAPIYAML("1.0.0", "https://127.0.0.1:4265")
 	default:
 		err = fmt.Errorf("unsupported format %q", format)
 	}
@@ -40,7 +40,7 @@ func main() {
 		_, _ = os.Stdout.Write(data)
 		return
 	}
-	path := filepath.Join("openapi", "internal-openapi-"+format+".yaml")
+	path := filepath.Join("openapi", "service-openapi-"+format+".yaml")
 	current, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

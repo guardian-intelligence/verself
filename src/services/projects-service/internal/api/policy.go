@@ -75,8 +75,8 @@ type operationPolicy struct {
 	RiskLevel          string
 	DataClassification string
 	BodyLimitBytes     int64
-	Internal           bool
-	InternalPeers      []string
+	Service            bool
+	ServicePeers       []string
 }
 
 type operationRequestInfoKey struct{}
@@ -120,7 +120,7 @@ func startOperationSpan(ctx context.Context, operationID string, policy operatio
 		attribute.String("projects.resource", policy.Resource),
 		attribute.String("projects.action", policy.Action),
 		attribute.String("projects.audit_event", policy.AuditEvent),
-		attribute.Bool("projects.internal", policy.Internal),
+		attribute.Bool("projects.service_projection", policy.Service),
 	))
 }
 
@@ -172,8 +172,8 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
 		panic("missing body limit for mutating operation " + op.OperationID)
 	}
-	if policy.Internal && len(policy.InternalPeers) == 0 {
-		panic("missing internal peer allowlist for " + op.OperationID)
+	if policy.Service && len(policy.ServicePeers) == 0 {
+		panic("missing service peer allowlist for " + op.OperationID)
 	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
@@ -181,7 +181,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.Idempotency == idempotencyHeaderKey {
 		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
 	}
-	if policy.Internal && policy.OrgScope == orgScopeTokenOrgID {
+	if policy.Service && policy.OrgScope == orgScopeTokenOrgID {
 		op.Parameters = appendOriginHeaderParameters(op.Parameters)
 	}
 	if op.Extensions == nil {
@@ -206,14 +206,14 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.BodyLimitBytes > 0 {
 		op.Extensions["x-verself-iam"].(map[string]any)["request_body_max_bytes"] = policy.BodyLimitBytes
 	}
-	if policy.Internal && policy.OrgScope == orgScopeTokenOrgID {
+	if policy.Service && policy.OrgScope == orgScopeTokenOrgID {
 		op.Extensions["x-verself-origin"] = map[string]any{
 			"org_id_header":  originOrgIDHeader,
 			"subject_header": originSubjectHeader,
 			"email_header":   originEmailHeader,
 		}
 	}
-	if policy.Internal {
+	if policy.Service {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
 	} else {
 		op.Security = []map[string][]string{{"bearerAuth": {}}}
@@ -286,16 +286,16 @@ func appendOptionalStringHeader(parameters []*huma.Param, name, description stri
 }
 
 func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projects.Principal, error) {
-	if policy.Internal {
+	if policy.Service {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
 			return projects.Principal{}, unauthorized(ctx)
 		}
-		if !internalPeerAllowed(peerID.String(), policy.InternalPeers) {
-			return projects.Principal{Subject: peerID.String()}, forbidden(ctx, "internal-peer-denied", "SPIFFE peer is not allowed to call this projects operation")
+		if !servicePeerAllowed(peerID.String(), policy.ServicePeers) {
+			return projects.Principal{Subject: peerID.String()}, forbidden(ctx, "service-peer-denied", "SPIFFE peer is not allowed to call this projects operation")
 		}
 		if policy.OrgScope == orgScopeTokenOrgID {
-			principal, err := principalFromInternalOrigin(ctx)
+			principal, err := principalFromServiceOrigin(ctx)
 			if err != nil {
 				return principal, err
 			}
@@ -327,7 +327,7 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projec
 	return principal, nil
 }
 
-func principalFromInternalOrigin(ctx context.Context) (projects.Principal, error) {
+func principalFromServiceOrigin(ctx context.Context) (projects.Principal, error) {
 	info := operationRequestInfoFromContext(ctx)
 	orgID, err := strconv.ParseUint(strings.TrimSpace(info.OriginOrgID), 10, 64)
 	if err != nil || orgID == 0 {
@@ -353,7 +353,7 @@ func principalFromInternalOrigin(ctx context.Context) (projects.Principal, error
 	return principal, nil
 }
 
-func internalPeerAllowed(peerID string, allowedServices []string) bool {
+func servicePeerAllowed(peerID string, allowedServices []string) bool {
 	if len(allowedServices) == 0 {
 		return false
 	}

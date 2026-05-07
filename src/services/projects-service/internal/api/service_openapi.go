@@ -10,27 +10,27 @@ import (
 	"github.com/verself/projects-service/internal/projects"
 )
 
-func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service) huma.API {
-	config := huma.DefaultConfig("Projects Service Internal API", version)
+func NewServiceAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service) huma.API {
+	config := huma.DefaultConfig("Projects Service API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
-	applyInternalSecurityScheme(api)
-	registerProjectOperations(api, svc, apiSurfaceInternal)
+	applyServiceSecurityScheme(api)
+	registerProjectOperations(api, svc, apiProjectionService)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
-func InternalOpenAPIYAML(version, serverURL string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
+func ServiceOpenAPIYAML(version, serverURL string) ([]byte, error) {
+	api := NewServiceAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
 	return api.OpenAPI().YAML()
 }
 
-func InternalOpenAPIDowngradeYAML(version, serverURL string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
+func ServiceOpenAPIDowngradeYAML(version, serverURL string) ([]byte, error) {
+	api := NewServiceAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
 	return api.OpenAPI().DowngradeYAML()
 }
 
-func applyInternalSecurityScheme(api huma.API) {
+func applyServiceSecurityScheme(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {
 		openapi.Components = &huma.Components{}
@@ -40,6 +40,6 @@ func applyInternalSecurityScheme(api huma.API) {
 	}
 	openapi.Components.SecuritySchemes["mutualTLS"] = &huma.SecurityScheme{
 		Type:        "mutualTLS",
-		Description: "SPIFFE X.509-SVID mutual TLS on the projects-service internal listener.",
+		Description: "SPIFFE X.509-SVID mutual TLS on the projects-service service listener.",
 	}
 }

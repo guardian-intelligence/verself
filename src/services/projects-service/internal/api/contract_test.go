@@ -10,36 +10,39 @@ import (
 	"github.com/verself/projects-service/internal/projects"
 )
 
-func TestProjectsOpenAPIInternalProjectionContainsPublicOperations(t *testing.T) {
+func TestProjectsServiceProjectionContainsPublicOperations(t *testing.T) {
 	publicAPI := NewAPI(http.NewServeMux(), Config{Version: "1.0.0", ListenAddr: "127.0.0.1:0", Service: &projects.Service{}})
-	internalAPI := NewInternalAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{})
+	serviceAPI := NewServiceAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{})
 
 	publicSpec := publicAPI.OpenAPI()
-	internalSpec := internalAPI.OpenAPI()
+	serviceSpec := serviceAPI.OpenAPI()
+
+	assertOnlySecuritySchemes(t, publicSpec.Components.SecuritySchemes, "bearerAuth")
+	assertOnlySecuritySchemes(t, serviceSpec.Components.SecuritySchemes, "mutualTLS")
 
 	var checked int
 	for path, publicPath := range publicSpec.Paths {
 		if !strings.HasPrefix(path, "/api/") {
 			continue
 		}
-		internalPath := internalSpec.Paths[path]
-		if internalPath == nil {
-			t.Fatalf("internal OpenAPI projection is missing public path %s", path)
+		servicePath := serviceSpec.Paths[path]
+		if servicePath == nil {
+			t.Fatalf("service OpenAPI projection is missing public path %s", path)
 		}
 		for _, publicOp := range operationsForPath(publicPath) {
 			if publicOp == nil {
 				continue
 			}
 			checked++
-			internalOp := operationByMethod(internalPath, publicOp.Method)
-			if internalOp == nil {
-				t.Fatalf("internal OpenAPI projection is missing %s %s", publicOp.Method, path)
+			serviceOp := operationByMethod(servicePath, publicOp.Method)
+			if serviceOp == nil {
+				t.Fatalf("service OpenAPI projection is missing %s %s", publicOp.Method, path)
 			}
-			if internalOp.OperationID != publicOp.OperationID {
-				t.Fatalf("%s %s operation ID drift: public=%s internal=%s", publicOp.Method, path, publicOp.OperationID, internalOp.OperationID)
+			if serviceOp.OperationID != publicOp.OperationID {
+				t.Fatalf("%s %s operation ID drift: public=%s service=%s", publicOp.Method, path, publicOp.OperationID, serviceOp.OperationID)
 			}
 			assertOnlySecurity(t, publicOp, path, "bearerAuth")
-			assertOnlySecurity(t, internalOp, path, "mutualTLS")
+			assertOnlySecurity(t, serviceOp, path, "mutualTLS")
 			for _, header := range []string{originOrgIDHeader, originSubjectHeader, originEmailHeader} {
 				if operationHasParameter(publicOp, "header", header) {
 					t.Fatalf("%s %s public projection must not expose %s", publicOp.Method, path, header)
@@ -49,12 +52,12 @@ func TestProjectsOpenAPIInternalProjectionContainsPublicOperations(t *testing.T)
 				t.Fatalf("%s %s public projection must not expose x-verself-origin extension", publicOp.Method, path)
 			}
 			for _, header := range []string{originOrgIDHeader, originSubjectHeader} {
-				if !operationHasRequiredParameter(internalOp, "header", header) {
-					t.Fatalf("%s %s internal projection must require %s", publicOp.Method, path, header)
+				if !operationHasRequiredParameter(serviceOp, "header", header) {
+					t.Fatalf("%s %s service projection must require %s", publicOp.Method, path, header)
 				}
 			}
-			if _, ok := internalOp.Extensions["x-verself-origin"].(map[string]any); !ok {
-				t.Fatalf("%s %s internal projection missing x-verself-origin extension", publicOp.Method, path)
+			if _, ok := serviceOp.Extensions["x-verself-origin"].(map[string]any); !ok {
+				t.Fatalf("%s %s service projection missing x-verself-origin extension", publicOp.Method, path)
 			}
 		}
 	}
@@ -108,6 +111,16 @@ func assertOnlySecurity(t *testing.T, op *huma.Operation, path, scheme string) {
 	}
 	if _, ok := op.Security[0][scheme]; !ok || len(op.Security[0]) != 1 {
 		t.Fatalf("%s %s must require only %s: %#v", op.Method, path, scheme, op.Security)
+	}
+}
+
+func assertOnlySecuritySchemes(t *testing.T, schemes map[string]*huma.SecurityScheme, expected string) {
+	t.Helper()
+	if len(schemes) != 1 {
+		t.Fatalf("OpenAPI projection must declare exactly one security scheme: %#v", schemes)
+	}
+	if _, ok := schemes[expected]; !ok {
+		t.Fatalf("OpenAPI projection must declare only %s: %#v", expected, schemes)
 	}
 }
 

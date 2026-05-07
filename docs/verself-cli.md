@@ -1,23 +1,22 @@
 # Verself CLI
 
-`verself` is the customer, operator, and bootstrap facade for the Verself
-platform. It sits above the curated SDKs, which wrap generated OpenAPI clients
-for product services. Browser server functions, the CLI, and customer
-automation use the same service contracts with different auth flows and local
-state handling.
+`verself` is the public CLI and SDK facade for hosted Verself APIs. It sits
+above curated SDKs, which wrap generated OpenAPI clients for product services.
+Browser server functions, the CLI, and customer automation use the same service
+contracts with different auth flows and local state handling.
 
-The CLI has three execution surfaces:
+The CLI has three surfaces:
 
-- service mode: authenticated commands call public or SPIFFE-only service APIs
-  through SDK packages;
-- company mode: commands write durable local company records and secret
+- service mode: authenticated commands call hosted public APIs through SDK
+  packages;
+- company mode: operator-local commands write durable company records and secret
   references under XDG and the credential store;
-- bootstrap mode: commands read a company record, apply one-run public option
-  overrides, and materialize repo/site artifacts.
+- bootstrap mode: operator-local commands read a company record, apply one-run
+  public option overrides, and materialize repo/site artifacts.
 
 `aspect` remains the repo task runner for contributors and agents. `verself`
-becomes the public product CLI and can wrap selected `aspect` tasks when it is
-running from a checkout.
+is the public product CLI. Operator-local commands can wrap selected `aspect`
+tasks when running from a checkout.
 
 ## Layering
 
@@ -43,25 +42,89 @@ company input
   -> public option overrides
   -> resolved manifest
   -> site files, encrypted SOPS bags, and generated command metadata
-  -> bootstrap run record or repository export
+  -> bootstrap run record
 ```
 
 Bootstrap writes files under `src/host/sites/<site>/`, emits a run record, and
 stops at artifact generation. Provisioning, deployment, and owner-grant seeding
 stay on checked-in repo tooling such as `aspect deploy` and operator tasks.
 
-A bootstrapped company is an independent Verself installation. Hosted Verself
-does not become its control plane, identity provider, billing backend, source
-host, secret manager, deployment orchestrator, or operational authority. The
-hosted service renders and exports a configured repo; after download, the
-customer controls the repo, keys, provider accounts, domains, infrastructure,
-runtime services, backups, and organization data.
+Self-hosted installation rendering is an operator/internal surface for now. The
+public CLI and SDK docs should lead with hosted Verself APIs, bearer-token auth,
+and product resources.
 
-`verself-sh` is the seed codebase for the generated company. The customer's
-post-bootstrap substrate is their own Latitude bare metal, provider accounts,
-domains, and SOPS keys. Verself's production installation does not host,
-orchestrate, bill, observe, back up, or administer the generated installation
-after export.
+When self-hosted installation rendering is documented separately, the model must
+state that the rendered installation is fully independent: its own control
+plane, identity provider, billing backend, source host, secret manager,
+deployment orchestration, operational authority, telemetry, keys, provider
+accounts, domains, infrastructure, backups, and organization data. Hosted
+Verself may render local artifacts; the resulting installation administers
+itself.
+
+## SDK Shape
+
+The public SDK copies the Vercel constructor shape. Hosted usage requires only a
+bearer token:
+
+```ts
+import { Verself } from "@verself/sdk";
+
+const verself = new Verself({
+  bearerToken: process.env.VERSELF_TOKEN!,
+});
+```
+
+Go follows the same semantics:
+
+```go
+client, err := verself.New(verself.Options{
+	BearerToken: os.Getenv("VERSELF_TOKEN"),
+})
+if err != nil {
+	return err
+}
+```
+
+Projects is the first SDK-backed vertical slice. The TypeScript SDK exposes a
+curated `Verself` constructor and a `projects` resource whose implementation
+uses the generated projects-service OpenAPI client:
+
+```ts
+import { Verself } from "@verself/sdk";
+
+const verself = new Verself({
+  bearerToken: process.env.VERSELF_TOKEN!,
+});
+
+const page = await verself.projects.list({ state: "active" });
+const project = await verself.projects.create({
+  display_name: "API",
+  slug: "api",
+});
+```
+
+The Go SDK is the same boundary for CLI and automation:
+
+```go
+client, err := verself.New(verself.Options{
+	BearerToken: os.Getenv("VERSELF_TOKEN"),
+})
+if err != nil {
+	return err
+}
+
+page, err := client.Projects.List(ctx, verself.ListProjectsOptions{
+	State: verself.ProjectStateActive,
+	Limit: 100,
+})
+```
+
+`serverURL` remains the general development override. `projectsURL` is accepted
+by the SDKs and CLI for service-local development, staging tunnels, and
+operator diagnostics.
+
+`serverURL` is an optional development, test, and operator override. Public
+examples should omit it.
 
 ## System Pieces
 
@@ -76,16 +139,16 @@ The CLI boundary has these major pieces:
 | Company store | Durable local company intent, owner defaults, CLI name, site defaults, provider options, runtime integration options, and secret references. |
 | Bootstrap manifest | Resolved snapshot of company, owner, site, domain, CLI, provider, and runtime integration intent. |
 | Site artifact renderer | `src/host/sites/<site>/` files, provisioning templates, encrypted SOPS bags, README instructions, and generated CLI entrypoints. |
-| Hosted company-clone service | Artifact-only API that renders a configured repository and asks source-code-hosting-service for an export URL. |
-| Source-code-hosting-service | Repository storage, Git HTTP, checkout grants, archive/export resources, and signed download URLs. |
+| Self-hosted renderer | Deferred operator/internal artifact renderer for independent installations, outside the public SDK/CLI v0 surface. |
+| Source-code-hosting-service | Repository storage, Git HTTP, checkout grants, archive resources, and signed download URLs. |
 | Aspect task surface | Repo-local provisioning, host convergence, Nomad deployment, owner-claim preparation, Zitadel grant reconciliation, and post-deploy verification through checked-in tasks such as `aspect deploy`. |
 | IAM service | Organization materialization, verified owner claim completion, Zitadel grants, and authorization graph convergence when invoked by repo-local operator/seeding logic. |
 | Host/provisioning layer | Latitude/OpenTofu inputs, Cloudflare DNS inputs, SOPS bags, Ansible host convergence, Nomad deployment, and post-deploy verification consumed after bootstrap rendering. |
 | Observability/audit | Trace propagation, ClickHouse evidence, service audit rows, and domain-event ledgers tied to operation IDs. |
 
-Hosted observability and audit evidence covers only the render/export operation.
-The customer's cloned installation writes its own telemetry and audit evidence
-after it is deployed.
+Hosted service observability covers hosted API calls. Operator-local rendering
+records local run state; deployed self-hosted installations write their own
+telemetry and audit evidence.
 
 ## Resource Model
 
@@ -95,33 +158,26 @@ state. Facades should render these terms consistently.
 ```text
 local machine
   profile
-    -> installation
-       -> organization
-          -> project
-             -> repository
+    -> organization
+       -> project
+          -> repository
 
-checkout bootstrap
+operator checkout
   site
-    -> rendered repo/site artifacts
-
-company clone operation
-  company intent + company options
-    -> repository export
+    -> rendered site artifacts
 ```
 
 | Term | Layer | Meaning |
 | --- | --- | --- |
-| Installation | Product/runtime | One running Verself control plane reachable at a root URL, for example `https://verself.sh`. It has service origins, an auth issuer, and product APIs. |
 | Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, and SOPS bags under `src/host/sites/<site>/`. |
 | Company | Business intent | The external business being created or operated. It supplies display name, owner identity, brand/domain intent, and billing/legal semantics. |
-| Organization | Product tenant | The IAM, billing, policy, and membership boundary inside an installation. A company is represented by one primary organization in an installation. |
-| Domain | DNS/resource | A DNS name attached to an installation, company, organization, or service origin. `product_domain` names the Verself installation; `company_domain` names the business. |
+| Organization | Product tenant | The IAM, billing, policy, and membership boundary in hosted Verself. A company is represented by one primary organization. |
+| Domain | DNS/resource | A DNS name attached to a company, organization, or service origin. `product_domain` names the hosted Verself product root; `company_domain` names the business. |
 | Project | Product workspace | An organization-scoped workspace for source, deployments, workloads, environments, and product resources. |
-| Repository | Source resource | A source-code-hosting-service repository attached to a project and exposed through Git HTTP, tree/blob APIs, checkout grants, and exports. |
-| Profile | Local CLI state | A local XDG-backed pointer to one installation, credential reference, and optional default organization/project. |
+| Repository | Source resource | A source-code-hosting-service repository attached to a project and exposed through Git HTTP, tree/blob APIs, and checkout grants. |
+| Profile | Local CLI state | A local XDG-backed pointer to hosted Verself account context, credential reference, and optional default organization/project. |
 | Company option | Local intent | A secret reference, non-secret config value, or structured provider field set owned by a company record and rendered into bootstrap artifacts when needed. |
 | Bootstrap manifest | Render input | A resolved snapshot produced from the company store plus one-run public option overrides. |
-| Clone | Operation/artifact | A company-clone workflow that renders a downloadable company repository and bootstrap artifacts. Provisioning and seeding are separate command surfaces. |
 
 Names map across layers during bootstrap:
 
@@ -131,12 +187,12 @@ Names map across layers during bootstrap:
 | `company.domain` | owner email domain, organization name default, DNS template target |
 | `owner.alias` | owner email local-part and owner-claim input |
 | `cli.name` | generated CLI binary name and command examples |
-| `product_domain` | installation root, auth origin, API origins, Git/source origin |
+| `product_domain` | hosted product root, auth origin, API origins, Git/source origin |
 | `site` | local deployment environment used to materialize `src/host/sites/<site>/` |
 
-This keeps customer-facing UX simple: the founder starts with a company and
-keys; the platform materializes a configured repository. The downloaded repo
-contains the inputs that `aspect deploy` and operator tasks can execute.
+This keeps customer-facing UX focused on hosted Verself resources. Operator
+bootstrap commands can still materialize site artifacts from company intent, but
+that workflow is documented as an operator surface.
 
 ## Command Shape
 
@@ -231,17 +287,11 @@ stateDiagram-v2
   ManifestSnapshot --> XDGState: bootstrap/<run-id>.json
   ManifestSnapshot --> RepoArtifacts: src/host/sites/<site>/
 
-  XDGData --> CompanyCloneRequest: hosted artifact mode
-  CredentialStore --> CompanyCloneRequest
-  CompanyCloneRequest --> SourceExport
-  SourceExport --> DownloadedRepo
-  DownloadedRepo --> RepoArtifacts
-
   TypedError --> [*]
   RepoArtifacts --> AspectDeploy: aspect deploy --site
   AspectDeploy --> ExistingDeployLogic: repo-local tooling
-  ExistingDeployLogic --> DeployedInstallation
-  DeployedInstallation --> [*]
+  ExistingDeployLogic --> OperatorEvidence
+  OperatorEvidence --> [*]
 ```
 
 Durable local state is append-or-replace by resource kind: profiles and active
@@ -253,7 +303,7 @@ the user also writes them through `verself company`.
 
 ## Profile Model
 
-A profile represents one Verself installation plus one local account context.
+A profile represents one hosted Verself account context.
 Profiles are named with `[A-Za-z0-9_.-]+` and contain no path separators.
 
 `$XDG_CONFIG_HOME/verself/config.json`:
@@ -273,7 +323,7 @@ Profiles are named with `[A-Za-z0-9_.-]+` and contain no path separators.
       "default_org": "guardianintelligence.org",
       "default_project": "verself"
     },
-    "local-clone": {
+    "local-bootstrap": {
       "kind": "bootstrap-local",
       "repo_root": "/home/ubuntu/Projects/verself-sh",
       "site": "prod"
@@ -286,7 +336,7 @@ Profile kinds:
 
 | Kind | Use |
 | --- | --- |
-| `customer` | Normal API/console usage against a Verself installation. |
+| `customer` | Normal API/console usage against hosted Verself. |
 | `operator` | Human operator usage with access to operator-only APIs. |
 | `bootstrap-local` | A checkout that can materialize company-derived site files and command metadata. |
 | `ci` | Non-interactive profile using an API credential or workload credential. |
@@ -343,31 +393,33 @@ and refreshed as needed.
 Headless auth:
 
 ```text
-VERSELF_TOKEN=... verself deploy --profile ci --json
+VERSELF_TOKEN=... verself projects list --profile ci --json
 verself auth login --token-file /run/secrets/verself-token
 ```
 
 Token files must be regular files with owner-only permissions. The CLI refuses
 world-readable token files.
 
+Until `auth login` and profile storage exist, SDK-backed Projects commands read
+`VERSELF_TOKEN`, `VERSELF_TOKEN_FILE`, or `--token-file`, and use
+`VERSELF_PROJECTS_API_URL` or `--projects-url` for non-production service
+selection.
+
 ## Public Command Surface
 
 The CLI borrows command grammar from Vercel — `auth login`, `whoami`, `link`,
 `env pull`, `orgs use` — because the ergonomics are good and operators arrive
-with that vocabulary. Product semantics differ. Verself does not run an
-application-hosting product, so commands such as `verself deploy` do not push a
-customer-authored application to `verself.sh`; they run against the active
-profile's installation, which is `verself.sh` for sandbox-rental customers and
-the operator's own apex for cloned installations. Deploys against a cloned
-installation are still executed by that installation's repo-local
-`aspect deploy`; the CLI surfaces it as a single command for ergonomics.
+with that vocabulary. The public v0 surface targets hosted Verself APIs and
+sandbox-compute product resources. Verself sells sandbox compute rather than
+application hosting, so hosted public commands manage organizations, projects,
+environments, source resources, credentials, billing, logs, and sandbox
+workloads.
 
 ```text
 verself login
 verself whoami
 verself switch
 verself link
-verself deploy
 verself pull
 verself env ls|add|get|rm|pull|run
 verself domains ls|add|rm|verify
@@ -378,9 +430,16 @@ verself logs
 verself billing status
 verself iam policies get|set|add-binding|remove-binding
 verself iam test-permissions
+```
+
+Operator-local commands are available when running from a checkout:
+
+```text
+verself deploy
 verself company list|configure|use|inspect|remove
 verself company options list|add|set|remove
 verself company secret list|generate|reveal|set|remove
+verself bootstrap
 ```
 
 `teams` can be accepted as an alias for `orgs` for migration ergonomics:
@@ -400,17 +459,17 @@ adding an explicit single-key reveal command. The primary compatible flows are
 pulling variables into a file and running a command with fetched variables:
 
 ```text
-verself env pull .env.verself --org guardianintelligence.org --project verself --environment bootstrap
-verself env run --org guardianintelligence.org --project verself --environment bootstrap -- aspect deploy --site=prod --sha=HEAD
+verself env pull .env.verself --org guardianintelligence.org --project api --environment production
+verself env run --org guardianintelligence.org --project api --environment preview -- npm test
 ```
 
 `env get` is a Verself extension for explicit single-secret reveal:
 
 ```text
-verself env get VERSELF_SOPS_AGE_IDENTITY \
+verself env get API_TOKEN \
   --org guardianintelligence.org \
-  --project verself \
-  --environment bootstrap
+  --project api \
+  --environment production
 ```
 
 `env get` is terminal-only by default for secret values. Non-interactive callers
@@ -421,9 +480,9 @@ or active profile state.
 
 ## Company UX
 
-`verself company` owns the durable local data store for company intent and
-third-party options. Bootstrap reads this store and accepts one-run public
-option overrides for the current render.
+`verself company` is an operator-local surface. It owns the durable local data
+store for company intent and third-party options. Bootstrap reads this store and
+accepts one-run public option overrides for the current render.
 
 ```text
 verself company configure guardian \
@@ -477,10 +536,11 @@ For Guardian, the company record derives these seeding inputs:
 
 ## Bootstrap UX
 
-`verself bootstrap` resolves a company record into repo-local artifacts. It can
-take one-run public option overrides, but durable configuration changes go
-through `verself company`. Secret-valued inputs are refused in `bootstrap --set`
-and must be supplied through `verself company options add`.
+`verself bootstrap` is an operator-local command that resolves a company record
+into repo-local artifacts. It can take one-run public option overrides, but
+durable configuration changes go through `verself company`. Secret-valued inputs
+are refused in `bootstrap --set` and must be supplied through
+`verself company options add`.
 
 ```text
 verself bootstrap --company guardian
@@ -513,9 +573,9 @@ operator tasks that consume the same company record and resolved manifest.
 ## Company Options
 
 Company options are the shared interface for all third-party and generated
-configuration needed by an installation. The same schema covers pre-provisioning
-infrastructure inputs and runtime integrations that may become necessary after
-the first deploy.
+configuration needed by operator bootstrap. The same schema covers
+pre-provisioning infrastructure inputs and runtime integrations that may become
+necessary after the first deploy.
 
 An option has:
 
@@ -535,10 +595,10 @@ and structured field names. Multi-field integrations use the same option shape
 with `fields` instead of `secret`. Ambiguous values produce
 `company_option.unclassified` and require a semantic option name.
 
-Initial company clone rendering has no hard runtime integration requirement.
-Every third-party runtime integration required by a deployed installation still
-belongs in the option catalog so the generated repo can include the right SOPS
-templates, service config keys, and verification commands.
+Initial local rendering has no hard runtime integration requirement. Every
+third-party runtime integration required by a deployed self-hosted installation
+still belongs in the option catalog so operator artifacts can include the right
+SOPS templates, service config keys, and verification commands.
 
 Initial option catalog:
 
@@ -564,15 +624,15 @@ transaction.
 ## Company Secrets
 
 Company secrets are generated or supplied values that become SOPS bag entries,
-credential-store entries, or provider/runtime config secrets. They are
-modeled separately from options because a secret has generation policy,
-rotation metadata, and reveal rules.
+credential-store entries, or provider/runtime config secrets. They are modeled
+separately from options because a secret has generation policy, rotation
+metadata, and reveal rules.
 
-The hosted company-clone flow generates a root SOPS Age identity for the
-account, stores the private identity as an org/project/environment-scoped env
-secret, encrypts generated SOPS bags to the corresponding Age recipient, and
-then exports the repository. The generated repo contains encrypted secrets and
-the recipient metadata, never the private Age identity.
+Local bootstrap generation creates or accepts a root SOPS Age identity, stores
+the private identity in the local credential store or explicit env scope, and
+encrypts generated SOPS bags to the corresponding Age recipient. Rendered site
+artifacts contain encrypted secrets and recipient metadata, never the private Age
+identity.
 
 ```text
 verself company secret generate guardian --all
@@ -631,14 +691,9 @@ first-run screen with names, destinations, and update commands. Non-interactive
 JSON output includes `value_ref`, `render_targets`, and `reveal_command`, but
 omits plaintext unless `--reveal-once` is passed and stdout is a terminal.
 
-The root SOPS key may be escrowed by hosted Verself only during repo generation
-so the facade can hand it to the customer with `env get`. That escrow does not
-make the generated company dependent on Verself's production installation. The
-customer can write the key into their own credential store, rotate the SOPS
-recipient, delete the hosted env secret, and continue operating independently.
-A stricter mode should accept a customer-provided Age recipient or run key
-generation client-side so the hosted renderer never sees the private decryption
-key.
+The root SOPS key remains local by default. If an internal renderer is introduced
+later, it should prefer a caller-provided Age recipient or client-side key
+generation so hosted Verself never sees the private decryption key.
 
 ## Derivation Rules
 
@@ -722,7 +777,7 @@ Generated by bootstrap rendering:
 - encrypted SOPS bags for generated site secrets;
 - the root SOPS Age recipient and env secret reference;
 - bootstrap run identifiers;
-- source export manifest hashes.
+- rendered artifact manifest hashes.
 
 Generated by company secret generation:
 
@@ -733,203 +788,17 @@ Generated by company secret generation:
 - metadata describing target SOPS bags, consuming components, reveal policy,
   and rotation commands.
 
-## Hosted Renderer Service
+## Self-Hosted Rendering
 
-A hosted renderer can expose the same company snapshot contract:
+Self-hosted rendering is deferred from the public SDK and CLI v0 surface. The
+supported public product path is hosted Verself APIs with bearer-token auth.
 
-```text
-verself company clone guardian --remote
-verself company render guardian --remote --age-recipient age1...
-```
-
-The first supported hosted mode validates a company record snapshot, renders a
-configured repository, and returns a signed source export. Provider mutation,
-service deployment, and owner seeding remain outside the hosted renderer and
-belong to checked-in repo tooling such as `aspect deploy` and operator tasks.
-
-The hosted renderer is not a parent tenant, reseller control plane, management
-plane, or shared runtime for the generated company. No customer organization,
-project, membership, billing account, deployment state, domain ownership, or
-runtime secret is coupled to Verself's own production installation after export.
-Any bootstrap secret escrow exists only to let the facade hand the customer the
-decryption key for the exported repo; the generated installation can rotate or
-remove that relationship immediately.
-
-The renderer does not provide a hosted substrate. It produces a repository that
-can provision a fresh installation on the customer's Latitude account. The
-customer's bare-metal node, DNS zone, backups, identity system, source host, and
-service state are created and operated from the exported repo.
-
-## Company Clone API
-
-The first hosted product API is artifact-only. It accepts a company record
-snapshot, company option hints, and a requested CLI name, then returns a source
-export URL for a configured Verself repo clone. The generated repository
-contains the manifests and command surface needed for the customer to run the
-existing repo bootstrap scripts, build their CLI, and then use
-`aspect deploy`.
-
-The customer chooses the CLI name because it becomes their facade:
-
-```text
-<their_cli_name> auth login
-<their_cli_name> company inspect
-<their_cli_name> orgs use <their-org>
-```
-
-The service derives option classifications from credential shape and optional
-probes. Capability detection improves generated templates, README copy, and
-facade UX. Provider-side mutation happens later from the customer's cloned
-repository.
-
-```http
-POST /v1/company-clones
-Idempotency-Key: clone-guardian-001
-```
-
-```json
-{
-  "company": {
-    "name": "Guardian Intelligence",
-    "domain": "guardianintelligence.org"
-  },
-  "owner": {
-    "name": "Shovon Hasan",
-    "alias": "shovon"
-  },
-  "cli": {
-    "name": "guardian",
-    "display_name": "Guardian"
-  },
-  "company_options": [
-    { "name": "latitude.api_token", "secret": "lat_..." },
-    { "name": "cloudflare.api_token", "secret": "cf_..." },
-    { "name": "stripe.secret_key", "secret": "sk_live_..." },
-    { "name": "stripe.webhook_secret", "secret": "whsec_..." },
-    { "name": "stripe.publishable_key", "value": "pk_live_..." },
-    {
-      "name": "aws.s3_backups",
-      "fields": {
-        "access_key_id": "AKIA...",
-        "secret_access_key": "...",
-        "region": "us-east-1",
-        "bucket": "guardian-verself-backups"
-      }
-    }
-  ],
-  "mode": "artifact_only"
-}
-```
-
-The response always gives the facade enough information to render progress and
-next commands. A request with only a Latitude credential can return a
-downloadable company repo because DNS, backups, provisioning, and deployment are
-performed by the cloned repo.
-
-```json
-{
-  "company_clone_id": "company_clones/cc_01J...",
-  "state": "repo_ready",
-  "operation_url": "https://api.verself.sh/v1/company-clones/cc_01J.../operations/op_01J...",
-  "cli": {
-    "name": "guardian",
-    "login_command": "guardian auth login"
-  },
-  "repository": {
-    "repo_id": "7a2f8c6d-1fb1-4c9c-a32b-a84895fd25d8",
-    "git_http_url": "https://source.api.verself.sh/guardianintelligence-org/company.git",
-    "download_url": "https://source.api.verself.sh/api/v1/repo-exports/rex_01J.../download",
-    "format": "application/x-git-bundle",
-    "expires_at": "2026-05-06T22:00:00Z"
-  },
-  "root_sops_key": {
-    "env_key": "VERSELF_SOPS_AGE_IDENTITY",
-    "scope": {
-      "org": "guardianintelligence.org",
-      "project": "verself",
-      "environment": "bootstrap"
-    },
-    "recipient": "age1example...",
-    "secret_ref": "env://guardianintelligence.org/verself/bootstrap/VERSELF_SOPS_AGE_IDENTITY",
-    "reveal_command": "guardian env get VERSELF_SOPS_AGE_IDENTITY --org guardianintelligence.org --project verself --environment bootstrap"
-  },
-  "option_classifications": [
-    {
-      "provider": "latitude",
-      "option_ref": "company_options/opt_01J...",
-      "capabilities": ["compute.bare_metal.allocate", "compute.ssh_key.manage"]
-    }
-  ],
-  "generated_artifacts": [
-    {
-      "path": ".verself/bootstrap/manifest.yaml",
-      "kind": "bootstrap_manifest"
-    },
-    {
-      "path": "src/host/sites/prod/vars.yml",
-      "kind": "site_vars"
-    },
-    {
-      "path": "src/host/sites/prod/provisioning.tfvars.json.template",
-      "kind": "provisioning_template"
-    },
-    {
-      "path": ".sops.yaml",
-      "kind": "sops_config"
-    },
-    {
-      "path": "src/host/sites/prod/secrets/README.md",
-      "kind": "secret_instructions"
-    },
-    {
-      "path": "src/host/sites/prod/secrets/external.sops.yml",
-      "kind": "runtime_integration_secrets"
-    },
-    {
-      "path": "src/cli/guardian/",
-      "kind": "cli_entrypoint"
-    }
-  ],
-  "next_commands": [
-    "./scripts/bootstrap-linux-amd64",
-    "bazelisk build //src/cli/guardian:guardian",
-    "./bazel-bin/src/cli/guardian/guardian env get VERSELF_SOPS_AGE_IDENTITY --org guardianintelligence.org --project verself --environment bootstrap",
-    "./bazel-bin/src/cli/guardian/guardian company inspect guardian --json",
-    "./bazel-bin/src/cli/guardian/guardian env run --org guardianintelligence.org --project verself --environment bootstrap -- aspect deploy --site=prod --sha=HEAD"
-  ],
-  "warnings": [],
-  "steps": [
-    {
-      "step_id": "classify-options",
-      "state": "succeeded",
-      "label": "Classify company options"
-    },
-    {
-      "step_id": "render-company-repo",
-      "state": "succeeded",
-      "label": "Render company repository"
-    },
-    {
-      "step_id": "render-cli-entrypoint",
-      "state": "succeeded",
-      "label": "Render Guardian CLI entrypoint"
-    }
-  ]
-}
-```
-
-The generated repository contains configuration, encrypted SOPS bags, and
-command metadata. Default hosted output generates a root SOPS Age identity,
-stores the private identity as a scoped env secret, and encrypts generated bags
-to the public recipient. When the customer supplies an Age/SOPS recipient, the
-renderer uses that recipient instead and does not escrow a private decryption
-key.
-
-Generated repo requirements:
+The operator-local implementation may still render site artifacts from a company
+record:
 
 | Path | Purpose |
 | --- | --- |
-| `.verself/bootstrap/manifest.yaml` | Canonical company clone manifest with company, owner, CLI, site, domain, and provider capability metadata. |
+| `.verself/bootstrap/manifest.yaml` | Canonical bootstrap manifest with company, owner, CLI, site, domain, and provider capability metadata. |
 | `.sops.yaml` | SOPS creation rules addressed to the root Age recipient. |
 | `src/cli/<cli_name>/` | CLI package or build target that emits the chosen command name. |
 | `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, company/org defaults, and platform org defaults. |
@@ -937,7 +806,7 @@ Generated repo requirements:
 | `src/host/sites/<site>/secrets/*.sops.yml` | Encrypted SOPS bags for generated and supplied secrets. |
 | `README.md` | Customer-specific next commands using `<cli_name>`, owner email, organization name, and selected site. |
 
-After the customer downloads the repo, the intended flow is:
+The intended operator-local flow is:
 
 ```text
 ./scripts/bootstrap-linux-amd64
@@ -947,54 +816,27 @@ bazelisk build //src/cli/<cli_name>:<cli_name>
 ./bazel-bin/src/cli/<cli_name>/<cli_name> env run --org <org> --project <project> --environment bootstrap -- aspect deploy --site=prod --sha=HEAD
 ```
 
-`<cli_name> auth login` should be preconfigured to discover the customer's
-installation after deploy. The owner email and organization claim are derived
-from `owner.alias` and `company.domain`, then completed by the deployed
-`iam-service` after repo-local operator/seeding logic prepares the claim and the
-owner verifies their email.
-
-Source downloads should be owned by `source-code-hosting-service`. Add a public
-repository export resource over its existing repository, Git HTTP, checkout
-grant, and Forgejo archive behavior:
-
-```text
-POST /api/v1/repos/{repo_id}/exports
-GET  /api/v1/repo-exports/{export_id}/download
-```
-
-The company-clone service returns source export URLs. The source
-export endpoint streams repository bytes.
-
-The hosted service is an artifact renderer and source-export issuer. After
-download, the repo, provider accounts, secrets, infrastructure, and deployed
-services are controlled by the customer. The hosted service redacts credentials,
-avoids persistent raw secret storage by default, records render evidence, and
-signs or hashes the export manifest so the facade can show provenance.
-
-The export manifest must state that the generated company is decoupled from
-Verself's production installation. The downloaded repo should contain only
-configuration needed to build and deploy the customer's own installation, plus
-optional provenance for how the repo was rendered.
-
-The export manifest must also state the substrate boundary: `verself-sh` is seed
-code, and post-bootstrap execution happens on customer-provisioned Latitude bare
-metal. Any references to Verself-hosted APIs in the generated repo are bootstrap
-facade conveniences or provenance links, not runtime dependencies for the
-customer's installation.
+If a hosted renderer is reintroduced, expose it as a separate self-hosted
+installation product surface. Its documentation must state the independence
+boundary directly: after render handoff, the resulting installation owns its
+control plane, identity provider, billing backend, source host, secret manager,
+deployment orchestration, telemetry backend, backup system, and operational
+authority.
 
 ## Operation Errors
 
-Company-clone operations are long-running resources. The hosted company-clone
-flow only renders a repository and creates a source export.
+SDK-backed service commands return typed errors normalized from RFC 9457 Problem
+Details. Operator-local render commands use the same `errors` array shape for
+field-, render-, artifact-, or step-specific failures.
 
-Artifact-only operation states:
+Render operation states:
 
 ```text
 accepted
 planning
 classifying_options
-rendering_repository
-repo_ready
+rendering_artifacts
+artifacts_ready
 failed
 canceling
 canceled
@@ -1011,17 +853,15 @@ failed
 skipped
 ```
 
-Every operation response may include `errors`. HTTP failures use RFC 9457
-Problem Details and include the same `errors` array shape when multiple
-field-, render-, export-, or step-specific failures are relevant. The facade
-keys on `code` and `step_id`; it treats `message` as fallback copy.
+Every operation response may include `errors`. The facade keys on `code` and
+`step_id`; it treats `message` as fallback copy.
 
 ```json
 {
-  "type": "urn:verself:problem:company-clone:render-failed",
+  "type": "urn:verself:problem:bootstrap:render-failed",
   "title": "Render failed",
   "status": 422,
-  "detail": "The company clone request could not be rendered.",
+  "detail": "The bootstrap request could not be rendered.",
   "instance": "urn:verself:trace:4bf92f3577b34da6a3ce929d0e0e4736",
   "errors": [
     {
@@ -1052,7 +892,7 @@ Error detail fields:
 | `user_action` | Short action text for fallback UX. |
 | `docs_url` | Deep link for long-form remediation. |
 | `trace_id` | Trace ID when the error was produced by a specific span. |
-| `details` | Typed, redacted render/export metadata. |
+| `details` | Typed, redacted render or service metadata. |
 
 Stable code families:
 
@@ -1060,7 +900,7 @@ Stable code families:
 | --- | --- |
 | `validation.*` | `validation.domain_invalid`, `validation.owner_alias_invalid`, `validation.cli_name_invalid`, `validation.site_invalid` |
 | `render.*` | `render.manifest_failed`, `render.site_vars_failed`, `render.cli_entrypoint_failed`, `render.readme_failed` |
-| `source.*` | `source.repository_create_failed`, `source.export_failed`, `source.export_expired` |
+| `source.*` | `source.repository_create_failed`, `source.archive_failed`, `source.archive_expired` |
 | `storage.*` | `storage.artifact_write_failed`, `storage.artifact_hash_failed` |
 | `company_option.*` | `company_option.unclassified`, `company_option.unsupported_shape` |
 
@@ -1152,27 +992,23 @@ CLI implementation should have deterministic tests for:
 - secret reveal and set command behavior, including no plaintext in default JSON
   or progress output;
 - generated next-command output that uses `aspect deploy` for deployment;
-- company-clone artifact rendering into deterministic file paths;
-- source export creation and expired export handling;
+- bootstrap artifact rendering into deterministic file paths;
 - generated-client request shapes for SDK-backed commands;
 - idempotency key generation and retry behavior for mutating commands;
 - JSON output stability for automation.
 
-Live company-clone e2e coverage should exercise:
+Live SDK and CLI coverage should exercise:
 
-- `POST /v1/company-clones` with company, owner, CLI name, and company options
-  containing a Latitude-shaped secret;
-- a `repo_ready` response with `repository.download_url`, `generated_artifacts`,
-  `next_commands`, `warnings`, `steps`, and only artifact-renderer states;
-- source export download through `source-code-hosting-service`;
-- generated repository contents containing the bootstrap manifest, site vars,
-  provisioning template, encrypted SOPS bags, CLI entrypoint, and README;
-- service-side audit/domain-event rows and traces for render and export
-  creation.
+- `verself projects list` and `verself projects create` through the Go SDK;
+- the Go SDK `Projects` client using the generated projects-service client;
+- TypeScript server functions in `verself-web` using the TypeScript SDK;
+- idempotency keys on project mutations;
+- service-side audit/domain-event rows and ClickHouse traces for each live
+  request.
 
-Completion evidence for company-clone work is the combination of API JSON
-output, source export metadata, service audit events, domain-event ledger rows,
-and traces linked by the same trace ID.
+Completion evidence for SDK-backed work is the combination of API JSON output,
+service audit events, domain-event ledger rows, and traces linked by the same
+trace ID.
 
 ## Implementation Boundaries
 
@@ -1180,6 +1016,7 @@ Suggested source layout:
 
 ```text
 src/sdks/go/verself/             curated public Go SDK
+src/frontends/viteplus-monorepo/packages/sdk/  curated public TypeScript SDK
 src/cli/verself/                 public CLI binary
 src/tools/operator/              legacy/internal operator helpers during cutover
 src/services/iam-service/        owner-claim and organization APIs

@@ -8,7 +8,7 @@ What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today
 
 Verself does not run customer-authored applications as managed long-lived services. The sandbox products rent compute time; they do not host applications. There is no PaaS surface and no roadmap toward one.
 
-The platform itself is open-source and clone-deployable. The bootstrap CLI (`docs/verself-cli.md`) renders a configured copy of this repo onto operator-supplied Latitude.sh bare metal. A cloned installation has no runtime coupling to `verself.sh` — it is a peer installation operating its own substrate, not a managed tenant.
+The platform itself is open-source and self-hostable. The bootstrap CLI (`docs/verself-cli.md`) renders site artifacts for operator-supplied Latitude.sh bare metal. This surface is operator/internal while public product, SDK, and CLI docs lead with hosted `verself.sh` APIs. A rendered self-hosted installation owns its own substrate, identity, data, billing, and operations.
 
 ## Service Architecture
 
@@ -16,7 +16,7 @@ Host bootstrap substrate is authored under `src/host`. Components, services, fro
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Systemd units consume host credentials with `LoadCredential=` where they still run under systemd; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
-Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Public specs generate customer/human `client` packages. SPIFFE-only service operations get their own committed internal OpenAPI specs and `internalclient` packages; callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated client so trace propagation and peer authorization stay centralized. Shared cross-service transfer contracts live in `src/domain-transfer-objects`; use them for Huma boundary DTOs, protobuf schemas, and generated-client contracts instead of service-local 64-bit JSON encodings.
+Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits public OpenAPI 3.0/3.1 projections for customer, CLI, browser-server-route, documentation, and SDK callers. Services with repo-owned operations also commit service OpenAPI projections that use SPIFFE mTLS and may include repo-only routes. Repo-owned service callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated service client so trace propagation and peer authorization stay centralized. Shared cross-service transfer contracts live in `src/domain-transfer-objects`; use them for Huma boundary DTOs, protobuf schemas, and generated-client contracts instead of service-local 64-bit JSON encodings.
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):
@@ -108,8 +108,8 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
   Customer/operator CLIs are a generated-client surface over those same APIs,
   not a private control plane.
 - Repo-owned service-to-service calls use generated Go clients plus SPIFFE mTLS
-  HTTP clients. Public `client` packages are for customer-authenticated API
-  shapes; `internalclient` packages are for SPIFFE-only operations that would
-  otherwise require spoofable body-scoped attribution.
+  HTTP clients. Public OpenAPI projections feed SDK-layer generated code;
+  service OpenAPI projections feed service-owned `client` packages that may
+  include SPIFFE-only operations and origin-attribution headers.
 - Start telemetry investigation with `aspect observe` — discoverability-first.
 - `aspect db ch schemas` reads all ClickHouse tables (ground truth). Prefer `aspect observe` first, fall back to raw `aspect db ch query --query='...'` when observe has no named query.

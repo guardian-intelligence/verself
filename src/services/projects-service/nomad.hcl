@@ -6,7 +6,7 @@ job "projects-service" {
     count = 2
     network {
       mode = "host"
-      port "internal_https" {
+      port "service_https" {
         host_network = "loopback"
       }
       port "public_http" {
@@ -36,13 +36,13 @@ job "projects-service" {
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/projects-service/auth-audience"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
         VERSELF_PG_DSN = "postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_PG_MIN_CONNS = "1"
+        VERSELF_SERVICE_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_service_https}"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
@@ -70,13 +70,13 @@ job "projects-service" {
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/projects-service/auth-audience"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
         VERSELF_PG_DSN = "postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_PG_MIN_CONNS = "1"
+        VERSELF_SERVICE_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_service_https}"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
@@ -90,8 +90,8 @@ job "projects-service" {
         mode = "delay"
       }
       service {
-        name = "projects-service-internal-https"
-        port = "internal_https"
+        name = "projects-service-service-https"
+        port = "service_https"
         provider = "nomad"
         address_mode = "auto"
       }

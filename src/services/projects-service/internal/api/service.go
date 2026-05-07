@@ -39,10 +39,10 @@ type projectEventsOutput struct {
 }
 
 func resolveProjectOperation() projectOperation {
-	return internalProjectOperation[resolveProjectInput, resolveProjectOutput](huma.Operation{
+	return serviceOnlyProjectOperation[resolveProjectInput, resolveProjectOutput](huma.Operation{
 		OperationID:   "resolve-project",
 		Method:        http.MethodPost,
-		Path:          "/internal/v1/projects/resolve",
+		Path:          "/service/v1/projects/resolve",
 		Summary:       "Resolve a project for a repo-owned service",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
@@ -50,14 +50,14 @@ func resolveProjectOperation() projectOperation {
 		Resource:         "project",
 		Action:           "resolve",
 		OrgScope:         orgScopeRequestOrgID,
-		RateLimitClass:   "internal_read",
+		RateLimitClass:   "service_read",
 		AuditEvent:       "projects.project.resolve",
 		OperationDisplay: "resolve project",
 		OperationType:    "read",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-		Internal:         true,
-		InternalPeers: []string{
+		Service:          true,
+		ServicePeers: []string{
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
 		},
@@ -65,10 +65,10 @@ func resolveProjectOperation() projectOperation {
 }
 
 func resolveProjectEnvironmentOperation() projectOperation {
-	return internalProjectOperation[resolveEnvironmentInput, resolveEnvironmentOutput](huma.Operation{
+	return serviceOnlyProjectOperation[resolveEnvironmentInput, resolveEnvironmentOutput](huma.Operation{
 		OperationID:   "resolve-project-environment",
 		Method:        http.MethodPost,
-		Path:          "/internal/v1/project-environments/resolve",
+		Path:          "/service/v1/project-environments/resolve",
 		Summary:       "Resolve a project environment for a repo-owned service",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
@@ -76,14 +76,14 @@ func resolveProjectEnvironmentOperation() projectOperation {
 		Resource:         "project_environment",
 		Action:           "resolve",
 		OrgScope:         orgScopeRequestOrgID,
-		RateLimitClass:   "internal_read",
+		RateLimitClass:   "service_read",
 		AuditEvent:       "projects.environment.resolve",
 		OperationDisplay: "resolve project environment",
 		OperationType:    "read",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-		Internal:         true,
-		InternalPeers: []string{
+		Service:          true,
+		ServicePeers: []string{
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
 		},
@@ -91,23 +91,23 @@ func resolveProjectEnvironmentOperation() projectOperation {
 }
 
 func listProjectEventsOperation() projectOperation {
-	return internalProjectOperation[projectEventsInput, projectEventsOutput](huma.Operation{
-		OperationID: "list-project-events-internal",
+	return serviceOnlyProjectOperation[projectEventsInput, projectEventsOutput](huma.Operation{
+		OperationID: "list-project-events-service",
 		Method:      http.MethodGet,
-		Path:        "/internal/v1/project-events",
+		Path:        "/service/v1/project-events",
 		Summary:     "List project domain events",
 	}, operationPolicy{
 		Permission:       permissionProjectEventRead,
 		Resource:         "project_event",
 		Action:           "list",
 		OrgScope:         orgScopeRequestOrgID,
-		RateLimitClass:   "internal_read",
+		RateLimitClass:   "service_read",
 		AuditEvent:       "projects.event.list",
 		OperationDisplay: "list project events",
 		OperationType:    "read",
 		RiskLevel:        "medium",
-		Internal:         true,
-		InternalPeers:    []string{workloadauth.ServiceGovernance},
+		Service:          true,
+		ServicePeers:     []string{workloadauth.ServiceGovernance},
 	}, listEvents)
 }
 

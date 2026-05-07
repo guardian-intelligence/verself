@@ -2,7 +2,7 @@
 
 Verself sells sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement; Lambda-style workloads and persistent dev VMs are planned on the same isolation substrate. Customer code runs inside short-lived sandboxes the customer rents — Verself does not host customer applications as managed long-lived services.
 
-The platform itself is open-source and clone-deployable. A separate bootstrap CLI renders a configured copy of this repo onto operator-supplied Latitude.sh bare metal; a cloned installation has no runtime coupling to verself.sh and is not a managed tenant. See [`docs/verself-cli.md`](docs/verself-cli.md).
+The platform itself is open-source and self-hostable. The self-hosted bootstrap path is currently an operator/internal surface that renders site artifacts for operator-supplied Latitude.sh bare metal; public SDK and CLI docs lead with hosted `verself.sh` APIs. See [`docs/verself-cli.md`](docs/verself-cli.md).
 
 The repo holds services, console, marketing site, and operator tooling, almost entirely self-hosted on bare metal: Forgejo for source, fast CI via Firecracker + ZFS, Grafana + ClickHouse observability (logs, traces, metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general-purpose RDBMS.
 

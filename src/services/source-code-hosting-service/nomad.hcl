@@ -124,7 +124,7 @@ job "source-code-hosting-service" {
         destination = "secrets/upstreams.env"
         data = <<-EOT
 SOURCE_IAM_INTERNAL_URL=https://{{- with nomadService "iam-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SOURCE_PROJECTS_INTERNAL_URL=https://{{- with nomadService "projects-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+SOURCE_PROJECTS_SERVICE_URL=https://{{- with nomadService "projects-service-service-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SOURCE_SANDBOX_INTERNAL_URL=https://{{- with nomadService "sandbox-rental-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SOURCE_SECRETS_INTERNAL_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT

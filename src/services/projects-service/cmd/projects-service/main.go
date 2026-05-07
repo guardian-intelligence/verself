@@ -69,7 +69,7 @@ func run() error {
 	cfg := envconfig.New()
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4264")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4265")
+	serviceListenAddr := cfg.String("VERSELF_SERVICE_LISTEN_ADDR", "127.0.0.1:4265")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -126,7 +126,7 @@ func run() error {
 	})(privateMux)
 	rootMux.Handle("/", authenticated)
 
-	internalPeerIDs, err := workloadauth.PeerIDsForSource(
+	servicePeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
 		workloadauth.ServiceSourceCodeHosting,
 		workloadauth.ServiceSandboxRental,
@@ -135,21 +135,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
+	serviceTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, servicePeerIDs...)
 	if err != nil {
-		return fmt.Errorf("projects spiffe internal tls: %w", err)
+		return fmt.Errorf("projects spiffe service tls: %w", err)
 	}
-	internalMux := http.NewServeMux()
-	projectsapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, svc)
-	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
+	serviceMux := http.NewServeMux()
+	projectsapi.NewServiceAPI(serviceMux, serviceVersion, "https://"+serviceListenAddr, svc)
+	serviceAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(servicePeerIDs, serviceMux)
 	if err != nil {
-		return fmt.Errorf("projects internal allowlist: %w", err)
+		return fmt.Errorf("projects service allowlist: %w", err)
 	}
 
 	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
-	internal.TLSConfig = internalTLSConfig
-	return httpserver.RunPair(ctx, logger, public, internal)
+	serviceServer := httpserver.New(serviceListenAddr, otelhttp.NewHandler(limitRequestBodies(serviceAllowlist, requestBodyLimit), serviceName+"-service"))
+	serviceServer.TLSConfig = serviceTLSConfig
+	return httpserver.RunPair(ctx, logger, public, serviceServer)
 }
 
 func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, error) {
@@ -201,7 +201,7 @@ func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 func requestMayHaveBody(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/internal/")
+		return strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/service/")
 	default:
 		return false
 	}

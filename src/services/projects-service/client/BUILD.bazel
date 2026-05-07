@@ -5,7 +5,7 @@ verself_oapi_go_client(
     importpath = "github.com/verself/projects-service/client",
     package = "projectsclient",
     response_type_suffix = "HTTPResponse",
-    spec = "//src/services/projects-service/openapi:internal-openapi-3.0.yaml",
+    spec = "//src/services/projects-service/openapi:service-openapi-3.0.yaml",
     visibility = ["//src/services:__subpackages__"],
     deps = [
         "@com_github_oapi_codegen_runtime//:runtime",
