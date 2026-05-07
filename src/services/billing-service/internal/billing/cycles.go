@@ -129,6 +129,9 @@ func (c *Client) ApplyPendingDueBillingWork(ctx context.Context, limit int) (int
 }
 
 func (c *Client) ensureOpenBillingCycleTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, now time.Time) (billingCycle, error) {
+	if err := ensureDefaultOrgTx(ctx, q, orgID); err != nil {
+		return billingCycle{}, err
+	}
 	if cycle, ok, err := c.openBillingCycleContainingTx(ctx, q, orgID, productID, now); err != nil || ok {
 		return cycle, err
 	}

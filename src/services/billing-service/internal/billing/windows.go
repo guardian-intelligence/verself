@@ -924,8 +924,8 @@ func (c *Client) orgBillingStateTx(ctx context.Context, tx pgx.Tx, orgID OrgID) 
 	q := c.queries.WithTx(tx)
 	row, err := q.GetOrgBillingState(ctx, store.GetOrgBillingStateParams{OrgID: orgIDText(orgID)})
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := q.InsertDefaultOrg(ctx, store.InsertDefaultOrgParams{OrgID: orgIDText(orgID), DisplayName: "Org " + orgIDText(orgID)}); err != nil {
-			return "", "", fmt.Errorf("bootstrap org: %w", err)
+		if err := ensureDefaultOrgTx(ctx, q, orgID); err != nil {
+			return "", "", err
 		}
 		return "active", "block", nil
 	}

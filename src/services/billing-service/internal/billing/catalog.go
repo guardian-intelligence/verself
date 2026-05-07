@@ -39,6 +39,16 @@ func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string,
 	return nil
 }
 
+func ensureDefaultOrgTx(ctx context.Context, q *store.Queries, orgID OrgID) error {
+	if orgID == 0 {
+		return fmt.Errorf("org_id is required")
+	}
+	if err := q.InsertDefaultOrg(ctx, store.InsertDefaultOrgParams{OrgID: orgIDText(orgID), DisplayName: "Org " + orgIDText(orgID)}); err != nil {
+		return fmt.Errorf("bootstrap org: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) ListPlans(ctx context.Context, productID string) ([]PlanRecord, error) {
 	rows, err := c.queries.ListActivePlans(ctx, store.ListActivePlansParams{ProductID: productID})
 	if err != nil {
