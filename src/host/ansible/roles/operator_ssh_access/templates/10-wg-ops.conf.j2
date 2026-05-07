@@ -1,0 +1,5 @@
+# Managed by Ansible - operator_ssh_access role.
+
+[Unit]
+Wants=wg-quick@{{ operator_ssh_access_recovery_wireguard_interface }}.service
+After=wg-quick@{{ operator_ssh_access_recovery_wireguard_interface }}.service

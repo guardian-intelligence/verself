@@ -7,3 +7,4 @@ operator_ssh_access_upstream_address: 127.0.0.1
 operator_ssh_access_upstream_port: 22
 operator_ssh_access_recovery_address: "{{ host_wireguard_tunnels.ops.address }}"
 operator_ssh_access_recovery_port: 2222
+operator_ssh_access_recovery_wireguard_interface: "{{ host_wireguard_tunnels.ops.interface | default('wg-ops') }}"

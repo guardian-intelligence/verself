@@ -23,6 +23,23 @@
     mode: "0644"
   register: operator_ssh_access_config
 
+- name: Ensure sshd systemd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/ssh.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render sshd recovery listener ordering
+  ansible.builtin.template:
+    src: 10-wg-ops.conf.j2
+    dest: /etc/systemd/system/ssh.service.d/10-wg-ops.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: operator_ssh_access_unit
+
 - name: Validate merged sshd configuration
   ansible.builtin.command:
     cmd: /usr/sbin/sshd -t
@@ -39,10 +56,12 @@
 - name: Restart sshd with Pomerium upstream listeners
   ansible.builtin.systemd:
     name: ssh.service
+    daemon_reload: true
     state: restarted
   when: >
     operator_ssh_access_user_ca.changed
     or operator_ssh_access_config.changed
+    or operator_ssh_access_unit.changed
     or operator_ssh_access_socket.changed
 
 - name: Wait for local SSH upstream
@@ -63,5 +82,6 @@
       {{
         operator_ssh_access_user_ca.changed
         or operator_ssh_access_config.changed
+        or operator_ssh_access_unit.changed
         or operator_ssh_access_socket.changed
       }}
