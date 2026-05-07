@@ -1,0 +1,97 @@
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/components:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/components/electric/cmd/electric-nomad-runner:electric-nomad-runner_nomad_artifact": "electric-nomad-runner",
+    },
+    component = "electric",
+    job_id = "electric",
+    job_spec = "nomad.hcl",
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    srcs = ["tasks/instances.yml"],
+    definition_json = """
+{
+  "component": "electric",
+  "kind": "platform_component",
+  "nomad_component_label": "//src/components/electric:nomad_component",
+  "order": 35,
+  "workload": {
+    "bootstrap": [
+      {
+        "class": "host_runtime",
+        "name": "electric-instances",
+        "phase": "after_credentials",
+        "source": "src/components/electric/tasks/instances.yml"
+      }
+    ],
+    "directories": [
+      {"group": "root", "mode": "0750", "owner": "root", "path": "/etc/credstore/electric"},
+      {"group": "root", "mode": "0750", "owner": "root", "path": "/etc/credstore/electric-notifications"}
+    ],
+    "secret_refs": [
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric/api-secret",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 48}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-pg-password",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric/pg-password",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 32}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-notifications-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric-notifications/api-secret",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 48}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-notifications-pg-password",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric-notifications/pg-password",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 32}, "kind": "generated"}
+      }
+    ]
+  }
+}
+""",
+    visibility = ["//src/host:__pkg__"],
+)

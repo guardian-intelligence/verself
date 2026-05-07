@@ -8,11 +8,11 @@ dependencies: []
 galaxy_info:
   author: verself
   description: >-
-    Provision one ElectricSQL sync container instance — create the pg role,
+    Prepare one ElectricSQL sync instance for Nomad — create the pg role,
     reconcile publication + REPLICA IDENTITY + ownership in a single psql
     DO block (the module-based approach silently corrupts ANY()
-    comparisons), render the systemd unit and nft egress rules, ensure the
-    unit is up and healthy.
+    comparisons), render the runtime env file, and admit the pinned image
+    into the local containerd store.
   role_name: electric
   license: UNLICENSED
   min_ansible_version: "2.18"

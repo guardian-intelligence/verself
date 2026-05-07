@@ -1,0 +1,198 @@
+package main
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+)
+
+const shutdownGrace = 25 * time.Second
+
+type config struct {
+	ctrBin              string
+	image               string
+	envFile             string
+	storageDir          string
+	instanceID          string
+	replicationStreamID string
+	dbPoolSize          string
+	portEnv             string
+	runcBinary          string
+	containerID         string
+}
+
+func main() {
+	cfg, err := parseConfig(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "electric-nomad-runner: %v\n", err)
+		os.Exit(2)
+	}
+	if err := run(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "electric-nomad-runner: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func parseConfig(args []string) (config, error) {
+	fs := flag.NewFlagSet("electric-nomad-runner", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	cfg := config{}
+	fs.StringVar(&cfg.ctrBin, "ctr", "", "absolute path to ctr")
+	fs.StringVar(&cfg.image, "image", "", "container image reference")
+	fs.StringVar(&cfg.envFile, "env-file", "", "runtime env file containing Electric secrets")
+	fs.StringVar(&cfg.storageDir, "storage-dir", "", "host storage directory mounted at /data")
+	fs.StringVar(&cfg.instanceID, "instance-id", "", "stable Electric instance id")
+	fs.StringVar(&cfg.replicationStreamID, "replication-stream-id", "", "stable Electric replication stream id")
+	fs.StringVar(&cfg.dbPoolSize, "db-pool-size", "", "Electric database pool size")
+	fs.StringVar(&cfg.portEnv, "port-env", "NOMAD_PORT_http", "environment variable containing the allocated HTTP port")
+	fs.StringVar(&cfg.runcBinary, "runc-binary", "/usr/bin/crun", "runc-compatible runtime binary")
+	if err := fs.Parse(args); err != nil {
+		return config{}, err
+	}
+	if fs.NArg() != 0 {
+		return config{}, fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
+	}
+
+	for name, value := range map[string]string{
+		"ctr":                   cfg.ctrBin,
+		"image":                 cfg.image,
+		"env-file":              cfg.envFile,
+		"storage-dir":           cfg.storageDir,
+		"instance-id":           cfg.instanceID,
+		"replication-stream-id": cfg.replicationStreamID,
+		"db-pool-size":          cfg.dbPoolSize,
+		"port-env":              cfg.portEnv,
+		"runc-binary":           cfg.runcBinary,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return config{}, fmt.Errorf("--%s is required", name)
+		}
+	}
+	allocID := strings.TrimSpace(os.Getenv("NOMAD_ALLOC_ID"))
+	if allocID == "" {
+		return config{}, errors.New("NOMAD_ALLOC_ID is required")
+	}
+	cfg.containerID = cfg.instanceID + "-" + allocID
+	return cfg, nil
+}
+
+func run(cfg config) error {
+	port := strings.TrimSpace(os.Getenv(cfg.portEnv))
+	if port == "" {
+		return fmt.Errorf("%s is required", cfg.portEnv)
+	}
+
+	_ = cleanup(cfg)
+
+	cmd := exec.Command(cfg.ctrBin, ctrRunArgs(cfg, port)...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start ctr run: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	select {
+	case err := <-done:
+		cleanupErr := cleanup(cfg)
+		if err != nil {
+			return err
+		}
+		return cleanupErr
+	case sig := <-signals:
+		if err := terminate(cfg, cmd, done); err != nil {
+			return fmt.Errorf("%s: %w", sig, err)
+		}
+		return nil
+	}
+}
+
+func ctrRunArgs(cfg config, port string) []string {
+	return []string{
+		"run",
+		"--rm",
+		"--net-host",
+		"--runtime", "io.containerd.runc.v2",
+		"--runc-binary", cfg.runcBinary,
+		"--env-file", cfg.envFile,
+		"--env", "ELECTRIC_PORT=" + port,
+		"--env", "ELECTRIC_STORAGE_DIR=/data",
+		"--env", "ELECTRIC_DB_POOL_SIZE=" + cfg.dbPoolSize,
+		"--env", "ELECTRIC_INSTANCE_ID=" + cfg.instanceID,
+		"--env", "ELECTRIC_REPLICATION_STREAM_ID=" + cfg.replicationStreamID,
+		"--env", "ELECTRIC_MANUAL_TABLE_PUBLISHING=true",
+		"--env", "RELEASE_NAME=" + cfg.instanceID + "@127.0.0.1",
+		"--env", "RELEASE_DISTRIBUTION=none",
+		"--mount", "type=bind,src=" + cfg.storageDir + ",dst=/data,options=rbind:rw",
+		cfg.image,
+		cfg.containerID,
+	}
+}
+
+func terminate(cfg config, cmd *exec.Cmd, done <-chan error) error {
+	_ = ctr(cfg, "tasks", "kill", "--signal", "SIGTERM", cfg.containerID)
+	timer := time.NewTimer(shutdownGrace)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+	case <-timer.C:
+		_ = ctr(cfg, "tasks", "kill", "--signal", "SIGKILL", cfg.containerID)
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		<-done
+	}
+	return cleanup(cfg)
+}
+
+func cleanup(cfg config) error {
+	taskErr := ctr(cfg, "tasks", "delete", "--force", cfg.containerID)
+	containerErr := ctr(cfg, "containers", "delete", cfg.containerID)
+	if taskErr != nil && containerErr != nil {
+		return fmt.Errorf("cleanup task: %v; cleanup container: %w", taskErr, containerErr)
+	}
+	if taskErr != nil {
+		return taskErr
+	}
+	return containerErr
+}
+
+func ctr(cfg config, args ...string) error {
+	cmd := exec.Command(cfg.ctrBin, args...)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		if len(output) > 0 {
+			_, _ = os.Stdout.Write(output)
+		}
+		return nil
+	}
+	if isMissingContainerOutput(output) {
+		return nil
+	}
+	if len(output) > 0 {
+		_, _ = os.Stderr.Write(output)
+	}
+	return fmt.Errorf("ctr %s: %w", strings.Join(args, " "), err)
+}
+
+func isMissingContainerOutput(output []byte) bool {
+	lower := strings.ToLower(string(output))
+	return strings.Contains(lower, "not found") || strings.Contains(lower, "does not exist")
+}

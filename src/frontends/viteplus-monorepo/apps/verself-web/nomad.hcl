@@ -29,8 +29,6 @@ job "verself-web" {
         command = "local/bin/verself-web"
       }
       env {
-        ELECTRIC_BASE_URL = "http://127.0.0.1:3010"
-        ELECTRIC_NOTIFICATIONS_BASE_URL = "http://127.0.0.1:3012"
         HOME = "/var/lib/verself-web"
         HOST = "127.0.0.1"
         NODE_ENV = "production"
@@ -81,6 +79,8 @@ job "verself-web" {
         destination = "secrets/upstreams.env"
         data = <<-EOT
 BILLING_SERVICE_BASE_URL=http://{{- with nomadService "billing-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+ELECTRIC_BASE_URL=http://{{- with nomadService "electric-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+ELECTRIC_NOTIFICATIONS_BASE_URL=http://{{- with nomadService "electric-notifications-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 GOVERNANCE_SERVICE_BASE_URL=http://{{- with nomadService "governance-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 IAM_SERVICE_BASE_URL=http://{{- with nomadService "iam-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 NOTIFICATIONS_SERVICE_BASE_URL=http://{{- with nomadService "notifications-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}

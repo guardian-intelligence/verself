@@ -1,13 +1,13 @@
 ---
 argument_specs:
   main:
-    short_description: Provision one ElectricSQL sync instance.
+    short_description: Prepare host state for one ElectricSQL sync instance.
     description:
       - >-
-        Invoked once per generated Electric instance. Instance-specific paths,
-        port, role names, and table lists come from electric_config; the role
-        owns shared plumbing (image pin, credstore layout, systemd template,
-        nft egress, and the pg reconcile DO block).
+        Invoked once per Electric instance before the Nomad job runs.
+        Instance-specific paths, role names, and table lists come from
+        electric_config; the role owns credential materialization, persistent
+        storage, local image admission, and the pg reconcile DO block.
     options:
       electric_config:
         type: dict
@@ -19,9 +19,6 @@ argument_specs:
             choices: [default, mail, notifications]
           electric_service_name:
             type: str
-            required: true
-          electric_service_port:
-            type: int
             required: true
           electric_pg_role:
             type: str
@@ -46,17 +43,5 @@ argument_specs:
             type: str
             required: true
           electric_credstore_dir:
-            type: str
-            required: true
-          electric_nftables_table:
-            type: str
-            required: true
-          electric_nftables_file:
-            type: str
-            required: true
-          electric_db_pool_size:
-            type: int
-            required: true
-          electric_replication_stream_id:
             type: str
             required: true

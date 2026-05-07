@@ -1,6 +1,7 @@
+import type { Attributes, Span } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
-import { UndiciInstrumentation } from "@opentelemetry/instrumentation-undici";
+import { UndiciInstrumentation, type UndiciRequest } from "@opentelemetry/instrumentation-undici";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 
@@ -34,6 +35,44 @@ function logSdkError(msg: string, error: unknown): void {
   console.error(JSON.stringify(payload));
 }
 
+const sensitiveURLQueryParamNames = new Set([
+  "access_token",
+  "api_secret",
+  "authorization",
+  "client_secret",
+  "code",
+  "id_token",
+  "refresh_token",
+  "secret",
+  "token",
+]);
+
+function redactedUndiciURLAttributes(request: UndiciRequest): Attributes {
+  let url: URL;
+  try {
+    url = new URL(request.path, request.origin);
+  } catch {
+    return {};
+  }
+
+  let redacted = false;
+  for (const key of Array.from(url.searchParams.keys())) {
+    if (!sensitiveURLQueryParamNames.has(key.toLowerCase())) continue;
+    url.searchParams.set(key, "<redacted>");
+    redacted = true;
+  }
+
+  if (!redacted) return {};
+  return {
+    "url.full": url.toString(),
+    "url.query": url.search,
+  };
+}
+
+function scrubUndiciRequestURL(span: Span, request: UndiciRequest): void {
+  span.setAttributes(redactedUndiciURLAttributes(request));
+}
+
 export async function initOtel(serviceName: string): Promise<void> {
   const otlpEndpoint = (process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://127.0.0.1:4318").replace(
     /\/+$/,
@@ -48,7 +87,13 @@ export async function initOtel(serviceName: string): Promise<void> {
       "deployment.environment.name": process.env.NODE_ENV || "production",
     }),
     traceExporter: new OTLPTraceExporter({ url: tracesEndpoint }),
-    instrumentations: [new HttpInstrumentation(), new UndiciInstrumentation()],
+    instrumentations: [
+      new HttpInstrumentation(),
+      new UndiciInstrumentation({
+        requestHook: scrubUndiciRequestURL,
+        startSpanHook: redactedUndiciURLAttributes,
+      }),
+    ],
   });
 
   sdk.start();
