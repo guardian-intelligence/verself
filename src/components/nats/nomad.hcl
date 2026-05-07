@@ -20,6 +20,26 @@ job "nats" {
       }
     }
 
+    task "spiffe-helper" {
+      driver = "raw_exec"
+      user = "nats"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = true
+      }
+
+      config {
+        command = "/opt/verself/profile/bin/spiffe-helper"
+        args = ["-config", "/etc/nats/nats-spiffe-helper.conf"]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "server" {
       driver = "raw_exec"
       user = "nats"

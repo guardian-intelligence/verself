@@ -148,9 +148,6 @@
     owner: root
     group: grafana
     mode: "0640"
-  notify:
-    - restart grafana-clickhouse-spiffe-helper
-    - restart grafana
 
 - name: Ensure Grafana ClickHouse user exists with read-only certificate grants
   ansible.builtin.shell: |
@@ -199,7 +196,6 @@
     group: grafana
     mode: "0750"
     recurse: true
-  notify: restart grafana
 
 - name: Set ClickHouse datasource plugin marker ownership
   ansible.builtin.file:
@@ -207,7 +203,6 @@
     owner: grafana
     group: grafana
     mode: "0640"
-  notify: restart grafana
 
 - name: Deploy Grafana configuration
   ansible.builtin.template:
@@ -216,7 +211,6 @@
     owner: root
     group: grafana
     mode: "0640"
-  notify: restart grafana
 
 - name: Deploy Grafana secret environment
   ansible.builtin.template:
@@ -225,7 +219,6 @@
     owner: root
     group: grafana
     mode: "0640"
-  notify: restart grafana
   no_log: true
 
 - name: Deploy Grafana ClickHouse datasource refresh script
@@ -235,9 +228,6 @@
     owner: root
     group: root
     mode: "0755"
-  notify:
-    - restart grafana-clickhouse-spiffe-helper
-    - restart grafana
 
 - name: Deploy Grafana ClickHouse SPIFFE helper config
   ansible.builtin.template:
@@ -246,7 +236,6 @@
     owner: root
     group: grafana
     mode: "0640"
-  notify: restart grafana-clickhouse-spiffe-helper
 
 - name: Deploy Grafana dashboard provider
   ansible.builtin.template:
@@ -255,7 +244,6 @@
     owner: root
     group: grafana
     mode: "0640"
-  notify: restart grafana
 
 - name: Deploy Grafana dashboards
   ansible.builtin.template:
@@ -268,38 +256,6 @@
   loop_control:
     label: "{{ dashboard.title }}"
     loop_var: dashboard
-  notify: restart grafana
-
-- name: Deploy Grafana systemd unit
-  ansible.builtin.template:
-    src: grafana.service.j2
-    dest: /etc/systemd/system/grafana.service
-    mode: "0644"
-  notify: restart grafana
-
-- name: Deploy Grafana ClickHouse SPIFFE helper systemd unit
-  ansible.builtin.template:
-    src: grafana-clickhouse-spiffe-helper.service.j2
-    dest: /etc/systemd/system/grafana-clickhouse-spiffe-helper.service
-    mode: "0644"
-  notify: restart grafana-clickhouse-spiffe-helper
-
-- name: Apply Grafana unit and config changes before readiness
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start Grafana ClickHouse SPIFFE helper
-  ansible.builtin.systemd:
-    name: grafana-clickhouse-spiffe-helper
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Enable and start Grafana
-  ansible.builtin.systemd:
-    name: grafana
-    enabled: true
-    state: started
-    daemon_reload: true
 
 - name: Wait for Grafana HTTP listener
   ansible.builtin.wait_for:

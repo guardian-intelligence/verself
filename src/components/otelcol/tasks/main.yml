@@ -83,7 +83,6 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
-  notify: restart otelcol
 
 - name: Deploy OTel Collector ClickHouse SPIFFE helper config
   ansible.builtin.template:
@@ -92,16 +91,6 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
-  notify: restart otelcol-clickhouse-spiffe-helper
-
-- name: Deploy OTel Collector ClickHouse SPIFFE helper systemd unit
-  ansible.builtin.template:
-    src: otelcol-clickhouse-spiffe-helper.service.j2
-    dest: /etc/systemd/system/otelcol-clickhouse-spiffe-helper.service
-    owner: root
-    group: root
-    mode: "0644"
-  notify: restart otelcol-clickhouse-spiffe-helper
 
 - name: Deploy OTel Collector config
   ansible.builtin.template:
@@ -110,31 +99,3 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
-  notify: restart otelcol
-
-- name: Deploy OTel Collector systemd unit
-  ansible.builtin.template:
-    src: otelcol.service.j2
-    dest: /etc/systemd/system/otelcol.service
-    owner: root
-    group: root
-    mode: "0644"
-  notify:
-    - restart otelcol
-
-- name: Apply OTel Collector unit and config changes before readiness
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start OTel Collector ClickHouse SPIFFE helper
-  ansible.builtin.systemd:
-    name: otelcol-clickhouse-spiffe-helper
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Enable and start OTel Collector
-  ansible.builtin.systemd:
-    name: otelcol
-    enabled: true
-    state: started
-    daemon_reload: true

@@ -46,26 +46,6 @@
     owner: root
     group: nats
     mode: "0640"
-  notify: restart nats-spiffe-helper
-
-- name: Deploy NATS SPIFFE helper unit
-  ansible.builtin.template:
-    src: nats-spiffe-helper.service.j2
-    dest: /etc/systemd/system/nats-spiffe-helper.service
-    mode: "0644"
-  notify: restart nats-spiffe-helper
-
-- name: Enable and start NATS SPIFFE helper
-  ansible.builtin.systemd:
-    name: nats-spiffe-helper
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Wait for NATS SPIFFE certificate
-  ansible.builtin.wait_for:
-    path: "{{ nats_spiffe_dir }}/svid.pem"
-    timeout: 30
 
 - name: Deploy NATS config
   ansible.builtin.template:
@@ -74,24 +54,3 @@
     owner: root
     group: nats
     mode: "0640"
-  notify: restart nats
-
-- name: Deploy NATS systemd unit
-  ansible.builtin.template:
-    src: nats.service.j2
-    dest: /etc/systemd/system/nats.service
-    mode: "0644"
-  notify: restart nats
-
-- name: Enable and start NATS
-  ansible.builtin.systemd:
-    name: nats
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Wait for NATS listener
-  ansible.builtin.wait_for:
-    host: "{{ nats_host }}"
-    port: "{{ nats_client_port }}"
-    timeout: 30

@@ -25,6 +25,26 @@ job "otelcol" {
       }
     }
 
+    task "clickhouse-spiffe-helper" {
+      driver = "raw_exec"
+      user = "otelcol"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = true
+      }
+
+      config {
+        command = "/opt/verself/profile/bin/spiffe-helper"
+        args = ["-config", "/etc/otelcol/clickhouse-spiffe-helper.conf"]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "collector" {
       driver = "raw_exec"
       user = "otelcol"

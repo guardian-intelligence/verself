@@ -25,10 +25,7 @@ spire_identity(
     entry_id = "verself-grafana",
     key = "grafana.default",
     path = "/svc/grafana",
-    restart_units = [
-        "grafana-clickhouse-spiffe-helper",
-        "grafana",
-    ],
+    restart_units = [],
     user = "grafana",
     visibility = ["//src/host:__pkg__"],
 )
