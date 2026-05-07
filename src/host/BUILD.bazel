@@ -31,6 +31,10 @@ component_substrate_registry(
     name = "component_substrate_registry",
     components = [
         "//src/components/electric:component_substrate",
+        "//src/components/garage:component_substrate",
+        "//src/components/nats:component_substrate",
+        "//src/components/openbao:component_substrate",
+        "//src/components/stalwart:component_substrate",
         "//src/frontends/viteplus-monorepo/apps/company:component_substrate",
         "//src/frontends/viteplus-monorepo/apps/verself-web:component_substrate",
         "//src/services/billing-service:component_substrate",
@@ -44,6 +48,7 @@ component_substrate_registry(
         "//src/services/sandbox-rental-service:component_substrate",
         "//src/services/secrets-service:component_substrate",
         "//src/services/source-code-hosting-service:component_substrate",
+        "//src/substrate/vm-orchestrator:component_substrate",
     ],
 )
 
@@ -57,6 +62,7 @@ filegroup(
         "//src/components:role_sources",
         "//src/host/binaries:server_tools_archive",
         "//src/host/binaries:substrate_go_tools",
+        "//src/substrate/vm-orchestrator:host_ansible_sources",
     ],
 )
 
@@ -68,15 +74,6 @@ filegroup(
         "sites/prod/secrets/host.sops.yml",
         "sites/prod/vars.yml",
         "//src/components/haproxy:role_sources",
-    ],
-)
-
-filegroup(
-    name = "verdaccio_sources",
-    srcs = [
-        "ansible/playbooks/verdaccio.yml",
-        "sites/prod/vars.yml",
-        "//src/components/verdaccio:role_sources",
     ],
 )
 
@@ -118,5 +115,6 @@ filegroup(
         ],
     ) + [
         "//src/integrations:integration_sources",
+        "//src/substrate/vm-orchestrator:host_ansible_sources",
     ],
 )

@@ -6,6 +6,7 @@ go_library(
         "artifacts.go",
         "bazel.go",
         "evidence.go",
+        "host.go",
         "main.go",
         "nomad.go",
         "plan.go",
@@ -15,6 +16,7 @@ go_library(
     importpath = "github.com/verself/deployment-tools/cmd/verself-deploy",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/tools/deployment/internal/ansible",
         "//src/tools/deployment/internal/bazelbuild",
         "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/deploymodel",

@@ -19,10 +19,11 @@
 
 - name: Load service-owned component substrate registry for nftables
   ansible.builtin.set_fact:
+    nftables_component_registry_available: "{{ component_substrate_registry_file is defined and (component_substrate_registry_file | length > 0) }}"
     nftables_component_substrate_registry: >-
       {{
         lookup('ansible.builtin.file', component_substrate_registry_file) | from_json
-        if component_substrate_registry_file is defined
+        if component_substrate_registry_file is defined and (component_substrate_registry_file | length > 0)
         else {"schema_version": 1, "components": []}
       }}
 
@@ -31,7 +32,6 @@
     nftables_platform_ruleset_paths: >-
       {{
         lookup('ansible.builtin.fileglob', platform_host_files_dir + '/etc/nftables.d/*.nft', wantlist=True)
-        | reject('search', '/firecracker\\.nft$')
         | sort
         | list
       }}
@@ -53,7 +53,6 @@
   loop: "{{ nftables_platform_ruleset_paths }}"
   loop_control:
     label: "{{ item | basename }}"
-  when: (item | basename) != "firecracker.nft"
 
 - name: Collect service-owned nftables ruleset records
   ansible.builtin.set_fact:
@@ -193,7 +192,9 @@
   loop: "{{ nftables_deployed_rulesets.files }}"
   loop_control:
     label: "{{ item.path | basename }}"
-  when: (item.path | basename) not in nftables_rendered_ruleset_names
+  when:
+    - nftables_component_registry_available | bool
+    - (item.path | basename) not in nftables_rendered_ruleset_names
   notify: reload nftables
 
 - name: Deploy rendered nftables rulesets

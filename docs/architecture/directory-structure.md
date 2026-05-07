@@ -87,7 +87,9 @@ They do not converge host packages or deploy services.
 The former centralized topology vars have been split: host bootstrap facts live
 under `src/host/sites/<site>/`, while component/service/frontend deployment
 metadata lives with the owning package.
-Host firewall files are authored in `src/host/ansible/host-files/`.
+Host firewall foundation files are authored in `src/host/ansible/host-files/`;
+component, service, frontend, and privileged-substrate nftables snippets live
+with the owning package.
 The host bootstrap boundary covers the machine foundation, recovery access,
 ZFS, SPIRE, HAProxy, ClickHouse initial schema, Nomad, and devtools.
 Nomad jobs live with their owning service, frontend, or component as

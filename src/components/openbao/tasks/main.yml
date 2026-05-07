@@ -146,13 +146,6 @@
       127.0.0.1 {{ host }}
       {% endfor %}
 
-- name: Deploy OpenBao nftables ruleset
-  ansible.builtin.copy:
-    src: "{{ platform_host_files_dir }}/etc/nftables.d/openbao.nft"
-    dest: /etc/nftables.d/openbao.nft
-    mode: "0644"
-  notify: reload nftables
-
 - name: Deploy OpenBao configuration
   ansible.builtin.template:
     src: openbao.hcl.j2

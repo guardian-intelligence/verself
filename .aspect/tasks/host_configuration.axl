@@ -1,4 +1,4 @@
-"""aspect host edit-secrets | npm-edge | operator-access-handoff
+"""aspect host edit-secrets | firewall | operator-access-handoff
 
 Bootstrap convergence and Nomad deployments do not own the operator-access
 handoff. Pomerium is a manual host action because a bad change can move SSH
@@ -22,38 +22,55 @@ edit_secrets = task(
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
 )
 
-def _host_playbook(ctx, site, playbook):
+def _host_playbook(ctx, site, playbook, extra_vars = None):
     rc = inventory_check(ctx, site)
     if rc != 0:
         return rc
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    playbook_args = [
+        "-i",
+        ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
+        "playbooks/" + playbook,
+        "-e",
+        "verself_site=" + site,
+    ]
+    if extra_vars != None:
+        for key, value in extra_vars.items():
+            playbook_args.extend(["-e", key + "=" + value])
     return checked_spawn(
         ctx,
         "ansible-playbook",
-        [
-            "-i",
-            ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
-            "playbooks/" + playbook,
-            "-e",
-            "verself_site=" + site,
-        ],
+        playbook_args,
         cwd = ansible_dir,
         label = "ansible-playbook " + playbook + " --site " + site,
     )
 
-def _npm_edge_impl(ctx):
+def _firewall_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    for playbook in ["verdaccio.yml", "nftables.yml", "haproxy.yml"]:
-        rc = _host_playbook(ctx, site, playbook)
-        if rc != 0:
-            return rc
-    return 0
+    rc = checked_spawn(
+        ctx,
+        "bazelisk",
+        ["build", "//src/host:nftables_sources"],
+        cwd = ws_path(ctx),
+        label = "bazelisk build //src/host:nftables_sources",
+    )
+    if rc != 0:
+        return rc
+    return _host_playbook(
+        ctx,
+        site,
+        "nftables.yml",
+        extra_vars = {
+            "component_substrate_registry_file": ws_path(ctx, "bazel-bin/src/host/component_substrate_registry.component_substrate_registry.json"),
+            "verself_repo_root": ws_path(ctx),
+        },
+    )
 
-npm_edge = task(
-    implementation = _npm_edge_impl,
-    name = "npm-edge",
+firewall = task(
+    implementation = _firewall_impl,
+    name = "firewall",
     group = ["host"],
-    summary = "Converge Verdaccio, nftables, and HAProxy for the public npm registry edge.",
+    summary = "Converge host and owner-local nftables rulesets.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },

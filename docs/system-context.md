@@ -15,7 +15,7 @@ The platform itself is open-source and self-hostable. The bootstrap CLI (`docs/v
 
 ## Service Architecture
 
-Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall files are authored in `src/host/ansible/host-files/`; service/component nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages, including `src/host/binaries/` and `src/substrate/vm-orchestrator/guest-images/`.
+Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall foundation files are authored in `src/host/ansible/host-files/`; component, service, frontend, and privileged-substrate nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages, including `src/host/binaries/` and `src/substrate/vm-orchestrator/guest-images/`.
 
 The bootstrap ring contains the host foundation required to start Nomad, plus
 HAProxy, SPIRE, ZFS, and ClickHouse server state required for deploy evidence.

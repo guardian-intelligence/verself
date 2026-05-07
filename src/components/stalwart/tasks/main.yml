@@ -17,18 +17,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-# --- nftables egress rules ---
-
-- name: Deploy stalwart nftables ruleset
-  ansible.builtin.copy:
-    src: "{{ platform_host_files_dir }}/etc/nftables.d/stalwart.nft"
-    dest: /etc/nftables.d/stalwart.nft
-    mode: "0644"
-  notify: reload nftables
-
-- name: Apply stalwart nftables before proceeding
-  ansible.builtin.meta: flush_handlers
-
 # --- Directories ---
 
 - name: Create stalwart directories

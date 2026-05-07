@@ -109,10 +109,10 @@ PostgreSQL and OTel collector.
   foundation, recovery networking, SPIRE, HAProxy, ClickHouse initial schema,
   Nomad, devtools, and privileged substrate.
 
-- `src/host/ansible/roles/postgresql/`
-  changes from server lifecycle ownership to host substrate preparation. The
-  server process, initialization, and readiness checks move to
-  `src/components/postgresql/`.
+- `src/components/postgresql/`
+  owns PostgreSQL host-state preparation while the server process is supervised
+  by the component Nomad job. Initialization and readiness checks converge
+  toward component-local Nomad lifecycle tasks.
 
 - `src/host/ansible/playbooks/tasks/component-substrate.yml`
   shrinks as runtime accounts, PostgreSQL bindings, ClickHouse grants, OpenBao

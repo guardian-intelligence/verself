@@ -21,6 +21,7 @@ filegroup(
         "//src/components/haproxy:role_sources",
         "//src/components/nats:role_sources",
         "//src/components/otelcol:role_sources",
+        "//src/components/postgresql:role_sources",
         "//src/components/spicedb:role_sources",
         "//src/components/temporal-platform:role_sources",
         "//src/components/verdaccio:role_sources",
