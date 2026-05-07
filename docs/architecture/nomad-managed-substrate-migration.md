@@ -46,7 +46,7 @@ directory. A Nomad `postgres` job owns the server process and runs a prestart
 initializer when the data directory has no `PG_VERSION`.
 
 Database, role, grant, and connection-limit convergence move from host Ansible
-into a Nomad batch component generated from `src/configuration`. Service-owned
+into a Nomad batch component generated from owner-local metadata. Service-owned
 PostgreSQL migrations run as owner-local Nomad batch or prestart tasks before
 the service allocation that consumes the schema.
 
@@ -87,12 +87,9 @@ PostgreSQL and OTel collector.
 - `src/host/` owns host bootstrap roles, site facts, SOPS bootstrap material,
   host binary admission, bootstrap ClickHouse schema, and Nomad agent
   convergence.
-- `src/configuration/` owns static component substrate descriptors, runtime
-  users, directories, SPIRE identities, endpoint exports, and credential
-  bindings.
 - `src/components/<name>/` owns each platform component's `BUILD.bazel`,
-  `nomad.hcl`, concrete files referenced by deployment configuration,
-  migrations, and reconcilers.
+  `nomad.hcl`, runtime users, directories, SPIRE identities, endpoint exports,
+  credential bindings, migrations, and reconcilers.
 - `src/services/<name>/` owns product service `nomad.hcl`, OpenAPI contracts,
   PostgreSQL migrations, ClickHouse projections, service-to-service clients,
   and public route metadata.
@@ -119,8 +116,7 @@ PostgreSQL and OTel collector.
 
 - `src/host/ansible/playbooks/tasks/component-substrate.yml`
   shrinks as runtime accounts, PostgreSQL bindings, ClickHouse grants, OpenBao
-  policies, and endpoint files move into Nomad components generated from
-  `src/configuration`.
+  policies, and endpoint files move into owner-local Nomad components.
 
 - `src/components/postgresql/`
   becomes the PostgreSQL Nomad component: server job, init prestart task,

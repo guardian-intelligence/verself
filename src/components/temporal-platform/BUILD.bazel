@@ -1,6 +1,7 @@
 # gazelle:prefix github.com/verself/temporal-platform
 
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 filegroup(
     name = "role_sources",
@@ -18,6 +19,17 @@ filegroup(
         allow_empty = True,
     ),
     visibility = ["//src/components:__pkg__"],
+)
+
+spire_identity(
+    name = "spiffe_identity_server",
+    component = "temporal",
+    entry_id = "verself-temporal-server",
+    key = "temporal.server",
+    path = "/svc/temporal-server",
+    restart_units = ["temporal-server"],
+    user = "temporal_server",
+    visibility = ["//src/host:__pkg__"],
 )
 
 nomad_component(

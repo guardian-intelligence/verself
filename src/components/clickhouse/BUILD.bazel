@@ -1,5 +1,6 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 filegroup(
     name = "role_sources",
@@ -40,4 +41,26 @@ nomad_component(
     job_spec = "nomad.hcl",
     provides = ["clickhouse:migrations"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+spire_identity(
+    name = "spiffe_identity_server",
+    component = "clickhouse",
+    entry_id = "verself-clickhouse-server",
+    key = "clickhouse.server",
+    path = "/svc/clickhouse-server",
+    restart_units = ["clickhouse-server-spiffe-helper"],
+    user = "clickhouse",
+    visibility = ["//src/host:__pkg__"],
+)
+
+spire_identity(
+    name = "spiffe_identity_operator",
+    component = "clickhouse",
+    entry_id = "verself-clickhouse-operator",
+    key = "clickhouse.operator",
+    path = "/svc/clickhouse-operator",
+    restart_units = ["clickhouse-operator-spiffe-helper"],
+    user = "clickhouse_operator",
+    visibility = ["//src/host:__pkg__"],
 )

@@ -1,11 +1,5 @@
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
-exports_files(
-    [
-        "nftables/stalwart.nft",
-    ],
-    visibility = ["//src/configuration:__pkg__"],
-)
 
 filegroup(
     name = "role_sources",
@@ -36,4 +30,35 @@ nomad_component(
     ],
     requires = ["postgres:server"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    srcs = ["nftables/stalwart.nft"],
+    definition_json = """
+{
+  "component": "stalwart",
+  "kind": "platform_component",
+  "nftables_rulesets": [
+    {
+      "name": "stalwart",
+      "source": "src/components/stalwart/nftables/stalwart.nft",
+      "table": "verself_stalwart",
+      "target": "/etc/nftables.d/stalwart.nft"
+    }
+  ],
+  "nomad_component_label": "//src/components/stalwart:nomad_component",
+  "order": 65,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "stalwart", "mode": "0755", "owner": "root", "path": "/etc/stalwart"},
+      {"group": "stalwart", "mode": "0750", "owner": "root", "path": "/etc/stalwart/certs"},
+      {"group": "stalwart", "mode": "0750", "owner": "stalwart", "path": "/var/lib/stalwart"}
+    ],
+    "units": [{"name": "stalwart", "user": "stalwart"}]
+  }
+}
+""",
+    visibility = ["//src/host:__pkg__"],
 )

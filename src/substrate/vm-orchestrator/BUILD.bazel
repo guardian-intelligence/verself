@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 
 # gazelle:prefix github.com/verself/vm-orchestrator
 
@@ -152,5 +153,30 @@ filegroup(
         ],
         allow_empty = False,
     ),
+    visibility = ["//src/host:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    srcs = [],
+    definition_json = """
+{
+  "component": "vm_orchestrator",
+  "deployment": {
+    "nomad_component_label": "",
+    "supervisor": "host_bootstrap"
+  },
+  "kind": "privileged_substrate",
+  "order": 1,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "root", "mode": "0755", "owner": "root", "path": "/var/lib/verself"},
+      {"group": "root", "mode": "0755", "owner": "root", "path": "/var/lib/verself/guest-images"}
+    ],
+    "units": [{"name": "vm-orchestrator", "user": "root"}]
+  }
+}
+""",
     visibility = ["//src/host:__pkg__"],
 )
