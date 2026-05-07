@@ -30,20 +30,37 @@ const (
 	PermissionProjectWrite                  = "projects:project:write"
 	PermissionProjectEnvironmentRead        = "projects:environment:read"
 	PermissionProjectEnvironmentWrite       = "projects:environment:write"
+	PermissionProjectEventRead              = "projects:event:read"
+	PermissionProjectResolve                = "projects:resolve"
 	PermissionSourceRepoRead                = "source:repo:read"
 	PermissionSourceRepoWrite               = "source:repo:write"
 	PermissionSourceCheckoutWrite           = "source:checkout:write"
 	PermissionSourceIntegrationWrite        = "source:integration:write"
+	PermissionSourceGitCredentialWrite      = "source:git_credential:write"
+	PermissionSourceWorkflowRead            = "source:workflow:read"
+	PermissionSourceWorkflowWrite           = "source:workflow:write"
 	PermissionSecretWrite                   = "secrets:secret:write"
 	PermissionSecretRead                    = "secrets:secret:read"
 	PermissionSecretList                    = "secrets:secret:list"
 	PermissionSecretDelete                  = "secrets:secret:delete"
+	PermissionVariableWrite                 = "secrets:variable:write"
+	PermissionVariableRead                  = "secrets:variable:read"
+	PermissionVariableList                  = "secrets:variable:list"
+	PermissionVariableDelete                = "secrets:variable:delete"
+	PermissionCredentialCreate              = "secrets:credential:create"
+	PermissionCredentialRead                = "secrets:credential:read"
+	PermissionCredentialList                = "secrets:credential:list"
+	PermissionCredentialRoll                = "secrets:credential:roll"
+	PermissionCredentialRevoke              = "secrets:credential:revoke"
 	PermissionTransitKeyCreate              = "secrets:transit_key:create"
 	PermissionTransitKeyRotate              = "secrets:transit_key:rotate"
 	PermissionTransitEncrypt                = "secrets:transit:encrypt"
 	PermissionTransitDecrypt                = "secrets:transit:decrypt"
 	PermissionTransitSign                   = "secrets:transit:sign"
 	PermissionTransitVerify                 = "secrets:transit:verify"
+	PermissionGovernanceAuditRead           = "governance:audit:read"
+	PermissionGovernanceExportRead          = "governance:export:read"
+	PermissionGovernanceExportCreate        = "governance:export:create"
 )
 
 var openBaoRolesByPermission = map[string]string{
@@ -51,6 +68,15 @@ var openBaoRolesByPermission = map[string]string{
 	PermissionSecretRead:       "secrets-direct-read-secret",
 	PermissionSecretList:       "secrets-direct-list-secrets",
 	PermissionSecretDelete:     "secrets-direct-delete-secret",
+	PermissionVariableWrite:    "secrets-direct-put-variable",
+	PermissionVariableRead:     "secrets-direct-read-variable",
+	PermissionVariableList:     "secrets-direct-list-variables",
+	PermissionVariableDelete:   "secrets-direct-delete-variable",
+	PermissionCredentialCreate: "secrets-direct-create-credential",
+	PermissionCredentialRead:   "secrets-direct-read-credential",
+	PermissionCredentialList:   "secrets-direct-list-credentials",
+	PermissionCredentialRoll:   "secrets-direct-roll-credential",
+	PermissionCredentialRevoke: "secrets-direct-revoke-credential",
 	PermissionTransitKeyCreate: "secrets-direct-create-transit-key",
 	PermissionTransitKeyRotate: "secrets-direct-rotate-transit-key",
 	PermissionTransitEncrypt:   "secrets-direct-encrypt-with-transit-key",
@@ -79,6 +105,9 @@ var defaultOperations = Operations{
 				{OperationID: "get-organization-iam-policy", Permission: PermissionIAMPolicyRead, Resource: "organization_iam_policy", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "set-organization-iam-policy", Permission: PermissionIAMPolicySet, Resource: "organization_iam_policy", Action: "write", OrgScope: "token_org_id"},
 				{OperationID: "test-organization-iam-permissions", Permission: PermissionIAMPolicyTest, Resource: "organization_iam_policy", Action: "test", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-service-accounts", Permission: PermissionAPICredentialsRead, Resource: "service_account", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-service-account", Permission: PermissionAPICredentialsRead, Resource: "service_account", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "disable-service-account", Permission: PermissionAPICredentialsRevoke, Resource: "service_account", Action: "disable", OrgScope: "token_org_id"},
 				{OperationID: "list-api-credentials", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "get-api-credential", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "create-api-credential", Permission: PermissionAPICredentialsCreate, Resource: "api_credential", Action: "create", OrgScope: "token_org_id"},
@@ -138,12 +167,15 @@ var defaultOperations = Operations{
 				{OperationID: "create-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "patch-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "update", OrgScope: "token_org_id"},
 				{OperationID: "archive-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "archive", OrgScope: "token_org_id"},
+				{OperationID: "list-project-events", Permission: PermissionProjectEventRead, Resource: "project_event", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "resolve-project", Permission: PermissionProjectResolve, Resource: "project", Action: "resolve", OrgScope: "token_org_id", MemberEligible: true},
 			},
 		},
 		{
 			Service: "source-code-hosting-service",
 			Operations: []Operation{
 				{OperationID: "create-source-repository", Permission: PermissionSourceRepoWrite, Resource: "source_repository", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-source-git-credential", Permission: PermissionSourceGitCredentialWrite, Resource: "source_git_credential", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "list-source-repositories", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-source-repository", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-source-refs", Permission: PermissionSourceRepoRead, Resource: "source_ref", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
@@ -151,6 +183,10 @@ var defaultOperations = Operations{
 				{OperationID: "get-source-blob", Permission: PermissionSourceRepoRead, Resource: "source_blob", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "create-source-checkout-grant", Permission: PermissionSourceCheckoutWrite, Resource: "source_checkout_grant", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-source-integration", Permission: PermissionSourceIntegrationWrite, Resource: "source_integration", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-source-workflow-run", Permission: PermissionSourceWorkflowWrite, Resource: "source_workflow_run", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-source-workflow-runs", Permission: PermissionSourceWorkflowRead, Resource: "source_workflow_run", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-source-workflow-run", Permission: PermissionSourceWorkflowRead, Resource: "source_workflow_run", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "download-source-checkout-archive", Permission: PermissionSourceCheckoutWrite, Resource: "source_checkout_archive", Action: "download", OrgScope: "token_org_id"},
 			},
 		},
 		{
@@ -159,13 +195,33 @@ var defaultOperations = Operations{
 				{OperationID: "put-secret", Permission: PermissionSecretWrite, Resource: "secret", Action: "write", OrgScope: "token_org_id"},
 				{OperationID: "read-secret", Permission: PermissionSecretRead, Resource: "secret", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-secrets", Permission: PermissionSecretList, Resource: "secret", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "resolve-secrets", Permission: PermissionSecretRead, Resource: "secret", Action: "resolve", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "delete-secret", Permission: PermissionSecretDelete, Resource: "secret", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "put-variable", Permission: PermissionVariableWrite, Resource: "variable", Action: "write", OrgScope: "token_org_id"},
+				{OperationID: "read-variable", Permission: PermissionVariableRead, Resource: "variable", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-variables", Permission: PermissionVariableList, Resource: "variable", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "delete-variable", Permission: PermissionVariableDelete, Resource: "variable", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "create-opaque-credential", Permission: PermissionCredentialCreate, Resource: "opaque_credential", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "get-opaque-credential", Permission: PermissionCredentialRead, Resource: "opaque_credential", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-opaque-credentials", Permission: PermissionCredentialList, Resource: "opaque_credential", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "roll-opaque-credential", Permission: PermissionCredentialRoll, Resource: "opaque_credential", Action: "roll", OrgScope: "token_org_id"},
+				{OperationID: "revoke-opaque-credential", Permission: PermissionCredentialRevoke, Resource: "opaque_credential", Action: "revoke", OrgScope: "token_org_id"},
 				{OperationID: "create-transit-key", Permission: PermissionTransitKeyCreate, Resource: "transit_key", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "rotate-transit-key", Permission: PermissionTransitKeyRotate, Resource: "transit_key", Action: "rotate", OrgScope: "token_org_id"},
 				{OperationID: "encrypt-with-transit-key", Permission: PermissionTransitEncrypt, Resource: "transit_key", Action: "encrypt", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "decrypt-with-transit-key", Permission: PermissionTransitDecrypt, Resource: "transit_key", Action: "decrypt", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "sign-with-transit-key", Permission: PermissionTransitSign, Resource: "transit_key", Action: "sign", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "verify-with-transit-key", Permission: PermissionTransitVerify, Resource: "transit_key", Action: "verify", OrgScope: "token_org_id", MemberEligible: true},
+			},
+		},
+		{
+			Service: "governance-service",
+			Operations: []Operation{
+				{OperationID: "list-audit-events", Permission: PermissionGovernanceAuditRead, Resource: "audit_event", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-data-exports", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "create-data-export", Permission: PermissionGovernanceExportCreate, Resource: "data_export", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "get-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "download-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "download", OrgScope: "token_org_id"},
 			},
 		},
 	},

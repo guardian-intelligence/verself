@@ -18,17 +18,18 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	store := actionStore{
 		staticIdentityStore: staticIdentityStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())},
 		result: identity.ResolveAPICredentialClaimsResult{
-			CredentialID: "credential-1",
-			OrgID:        "42",
-			DisplayName:  "deploy bot",
-			AuthMethod:   identity.APICredentialAuthMethodPrivateKeyJWT,
-			Fingerprint:  "sha256:abcdef",
-			OwnerID:      "owner-1",
-			OwnerDisplay: "owner@example.test",
-			Permissions:  []string{"sandbox:logs:read"},
+			CredentialID:       "credential-1",
+			ServiceAccountID:   "service-account-1",
+			OrgID:              "42",
+			DisplayName:        "deploy bot key",
+			ServiceAccountName: "deploy bot",
+			AuthMethod:         identity.APICredentialAuthMethodPrivateKeyJWT,
+			Fingerprint:        "sha256:abcdef",
+			OwnerID:            "owner-1",
+			OwnerDisplay:       "owner@example.test",
 		},
 	}
-	svc := &identity.Service{Store: store}
+	svc := &identity.Service{Store: store, AuthorizationGraph: actionAuthz{permissions: []string{"sandbox:logs:read"}}}
 	payload := []byte(`{"user":{"id":"subject-1"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/api-credential-claims", bytes.NewReader(payload))
 	req.Header.Set(zitadelActionSigningHeader, actionSignatureHeader(time.Now(), payload, "signing-key"))
@@ -50,11 +51,14 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	if claims["verself:credential_id"] != "credential-1" || claims["org_id"] != "42" {
 		t.Fatalf("missing identity claims: %#v", claims)
 	}
-	if claims["verself:credential_name"] != "deploy bot" ||
+	if claims["verself:credential_name"] != "deploy bot key" ||
 		claims["verself:credential_fingerprint"] != "sha256:abcdef" ||
 		claims["verself:credential_owner_id"] != "owner-1" ||
 		claims["verself:credential_owner_display"] != "owner@example.test" ||
-		claims["verself:credential_auth_method"] != "private_key_jwt" {
+		claims["verself:credential_auth_method"] != "private_key_jwt" ||
+		claims["verself:principal_type"] != "service_account" ||
+		claims["verself:service_account_id"] != "service-account-1" ||
+		claims["verself:service_account_name"] != "deploy bot" {
 		t.Fatalf("missing credential audit claims: %#v", claims)
 	}
 	permissions, ok := claims["permissions"].([]any)
@@ -91,4 +95,28 @@ func (s actionStore) ResolveAPICredentialClaims(context.Context, string, time.Ti
 		return identity.ResolveAPICredentialClaimsResult{}, s.err
 	}
 	return s.result, nil
+}
+
+type actionAuthz struct {
+	permissions []string
+}
+
+func (a actionAuthz) ReconcileOrganizationRoles(context.Context, string, []identity.Member, identity.MemberCapabilitiesDocument, string) (string, error) {
+	return "", nil
+}
+
+func (a actionAuthz) ReconcileMemberRoles(context.Context, string, identity.Member, string) (string, error) {
+	return "", nil
+}
+
+func (a actionAuthz) ReconcileCapabilityGrants(context.Context, string, identity.MemberCapabilitiesDocument, string) (string, error) {
+	return "", nil
+}
+
+func (a actionAuthz) ReconcileServiceAccountPermissions(context.Context, string, string, []string, string) (string, error) {
+	return "", nil
+}
+
+func (a actionAuthz) TestOrganizationPermissions(context.Context, string, identity.AuthorizationSubject, []string, string) ([]string, string, error) {
+	return append([]string(nil), a.permissions...), "", nil
 }

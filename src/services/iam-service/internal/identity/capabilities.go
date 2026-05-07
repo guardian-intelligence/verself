@@ -75,7 +75,10 @@ var defaultCapabilities = []Capability{
 		Permissions: []string{
 			PermissionProjectRead,
 			PermissionProjectEnvironmentRead,
+			PermissionProjectEventRead,
+			PermissionProjectResolve,
 			PermissionSourceRepoRead,
+			PermissionSourceWorkflowRead,
 		},
 	},
 	{
@@ -86,6 +89,8 @@ var defaultCapabilities = []Capability{
 		Permissions: []string{
 			PermissionSecretRead,
 			PermissionSecretList,
+			PermissionVariableRead,
+			PermissionVariableList,
 			PermissionTransitEncrypt,
 			PermissionTransitDecrypt,
 			PermissionTransitSign,

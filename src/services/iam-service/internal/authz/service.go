@@ -14,14 +14,19 @@ import (
 )
 
 const (
-	resourceTypeOrg  = "org"
-	resourceTypeRole = "role"
+	resourceTypeOrg                 = "org"
+	resourceTypeOperationPermission = "operation_permission"
+	resourceTypeRole                = "role"
 
-	relationMember = "member"
+	relationGrantee = "grantee"
+	relationMember  = "member"
 
 	subjectTypeUser           = "user"
 	subjectTypeServiceAccount = "service_account"
+	subjectTypeWorkload       = "workload"
 	subjectRelationMember     = "member"
+
+	permissionUse = "use"
 
 	publicRoleOwner           = "roles/owner"
 	publicRoleAdmin           = "roles/admin"
@@ -53,6 +58,7 @@ type SubjectKind string
 const (
 	SubjectKindUser           SubjectKind = "user"
 	SubjectKindServiceAccount SubjectKind = "service_account"
+	SubjectKindWorkload       SubjectKind = "workload"
 )
 
 type Subject struct {
@@ -133,20 +139,37 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionProjectWrite:                  "manage_iam",
 	identity.PermissionProjectEnvironmentRead:        "view_source",
 	identity.PermissionProjectEnvironmentWrite:       "manage_iam",
+	identity.PermissionProjectEventRead:              "view_source",
+	identity.PermissionProjectResolve:                "view_source",
 	identity.PermissionSourceRepoRead:                "view_source",
 	identity.PermissionSourceRepoWrite:               "manage_iam",
 	identity.PermissionSourceCheckoutWrite:           "manage_iam",
 	identity.PermissionSourceIntegrationWrite:        "manage_iam",
+	identity.PermissionSourceGitCredentialWrite:      "manage_iam",
+	identity.PermissionSourceWorkflowRead:            "view_source",
+	identity.PermissionSourceWorkflowWrite:           "manage_iam",
 	identity.PermissionSecretWrite:                   "manage_iam",
 	identity.PermissionSecretRead:                    "use_secrets",
 	identity.PermissionSecretList:                    "use_secrets",
 	identity.PermissionSecretDelete:                  "manage_iam",
+	identity.PermissionVariableWrite:                 "manage_iam",
+	identity.PermissionVariableRead:                  "use_secrets",
+	identity.PermissionVariableList:                  "use_secrets",
+	identity.PermissionVariableDelete:                "manage_iam",
+	identity.PermissionCredentialCreate:              "manage_iam",
+	identity.PermissionCredentialRead:                "manage_iam",
+	identity.PermissionCredentialList:                "manage_iam",
+	identity.PermissionCredentialRoll:                "manage_iam",
+	identity.PermissionCredentialRevoke:              "manage_iam",
 	identity.PermissionTransitKeyCreate:              "manage_iam",
 	identity.PermissionTransitKeyRotate:              "manage_iam",
 	identity.PermissionTransitEncrypt:                "use_secrets",
 	identity.PermissionTransitDecrypt:                "use_secrets",
 	identity.PermissionTransitSign:                   "use_secrets",
 	identity.PermissionTransitVerify:                 "use_secrets",
+	identity.PermissionGovernanceAuditRead:           "manage_iam",
+	identity.PermissionGovernanceExportRead:          "manage_iam",
+	identity.PermissionGovernanceExportCreate:        "manage_iam",
 }
 
 func New(backend Backend) *Service {
@@ -162,6 +185,10 @@ func UserSubject(id string) Subject {
 
 func ServiceAccountSubject(id string) Subject {
 	return Subject{Kind: SubjectKindServiceAccount, ID: strings.TrimSpace(id)}
+}
+
+func WorkloadSubject(id string) Subject {
+	return Subject{Kind: SubjectKindWorkload, ID: strings.TrimSpace(id)}
 }
 
 func (s *Service) ReconcileOrganizationRoles(ctx context.Context, orgID string, members []identity.Member, capabilities identity.MemberCapabilitiesDocument, operation string) (string, error) {
@@ -203,6 +230,26 @@ func (s *Service) ReconcileCapabilityGrants(ctx context.Context, orgID string, c
 		return "", err
 	}
 	desired := desiredCapabilityOrgGrants(orgID, capabilities.EnabledKeys)
+	return s.replace(ctx, current, desired, metadata(operation, orgID))
+}
+
+func (s *Service) ReconcileServiceAccountPermissions(ctx context.Context, orgID, serviceAccountID string, permissions []string, operation string) (string, error) {
+	if err := validateOrgID(orgID); err != nil {
+		return "", err
+	}
+	subject := ServiceAccountSubject(serviceAccountID)
+	if err := validateSubject(subject); err != nil {
+		return "", err
+	}
+	permissions, err := normalizeKnownProductPermissions(permissions)
+	if err != nil {
+		return "", err
+	}
+	current, _, err := s.currentOperationPermissionRelationships(ctx, orgID, &subject)
+	if err != nil {
+		return "", err
+	}
+	desired := desiredOperationPermissionRelationships(orgID, subject, permissions)
 	return s.replace(ctx, current, desired, metadata(operation, orgID))
 }
 
@@ -254,10 +301,11 @@ func (s *Service) SetOrganizationPolicy(ctx context.Context, orgID string, polic
 	return out, nil
 }
 
-func (s *Service) TestOrganizationPermissions(ctx context.Context, orgID string, subject Subject, permissions []string, minZedToken string) ([]string, string, error) {
+func (s *Service) TestOrganizationPermissions(ctx context.Context, orgID string, authSubject identity.AuthorizationSubject, permissions []string, minZedToken string) ([]string, string, error) {
 	if err := validateOrgID(orgID); err != nil {
 		return nil, "", err
 	}
+	subject := subjectFromAuthorizationSubject(authSubject)
 	if err := validateSubject(subject); err != nil {
 		return nil, "", err
 	}
@@ -267,11 +315,22 @@ func (s *Service) TestOrganizationPermissions(ctx context.Context, orgID string,
 	allowed := []string{}
 	checkedAt := ""
 	for _, requested := range compactSorted(permissions) {
+		ok, token, err := s.backend.Check(ctx, operationPermissionResource(orgID, requested), permissionUse, subjectRef(subject), minZedToken)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+		if token != "" {
+			checkedAt = token
+		}
+		if ok {
+			allowed = append(allowed, requested)
+			continue
+		}
 		spicePermission, ok := orgPermissionByProductPermission[requested]
 		if !ok {
 			continue
 		}
-		ok, token, err := s.backend.Check(ctx, orgResource(orgID), spicePermission, subjectRef(subject), minZedToken)
+		ok, token, err = s.backend.Check(ctx, orgResource(orgID), spicePermission, subjectRef(subject), minZedToken)
 		if err != nil {
 			return nil, "", fmt.Errorf("%w: %v", ErrUnavailable, err)
 		}
@@ -388,6 +447,33 @@ func (s *Service) currentCapabilityGrantRelationships(ctx context.Context, orgID
 	return s.currentOrgRoleGrants(ctx, orgID, definitions, nil)
 }
 
+func (s *Service) currentOperationPermissionRelationships(ctx context.Context, orgID string, subject *Subject) ([]spicedb.Relationship, string, error) {
+	if s == nil || s.backend == nil {
+		return nil, "", ErrUnavailable
+	}
+	out := []spicedb.Relationship{}
+	zedToken := ""
+	for _, permission := range compactSorted(sortedKeys(identity.KnownPermissions())) {
+		relationships, token, err := s.backend.ReadResourceRelationships(ctx, operationPermissionResource(orgID, permission), relationSet(relationGrantee))
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+		if token != "" {
+			zedToken = token
+		}
+		for _, relationship := range relationships {
+			if relationship.Relation != relationGrantee {
+				continue
+			}
+			if subject != nil && !sameSubject(relationship.Subject, *subject) {
+				continue
+			}
+			out = append(out, relationship)
+		}
+	}
+	return out, zedToken, nil
+}
+
 func (s *Service) currentOrgRoleGrants(ctx context.Context, orgID string, definitions []roleDefinition, subject *Subject) ([]spicedb.Relationship, string, error) {
 	if s == nil || s.backend == nil {
 		return nil, "", ErrUnavailable
@@ -475,6 +561,18 @@ func desiredCapabilityOrgGrants(orgID string, enabledCapabilities []string) []sp
 			continue
 		}
 		out = append(out, orgRoleGrant(orgID, capabilityGrantRelations[key], identity.RoleMember))
+	}
+	return out
+}
+
+func desiredOperationPermissionRelationships(orgID string, subject Subject, permissions []string) []spicedb.Relationship {
+	out := make([]spicedb.Relationship, 0, len(permissions))
+	for _, permission := range compactSorted(permissions) {
+		out = append(out, spicedb.Relationship{
+			Resource: operationPermissionResource(orgID, permission),
+			Relation: relationGrantee,
+			Subject:  subjectRef(subject),
+		})
 	}
 	return out
 }
@@ -604,10 +702,23 @@ func subjectForMember(member identity.Member) Subject {
 	return UserSubject(member.UserID)
 }
 
+func subjectFromAuthorizationSubject(subject identity.AuthorizationSubject) Subject {
+	switch subject.Kind {
+	case identity.AuthorizationSubjectKindServiceAccount:
+		return ServiceAccountSubject(subject.ID)
+	case identity.AuthorizationSubjectKindWorkload:
+		return WorkloadSubject(subject.ID)
+	default:
+		return UserSubject(subject.ID)
+	}
+}
+
 func subjectRef(subject Subject) spicedb.SubjectRef {
 	switch subject.Kind {
 	case SubjectKindServiceAccount:
 		return spicedb.SubjectRef{Type: subjectTypeServiceAccount, ID: encodeOpaqueObjectID(subject.ID)}
+	case SubjectKindWorkload:
+		return spicedb.SubjectRef{Type: subjectTypeWorkload, ID: encodeOpaqueObjectID(subject.ID)}
 	default:
 		return spicedb.SubjectRef{Type: subjectTypeUser, ID: encodeOpaqueObjectID(subject.ID)}
 	}
@@ -658,7 +769,7 @@ func validateSubject(subject Subject) error {
 		return fmt.Errorf("%w: subject id is required", ErrInvalid)
 	}
 	switch subject.Kind {
-	case SubjectKindUser, SubjectKindServiceAccount:
+	case SubjectKindUser, SubjectKindServiceAccount, SubjectKindWorkload:
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported subject kind %q", ErrInvalid, subject.Kind)
@@ -704,6 +815,13 @@ func orgResource(orgID string) spicedb.ResourceRef {
 
 func roleResource(orgID, roleKey string) spicedb.ResourceRef {
 	return spicedb.ResourceRef{Type: resourceTypeRole, ID: roleObjectID(orgID, roleKey)}
+}
+
+func operationPermissionResource(orgID, permission string) spicedb.ResourceRef {
+	return spicedb.ResourceRef{
+		Type: resourceTypeOperationPermission,
+		ID:   "org_" + strings.TrimSpace(orgID) + "_permission_" + encodeOpaqueObjectID(permission),
+	}
 }
 
 func orgRoleGrant(orgID, relation, roleKey string) spicedb.Relationship {
@@ -796,6 +914,26 @@ func compactSorted(values []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeKnownProductPermissions(permissions []string) ([]string, error) {
+	known := identity.KnownPermissions()
+	out := compactSorted(permissions)
+	for _, permission := range out {
+		if _, ok := known[permission]; !ok {
+			return nil, fmt.Errorf("%w: unknown permission %q", ErrInvalid, permission)
+		}
+	}
+	return out, nil
 }
 
 func lastToken(tokens ...string) string {

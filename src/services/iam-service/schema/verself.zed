@@ -4,12 +4,20 @@ definition user {}
 
 definition service_account {}
 
+definition workload {}
+
+definition operation_permission {
+  relation grantee: user | service_account | workload
+
+  permission use: user | service_account | workload = grantee
+}
+
 definition role {
   relation member: user | service_account
 }
 
 definition org {
-  relation owner: user | role#member
+  relation owner: user | service_account | role#member
   relation admin: user | service_account | role#member
   relation member: user | service_account | role#member
   relation member_inviter: user | service_account | role#member

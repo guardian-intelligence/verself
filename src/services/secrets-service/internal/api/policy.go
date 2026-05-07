@@ -246,12 +246,13 @@ func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 func principalFromIdentity(identity *auth.Identity, policy operationPolicy) secrets.Principal {
 	principalType := "user"
 	credentialID := claimString(identity.Raw, "verself:credential_id")
+	serviceAccountID := claimString(identity.Raw, "verself:service_account_id")
 	if credentialID != "" {
-		principalType = "api_credential"
+		principalType = "service_account"
 	}
 	return secrets.Principal{
 		OrgID:                 strings.TrimSpace(identity.OrgID),
-		Subject:               strings.TrimSpace(identity.Subject),
+		Subject:               firstNonEmpty(serviceAccountID, identity.Subject),
 		Email:                 strings.TrimSpace(identity.Email),
 		Type:                  principalType,
 		CredentialID:          credentialID,

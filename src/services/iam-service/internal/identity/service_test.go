@@ -188,6 +188,22 @@ func (fakeMembersStore) UpdateMemberRolesCommand(context.Context, UpdateMemberRo
 	return UpdateMemberRolesResult{}, nil
 }
 
+func (fakeMembersStore) CreateServiceAccount(context.Context, ServiceAccount, APICredential, APICredentialSecret) (ServiceAccount, APICredential, error) {
+	return ServiceAccount{}, APICredential{}, nil
+}
+
+func (fakeMembersStore) ListServiceAccounts(context.Context, string) ([]ServiceAccount, error) {
+	return nil, nil
+}
+
+func (fakeMembersStore) GetServiceAccount(context.Context, string, string) (ServiceAccount, error) {
+	return ServiceAccount{}, ErrAPICredentialMissing
+}
+
+func (fakeMembersStore) DisableServiceAccount(context.Context, string, string, string, time.Time) (ServiceAccount, []APICredential, error) {
+	return ServiceAccount{}, nil, nil
+}
+
 func (fakeMembersStore) CreateAPICredential(context.Context, APICredential, APICredentialSecret) (APICredential, error) {
 	return APICredential{}, nil
 }

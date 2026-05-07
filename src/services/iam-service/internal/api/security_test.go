@@ -168,6 +168,22 @@ func (s staticIdentityStore) UpdateMemberRolesCommand(context.Context, identity.
 	return identity.UpdateMemberRolesResult{}, nil
 }
 
+func (s staticIdentityStore) CreateServiceAccount(context.Context, identity.ServiceAccount, identity.APICredential, identity.APICredentialSecret) (identity.ServiceAccount, identity.APICredential, error) {
+	return identity.ServiceAccount{}, identity.APICredential{}, nil
+}
+
+func (s staticIdentityStore) ListServiceAccounts(context.Context, string) ([]identity.ServiceAccount, error) {
+	return []identity.ServiceAccount{}, nil
+}
+
+func (s staticIdentityStore) GetServiceAccount(context.Context, string, string) (identity.ServiceAccount, error) {
+	return identity.ServiceAccount{}, identity.ErrAPICredentialMissing
+}
+
+func (s staticIdentityStore) DisableServiceAccount(context.Context, string, string, string, time.Time) (identity.ServiceAccount, []identity.APICredential, error) {
+	return identity.ServiceAccount{}, nil, nil
+}
+
 func (s staticIdentityStore) CreateAPICredential(context.Context, identity.APICredential, identity.APICredentialSecret) (identity.APICredential, error) {
 	return identity.APICredential{}, nil
 }

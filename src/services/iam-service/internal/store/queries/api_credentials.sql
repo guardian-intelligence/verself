@@ -1,12 +1,57 @@
+-- name: InsertServiceAccount :exec
+INSERT INTO iam_service_accounts (
+    service_account_id, org_id, subject_id, client_id, display_name, description,
+    status, created_at, created_by, updated_at
+)
+VALUES (
+    sqlc.arg(service_account_id), sqlc.arg(org_id), sqlc.arg(subject_id), sqlc.arg(client_id),
+    sqlc.arg(display_name), sqlc.arg(description), sqlc.arg(status), sqlc.arg(created_at),
+    sqlc.arg(created_by), sqlc.arg(created_at)
+);
+
+-- name: ListServiceAccounts :many
+SELECT service_account_id, org_id, subject_id, client_id, display_name, description,
+       status, created_at, created_by, updated_at, disabled_at,
+       COALESCE(disabled_by, '') AS disabled_by, last_used_at
+FROM iam_service_accounts
+WHERE org_id = sqlc.arg(org_id)
+ORDER BY created_at DESC, service_account_id DESC;
+
+-- name: GetServiceAccount :one
+SELECT service_account_id, org_id, subject_id, client_id, display_name, description,
+       status, created_at, created_by, updated_at, disabled_at,
+       COALESCE(disabled_by, '') AS disabled_by, last_used_at
+FROM iam_service_accounts
+WHERE org_id = sqlc.arg(org_id) AND service_account_id = sqlc.arg(service_account_id);
+
+-- name: DisableServiceAccount :execrows
+UPDATE iam_service_accounts
+SET status = 'disabled', disabled_at = sqlc.arg(disabled_at), disabled_by = sqlc.arg(disabled_by), updated_at = sqlc.arg(disabled_at)
+WHERE org_id = sqlc.arg(org_id) AND service_account_id = sqlc.arg(service_account_id) AND status = 'active';
+
+-- name: RevokeServiceAccountCredentials :exec
+UPDATE iam_api_credentials
+SET status = 'revoked', revoked_at = COALESCE(revoked_at, sqlc.arg(revoked_at)), revoked_by = COALESCE(NULLIF(revoked_by, ''), sqlc.arg(revoked_by)), updated_at = sqlc.arg(revoked_at)
+WHERE org_id = sqlc.arg(org_id) AND service_account_id = sqlc.arg(service_account_id) AND status = 'active';
+
+-- name: RevokeServiceAccountCredentialSecrets :exec
+UPDATE iam_api_credential_secrets s
+SET revoked_at = COALESCE(s.revoked_at, sqlc.arg(revoked_at)), revoked_by = COALESCE(NULLIF(s.revoked_by, ''), sqlc.arg(revoked_by))
+FROM iam_api_credentials c
+WHERE c.credential_id = s.credential_id
+  AND c.org_id = sqlc.arg(org_id)
+  AND c.service_account_id = sqlc.arg(service_account_id)
+  AND s.revoked_at IS NULL;
+
 -- name: InsertAPICredential :exec
 INSERT INTO iam_api_credentials (
-    credential_id, org_id, subject_id, client_id, display_name, auth_method, status,
+    credential_id, service_account_id, org_id, subject_id, client_id, display_name, auth_method, status,
     policy_version_at_issue, created_at, created_by, updated_at, expires_at
 )
 VALUES (
-    sqlc.arg(credential_id), sqlc.arg(org_id), sqlc.arg(subject_id), sqlc.arg(client_id), sqlc.arg(display_name),
-    sqlc.arg(auth_method), sqlc.arg(status), sqlc.arg(policy_version_at_issue), sqlc.arg(created_at), sqlc.arg(created_by),
-    sqlc.arg(created_at), sqlc.narg(expires_at)
+    sqlc.arg(credential_id), sqlc.arg(service_account_id), sqlc.arg(org_id), sqlc.arg(subject_id), sqlc.arg(client_id),
+    sqlc.arg(display_name), sqlc.arg(auth_method), sqlc.arg(status), sqlc.arg(policy_version_at_issue),
+    sqlc.arg(created_at), sqlc.arg(created_by), sqlc.arg(created_at), sqlc.narg(expires_at)
 );
 
 -- name: InsertAPICredentialPermission :exec
@@ -14,7 +59,7 @@ INSERT INTO iam_api_credential_permissions (credential_id, permission, created_a
 VALUES (sqlc.arg(credential_id), sqlc.arg(permission), sqlc.arg(created_at));
 
 -- name: ListAPICredentials :many
-SELECT c.credential_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
+SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
        c.auth_method,
        COALESCE((
            SELECT s.fingerprint
@@ -30,7 +75,7 @@ WHERE c.org_id = sqlc.arg(org_id)
 ORDER BY c.created_at DESC, c.credential_id DESC;
 
 -- name: GetAPICredential :one
-SELECT c.credential_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
+SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
        c.auth_method,
        COALESCE((
            SELECT s.fingerprint
@@ -99,7 +144,8 @@ SET status = 'revoked', revoked_at = sqlc.arg(revoked_at), revoked_by = sqlc.arg
 WHERE org_id = sqlc.arg(org_id) AND credential_id = sqlc.arg(credential_id) AND status = 'active';
 
 -- name: ResolveAPICredentialClaims :one
-SELECT c.credential_id, c.org_id, c.display_name, c.auth_method,
+SELECT c.credential_id, c.service_account_id, c.org_id, c.display_name,
+       a.display_name AS service_account_display_name, c.auth_method,
        COALESCE((
            SELECT s.fingerprint
            FROM iam_api_credential_secrets s
@@ -109,11 +155,20 @@ SELECT c.credential_id, c.org_id, c.display_name, c.auth_method,
        ), ''::text)::text AS fingerprint,
        c.created_by
 FROM iam_api_credentials c
+JOIN iam_service_accounts a ON a.service_account_id = c.service_account_id
 WHERE c.subject_id = sqlc.arg(subject_id)
   AND c.status = 'active'
-  AND (c.expires_at IS NULL OR c.expires_at > sqlc.arg(used_at));
+  AND a.status = 'active'
+  AND (c.expires_at IS NULL OR c.expires_at > sqlc.arg(used_at))
+ORDER BY c.created_at DESC, c.credential_id DESC
+LIMIT 1;
 
 -- name: RecordAPICredentialUse :exec
 UPDATE iam_api_credentials
 SET last_used_at = sqlc.arg(used_at), updated_at = sqlc.arg(used_at)
 WHERE credential_id = sqlc.arg(credential_id);
+
+-- name: RecordServiceAccountUse :exec
+UPDATE iam_service_accounts
+SET last_used_at = sqlc.arg(used_at), updated_at = sqlc.arg(used_at)
+WHERE service_account_id = sqlc.arg(service_account_id);

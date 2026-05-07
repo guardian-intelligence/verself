@@ -401,8 +401,9 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 	info := operationRequestInfoFromContext(ctx)
 	principalType := "user"
 	credentialID := claimString(identity.Raw, "verself:credential_id")
+	serviceAccountID := claimString(identity.Raw, "verself:service_account_id")
 	if credentialID != "" {
-		principalType = "api_credential"
+		principalType = "service_account"
 	}
 	targetID, targetDisplay := auditTargetFromBoundary(input, output)
 	record := governanceAuditRecord{
@@ -417,7 +418,7 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		RiskLevel:             policy.RiskLevel,
 		DataClassification:    policy.DataClassification,
 		ActorType:             principalType,
-		ActorID:               identity.Subject,
+		ActorID:               firstNonEmpty(serviceAccountID, identity.Subject),
 		ActorDisplay:          identity.Email,
 		ActorOwnerID:          claimString(identity.Raw, "verself:credential_owner_id"),
 		ActorOwnerDisplay:     claimString(identity.Raw, "verself:credential_owner_display"),

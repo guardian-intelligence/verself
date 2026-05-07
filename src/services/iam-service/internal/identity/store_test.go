@@ -13,6 +13,7 @@ func TestAPICredentialFromFieldsAcceptsNullRevokedBy(t *testing.T) {
 	now := time.Unix(1700000000, 0).UTC()
 	credential, err := apiCredentialFromFields(
 		"credential-1",
+		"service-account-1",
 		"org-1",
 		"subject-1",
 		"client-1",

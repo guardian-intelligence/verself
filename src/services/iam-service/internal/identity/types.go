@@ -31,6 +31,19 @@ type Principal struct {
 	Email             string
 }
 
+type AuthorizationSubjectKind string
+
+const (
+	AuthorizationSubjectKindUser           AuthorizationSubjectKind = "user"
+	AuthorizationSubjectKindServiceAccount AuthorizationSubjectKind = "service_account"
+	AuthorizationSubjectKindWorkload       AuthorizationSubjectKind = "workload"
+)
+
+type AuthorizationSubject struct {
+	Kind AuthorizationSubjectKind
+	ID   string
+}
+
 type OrganizationProfileState string
 
 const (
@@ -40,6 +53,7 @@ const (
 type (
 	APICredentialAuthMethod string
 	APICredentialStatus     string
+	ServiceAccountStatus    string
 )
 
 type OrganizationProfile struct {
@@ -178,10 +192,31 @@ const (
 
 	APICredentialStatusActive  APICredentialStatus = "active"
 	APICredentialStatusRevoked APICredentialStatus = "revoked"
+
+	ServiceAccountStatusActive   ServiceAccountStatus = "active"
+	ServiceAccountStatusDisabled ServiceAccountStatus = "disabled"
 )
+
+type ServiceAccount struct {
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Description      string
+	Status           ServiceAccountStatus
+	Permissions      []string
+	CreatedAt        time.Time
+	CreatedBy        string
+	UpdatedAt        time.Time
+	DisabledAt       *time.Time
+	DisabledBy       string
+	LastUsedAt       *time.Time
+}
 
 type APICredential struct {
 	CredentialID         string
+	ServiceAccountID     string
 	OrgID                string
 	SubjectID            string
 	ClientID             string
@@ -240,11 +275,24 @@ type AddServiceAccountCredentialInput struct {
 	ExpiresAt  *time.Time
 }
 
-type CreateAPICredentialRequest struct {
+type CreateServiceAccountRequest struct {
 	DisplayName string
-	AuthMethod  APICredentialAuthMethod
+	Description string
 	Permissions []string
-	ExpiresAt   *time.Time
+}
+
+type DisableServiceAccountResult struct {
+	ServiceAccount ServiceAccount
+	Credentials    []APICredential
+}
+
+type CreateAPICredentialRequest struct {
+	ServiceAccountID string
+	DisplayName      string
+	Description      string
+	AuthMethod       APICredentialAuthMethod
+	Permissions      []string
+	ExpiresAt        *time.Time
 }
 
 type CreateAPICredentialResult struct {
@@ -262,15 +310,17 @@ type RollAPICredentialResult struct {
 }
 
 type ResolveAPICredentialClaimsResult struct {
-	CredentialID string
-	OrgID        string
-	DisplayName  string
-	AuthMethod   APICredentialAuthMethod
-	Fingerprint  string
-	OwnerID      string
-	OwnerDisplay string
-	Permissions  []string
-	OpenBaoRoles []string
+	CredentialID       string
+	ServiceAccountID   string
+	OrgID              string
+	DisplayName        string
+	ServiceAccountName string
+	AuthMethod         APICredentialAuthMethod
+	Fingerprint        string
+	OwnerID            string
+	OwnerDisplay       string
+	Permissions        []string
+	OpenBaoRoles       []string
 }
 
 func SecretHash(secret string) (fingerprint string, raw []byte) {

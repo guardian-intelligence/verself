@@ -11,8 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const disableServiceAccount = `-- name: DisableServiceAccount :execrows
+UPDATE iam_service_accounts
+SET status = 'disabled', disabled_at = $1, disabled_by = $2, updated_at = $1
+WHERE org_id = $3 AND service_account_id = $4 AND status = 'active'
+`
+
+type DisableServiceAccountParams struct {
+	DisabledAt       pgtype.Timestamptz
+	DisabledBy       pgtype.Text
+	OrgID            string
+	ServiceAccountID string
+}
+
+func (q *Queries) DisableServiceAccount(ctx context.Context, arg DisableServiceAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, disableServiceAccount,
+		arg.DisabledAt,
+		arg.DisabledBy,
+		arg.OrgID,
+		arg.ServiceAccountID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAPICredential = `-- name: GetAPICredential :one
-SELECT c.credential_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
+SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
        c.auth_method,
        COALESCE((
            SELECT s.fingerprint
@@ -34,6 +60,7 @@ type GetAPICredentialParams struct {
 
 type GetAPICredentialRow struct {
 	CredentialID         string
+	ServiceAccountID     string
 	OrgID                string
 	SubjectID            string
 	ClientID             string
@@ -56,6 +83,7 @@ func (q *Queries) GetAPICredential(ctx context.Context, arg GetAPICredentialPara
 	var i GetAPICredentialRow
 	err := row.Scan(
 		&i.CredentialID,
+		&i.ServiceAccountID,
 		&i.OrgID,
 		&i.SubjectID,
 		&i.ClientID,
@@ -75,20 +103,71 @@ func (q *Queries) GetAPICredential(ctx context.Context, arg GetAPICredentialPara
 	return i, err
 }
 
+const getServiceAccount = `-- name: GetServiceAccount :one
+SELECT service_account_id, org_id, subject_id, client_id, display_name, description,
+       status, created_at, created_by, updated_at, disabled_at,
+       COALESCE(disabled_by, '') AS disabled_by, last_used_at
+FROM iam_service_accounts
+WHERE org_id = $1 AND service_account_id = $2
+`
+
+type GetServiceAccountParams struct {
+	OrgID            string
+	ServiceAccountID string
+}
+
+type GetServiceAccountRow struct {
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Description      string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	DisabledAt       pgtype.Timestamptz
+	DisabledBy       string
+	LastUsedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) GetServiceAccount(ctx context.Context, arg GetServiceAccountParams) (GetServiceAccountRow, error) {
+	row := q.db.QueryRow(ctx, getServiceAccount, arg.OrgID, arg.ServiceAccountID)
+	var i GetServiceAccountRow
+	err := row.Scan(
+		&i.ServiceAccountID,
+		&i.OrgID,
+		&i.SubjectID,
+		&i.ClientID,
+		&i.DisplayName,
+		&i.Description,
+		&i.Status,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.UpdatedAt,
+		&i.DisabledAt,
+		&i.DisabledBy,
+		&i.LastUsedAt,
+	)
+	return i, err
+}
+
 const insertAPICredential = `-- name: InsertAPICredential :exec
 INSERT INTO iam_api_credentials (
-    credential_id, org_id, subject_id, client_id, display_name, auth_method, status,
+    credential_id, service_account_id, org_id, subject_id, client_id, display_name, auth_method, status,
     policy_version_at_issue, created_at, created_by, updated_at, expires_at
 )
 VALUES (
     $1, $2, $3, $4, $5,
-    $6, $7, $8, $9, $10,
-    $9, $11
+    $6, $7, $8, $9,
+    $10, $11, $10, $12
 )
 `
 
 type InsertAPICredentialParams struct {
 	CredentialID         string
+	ServiceAccountID     string
 	OrgID                string
 	SubjectID            string
 	ClientID             string
@@ -104,6 +183,7 @@ type InsertAPICredentialParams struct {
 func (q *Queries) InsertAPICredential(ctx context.Context, arg InsertAPICredentialParams) error {
 	_, err := q.db.Exec(ctx, insertAPICredential,
 		arg.CredentialID,
+		arg.ServiceAccountID,
 		arg.OrgID,
 		arg.SubjectID,
 		arg.ClientID,
@@ -179,6 +259,45 @@ func (q *Queries) InsertAPICredentialSecret(ctx context.Context, arg InsertAPICr
 	return err
 }
 
+const insertServiceAccount = `-- name: InsertServiceAccount :exec
+INSERT INTO iam_service_accounts (
+    service_account_id, org_id, subject_id, client_id, display_name, description,
+    status, created_at, created_by, updated_at
+)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8,
+    $9, $8
+)
+`
+
+type InsertServiceAccountParams struct {
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Description      string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+}
+
+func (q *Queries) InsertServiceAccount(ctx context.Context, arg InsertServiceAccountParams) error {
+	_, err := q.db.Exec(ctx, insertServiceAccount,
+		arg.ServiceAccountID,
+		arg.OrgID,
+		arg.SubjectID,
+		arg.ClientID,
+		arg.DisplayName,
+		arg.Description,
+		arg.Status,
+		arg.CreatedAt,
+		arg.CreatedBy,
+	)
+	return err
+}
+
 const listAPICredentialPermissions = `-- name: ListAPICredentialPermissions :many
 SELECT permission
 FROM iam_api_credential_permissions
@@ -211,7 +330,7 @@ func (q *Queries) ListAPICredentialPermissions(ctx context.Context, arg ListAPIC
 }
 
 const listAPICredentials = `-- name: ListAPICredentials :many
-SELECT c.credential_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
+SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
        c.auth_method,
        COALESCE((
            SELECT s.fingerprint
@@ -233,6 +352,7 @@ type ListAPICredentialsParams struct {
 
 type ListAPICredentialsRow struct {
 	CredentialID         string
+	ServiceAccountID     string
 	OrgID                string
 	SubjectID            string
 	ClientID             string
@@ -261,6 +381,7 @@ func (q *Queries) ListAPICredentials(ctx context.Context, arg ListAPICredentials
 		var i ListAPICredentialsRow
 		if err := rows.Scan(
 			&i.CredentialID,
+			&i.ServiceAccountID,
 			&i.OrgID,
 			&i.SubjectID,
 			&i.ClientID,
@@ -350,6 +471,69 @@ func (q *Queries) ListActiveAPICredentialSecrets(ctx context.Context, arg ListAc
 	return items, nil
 }
 
+const listServiceAccounts = `-- name: ListServiceAccounts :many
+SELECT service_account_id, org_id, subject_id, client_id, display_name, description,
+       status, created_at, created_by, updated_at, disabled_at,
+       COALESCE(disabled_by, '') AS disabled_by, last_used_at
+FROM iam_service_accounts
+WHERE org_id = $1
+ORDER BY created_at DESC, service_account_id DESC
+`
+
+type ListServiceAccountsParams struct {
+	OrgID string
+}
+
+type ListServiceAccountsRow struct {
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Description      string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	DisabledAt       pgtype.Timestamptz
+	DisabledBy       string
+	LastUsedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) ListServiceAccounts(ctx context.Context, arg ListServiceAccountsParams) ([]ListServiceAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listServiceAccounts, arg.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListServiceAccountsRow{}
+	for rows.Next() {
+		var i ListServiceAccountsRow
+		if err := rows.Scan(
+			&i.ServiceAccountID,
+			&i.OrgID,
+			&i.SubjectID,
+			&i.ClientID,
+			&i.DisplayName,
+			&i.Description,
+			&i.Status,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.DisabledAt,
+			&i.DisabledBy,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordAPICredentialUse = `-- name: RecordAPICredentialUse :exec
 UPDATE iam_api_credentials
 SET last_used_at = $1, updated_at = $1
@@ -366,8 +550,25 @@ func (q *Queries) RecordAPICredentialUse(ctx context.Context, arg RecordAPICrede
 	return err
 }
 
+const recordServiceAccountUse = `-- name: RecordServiceAccountUse :exec
+UPDATE iam_service_accounts
+SET last_used_at = $1, updated_at = $1
+WHERE service_account_id = $2
+`
+
+type RecordServiceAccountUseParams struct {
+	UsedAt           pgtype.Timestamptz
+	ServiceAccountID string
+}
+
+func (q *Queries) RecordServiceAccountUse(ctx context.Context, arg RecordServiceAccountUseParams) error {
+	_, err := q.db.Exec(ctx, recordServiceAccountUse, arg.UsedAt, arg.ServiceAccountID)
+	return err
+}
+
 const resolveAPICredentialClaims = `-- name: ResolveAPICredentialClaims :one
-SELECT c.credential_id, c.org_id, c.display_name, c.auth_method,
+SELECT c.credential_id, c.service_account_id, c.org_id, c.display_name,
+       a.display_name AS service_account_display_name, c.auth_method,
        COALESCE((
            SELECT s.fingerprint
            FROM iam_api_credential_secrets s
@@ -377,9 +578,13 @@ SELECT c.credential_id, c.org_id, c.display_name, c.auth_method,
        ), ''::text)::text AS fingerprint,
        c.created_by
 FROM iam_api_credentials c
+JOIN iam_service_accounts a ON a.service_account_id = c.service_account_id
 WHERE c.subject_id = $1
   AND c.status = 'active'
+  AND a.status = 'active'
   AND (c.expires_at IS NULL OR c.expires_at > $2)
+ORDER BY c.created_at DESC, c.credential_id DESC
+LIMIT 1
 `
 
 type ResolveAPICredentialClaimsParams struct {
@@ -388,12 +593,14 @@ type ResolveAPICredentialClaimsParams struct {
 }
 
 type ResolveAPICredentialClaimsRow struct {
-	CredentialID string
-	OrgID        string
-	DisplayName  string
-	AuthMethod   string
-	Fingerprint  string
-	CreatedBy    string
+	CredentialID              string
+	ServiceAccountID          string
+	OrgID                     string
+	DisplayName               string
+	ServiceAccountDisplayName string
+	AuthMethod                string
+	Fingerprint               string
+	CreatedBy                 string
 }
 
 func (q *Queries) ResolveAPICredentialClaims(ctx context.Context, arg ResolveAPICredentialClaimsParams) (ResolveAPICredentialClaimsRow, error) {
@@ -401,8 +608,10 @@ func (q *Queries) ResolveAPICredentialClaims(ctx context.Context, arg ResolveAPI
 	var i ResolveAPICredentialClaimsRow
 	err := row.Scan(
 		&i.CredentialID,
+		&i.ServiceAccountID,
 		&i.OrgID,
 		&i.DisplayName,
+		&i.ServiceAccountDisplayName,
 		&i.AuthMethod,
 		&i.Fingerprint,
 		&i.CreatedBy,
@@ -486,6 +695,56 @@ func (q *Queries) RevokeActiveAPICredentialSecrets(ctx context.Context, arg Revo
 		arg.RevokedBy,
 		arg.OrgID,
 		arg.CredentialID,
+	)
+	return err
+}
+
+const revokeServiceAccountCredentialSecrets = `-- name: RevokeServiceAccountCredentialSecrets :exec
+UPDATE iam_api_credential_secrets s
+SET revoked_at = COALESCE(s.revoked_at, $1), revoked_by = COALESCE(NULLIF(s.revoked_by, ''), $2)
+FROM iam_api_credentials c
+WHERE c.credential_id = s.credential_id
+  AND c.org_id = $3
+  AND c.service_account_id = $4
+  AND s.revoked_at IS NULL
+`
+
+type RevokeServiceAccountCredentialSecretsParams struct {
+	RevokedAt        pgtype.Timestamptz
+	RevokedBy        pgtype.Text
+	OrgID            string
+	ServiceAccountID string
+}
+
+func (q *Queries) RevokeServiceAccountCredentialSecrets(ctx context.Context, arg RevokeServiceAccountCredentialSecretsParams) error {
+	_, err := q.db.Exec(ctx, revokeServiceAccountCredentialSecrets,
+		arg.RevokedAt,
+		arg.RevokedBy,
+		arg.OrgID,
+		arg.ServiceAccountID,
+	)
+	return err
+}
+
+const revokeServiceAccountCredentials = `-- name: RevokeServiceAccountCredentials :exec
+UPDATE iam_api_credentials
+SET status = 'revoked', revoked_at = COALESCE(revoked_at, $1), revoked_by = COALESCE(NULLIF(revoked_by, ''), $2), updated_at = $1
+WHERE org_id = $3 AND service_account_id = $4 AND status = 'active'
+`
+
+type RevokeServiceAccountCredentialsParams struct {
+	RevokedAt        pgtype.Timestamptz
+	RevokedBy        pgtype.Text
+	OrgID            string
+	ServiceAccountID string
+}
+
+func (q *Queries) RevokeServiceAccountCredentials(ctx context.Context, arg RevokeServiceAccountCredentialsParams) error {
+	_, err := q.db.Exec(ctx, revokeServiceAccountCredentials,
+		arg.RevokedAt,
+		arg.RevokedBy,
+		arg.OrgID,
+		arg.ServiceAccountID,
 	)
 	return err
 }

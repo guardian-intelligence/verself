@@ -188,6 +188,51 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 	}), testOrganizationIAMPermissions(authzSvc))
 
 	registerSecured(api, svc, secured(huma.Operation{
+		OperationID: "list-service-accounts",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/organization/service-accounts",
+		Summary:     "List organization service accounts",
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRead,
+		Resource:       "service_account",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "iam.service_account.list",
+	}), listServiceAccounts(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID: "get-service-account",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/organization/service-accounts/{service_account_id}",
+		Summary:     "Get service account metadata",
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRead,
+		Resource:       "service_account",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "iam.service_account.read",
+	}), getServiceAccount(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID:   "disable-service-account",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/organization/service-accounts/{service_account_id}/disable",
+		Summary:       "Disable a service account and revoke its API credentials",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRevoke,
+		Resource:       "service_account",
+		Action:         "disable",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "api_credential_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "iam.service_account.disable",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), disableServiceAccount(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
 		OperationID: "list-api-credentials",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/api-credentials",
@@ -310,6 +355,18 @@ type putMemberCapabilitiesInput struct {
 	Body dto.IAMPutMemberCapabilitiesRequest
 }
 
+type serviceAccountPath struct {
+	ServiceAccountID string `path:"service_account_id" doc:"Verself service account ID"`
+}
+
+type serviceAccountsOutput struct {
+	Body dto.IAMServiceAccounts
+}
+
+type serviceAccountOutput struct {
+	Body dto.IAMServiceAccount
+}
+
 type organizationIAMPolicyPath struct {
 	OrgID string `path:"org_id" doc:"Zitadel organization ID"`
 }
@@ -384,8 +441,12 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 	if _, err := dto.ParseUint64(authIdentity.OrgID); err != nil {
 		return identity.Principal{}, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
 	}
+	subject := authIdentity.Subject
+	if serviceAccountID, _ := authIdentity.Raw["verself:service_account_id"].(string); strings.TrimSpace(serviceAccountID) != "" {
+		subject = strings.TrimSpace(serviceAccountID)
+	}
 	return identity.Principal{
-		Subject:           authIdentity.Subject,
+		Subject:           subject,
 		OrgID:             authIdentity.OrgID,
 		Roles:             identityRolesForCurrentOrg(authIdentity),
 		DirectPermissions: directPermissionsFromAuthIdentity(authIdentity),
@@ -588,6 +649,48 @@ func testOrganizationIAMPermissions(authzSvc *authz.Service) func(context.Contex
 	}
 }
 
+func listServiceAccounts(svc *identity.Service) func(context.Context, *emptyInput) (*serviceAccountsOutput, error) {
+	return func(ctx context.Context, _ *emptyInput) (*serviceAccountsOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		accounts, err := svc.ListServiceAccounts(ctx, principal)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &serviceAccountsOutput{Body: dto.IAMServiceAccounts{ServiceAccounts: serviceAccountDTOs(accounts)}}, nil
+	}
+}
+
+func getServiceAccount(svc *identity.Service) func(context.Context, *serviceAccountPath) (*serviceAccountOutput, error) {
+	return func(ctx context.Context, input *serviceAccountPath) (*serviceAccountOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		account, err := svc.GetServiceAccount(ctx, principal, input.ServiceAccountID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &serviceAccountOutput{Body: serviceAccountDTO(account)}, nil
+	}
+}
+
+func disableServiceAccount(svc *identity.Service) func(context.Context, *serviceAccountPath) (*serviceAccountOutput, error) {
+	return func(ctx context.Context, input *serviceAccountPath) (*serviceAccountOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, err := svc.DisableServiceAccount(ctx, principal, input.ServiceAccountID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &serviceAccountOutput{Body: serviceAccountDTO(result.ServiceAccount)}, nil
+	}
+}
+
 func listAPICredentials(svc *identity.Service) func(context.Context, *emptyInput) (*apiCredentialsOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*apiCredentialsOutput, error) {
 		principal, err := principalFromContext(ctx)
@@ -623,10 +726,12 @@ func createAPICredential(svc *identity.Service) func(context.Context, *createAPI
 			return nil, err
 		}
 		result, err := svc.CreateAPICredential(ctx, principal, identity.CreateAPICredentialRequest{
-			DisplayName: input.Body.DisplayName,
-			AuthMethod:  identity.APICredentialAuthMethod(input.Body.AuthMethod),
-			Permissions: input.Body.Permissions,
-			ExpiresAt:   input.Body.ExpiresAt,
+			ServiceAccountID: input.Body.ServiceAccountID,
+			DisplayName:      input.Body.DisplayName,
+			Description:      input.Body.Description,
+			AuthMethod:       identity.APICredentialAuthMethod(input.Body.AuthMethod),
+			Permissions:      input.Body.Permissions,
+			ExpiresAt:        input.Body.ExpiresAt,
 		})
 		if err != nil {
 			return nil, identityError(ctx, err)
@@ -755,6 +860,33 @@ func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) dto.IAMMembe
 	}
 }
 
+func serviceAccountDTOs(accounts []identity.ServiceAccount) []dto.IAMServiceAccount {
+	out := make([]dto.IAMServiceAccount, 0, len(accounts))
+	for _, account := range accounts {
+		out = append(out, serviceAccountDTO(account))
+	}
+	return out
+}
+
+func serviceAccountDTO(account identity.ServiceAccount) dto.IAMServiceAccount {
+	return dto.IAMServiceAccount{
+		ServiceAccountID: account.ServiceAccountID,
+		OrgID:            orgID(account.OrgID),
+		SubjectID:        account.SubjectID,
+		ClientID:         account.ClientID,
+		DisplayName:      account.DisplayName,
+		Description:      account.Description,
+		Status:           string(account.Status),
+		Permissions:      append([]string(nil), account.Permissions...),
+		CreatedAt:        account.CreatedAt,
+		CreatedBy:        account.CreatedBy,
+		UpdatedAt:        account.UpdatedAt,
+		DisabledAt:       account.DisabledAt,
+		DisabledBy:       account.DisabledBy,
+		LastUsedAt:       account.LastUsedAt,
+	}
+}
+
 func apiCredentialDTOs(credentials []identity.APICredential) []dto.IAMAPICredential {
 	out := make([]dto.IAMAPICredential, 0, len(credentials))
 	for _, credential := range credentials {
@@ -766,6 +898,7 @@ func apiCredentialDTOs(credentials []identity.APICredential) []dto.IAMAPICredent
 func apiCredentialDTO(credential identity.APICredential) dto.IAMAPICredential {
 	return dto.IAMAPICredential{
 		CredentialID:         credential.CredentialID,
+		ServiceAccountID:     credential.ServiceAccountID,
 		OrgID:                orgID(credential.OrgID),
 		SubjectID:            credential.SubjectID,
 		ClientID:             credential.ClientID,
@@ -812,14 +945,17 @@ func requirePathOrgMatchesToken(ctx context.Context, orgID string) error {
 	return nil
 }
 
-func authzSubjectFromIdentity(authIdentity *auth.Identity) authz.Subject {
+func authzSubjectFromIdentity(authIdentity *auth.Identity) identity.AuthorizationSubject {
 	if authIdentity == nil {
-		return authz.UserSubject("")
+		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser}
+	}
+	if serviceAccountID, _ := authIdentity.Raw["verself:service_account_id"].(string); strings.TrimSpace(serviceAccountID) != "" {
+		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: serviceAccountID}
 	}
 	if credentialID, _ := authIdentity.Raw["verself:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
-		return authz.ServiceAccountSubject(authIdentity.Subject)
+		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: authIdentity.Subject}
 	}
-	return authz.UserSubject(authIdentity.Subject)
+	return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser, ID: authIdentity.Subject}
 }
 
 func policyDTO(policy authz.Policy) dto.IAMPolicy {

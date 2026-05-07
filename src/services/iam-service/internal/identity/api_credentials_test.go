@@ -10,10 +10,11 @@ import (
 func TestCreateAPICredentialValidatesRequestedPermissions(t *testing.T) {
 	defaults := DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())
 	svc := &Service{
-		Store:     &apiCredentialTestStore{capabilities: defaults},
-		Directory: &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")},
-		ProjectID: "identity-project",
-		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		Store:              &apiCredentialTestStore{capabilities: defaults},
+		Directory:          &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")},
+		AuthorizationGraph: apiCredentialTestAuthz{},
+		ProjectID:          "identity-project",
+		Now:                func() time.Time { return time.Unix(1700000000, 0).UTC() },
 	}
 
 	_, err := svc.CreateAPICredential(context.Background(), Principal{
@@ -39,7 +40,7 @@ func TestCreateAPICredentialValidatesRequestedPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("owner should mint sandbox permissions: %v", err)
 	}
-	if result.Credential.OrgID != "42" || result.Credential.SubjectID != "subject-1" {
+	if result.Credential.OrgID != "42" || result.Credential.SubjectID != "subject-1" || result.Credential.ServiceAccountID == "" {
 		t.Fatalf("unexpected credential: %#v", result.Credential)
 	}
 	if result.Credential.PolicyVersionAtIssue != 0 {
@@ -58,9 +59,10 @@ func TestCreateAPICredentialCleansUpServiceAccountWhenStoreFails(t *testing.T) {
 			capabilities: DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC()),
 			createErr:    storeErr,
 		},
-		Directory: directory,
-		ProjectID: "identity-project",
-		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		Directory:          directory,
+		AuthorizationGraph: apiCredentialTestAuthz{},
+		ProjectID:          "identity-project",
+		Now:                func() time.Time { return time.Unix(1700000000, 0).UTC() },
 	}
 
 	_, err := svc.CreateAPICredential(context.Background(), Principal{
@@ -138,6 +140,30 @@ func (s *apiCredentialTestStore) UpdateMemberRolesCommand(context.Context, Updat
 	return UpdateMemberRolesResult{}, nil
 }
 
+func (s *apiCredentialTestStore) CreateServiceAccount(_ context.Context, account ServiceAccount, credential APICredential, secret APICredentialSecret) (ServiceAccount, APICredential, error) {
+	if s.createErr != nil {
+		return ServiceAccount{}, APICredential{}, s.createErr
+	}
+	account.SubjectID = credential.SubjectID
+	account.ClientID = credential.ClientID
+	credential.Fingerprint = secret.Fingerprint
+	credential.Permissions = append([]string(nil), credential.Permissions...)
+	s.created = credential
+	return account, credential, nil
+}
+
+func (s *apiCredentialTestStore) ListServiceAccounts(context.Context, string) ([]ServiceAccount, error) {
+	return nil, nil
+}
+
+func (s *apiCredentialTestStore) GetServiceAccount(context.Context, string, string) (ServiceAccount, error) {
+	return ServiceAccount{}, ErrAPICredentialMissing
+}
+
+func (s *apiCredentialTestStore) DisableServiceAccount(context.Context, string, string, string, time.Time) (ServiceAccount, []APICredential, error) {
+	return ServiceAccount{}, nil, nil
+}
+
 func (s *apiCredentialTestStore) CreateAPICredential(_ context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error) {
 	if s.createErr != nil {
 		return APICredential{}, s.createErr
@@ -210,4 +236,26 @@ func (d *apiCredentialTestDirectory) RemoveServiceAccountCredential(context.Cont
 func (d *apiCredentialTestDirectory) DeactivateServiceAccount(_ context.Context, subjectID string) error {
 	d.deactivatedSubjects = append(d.deactivatedSubjects, subjectID)
 	return nil
+}
+
+type apiCredentialTestAuthz struct{}
+
+func (apiCredentialTestAuthz) ReconcileOrganizationRoles(context.Context, string, []Member, MemberCapabilitiesDocument, string) (string, error) {
+	return "", nil
+}
+
+func (apiCredentialTestAuthz) ReconcileMemberRoles(context.Context, string, Member, string) (string, error) {
+	return "", nil
+}
+
+func (apiCredentialTestAuthz) ReconcileCapabilityGrants(context.Context, string, MemberCapabilitiesDocument, string) (string, error) {
+	return "", nil
+}
+
+func (apiCredentialTestAuthz) ReconcileServiceAccountPermissions(context.Context, string, string, []string, string) (string, error) {
+	return "", nil
+}
+
+func (apiCredentialTestAuthz) TestOrganizationPermissions(_ context.Context, _ string, _ AuthorizationSubject, permissions []string, _ string) ([]string, string, error) {
+	return append([]string(nil), permissions...), "", nil
 }

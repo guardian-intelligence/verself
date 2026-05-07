@@ -21,6 +21,10 @@ type Store interface {
 	PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error)
 	GetOrgACLState(ctx context.Context, orgID, actor string) (OrgACLState, error)
 	UpdateMemberRolesCommand(ctx context.Context, command UpdateMemberRolesCommand, directory Directory, projectID string) (UpdateMemberRolesResult, error)
+	CreateServiceAccount(ctx context.Context, account ServiceAccount, credential APICredential, secret APICredentialSecret) (ServiceAccount, APICredential, error)
+	ListServiceAccounts(ctx context.Context, orgID string) ([]ServiceAccount, error)
+	GetServiceAccount(ctx context.Context, orgID, serviceAccountID string) (ServiceAccount, error)
+	DisableServiceAccount(ctx context.Context, orgID, serviceAccountID, actor string, now time.Time) (ServiceAccount, []APICredential, error)
 	CreateAPICredential(ctx context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error)
 	ListAPICredentials(ctx context.Context, orgID string) ([]APICredential, error)
 	GetAPICredential(ctx context.Context, orgID, credentialID string) (APICredential, error)
@@ -45,6 +49,8 @@ type AuthorizationGraph interface {
 	ReconcileOrganizationRoles(ctx context.Context, orgID string, members []Member, capabilities MemberCapabilitiesDocument, operation string) (string, error)
 	ReconcileMemberRoles(ctx context.Context, orgID string, member Member, operation string) (string, error)
 	ReconcileCapabilityGrants(ctx context.Context, orgID string, capabilities MemberCapabilitiesDocument, operation string) (string, error)
+	ReconcileServiceAccountPermissions(ctx context.Context, orgID, serviceAccountID string, permissions []string, operation string) (string, error)
+	TestOrganizationPermissions(ctx context.Context, orgID string, subject AuthorizationSubject, permissions []string, minZedToken string) ([]string, string, error)
 }
 
 type Service struct {
@@ -324,6 +330,84 @@ func (s *Service) PutMemberCapabilities(ctx context.Context, principal Principal
 	return updated, nil
 }
 
+func (s *Service) ListServiceAccounts(ctx context.Context, principal Principal) ([]ServiceAccount, error) {
+	if err := principal.validate(); err != nil {
+		return nil, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := store.ListServiceAccounts(ctx, principal.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range accounts {
+		permissions, err := s.serviceAccountPermissions(ctx, accounts[i].OrgID, accounts[i].ServiceAccountID)
+		if err != nil {
+			return nil, err
+		}
+		accounts[i].Permissions = permissions
+	}
+	return accounts, nil
+}
+
+func (s *Service) GetServiceAccount(ctx context.Context, principal Principal, serviceAccountID string) (ServiceAccount, error) {
+	if err := principal.validate(); err != nil {
+		return ServiceAccount{}, err
+	}
+	serviceAccountID = strings.TrimSpace(serviceAccountID)
+	if serviceAccountID == "" {
+		return ServiceAccount{}, fmt.Errorf("%w: service_account_id is required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	account, err := store.GetServiceAccount(ctx, principal.OrgID, serviceAccountID)
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	account.Permissions, err = s.serviceAccountPermissions(ctx, account.OrgID, account.ServiceAccountID)
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	return account, nil
+}
+
+func (s *Service) DisableServiceAccount(ctx context.Context, principal Principal, serviceAccountID string) (DisableServiceAccountResult, error) {
+	if err := principal.validate(); err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	serviceAccountID = strings.TrimSpace(serviceAccountID)
+	if serviceAccountID == "" {
+		return DisableServiceAccountResult{}, fmt.Errorf("%w: service_account_id is required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	account, err := store.GetServiceAccount(ctx, principal.OrgID, serviceAccountID)
+	if err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	if err := directory.DeactivateServiceAccount(ctx, account.SubjectID); err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	account, credentials, err := store.DisableServiceAccount(ctx, principal.OrgID, serviceAccountID, principal.Subject, s.now())
+	if err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	if _, err := s.reconcileServiceAccountPermissions(ctx, principal.OrgID, serviceAccountID, nil, "disable-service-account"); err != nil {
+		return DisableServiceAccountResult{}, err
+	}
+	return DisableServiceAccountResult{ServiceAccount: account, Credentials: credentials}, nil
+}
+
 func (s *Service) ListAPICredentials(ctx context.Context, principal Principal) ([]APICredential, error) {
 	if err := principal.validate(); err != nil {
 		return nil, err
@@ -332,7 +416,11 @@ func (s *Service) ListAPICredentials(ctx context.Context, principal Principal) (
 	if err != nil {
 		return nil, err
 	}
-	return store.ListAPICredentials(ctx, principal.OrgID)
+	credentials, err := store.ListAPICredentials(ctx, principal.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	return s.credentialsWithPermissions(ctx, credentials)
 }
 
 func (s *Service) GetAPICredential(ctx context.Context, principal Principal, credentialID string) (APICredential, error) {
@@ -347,7 +435,16 @@ func (s *Service) GetAPICredential(ctx context.Context, principal Principal, cre
 	if err != nil {
 		return APICredential{}, err
 	}
-	return store.GetAPICredential(ctx, principal.OrgID, credentialID)
+	credential, err := store.GetAPICredential(ctx, principal.OrgID, credentialID)
+	if err != nil {
+		return APICredential{}, err
+	}
+	permissions, err := s.serviceAccountPermissions(ctx, credential.OrgID, credential.ServiceAccountID)
+	if err != nil {
+		return APICredential{}, err
+	}
+	credential.Permissions = permissions
+	return credential, nil
 }
 
 func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialResult, error) {
@@ -355,6 +452,10 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 		return CreateAPICredentialResult{}, err
 	}
 	input, capabilities, err := s.normalizeCreateAPICredentialRequest(ctx, principal, input)
+	if err != nil {
+		return CreateAPICredentialResult{}, err
+	}
+	authzGraph, err := s.authorizationGraph()
 	if err != nil {
 		return CreateAPICredentialResult{}, err
 	}
@@ -368,9 +469,60 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 	}
 	now := s.now()
 	credentialID := uuid.NewString()
-	clientID := "verself-api-" + strings.ReplaceAll(credentialID, "-", "")
+	serviceAccountID := strings.TrimSpace(input.ServiceAccountID)
+	createServiceAccount := serviceAccountID == ""
+	var account ServiceAccount
+	var material APICredentialIssuedMaterial
+	clientID := ""
+	subjectID := ""
+	if createServiceAccount {
+		serviceAccountID = uuid.NewString()
+		clientID = "verself-sa-" + strings.ReplaceAll(serviceAccountID, "-", "")
+		account = ServiceAccount{
+			ServiceAccountID: serviceAccountID,
+			OrgID:            principal.OrgID,
+			ClientID:         clientID,
+			DisplayName:      input.DisplayName,
+			Description:      input.Description,
+			Status:           ServiceAccountStatusActive,
+			CreatedAt:        now,
+			CreatedBy:        principal.Subject,
+			UpdatedAt:        now,
+		}
+		subjectID, material, err = directory.CreateServiceAccountCredential(ctx, principal.OrgID, ServiceAccountCredentialInput{
+			CredentialID: credentialID,
+			ClientID:     clientID,
+			DisplayName:  input.DisplayName,
+			AuthMethod:   input.AuthMethod,
+			ExpiresAt:    input.ExpiresAt,
+		})
+		if err != nil {
+			return CreateAPICredentialResult{}, err
+		}
+		account.SubjectID = subjectID
+	} else {
+		account, err = store.GetServiceAccount(ctx, principal.OrgID, serviceAccountID)
+		if err != nil {
+			return CreateAPICredentialResult{}, err
+		}
+		if account.Status != ServiceAccountStatusActive {
+			return CreateAPICredentialResult{}, fmt.Errorf("%w: service account is not active", ErrInvalidInput)
+		}
+		subjectID = account.SubjectID
+		clientID = account.ClientID
+		material, err = directory.AddServiceAccountCredential(ctx, AddServiceAccountCredentialInput{
+			SubjectID:  account.SubjectID,
+			ClientID:   account.ClientID,
+			AuthMethod: input.AuthMethod,
+			ExpiresAt:  input.ExpiresAt,
+		})
+		if err != nil {
+			return CreateAPICredentialResult{}, err
+		}
+	}
 	credential := APICredential{
 		CredentialID:         credentialID,
+		ServiceAccountID:     serviceAccountID,
 		OrgID:                principal.OrgID,
 		ClientID:             clientID,
 		DisplayName:          input.DisplayName,
@@ -383,29 +535,30 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 		UpdatedAt:            now,
 		ExpiresAt:            input.ExpiresAt,
 	}
-	subjectID, material, err := directory.CreateServiceAccountCredential(ctx, principal.OrgID, ServiceAccountCredentialInput{
-		CredentialID: credentialID,
-		ClientID:     clientID,
-		DisplayName:  input.DisplayName,
-		AuthMethod:   input.AuthMethod,
-		ExpiresAt:    input.ExpiresAt,
-	})
-	if err != nil {
-		return CreateAPICredentialResult{}, err
-	}
 	if err := validateIssuedMaterial(input.AuthMethod, material); err != nil {
-		cleanupErr := directory.DeactivateServiceAccount(ctx, subjectID)
+		cleanupErr := cleanupIssuedCredential(ctx, directory, createServiceAccount, subjectID, APICredentialSecret{})
 		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr)
 	}
 	credential.SubjectID = subjectID
 	credential.ClientID = firstNonEmpty(material.ClientID, clientID)
+	account.ClientID = credential.ClientID
 	secret := credentialSecretFromMaterial(credential, material, principal.Subject, now, input.ExpiresAt)
 	credential.Fingerprint = secret.Fingerprint
-	credential, err = store.CreateAPICredential(ctx, credential, secret)
-	if err != nil {
-		cleanupErr := directory.DeactivateServiceAccount(ctx, subjectID)
+	if _, err := authzGraph.ReconcileServiceAccountPermissions(ctx, principal.OrgID, serviceAccountID, input.Permissions, "create-api-credential"); err != nil {
+		cleanupErr := cleanupIssuedCredential(ctx, directory, createServiceAccount, subjectID, secret)
 		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr)
 	}
+	if createServiceAccount {
+		account, credential, err = store.CreateServiceAccount(ctx, account, credential, secret)
+	} else {
+		credential, err = store.CreateAPICredential(ctx, credential, secret)
+	}
+	if err != nil {
+		cleanupErr := cleanupIssuedCredential(ctx, directory, createServiceAccount, subjectID, secret)
+		reconcileErr := cleanupServiceAccountPermissions(ctx, s, principal.OrgID, serviceAccountID, createServiceAccount)
+		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr, reconcileErr)
+	}
+	credential.Permissions = append([]string(nil), input.Permissions...)
 	material.Fingerprint = credential.Fingerprint
 	material.ClientID = credential.ClientID
 	return CreateAPICredentialResult{Credential: credential, IssuedMaterial: material}, nil
@@ -471,6 +624,10 @@ func (s *Service) RollAPICredential(ctx context.Context, principal Principal, cr
 	}
 	material.Fingerprint = credential.Fingerprint
 	material.ClientID = credential.ClientID
+	credential.Permissions, err = s.serviceAccountPermissions(ctx, credential.OrgID, credential.ServiceAccountID)
+	if err != nil {
+		return RollAPICredentialResult{}, err
+	}
 	return RollAPICredentialResult{Credential: credential, IssuedMaterial: material}, nil
 }
 
@@ -499,9 +656,6 @@ func (s *Service) RevokeAPICredential(ctx context.Context, principal Principal, 
 			return APICredential{}, err
 		}
 	}
-	if err := directory.DeactivateServiceAccount(ctx, credential.SubjectID); err != nil {
-		return APICredential{}, err
-	}
 	return store.RevokeAPICredential(ctx, principal.OrgID, credential.CredentialID, principal.Subject, s.now())
 }
 
@@ -514,7 +668,17 @@ func (s *Service) ResolveAPICredentialClaims(ctx context.Context, subjectID stri
 	if err != nil {
 		return ResolveAPICredentialClaimsResult{}, err
 	}
-	return store.ResolveAPICredentialClaims(ctx, subjectID, s.now())
+	result, err := store.ResolveAPICredentialClaims(ctx, subjectID, s.now())
+	if err != nil {
+		return ResolveAPICredentialClaimsResult{}, err
+	}
+	permissions, err := s.serviceAccountPermissions(ctx, result.OrgID, result.ServiceAccountID)
+	if err != nil {
+		return ResolveAPICredentialClaimsResult{}, err
+	}
+	result.Permissions = permissions
+	result.OpenBaoRoles = OpenBaoRolesForPermissions(permissions)
+	return result, nil
 }
 
 func (s *Service) memberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {
@@ -538,6 +702,13 @@ func (s *Service) store() (Store, error) {
 		return nil, ErrStoreUnavailable
 	}
 	return s.Store, nil
+}
+
+func (s *Service) authorizationGraph() (AuthorizationGraph, error) {
+	if s == nil || s.AuthorizationGraph == nil {
+		return nil, ErrStoreUnavailable
+	}
+	return s.AuthorizationGraph, nil
 }
 
 func (s *Service) directory() (Directory, error) {
@@ -587,6 +758,43 @@ func (s *Service) reconcileCapabilityGrants(ctx context.Context, orgID string, c
 	}
 	_, err := s.AuthorizationGraph.ReconcileCapabilityGrants(ctx, orgID, capabilities, operation)
 	return err
+}
+
+func (s *Service) reconcileServiceAccountPermissions(ctx context.Context, orgID, serviceAccountID string, permissions []string, operation string) (string, error) {
+	graph, err := s.authorizationGraph()
+	if err != nil {
+		return "", err
+	}
+	return graph.ReconcileServiceAccountPermissions(ctx, orgID, serviceAccountID, permissions, operation)
+}
+
+func (s *Service) serviceAccountPermissions(ctx context.Context, orgID, serviceAccountID string) ([]string, error) {
+	graph, err := s.authorizationGraph()
+	if err != nil {
+		return nil, err
+	}
+	allowed, _, err := graph.TestOrganizationPermissions(ctx, orgID, AuthorizationSubject{
+		Kind: AuthorizationSubjectKindServiceAccount,
+		ID:   serviceAccountID,
+	}, sortedKeys(KnownPermissions()), "")
+	if err != nil {
+		return nil, err
+	}
+	return normalizePermissions(allowed), nil
+}
+
+func (s *Service) credentialsWithPermissions(ctx context.Context, credentials []APICredential) ([]APICredential, error) {
+	for i := range credentials {
+		if strings.TrimSpace(credentials[i].ServiceAccountID) == "" {
+			continue
+		}
+		permissions, err := s.serviceAccountPermissions(ctx, credentials[i].OrgID, credentials[i].ServiceAccountID)
+		if err != nil {
+			return nil, err
+		}
+		credentials[i].Permissions = permissions
+	}
+	return credentials, nil
 }
 
 func (s *Service) validateRoleKeys(roleKeys []string) error {
@@ -777,12 +985,17 @@ func callerMember(principal Principal, members []Member) Member {
 }
 
 func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialRequest, MemberCapabilitiesDocument, error) {
+	input.ServiceAccountID = strings.TrimSpace(input.ServiceAccountID)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	if input.DisplayName == "" {
 		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: display_name is required", ErrInvalidInput)
 	}
 	if len(input.DisplayName) > 200 {
 		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
+	}
+	input.Description = strings.TrimSpace(input.Description)
+	if len(input.Description) > 1000 {
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: description is too long", ErrInvalidInput)
 	}
 	input.AuthMethod = normalizeAuthMethod(string(input.AuthMethod))
 	if err := validateAuthMethod(input.AuthMethod); err != nil {
@@ -870,6 +1083,27 @@ func validateIssuedMaterial(expected APICredentialAuthMethod, material APICreden
 		return validateAuthMethod(expected)
 	}
 	return nil
+}
+
+func cleanupIssuedCredential(ctx context.Context, directory Directory, deactivateSubject bool, subjectID string, secret APICredentialSecret) error {
+	if directory == nil || strings.TrimSpace(subjectID) == "" {
+		return nil
+	}
+	if deactivateSubject {
+		return directory.DeactivateServiceAccount(ctx, subjectID)
+	}
+	if strings.TrimSpace(secret.SecretID) == "" {
+		return nil
+	}
+	return directory.RemoveServiceAccountCredential(ctx, subjectID, secret)
+}
+
+func cleanupServiceAccountPermissions(ctx context.Context, svc *Service, orgID, serviceAccountID string, clear bool) error {
+	if !clear {
+		return nil
+	}
+	_, err := svc.reconcileServiceAccountPermissions(ctx, orgID, serviceAccountID, nil, "cleanup-service-account-permissions")
+	return err
 }
 
 func credentialSecretFromMaterial(credential APICredential, material APICredentialIssuedMaterial, actor string, now time.Time, expiresAt *time.Time) APICredentialSecret {

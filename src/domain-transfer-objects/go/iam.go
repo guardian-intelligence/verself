@@ -134,6 +134,7 @@ type IAMTestPermissionsResponse struct {
 
 type IAMAPICredential struct {
 	CredentialID         string     `json:"credential_id"`
+	ServiceAccountID     string     `json:"service_account_id"`
 	OrgID                OrgID      `json:"org_id"`
 	SubjectID            string     `json:"subject_id"`
 	ClientID             string     `json:"client_id"`
@@ -152,6 +153,27 @@ type IAMAPICredential struct {
 	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
 }
 
+type IAMServiceAccount struct {
+	ServiceAccountID string     `json:"service_account_id"`
+	OrgID            OrgID      `json:"org_id"`
+	SubjectID        string     `json:"subject_id"`
+	ClientID         string     `json:"client_id"`
+	DisplayName      string     `json:"display_name"`
+	Description      string     `json:"description,omitempty"`
+	Status           string     `json:"status"`
+	Permissions      []string   `json:"permissions"`
+	CreatedAt        time.Time  `json:"created_at"`
+	CreatedBy        string     `json:"created_by"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	DisabledAt       *time.Time `json:"disabled_at,omitempty"`
+	DisabledBy       string     `json:"disabled_by,omitempty"`
+	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
+}
+
+type IAMServiceAccounts struct {
+	ServiceAccounts []IAMServiceAccount `json:"service_accounts"`
+}
+
 type IAMAPICredentials struct {
 	Credentials []IAMAPICredential `json:"credentials"`
 }
@@ -167,10 +189,12 @@ type IAMAPICredentialIssuedMaterial struct {
 }
 
 type IAMCreateAPICredentialRequest struct {
-	DisplayName string     `json:"display_name" required:"true" maxLength:"200"`
-	AuthMethod  string     `json:"auth_method,omitempty" enum:"private_key_jwt,client_secret"`
-	Permissions []string   `json:"permissions" required:"true" minItems:"1" maxItems:"256"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	ServiceAccountID string     `json:"service_account_id,omitempty" maxLength:"64"`
+	DisplayName      string     `json:"display_name" required:"true" maxLength:"200"`
+	Description      string     `json:"description,omitempty" maxLength:"1000"`
+	AuthMethod       string     `json:"auth_method,omitempty" enum:"private_key_jwt,client_secret"`
+	Permissions      []string   `json:"permissions" required:"true" minItems:"1" maxItems:"256"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 }
 
 type IAMCreateAPICredentialResponse struct {

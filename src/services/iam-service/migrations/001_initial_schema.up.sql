@@ -137,8 +137,43 @@ CREATE INDEX IF NOT EXISTS iam_domain_event_outbox_pending_idx
     ON iam_domain_event_outbox (next_attempt_at, occurred_at, event_id)
     WHERE projected_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS iam_service_accounts (
+    service_account_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    disabled_at TIMESTAMPTZ,
+    disabled_by TEXT,
+    last_used_at TIMESTAMPTZ,
+    CHECK (length(btrim(service_account_id)) > 0),
+    CHECK (length(btrim(org_id)) > 0),
+    CHECK (length(btrim(subject_id)) > 0),
+    CHECK (length(btrim(client_id)) > 0),
+    CHECK (length(btrim(display_name)) > 0),
+    CHECK (status IN ('active', 'disabled')),
+    CHECK (length(btrim(created_by)) > 0),
+    CHECK (
+        (status = 'active' AND disabled_at IS NULL AND disabled_by IS NULL)
+        OR
+        (status = 'disabled' AND disabled_at IS NOT NULL AND length(btrim(disabled_by)) > 0)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS iam_service_accounts_org_status_idx
+    ON iam_service_accounts (org_id, status, created_at DESC, service_account_id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS iam_service_accounts_subject_idx
+    ON iam_service_accounts (subject_id);
+
 CREATE TABLE IF NOT EXISTS iam_api_credentials (
     credential_id TEXT PRIMARY KEY,
+    service_account_id TEXT NOT NULL REFERENCES iam_service_accounts (service_account_id) ON DELETE CASCADE,
     org_id TEXT NOT NULL,
     subject_id TEXT NOT NULL,
     client_id TEXT NOT NULL,
@@ -154,6 +189,7 @@ CREATE TABLE IF NOT EXISTS iam_api_credentials (
     revoked_by TEXT,
     last_used_at TIMESTAMPTZ,
     CHECK (length(btrim(credential_id)) > 0),
+    CHECK (length(btrim(service_account_id)) > 0),
     CHECK (length(btrim(org_id)) > 0),
     CHECK (length(btrim(subject_id)) > 0),
     CHECK (length(btrim(client_id)) > 0),
@@ -176,6 +212,9 @@ CREATE INDEX IF NOT EXISTS iam_api_credentials_org_subject_idx
 CREATE UNIQUE INDEX IF NOT EXISTS iam_api_credentials_active_subject_idx
     ON iam_api_credentials (subject_id)
     WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS iam_api_credentials_service_account_idx
+    ON iam_api_credentials (service_account_id, status, created_at DESC, credential_id DESC);
 
 CREATE TABLE IF NOT EXISTS iam_api_credential_permissions (
     credential_id TEXT NOT NULL REFERENCES iam_api_credentials (credential_id) ON DELETE CASCADE,

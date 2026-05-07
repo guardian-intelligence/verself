@@ -83,6 +83,9 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 			{Key: "verself:credential_owner_id", Value: claims.OwnerID},
 			{Key: "verself:credential_owner_display", Value: claims.OwnerDisplay},
 			{Key: "verself:credential_auth_method", Value: string(claims.AuthMethod)},
+			{Key: "verself:principal_type", Value: "service_account"},
+			{Key: "verself:service_account_id", Value: claims.ServiceAccountID},
+			{Key: "verself:service_account_name", Value: claims.ServiceAccountName},
 			{Key: "org_id", Value: claims.OrgID},
 			{Key: "permissions", Value: claims.Permissions},
 		}
