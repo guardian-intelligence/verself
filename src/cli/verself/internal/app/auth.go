@@ -80,6 +80,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	projectsURL := fs.String("projects-url", "", "Projects service base URL")
 	notificationsURL := fs.String("notifications-url", "", "Notifications service base URL")
 	billingURL := fs.String("billing-url", "", "Billing service base URL")
+	governanceURL := fs.String("governance-url", "", "Governance service base URL")
 	sandboxURL := fs.String("sandbox-url", "", "Sandbox rental service base URL")
 	secretsURL := fs.String("secrets-url", "", "Secrets service base URL")
 	sourceURL := fs.String("source-url", "", "Source service base URL")
@@ -97,6 +98,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		ProjectsURL:      strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
 		NotificationsURL: strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"))),
 		BillingURL:       strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"))),
+		GovernanceURL:    strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"))),
 		SandboxURL:       strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"))),
 		SecretsURL:       strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"))),
 		SourceURL:        strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
@@ -119,6 +121,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		ProjectsURL:      profile.ProjectsURL,
 		NotificationsURL: profile.NotificationsURL,
 		BillingURL:       profile.BillingURL,
+		GovernanceURL:    profile.GovernanceURL,
 		SandboxURL:       profile.SandboxURL,
 		SecretsURL:       profile.SecretsURL,
 		SourceURL:        profile.SourceURL,

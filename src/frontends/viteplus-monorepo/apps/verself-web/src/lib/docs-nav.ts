@@ -52,7 +52,22 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
       { id: "api-credentials", label: "API credentials" },
       { id: "projects", label: "Projects" },
       { id: "notifications", label: "Notifications" },
+      { id: "governance", label: "Governance" },
       { id: "repositories", label: "Repositories" },
+    ],
+  },
+  {
+    id: "governance",
+    label: "Governance",
+    to: "/docs/governance",
+    matchPrefix: "/docs/governance",
+    status: "available",
+    description: "Audit events, high-risk activity views, and organization data exports.",
+    children: [
+      { id: "overview", label: "Overview" },
+      { id: "audit-events", label: "Audit events" },
+      { id: "data-exports", label: "Data exports" },
+      { id: "commands", label: "Commands" },
     ],
   },
   {

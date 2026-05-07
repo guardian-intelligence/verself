@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import type { AuditEventsQuery } from "~/lib/governance-api";
+import type { GovernanceAuditEventsQuery } from "@verself/sdk";
 
 // Column IDs double as URL tokens and render keys — keep them short, stable,
 // and lowercase. Adding a new column means extending this list and the
@@ -149,12 +149,12 @@ export function parseAuditSearch(search: Record<string, unknown>): AuditSearch {
   return result.success ? result.output : {};
 }
 
-// Projection into the governance-api client's query shape. Cols/view are
+// Projection into the Governance API query shape. Cols/view are
 // UI-local concerns — view decomposes into the server's high_risk flag only
 // when no explicit filter is acting, so toggling "All activity" means the URL
 // carries neither `view` nor `high_risk`.
-export function auditSearchToQuery(search: AuditSearch): AuditEventsQuery {
-  const query: AuditEventsQuery = {};
+export function auditSearchToQuery(search: AuditSearch): GovernanceAuditEventsQuery {
+  const query: GovernanceAuditEventsQuery = {};
   if (search.cursor !== undefined) query.cursor = search.cursor;
   if (search.limit !== undefined) query.limit = search.limit;
   if (search.order !== undefined) query.order = search.order;

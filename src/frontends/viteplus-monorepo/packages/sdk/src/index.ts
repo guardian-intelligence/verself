@@ -1,4 +1,5 @@
 import { Billing } from "./billing";
+import { Governance } from "./governance";
 import { IAM } from "./iam";
 import { Notifications } from "./notifications";
 import { Projects } from "./projects";
@@ -11,6 +12,7 @@ export const DEFAULT_IAM_URL = "https://iam.api.verself.sh";
 export const DEFAULT_PROJECTS_URL = "https://projects.api.verself.sh";
 export const DEFAULT_NOTIFICATIONS_URL = "https://notifications.api.verself.sh";
 export const DEFAULT_BILLING_URL = "https://billing.api.verself.sh";
+export const DEFAULT_GOVERNANCE_URL = "https://governance.api.verself.sh";
 export const DEFAULT_SANDBOX_URL = "https://sandbox.api.verself.sh";
 export const DEFAULT_SECRETS_URL = "https://secrets.api.verself.sh";
 export const DEFAULT_SOURCE_URL = "https://source.api.verself.sh";
@@ -22,6 +24,7 @@ export type VerselfOptions = {
   projectsURL?: string | undefined;
   notificationsURL?: string | undefined;
   billingURL?: string | undefined;
+  governanceURL?: string | undefined;
   sandboxURL?: string | undefined;
   secretsURL?: string | undefined;
   sourceURL?: string | undefined;
@@ -34,6 +37,7 @@ export class Verself {
   readonly projects: Projects;
   readonly notifications: Notifications;
   readonly billing: Billing;
+  readonly governance: Governance;
   readonly sandbox: SandboxRental;
   readonly secrets: Secrets;
   readonly source: Source;
@@ -64,6 +68,12 @@ export class Verself {
     this.billing = new Billing({
       accessToken: token,
       baseUrl: resolveBillingURL(options),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.traceparent ? { traceparent: options.traceparent } : {}),
+    });
+    this.governance = new Governance({
+      accessToken: token,
+      baseUrl: resolveGovernanceURL(options),
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.traceparent ? { traceparent: options.traceparent } : {}),
     });
@@ -114,6 +124,15 @@ function resolveBillingURL(options: VerselfOptions): string {
   return resolveServiceURL("billing", options.billingURL, options.serverURL, DEFAULT_BILLING_URL);
 }
 
+function resolveGovernanceURL(options: VerselfOptions): string {
+  return resolveServiceURL(
+    "governance",
+    options.governanceURL,
+    options.serverURL,
+    DEFAULT_GOVERNANCE_URL,
+  );
+}
+
 function resolveSandboxURL(options: VerselfOptions): string {
   return resolveServiceURL("sandbox", options.sandboxURL, options.serverURL, DEFAULT_SANDBOX_URL);
 }
@@ -127,7 +146,15 @@ function resolveSourceURL(options: VerselfOptions): string {
 }
 
 function resolveServiceURL(
-  service: "iam" | "projects" | "notifications" | "billing" | "sandbox" | "secrets" | "source",
+  service:
+    | "iam"
+    | "projects"
+    | "notifications"
+    | "billing"
+    | "governance"
+    | "sandbox"
+    | "secrets"
+    | "source",
   serviceURL: string | undefined,
   serverURL: string | undefined,
   defaultURL: string,
@@ -207,6 +234,24 @@ export {
   type StatementQuery as BillingStatementQuery,
   type StatementQueryInput as BillingStatementQueryInput,
 } from "./billing";
+
+export {
+  Governance,
+  GovernanceApiError,
+  governanceAuditEventsQuerySchema,
+  governanceCreateExportRequestSchema,
+  isGovernanceApiError,
+  type GovernanceAuditEvent,
+  type GovernanceAuditEvents,
+  type GovernanceAuditEventsQuery,
+  type GovernanceAuditEventsQueryInput,
+  type GovernanceClientOptions,
+  type GovernanceCreateExportRequest,
+  type GovernanceCreateExportRequestInput,
+  type GovernanceExportArtifact,
+  type GovernanceExportJob,
+  type GovernanceMutationOptions,
+} from "./governance";
 
 export {
   IAM,

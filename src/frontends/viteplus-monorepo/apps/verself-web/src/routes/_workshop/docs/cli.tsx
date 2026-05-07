@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_workshop/docs/cli")({
       {
         name: "description",
         content:
-          "Use the Verself CLI with auth profiles, organization context, API credentials, Projects, Source, and Sandbox Rental.",
+          "Use the Verself CLI with auth profiles, organization context, API credentials, Projects, Governance, Source, and Sandbox Rental.",
       },
     ],
   }),
@@ -31,7 +31,7 @@ function CLIDocs() {
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">CLI</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
           Operate Verself, cloned installations, organization state, API credentials, Projects,
-          Source, and Sandbox Rental from one binary.
+          Governance, Source, and Sandbox Rental from one binary.
         </p>
       </header>
 
@@ -46,6 +46,7 @@ function CLIDocs() {
         <Command>{`verself auth login --token-file /run/secrets/verself-token \
   --iam-url https://iam.api.example.com \
   --projects-url https://projects.api.example.com \
+  --governance-url https://governance.api.example.com \
   --sandbox-url https://sandbox.api.example.com \
   --source-url https://source.api.example.com
 verself auth whoami
@@ -117,6 +118,26 @@ verself notifications summary --json
 verself notifications preferences set --version 1 --enabled true --web-enabled true
 verself notifications read-cursor 42
 verself notifications test --title "Canary" --body "Notifications API"`}</Command>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <SectionHeading id="governance">Governance</SectionHeading>
+        <SummaryPanel>
+          <SummaryItem term="Audit events">
+            Audit commands use the Go SDK over the public Governance OpenAPI contract.
+          </SummaryItem>
+          <SummaryItem term="Exports">
+            Data export creation sends idempotency keys, and downloads request gzip artifacts.
+          </SummaryItem>
+          <SummaryItem term="Trace context">
+            <code>--traceparent</code> joins audit and export API calls to an existing trace.
+          </SummaryItem>
+        </SummaryPanel>
+        <Command>{`verself audit events --high-risk --limit 50
+verself audit events --operation-type export --result allowed --json
+verself audit exports list
+verself audit exports create --scope audit --idempotency-key audit-export:2026-05-07
+verself audit exports download <export-id> ./export.tar.gz --json`}</Command>
       </section>
 
       <section className="flex flex-col gap-4">

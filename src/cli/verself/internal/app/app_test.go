@@ -294,6 +294,86 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 }
 
+func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
+	const exportID = "11111111-1111-1111-1111-111111111111"
+	const traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
+	var createKey string
+	var createBody map[string]any
+	exportJSON := `{"export_id":"` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["audit"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"audit/audit_events.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
+	auditEventJSON := `{"action":"governance.data_export.create","actor_id":"user_1","actor_type":"user","audit_event":"governance.data_export.create","content_sha256":"hash","decision":"allowed","event_category":"data_export","event_id":"22222222-2222-2222-2222-222222222222","operation_display":"Create data export","operation_id":"create-data-export","operation_type":"export","org_id":"370200542594579812","org_scope":"same_org","permission":"governance.exports.write","prev_hmac":"prev","recorded_at":"2026-05-07T00:00:01Z","result":"allowed","risk_level":"high","row_hmac":"row","sequence":"1","service_name":"governance-service","source_product_area":"Governance","target_id":"` + exportID + `","target_kind":"data_export","trace_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer tok_governance" {
+			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/audit/events":
+			if r.Header.Get("Traceparent") != traceparent {
+				t.Fatalf("events Traceparent = %q", r.Header.Get("Traceparent"))
+			}
+			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("high_risk") != "true" {
+				t.Fatalf("events query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"events":[` + auditEventJSON + `],"filters":{"high_risk":true},"limit":2}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports":
+			_, _ = w.Write([]byte(`{"exports":[` + exportJSON + `]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/governance/exports":
+			createKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(exportJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports/"+exportID:
+			_, _ = w.Write([]byte(exportJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports/"+exportID+"/download":
+			if !strings.Contains(r.Header.Get("Accept"), "application/gzip") {
+				t.Fatalf("download Accept = %q", r.Header.Get("Accept"))
+			}
+			w.Header().Set("Content-Type", "application/gzip")
+			w.Header().Set("Content-Disposition", `attachment; filename="governance-export.tar.gz"`)
+			_, _ = w.Write([]byte("gzip-bytes"))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_TOKEN", "tok_governance")
+	t.Setenv("VERSELF_GOVERNANCE_API_URL", server.URL)
+
+	var eventsOut bytes.Buffer
+	runCLI(t, &eventsOut, "audit", "events", "--limit", "2", "--high-risk", "--traceparent", traceparent)
+	if !strings.Contains(eventsOut.String(), "governance.data_export.create\t22222222-2222-2222-2222-222222222222\thigh\tallowed") {
+		t.Fatalf("audit events output:\n%s", eventsOut.String())
+	}
+
+	var exportsOut bytes.Buffer
+	runCLI(t, &exportsOut, "audit", "exports", "list")
+	if !strings.Contains(exportsOut.String(), "ready\t"+exportID+"\taudit") {
+		t.Fatalf("audit exports list output:\n%s", exportsOut.String())
+	}
+
+	var createOut bytes.Buffer
+	runCLI(t, &createOut, "audit", "exports", "create", "--scope", "audit", "--include-logs", "--idempotency-key", "governance-export:test")
+	if createKey != "governance-export:test" || createBody["include_logs"] != true {
+		t.Fatalf("unexpected export create: %q %#v", createKey, createBody)
+	}
+	if !strings.Contains(createOut.String(), "ready\t"+exportID+"\taudit") {
+		t.Fatalf("audit exports create output:\n%s", createOut.String())
+	}
+
+	artifactPath := filepath.Join(t.TempDir(), "export.tar.gz")
+	var downloadOut bytes.Buffer
+	runCLI(t, &downloadOut, "audit", "exports", "download", exportID, artifactPath, "--json")
+	if got := readFile(t, artifactPath); got != "gzip-bytes" {
+		t.Fatalf("downloaded artifact = %q", got)
+	}
+	if !strings.Contains(downloadOut.String(), `"file_name": "governance-export.tar.gz"`) {
+		t.Fatalf("audit exports download output:\n%s", downloadOut.String())
+	}
+}
+
 func TestNotificationsCommandsUseSDKBackedAPI(t *testing.T) {
 	const notificationID = "11111111-1111-1111-1111-111111111111"
 	notificationJSON := func(sequence string) string {

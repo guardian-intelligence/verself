@@ -18,6 +18,7 @@ type serviceClientFlags struct {
 	projectsURL      string
 	notificationsURL string
 	billingURL       string
+	governanceURL    string
 	sandboxURL       string
 	secretsURL       string
 	sourceURL        string
@@ -390,6 +391,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
 	fs.StringVar(&flags.notificationsURL, "notifications-url", "", "notifications service base URL")
 	fs.StringVar(&flags.billingURL, "billing-url", "", "billing service base URL")
+	fs.StringVar(&flags.governanceURL, "governance-url", "", "governance service base URL")
 	fs.StringVar(&flags.sandboxURL, "sandbox-url", "", "sandbox rental service base URL")
 	fs.StringVar(&flags.secretsURL, "secrets-url", "", "secrets service base URL")
 	fs.StringVar(&flags.sourceURL, "source-url", "", "source service base URL")
@@ -430,6 +432,13 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	if billingURL == "" && profile != nil {
 		billingURL = profile.BillingURL
 	}
+	governanceURL := strings.TrimSpace(flags.governanceURL)
+	if governanceURL == "" {
+		governanceURL = strings.TrimSpace(c.getenv("VERSELF_GOVERNANCE_API_URL"))
+	}
+	if governanceURL == "" && profile != nil {
+		governanceURL = profile.GovernanceURL
+	}
 	sandboxURL := strings.TrimSpace(flags.sandboxURL)
 	if sandboxURL == "" {
 		sandboxURL = strings.TrimSpace(c.getenv("VERSELF_SANDBOX_API_URL"))
@@ -457,6 +466,7 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 		ProjectsURL:      projectsURL,
 		NotificationsURL: notificationsURL,
 		BillingURL:       billingURL,
+		GovernanceURL:    governanceURL,
 		SandboxURL:       sandboxURL,
 		SecretsURL:       secretsURL,
 		SourceURL:        sourceURL,

@@ -3,15 +3,6 @@ import * as v from "valibot";
 import { readFileSync } from "node:fs";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
-  GovernanceApiError,
-  auditEventsQuerySchema,
-  createDataExport as createDataExportRequest,
-  createExportRequestSchema,
-  isGovernanceApiError,
-  listAuditEvents as listAuditEventsRequest,
-  listDataExports as listDataExportsRequest,
-} from "~/lib/governance-api";
-import {
   ProfileApiError,
   getProfile as getProfileRequest,
   isProfileApiError,
@@ -22,6 +13,7 @@ import {
 } from "~/lib/profile-api";
 import {
   BillingApiError,
+  GovernanceApiError,
   IAMApiError,
   NotificationsApiError,
   ProjectsApiError,
@@ -41,7 +33,10 @@ import {
   executionIdInputSchema,
   executionScheduleIdInputSchema,
   executionScheduleRequestSchema,
+  governanceAuditEventsQuerySchema as auditEventsQuerySchema,
+  governanceCreateExportRequestSchema as createExportRequestSchema,
   inviteMemberRequestSchema,
+  isGovernanceApiError,
   isNotificationsApiError,
   runIdInputSchema,
   isBillingApiError,
@@ -110,6 +105,10 @@ import {
   type ProjectList,
   type GitHubInstallation,
   type GitHubInstallationConnect,
+  type GovernanceAuditEvent,
+  type GovernanceAuditEvents,
+  type GovernanceCreateExportRequest as CreateExportRequest,
+  type GovernanceExportJob,
   type JobsAnalytics,
   type RunListQuery,
   type RunListQueryInput,
@@ -131,12 +130,6 @@ import {
   type UpdateOrganizationRequest,
   Verself,
 } from "@verself/sdk";
-import type {
-  CreateExportRequest,
-  GovernanceAuditEvent,
-  GovernanceAuditEvents,
-  GovernanceExportJob,
-} from "~/lib/governance-api";
 import type {
   ProfileSnapshot,
   PutProfilePreferencesRequest,
@@ -163,6 +156,7 @@ const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
   "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE",
 );
 const PROJECTS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("PROJECTS_SERVICE_AUTH_AUDIENCE");
+const GOVERNANCE_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("GOVERNANCE_SERVICE_AUTH_AUDIENCE");
 const BILLING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("BILLING_SERVICE_AUTH_AUDIENCE");
 const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
   "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
@@ -274,17 +268,6 @@ export type {
   UpdateMemberRolesRequest,
 };
 
-async function iamClientOptions(
-  context: ConsoleAuthContext | undefined,
-  options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
-) {
-  const accessToken = await getAccessTokenForAudience(context, IAM_SERVICE_AUTH_AUDIENCE, options);
-  return {
-    accessToken,
-    baseUrl: IAM_SERVICE_BASE_URL,
-  };
-}
-
 async function iamSDK(
   context: ConsoleAuthContext | undefined,
   options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
@@ -297,12 +280,9 @@ async function iamSDK(
   });
 }
 
-async function governanceClientOptions(context: ConsoleAuthContext | undefined) {
-  const iamOptions = await iamClientOptions(context);
-  return {
-    ...iamOptions,
-    baseUrl: GOVERNANCE_SERVICE_BASE_URL,
-  };
+async function governanceSDK(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, GOVERNANCE_SERVICE_AUTH_AUDIENCE);
+  return new Verself({ bearerToken: accessToken, governanceURL: GOVERNANCE_SERVICE_BASE_URL });
 }
 
 async function profileClientOptions(context: ConsoleAuthContext | undefined) {
@@ -616,26 +596,20 @@ export const listGovernanceAuditEvents = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(auditEventsQuerySchema)
   .handler(async ({ context, data }) => {
-    return listAuditEventsRequest({
-      ...(await governanceClientOptions(context)),
-      query: data,
-    });
+    return (await governanceSDK(context)).governance.listAuditEvents(data);
   });
 
 export const listGovernanceDataExports = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return listDataExportsRequest(await governanceClientOptions(context));
+    return (await governanceSDK(context)).governance.listDataExports();
   });
 
 export const createGovernanceDataExport = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(createExportRequestSchema)
   .handler(async ({ context, data }) => {
-    return createDataExportRequest({
-      ...(await governanceClientOptions(context)),
-      body: data,
-    });
+    return (await governanceSDK(context)).governance.createDataExport(data);
   });
 
 const governanceDownloadRequestSchema = v.strictObject({
@@ -646,32 +620,14 @@ export const downloadGovernanceDataExport = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(governanceDownloadRequestSchema)
   .handler(async ({ context, data }) => {
-    const options = await governanceClientOptions(context);
-    const response = await fetch(
-      `${options.baseUrl}/api/v1/governance/exports/${data.export_id}/download`,
-      {
-        headers: {
-          Accept: "application/gzip",
-          Authorization: `Bearer ${options.accessToken}`,
-        },
-      },
+    const artifact = await (await governanceSDK(context)).governance.downloadDataExport(
+      data.export_id,
     );
-    if (!response.ok) {
-      throw new GovernanceApiError(
-        response.status,
-        `/api/v1/governance/exports/${data.export_id}/download`,
-        await response.text(),
-      );
-    }
-    const contentDisposition = response.headers.get("content-disposition") ?? "";
-    const fileName =
-      /filename="([^"]+)"/.exec(contentDisposition)?.[1] ??
-      `verself-export-${data.export_id}.tar.gz`;
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = Buffer.from(artifact.data);
     return {
-      content_type: response.headers.get("content-type") ?? "application/gzip",
+      content_type: artifact.content_type,
       data_base64: bytes.toString("base64"),
-      file_name: fileName,
+      file_name: artifact.file_name,
     };
   });
 

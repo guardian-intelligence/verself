@@ -60,6 +60,8 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runProjects(ctx, args[1:])
 	case "notifications":
 		return c.runNotifications(ctx, args[1:])
+	case "audit":
+		return c.runAudit(ctx, args[1:])
 	case "repos":
 		return c.runRepos(ctx, args[1:])
 	case "runs":
@@ -111,6 +113,11 @@ func (c CLI) usage() error {
   %[1]s notifications dismiss <notification-id> [--json]
   %[1]s notifications clear [--json]
   %[1]s notifications test [--title TEXT] [--body TEXT] [--action-url URL] [--json]
+  %[1]s audit events [--high-risk] [--limit N] [--json]
+  %[1]s audit exports list [--json]
+  %[1]s audit exports create [--scope SCOPE] [--include-logs] [--json]
+  %[1]s audit exports get <export-id> [--json]
+  %[1]s audit exports download <export-id> [file] [--json]
   %[1]s repos list [--project-id PROJECT_ID] [--json]
   %[1]s repos get <repo-id> [--json]
   %[1]s repos create <project-id> [--description TEXT] [--default-branch BRANCH] [--json]

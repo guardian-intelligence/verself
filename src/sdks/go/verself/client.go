@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	billingcore "github.com/verself/verself-go/internal/generated/billing"
+	governancecore "github.com/verself/verself-go/internal/generated/governance"
 	iamcore "github.com/verself/verself-go/internal/generated/iam"
 	notificationscore "github.com/verself/verself-go/internal/generated/notifications"
 	projectscore "github.com/verself/verself-go/internal/generated/projects"
@@ -25,6 +26,7 @@ const (
 	DefaultProjectsURL      = "https://projects.api.verself.sh"
 	DefaultNotificationsURL = "https://notifications.api.verself.sh"
 	DefaultBillingURL       = "https://billing.api.verself.sh"
+	DefaultGovernanceURL    = "https://governance.api.verself.sh"
 	DefaultSandboxURL       = "https://sandbox.api.verself.sh"
 	DefaultSecretsURL       = "https://secrets.api.verself.sh"
 	DefaultSourceURL        = "https://source.api.verself.sh"
@@ -37,6 +39,7 @@ type Options struct {
 	ProjectsURL      string
 	NotificationsURL string
 	BillingURL       string
+	GovernanceURL    string
 	SandboxURL       string
 	SecretsURL       string
 	SourceURL        string
@@ -49,6 +52,7 @@ type Client struct {
 	Projects      *ProjectsClient
 	Notifications *NotificationsClient
 	Billing       *BillingClient
+	Governance    *GovernanceClient
 	Sandbox       *SandboxClient
 	Secrets       *SecretsClient
 	Source        *SourceClient
@@ -72,6 +76,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	billingURL, err := serviceURL(options.BillingURL, options.ServerURL, "billing")
+	if err != nil {
+		return nil, err
+	}
+	governanceURL, err := serviceURL(options.GovernanceURL, options.ServerURL, "governance")
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +135,15 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	governanceEditor := governanceRequestEditor(token, options.Traceparent)
+	generatedGovernance, err := governancecore.NewClientWithResponses(
+		governanceURL,
+		governancecore.WithHTTPClient(httpClient),
+		governancecore.WithRequestEditorFn(governanceEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	sourceEditor := sourceRequestEditor(token, options.Traceparent)
 	generatedSource, err := sourcecore.NewClientWithResponses(
 		sourceURL,
@@ -159,6 +176,7 @@ func New(options Options) (*Client, error) {
 		Projects:      &ProjectsClient{client: generatedProjects},
 		Notifications: &NotificationsClient{client: generatedNotifications},
 		Billing:       &BillingClient{client: generatedBilling},
+		Governance:    &GovernanceClient{client: generatedGovernance},
 		Sandbox:       &SandboxClient{client: generatedSandbox},
 		Secrets:       &SecretsClient{client: generatedSecrets},
 		Source:        &SourceClient{client: generatedSource},
@@ -184,6 +202,12 @@ func notificationsRequestEditor(token, traceparent string) notificationscore.Req
 }
 
 func billingRequestEditor(token, traceparent string) billingcore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, token, traceparent)
+	}
+}
+
+func governanceRequestEditor(token, traceparent string) governancecore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, token, traceparent)
 	}
@@ -237,6 +261,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultNotificationsURL
 	case "billing":
 		return DefaultBillingURL
+	case "governance":
+		return DefaultGovernanceURL
 	case "sandbox":
 		return DefaultSandboxURL
 	case "secrets":

@@ -29,6 +29,10 @@
       "types": "./src/billing.ts",
       "default": "./src/billing.ts"
     },
+    "./governance": {
+      "types": "./src/governance.ts",
+      "default": "./src/governance.ts"
+    },
     "./sandbox": {
       "types": "./src/sandbox.ts",
       "default": "./src/sandbox.ts"

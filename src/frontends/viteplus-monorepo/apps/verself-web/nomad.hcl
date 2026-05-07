@@ -42,6 +42,7 @@ job "verself-web" {
         VERSELF_CRED_ELECTRIC_API_SECRET = "/etc/credstore/verself-web/electric-api-secret"
         VERSELF_CRED_ELECTRIC_NOTIFICATIONS_API_SECRET = "/etc/credstore/verself-web/electric-notifications-api-secret"
         VERSELF_CRED_BILLING_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/billing-service-auth-audience"
+        VERSELF_CRED_GOVERNANCE_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/governance-service-auth-audience"
         VERSELF_CRED_IAM_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/iam-service-auth-audience"
         VERSELF_CRED_NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/notifications-service-auth-audience"
         VERSELF_CRED_PROFILE_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/profile-service-auth-audience"

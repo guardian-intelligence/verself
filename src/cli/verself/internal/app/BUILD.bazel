@@ -4,6 +4,7 @@ go_library(
     name = "app",
     srcs = [
         "app.go",
+        "audit.go",
         "auth.go",
         "models.go",
         "notifications.go",
