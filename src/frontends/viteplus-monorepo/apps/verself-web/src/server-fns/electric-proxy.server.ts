@@ -13,12 +13,23 @@ const ELECTRIC_BASE_URL = requireURLFromEnv("ELECTRIC_BASE_URL");
 const ELECTRIC_NOTIFICATIONS_BASE_URL = requireURLFromEnv("ELECTRIC_NOTIFICATIONS_BASE_URL");
 
 const ELECTRIC_PROTOCOL_QUERY_PARAMS = new Set([
+  "cache-buster",
+  "cursor",
+  "expired_handle",
+  "experimental_live_sse",
   "offset",
   "handle",
   "live",
   "live_sse",
   "replica",
   "log",
+  "subset__limit",
+  "subset__offset",
+  "subset__order_by",
+  "subset__order_by_expr",
+  "subset__params",
+  "subset__where",
+  "subset__where_expr",
 ]);
 const ELECTRIC_SHAPE_DEFINITION_PARAMS = new Set([
   "table",
