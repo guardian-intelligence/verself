@@ -39,6 +39,7 @@ job "grafana" {
       service {
         name = "grafana-http"
         port = "http"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

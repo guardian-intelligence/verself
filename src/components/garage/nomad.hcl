@@ -45,12 +45,14 @@ job "garage" {
       service {
         name = "garage-s3"
         port = "s3"
+        provider = "nomad"
         address_mode = "auto"
       }
 
       service {
         name = "garage-admin"
         port = "admin"
+        provider = "nomad"
         address_mode = "auto"
       }
     }
@@ -98,12 +100,14 @@ job "garage" {
       service {
         name = "garage-s3"
         port = "s3"
+        provider = "nomad"
         address_mode = "auto"
       }
 
       service {
         name = "garage-admin"
         port = "admin"
+        provider = "nomad"
         address_mode = "auto"
       }
     }
@@ -151,12 +155,14 @@ job "garage" {
       service {
         name = "garage-s3"
         port = "s3"
+        provider = "nomad"
         address_mode = "auto"
       }
 
       service {
         name = "garage-admin"
         port = "admin"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

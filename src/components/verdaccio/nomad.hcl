@@ -39,6 +39,7 @@ job "verdaccio" {
       service {
         name = "verdaccio-http"
         port = "http"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

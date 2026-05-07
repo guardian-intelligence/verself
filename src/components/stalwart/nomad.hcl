@@ -41,12 +41,14 @@ job "stalwart" {
       service {
         name = "stalwart-http"
         port = "http"
+        provider = "nomad"
         address_mode = "auto"
       }
 
       service {
         name = "stalwart-smtp"
         port = "smtp"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

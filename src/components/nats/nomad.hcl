@@ -41,12 +41,14 @@ job "nats" {
       service {
         name = "nats-client"
         port = "client"
+        provider = "nomad"
         address_mode = "auto"
       }
 
       service {
         name = "nats-monitoring"
         port = "monitoring"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

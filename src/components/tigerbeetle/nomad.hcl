@@ -45,6 +45,7 @@ job "tigerbeetle" {
       service {
         name = "tigerbeetle-client"
         port = "client"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

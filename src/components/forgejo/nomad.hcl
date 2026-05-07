@@ -39,6 +39,7 @@ job "forgejo" {
       service {
         name = "forgejo-http"
         port = "http"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

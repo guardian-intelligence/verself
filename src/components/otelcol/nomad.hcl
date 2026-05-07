@@ -44,12 +44,14 @@ job "otelcol" {
       service {
         name = "otelcol-otlp-grpc"
         port = "otlp_grpc"
+        provider = "nomad"
         address_mode = "auto"
       }
 
       service {
         name = "otelcol-otlp-http"
         port = "otlp_http"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

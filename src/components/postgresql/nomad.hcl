@@ -37,6 +37,7 @@ job "postgresql" {
       service {
         name = "postgresql"
         port = "postgres"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

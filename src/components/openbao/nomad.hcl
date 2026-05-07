@@ -43,6 +43,7 @@ job "openbao" {
       service {
         name = "openbao-api"
         port = "api"
+        provider = "nomad"
         address_mode = "auto"
       }
     }

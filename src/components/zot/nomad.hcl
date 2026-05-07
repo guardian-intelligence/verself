@@ -37,6 +37,7 @@ job "zot" {
       service {
         name = "zot-http"
         port = "http"
+        provider = "nomad"
         address_mode = "auto"
       }
     }
