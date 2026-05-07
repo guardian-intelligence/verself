@@ -40,6 +40,14 @@ func TestProjectsOpenAPIInternalProjectionContainsPublicOperations(t *testing.T)
 			}
 			assertOnlySecurity(t, publicOp, path, "bearerAuth")
 			assertOnlySecurity(t, internalOp, path, "mutualTLS")
+			for _, header := range []string{originOrgIDHeader, originSubjectHeader, originEmailHeader} {
+				if operationHasParameter(publicOp, "header", header) {
+					t.Fatalf("%s %s public projection must not expose %s", publicOp.Method, path, header)
+				}
+			}
+			if _, ok := publicOp.Extensions["x-verself-origin"]; ok {
+				t.Fatalf("%s %s public projection must not expose x-verself-origin extension", publicOp.Method, path)
+			}
 			for _, header := range []string{originOrgIDHeader, originSubjectHeader} {
 				if !operationHasRequiredParameter(internalOp, "header", header) {
 					t.Fatalf("%s %s internal projection must require %s", publicOp.Method, path, header)
@@ -106,6 +114,15 @@ func assertOnlySecurity(t *testing.T, op *huma.Operation, path, scheme string) {
 func operationHasRequiredParameter(op *huma.Operation, in, name string) bool {
 	for _, param := range op.Parameters {
 		if param != nil && param.In == in && param.Name == name && param.Required {
+			return true
+		}
+	}
+	return false
+}
+
+func operationHasParameter(op *huma.Operation, in, name string) bool {
+	for _, param := range op.Parameters {
+		if param != nil && param.In == in && param.Name == name {
 			return true
 		}
 	}

@@ -17,7 +17,7 @@ go_library(
     visibility = ["//src/services/source-code-hosting-service:__subpackages__"],
     deps = [
         "//src/services/iam-service/internalclient",
-        "//src/services/projects-service/internalclient",
+        "//src/services/projects-service/client",
         "//src/services/sandbox-rental-service/internalclient",
         "//src/services/secrets-service/internalclient",
         "//src/services/source-code-hosting-service/internal/store",

@@ -9,11 +9,8 @@ go_library(
     importpath = "github.com/verself/verself-go",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/services/projects-service/client",
-        "//src/services/projects-service/internalclient",
-        "//src/services/service-runtime/go/workload",
+        "//src/sdks/go/verself/internal/generated/projects",
         "@com_github_google_uuid//:uuid",
-        "@com_github_spiffe_go_spiffe_v2//workloadapi",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//propagation",
     ],

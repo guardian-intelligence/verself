@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	projectsinternalclient "github.com/verself/projects-service/internalclient"
 )
 
 func TestProjectsCreateUsesBearerAndIdempotency(t *testing.T) {
@@ -82,63 +80,30 @@ func TestProjectsListParsesPage(t *testing.T) {
 	}
 }
 
-func TestProjectsInternalCreateUsesOriginAndIdempotency(t *testing.T) {
-	var authHeader string
-	var orgHeader string
-	var subjectHeader string
-	var emailHeader string
-	var idempotencyHeader string
-
+func TestProjectsCreateNormalizesProblemDetails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/projects" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		authHeader = r.Header.Get("Authorization")
-		orgHeader = r.Header.Get("X-Verself-Origin-Org-ID")
-		subjectHeader = r.Header.Get("X-Verself-Origin-Subject")
-		emailHeader = r.Header.Get("X-Verself-Origin-Email")
-		idempotencyHeader = r.Header.Get("Idempotency-Key")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"project_id":"11111111-1111-1111-1111-111111111111","org_id":"370200542594579812","slug":"api","display_name":"API","description":"Core API","state":"active","version":"1","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"type":"urn:verself:problem:projects:slug-conflict","title":"Project slug conflict","status":409,"detail":"Project slug is already in use."}`))
 	}))
 	defer server.Close()
 
-	generated, err := projectsinternalclient.NewClientWithResponses(
-		server.URL,
-		projectsinternalclient.WithHTTPClient(server.Client()),
-		projectsinternalclient.WithRequestEditorFn(internalRequestEditor("")),
-	)
+	client, err := New(Options{BearerToken: "tok_test", ProjectsURL: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := &ProjectsClient{
-		internal: generated,
-		origin: Origin{
-			OrgID:   370200542594579812,
-			Subject: "user",
-			Email:   "user@example.com",
-		},
-	}
-	project, err := client.Create(context.Background(), CreateProjectInput{
-		Slug:           "api",
-		DisplayName:    "API",
-		Description:    "Core API",
-		IdempotencyKey: "project:test",
+	_, err = client.Projects.Create(context.Background(), CreateProjectInput{
+		Slug:        "api",
+		DisplayName: "API",
 	})
-	if err != nil {
-		t.Fatal(err)
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("error = %#v, want *APIError", err)
 	}
-	if authHeader != "" {
-		t.Fatalf("internal client must not send bearer Authorization, got %q", authHeader)
-	}
-	if orgHeader != "370200542594579812" || subjectHeader != "user" || emailHeader != "user@example.com" {
-		t.Fatalf("unexpected origin headers org=%q subject=%q email=%q", orgHeader, subjectHeader, emailHeader)
-	}
-	if idempotencyHeader != "project:test" {
-		t.Fatalf("Idempotency-Key = %q", idempotencyHeader)
-	}
-	if project.ProjectID != "11111111-1111-1111-1111-111111111111" || project.Slug != "api" {
-		t.Fatalf("unexpected project: %#v", project)
+	if apiErr.StatusCode != http.StatusConflict || apiErr.Title != "Project slug conflict" || apiErr.Detail != "Project slug is already in use." {
+		t.Fatalf("unexpected api error: %#v", apiErr)
 	}
 }

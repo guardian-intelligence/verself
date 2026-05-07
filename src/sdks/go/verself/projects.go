@@ -6,14 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	projectsclient "github.com/verself/projects-service/client"
-	projectsinternalclient "github.com/verself/projects-service/internalclient"
+	projectscore "github.com/verself/verself-go/internal/generated/projects"
 )
 
 type ProjectState string
@@ -84,21 +82,16 @@ func (e *APIError) Error() string {
 }
 
 type ProjectsClient struct {
-	client   *projectsclient.ClientWithResponses
-	internal *projectsinternalclient.ClientWithResponses
-	origin   Origin
+	client *projectscore.ClientWithResponses
 }
 
 func (c *ProjectsClient) List(ctx context.Context, options ListProjectsOptions) (ProjectList, error) {
-	if c == nil || (c.client == nil && c.internal == nil) {
+	if c == nil || c.client == nil {
 		return ProjectList{}, fmt.Errorf("verself sdk: projects client is not initialized")
 	}
-	if c.internal != nil {
-		return c.listInternal(ctx, options)
-	}
-	params := &projectsclient.ListProjectsParams{}
+	params := &projectscore.ListProjectsParams{}
 	if options.State != "" {
-		state := projectsclient.ListProjectsParamsState(options.State)
+		state := projectscore.ListProjectsParamsState(options.State)
 		params.State = &state
 	}
 	if options.Limit > 0 {
@@ -120,7 +113,7 @@ func (c *ProjectsClient) List(ctx context.Context, options ListProjectsOptions) 
 }
 
 func (c *ProjectsClient) Create(ctx context.Context, input CreateProjectInput) (Project, error) {
-	if c == nil || (c.client == nil && c.internal == nil) {
+	if c == nil || c.client == nil {
 		return Project{}, fmt.Errorf("verself sdk: projects client is not initialized")
 	}
 	key := strings.TrimSpace(input.IdempotencyKey)
@@ -131,10 +124,7 @@ func (c *ProjectsClient) Create(ctx context.Context, input CreateProjectInput) (
 		}
 		key = generated
 	}
-	if c.internal != nil {
-		return c.createInternal(ctx, input, key)
-	}
-	body := projectsclient.CreateProjectJSONRequestBody{
+	body := projectscore.CreateProjectJSONRequestBody{
 		DisplayName: strings.TrimSpace(input.DisplayName),
 	}
 	if strings.TrimSpace(input.Slug) != "" {
@@ -145,7 +135,7 @@ func (c *ProjectsClient) Create(ctx context.Context, input CreateProjectInput) (
 		description := strings.TrimSpace(input.Description)
 		body.Description = &description
 	}
-	response, err := c.client.CreateProjectWithResponse(ctx, &projectsclient.CreateProjectParams{
+	response, err := c.client.CreateProjectWithResponse(ctx, &projectscore.CreateProjectParams{
 		IdempotencyKey: key,
 	}, body)
 	if err != nil {
@@ -158,15 +148,12 @@ func (c *ProjectsClient) Create(ctx context.Context, input CreateProjectInput) (
 }
 
 func (c *ProjectsClient) Get(ctx context.Context, projectID string) (Project, error) {
-	if c == nil || (c.client == nil && c.internal == nil) {
+	if c == nil || c.client == nil {
 		return Project{}, fmt.Errorf("verself sdk: projects client is not initialized")
 	}
 	id, err := uuid.Parse(strings.TrimSpace(projectID))
 	if err != nil {
 		return Project{}, fmt.Errorf("verself sdk: invalid project id: %w", err)
-	}
-	if c.internal != nil {
-		return c.getInternal(ctx, id)
 	}
 	response, err := c.client.GetProjectWithResponse(ctx, id)
 	if err != nil {
@@ -178,93 +165,7 @@ func (c *ProjectsClient) Get(ctx context.Context, projectID string) (Project, er
 	return projectFromGenerated(*response.JSON200), nil
 }
 
-func (c *ProjectsClient) listInternal(ctx context.Context, options ListProjectsOptions) (ProjectList, error) {
-	params := c.internalListParams()
-	if options.State != "" {
-		state := projectsinternalclient.ListProjectsParamsState(options.State)
-		params.State = &state
-	}
-	if options.Limit > 0 {
-		limit := int64(options.Limit)
-		params.Limit = &limit
-	}
-	if strings.TrimSpace(options.Cursor) != "" {
-		cursor := strings.TrimSpace(options.Cursor)
-		params.Cursor = &cursor
-	}
-	response, err := c.internal.ListProjectsWithResponse(ctx, &params)
-	if err != nil {
-		return ProjectList{}, err
-	}
-	if response.JSON200 == nil {
-		return ProjectList{}, apiErrorFields("Projects API", "list projects", response.StatusCode(), internalProblemTitle(response.ApplicationproblemJSONDefault), internalProblemDetail(response.ApplicationproblemJSONDefault), response.Body)
-	}
-	return projectListFromInternalGenerated(*response.JSON200), nil
-}
-
-func (c *ProjectsClient) createInternal(ctx context.Context, input CreateProjectInput, key string) (Project, error) {
-	params := projectsinternalclient.CreateProjectParams{
-		IdempotencyKey:        key,
-		XVerselfOriginOrgID:   strconv.FormatUint(c.origin.OrgID, 10),
-		XVerselfOriginSubject: strings.TrimSpace(c.origin.Subject),
-	}
-	if strings.TrimSpace(c.origin.Email) != "" {
-		email := strings.TrimSpace(c.origin.Email)
-		params.XVerselfOriginEmail = &email
-	}
-	body := projectsinternalclient.CreateProjectJSONRequestBody{
-		DisplayName: strings.TrimSpace(input.DisplayName),
-	}
-	if strings.TrimSpace(input.Slug) != "" {
-		slug := strings.TrimSpace(input.Slug)
-		body.Slug = &slug
-	}
-	if strings.TrimSpace(input.Description) != "" {
-		description := strings.TrimSpace(input.Description)
-		body.Description = &description
-	}
-	response, err := c.internal.CreateProjectWithResponse(ctx, &params, body)
-	if err != nil {
-		return Project{}, err
-	}
-	if response.JSON201 == nil {
-		return Project{}, apiErrorFields("Projects API", "create project", response.StatusCode(), internalProblemTitle(response.ApplicationproblemJSONDefault), internalProblemDetail(response.ApplicationproblemJSONDefault), response.Body)
-	}
-	return projectFromInternalGenerated(*response.JSON201), nil
-}
-
-func (c *ProjectsClient) getInternal(ctx context.Context, projectID uuid.UUID) (Project, error) {
-	params := projectsinternalclient.GetProjectParams{
-		XVerselfOriginOrgID:   strconv.FormatUint(c.origin.OrgID, 10),
-		XVerselfOriginSubject: strings.TrimSpace(c.origin.Subject),
-	}
-	if strings.TrimSpace(c.origin.Email) != "" {
-		email := strings.TrimSpace(c.origin.Email)
-		params.XVerselfOriginEmail = &email
-	}
-	response, err := c.internal.GetProjectWithResponse(ctx, projectID, &params)
-	if err != nil {
-		return Project{}, err
-	}
-	if response.JSON200 == nil {
-		return Project{}, apiErrorFields("Projects API", "get project", response.StatusCode(), internalProblemTitle(response.ApplicationproblemJSONDefault), internalProblemDetail(response.ApplicationproblemJSONDefault), response.Body)
-	}
-	return projectFromInternalGenerated(*response.JSON200), nil
-}
-
-func (c *ProjectsClient) internalListParams() projectsinternalclient.ListProjectsParams {
-	params := projectsinternalclient.ListProjectsParams{
-		XVerselfOriginOrgID:   strconv.FormatUint(c.origin.OrgID, 10),
-		XVerselfOriginSubject: strings.TrimSpace(c.origin.Subject),
-	}
-	if strings.TrimSpace(c.origin.Email) != "" {
-		email := strings.TrimSpace(c.origin.Email)
-		params.XVerselfOriginEmail = &email
-	}
-	return params
-}
-
-func projectListFromGenerated(input projectsclient.ProjectList) ProjectList {
+func projectListFromGenerated(input projectscore.ProjectList) ProjectList {
 	out := ProjectList{}
 	if input.NextCursor != nil {
 		out.NextCursor = *input.NextCursor
@@ -278,7 +179,7 @@ func projectListFromGenerated(input projectsclient.ProjectList) ProjectList {
 	return out
 }
 
-func projectFromGenerated(input projectsclient.Project) Project {
+func projectFromGenerated(input projectscore.Project) Project {
 	redirectedFromSlug := ""
 	if input.RedirectedFromSlug != nil {
 		redirectedFromSlug = *input.RedirectedFromSlug
@@ -300,43 +201,7 @@ func projectFromGenerated(input projectsclient.Project) Project {
 	}
 }
 
-func projectListFromInternalGenerated(input projectsinternalclient.ProjectList) ProjectList {
-	out := ProjectList{}
-	if input.NextCursor != nil {
-		out.NextCursor = *input.NextCursor
-	}
-	if input.Projects != nil {
-		out.Projects = make([]Project, 0, len(*input.Projects))
-		for _, project := range *input.Projects {
-			out.Projects = append(out.Projects, projectFromInternalGenerated(project))
-		}
-	}
-	return out
-}
-
-func projectFromInternalGenerated(input projectsinternalclient.Project) Project {
-	redirectedFromSlug := ""
-	if input.RedirectedFromSlug != nil {
-		redirectedFromSlug = *input.RedirectedFromSlug
-	}
-	return Project{
-		ProjectID:          input.ProjectId.String(),
-		OrgID:              input.OrgId,
-		Slug:               input.Slug,
-		RedirectedFromSlug: redirectedFromSlug,
-		DisplayName:        input.DisplayName,
-		Description:        input.Description,
-		State:              input.State,
-		Version:            input.Version,
-		CreatedBy:          input.CreatedBy,
-		UpdatedBy:          input.UpdatedBy,
-		CreatedAt:          input.CreatedAt,
-		UpdatedAt:          input.UpdatedAt,
-		ArchivedAt:         input.ArchivedAt,
-	}
-}
-
-func apiError(service, operation string, statusCode int, model *projectsclient.ErrorModel, body []byte) error {
+func apiError(service, operation string, statusCode int, model *projectscore.ErrorModel, body []byte) error {
 	var title *string
 	var detail *string
 	if model != nil {
@@ -360,20 +225,6 @@ func apiErrorFields(service, operation string, statusCode int, title *string, de
 		err.Detail = *detail
 	}
 	return err
-}
-
-func internalProblemTitle(model *projectsinternalclient.ErrorModel) *string {
-	if model == nil {
-		return nil
-	}
-	return model.Title
-}
-
-func internalProblemDetail(model *projectsinternalclient.ErrorModel) *string {
-	if model == nil {
-		return nil
-	}
-	return model.Detail
 }
 
 func generateIdempotencyKey(namespace string) (string, error) {
