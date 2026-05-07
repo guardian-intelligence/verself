@@ -219,8 +219,6 @@ type SupplyChainEvidenceSummary struct {
 	TraceID            string
 	PolicyCheckSpans   uint64
 	PolicyRecordSpans  uint64
-	DeploySucceeded    uint64
-	DeployFailed       uint64
 	LastSupplyChainRow time.Time
 }
 
@@ -286,21 +284,6 @@ WHERE ServiceName = 'verself-deploy'
 		return SupplyChainEvidenceSummary{}, fmt.Errorf("deploydb: query supply-chain policy spans: %w", err)
 	}
 
-	if err := c.conn.QueryRow(ctx, `
-SELECT
-  countIf(event_kind = 'succeeded') AS deploy_succeeded,
-  countIf(event_kind = 'failed') AS deploy_failed
-FROM verself.deploy_events
-WHERE deploy_run_key = {run_key:String}
-`, runKeyArg).Scan(
-		&summary.DeploySucceeded,
-		&summary.DeployFailed,
-	); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return SupplyChainEvidenceSummary{}, fmt.Errorf("deploydb: query deploy events: %w", err)
-	}
-
 	span.SetAttributes(
 		attribute.Int64("supply_chain.row_count", int64FromUint64(summary.RowCount, "supply-chain row count")),
 		attribute.Int64("supply_chain.rejected_count", int64FromUint64(summary.Rejected, "supply-chain rejected count")),
@@ -310,8 +293,6 @@ WHERE deploy_run_key = {run_key:String}
 		attribute.Int64("supply_chain.distinct_trace_id_count", int64FromUint64(summary.DistinctTraceID, "supply-chain distinct trace id count")),
 		attribute.Int64("supply_chain.policy_check_span_count", int64FromUint64(summary.PolicyCheckSpans, "supply-chain policy check span count")),
 		attribute.Int64("supply_chain.policy_record_span_count", int64FromUint64(summary.PolicyRecordSpans, "supply-chain policy record span count")),
-		attribute.Int64("deploy.succeeded_event_count", int64FromUint64(summary.DeploySucceeded, "deploy succeeded event count")),
-		attribute.Int64("deploy.failed_event_count", int64FromUint64(summary.DeployFailed, "deploy failed event count")),
 	)
 	span.SetStatus(codes.Ok, "")
 	return summary, nil

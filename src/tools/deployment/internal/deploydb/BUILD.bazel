@@ -5,7 +5,6 @@ go_library(
     srcs = [
         "ansible_task_events.go",
         "client.go",
-        "deploy_events.go",
         "nomad_job_events.go",
         "open_operator.go",
         "operator_config.go",

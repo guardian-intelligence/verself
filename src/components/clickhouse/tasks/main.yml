@@ -414,12 +414,7 @@
       SELECT count()
       FROM system.tables
       WHERE (database = 'default' AND name IN ('otel_traces', 'otel_logs', 'otel_metrics_sum'))
-         OR (
-           database = 'verself'
-           AND name IN (
-             'deploy_events'
-           )
-         )"
+         OR (database = 'verself' AND name = 'job_events')"
   register: clickhouse_expected_table_probe
   changed_when: false
 
