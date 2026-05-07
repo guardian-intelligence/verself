@@ -40,22 +40,50 @@ import {
 import {
   IAMApiError,
   ProjectsApiError,
+  SandboxRentalApiError,
   SourceApiError as SourceCodeHostingApiError,
+  cancelContractRequestSchema,
+  checkoutRequestSchema,
+  contractChangeRequestSchema,
+  contractRequestSchema,
   createProjectRequestSchema,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
   createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
   createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
+  executionIdInputSchema,
+  executionScheduleIdInputSchema,
+  executionScheduleRequestSchema,
   inviteMemberRequestSchema,
   isIAMApiError,
   isProjectsApiError,
+  isSandboxRentalApiError,
+  isSandboxRentalNotFound,
   isSourceApiError as isSourceCodeHostingApiError,
+  portalRequestSchema,
   putMemberCapabilitiesRequestSchema,
+  runListQuerySchema,
+  statementQuerySchema,
   updateMemberRolesRequestSchema,
   updateOrganizationRequestSchema,
   type CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
   type CreateRepositoryRequest as CreateSourceRepositoryRequest,
+  type CancelContractRequest,
+  type CheckoutRequest,
+  type ContractChangeRequest,
+  type ContractRequest,
+  type ContractsResponse,
+  type EntitlementBucketSection,
+  type EntitlementProductSection,
+  type EntitlementSlot,
+  type EntitlementSourceTotal,
+  type EntitlementsView,
+  type Execution,
+  type ExecutionSchedule,
+  type ExecutionScheduleIdInput,
+  type ExecutionScheduleRequest,
+  type ExecutionSchedules,
   type InviteMemberRequest,
   type InviteMemberResponse,
   type Member,
@@ -64,9 +92,14 @@ import {
   type MemberCapability,
   type Organization,
   type OrganizationMetadata,
+  type PlansResponse,
+  type PortalRequest,
   type PutMemberCapabilitiesRequest,
   type Project,
   type ProjectList,
+  type RunListQuery,
+  type RunListQueryInput,
+  type RunsPage,
   type SourceBlob,
   type SourceCheckoutGrant,
   type SourceGitCredential,
@@ -75,6 +108,8 @@ import {
   type SourceRepositoryList,
   type SourceTree,
   type SourceWorkflowRunList,
+  type Statement,
+  type StatementQuery,
   type UpdateMemberRolesRequest,
   type UpdateOrganizationRequest,
   Verself,
@@ -101,61 +136,6 @@ import type {
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
 } from "~/lib/notifications-api";
-import {
-  cancelContract as cancelContractRequest,
-  cancelContractRequestSchema,
-  createExecutionSchedule as createExecutionScheduleRequest,
-  createCheckoutSession as createCheckoutSessionRequest,
-  createContractChangeSession as createContractChangeSessionRequest,
-  createContractSession as createContractSessionRequest,
-  createPortalSession as createPortalSessionRequest,
-  executionIdInputSchema,
-  executionScheduleIdInputSchema,
-  executionScheduleRequestSchema,
-  getEntitlements as getEntitlementsRequest,
-  getExecution as getExecutionRequest,
-  getExecutionSchedule as getExecutionScheduleRequest,
-  getPlans as getPlansRequest,
-  getStatement as getStatementRequest,
-  getContracts as getContractsRequest,
-  listRuns as listRunsRequest,
-  listExecutionSchedules as listExecutionSchedulesRequest,
-  pauseSchedule as pauseScheduleRequest,
-  resumeSchedule as resumeScheduleRequest,
-  runListQuerySchema,
-  statementQuerySchema,
-  isSandboxRentalApiError,
-  isSandboxRentalNotFound,
-  SandboxRentalApiError,
-  portalRequestSchema,
-  contractChangeRequestSchema,
-  contractRequestSchema,
-  checkoutRequestSchema,
-} from "~/lib/sandbox-rental-api";
-import type {
-  CheckoutRequest,
-  CancelContractRequest,
-  ContractChangeRequest,
-  EntitlementBucketSection,
-  EntitlementProductSection,
-  EntitlementSlot,
-  EntitlementSourceTotal,
-  EntitlementsView,
-  Execution,
-  ExecutionSchedule,
-  ExecutionScheduleIdInput,
-  ExecutionScheduleRequest,
-  ExecutionSchedules,
-  PlansResponse,
-  Statement,
-  StatementQuery,
-  PortalRequest,
-  ContractRequest,
-  ContractsResponse,
-  RunListQuery,
-  RunListQueryInput,
-  RunsPage,
-} from "~/lib/sandbox-rental-api";
 import { consoleAuthMiddleware, getAccessTokenForAudience, type ConsoleAuthContext } from "./auth";
 
 const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
@@ -274,13 +254,6 @@ export type {
   UpdateMemberRolesRequest,
 };
 
-async function sandboxRentalClientOptions(context: ConsoleAuthContext | undefined) {
-  return {
-    accessToken: await getAccessTokenForAudience(context, SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE),
-    baseUrl: SANDBOX_RENTAL_SERVICE_BASE_URL,
-  };
-}
-
 async function iamClientOptions(
   context: ConsoleAuthContext | undefined,
   options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
@@ -339,6 +312,17 @@ async function sourceCodeHostingSDK(context: ConsoleAuthContext | undefined) {
     SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
   );
   return new Verself({ bearerToken: accessToken, sourceURL: SOURCE_CODE_HOSTING_SERVICE_BASE_URL });
+}
+
+async function sandboxRentalSDK(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(
+    context,
+    SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE,
+  );
+  return new Verself({
+    bearerToken: accessToken,
+    sandboxURL: SANDBOX_RENTAL_SERVICE_BASE_URL,
+  });
 }
 
 export const getOrganization = createServerFn({ method: "GET" })
@@ -687,143 +671,107 @@ export const downloadGovernanceDataExport = createServerFn({ method: "POST" })
 export const getEntitlements = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getEntitlementsRequest(await sandboxRentalClientOptions(context));
+    return (await sandboxRentalSDK(context)).sandbox.getEntitlements();
   });
 
 export const getContracts = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getContractsRequest(await sandboxRentalClientOptions(context));
+    return (await sandboxRentalSDK(context)).sandbox.getContracts();
   });
 
 export const getPlans = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getPlansRequest(await sandboxRentalClientOptions(context));
+    return (await sandboxRentalSDK(context)).sandbox.getPlans();
   });
 
 export const getStatement = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(statementQuerySchema)
   .handler(async ({ context, data }) => {
-    return getStatementRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      query: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.getStatement(data);
   });
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(checkoutRequestSchema)
   .handler(async ({ context, data }) => {
-    return createCheckoutSessionRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.createCheckoutSession(data);
   });
 
 export const createContractSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(contractRequestSchema)
   .handler(async ({ context, data }) => {
-    return createContractSessionRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.createContractSession(data);
   });
 
 export const createContractChangeSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(contractChangeRequestSchema)
   .handler(async ({ context, data }) => {
-    return createContractChangeSessionRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.createContractChangeSession(data);
   });
 
 export const createPortalSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(portalRequestSchema)
   .handler(async ({ context, data }) => {
-    return createPortalSessionRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.createPortalSession(data);
   });
 
 export const cancelContract = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(cancelContractRequestSchema)
   .handler(async ({ context, data }) => {
-    return cancelContractRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.cancelContract(data);
   });
 
 export const getExecution = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(executionIdInputSchema)
   .handler(async ({ context, data }) => {
-    return getExecutionRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      executionId: data.executionId,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.getExecution(data.executionId);
   });
 
 export const listRuns = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(v.optional(runListQuerySchema))
   .handler(async ({ context, data }) => {
-    return listRunsRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      ...(data === undefined ? {} : { query: data }),
-    });
+    return (await sandboxRentalSDK(context)).sandbox.listRuns(data);
   });
 
 export const listExecutionSchedules = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return listExecutionSchedulesRequest(await sandboxRentalClientOptions(context));
+    return (await sandboxRentalSDK(context)).sandbox.listExecutionSchedules();
   });
 
 export const createExecutionSchedule = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(executionScheduleRequestSchema)
   .handler(async ({ context, data }) => {
-    return createExecutionScheduleRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.createExecutionSchedule(data);
   });
 
 export const getExecutionSchedule = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(executionScheduleIdInputSchema)
   .handler(async ({ context, data }) => {
-    return getExecutionScheduleRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      scheduleId: data.scheduleId,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.getExecutionSchedule(data.scheduleId);
   });
 
 export const pauseExecutionSchedule = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(executionScheduleIdInputSchema)
   .handler(async ({ context, data }) => {
-    return pauseScheduleRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      scheduleId: data.scheduleId,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.pauseSchedule(data.scheduleId);
   });
 
 export const resumeExecutionSchedule = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(executionScheduleIdInputSchema)
   .handler(async ({ context, data }) => {
-    return resumeScheduleRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      scheduleId: data.scheduleId,
-    });
+    return (await sandboxRentalSDK(context)).sandbox.resumeSchedule(data.scheduleId);
   });

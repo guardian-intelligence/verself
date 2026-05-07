@@ -6,7 +6,7 @@ import type {
   EntitlementsView,
   PlansResponse,
   Statement,
-} from "~/lib/sandbox-rental-api";
+} from "@verself/sdk";
 
 // Billing state collapses the four boundary-parsed objects the billing-service
 // returns (plans, contracts, entitlements, statement) into a small set of

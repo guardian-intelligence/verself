@@ -39,12 +39,7 @@ import {
   formatLedgerAmountPrecise,
   formatLedgerRate,
 } from "~/lib/format";
-import type {
-  BillingPlan,
-  Contract,
-  EntitlementSourceTotal,
-  Statement,
-} from "~/lib/sandbox-rental-api";
+import type { BillingPlan, Contract, EntitlementSourceTotal, Statement } from "@verself/sdk";
 
 type StatementLineItem = Statement["line_items"][number];
 type LineItemDrainKey =

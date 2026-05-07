@@ -8,7 +8,7 @@ import {
   createPortalSession,
 } from "~/server-fns/api";
 import { useOrgScopedPath } from "~/features/shell/org-routing";
-import type { BillingPlan } from "~/lib/sandbox-rental-api";
+import type { BillingPlan } from "@verself/sdk";
 import { contractsQuery, entitlementsQuery } from "./queries";
 import type { PlanCardIntent } from "./state";
 

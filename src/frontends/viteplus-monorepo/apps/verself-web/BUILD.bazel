@@ -64,7 +64,6 @@ viteplus_openapi_clients(
     openapi_ts_bin = openapi_ts_bin,
     plugin_packages = [":node_modules/valibot"],
     specs = [
-        ("sandbox-rental-api", "//src/services/sandbox-rental-service/openapi:openapi-3.1.yaml.bin"),
         ("governance-api", "//src/services/governance-service/openapi:openapi-3.1.yaml.bin"),
         ("profile-api", "//src/services/profile-service/openapi:openapi-3.1.yaml.bin"),
         ("notifications-api", "//src/services/notifications-service/openapi:openapi-3.1.yaml.bin"),

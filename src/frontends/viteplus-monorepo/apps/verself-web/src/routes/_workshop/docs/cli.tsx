@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { Prose, SectionHeading, SummaryItem, SummaryPanel } from "~/features/policy/policy-primitives";
+import {
+  Prose,
+  SectionHeading,
+  SummaryItem,
+  SummaryPanel,
+} from "~/features/policy/policy-primitives";
 
 export const Route = createFileRoute("/_workshop/docs/cli")({
   component: CLIDocs,
@@ -10,7 +15,7 @@ export const Route = createFileRoute("/_workshop/docs/cli")({
       {
         name: "description",
         content:
-          "Use the Verself CLI with auth profiles, organization context, API credentials, and Projects.",
+          "Use the Verself CLI with auth profiles, organization context, API credentials, Projects, Source, and Sandbox Rental.",
       },
     ],
   }),
@@ -25,8 +30,8 @@ function CLIDocs() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">CLI</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-          Operate Verself, cloned installations, organization state, API credentials, and Projects
-          from one binary.
+          Operate Verself, cloned installations, organization state, API credentials, Projects,
+          Source, and Sandbox Rental from one binary.
         </p>
       </header>
 
@@ -41,6 +46,7 @@ function CLIDocs() {
         <Command>{`verself auth login --token-file /run/secrets/verself-token \
   --iam-url https://iam.api.example.com \
   --projects-url https://projects.api.example.com \
+  --sandbox-url https://sandbox.api.example.com \
   --source-url https://source.api.example.com
 verself auth whoami
 verself auth token`}</Command>
@@ -115,6 +121,39 @@ verself repos workflow-runs dispatch <repo-id> \
   --project-id <project-id> \
   --workflow-path .github/workflows/build.yml \
   --input target=linux`}</Command>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <SectionHeading id="sandbox-rental">Sandbox Rental</SectionHeading>
+        <SummaryPanel>
+          <SummaryItem term="Runs">
+            Run commands read execution records, attempts, billing windows, and logs through the Go
+            SDK over the public Sandbox Rental contract.
+          </SummaryItem>
+          <SummaryItem term="Schedules">
+            Schedule commands create paused or active recurring workflow dispatches with typed
+            idempotency keys.
+          </SummaryItem>
+          <SummaryItem term="Billing">
+            Billing commands expose the same entitlements, contracts, plans, and current statement
+            projections used by the console.
+          </SummaryItem>
+        </SummaryPanel>
+        <Command>{`verself runs list --status succeeded
+verself runs get <execution-id> --json
+verself runs logs <execution-id>
+verself schedules create \
+  --project-id <project-id> \
+  --source-repository-id <repo-id> \
+  --workflow-path .github/workflows/build.yml \
+  --interval-seconds 900 \
+  --paused \
+  --input target=linux \
+  --json
+verself schedules pause <schedule-id>
+verself schedules resume <schedule-id>
+verself billing entitlements --json
+verself billing statement --product-id sandbox-ci`}</Command>
       </section>
     </article>
   );

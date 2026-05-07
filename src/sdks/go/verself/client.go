@@ -12,6 +12,7 @@ import (
 
 	iamcore "github.com/verself/verself-go/internal/generated/iam"
 	projectscore "github.com/verself/verself-go/internal/generated/projects"
+	sandboxcore "github.com/verself/verself-go/internal/generated/sandbox"
 	sourcecore "github.com/verself/verself-go/internal/generated/source"
 )
 
@@ -19,6 +20,7 @@ const (
 	DefaultServerURL   = "https://verself.sh"
 	DefaultIAMURL      = "https://iam.api.verself.sh"
 	DefaultProjectsURL = "https://projects.api.verself.sh"
+	DefaultSandboxURL  = "https://sandbox.api.verself.sh"
 	DefaultSourceURL   = "https://source.api.verself.sh"
 )
 
@@ -27,6 +29,7 @@ type Options struct {
 	ServerURL   string
 	IAMURL      string
 	ProjectsURL string
+	SandboxURL  string
 	SourceURL   string
 	HTTPClient  *http.Client
 	Traceparent string
@@ -35,6 +38,7 @@ type Options struct {
 type Client struct {
 	IAM      *IAMClient
 	Projects *ProjectsClient
+	Sandbox  *SandboxClient
 	Source   *SourceClient
 }
 
@@ -52,6 +56,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	sourceURL, err := serviceURL(options.SourceURL, options.ServerURL, "source")
+	if err != nil {
+		return nil, err
+	}
+	sandboxURL, err := serviceURL(options.SandboxURL, options.ServerURL, "sandbox")
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +94,19 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	sandboxEditor := sandboxRequestEditor(token, options.Traceparent)
+	generatedSandbox, err := sandboxcore.NewClientWithResponses(
+		sandboxURL,
+		sandboxcore.WithHTTPClient(httpClient),
+		sandboxcore.WithRequestEditorFn(sandboxEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
 		IAM:      &IAMClient{client: generatedIAM},
 		Projects: &ProjectsClient{client: generatedProjects},
+		Sandbox:  &SandboxClient{client: generatedSandbox},
 		Source:   &SourceClient{client: generatedSource},
 	}, nil
 }
@@ -106,6 +124,12 @@ func projectsRequestEditor(token, traceparent string) projectscore.RequestEditor
 }
 
 func sourceRequestEditor(token, traceparent string) sourcecore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, token, traceparent)
+	}
+}
+
+func sandboxRequestEditor(token, traceparent string) sandboxcore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, token, traceparent)
 	}
@@ -137,6 +161,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultIAMURL
 	case "projects":
 		return DefaultProjectsURL
+	case "sandbox":
+		return DefaultSandboxURL
 	case "source":
 		return DefaultSourceURL
 	default:

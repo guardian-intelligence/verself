@@ -1,10 +1,12 @@
 import { IAM } from "./iam";
 import { Projects } from "./projects";
+import { SandboxRental } from "./sandbox";
 import { Source } from "./source";
 
 export const DEFAULT_SERVER_URL = "https://verself.sh";
 export const DEFAULT_IAM_URL = "https://iam.api.verself.sh";
 export const DEFAULT_PROJECTS_URL = "https://projects.api.verself.sh";
+export const DEFAULT_SANDBOX_URL = "https://sandbox.api.verself.sh";
 export const DEFAULT_SOURCE_URL = "https://source.api.verself.sh";
 
 export type VerselfOptions = {
@@ -12,6 +14,7 @@ export type VerselfOptions = {
   serverURL?: string | undefined;
   iamURL?: string | undefined;
   projectsURL?: string | undefined;
+  sandboxURL?: string | undefined;
   sourceURL?: string | undefined;
   fetch?: typeof fetch | undefined;
   traceparent?: string | undefined;
@@ -20,6 +23,7 @@ export type VerselfOptions = {
 export class Verself {
   readonly iam: IAM;
   readonly projects: Projects;
+  readonly sandbox: SandboxRental;
   readonly source: Source;
 
   constructor(options: VerselfOptions) {
@@ -39,6 +43,12 @@ export class Verself {
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.traceparent ? { traceparent: options.traceparent } : {}),
     });
+    this.sandbox = new SandboxRental({
+      accessToken: token,
+      baseUrl: resolveSandboxURL(options),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.traceparent ? { traceparent: options.traceparent } : {}),
+    });
     this.source = new Source({
       accessToken: token,
       baseUrl: resolveSourceURL(options),
@@ -53,7 +63,16 @@ function resolveIAMURL(options: VerselfOptions): string {
 }
 
 function resolveProjectsURL(options: VerselfOptions): string {
-  return resolveServiceURL("projects", options.projectsURL, options.serverURL, DEFAULT_PROJECTS_URL);
+  return resolveServiceURL(
+    "projects",
+    options.projectsURL,
+    options.serverURL,
+    DEFAULT_PROJECTS_URL,
+  );
+}
+
+function resolveSandboxURL(options: VerselfOptions): string {
+  return resolveServiceURL("sandbox", options.sandboxURL, options.serverURL, DEFAULT_SANDBOX_URL);
 }
 
 function resolveSourceURL(options: VerselfOptions): string {
@@ -61,7 +80,7 @@ function resolveSourceURL(options: VerselfOptions): string {
 }
 
 function resolveServiceURL(
-  service: "iam" | "projects" | "source",
+  service: "iam" | "projects" | "sandbox" | "source",
   serviceURL: string | undefined,
   serverURL: string | undefined,
   defaultURL: string,
@@ -149,6 +168,8 @@ export {
   type UpdateProjectEnvironmentRequest,
   type UpdateProjectRequest,
 } from "./projects";
+
+export * from "./sandbox";
 
 export {
   Source,

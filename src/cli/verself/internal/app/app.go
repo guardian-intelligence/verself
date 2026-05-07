@@ -57,6 +57,12 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runProjects(ctx, args[1:])
 	case "repos":
 		return c.runRepos(ctx, args[1:])
+	case "runs":
+		return c.runRuns(ctx, args[1:])
+	case "schedules":
+		return c.runSchedules(ctx, args[1:])
+	case "billing":
+		return c.runBilling(ctx, args[1:])
 	case "bootstrap":
 		return c.runBootstrap(args[1:])
 	case "help", "--help", "-h":
@@ -99,6 +105,18 @@ func (c CLI) usage() error {
   %[1]s repos workflow-runs list <repo-id> [--json]
   %[1]s repos workflow-runs get <workflow-run-id> [--json]
   %[1]s repos workflow-runs dispatch <repo-id> --project-id PROJECT_ID --workflow-path PATH [--json]
+  %[1]s runs list [--status STATUS] [--json]
+  %[1]s runs get <execution-id> [--json]
+  %[1]s runs logs <execution-id> [--json]
+  %[1]s schedules list [--json]
+  %[1]s schedules create --project-id PROJECT_ID --source-repository-id REPO_ID --workflow-path PATH --interval-seconds SECONDS [--json]
+  %[1]s schedules get <schedule-id> [--json]
+  %[1]s schedules pause <schedule-id> [--json]
+  %[1]s schedules resume <schedule-id> [--json]
+  %[1]s billing entitlements [--json]
+  %[1]s billing contracts [--json]
+  %[1]s billing plans [--json]
+  %[1]s billing statement --product-id PRODUCT_ID [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
   %[1]s bootstrap --company <name> [--repo-root PATH]

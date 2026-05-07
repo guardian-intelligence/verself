@@ -21,6 +21,10 @@
       "types": "./src/projects.ts",
       "default": "./src/projects.ts"
     },
+    "./sandbox": {
+      "types": "./src/sandbox.ts",
+      "default": "./src/sandbox.ts"
+    },
     "./source": {
       "types": "./src/source.ts",
       "default": "./src/source.ts"

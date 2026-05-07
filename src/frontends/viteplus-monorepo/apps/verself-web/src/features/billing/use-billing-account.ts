@@ -3,12 +3,7 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useSignedInAuth } from "@verself/auth-web/react";
 import { contractsQuery, entitlementsQuery, plansQuery, statementQuery } from "./queries";
 import { deriveBillingAccount, type BillingAccount, type BillingSnapshot } from "./state";
-import type {
-  ContractsResponse,
-  EntitlementsView,
-  PlansResponse,
-  Statement,
-} from "~/lib/sandbox-rental-api";
+import type { ContractsResponse, EntitlementsView, PlansResponse, Statement } from "@verself/sdk";
 
 export interface UseBillingAccountOptions {
   readonly initialPlans?: PlansResponse;

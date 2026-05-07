@@ -2,7 +2,7 @@ import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { listRuns } from "~/server-fns/api";
 import { DEFAULT_BUILD_RUNS_QUERY, normalizeBuildRunsQuery } from "./model";
-import type { RunListQueryInput } from "~/lib/sandbox-rental-api";
+import type { RunListQueryInput } from "@verself/sdk";
 
 export function buildRunsQuery(
   auth: AuthenticatedAuth,

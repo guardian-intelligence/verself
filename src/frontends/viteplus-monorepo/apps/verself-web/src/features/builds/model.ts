@@ -4,7 +4,7 @@ import {
   type Execution,
   type RunListQueryInput,
   type RunsPage,
-} from "~/lib/sandbox-rental-api";
+} from "@verself/sdk";
 
 export const BUILD_RUNS_PAGE_SIZE = 50;
 export const DEFAULT_BUILD_RUNS_QUERY = { limit: BUILD_RUNS_PAGE_SIZE } satisfies RunListQueryInput;

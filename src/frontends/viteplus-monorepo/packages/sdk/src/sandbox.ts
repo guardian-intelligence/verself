@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { createClient, type Client } from "../__generated/sandbox-rental-api/client/index.js";
+import { createClient, type Client } from "./__generated/sandbox-rental-api/client/index.js";
 import {
   type ListRunsData,
   cancelBillingContract,
@@ -18,7 +18,7 @@ import {
   listRuns as listGeneratedRuns,
   pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
   resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
-} from "../__generated/sandbox-rental-api/index.js";
+} from "./__generated/sandbox-rental-api/index.js";
 import {
   vBillingCancelContractResponse,
   vBillingEntitlementBucketSection,
@@ -61,7 +61,7 @@ import {
   vSandboxExecutionRecord,
   vSandboxExecutionScheduleDispatchRecord,
   vSandboxExecutionScheduleRecord,
-} from "../__generated/sandbox-rental-api/valibot.gen.js";
+} from "./__generated/sandbox-rental-api/valibot.gen.js";
 import {
   type BearerClientOptions,
   ServiceApiError,
@@ -74,6 +74,78 @@ import {
 const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
 
 export type SandboxRentalClientOptions = BearerClientOptions;
+
+export class SandboxRental {
+  readonly #options: SandboxRentalClientOptions;
+
+  constructor(options: SandboxRentalClientOptions) {
+    this.#options = options;
+  }
+
+  getEntitlements(): Promise<EntitlementsView> {
+    return getEntitlements(this.#options);
+  }
+
+  getContracts(): Promise<ContractsResponse> {
+    return getContracts(this.#options);
+  }
+
+  getPlans(): Promise<PlansResponse> {
+    return getPlans(this.#options);
+  }
+
+  getStatement(query: StatementQuery): Promise<Statement> {
+    return getStatement({ ...this.#options, query });
+  }
+
+  createCheckoutSession(body: CheckoutRequest): Promise<CheckoutSession> {
+    return createCheckoutSession({ ...this.#options, body });
+  }
+
+  createContractSession(body: ContractRequest): Promise<ContractSession> {
+    return createContractSession({ ...this.#options, body });
+  }
+
+  createContractChangeSession(body: ContractChangeRequest): Promise<ContractChangeSession> {
+    return createContractChangeSession({ ...this.#options, body });
+  }
+
+  createPortalSession(body: PortalRequest): Promise<PortalSession> {
+    return createPortalSession({ ...this.#options, body });
+  }
+
+  cancelContract(body: CancelContractRequest): Promise<{ contract: Contract }> {
+    return cancelContract({ ...this.#options, body });
+  }
+
+  getExecution(executionId: string): Promise<Execution> {
+    return getExecution({ ...this.#options, executionId });
+  }
+
+  listRuns(query?: RunListQueryInput | undefined): Promise<RunsPage> {
+    return listRuns({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  listExecutionSchedules(): Promise<ExecutionSchedules> {
+    return listExecutionSchedules(this.#options);
+  }
+
+  createExecutionSchedule(body: ExecutionScheduleRequest): Promise<ExecutionSchedule> {
+    return createExecutionSchedule({ ...this.#options, body });
+  }
+
+  getExecutionSchedule(scheduleId: string): Promise<ExecutionSchedule> {
+    return getExecutionSchedule({ ...this.#options, scheduleId });
+  }
+
+  pauseSchedule(scheduleId: string): Promise<ExecutionSchedule> {
+    return pauseSchedule({ ...this.#options, scheduleId });
+  }
+
+  resumeSchedule(scheduleId: string): Promise<ExecutionSchedule> {
+    return resumeSchedule({ ...this.#options, scheduleId });
+  }
+}
 
 export class SandboxRentalApiError extends ServiceApiError {
   constructor(status: number, path: string, body: string) {
@@ -116,7 +188,7 @@ function throwSandboxRentalError(
 function createSandboxRentalClient(options: SandboxRentalClientOptions): Client {
   return createClient({
     baseUrl: options.baseUrl,
-    headers: createBearerJSONHeaders(options.accessToken),
+    headers: createBearerJSONHeaders(options.accessToken, options.traceparent),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
 }

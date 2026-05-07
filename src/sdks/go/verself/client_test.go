@@ -17,6 +17,13 @@ func TestServiceURLDerivesServiceSubdomainFromInstallationApex(t *testing.T) {
 	if projectsURL != "https://projects.api.example.com:8443" {
 		t.Fatalf("projects URL = %q", projectsURL)
 	}
+	sandboxURL, err := serviceURL("", "https://example.com", "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandboxURL != "https://sandbox.api.example.com" {
+		t.Fatalf("sandbox URL = %q", sandboxURL)
+	}
 }
 
 func TestServiceURLUsesExplicitServiceOverride(t *testing.T) {
