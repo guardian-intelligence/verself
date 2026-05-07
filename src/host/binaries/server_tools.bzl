@@ -52,6 +52,7 @@ DEB_DIRECTORY_SPECS = [
 RAW_BINARY_SPECS = [
     ("garage", "@server_tool_garage//file", "garage"),
     ("forgejo", "@server_tool_forgejo//file", "forgejo"),
+    ("runc", "@server_tool_runc//file", "runc"),
     ("zot", "@server_tool_zot//file", "zot"),
 ]
 
@@ -84,6 +85,7 @@ SERVER_TOOL_DEPS = [
     ":openbao",
     ":otelcol_contrib",
     ":pomerium",
+    ":runc",
     ":spicedb",
     ":spiffe_helper",
     ":spire_agent",

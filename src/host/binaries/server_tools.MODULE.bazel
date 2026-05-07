@@ -148,6 +148,13 @@ http_file(
 )
 
 http_file(
+    name = "server_tool_runc",
+    downloaded_file_path = "runc.amd64",
+    sha256 = "ac8a90f9e225bb9322189937b230cdc5478d5753f0e31e1bda98a5cf06bd9539",
+    url = "https://github.com/opencontainers/runc/releases/download/v1.4.2/runc.amd64",
+)
+
+http_file(
     name = "server_tool_nodejs",
     downloaded_file_path = "node-v22.22.2-linux-x64.tar.xz",
     sha256 = "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
