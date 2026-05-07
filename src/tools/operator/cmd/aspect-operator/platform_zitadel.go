@@ -29,10 +29,11 @@ type platformOwnerGrantSubject struct {
 }
 
 type platformRuntimeAuthAudienceSpec struct {
-	ComponentName  string
-	ProjectName    string
-	CredentialPath string
-	Group          string
+	ComponentName        string
+	ProjectName          string
+	CredentialPath       string
+	Group                string
+	BrowserLoginAudience bool
 }
 
 type platformZitadelClient struct {
@@ -118,19 +119,34 @@ func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 		{ComponentName: "profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/profile-service/auth-audience", Group: "profile_service"},
 		{ComponentName: "projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/projects-service/auth-audience", Group: "projects_service"},
 		{ComponentName: "source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/source-code-hosting-service/auth-audience", Group: "source_code_hosting_service"},
-		{ComponentName: "billing", ProjectName: "billing", CredentialPath: "/etc/credstore/billing/auth-audience", Group: "billing"},
+		{ComponentName: "billing", ProjectName: "iam-service", CredentialPath: "/etc/credstore/billing/auth-audience", Group: "billing"},
 		{ComponentName: "sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
 		{ComponentName: "secrets-service", ProjectName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
 		{ComponentName: "mailbox-service", ProjectName: "mailbox-service", CredentialPath: "/etc/credstore/mailbox-service/auth-audience", Group: "mailbox_service"},
-		{ComponentName: "verself-web.iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/iam-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/governance-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/notifications-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/profile-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/projects-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.billing", ProjectName: "billing", CredentialPath: "/etc/credstore/verself-web/billing-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/source-code-hosting-service-auth-audience", Group: "verself-web"},
-		{ComponentName: "verself-web.sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/verself-web/sandbox-rental-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/iam-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/governance-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/notifications-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/profile-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/projects-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.billing", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/billing-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/source-code-hosting-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "verself-web.sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/verself-web/sandbox-rental-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
 	}
+}
+
+func platformBrowserAuthLoginProjectNames() []string {
+	projectNames := map[string]struct{}{}
+	for _, spec := range platformRuntimeAuthAudienceSpecs() {
+		if spec.BrowserLoginAudience {
+			projectNames[spec.ProjectName] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(projectNames))
+	for name := range projectNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (r *platformRunner) ensurePlatformOwner() error {
@@ -271,6 +287,11 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 			return err
 		}
 		mismatches = append(mismatches, credentialMismatches...)
+		browserAudienceMismatches, err := r.browserAuthLoginAudienceCredentialMismatches(ctx, projectIDs)
+		if err != nil {
+			return err
+		}
+		mismatches = append(mismatches, browserAudienceMismatches...)
 		if len(mismatches) > 0 {
 			*issues = append(*issues, "Zitadel platform owner mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
@@ -378,14 +399,11 @@ func (r *platformRunner) ensureRuntimeAuthAudienceCredentials(ctx context.Contex
 }
 
 func (r *platformRunner) ensureBrowserAuthLoginAudienceCredential(ctx context.Context, projectIDs map[string]string) error {
-	iamID := strings.TrimSpace(projectIDs["iam-service"])
-	sandboxID := strings.TrimSpace(projectIDs["sandbox-rental"])
-	if iamID == "" || sandboxID == "" {
-		return fmt.Errorf("browser auth login audiences require iam-service and sandbox-rental project IDs")
+	value, err := browserAuthLoginAudienceCredentialValue(projectIDs)
+	if err != nil {
+		return err
 	}
-	path := "/etc/credstore/iam-service/browser-auth-login-audiences"
-	value := sandboxID + "," + iamID + "\n"
-	changed, err := r.writeRootCredential(ctx, path, "iam_service", value)
+	changed, err := r.writeRootCredential(ctx, browserAuthLoginAudiencesPath, browserAuthLoginAudiencesGroup, value)
 	if err != nil {
 		return fmt.Errorf("write browser auth login audiences credential: %w", err)
 	}
@@ -393,6 +411,27 @@ func (r *platformRunner) ensureBrowserAuthLoginAudienceCredential(ctx context.Co
 		r.markChanged("iam.browser_auth_login_audiences.updated")
 	}
 	return nil
+}
+
+const (
+	browserAuthLoginAudiencesPath  = "/etc/credstore/iam-service/browser-auth-login-audiences"
+	browserAuthLoginAudiencesGroup = "iam_service"
+)
+
+func browserAuthLoginAudienceCredentialValue(projectIDs map[string]string) (string, error) {
+	names := platformBrowserAuthLoginProjectNames()
+	if len(names) == 0 {
+		return "", fmt.Errorf("browser auth login audiences require at least one browser audience")
+	}
+	ids := make([]string, 0, len(names))
+	for _, name := range names {
+		projectID := strings.TrimSpace(projectIDs[name])
+		if projectID == "" {
+			return "", fmt.Errorf("browser auth login audience %s project ID is not resolved", name)
+		}
+		ids = append(ids, projectID)
+	}
+	return strings.Join(ids, ",") + "\n", nil
 }
 
 func (r *platformRunner) writeRootCredential(ctx context.Context, path, group, value string) (bool, error) {
@@ -465,6 +504,32 @@ func (r *platformRunner) platformRuntimeAuthAudienceCredentialMismatches(ctx con
 		if stat.Mode != "640" {
 			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.mode=%q", spec.ComponentName, stat.Mode))
 		}
+	}
+	return mismatches, nil
+}
+
+func (r *platformRunner) browserAuthLoginAudienceCredentialMismatches(ctx context.Context, projectIDs map[string]string) ([]string, error) {
+	value, err := browserAuthLoginAudienceCredentialValue(projectIDs)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, browserAuthLoginAudiencesPath)
+	if err != nil {
+		return []string{fmt.Sprintf("iam.browser_auth_login_audiences.read_error=%q", err.Error())}, nil
+	}
+	var mismatches []string
+	if string(raw) != value {
+		mismatches = append(mismatches, "iam.browser_auth_login_audiences.value_mismatch")
+	}
+	stat, err := r.remoteCredentialStat(ctx, browserAuthLoginAudiencesPath)
+	if err != nil {
+		return append(mismatches, fmt.Sprintf("iam.browser_auth_login_audiences.stat_error=%q", err.Error())), nil
+	}
+	if stat.Group != browserAuthLoginAudiencesGroup {
+		mismatches = append(mismatches, fmt.Sprintf("iam.browser_auth_login_audiences.group=%q", stat.Group))
+	}
+	if stat.Mode != "640" {
+		mismatches = append(mismatches, fmt.Sprintf("iam.browser_auth_login_audiences.mode=%q", stat.Mode))
 	}
 	return mismatches, nil
 }
