@@ -94,7 +94,7 @@ store = "postgresql"
 # Fallback admin for Management API bootstrap.
 [authentication.fallback-admin]
 user = "admin"
-secret = "%{file:/run/credentials/stalwart.service/admin-password}%"
+secret = "%{file:/etc/credstore/stalwart/admin-password}%"
 
 # --- Settings below are local-only (TOML bootstrap) ---
 # session.*, remote.*, queue.*, metrics.* must be pushed via the Settings API
