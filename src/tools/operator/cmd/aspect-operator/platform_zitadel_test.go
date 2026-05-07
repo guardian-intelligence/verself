@@ -9,6 +9,32 @@ import (
 	"testing"
 )
 
+func TestPlatformRuntimeAuthAudienceSpecsIncludeBillingWebAudience(t *testing.T) {
+	var found bool
+	credentialPaths := map[string]string{}
+	for _, spec := range platformRuntimeAuthAudienceSpecs() {
+		if previous, ok := credentialPaths[spec.CredentialPath]; ok {
+			t.Fatalf("duplicate runtime auth audience credential path %s for %s and %s", spec.CredentialPath, previous, spec.ComponentName)
+		}
+		credentialPaths[spec.CredentialPath] = spec.ComponentName
+		if spec.ComponentName == "verself-web.billing" {
+			found = true
+			if spec.ProjectName != "billing" {
+				t.Fatalf("web billing audience must target billing project, got %q", spec.ProjectName)
+			}
+			if spec.CredentialPath != "/etc/credstore/verself-web/billing-service-auth-audience" {
+				t.Fatalf("unexpected web billing audience credential path %q", spec.CredentialPath)
+			}
+			if spec.Group != "verself-web" {
+				t.Fatalf("unexpected web billing audience credential group %q", spec.Group)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing verself-web billing runtime auth audience")
+	}
+}
+
 func TestPlatformZitadelUpsertAuthorizationCreatesAndUpdates(t *testing.T) {
 	var authorizations []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

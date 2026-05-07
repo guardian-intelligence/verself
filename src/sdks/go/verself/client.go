@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
+	billingcore "github.com/verself/verself-go/internal/generated/billing"
 	iamcore "github.com/verself/verself-go/internal/generated/iam"
 	projectscore "github.com/verself/verself-go/internal/generated/projects"
 	sandboxcore "github.com/verself/verself-go/internal/generated/sandbox"
@@ -20,6 +21,7 @@ const (
 	DefaultServerURL   = "https://verself.sh"
 	DefaultIAMURL      = "https://iam.api.verself.sh"
 	DefaultProjectsURL = "https://projects.api.verself.sh"
+	DefaultBillingURL  = "https://billing.api.verself.sh"
 	DefaultSandboxURL  = "https://sandbox.api.verself.sh"
 	DefaultSourceURL   = "https://source.api.verself.sh"
 )
@@ -29,6 +31,7 @@ type Options struct {
 	ServerURL   string
 	IAMURL      string
 	ProjectsURL string
+	BillingURL  string
 	SandboxURL  string
 	SourceURL   string
 	HTTPClient  *http.Client
@@ -38,6 +41,7 @@ type Options struct {
 type Client struct {
 	IAM      *IAMClient
 	Projects *ProjectsClient
+	Billing  *BillingClient
 	Sandbox  *SandboxClient
 	Source   *SourceClient
 }
@@ -52,6 +56,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	projectsURL, err := serviceURL(options.ProjectsURL, options.ServerURL, "projects")
+	if err != nil {
+		return nil, err
+	}
+	billingURL, err := serviceURL(options.BillingURL, options.ServerURL, "billing")
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +93,15 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	billingEditor := billingRequestEditor(token, options.Traceparent)
+	generatedBilling, err := billingcore.NewClientWithResponses(
+		billingURL,
+		billingcore.WithHTTPClient(httpClient),
+		billingcore.WithRequestEditorFn(billingEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	sourceEditor := sourceRequestEditor(token, options.Traceparent)
 	generatedSource, err := sourcecore.NewClientWithResponses(
 		sourceURL,
@@ -106,6 +123,7 @@ func New(options Options) (*Client, error) {
 	return &Client{
 		IAM:      &IAMClient{client: generatedIAM},
 		Projects: &ProjectsClient{client: generatedProjects},
+		Billing:  &BillingClient{client: generatedBilling},
 		Sandbox:  &SandboxClient{client: generatedSandbox},
 		Source:   &SourceClient{client: generatedSource},
 	}, nil
@@ -118,6 +136,12 @@ func iamRequestEditor(token, traceparent string) iamcore.RequestEditorFn {
 }
 
 func projectsRequestEditor(token, traceparent string) projectscore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, token, traceparent)
+	}
+}
+
+func billingRequestEditor(token, traceparent string) billingcore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, token, traceparent)
 	}
@@ -161,6 +185,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultIAMURL
 	case "projects":
 		return DefaultProjectsURL
+	case "billing":
+		return DefaultBillingURL
 	case "sandbox":
 		return DefaultSandboxURL
 	case "source":

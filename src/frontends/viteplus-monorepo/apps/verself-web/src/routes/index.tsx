@@ -64,7 +64,9 @@ function LandingPage() {
 
       <section className="relative z-10 mx-auto grid min-h-[86svh] max-w-5xl grid-cols-1 gap-10 border-t border-white/10 bg-black/35 px-6 py-24 text-left md:grid-cols-[0.82fr_1fr] md:py-32">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.24em] text-white/40">Bare metal substrate</p>
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-white/40">
+            Bare metal substrate
+          </p>
           <h2
             className="mt-5 max-w-lg text-3xl font-light leading-tight text-white md:text-5xl"
             style={{ fontFamily: "Fraunces, serif", fontVariationSettings: "'opsz' 144, 'SOFT' 0" }}
@@ -75,7 +77,8 @@ function LandingPage() {
         <div className="max-w-xl space-y-5 text-sm leading-7 text-white/58 md:pt-11 md:text-base">
           <p>
             Verself turns operator-owned Latitude metal into short-lived Firecracker capacity for CI
-            runs today, with persistent dev VMs and Lambda-style workloads on the same control plane.
+            runs today, with persistent dev VMs and Lambda-style workloads on the same control
+            plane.
           </p>
           <p>
             The public surface stays API-first: rent compute, observe execution, settle usage, and

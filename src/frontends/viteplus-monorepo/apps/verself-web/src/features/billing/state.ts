@@ -1,11 +1,11 @@
 import type {
   BillingPlan,
+  BillingContractsResponse as ContractsResponse,
+  BillingEntitlementSourceTotal as EntitlementSourceTotal,
+  BillingEntitlementsView as EntitlementsView,
+  BillingPlansResponse as PlansResponse,
+  BillingStatement as Statement,
   Contract,
-  ContractsResponse,
-  EntitlementSourceTotal,
-  EntitlementsView,
-  PlansResponse,
-  Statement,
 } from "@verself/sdk";
 
 // Billing state collapses the four boundary-parsed objects the billing-service

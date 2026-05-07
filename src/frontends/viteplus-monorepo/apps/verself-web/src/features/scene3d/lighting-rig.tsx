@@ -1,7 +1,10 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { DirectionalLight, HemisphereLight, MathUtils, PointLight, Vector3 } from "three";
-import { firstLightFocusPoint, firstLightStartPoint } from "./scenes/first-light/first-light-config";
+import {
+  firstLightFocusPoint,
+  firstLightStartPoint,
+} from "./scenes/first-light/first-light-config";
 import { useSceneRuntime } from "./scene-runtime";
 
 const startPoint = new Vector3(...firstLightStartPoint);
@@ -27,7 +30,13 @@ export function LightingRig() {
 
     desiredPosition
       .copy(focusPoint)
-      .add(orbitOffset.set(Math.sin(orbit) * 1.05, Math.cos(orbit * 0.7) * 0.22, Math.cos(orbit) * 0.85));
+      .add(
+        orbitOffset.set(
+          Math.sin(orbit) * 1.05,
+          Math.cos(orbit * 0.7) * 0.22,
+          Math.cos(orbit) * 0.85,
+        ),
+      );
     desiredPosition.lerpVectors(startPoint, desiredPosition, settle);
     desiredPosition.x += runtime.pointer.x * 0.055;
     desiredPosition.y += runtime.pointer.y * 0.04;

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -15,7 +14,7 @@ import (
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
-	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, PublicAPIConfig{})
 	openAPI := api.OpenAPI()
 
 	var checked int
@@ -63,73 +62,23 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 	}
 }
 
-func TestBillingProxyErrorRedactsUpstreamDetails(t *testing.T) {
-	err := billingProxyError(context.Background(), errors.New("postgres://billing:secret@127.0.0.1:5432/billing: connection refused"))
-
-	var statusErr huma.StatusError
-	if !errors.As(err, &statusErr) {
-		t.Fatalf("expected huma status error, got %T", err)
-	}
-	if statusErr.GetStatus() != http.StatusBadGateway {
-		t.Fatalf("status: got %d want %d", statusErr.GetStatus(), http.StatusBadGateway)
-	}
-
-	payload, marshalErr := json.Marshal(err)
-	if marshalErr != nil {
-		t.Fatalf("marshal error: %v", marshalErr)
-	}
-	body := string(payload)
-	for _, leaked := range []string{"postgres://", "secret", "127.0.0.1", "connection refused"} {
-		if strings.Contains(body, leaked) {
-			t.Fatalf("billing proxy error leaked %q in %s", leaked, body)
-		}
-	}
-	if !strings.Contains(body, "billing service unavailable") {
-		t.Fatalf("billing proxy error body does not include stable public detail: %s", body)
-	}
-}
-
-func TestBillingProxyErrorMapsNoStripeCustomer(t *testing.T) {
-	err := billingPortalProxyResponseError(context.Background(), http.StatusUnprocessableEntity, []byte(`{"type":"urn:verself:problem:billing:no-stripe-customer","detail":"no stripe customer linked to this org","status":422}`))
-
-	var statusErr huma.StatusError
-	if !errors.As(err, &statusErr) {
-		t.Fatalf("expected huma status error, got %T", err)
-	}
-	if statusErr.GetStatus() != http.StatusUnprocessableEntity {
-		t.Fatalf("status: got %d want %d", statusErr.GetStatus(), http.StatusUnprocessableEntity)
-	}
-
-	payload, marshalErr := json.Marshal(err)
-	if marshalErr != nil {
-		t.Fatalf("marshal error: %v", marshalErr)
-	}
-	body := string(payload)
-	if !strings.Contains(body, "billing portal requires an existing Stripe customer") {
-		t.Fatalf("billing proxy error body does not include stable public detail: %s", body)
-	}
-	if strings.Contains(body, "billing-client:") {
-		t.Fatalf("billing proxy error leaked upstream sentinel in %s", body)
-	}
-}
-
 func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 	owner := sandboxServiceToken("42", roleOwner)
-	if !identityHasPermission(owner, permissionBillingCheckout) {
-		t.Fatal("owner should be allowed to create billing checkout")
+	if !identityHasPermission(owner, permissionStickyDiskWrite) {
+		t.Fatal("owner should be allowed to reset sticky disks")
 	}
 
 	admin := sandboxServiceToken("42", roleAdmin)
-	if !identityHasPermission(admin, permissionBillingCheckout) {
-		t.Fatal("admin should be allowed to create billing checkout")
+	if !identityHasPermission(admin, permissionGitHubWrite) {
+		t.Fatal("admin should be allowed to manage GitHub installation")
 	}
 
 	member := sandboxServiceToken("42", roleMember)
 	if !identityHasPermission(member, permissionScheduleWrite) {
 		t.Fatal("member should be allowed to manage execution schedules")
 	}
-	if identityHasPermission(member, permissionBillingCheckout) {
-		t.Fatal("member should not be allowed to create billing checkout")
+	if identityHasPermission(member, permissionGitHubWrite) {
+		t.Fatal("member should not be allowed to manage GitHub installation")
 	}
 
 	unmarkedScope := &auth.Identity{
@@ -184,7 +133,7 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	})
 
 	identity, err := enforceOperationPolicy(ctx, operationPolicy{
-		Permission: permissionBillingCheckout,
+		Permission: permissionGitHubWrite,
 	}, &EmptyInput{})
 	if identity == nil || identity.Subject != "user-123" {
 		t.Fatalf("expected denied operation to retain identity, got %#v", identity)
@@ -192,34 +141,6 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	var statusErr huma.StatusError
 	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
 		t.Fatalf("expected forbidden missing-permission error, got %#v", err)
-	}
-}
-
-func TestBillingReturnURLValidationRequiresAllowedOrigin(t *testing.T) {
-	origins, err := ParseBillingReturnOrigins("https://console.example.com, http://127.0.0.1:4244")
-	if err != nil {
-		t.Fatalf("parse origins: %v", err)
-	}
-
-	if err := validateBillingReturnURLs(context.Background(), origins,
-		billingReturnURLField{Name: "success_url", URL: "https://console.example.com/billing?purchased=true"},
-		billingReturnURLField{Name: "cancel_url", URL: "http://127.0.0.1:4244/billing/credits"},
-	); err != nil {
-		t.Fatalf("valid return URLs rejected: %v", err)
-	}
-
-	err = validateBillingReturnURLs(context.Background(), origins,
-		billingReturnURLField{Name: "success_url", URL: "https://evil.example.com/billing"},
-	)
-	var statusErr huma.StatusError
-	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusBadRequest {
-		t.Fatalf("expected bad request for unregistered origin, got %#v", err)
-	}
-}
-
-func TestParseBillingReturnOriginsRejectsRedirectURL(t *testing.T) {
-	if _, err := ParseBillingReturnOrigins("https://console.example.com/callback"); err == nil {
-		t.Fatal("expected origin parser to reject URL with path")
 	}
 }
 

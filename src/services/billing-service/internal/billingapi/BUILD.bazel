@@ -1,17 +1,28 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "billingapi",
-    srcs = ["api.go"],
+    srcs = [
+        "api.go",
+        "billing_return_url.go",
+        "errors.go",
+        "policy.go",
+        "security.go",
+    ],
     importpath = "github.com/verself/billing-service/internal/billingapi",
     visibility = ["//src/services/billing-service:__subpackages__"],
     deps = [
         "//src/domain-transfer-objects/go:dto",
         "//src/services/billing-service/internal/billing",
+        "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
 
@@ -19,4 +30,14 @@ alias(
     name = "go_default_library",
     actual = ":billingapi",
     visibility = ["//src/services/billing-service:__subpackages__"],
+)
+
+go_test(
+    name = "billingapi_test",
+    srcs = ["security_test.go"],
+    embed = [":billingapi"],
+    deps = [
+        "//src/services/service-runtime/go/auth",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+    ],
 )

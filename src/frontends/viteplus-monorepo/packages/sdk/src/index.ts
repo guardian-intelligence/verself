@@ -1,3 +1,4 @@
+import { Billing } from "./billing";
 import { IAM } from "./iam";
 import { Projects } from "./projects";
 import { SandboxRental } from "./sandbox";
@@ -6,6 +7,7 @@ import { Source } from "./source";
 export const DEFAULT_SERVER_URL = "https://verself.sh";
 export const DEFAULT_IAM_URL = "https://iam.api.verself.sh";
 export const DEFAULT_PROJECTS_URL = "https://projects.api.verself.sh";
+export const DEFAULT_BILLING_URL = "https://billing.api.verself.sh";
 export const DEFAULT_SANDBOX_URL = "https://sandbox.api.verself.sh";
 export const DEFAULT_SOURCE_URL = "https://source.api.verself.sh";
 
@@ -14,6 +16,7 @@ export type VerselfOptions = {
   serverURL?: string | undefined;
   iamURL?: string | undefined;
   projectsURL?: string | undefined;
+  billingURL?: string | undefined;
   sandboxURL?: string | undefined;
   sourceURL?: string | undefined;
   fetch?: typeof fetch | undefined;
@@ -23,6 +26,7 @@ export type VerselfOptions = {
 export class Verself {
   readonly iam: IAM;
   readonly projects: Projects;
+  readonly billing: Billing;
   readonly sandbox: SandboxRental;
   readonly source: Source;
 
@@ -40,6 +44,12 @@ export class Verself {
     this.projects = new Projects({
       accessToken: token,
       baseUrl: resolveProjectsURL(options),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.traceparent ? { traceparent: options.traceparent } : {}),
+    });
+    this.billing = new Billing({
+      accessToken: token,
+      baseUrl: resolveBillingURL(options),
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.traceparent ? { traceparent: options.traceparent } : {}),
     });
@@ -71,6 +81,10 @@ function resolveProjectsURL(options: VerselfOptions): string {
   );
 }
 
+function resolveBillingURL(options: VerselfOptions): string {
+  return resolveServiceURL("billing", options.billingURL, options.serverURL, DEFAULT_BILLING_URL);
+}
+
 function resolveSandboxURL(options: VerselfOptions): string {
   return resolveServiceURL("sandbox", options.sandboxURL, options.serverURL, DEFAULT_SANDBOX_URL);
 }
@@ -80,7 +94,7 @@ function resolveSourceURL(options: VerselfOptions): string {
 }
 
 function resolveServiceURL(
-  service: "iam" | "projects" | "sandbox" | "source",
+  service: "iam" | "projects" | "billing" | "sandbox" | "source",
   serviceURL: string | undefined,
   serverURL: string | undefined,
   defaultURL: string,
@@ -114,6 +128,52 @@ function resolveServiceURL(
 function normalizeURL(url: URL): string {
   return url.toString().replace(/\/$/, "");
 }
+
+export {
+  Billing,
+  BillingApiError,
+  billingDocumentsQuerySchema,
+  billingGrantsQuerySchema,
+  billingProductQuerySchema,
+  cancelContractRequestSchema as cancelBillingContractRequestSchema,
+  checkoutRequestSchema as billingCheckoutRequestSchema,
+  contractChangeRequestSchema as billingContractChangeRequestSchema,
+  contractRequestSchema as billingContractRequestSchema,
+  isBillingApiError,
+  portalRequestSchema as billingPortalRequestSchema,
+  statementQuerySchema as billingStatementQuerySchema,
+  type BillingClientOptions,
+  type BillingDocumentsQuery,
+  type BillingDocumentsQueryInput,
+  type BillingGrantsQuery,
+  type BillingGrantsQueryInput,
+  type BillingProductQuery,
+  type BillingProductQueryInput,
+  type BillingPlan,
+  type CancelContractRequest as CancelBillingContractRequest,
+  type CheckoutRequest as BillingCheckoutRequest,
+  type CheckoutSession as BillingCheckoutSession,
+  type Contract,
+  type ContractChangeRequest as BillingContractChangeRequest,
+  type ContractChangeSession as BillingContractChangeSession,
+  type ContractRequest as BillingContractRequest,
+  type ContractSession as BillingContractSession,
+  type ContractsResponse as BillingContractsResponse,
+  type DocumentsResponse as BillingDocumentsResponse,
+  type EntitlementBucketSection as BillingEntitlementBucketSection,
+  type EntitlementProductSection as BillingEntitlementProductSection,
+  type EntitlementSlot as BillingEntitlementSlot,
+  type EntitlementSourceTotal as BillingEntitlementSourceTotal,
+  type EntitlementsView as BillingEntitlementsView,
+  type Grant as BillingGrant,
+  type GrantsResponse as BillingGrantsResponse,
+  type PlansResponse as BillingPlansResponse,
+  type PortalRequest as BillingPortalRequest,
+  type PortalSession as BillingPortalSession,
+  type Statement as BillingStatement,
+  type StatementQuery as BillingStatementQuery,
+  type StatementQueryInput as BillingStatementQueryInput,
+} from "./billing";
 
 export {
   IAM,

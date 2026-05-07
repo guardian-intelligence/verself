@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "verself",
     srcs = [
+        "billing.go",
         "client.go",
         "iam.go",
         "projects.go",
@@ -12,6 +13,7 @@ go_library(
     importpath = "github.com/verself/verself-go",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/sdks/go/verself/internal/generated/billing",
         "//src/sdks/go/verself/internal/generated/iam",
         "//src/sdks/go/verself/internal/generated/projects",
         "//src/sdks/go/verself/internal/generated/sandbox",
@@ -25,6 +27,7 @@ go_library(
 go_test(
     name = "verself_test",
     srcs = [
+        "billing_test.go",
         "client_test.go",
         "projects_test.go",
         "sandbox_test.go",

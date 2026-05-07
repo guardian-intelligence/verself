@@ -32,6 +32,7 @@ job "billing" {
       env {
         BILLING_TB_ADDRESS = "127.0.0.1:3320"
         BILLING_TB_CLUSTER_ID = "0"
+        BILLING_RETURN_ORIGINS = "https://verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "billing-service-migration"
@@ -71,6 +72,7 @@ job "billing" {
       env {
         BILLING_TB_ADDRESS = "127.0.0.1:3320"
         BILLING_TB_CLUSTER_ID = "0"
+        BILLING_RETURN_ORIGINS = "https://verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "billing-service"

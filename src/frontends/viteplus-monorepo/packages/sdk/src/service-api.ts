@@ -27,10 +27,7 @@ export class ServiceApiError extends Error {
   }
 }
 
-export function createBearerJSONHeaders(
-  accessToken: string,
-  traceparent?: string | undefined,
-): Headers {
+export function createBearerJSONHeaders(accessToken: string, traceparent?: string): Headers {
   const headers = new Headers();
   headers.set("Accept", "application/json");
   headers.set("Authorization", `Bearer ${accessToken}`);
@@ -72,10 +69,7 @@ export function createIdempotencyKey(namespace: string): string {
   return `${namespace}:${suffix}`.slice(0, idempotencyKeyMaxLength);
 }
 
-export function idempotencyHeaders(
-  namespace: string,
-  explicitKey?: string | undefined,
-): IdempotencyHeaders {
+export function idempotencyHeaders(namespace: string, explicitKey?: string): IdempotencyHeaders {
   const key = explicitKey?.trim() || createIdempotencyKey(namespace);
   if (key.length > idempotencyKeyMaxLength) {
     throw new Error("Idempotency-Key must be 128 characters or fewer");

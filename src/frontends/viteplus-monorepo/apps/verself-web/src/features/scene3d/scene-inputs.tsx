@@ -22,7 +22,12 @@ export function SceneInputs() {
     const scrollTarget = Math.min(window.scrollY / Math.min(availableScroll, clampedTravel), 1);
 
     runtime.scroll.target = scrollTarget;
-    runtime.scroll.current = MathUtils.damp(runtime.scroll.current, runtime.scroll.target, 3.2, delta);
+    runtime.scroll.current = MathUtils.damp(
+      runtime.scroll.current,
+      runtime.scroll.target,
+      3.2,
+      delta,
+    );
     runtime.scroll.velocity = (runtime.scroll.current - previousScroll) / Math.max(delta, 1 / 120);
   });
 

@@ -38,14 +38,17 @@ import {
   putNotificationPreferencesRequestSchema,
 } from "~/lib/notifications-api";
 import {
+  BillingApiError,
   IAMApiError,
   ProjectsApiError,
   SandboxRentalApiError,
   SourceApiError as SourceCodeHostingApiError,
-  cancelContractRequestSchema,
-  checkoutRequestSchema,
-  contractChangeRequestSchema,
-  contractRequestSchema,
+  billingCheckoutRequestSchema as checkoutRequestSchema,
+  billingContractChangeRequestSchema as contractChangeRequestSchema,
+  billingContractRequestSchema as contractRequestSchema,
+  billingPortalRequestSchema as portalRequestSchema,
+  billingStatementQuerySchema as statementQuerySchema,
+  cancelBillingContractRequestSchema as cancelContractRequestSchema,
   createProjectRequestSchema,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
   createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
@@ -54,31 +57,34 @@ import {
   executionScheduleIdInputSchema,
   executionScheduleRequestSchema,
   inviteMemberRequestSchema,
+  isBillingApiError,
   isIAMApiError,
   isProjectsApiError,
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
   isSourceApiError as isSourceCodeHostingApiError,
-  portalRequestSchema,
   putMemberCapabilitiesRequestSchema,
   runListQuerySchema,
-  statementQuerySchema,
   updateMemberRolesRequestSchema,
   updateOrganizationRequestSchema,
+  type BillingCheckoutRequest as CheckoutRequest,
+  type BillingContractChangeRequest as ContractChangeRequest,
+  type BillingContractRequest as ContractRequest,
+  type BillingContractsResponse as ContractsResponse,
+  type BillingEntitlementBucketSection as EntitlementBucketSection,
+  type BillingEntitlementProductSection as EntitlementProductSection,
+  type BillingEntitlementSlot as EntitlementSlot,
+  type BillingEntitlementSourceTotal as EntitlementSourceTotal,
+  type BillingEntitlementsView as EntitlementsView,
+  type BillingPlansResponse as PlansResponse,
+  type BillingPortalRequest as PortalRequest,
+  type BillingStatement as Statement,
+  type BillingStatementQuery as StatementQuery,
+  type CancelBillingContractRequest as CancelContractRequest,
   type CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
   type CreateRepositoryRequest as CreateSourceRepositoryRequest,
-  type CancelContractRequest,
-  type CheckoutRequest,
-  type ContractChangeRequest,
-  type ContractRequest,
-  type ContractsResponse,
-  type EntitlementBucketSection,
-  type EntitlementProductSection,
-  type EntitlementSlot,
-  type EntitlementSourceTotal,
-  type EntitlementsView,
   type Execution,
   type ExecutionSchedule,
   type ExecutionScheduleIdInput,
@@ -92,8 +98,6 @@ import {
   type MemberCapability,
   type Organization,
   type OrganizationMetadata,
-  type PlansResponse,
-  type PortalRequest,
   type PutMemberCapabilitiesRequest,
   type Project,
   type ProjectList,
@@ -108,8 +112,6 @@ import {
   type SourceRepositoryList,
   type SourceTree,
   type SourceWorkflowRunList,
-  type Statement,
-  type StatementQuery,
   type UpdateMemberRolesRequest,
   type UpdateOrganizationRequest,
   Verself,
@@ -143,6 +145,7 @@ const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_U
 const PROFILE_SERVICE_BASE_URL = requireURLFromEnv("PROFILE_SERVICE_BASE_URL");
 const NOTIFICATIONS_SERVICE_BASE_URL = requireURLFromEnv("NOTIFICATIONS_SERVICE_BASE_URL");
 const PROJECTS_SERVICE_BASE_URL = requireURLFromEnv("PROJECTS_SERVICE_BASE_URL");
+const BILLING_SERVICE_BASE_URL = requireURLFromEnv("BILLING_SERVICE_BASE_URL");
 const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
   "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
 );
@@ -156,6 +159,7 @@ const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
   "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE",
 );
 const PROJECTS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("PROJECTS_SERVICE_AUTH_AUDIENCE");
+const BILLING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("BILLING_SERVICE_AUTH_AUDIENCE");
 const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
   "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
 );
@@ -182,6 +186,7 @@ export { GovernanceApiError, isGovernanceApiError };
 export { ProfileApiError, isProfileApiError };
 export { NotificationsApiError, isNotificationsApiError };
 export { ProjectsApiError, isProjectsApiError };
+export { BillingApiError, isBillingApiError };
 export { SourceCodeHostingApiError, isSourceCodeHostingApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
@@ -304,6 +309,11 @@ async function notificationsClientOptions(context: ConsoleAuthContext | undefine
 async function projectsSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getAccessTokenForAudience(context, PROJECTS_SERVICE_AUTH_AUDIENCE);
   return new Verself({ bearerToken: accessToken, projectsURL: PROJECTS_SERVICE_BASE_URL });
+}
+
+async function billingSDK(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, BILLING_SERVICE_AUTH_AUDIENCE);
+  return new Verself({ bearerToken: accessToken, billingURL: BILLING_SERVICE_BASE_URL });
 }
 
 async function sourceCodeHostingSDK(context: ConsoleAuthContext | undefined) {
@@ -671,61 +681,61 @@ export const downloadGovernanceDataExport = createServerFn({ method: "POST" })
 export const getEntitlements = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.getEntitlements();
+    return (await billingSDK(context)).billing.getEntitlements();
   });
 
 export const getContracts = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.getContracts();
+    return (await billingSDK(context)).billing.getContracts();
   });
 
 export const getPlans = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.getPlans();
+    return (await billingSDK(context)).billing.getPlans({ productId: "sandbox" });
   });
 
 export const getStatement = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(statementQuerySchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.getStatement(data);
+    return (await billingSDK(context)).billing.getStatement({ productId: data.product_id });
   });
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(checkoutRequestSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.createCheckoutSession(data);
+    return (await billingSDK(context)).billing.createCheckoutSession(data);
   });
 
 export const createContractSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(contractRequestSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.createContractSession(data);
+    return (await billingSDK(context)).billing.createContractSession(data);
   });
 
 export const createContractChangeSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(contractChangeRequestSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.createContractChangeSession(data);
+    return (await billingSDK(context)).billing.createContractChangeSession(data);
   });
 
 export const createPortalSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(portalRequestSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.createPortalSession(data);
+    return (await billingSDK(context)).billing.createPortalSession(data);
   });
 
 export const cancelContract = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(cancelContractRequestSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.cancelContract(data);
+    return (await billingSDK(context)).billing.cancelContract(data);
   });
 
 export const getExecution = createServerFn({ method: "GET" })

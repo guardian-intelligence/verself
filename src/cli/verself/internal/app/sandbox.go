@@ -298,7 +298,7 @@ func (c CLI) billingEntitlements(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	entitlements, err := client.Sandbox.GetEntitlements(ctx)
+	entitlements, err := client.Billing.GetEntitlements(ctx)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,7 @@ func (c CLI) billingContracts(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	contracts, err := client.Sandbox.ListContracts(ctx)
+	contracts, err := client.Billing.ListContracts(ctx)
 	if err != nil {
 		return err
 	}
@@ -339,17 +339,18 @@ func (c CLI) billingContracts(ctx context.Context, args []string) error {
 func (c CLI) billingPlans(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("billing plans", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
+	productID := fs.String("product-id", "", "product id")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: billing plans [--json]")
+		return errors.New("usage: billing plans --product-id PRODUCT_ID [--json]")
 	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	plans, err := client.Sandbox.ListPlans(ctx)
+	plans, err := client.Billing.ListPlans(ctx, verself.BillingListPlansOptions{ProductID: *productID})
 	if err != nil {
 		return err
 	}
@@ -378,7 +379,7 @@ func (c CLI) billingStatement(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	statement, err := client.Sandbox.GetStatement(ctx, verself.SandboxStatementOptions{ProductID: *productID})
+	statement, err := client.Billing.GetStatement(ctx, verself.BillingStatementOptions{ProductID: *productID})
 	if err != nil {
 		return err
 	}

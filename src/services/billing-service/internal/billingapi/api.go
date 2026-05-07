@@ -6,7 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -22,47 +22,44 @@ const (
 )
 
 type Config struct {
-	Version             string
-	ListenAddr          string
-	Client              *billing.Client
-	Logger              *slog.Logger
-	InternalPeers       []spiffeid.ID
-	StripeWebhookSecret string
+	Version              string
+	ListenAddr           string
+	Client               *billing.Client
+	Logger               *slog.Logger
+	InternalPeers        []spiffeid.ID
+	StripeWebhookSecret  string
+	BillingReturnOrigins []string
 }
 
 type Handler struct {
-	client              *billing.Client
-	logger              *slog.Logger
-	internalPeers       []spiffeid.ID
-	stripeWebhookSecret string
+	client               *billing.Client
+	logger               *slog.Logger
+	internalPeers        []spiffeid.ID
+	stripeWebhookSecret  string
+	billingReturnOrigins []string
 }
 
 type body[T any] struct {
 	Body T `required:"true"`
 }
 
-type OrgPath struct {
-	OrgID string `path:"org_id" pattern:"^[0-9]+$"`
-}
+type emptyInput struct{}
 
 type GrantsInput struct {
-	OrgPath
 	ProductID string `query:"product_id,omitempty" maxLength:"255"`
 	Active    bool   `query:"active,omitempty"`
 }
 
 type DocumentsInput struct {
-	OrgPath
 	ProductID string `query:"product_id,omitempty" maxLength:"255"`
 }
 
 type StatementInput struct {
-	OrgPath
 	ProductID string `query:"product_id" required:"true" minLength:"1" maxLength:"255"`
 }
 
-type ProductPath struct {
-	ProductID string `path:"product_id" minLength:"1" maxLength:"255"`
+type ProductQuery struct {
+	ProductID string `query:"product_id" required:"true" minLength:"1" maxLength:"255"`
 }
 
 type ContractPath struct {
@@ -76,7 +73,6 @@ type CreateContractChangeInput struct {
 
 type CancelContractInput struct {
 	ContractPath
-	Body dto.BillingCancelContractRequest `required:"true"`
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -89,7 +85,8 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 		config.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
-	RegisterRoutes(api, cfg)
+	applyPublicSecurityScheme(api)
+	RegisterPublicRoutes(api, cfg)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
@@ -106,45 +103,77 @@ func OpenAPIDowngradeYAML() ([]byte, error) {
 	return api.OpenAPI().DowngradeYAML()
 }
 
-func RegisterRoutes(api huma.API, cfg Config) {
-	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret}
-	public := huma.NewGroup(api, "/internal/billing/v1")
-	huma.Get(public, "/orgs/{org_id}/entitlements", h.getEntitlements, op("get-entitlements", "Get org entitlements view"))
-	huma.Get(public, "/orgs/{org_id}/grants", h.listGrants, op("list-grants", "List org credit grants"))
-	huma.Get(public, "/orgs/{org_id}/documents", h.listDocuments, op("list-documents", "List issued billing documents"))
-	huma.Get(public, "/orgs/{org_id}/statement", h.getStatement, op("get-statement", "Preview current statement"))
-	huma.Get(public, "/orgs/{org_id}/contracts", h.listContracts, op("list-contracts", "List org contracts"))
-	huma.Get(public, "/products/{product_id}/plans", h.listPlans, op("list-plans", "List active plans"))
-	huma.Post(public, "/checkout", h.createCheckout, op("create-checkout", "Create credit checkout"))
-	huma.Post(public, "/contracts", h.createContract, op("create-contract", "Create contract checkout"))
-	huma.Post(public, "/contracts/{contract_id}/changes", h.createContractChange, op("create-contract-change", "Create contract change"))
-	huma.Post(public, "/contracts/{contract_id}/cancel", h.cancelContract, op("cancel-contract", "Cancel contract"))
-	huma.Post(public, "/portal", h.createPortal, op("create-portal", "Create Stripe portal session"))
+func NewInternalAPI(mux *http.ServeMux, cfg Config) huma.API {
+	version := cfg.Version
+	if version == "" {
+		version = "2.0.0"
+	}
+	config := huma.DefaultConfig("Billing Internal API", version)
+	if cfg.ListenAddr != "" {
+		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
+	}
+	api := humago.New(mux, config)
+	applyInternalSecurityScheme(api)
+	RegisterInternalRoutes(api, cfg)
+	dto.ApplyOpenAPIWireDefaults(api)
+	return api
+}
 
-	service := huma.NewGroup(api, "/internal/billing/v1")
-	service.UseMiddleware(requireInternalPeerMiddleware(api, h.internalPeers))
-	huma.Post(service, "/reserve", h.reserveWindow, op("reserve-window", "Reserve billing window", http.StatusPaymentRequired, http.StatusForbidden))
-	huma.Post(service, "/activate", h.activateWindow, op("activate-window", "Activate billing window", http.StatusNotFound))
-	huma.Post(service, "/settle", h.settleWindow, op("settle-window", "Settle billing window", http.StatusNotFound))
-	huma.Post(service, "/void", h.voidWindow, op("void-window", "Void billing window", http.StatusNotFound))
+func InternalOpenAPIYAML() ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "https://127.0.0.1:4255"})
+	return api.OpenAPI().YAML()
+}
 
-	// HAProxy exposes only this path publicly; Huma keeps the OpenAPI surface focused on internal callers.
+func InternalOpenAPIDowngradeYAML() ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "https://127.0.0.1:4255"})
+	return api.OpenAPI().DowngradeYAML()
+}
+
+func serverURL(addr string) string {
+	if strings.Contains(addr, "://") {
+		return addr
+	}
+	return "http://" + addr
+}
+
+func RegisterPublicRoutes(api huma.API, cfg Config) {
+	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins}
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "get-billing-entitlements", Method: http.MethodGet, Path: "/api/v1/entitlements", Summary: "Get org entitlements view"}, readPolicy("billing_entitlements", "read", "billing.entitlements.read"), h.getEntitlements)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-grants", Method: http.MethodGet, Path: "/api/v1/grants", Summary: "List org credit grants"}, readPolicy("billing_grant", "list", "billing.grant.list"), h.listGrants)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-documents", Method: http.MethodGet, Path: "/api/v1/billing-documents", Summary: "List issued billing documents"}, readPolicy("billing_document", "list", "billing.document.list"), h.listDocuments)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "get-billing-statement", Method: http.MethodGet, Path: "/api/v1/statement", Summary: "Preview current statement"}, readPolicy("billing_statement", "read", "billing.statement.read"), h.getStatement)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-contracts", Method: http.MethodGet, Path: "/api/v1/contracts", Summary: "List org contracts"}, readPolicy("billing_contract", "list", "billing.contract.list"), h.listContracts)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-plans", Method: http.MethodGet, Path: "/api/v1/plans", Summary: "List active plans"}, readPolicy("billing_plan", "list", "billing.plan.list"), h.listPlans)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-checkout", Method: http.MethodPost, Path: "/api/v1/checkout", Summary: "Create credit checkout", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_checkout", "create", "billing.checkout.create"), h.createCheckout)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-contract", Method: http.MethodPost, Path: "/api/v1/contracts", Summary: "Create contract checkout", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract_checkout", "create", "billing.contract_checkout.create"), h.createContract)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-contract-change", Method: http.MethodPost, Path: "/api/v1/contracts/{contract_id}/changes", Summary: "Create contract change", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract_change", "create", "billing.contract_change.create"), h.createContractChange)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "cancel-billing-contract", Method: http.MethodPost, Path: "/api/v1/contracts/{contract_id}/cancel", Summary: "Cancel contract", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract", "cancel", "billing.contract.cancel"), h.cancelContract)
+	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-portal", Method: http.MethodPost, Path: "/api/v1/portal", Summary: "Create Stripe portal session", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_portal", "create", "billing.portal.create"), h.createPortal)
+
+	// HAProxy exposes only this path publicly; Huma keeps it out of the generated customer SDK.
 	api.Adapter().Handle(&huma.Operation{OperationID: "stripe-webhook", Method: http.MethodPost, Path: "/webhooks/stripe", Hidden: true}, h.stripeWebhook)
 }
 
-func op(id, summary string, errors ...int) func(*huma.Operation) {
+func RegisterInternalRoutes(api huma.API, cfg Config) {
+	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins}
+	service := huma.NewGroup(api, "/internal/billing/v1")
+	service.UseMiddleware(requireInternalPeerMiddleware(api, h.internalPeers))
+	huma.Post(service, "/reserve", h.reserveWindow, internalOp("reserve-window", "Reserve billing window", http.StatusPaymentRequired, http.StatusForbidden))
+	huma.Post(service, "/activate", h.activateWindow, internalOp("activate-window", "Activate billing window", http.StatusNotFound))
+	huma.Post(service, "/settle", h.settleWindow, internalOp("settle-window", "Settle billing window", http.StatusNotFound))
+	huma.Post(service, "/void", h.voidWindow, internalOp("void-window", "Void billing window", http.StatusNotFound))
+}
+
+func internalOp(id, summary string, errors ...int) func(*huma.Operation) {
 	return func(operation *huma.Operation) {
 		operation.OperationID = id
 		operation.Summary = summary
 		operation.Errors = errors
+		operation.Security = []map[string][]string{{"mutualTLS": {}}}
 	}
 }
 
-func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[dto.BillingEntitlementsView], error) {
-	orgID, err := billingOrgID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) getEntitlements(ctx context.Context, orgID billing.OrgID, _ *emptyInput) (*body[dto.BillingEntitlementsView], error) {
 	view, err := h.client.ListEntitlementsView(ctx, orgID)
 	if err != nil {
 		return nil, h.internalError(ctx, "get entitlements", err)
@@ -152,11 +181,7 @@ func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[dt
 	return &body[dto.BillingEntitlementsView]{Body: entitlementsResponse(view)}, nil
 }
 
-func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[dto.BillingGrants], error) {
-	orgID, err := billingOrgID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) listGrants(ctx context.Context, orgID billing.OrgID, input *GrantsInput) (*body[dto.BillingGrants], error) {
 	grants, err := h.client.ListGrantBalances(ctx, orgID, input.ProductID)
 	if err != nil {
 		return nil, h.internalError(ctx, "list grants", err)
@@ -168,11 +193,7 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[dto
 	return &body[dto.BillingGrants]{Body: dto.BillingGrants{Grants: out}}, nil
 }
 
-func (h *Handler) listDocuments(ctx context.Context, input *DocumentsInput) (*body[dto.BillingDocuments], error) {
-	orgID, err := billingOrgID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) listDocuments(ctx context.Context, orgID billing.OrgID, input *DocumentsInput) (*body[dto.BillingDocuments], error) {
 	documents, err := h.client.ListDocuments(ctx, orgID, input.ProductID)
 	if err != nil {
 		return nil, h.internalError(ctx, "list documents", err)
@@ -184,11 +205,7 @@ func (h *Handler) listDocuments(ctx context.Context, input *DocumentsInput) (*bo
 	return &body[dto.BillingDocuments]{Body: dto.BillingDocuments{Documents: out}}, nil
 }
 
-func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[dto.BillingStatement], error) {
-	orgID, err := billingOrgID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) getStatement(ctx context.Context, orgID billing.OrgID, input *StatementInput) (*body[dto.BillingStatement], error) {
 	statement, err := h.client.PreviewStatement(ctx, orgID, input.ProductID)
 	if err != nil {
 		return nil, h.internalError(ctx, "get statement", err)
@@ -196,11 +213,7 @@ func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*bod
 	return &body[dto.BillingStatement]{Body: statementResponse(statement)}, nil
 }
 
-func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[dto.BillingContracts], error) {
-	orgID, err := billingOrgID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) listContracts(ctx context.Context, orgID billing.OrgID, _ *emptyInput) (*body[dto.BillingContracts], error) {
 	contracts, err := h.client.ListContracts(ctx, orgID)
 	if err != nil {
 		return nil, h.internalError(ctx, "list contracts", err)
@@ -212,7 +225,7 @@ func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[dto.
 	return &body[dto.BillingContracts]{Body: dto.BillingContracts{Contracts: out}}, nil
 }
 
-func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[dto.BillingPlans], error) {
+func (h *Handler) listPlans(ctx context.Context, _ billing.OrgID, input *ProductQuery) (*body[dto.BillingPlans], error) {
 	plans, err := h.client.ListPlans(ctx, input.ProductID)
 	if err != nil {
 		return nil, h.internalError(ctx, "list plans", err)
@@ -224,9 +237,11 @@ func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[dto.
 	return &body[dto.BillingPlans]{Body: dto.BillingPlans{Plans: out}}, nil
 }
 
-func (h *Handler) createCheckout(ctx context.Context, input *body[dto.BillingCreateCheckoutRequest]) (*body[dto.BillingURLResponse], error) {
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
+func (h *Handler) createCheckout(ctx context.Context, orgID billing.OrgID, input *body[dto.BillingCreateCheckoutRequest]) (*body[dto.BillingURLResponse], error) {
+	if err := validateBillingReturnURLs(ctx, h.billingReturnOrigins,
+		billingReturnURLField{Name: "success_url", URL: input.Body.SuccessURL},
+		billingReturnURLField{Name: "cancel_url", URL: input.Body.CancelURL},
+	); err != nil {
 		return nil, err
 	}
 	url, err := h.client.CreateCheckoutSession(ctx, orgID, input.Body.ProductID, billing.CheckoutParams{AmountCents: input.Body.AmountCents, SuccessURL: input.Body.SuccessURL, CancelURL: input.Body.CancelURL})
@@ -236,9 +251,11 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[dto.BillingCre
 	return &body[dto.BillingURLResponse]{Body: dto.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) createContract(ctx context.Context, input *body[dto.BillingCreateContractRequest]) (*body[dto.BillingURLResponse], error) {
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
+func (h *Handler) createContract(ctx context.Context, orgID billing.OrgID, input *body[dto.BillingCreateContractRequest]) (*body[dto.BillingURLResponse], error) {
+	if err := validateBillingReturnURLs(ctx, h.billingReturnOrigins,
+		billingReturnURLField{Name: "success_url", URL: input.Body.SuccessURL},
+		billingReturnURLField{Name: "cancel_url", URL: input.Body.CancelURL},
+	); err != nil {
 		return nil, err
 	}
 	url, err := h.client.CreateContract(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
@@ -251,9 +268,11 @@ func (h *Handler) createContract(ctx context.Context, input *body[dto.BillingCre
 	return &body[dto.BillingURLResponse]{Body: dto.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) createContractChange(ctx context.Context, input *CreateContractChangeInput) (*body[dto.BillingContractChangeResponse], error) {
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
+func (h *Handler) createContractChange(ctx context.Context, orgID billing.OrgID, input *CreateContractChangeInput) (*body[dto.BillingContractChangeResponse], error) {
+	if err := validateBillingReturnURLs(ctx, h.billingReturnOrigins,
+		billingReturnURLField{Name: "success_url", URL: input.Body.SuccessURL},
+		billingReturnURLField{Name: "cancel_url", URL: input.Body.CancelURL},
+	); err != nil {
 		return nil, err
 	}
 	result, err := h.client.CreateContractChange(ctx, orgID, input.ContractID, billing.ContractChangeRequest{TargetPlanID: input.Body.TargetPlanID, SuccessURL: input.Body.SuccessURL, CancelURL: input.Body.CancelURL})
@@ -269,11 +288,7 @@ func (h *Handler) createContractChange(ctx context.Context, input *CreateContrac
 	return &body[dto.BillingContractChangeResponse]{Body: dto.BillingContractChangeResponse{URL: result.URL, ChangeID: result.ChangeID, FinalizationID: result.FinalizationID, DocumentID: result.DocumentID, Status: result.Status, PriceDelta: dto.Uint64(result.PriceDeltaUnits)}}, nil
 }
 
-func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[dto.BillingCancelContractResponse], error) {
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) cancelContract(ctx context.Context, orgID billing.OrgID, input *CancelContractInput) (*body[dto.BillingCancelContractResponse], error) {
 	contract, err := h.client.CancelContract(ctx, orgID, input.ContractID)
 	if err != nil {
 		if errors.Is(err, billing.ErrContractNotFound) {
@@ -284,9 +299,8 @@ func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput
 	return &body[dto.BillingCancelContractResponse]{Body: dto.BillingCancelContractResponse{Contract: contractResponse(contract)}}, nil
 }
 
-func (h *Handler) createPortal(ctx context.Context, input *body[dto.BillingCreatePortalSessionRequest]) (*body[dto.BillingURLResponse], error) {
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
+func (h *Handler) createPortal(ctx context.Context, orgID billing.OrgID, input *body[dto.BillingCreatePortalSessionRequest]) (*body[dto.BillingURLResponse], error) {
+	if err := validateBillingReturnURLs(ctx, h.billingReturnOrigins, billingReturnURLField{Name: "return_url", URL: input.Body.ReturnURL}); err != nil {
 		return nil, err
 	}
 	url, err := h.client.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
@@ -454,14 +468,6 @@ func reservationResponse(reservation billing.WindowReservation) dto.BillingWindo
 		rates[sku] = dto.Uint64(rate)
 	}
 	return dto.BillingWindowReservation{WindowID: reservation.WindowID, OrgID: dto.Uint64(uint64(reservation.OrgID)), ProductID: reservation.ProductID, PlanID: reservation.PlanID, ActorID: reservation.ActorID, SourceType: reservation.SourceType, SourceRef: reservation.SourceRef, WindowSeq: reservation.WindowSeq, ReservationShape: reservation.ReservationShape, ReservedQuantity: reservation.ReservedQuantity, ReservedChargeUnits: dto.Uint64(reservation.ReservedChargeUnits), PricingPhase: reservation.PricingPhase, Allocation: reservation.Allocation, SKURates: rates, CostPerUnit: dto.Uint64(reservation.CostPerUnit), WindowStart: reservation.WindowStart, ActivatedAt: reservation.ActivatedAt, ExpiresAt: reservation.ExpiresAt, RenewBy: reservation.RenewBy}
-}
-
-func billingOrgID(id string) (billing.OrgID, error) {
-	parsed, err := strconv.ParseUint(id, 10, 64)
-	if err != nil || parsed == 0 {
-		return 0, huma.Error400BadRequest("invalid org_id", err)
-	}
-	return billing.OrgID(parsed), nil
 }
 
 func billingOrgIDFromWire(id dto.DecimalUint64) (billing.OrgID, error) {

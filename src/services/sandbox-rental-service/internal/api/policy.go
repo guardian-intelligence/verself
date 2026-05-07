@@ -35,8 +35,6 @@ const (
 	permissionAnalyticsRead   permission = "sandbox:analytics:read"
 	permissionStickyDiskRead  permission = "sandbox:sticky_disk:read"
 	permissionStickyDiskWrite permission = "sandbox:sticky_disk:write"
-	permissionBillingRead     permission = "billing:read"
-	permissionBillingCheckout permission = "billing:checkout"
 
 	roleOwner  = "owner"
 	roleAdmin  = "admin"
@@ -87,8 +85,6 @@ var fullRolePermissions = []permission{
 	permissionAnalyticsRead,
 	permissionStickyDiskRead,
 	permissionStickyDiskWrite,
-	permissionBillingRead,
-	permissionBillingCheckout,
 }
 
 var rolePermissionBundles = map[string][]permission{

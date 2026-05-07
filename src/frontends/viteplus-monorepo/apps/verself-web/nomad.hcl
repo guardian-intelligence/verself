@@ -41,6 +41,7 @@ job "verself-web" {
         PRODUCT_BASE_URL = "https://verself.sh"
         VERSELF_CRED_ELECTRIC_API_SECRET = "/etc/credstore/verself-web/electric-api-secret"
         VERSELF_CRED_ELECTRIC_NOTIFICATIONS_API_SECRET = "/etc/credstore/verself-web/electric-notifications-api-secret"
+        VERSELF_CRED_BILLING_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/billing-service-auth-audience"
         VERSELF_CRED_IAM_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/iam-service-auth-audience"
         VERSELF_CRED_NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/notifications-service-auth-audience"
         VERSELF_CRED_PROFILE_SERVICE_AUTH_AUDIENCE = "/etc/credstore/verself-web/profile-service-auth-audience"
@@ -78,6 +79,7 @@ job "verself-web" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+BILLING_SERVICE_BASE_URL=http://{{- with nomadService "billing-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 GOVERNANCE_SERVICE_BASE_URL=http://{{- with nomadService "governance-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 IAM_SERVICE_BASE_URL=http://{{- with nomadService "iam-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 NOTIFICATIONS_SERVICE_BASE_URL=http://{{- with nomadService "notifications-service-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}

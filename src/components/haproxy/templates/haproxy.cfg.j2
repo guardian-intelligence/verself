@@ -102,7 +102,6 @@ frontend fe_https
   use_backend be_sandbox_github_actions_webhook if host_sandbox method_post { path -i /webhooks/github/actions }
   use_backend be_sandbox_forgejo_actions_webhook if host_sandbox method_post { path -i /webhooks/forgejo/actions }
   use_backend be_sandbox_github_installation_callback if host_sandbox method_get { path -i /github/installations/callback }
-  use_backend be_sandbox_small_json_mutation if host_sandbox method_post { path -i /api/v1/billing/checkout /api/v1/billing/contracts }
   use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
   use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }

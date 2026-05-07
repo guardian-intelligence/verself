@@ -63,6 +63,7 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "billing_service")
 	tbAddress := cfg.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
+	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
 	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
@@ -73,6 +74,10 @@ func run() error {
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	if err := cfg.Err(); err != nil {
+		return err
+	}
+	billingReturnOrigins, err := billingapi.ParseBillingReturnOrigins(billingReturnOriginsRaw)
+	if err != nil {
 		return err
 	}
 
@@ -206,14 +211,16 @@ func run() error {
 	}
 
 	privateMux := http.NewServeMux()
-	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs, StripeWebhookSecret: webhookSecret})
+	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, StripeWebhookSecret: webhookSecret, BillingReturnOrigins: billingReturnOrigins})
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
-	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, privateMux)
+	internalMux := http.NewServeMux()
+	billingapi.NewInternalAPI(internalMux, billingapi.Config{Version: serviceVersion, ListenAddr: "https://" + internalListenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs})
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("billing internal allowlist: %w", err)
 	}
@@ -268,15 +275,7 @@ func isUnauthenticatedBillingPath(path string) bool {
 	if strings.HasPrefix(path, "/openapi") {
 		return true
 	}
-	if strings.HasPrefix(path, "/internal/billing/v1/orgs/") || strings.HasPrefix(path, "/internal/billing/v1/products/") {
-		return true
-	}
-	switch path {
-	case "/internal/billing/v1/checkout", "/internal/billing/v1/contracts", "/internal/billing/v1/portal":
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {

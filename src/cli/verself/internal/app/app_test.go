@@ -504,17 +504,20 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/execution-schedules/"+scheduleID+"/resume":
 			resumeKey = r.Header.Get("Idempotency-Key")
 			_, _ = w.Write([]byte(scheduleJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/entitlements":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/entitlements":
 			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","universal":{"scope_type":"account","product_id":"","product_display":"","bucket_id":"","bucket_display":"","sku_id":"","sku_display":"","coverage_label":"Account","available_units":"100","pending_units":"0","period_start_units":"100","spent_units":"0","sources":[]},"products":[]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/contracts":
-			_, _ = w.Write([]byte(`{"contracts":[{"contract_id":"contract_1","product_id":"sandbox-ci","plan_id":"ci-pro","cadence_kind":"monthly","status":"active","payment_state":"current","entitlement_state":"active","phase_id":"phase_1","starts_at":"2026-05-06T00:00:00Z"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/plans":
-			_, _ = w.Write([]byte(`{"plans":[{"plan_id":"ci-pro","product_id":"sandbox-ci","display_name":"CI Pro","tier":"pro","billing_mode":"subscription","currency":"USD","monthly_amount_cents":"9900","annual_amount_cents":"99000","active":true,"is_default":true}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/statement":
-			if r.URL.Query().Get("product_id") != "sandbox-ci" {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/contracts":
+			_, _ = w.Write([]byte(`{"contracts":[{"contract_id":"contract_1","product_id":"sandbox","plan_id":"sandbox-pro","cadence_kind":"monthly","status":"active","payment_state":"current","entitlement_state":"active","phase_id":"phase_1","starts_at":"2026-05-06T00:00:00Z"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/plans":
+			if r.URL.Query().Get("product_id") != "sandbox" {
+				t.Fatalf("plans query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"plans":[{"plan_id":"sandbox-pro","product_id":"sandbox","display_name":"Sandbox Pro","tier":"pro","billing_mode":"subscription","currency":"USD","monthly_amount_cents":"9900","annual_amount_cents":"99000","active":true,"is_default":true}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/statement":
+			if r.URL.Query().Get("product_id") != "sandbox" {
 				t.Fatalf("statement query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","product_id":"sandbox-ci","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
+			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","product_id":"sandbox","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -522,6 +525,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("VERSELF_TOKEN", "tok_sandbox")
+	t.Setenv("VERSELF_BILLING_API_URL", server.URL)
 	t.Setenv("VERSELF_SANDBOX_API_URL", server.URL)
 
 	var runsOut bytes.Buffer
@@ -574,17 +578,17 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 	var contractsOut bytes.Buffer
 	runCLI(t, &contractsOut, "billing", "contracts")
-	if !strings.Contains(contractsOut.String(), "contract_1\tsandbox-ci\tci-pro\tactive") {
+	if !strings.Contains(contractsOut.String(), "contract_1\tsandbox\tsandbox-pro\tactive") {
 		t.Fatalf("billing contracts output:\n%s", contractsOut.String())
 	}
 	var plansOut bytes.Buffer
-	runCLI(t, &plansOut, "billing", "plans")
-	if !strings.Contains(plansOut.String(), "sandbox-ci\tci-pro\tpro\t9900") {
+	runCLI(t, &plansOut, "billing", "plans", "--product-id", "sandbox")
+	if !strings.Contains(plansOut.String(), "sandbox\tsandbox-pro\tpro\t9900") {
 		t.Fatalf("billing plans output:\n%s", plansOut.String())
 	}
 	var statementOut bytes.Buffer
-	runCLI(t, &statementOut, "billing", "statement", "--product-id", "sandbox-ci")
-	if !strings.Contains(statementOut.String(), "370200542594579812\tsandbox-ci\tcurrent\t0") {
+	runCLI(t, &statementOut, "billing", "statement", "--product-id", "sandbox")
+	if !strings.Contains(statementOut.String(), "370200542594579812\tsandbox\tcurrent\t0") {
 		t.Fatalf("billing statement output:\n%s", statementOut.String())
 	}
 }

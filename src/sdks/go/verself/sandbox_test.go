@@ -135,61 +135,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	}
 }
 
-func TestSandboxBillingReadsUsePublicAPI(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/entitlements":
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","universal":{"scope_type":"account","product_id":"","product_display":"","bucket_id":"","bucket_display":"","sku_id":"","sku_display":"","coverage_label":"Account","available_units":"100","pending_units":"0","period_start_units":"100","spent_units":"0","sources":[]},"products":[]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/contracts":
-			_, _ = w.Write([]byte(`{"contracts":[{"contract_id":"contract_1","product_id":"sandbox-ci","plan_id":"ci-pro","cadence_kind":"monthly","status":"active","payment_state":"current","entitlement_state":"active","phase_id":"phase_1","starts_at":"2026-05-06T00:00:00Z"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/plans":
-			_, _ = w.Write([]byte(`{"plans":[{"plan_id":"ci-pro","product_id":"sandbox-ci","display_name":"CI Pro","tier":"pro","billing_mode":"subscription","currency":"USD","monthly_amount_cents":"9900","annual_amount_cents":"99000","active":true,"is_default":true}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/billing/statement":
-			if r.URL.Query().Get("product_id") != "sandbox-ci" {
-				t.Fatalf("statement query = %s", r.URL.RawQuery)
-			}
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","product_id":"sandbox-ci","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	client, err := New(Options{BearerToken: "tok_sandbox", SandboxURL: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	entitlements, err := client.Sandbox.GetEntitlements(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if entitlements.Universal.AvailableUnits != "100" {
-		t.Fatalf("unexpected entitlements: %#v", entitlements)
-	}
-	contracts, err := client.Sandbox.ListContracts(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(contracts.Contracts) != 1 || contracts.Contracts[0].ContractID != "contract_1" {
-		t.Fatalf("unexpected contracts: %#v", contracts)
-	}
-	plans, err := client.Sandbox.ListPlans(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(plans.Plans) != 1 || plans.Plans[0].PlanID != "ci-pro" {
-		t.Fatalf("unexpected plans: %#v", plans)
-	}
-	statement, err := client.Sandbox.GetStatement(context.Background(), SandboxStatementOptions{ProductID: "sandbox-ci"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if statement.Totals.TotalDueUnits != "0" {
-		t.Fatalf("unexpected statement: %#v", statement)
-	}
-}
-
 func TestSandboxErrorsNormalizeProblemDetails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")

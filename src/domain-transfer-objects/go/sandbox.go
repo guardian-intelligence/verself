@@ -307,30 +307,6 @@ type SandboxExecutionScheduleDispatchRecord struct {
 	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
-type SandboxBillingCheckoutRequest struct {
-	ProductID   string `json:"product_id" required:"true" maxLength:"255" doc:"Product context for checkout display and metadata; purchased top-ups are account-scoped"`
-	AmountCents int64  `json:"amount_cents" required:"true" minimum:"1" maximum:"9007199254740991" doc:"Amount in cents"`
-	SuccessURL  string `json:"success_url" required:"true" maxLength:"2048"`
-	CancelURL   string `json:"cancel_url" required:"true" maxLength:"2048"`
-}
-
-type SandboxBillingContractRequest struct {
-	PlanID     string `json:"plan_id" required:"true" maxLength:"255" doc:"Plan to activate"`
-	Cadence    string `json:"cadence,omitempty" enum:"monthly" doc:"Billing cadence (default monthly)"`
-	SuccessURL string `json:"success_url" required:"true" maxLength:"2048"`
-	CancelURL  string `json:"cancel_url" required:"true" maxLength:"2048"`
-}
-
-type SandboxBillingContractChangeRequest struct {
-	TargetPlanID string `json:"target_plan_id" required:"true" maxLength:"255" doc:"Plan to upgrade into immediately"`
-	SuccessURL   string `json:"success_url" required:"true" maxLength:"2048"`
-	CancelURL    string `json:"cancel_url" required:"true" maxLength:"2048"`
-}
-
-type SandboxBillingPortalRequest struct {
-	ReturnURL string `json:"return_url" required:"true" maxLength:"2048"`
-}
-
 type SandboxAttemptRecord struct {
 	AttemptID              uuid.UUID  `json:"attempt_id"`
 	AttemptSeq             int        `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`

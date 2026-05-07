@@ -21,6 +21,10 @@
       "types": "./src/projects.ts",
       "default": "./src/projects.ts"
     },
+    "./billing": {
+      "types": "./src/billing.ts",
+      "default": "./src/billing.ts"
+    },
     "./sandbox": {
       "types": "./src/sandbox.ts",
       "default": "./src/sandbox.ts"

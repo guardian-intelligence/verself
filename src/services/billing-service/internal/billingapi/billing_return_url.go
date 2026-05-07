@@ -1,4 +1,4 @@
-package api
+package billingapi
 
 import (
 	"context"
@@ -71,7 +71,7 @@ func parseBillingReturnOrigin(raw string) (string, error) {
 
 func validateBillingReturnURLs(ctx context.Context, origins []string, fields ...billingReturnURLField) error {
 	if len(origins) == 0 {
-		return internalFailure(ctx, "billing-return-origins-unconfigured", "billing return URL validation is not configured", errors.New("missing billing return origins"))
+		return problem(ctx, 500, "billing-return-origins-unconfigured", "billing return URL validation is not configured", errors.New("missing billing return origins"))
 	}
 	allowed := make(map[string]struct{}, len(origins))
 	for _, origin := range origins {
@@ -88,28 +88,28 @@ func validateBillingReturnURLs(ctx context.Context, origins []string, fields ...
 func validateBillingReturnURL(ctx context.Context, allowed map[string]struct{}, field billingReturnURLField) error {
 	value := strings.TrimSpace(field.URL)
 	if value == "" {
-		return badRequest(ctx, "billing-return-url-required", field.Name+" is required", nil)
+		return problem(ctx, 400, "billing-return-url-required", field.Name+" is required", nil)
 	}
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return badRequest(ctx, "billing-return-url-invalid", field.Name+" must be an absolute http(s) URL", err)
+		return problem(ctx, 400, "billing-return-url-invalid", field.Name+" must be an absolute http(s) URL", err)
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return badRequest(ctx, "billing-return-url-invalid", field.Name+" must be an absolute http(s) URL", nil)
+		return problem(ctx, 400, "billing-return-url-invalid", field.Name+" must be an absolute http(s) URL", nil)
 	}
 	if parsed.Hostname() == "" {
-		return badRequest(ctx, "billing-return-url-invalid", field.Name+" must include a hostname", nil)
+		return problem(ctx, 400, "billing-return-url-invalid", field.Name+" must include a hostname", nil)
 	}
 	if parsed.User != nil {
-		return badRequest(ctx, "billing-return-url-invalid", field.Name+" must not include userinfo", nil)
+		return problem(ctx, 400, "billing-return-url-invalid", field.Name+" must not include userinfo", nil)
 	}
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "https" && scheme != "http" {
-		return badRequest(ctx, "billing-return-url-invalid", field.Name+" must use http or https", nil)
+		return problem(ctx, 400, "billing-return-url-invalid", field.Name+" must use http or https", nil)
 	}
 	origin := canonicalBillingReturnOrigin(scheme, parsed.Hostname(), parsed.Port())
 	if _, ok := allowed[origin]; !ok {
-		return badRequest(ctx, "billing-return-origin-not-allowed", field.Name+" origin is not registered for this service", nil)
+		return problem(ctx, 400, "billing-return-origin-not-allowed", field.Name+" origin is not registered for this service", nil)
 	}
 	return nil
 }

@@ -3,7 +3,12 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useSignedInAuth } from "@verself/auth-web/react";
 import { contractsQuery, entitlementsQuery, plansQuery, statementQuery } from "./queries";
 import { deriveBillingAccount, type BillingAccount, type BillingSnapshot } from "./state";
-import type { ContractsResponse, EntitlementsView, PlansResponse, Statement } from "@verself/sdk";
+import type {
+  BillingContractsResponse as ContractsResponse,
+  BillingEntitlementsView as EntitlementsView,
+  BillingPlansResponse as PlansResponse,
+  BillingStatement as Statement,
+} from "@verself/sdk";
 
 export interface UseBillingAccountOptions {
   readonly initialPlans?: PlansResponse;

@@ -218,7 +218,6 @@ type BillingEntitlementSourceTotal struct {
 }
 
 type BillingCreateCheckoutRequest struct {
-	OrgID       OrgID  `json:"org_id"`
 	ProductID   string `json:"product_id" minLength:"1" maxLength:"255"`
 	AmountCents int64  `json:"amount_cents" minimum:"1" maximum:"9007199254740991"`
 	SuccessURL  string `json:"success_url" minLength:"1" maxLength:"2048"`
@@ -226,7 +225,6 @@ type BillingCreateCheckoutRequest struct {
 }
 
 type BillingCreateContractRequest struct {
-	OrgID      OrgID  `json:"org_id"`
 	PlanID     string `json:"plan_id" minLength:"1" maxLength:"255"`
 	Cadence    string `json:"cadence,omitempty" enum:"monthly"`
 	SuccessURL string `json:"success_url" minLength:"1" maxLength:"2048"`
@@ -234,7 +232,6 @@ type BillingCreateContractRequest struct {
 }
 
 type BillingCreateContractChangeRequest struct {
-	OrgID        OrgID  `json:"org_id"`
 	TargetPlanID string `json:"target_plan_id" minLength:"1" maxLength:"255"`
 	SuccessURL   string `json:"success_url" minLength:"1" maxLength:"2048"`
 	CancelURL    string `json:"cancel_url" minLength:"1" maxLength:"2048"`
@@ -250,12 +247,7 @@ type BillingContractChangeResponse struct {
 }
 
 type BillingCreatePortalSessionRequest struct {
-	OrgID     OrgID  `json:"org_id"`
 	ReturnURL string `json:"return_url" minLength:"1" maxLength:"2048"`
-}
-
-type BillingCancelContractRequest struct {
-	OrgID OrgID `json:"org_id"`
 }
 
 type BillingCancelContractResponse struct {

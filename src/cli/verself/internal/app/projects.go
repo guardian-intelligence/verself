@@ -16,6 +16,7 @@ type serviceClientFlags struct {
 	tokenFile   string
 	iamURL      string
 	projectsURL string
+	billingURL  string
 	sandboxURL  string
 	sourceURL   string
 	traceparent string
@@ -385,6 +386,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs.StringVar(&flags.tokenFile, "token-file", "", "read bearer token from owner-only file")
 	fs.StringVar(&flags.iamURL, "iam-url", "", "IAM service base URL")
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
+	fs.StringVar(&flags.billingURL, "billing-url", "", "billing service base URL")
 	fs.StringVar(&flags.sandboxURL, "sandbox-url", "", "sandbox rental service base URL")
 	fs.StringVar(&flags.sourceURL, "source-url", "", "source service base URL")
 	fs.StringVar(&flags.traceparent, "traceparent", "", "trace context to join")
@@ -410,6 +412,13 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	if projectsURL == "" && profile != nil {
 		projectsURL = profile.ProjectsURL
 	}
+	billingURL := strings.TrimSpace(flags.billingURL)
+	if billingURL == "" {
+		billingURL = strings.TrimSpace(c.getenv("VERSELF_BILLING_API_URL"))
+	}
+	if billingURL == "" && profile != nil {
+		billingURL = profile.BillingURL
+	}
 	sandboxURL := strings.TrimSpace(flags.sandboxURL)
 	if sandboxURL == "" {
 		sandboxURL = strings.TrimSpace(c.getenv("VERSELF_SANDBOX_API_URL"))
@@ -428,6 +437,7 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 		BearerToken: token,
 		IAMURL:      iamURL,
 		ProjectsURL: projectsURL,
+		BillingURL:  billingURL,
 		SandboxURL:  sandboxURL,
 		SourceURL:   sourceURL,
 		Traceparent: flags.traceparent,

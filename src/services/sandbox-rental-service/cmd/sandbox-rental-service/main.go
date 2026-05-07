@@ -93,7 +93,6 @@ func run() error {
 	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
 	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
-	billingReturnOriginsRaw := cfg.RequireString("SANDBOX_BILLING_RETURN_ORIGINS")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
@@ -128,10 +127,6 @@ func run() error {
 	githubAppID, err := strconv.ParseInt(githubAppIDRaw, 10, 64)
 	if err != nil || githubAppID <= 0 {
 		return fmt.Errorf("SANDBOX_GITHUB_APP_ID must be a positive int64")
-	}
-	billingReturnOrigins, err := sandboxapi.ParseBillingReturnOrigins(billingReturnOriginsRaw)
-	if err != nil {
-		return fmt.Errorf("SANDBOX_BILLING_RETURN_ORIGINS: %w", err)
 	}
 	if err := validatePublicBaseURL(publicBaseURL); err != nil {
 		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
@@ -354,9 +349,8 @@ func run() error {
 
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, billingClient, sandboxapi.PublicAPIConfig{
-		BillingReturnOrigins: billingReturnOrigins,
-		PublicBaseURL:        publicBaseURL,
+	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, sandboxapi.PublicAPIConfig{
+		PublicBaseURL: publicBaseURL,
 	})
 	sandboxapi.RegisterPublicRoutes(rootMux, jobService)
 

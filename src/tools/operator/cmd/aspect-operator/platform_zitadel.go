@@ -126,6 +126,7 @@ func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 		{ComponentName: "verself-web.notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/notifications-service-auth-audience", Group: "verself-web"},
 		{ComponentName: "verself-web.profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/profile-service-auth-audience", Group: "verself-web"},
 		{ComponentName: "verself-web.projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/projects-service-auth-audience", Group: "verself-web"},
+		{ComponentName: "verself-web.billing", ProjectName: "billing", CredentialPath: "/etc/credstore/verself-web/billing-service-auth-audience", Group: "verself-web"},
 		{ComponentName: "verself-web.source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/source-code-hosting-service-auth-audience", Group: "verself-web"},
 		{ComponentName: "verself-web.sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/verself-web/sandbox-rental-auth-audience", Group: "verself-web"},
 	}

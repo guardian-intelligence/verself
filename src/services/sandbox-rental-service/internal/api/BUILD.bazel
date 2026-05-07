@@ -4,7 +4,6 @@ go_library(
     name = "api",
     srcs = [
         "audit_sink.go",
-        "billing_return_url.go",
         "dto.go",
         "errors.go",
         "github_webhook.go",
@@ -18,7 +17,6 @@ go_library(
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
     deps = [
         "//src/domain-transfer-objects/go:dto",
-        "//src/services/billing-service/client",
         "//src/services/governance-service/internalclient",
         "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/sandbox-rental-service/internal/recurring",

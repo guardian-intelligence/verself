@@ -22,6 +22,7 @@ type ProfileRecord struct {
 	TokenRef    string    `json:"token_ref"`
 	IAMURL      string    `json:"iam_url,omitempty"`
 	ProjectsURL string    `json:"projects_url,omitempty"`
+	BillingURL  string    `json:"billing_url,omitempty"`
 	SandboxURL  string    `json:"sandbox_url,omitempty"`
 	SourceURL   string    `json:"source_url,omitempty"`
 	SelectedOrg *OrgRef   `json:"selected_org,omitempty"`

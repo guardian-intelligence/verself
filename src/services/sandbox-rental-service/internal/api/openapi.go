@@ -7,23 +7,21 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
 type PublicAPIConfig struct {
-	BillingReturnOrigins []string
-	PublicBaseURL        string
+	PublicBaseURL string
 }
 
-func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ClientWithResponses, publicConfig PublicAPIConfig) huma.API {
+func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, publicConfig PublicAPIConfig) huma.API {
 	config := huma.DefaultConfig("Sandbox Rental Service", version)
 	config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, svc, recurringSvc, billing, publicConfig)
+	RegisterRoutes(api, svc, recurringSvc, publicConfig)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
@@ -46,12 +44,12 @@ func serverURL(addr string) string {
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
 	return api.OpenAPI().YAML()
 }
 

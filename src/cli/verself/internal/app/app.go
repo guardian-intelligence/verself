@@ -115,7 +115,7 @@ func (c CLI) usage() error {
   %[1]s schedules resume <schedule-id> [--json]
   %[1]s billing entitlements [--json]
   %[1]s billing contracts [--json]
-  %[1]s billing plans [--json]
+  %[1]s billing plans --product-id PRODUCT_ID [--json]
   %[1]s billing statement --product-id PRODUCT_ID [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
