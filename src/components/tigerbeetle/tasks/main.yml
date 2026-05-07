@@ -48,6 +48,12 @@
   changed_when: true
   when: not tigerbeetle_data_stat.stat.exists
 
+- name: Allow TigerBeetle to lock memory without a privileged supervisor
+  community.general.capabilities:
+    path: "{{ verself_bin }}/tigerbeetle"
+    capability: cap_ipc_lock+ep
+    state: present
+
 # --- systemd unit ---
 
 - name: Deploy TigerBeetle systemd unit
