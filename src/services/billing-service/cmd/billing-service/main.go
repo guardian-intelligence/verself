@@ -293,7 +293,7 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 	defer cancel()
 	values := make(map[string]string, len(secretNames))
 	for _, secretName := range secretNames {
-		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+		resp, err := client.ReadSecretWithResponse(secretCtx, secretName, nil)
 		if err != nil {
 			err = fmt.Errorf("read runtime secret %s: %w", secretName, err)
 			span.RecordError(err)

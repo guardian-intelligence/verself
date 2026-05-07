@@ -257,7 +257,7 @@ func readRuntimeSecret(ctx context.Context, client *secretsclient.ClientWithResp
 	}
 	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+	resp, err := client.ReadSecretWithResponse(secretCtx, secretName, nil)
 	if err != nil {
 		return "", fmt.Errorf("read runtime secret %s: %w", secretName, err)
 	}
