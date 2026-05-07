@@ -51,7 +51,22 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
       { id: "organizations", label: "Organizations" },
       { id: "api-credentials", label: "API credentials" },
       { id: "projects", label: "Projects" },
+      { id: "notifications", label: "Notifications" },
       { id: "repositories", label: "Repositories" },
+    ],
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    to: "/docs/notifications",
+    matchPrefix: "/docs/notifications",
+    status: "available",
+    description: "Inbox, notification preferences, read state, and test delivery.",
+    children: [
+      { id: "overview", label: "Overview" },
+      { id: "resources", label: "Resources" },
+      { id: "commands", label: "Commands" },
+      { id: "events", label: "Events" },
     ],
   },
   {

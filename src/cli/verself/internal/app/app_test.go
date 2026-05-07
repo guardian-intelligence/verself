@@ -294,6 +294,117 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 }
 
+func TestNotificationsCommandsUseSDKBackedAPI(t *testing.T) {
+	const notificationID = "11111111-1111-1111-1111-111111111111"
+	notificationJSON := func(sequence string) string {
+		return `{"notification_id":"` + notificationID + `","org_id":"370200542594579812","recipient_subject_id":"user_1","recipient_sequence":"` + sequence + `","kind":"test","priority":"normal","title":"Smoke","body":"Body","action_url":"https://verself.sh","resource_kind":"run","resource_id":"run_1","created_at":"2026-05-07T00:00:00Z"}`
+	}
+	summaryJSON := func(readUpTo, latest string) string {
+		return `{"org_id":"370200542594579812","subject_id":"user_1","unread_count":1,"latest_sequence":"` + latest + `","read_up_to_sequence":"` + readUpTo + `","preferences":{"enabled":true,"web_enabled":true,"email_enabled":false,"push_enabled":false,"sms_enabled":false,"version":1,"updated_at":"2026-05-07T00:00:00Z","updated_by":"user_1"},"latest_notification":` + notificationJSON(latest) + `}`
+	}
+	var listTraceparent string
+	var preferencesKey string
+	var preferencesBody map[string]any
+	var readCursorKey string
+	var readCursorBody map[string]any
+	var readKey string
+	var dismissKey string
+	var clearKey string
+	var testKey string
+	var testBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer tok_notifications" {
+			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/notifications":
+			listTraceparent = r.Header.Get("Traceparent")
+			if r.URL.Query().Get("limit") != "2" {
+				t.Fatalf("notifications list query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"summary":` + summaryJSON("0", "2") + `,"notifications":[` + notificationJSON("2") + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/notifications/summary":
+			_, _ = w.Write([]byte(summaryJSON("0", "2")))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/notifications/preferences":
+			preferencesKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&preferencesBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(summaryJSON("0", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/read-cursor":
+			readCursorKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&readCursorBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(summaryJSON("2", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/"+notificationID+"/read":
+			readKey = r.Header.Get("Idempotency-Key")
+			_, _ = w.Write([]byte(summaryJSON("2", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/"+notificationID+"/dismiss":
+			dismissKey = r.Header.Get("Idempotency-Key")
+			_, _ = w.Write([]byte(summaryJSON("2", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/clear":
+			clearKey = r.Header.Get("Idempotency-Key")
+			_, _ = w.Write([]byte(summaryJSON("2", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/notifications/test":
+			testKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&testBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"event_id":"evt_1","traceparent":"trace-child"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_TOKEN", "tok_notifications")
+	t.Setenv("VERSELF_NOTIFICATIONS_API_URL", server.URL)
+
+	traceparent := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	var listOut bytes.Buffer
+	runCLI(t, &listOut, "notifications", "list", "--limit", "2", "--traceparent", traceparent)
+	if listTraceparent != traceparent {
+		t.Fatalf("notifications list traceparent = %q", listTraceparent)
+	}
+	if !strings.Contains(listOut.String(), "notification\t"+notificationID+"\tnormal\ttest\t2\tSmoke") {
+		t.Fatalf("notifications list output:\n%s", listOut.String())
+	}
+
+	var summaryOut bytes.Buffer
+	runCLI(t, &summaryOut, "notifications", "summary", "--json")
+	if !strings.Contains(summaryOut.String(), `"unread_count": 1`) {
+		t.Fatalf("notifications summary output:\n%s", summaryOut.String())
+	}
+
+	runCLI(t, nil, "notifications", "preferences", "set", "--version", "1", "--enabled", "false", "--web-enabled", "true", "--email-enabled", "false", "--idempotency-key", "notifications:preferences")
+	if preferencesKey != "notifications:preferences" || preferencesBody["enabled"] != false || preferencesBody["web_enabled"] != true || preferencesBody["email_enabled"] != false {
+		t.Fatalf("unexpected preferences mutation: key=%q body=%#v", preferencesKey, preferencesBody)
+	}
+
+	runCLI(t, nil, "notifications", "read-cursor", "2", "--idempotency-key", "notifications:cursor")
+	if readCursorKey != "notifications:cursor" || readCursorBody["read_up_to_sequence"] != "2" {
+		t.Fatalf("unexpected read cursor mutation: key=%q body=%#v", readCursorKey, readCursorBody)
+	}
+
+	runCLI(t, nil, "notifications", "read", notificationID, "--idempotency-key", "notifications:read")
+	runCLI(t, nil, "notifications", "dismiss", notificationID, "--idempotency-key", "notifications:dismiss")
+	runCLI(t, nil, "notifications", "clear", "--idempotency-key", "notifications:clear")
+	var testOut bytes.Buffer
+	runCLI(t, &testOut, "notifications", "test", "--title", "CLI", "--body", "Body", "--action-url", "https://verself.sh/runs/1", "--idempotency-key", "notifications:test")
+	if readKey != "notifications:read" || dismissKey != "notifications:dismiss" || clearKey != "notifications:clear" || testKey != "notifications:test" {
+		t.Fatalf("unexpected mutation keys: read=%q dismiss=%q clear=%q test=%q", readKey, dismissKey, clearKey, testKey)
+	}
+	if testBody["title"] != "CLI" || testBody["body"] != "Body" || testBody["action_url"] != "https://verself.sh/runs/1" {
+		t.Fatalf("unexpected test notification body: %#v", testBody)
+	}
+	if !strings.Contains(testOut.String(), "accepted\tevt_1\ttrace-child") {
+		t.Fatalf("notifications test output:\n%s", testOut.String())
+	}
+}
+
 func TestEnvCommandsUseSecretsSDKBackedAPI(t *testing.T) {
 	var putBody map[string]any
 	var resolveNamedBody map[string]any

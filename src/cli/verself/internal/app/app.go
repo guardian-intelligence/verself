@@ -58,6 +58,8 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runOrgs(ctx, args[1:])
 	case "projects":
 		return c.runProjects(ctx, args[1:])
+	case "notifications":
+		return c.runNotifications(ctx, args[1:])
 	case "repos":
 		return c.runRepos(ctx, args[1:])
 	case "runs":
@@ -101,6 +103,14 @@ func (c CLI) usage() error {
   %[1]s projects restore <project-id> --version VERSION [--json]
   %[1]s projects environments list <project-id> [--json]
   %[1]s projects environments create <project-id> <display-name> --slug SLUG --kind KIND [--json]
+  %[1]s notifications list [--limit N] [--json]
+  %[1]s notifications summary [--json]
+  %[1]s notifications preferences set --version VERSION --enabled true|false [--web-enabled BOOL] [--email-enabled BOOL] [--push-enabled BOOL] [--sms-enabled BOOL] [--json]
+  %[1]s notifications read-cursor <sequence> [--json]
+  %[1]s notifications read <notification-id> [--json]
+  %[1]s notifications dismiss <notification-id> [--json]
+  %[1]s notifications clear [--json]
+  %[1]s notifications test [--title TEXT] [--body TEXT] [--action-url URL] [--json]
   %[1]s repos list [--project-id PROJECT_ID] [--json]
   %[1]s repos get <repo-id> [--json]
   %[1]s repos create <project-id> [--description TEXT] [--default-branch BRANCH] [--json]

@@ -23,6 +23,7 @@ viteplus_openapi_clients(
     specs = [
         ("iam-api", "//src/services/iam-service/openapi:openapi-3.1.yaml.bin"),
         ("projects-api", "//src/services/projects-service/openapi:openapi-3.1.yaml.bin"),
+        ("notifications-api", "//src/services/notifications-service/openapi:openapi-3.1.yaml.bin"),
         ("billing-api", "//src/services/billing-service/openapi:openapi-3.1.yaml.bin"),
         ("sandbox-rental-api", "//src/services/sandbox-rental-service/openapi:openapi-3.1.yaml.bin"),
         ("secrets-api", "//src/services/secrets-service/openapi:openapi-3.1.yaml.bin"),

@@ -21,6 +21,10 @@
       "types": "./src/projects.ts",
       "default": "./src/projects.ts"
     },
+    "./notifications": {
+      "types": "./src/notifications.ts",
+      "default": "./src/notifications.ts"
+    },
     "./billing": {
       "types": "./src/billing.ts",
       "default": "./src/billing.ts"

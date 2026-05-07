@@ -6,6 +6,7 @@ go_library(
         "billing.go",
         "client.go",
         "iam.go",
+        "notifications.go",
         "projects.go",
         "sandbox.go",
         "secrets.go",
@@ -16,6 +17,7 @@ go_library(
     deps = [
         "//src/sdks/go/verself/internal/generated/billing",
         "//src/sdks/go/verself/internal/generated/iam",
+        "//src/sdks/go/verself/internal/generated/notifications",
         "//src/sdks/go/verself/internal/generated/projects",
         "//src/sdks/go/verself/internal/generated/sandbox",
         "//src/sdks/go/verself/internal/generated/secrets",
@@ -31,6 +33,7 @@ go_test(
     srcs = [
         "billing_test.go",
         "client_test.go",
+        "notifications_test.go",
         "projects_test.go",
         "sandbox_test.go",
         "secrets_test.go",

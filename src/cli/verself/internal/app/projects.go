@@ -13,14 +13,15 @@ import (
 )
 
 type serviceClientFlags struct {
-	tokenFile   string
-	iamURL      string
-	projectsURL string
-	billingURL  string
-	sandboxURL  string
-	secretsURL  string
-	sourceURL   string
-	traceparent string
+	tokenFile        string
+	iamURL           string
+	projectsURL      string
+	notificationsURL string
+	billingURL       string
+	sandboxURL       string
+	secretsURL       string
+	sourceURL        string
+	traceparent      string
 }
 
 func (c CLI) runProjects(ctx context.Context, args []string) error {
@@ -387,6 +388,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs.StringVar(&flags.tokenFile, "token-file", "", "read bearer token from owner-only file")
 	fs.StringVar(&flags.iamURL, "iam-url", "", "IAM service base URL")
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
+	fs.StringVar(&flags.notificationsURL, "notifications-url", "", "notifications service base URL")
 	fs.StringVar(&flags.billingURL, "billing-url", "", "billing service base URL")
 	fs.StringVar(&flags.sandboxURL, "sandbox-url", "", "sandbox rental service base URL")
 	fs.StringVar(&flags.secretsURL, "secrets-url", "", "secrets service base URL")
@@ -413,6 +415,13 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	}
 	if projectsURL == "" && profile != nil {
 		projectsURL = profile.ProjectsURL
+	}
+	notificationsURL := strings.TrimSpace(flags.notificationsURL)
+	if notificationsURL == "" {
+		notificationsURL = strings.TrimSpace(c.getenv("VERSELF_NOTIFICATIONS_API_URL"))
+	}
+	if notificationsURL == "" && profile != nil {
+		notificationsURL = profile.NotificationsURL
 	}
 	billingURL := strings.TrimSpace(flags.billingURL)
 	if billingURL == "" {
@@ -443,14 +452,15 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 		sourceURL = profile.SourceURL
 	}
 	return verself.New(verself.Options{
-		BearerToken: token,
-		IAMURL:      iamURL,
-		ProjectsURL: projectsURL,
-		BillingURL:  billingURL,
-		SandboxURL:  sandboxURL,
-		SecretsURL:  secretsURL,
-		SourceURL:   sourceURL,
-		Traceparent: flags.traceparent,
+		BearerToken:      token,
+		IAMURL:           iamURL,
+		ProjectsURL:      projectsURL,
+		NotificationsURL: notificationsURL,
+		BillingURL:       billingURL,
+		SandboxURL:       sandboxURL,
+		SecretsURL:       secretsURL,
+		SourceURL:        sourceURL,
+		Traceparent:      flags.traceparent,
 	})
 }
 

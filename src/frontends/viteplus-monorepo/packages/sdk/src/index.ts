@@ -1,5 +1,6 @@
 import { Billing } from "./billing";
 import { IAM } from "./iam";
+import { Notifications } from "./notifications";
 import { Projects } from "./projects";
 import { SandboxRental } from "./sandbox";
 import { Secrets } from "./secrets";
@@ -8,6 +9,7 @@ import { Source } from "./source";
 export const DEFAULT_SERVER_URL = "https://verself.sh";
 export const DEFAULT_IAM_URL = "https://iam.api.verself.sh";
 export const DEFAULT_PROJECTS_URL = "https://projects.api.verself.sh";
+export const DEFAULT_NOTIFICATIONS_URL = "https://notifications.api.verself.sh";
 export const DEFAULT_BILLING_URL = "https://billing.api.verself.sh";
 export const DEFAULT_SANDBOX_URL = "https://sandbox.api.verself.sh";
 export const DEFAULT_SECRETS_URL = "https://secrets.api.verself.sh";
@@ -18,6 +20,7 @@ export type VerselfOptions = {
   serverURL?: string | undefined;
   iamURL?: string | undefined;
   projectsURL?: string | undefined;
+  notificationsURL?: string | undefined;
   billingURL?: string | undefined;
   sandboxURL?: string | undefined;
   secretsURL?: string | undefined;
@@ -29,6 +32,7 @@ export type VerselfOptions = {
 export class Verself {
   readonly iam: IAM;
   readonly projects: Projects;
+  readonly notifications: Notifications;
   readonly billing: Billing;
   readonly sandbox: SandboxRental;
   readonly secrets: Secrets;
@@ -48,6 +52,12 @@ export class Verself {
     this.projects = new Projects({
       accessToken: token,
       baseUrl: resolveProjectsURL(options),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.traceparent ? { traceparent: options.traceparent } : {}),
+    });
+    this.notifications = new Notifications({
+      accessToken: token,
+      baseUrl: resolveNotificationsURL(options),
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.traceparent ? { traceparent: options.traceparent } : {}),
     });
@@ -91,6 +101,15 @@ function resolveProjectsURL(options: VerselfOptions): string {
   );
 }
 
+function resolveNotificationsURL(options: VerselfOptions): string {
+  return resolveServiceURL(
+    "notifications",
+    options.notificationsURL,
+    options.serverURL,
+    DEFAULT_NOTIFICATIONS_URL,
+  );
+}
+
 function resolveBillingURL(options: VerselfOptions): string {
   return resolveServiceURL("billing", options.billingURL, options.serverURL, DEFAULT_BILLING_URL);
 }
@@ -108,7 +127,7 @@ function resolveSourceURL(options: VerselfOptions): string {
 }
 
 function resolveServiceURL(
-  service: "iam" | "projects" | "billing" | "sandbox" | "secrets" | "source",
+  service: "iam" | "projects" | "notifications" | "billing" | "sandbox" | "secrets" | "source",
   serviceURL: string | undefined,
   serverURL: string | undefined,
   defaultURL: string,
@@ -242,6 +261,28 @@ export {
   type UpdateProjectEnvironmentRequest,
   type UpdateProjectRequest,
 } from "./projects";
+
+export {
+  Notifications,
+  NotificationsApiError,
+  dismissNotificationRequestSchema,
+  isNotificationsApiError,
+  markNotificationReadRequestSchema,
+  notificationsListQuerySchema,
+  publishTestNotificationRequestSchema,
+  putNotificationPreferencesRequestSchema,
+  type DismissNotificationRequest,
+  type MarkNotificationReadRequest,
+  type Notification,
+  type NotificationAccepted,
+  type NotificationList,
+  type NotificationSummary,
+  type NotificationsClientOptions,
+  type NotificationsListQuery,
+  type NotificationsMutationOptions,
+  type PublishTestNotificationRequest,
+  type PutNotificationPreferencesRequest,
+} from "./notifications";
 
 export * from "./sandbox";
 

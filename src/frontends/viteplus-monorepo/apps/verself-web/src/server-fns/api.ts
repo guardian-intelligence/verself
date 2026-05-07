@@ -21,25 +21,9 @@ import {
   updateProfileIdentityRequestSchema,
 } from "~/lib/profile-api";
 import {
-  NotificationsApiError,
-  clearNotifications as clearNotificationsRequest,
-  dismissNotification as dismissNotificationRequest,
-  dismissNotificationRequestSchema,
-  getNotificationSummary as getNotificationSummaryRequest,
-  isNotificationsApiError,
-  listNotifications as listNotificationsRequest,
-  markNotificationRead as markNotificationReadRequest,
-  markNotificationReadByID as markNotificationReadByIDRequest,
-  markNotificationReadRequestSchema,
-  notificationsListQuerySchema,
-  publishTestNotification as publishTestNotificationRequest,
-  publishTestNotificationRequestSchema,
-  putNotificationPreferences as putNotificationPreferencesRequest,
-  putNotificationPreferencesRequestSchema,
-} from "~/lib/notifications-api";
-import {
   BillingApiError,
   IAMApiError,
+  NotificationsApiError,
   ProjectsApiError,
   SandboxRentalApiError,
   SourceApiError as SourceCodeHostingApiError,
@@ -53,10 +37,12 @@ import {
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
   createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
   createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
+  dismissNotificationRequestSchema,
   executionIdInputSchema,
   executionScheduleIdInputSchema,
   executionScheduleRequestSchema,
   inviteMemberRequestSchema,
+  isNotificationsApiError,
   runIdInputSchema,
   isBillingApiError,
   isIAMApiError,
@@ -64,7 +50,11 @@ import {
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
   isSourceApiError as isSourceCodeHostingApiError,
+  markNotificationReadRequestSchema,
+  notificationsListQuerySchema,
   putMemberCapabilitiesRequestSchema,
+  publishTestNotificationRequestSchema,
+  putNotificationPreferencesRequestSchema,
   runListQuerySchema,
   runLogSearchQuerySchema,
   sandboxAnalyticsQuerySchema,
@@ -92,6 +82,7 @@ import {
   type CreateRepositoryRequest as CreateSourceRepositoryRequest,
   type CachesAnalytics,
   type CostsAnalytics,
+  type DismissNotificationRequest,
   type Execution,
   type ExecutionLogs,
   type ExecutionSchedule,
@@ -104,9 +95,17 @@ import {
   type MemberCapabilities,
   type MemberCapabilitiesDocument,
   type MemberCapability,
+  type MarkNotificationReadRequest,
+  type Notification,
+  type NotificationAccepted,
+  type NotificationList,
+  type NotificationSummary,
+  type NotificationsListQuery,
   type Organization,
   type OrganizationMetadata,
+  type PublishTestNotificationRequest,
   type PutMemberCapabilitiesRequest,
+  type PutNotificationPreferencesRequest,
   type Project,
   type ProjectList,
   type GitHubInstallation,
@@ -143,17 +142,6 @@ import type {
   PutProfilePreferencesRequest,
   UpdateProfileIdentityRequest,
 } from "~/lib/profile-api";
-import type {
-  DismissNotificationRequest,
-  MarkNotificationReadRequest,
-  Notification,
-  NotificationAccepted,
-  NotificationList,
-  NotificationSummary,
-  NotificationsListQuery,
-  PublishTestNotificationRequest,
-  PutNotificationPreferencesRequest,
-} from "~/lib/notifications-api";
 import { consoleAuthMiddleware, getAccessTokenForAudience, type ConsoleAuthContext } from "./auth";
 
 const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
@@ -325,12 +313,12 @@ async function profileClientOptions(context: ConsoleAuthContext | undefined) {
   };
 }
 
-async function notificationsClientOptions(context: ConsoleAuthContext | undefined) {
+async function notificationsSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getAccessTokenForAudience(context, NOTIFICATIONS_SERVICE_AUTH_AUDIENCE);
-  return {
-    accessToken,
-    baseUrl: NOTIFICATIONS_SERVICE_BASE_URL,
-  };
+  return new Verself({
+    bearerToken: accessToken,
+    notificationsURL: NOTIFICATIONS_SERVICE_BASE_URL,
+  });
 }
 
 async function projectsSDK(context: ConsoleAuthContext | undefined) {
@@ -446,72 +434,54 @@ export const listNotifications = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(notificationsListQuerySchema)
   .handler(async ({ context, data }) => {
-    return listNotificationsRequest({
-      ...(await notificationsClientOptions(context)),
-      query: data,
-    });
+    return (await notificationsSDK(context)).notifications.list(data);
   });
 
 export const getNotificationSummary = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getNotificationSummaryRequest(await notificationsClientOptions(context));
+    return (await notificationsSDK(context)).notifications.summary();
   });
 
 export const putNotificationPreferences = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(putNotificationPreferencesRequestSchema)
   .handler(async ({ context, data }) => {
-    return putNotificationPreferencesRequest({
-      ...(await notificationsClientOptions(context)),
-      body: data,
-    });
+    return (await notificationsSDK(context)).notifications.putPreferences(data);
   });
 
 export const markNotificationRead = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(markNotificationReadRequestSchema)
   .handler(async ({ context, data }) => {
-    return markNotificationReadRequest({
-      ...(await notificationsClientOptions(context)),
-      body: data,
-    });
+    return (await notificationsSDK(context)).notifications.markRead(data);
   });
 
 export const markNotificationReadByID = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(dismissNotificationRequestSchema)
   .handler(async ({ context, data }) => {
-    return markNotificationReadByIDRequest({
-      ...(await notificationsClientOptions(context)),
-      body: data,
-    });
+    return (await notificationsSDK(context)).notifications.markNotificationRead(data.notification_id);
   });
 
 export const dismissNotification = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(dismissNotificationRequestSchema)
   .handler(async ({ context, data }) => {
-    return dismissNotificationRequest({
-      ...(await notificationsClientOptions(context)),
-      body: data,
-    });
+    return (await notificationsSDK(context)).notifications.dismiss(data.notification_id);
   });
 
 export const clearNotifications = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return clearNotificationsRequest(await notificationsClientOptions(context));
+    return (await notificationsSDK(context)).notifications.clear();
   });
 
 export const publishTestNotification = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(publishTestNotificationRequestSchema)
   .handler(async ({ context, data }) => {
-    return publishTestNotificationRequest({
-      ...(await notificationsClientOptions(context)),
-      body: data,
-    });
+    return (await notificationsSDK(context)).notifications.publishTest(data);
   });
 
 export const listProjects = createServerFn({ method: "GET" })

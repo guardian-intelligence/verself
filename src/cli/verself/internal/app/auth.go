@@ -78,6 +78,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	audience := fs.String("audience", "", "Zitadel project audience ID")
 	iamURL := fs.String("iam-url", "", "IAM service base URL")
 	projectsURL := fs.String("projects-url", "", "Projects service base URL")
+	notificationsURL := fs.String("notifications-url", "", "Notifications service base URL")
 	billingURL := fs.String("billing-url", "", "Billing service base URL")
 	sandboxURL := fs.String("sandbox-url", "", "Sandbox rental service base URL")
 	secretsURL := fs.String("secrets-url", "", "Secrets service base URL")
@@ -90,14 +91,15 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		return errors.New("usage: auth login --token-file PATH [--profile NAME]")
 	}
 	profile := ProfileRecord{
-		Version:     1,
-		Name:        strings.TrimSpace(*profileName),
-		IAMURL:      strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"))),
-		ProjectsURL: strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
-		BillingURL:  strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"))),
-		SandboxURL:  strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"))),
-		SecretsURL:  strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"))),
-		SourceURL:   strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
+		Version:          1,
+		Name:             strings.TrimSpace(*profileName),
+		IAMURL:           strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"))),
+		ProjectsURL:      strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
+		NotificationsURL: strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"))),
+		BillingURL:       strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"))),
+		SandboxURL:       strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"))),
+		SecretsURL:       strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"))),
+		SourceURL:        strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
 	}
 	if profile.Name == "" {
 		return errors.New("auth login profile name is required")
@@ -112,13 +114,14 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		return err
 	}
 	sdk, err := verself.New(verself.Options{
-		BearerToken: credential.AccessToken,
-		IAMURL:      profile.IAMURL,
-		ProjectsURL: profile.ProjectsURL,
-		BillingURL:  profile.BillingURL,
-		SandboxURL:  profile.SandboxURL,
-		SecretsURL:  profile.SecretsURL,
-		SourceURL:   profile.SourceURL,
+		BearerToken:      credential.AccessToken,
+		IAMURL:           profile.IAMURL,
+		ProjectsURL:      profile.ProjectsURL,
+		NotificationsURL: profile.NotificationsURL,
+		BillingURL:       profile.BillingURL,
+		SandboxURL:       profile.SandboxURL,
+		SecretsURL:       profile.SecretsURL,
+		SourceURL:        profile.SourceURL,
 	})
 	if err != nil {
 		return err

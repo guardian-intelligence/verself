@@ -6,6 +6,7 @@ go_library(
         "app.go",
         "auth.go",
         "models.go",
+        "notifications.go",
         "orgs.go",
         "paths.go",
         "projects.go",

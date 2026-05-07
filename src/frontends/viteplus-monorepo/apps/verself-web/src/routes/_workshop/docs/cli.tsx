@@ -100,6 +100,26 @@ verself projects environments list <project-id>`}</Command>
       </section>
 
       <section className="flex flex-col gap-4">
+        <SectionHeading id="notifications">Notifications</SectionHeading>
+        <SummaryPanel>
+          <SummaryItem term="Inbox">
+            Notification commands use the Go SDK over the public Notifications OpenAPI contract.
+          </SummaryItem>
+          <SummaryItem term="Read state">
+            Read-cursor, per-notification read, dismiss, and clear mutations send idempotency keys.
+          </SummaryItem>
+          <SummaryItem term="Canaries">
+            Test notifications publish through the same customer-facing API used by the console.
+          </SummaryItem>
+        </SummaryPanel>
+        <Command>{`verself notifications list --limit 20
+verself notifications summary --json
+verself notifications preferences set --version 1 --enabled true --web-enabled true
+verself notifications read-cursor 42
+verself notifications test --title "Canary" --body "Notifications API"`}</Command>
+      </section>
+
+      <section className="flex flex-col gap-4">
         <SectionHeading id="repositories">Repositories</SectionHeading>
         <SummaryPanel>
           <SummaryItem term="Source API">

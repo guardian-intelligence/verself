@@ -12,6 +12,7 @@ import (
 
 	billingcore "github.com/verself/verself-go/internal/generated/billing"
 	iamcore "github.com/verself/verself-go/internal/generated/iam"
+	notificationscore "github.com/verself/verself-go/internal/generated/notifications"
 	projectscore "github.com/verself/verself-go/internal/generated/projects"
 	sandboxcore "github.com/verself/verself-go/internal/generated/sandbox"
 	secretscore "github.com/verself/verself-go/internal/generated/secrets"
@@ -19,35 +20,38 @@ import (
 )
 
 const (
-	DefaultServerURL   = "https://verself.sh"
-	DefaultIAMURL      = "https://iam.api.verself.sh"
-	DefaultProjectsURL = "https://projects.api.verself.sh"
-	DefaultBillingURL  = "https://billing.api.verself.sh"
-	DefaultSandboxURL  = "https://sandbox.api.verself.sh"
-	DefaultSecretsURL  = "https://secrets.api.verself.sh"
-	DefaultSourceURL   = "https://source.api.verself.sh"
+	DefaultServerURL        = "https://verself.sh"
+	DefaultIAMURL           = "https://iam.api.verself.sh"
+	DefaultProjectsURL      = "https://projects.api.verself.sh"
+	DefaultNotificationsURL = "https://notifications.api.verself.sh"
+	DefaultBillingURL       = "https://billing.api.verself.sh"
+	DefaultSandboxURL       = "https://sandbox.api.verself.sh"
+	DefaultSecretsURL       = "https://secrets.api.verself.sh"
+	DefaultSourceURL        = "https://source.api.verself.sh"
 )
 
 type Options struct {
-	BearerToken string
-	ServerURL   string
-	IAMURL      string
-	ProjectsURL string
-	BillingURL  string
-	SandboxURL  string
-	SecretsURL  string
-	SourceURL   string
-	HTTPClient  *http.Client
-	Traceparent string
+	BearerToken      string
+	ServerURL        string
+	IAMURL           string
+	ProjectsURL      string
+	NotificationsURL string
+	BillingURL       string
+	SandboxURL       string
+	SecretsURL       string
+	SourceURL        string
+	HTTPClient       *http.Client
+	Traceparent      string
 }
 
 type Client struct {
-	IAM      *IAMClient
-	Projects *ProjectsClient
-	Billing  *BillingClient
-	Sandbox  *SandboxClient
-	Secrets  *SecretsClient
-	Source   *SourceClient
+	IAM           *IAMClient
+	Projects      *ProjectsClient
+	Notifications *NotificationsClient
+	Billing       *BillingClient
+	Sandbox       *SandboxClient
+	Secrets       *SecretsClient
+	Source        *SourceClient
 }
 
 func New(options Options) (*Client, error) {
@@ -60,6 +64,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	projectsURL, err := serviceURL(options.ProjectsURL, options.ServerURL, "projects")
+	if err != nil {
+		return nil, err
+	}
+	notificationsURL, err := serviceURL(options.NotificationsURL, options.ServerURL, "notifications")
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +109,15 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	notificationsEditor := notificationsRequestEditor(token, options.Traceparent)
+	generatedNotifications, err := notificationscore.NewClientWithResponses(
+		notificationsURL,
+		notificationscore.WithHTTPClient(httpClient),
+		notificationscore.WithRequestEditorFn(notificationsEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	billingEditor := billingRequestEditor(token, options.Traceparent)
 	generatedBilling, err := billingcore.NewClientWithResponses(
 		billingURL,
@@ -138,12 +155,13 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		IAM:      &IAMClient{client: generatedIAM},
-		Projects: &ProjectsClient{client: generatedProjects},
-		Billing:  &BillingClient{client: generatedBilling},
-		Sandbox:  &SandboxClient{client: generatedSandbox},
-		Secrets:  &SecretsClient{client: generatedSecrets},
-		Source:   &SourceClient{client: generatedSource},
+		IAM:           &IAMClient{client: generatedIAM},
+		Projects:      &ProjectsClient{client: generatedProjects},
+		Notifications: &NotificationsClient{client: generatedNotifications},
+		Billing:       &BillingClient{client: generatedBilling},
+		Sandbox:       &SandboxClient{client: generatedSandbox},
+		Secrets:       &SecretsClient{client: generatedSecrets},
+		Source:        &SourceClient{client: generatedSource},
 	}, nil
 }
 
@@ -154,6 +172,12 @@ func iamRequestEditor(token, traceparent string) iamcore.RequestEditorFn {
 }
 
 func projectsRequestEditor(token, traceparent string) projectscore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, token, traceparent)
+	}
+}
+
+func notificationsRequestEditor(token, traceparent string) notificationscore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, token, traceparent)
 	}
@@ -209,6 +233,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultIAMURL
 	case "projects":
 		return DefaultProjectsURL
+	case "notifications":
+		return DefaultNotificationsURL
 	case "billing":
 		return DefaultBillingURL
 	case "sandbox":
