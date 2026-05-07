@@ -19,6 +19,9 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   Zitadel, NATS, TigerBeetle, Electric, ClickHouse migrations, and HAProxy
   upstream reconciliation. Component Nomad descriptors live with their owning
   component.
+- `configuration/` — static cross-package deployment configuration: component
+  substrate descriptors, SPIRE workload identities, runtime users, credential
+  bindings, and host-firewall assembly inputs.
 - `domain-transfer-objects/` — shared data-transfer contracts for service
   boundaries, OpenAPI-compatible DTOs, shared protobuf schemas, numeric wire
   primitives, and generated-client contract rules.
@@ -85,11 +88,11 @@ They do not converge host packages or deploy services.
 - `sites/<site>/` — site facts, inventory, provisioning input, and SOPS bags.
 - `migrations/` — bootstrap ClickHouse schema needed before the deploy evidence path exists.
 The former centralized topology vars have been split: host bootstrap facts live
-under `src/host/sites/<site>/`, while component/service/frontend deployment
-metadata lives with the owning package.
+under `src/host/sites/<site>/`, while cross-package deployment metadata lives
+under `src/configuration`.
 Host firewall foundation files are authored in `src/host/ansible/host-files/`;
 component, service, frontend, and privileged-substrate nftables snippets live
-with the owning package.
+with the runtime package and are referenced by `src/configuration`.
 The host bootstrap boundary covers the machine foundation, recovery access,
 ZFS, SPIRE, HAProxy, ClickHouse initial schema, Nomad, and devtools.
 Nomad jobs live with their owning service, frontend, or component as
@@ -98,9 +101,8 @@ rollout inputs directly through Bazel and Nomad.
 
 ## Platform Components (`src/components/`)
 
-- `<component>/BUILD.bazel` — component descriptor, Nomad packaging, runtime
-  user metadata, SPIRE identities, credential bindings, route metadata, and
-  dependency `requires`/`provides`.
+- `<component>/BUILD.bazel` — component Nomad packaging, concrete deployment
+  input files, and dependency `requires`/`provides`.
 - `<component>/nomad.hcl` — Nomad job for service tasks, prestart tasks, batch
   migrations, and component-local service registration.
 - `<component>/tasks/` — temporary Ansible substrate tasks while a component is
@@ -117,8 +119,9 @@ Garage also participates in the pre-artifact deploy wave.
 
 ## Service- and host-local docs
 
-Host convergence, OpenTofu provisioning, and deploy wrappers live in
-`src/host/`, `src/tools/provisioning/`, and `.aspect/`.
+Host convergence, static deployment configuration, OpenTofu provisioning, and
+deploy wrappers live in `src/host/`, `src/configuration/`,
+`src/tools/provisioning/`, and `.aspect/`.
 
 Bazel-owned package definitions live with their owners:
 `src/host/binaries/` for server and host configuration tools,

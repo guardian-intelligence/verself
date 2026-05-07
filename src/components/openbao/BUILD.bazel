@@ -1,5 +1,11 @@
-load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+exports_files(
+    [
+        "nftables/openbao.nft",
+    ],
+    visibility = ["//src/configuration:__pkg__"],
+)
 
 filegroup(
     name = "role_sources",
@@ -26,38 +32,4 @@ nomad_component(
     job_spec = "nomad.hcl",
     provides = ["openbao:api"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-component_substrate_json(
-    name = "component_substrate",
-    srcs = ["nftables/openbao.nft"],
-    definition_json = """
-{
-  "component": "openbao",
-  "kind": "platform_component",
-  "nftables_rulesets": [
-    {
-      "name": "openbao",
-      "source": "src/components/openbao/nftables/openbao.nft",
-      "table": "verself_openbao",
-      "target": "/etc/nftables.d/openbao.nft"
-    }
-  ],
-  "nomad_component_label": "//src/components/openbao:nomad_component",
-  "order": 15,
-  "postgres": {},
-  "workload": {
-    "directories": [
-      {"group": "openbao", "mode": "0750", "owner": "root", "path": "/etc/openbao"},
-      {"group": "openbao", "mode": "0750", "owner": "root", "path": "/etc/openbao/tls"},
-      {"group": "openbao", "mode": "0750", "owner": "root", "path": "/etc/credstore/openbao"},
-      {"group": "openbao", "mode": "0700", "owner": "openbao", "path": "/var/lib/openbao"},
-      {"group": "openbao", "mode": "0700", "owner": "openbao", "path": "/var/lib/openbao/raft"},
-      {"group": "openbao", "mode": "0700", "owner": "openbao", "path": "/var/log/openbao"}
-    ],
-    "units": [{"home": "/var/lib/openbao", "name": "openbao", "user": "openbao"}]
-  }
-}
-""",
-    visibility = ["//src/host:__pkg__"],
 )

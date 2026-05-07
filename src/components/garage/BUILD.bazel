@@ -1,5 +1,11 @@
-load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+exports_files(
+    [
+        "nftables/garage.nft",
+    ],
+    visibility = ["//src/configuration:__pkg__"],
+)
 
 filegroup(
     name = "role_sources",
@@ -31,36 +37,4 @@ nomad_component(
         "garage:admin",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-component_substrate_json(
-    name = "component_substrate",
-    srcs = ["nftables/garage.nft"],
-    definition_json = """
-{
-  "component": "garage",
-  "kind": "platform_component",
-  "nftables_rulesets": [
-    {
-      "name": "garage",
-      "source": "src/components/garage/nftables/garage.nft",
-      "table": "verself_garage",
-      "target": "/etc/nftables.d/garage.nft"
-    }
-  ],
-  "nomad_component_label": "//src/components/garage:nomad_component",
-  "order": 5,
-  "postgres": {},
-  "workload": {
-    "directories": [
-      {"group": "garage", "mode": "0750", "owner": "root", "path": "/etc/garage"},
-      {"group": "garage", "mode": "0750", "owner": "garage", "path": "/var/lib/garage-0"},
-      {"group": "garage", "mode": "0750", "owner": "garage", "path": "/var/lib/garage-1"},
-      {"group": "garage", "mode": "0750", "owner": "garage", "path": "/var/lib/garage-2"}
-    ],
-    "units": [{"home": "/var/lib/garage-0", "name": "garage", "user": "garage"}]
-  }
-}
-""",
-    visibility = ["//src/host:__pkg__"],
 )

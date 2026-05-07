@@ -1,5 +1,4 @@
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 filegroup(
     name = "role_sources",
@@ -17,17 +16,6 @@ filegroup(
         allow_empty = True,
     ),
     visibility = ["//src/components:__pkg__"],
-)
-
-spire_identity(
-    name = "spiffe_identity",
-    component = "grafana",
-    entry_id = "verself-grafana",
-    key = "grafana.default",
-    path = "/svc/grafana",
-    restart_units = [],
-    user = "grafana",
-    visibility = ["//src/host:__pkg__"],
 )
 
 nomad_component(

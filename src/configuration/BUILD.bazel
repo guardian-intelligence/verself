@@ -1,0 +1,600 @@
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json", "component_substrate_registry")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity", "spire_identity_registry")
+
+package(default_visibility = ["//visibility:public"])
+
+spire_identity(
+    name = "clickhouse_operator_spiffe_identity",
+    component = "clickhouse",
+    entry_id = "verself-clickhouse-operator",
+    key = "clickhouse.operator",
+    path = "/svc/clickhouse-operator",
+    restart_units = ["clickhouse-operator-spiffe-helper"],
+    user = "clickhouse_operator",
+)
+
+spire_identity(
+    name = "clickhouse_server_spiffe_identity",
+    component = "clickhouse",
+    entry_id = "verself-clickhouse-server",
+    key = "clickhouse.server",
+    path = "/svc/clickhouse-server",
+    restart_units = ["clickhouse-server-spiffe-helper"],
+    user = "clickhouse",
+)
+
+spire_identity(
+    name = "grafana_default_spiffe_identity",
+    component = "grafana",
+    entry_id = "verself-grafana",
+    key = "grafana.default",
+    path = "/svc/grafana",
+    restart_units = [],
+    user = "grafana",
+)
+
+spire_identity(
+    name = "nats_default_spiffe_identity",
+    component = "nats",
+    entry_id = "verself-nats",
+    key = "nats.default",
+    path = "/svc/nats",
+    restart_units = [],
+    user = "nats",
+)
+
+spire_identity(
+    name = "otelcol_default_spiffe_identity",
+    component = "otelcol",
+    entry_id = "verself-otelcol",
+    key = "otelcol.default",
+    path = "/svc/otelcol",
+    restart_units = [],
+    user = "otelcol",
+)
+
+spire_identity(
+    name = "temporal_server_spiffe_identity",
+    component = "temporal",
+    entry_id = "verself-temporal-server",
+    key = "temporal.server",
+    path = "/svc/temporal-server",
+    restart_units = ["temporal-server"],
+    user = "temporal_server",
+)
+
+spire_identity(
+    name = "billing_default_spiffe_identity",
+    component = "billing",
+    entry_id = "verself-billing-service",
+    key = "billing.default",
+    path = "/svc/billing-service",
+    user = "billing",
+)
+
+spire_identity(
+    name = "governance_service_default_spiffe_identity",
+    component = "governance_service",
+    entry_id = "verself-governance-service",
+    key = "governance_service.default",
+    path = "/svc/governance-service",
+    user = "governance_service",
+)
+
+spire_identity(
+    name = "iam_service_default_spiffe_identity",
+    component = "iam_service",
+    entry_id = "verself-iam-service",
+    key = "iam_service.default",
+    path = "/svc/iam-service",
+    user = "iam_service",
+)
+
+spire_identity(
+    name = "mailbox_service_default_spiffe_identity",
+    component = "mailbox_service",
+    entry_id = "verself-mailbox-service",
+    key = "mailbox_service.default",
+    path = "/svc/mailbox-service",
+    user = "mailbox_service",
+)
+
+spire_identity(
+    name = "notifications_service_default_spiffe_identity",
+    component = "notifications_service",
+    entry_id = "verself-notifications-service",
+    key = "notifications_service.default",
+    path = "/svc/notifications-service",
+    user = "notifications_service",
+)
+
+spire_identity(
+    name = "object_storage_service_admin_spiffe_identity",
+    component = "object_storage_service",
+    entry_id = "verself-object-storage-admin",
+    key = "object_storage_service.admin",
+    path = "/svc/object-storage-admin",
+    uid_policy_kind = "fixed",
+    uid_policy_value = 961,
+    user = "object_storage_admin",
+)
+
+spire_identity(
+    name = "object_storage_service_service_spiffe_identity",
+    component = "object_storage_service",
+    entry_id = "verself-object-storage-service",
+    key = "object_storage_service.service",
+    path = "/svc/object-storage-service",
+    uid_policy_kind = "fixed",
+    uid_policy_value = 960,
+    user = "object_storage_service",
+)
+
+spire_identity(
+    name = "profile_service_default_spiffe_identity",
+    component = "profile_service",
+    entry_id = "verself-profile-service",
+    key = "profile_service.default",
+    path = "/svc/profile-service",
+    user = "profile_service",
+)
+
+spire_identity(
+    name = "projects_service_default_spiffe_identity",
+    component = "projects_service",
+    entry_id = "verself-projects-service",
+    key = "projects_service.default",
+    path = "/svc/projects-service",
+    user = "projects_service",
+)
+
+spire_identity(
+    name = "sandbox_rental_default_spiffe_identity",
+    component = "sandbox_rental",
+    entry_id = "verself-sandbox-rental-service",
+    key = "sandbox_rental.default",
+    path = "/svc/sandbox-rental-service",
+    user = "sandbox_rental",
+)
+
+spire_identity(
+    name = "secrets_service_default_spiffe_identity",
+    component = "secrets_service",
+    entry_id = "verself-secrets-service",
+    key = "secrets_service.default",
+    path = "/svc/secrets-service",
+    user = "secrets_service",
+)
+
+spire_identity(
+    name = "source_code_hosting_service_default_spiffe_identity",
+    component = "source_code_hosting_service",
+    entry_id = "verself-source-code-hosting-service",
+    key = "source_code_hosting_service.default",
+    path = "/svc/source-code-hosting-service",
+    user = "source_code_hosting_service",
+)
+
+spire_identity_registry(
+    name = "spire_identity_registry",
+    identities = [
+        ":clickhouse_operator_spiffe_identity",
+        ":clickhouse_server_spiffe_identity",
+        ":grafana_default_spiffe_identity",
+        ":nats_default_spiffe_identity",
+        ":otelcol_default_spiffe_identity",
+        ":temporal_server_spiffe_identity",
+        ":billing_default_spiffe_identity",
+        ":governance_service_default_spiffe_identity",
+        ":iam_service_default_spiffe_identity",
+        ":mailbox_service_default_spiffe_identity",
+        ":notifications_service_default_spiffe_identity",
+        ":object_storage_service_admin_spiffe_identity",
+        ":object_storage_service_service_spiffe_identity",
+        ":profile_service_default_spiffe_identity",
+        ":projects_service_default_spiffe_identity",
+        ":sandbox_rental_default_spiffe_identity",
+        ":secrets_service_default_spiffe_identity",
+        ":source_code_hosting_service_default_spiffe_identity",
+    ],
+)
+
+component_substrate_json(
+    name = "electric_component_substrate",
+    srcs = ["//src/components/electric:tasks/instances.yml"],
+    definition_json = """
+{
+  "component": "electric",
+  "kind": "platform_component",
+  "nomad_component_label": "//src/components/electric:nomad_component",
+  "order": 35,
+  "workload": {
+    "bootstrap": [
+      {
+        "class": "host_runtime",
+        "name": "electric-instances",
+        "phase": "after_credentials",
+        "source": "src/components/electric/tasks/instances.yml"
+      }
+    ],
+    "directories": [
+      {"group": "root", "mode": "0750", "owner": "root", "path": "/etc/credstore/electric"},
+      {"group": "root", "mode": "0750", "owner": "root", "path": "/etc/credstore/electric-notifications"}
+    ],
+    "secret_refs": [
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric/api-secret",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 48}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-pg-password",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric/pg-password",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 32}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-notifications-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric-notifications/api-secret",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 48}, "kind": "generated"}
+      },
+      {
+        "group": "root",
+        "mode": "0640",
+        "name": "electric-notifications-pg-password",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/electric-notifications/pg-password",
+        "source": {"generate": {"chars": "ascii_letters,digits", "kind": "password", "length": 32}, "kind": "generated"}
+      }
+    ]
+  }
+}
+""",
+)
+
+component_substrate_json(
+    name = "garage_component_substrate",
+    srcs = ["//src/components/garage:nftables/garage.nft"],
+    definition_json = """
+{
+  "component": "garage",
+  "kind": "platform_component",
+  "nftables_rulesets": [
+    {
+      "name": "garage",
+      "source": "src/components/garage/nftables/garage.nft",
+      "table": "verself_garage",
+      "target": "/etc/nftables.d/garage.nft"
+    }
+  ],
+  "nomad_component_label": "//src/components/garage:nomad_component",
+  "order": 5,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "garage", "mode": "0750", "owner": "root", "path": "/etc/garage"},
+      {"group": "garage", "mode": "0750", "owner": "garage", "path": "/var/lib/garage-0"},
+      {"group": "garage", "mode": "0750", "owner": "garage", "path": "/var/lib/garage-1"},
+      {"group": "garage", "mode": "0750", "owner": "garage", "path": "/var/lib/garage-2"}
+    ],
+    "units": [{"home": "/var/lib/garage-0", "name": "garage", "user": "garage"}]
+  }
+}
+""",
+)
+
+component_substrate_json(
+    name = "nats_component_substrate",
+    srcs = ["//src/components/nats:nftables/nats.nft"],
+    definition_json = """
+{
+  "component": "nats",
+  "kind": "platform_component",
+  "nftables_rulesets": [
+    {
+      "name": "nats",
+      "source": "src/components/nats/nftables/nats.nft",
+      "table": "verself_nats",
+      "target": "/etc/nftables.d/nats.nft"
+    }
+  ],
+  "nomad_component_label": "//src/components/nats:nomad_component",
+  "order": 25,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "nats", "mode": "0750", "owner": "root", "path": "/etc/nats"},
+      {"group": "nats", "mode": "0750", "owner": "nats", "path": "/var/lib/nats"},
+      {"group": "nats", "mode": "0750", "owner": "nats", "path": "/var/lib/nats/jetstream"}
+    ],
+    "units": [{"name": "nats", "supplementary_groups": ["spire_workload"], "user": "nats"}]
+  }
+}
+""",
+)
+
+component_substrate_json(
+    name = "openbao_component_substrate",
+    srcs = ["//src/components/openbao:nftables/openbao.nft"],
+    definition_json = """
+{
+  "component": "openbao",
+  "kind": "platform_component",
+  "nftables_rulesets": [
+    {
+      "name": "openbao",
+      "source": "src/components/openbao/nftables/openbao.nft",
+      "table": "verself_openbao",
+      "target": "/etc/nftables.d/openbao.nft"
+    }
+  ],
+  "nomad_component_label": "//src/components/openbao:nomad_component",
+  "order": 15,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "openbao", "mode": "0750", "owner": "root", "path": "/etc/openbao"},
+      {"group": "openbao", "mode": "0750", "owner": "root", "path": "/etc/openbao/tls"},
+      {"group": "openbao", "mode": "0750", "owner": "root", "path": "/etc/credstore/openbao"},
+      {"group": "openbao", "mode": "0700", "owner": "openbao", "path": "/var/lib/openbao"},
+      {"group": "openbao", "mode": "0700", "owner": "openbao", "path": "/var/lib/openbao/raft"},
+      {"group": "openbao", "mode": "0700", "owner": "openbao", "path": "/var/log/openbao"}
+    ],
+    "units": [{"home": "/var/lib/openbao", "name": "openbao", "user": "openbao"}]
+  }
+}
+""",
+)
+
+component_substrate_json(
+    name = "stalwart_component_substrate",
+    srcs = ["//src/components/stalwart:nftables/stalwart.nft"],
+    definition_json = """
+{
+  "component": "stalwart",
+  "kind": "platform_component",
+  "nftables_rulesets": [
+    {
+      "name": "stalwart",
+      "source": "src/components/stalwart/nftables/stalwart.nft",
+      "table": "verself_stalwart",
+      "target": "/etc/nftables.d/stalwart.nft"
+    }
+  ],
+  "nomad_component_label": "//src/components/stalwart:nomad_component",
+  "order": 65,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "stalwart", "mode": "0755", "owner": "root", "path": "/etc/stalwart"},
+      {"group": "stalwart", "mode": "0750", "owner": "root", "path": "/etc/stalwart/certs"},
+      {"group": "stalwart", "mode": "0750", "owner": "stalwart", "path": "/var/lib/stalwart"}
+    ],
+    "units": [{"name": "stalwart", "user": "stalwart"}]
+  }
+}
+""",
+)
+
+component_substrate_json(
+    name = "company_component_substrate",
+    srcs = [
+        "//src/frontends/viteplus-monorepo/apps/company:nftables/company.nft",
+    ],
+    definition_json = """{"component":"company","kind":"frontend","nftables_rulesets":[{"name":"company","table":"verself_company","target":"/etc/nftables.d/company.nft","source":"src/frontends/viteplus-monorepo/apps/company/nftables/company.nft"}],"nomad_component_label":"//src/frontends/viteplus-monorepo/apps/company:nomad_component","order":120,"postgres":{},"workload":{"directories":[{"group":"company","mode":"0700","owner":"company","path":"/var/lib/company"}],"units":[{"home":"/var/lib/company","name":"company","user":"company"}]}}""",
+)
+
+component_substrate_json(
+    name = "verself_web_component_substrate",
+    srcs = [
+        "//src/frontends/viteplus-monorepo/apps/verself-web:nftables/verself-web.nft",
+    ],
+    definition_json = """
+{
+  "component": "verself_web",
+  "kind": "frontend",
+  "nftables_rulesets": [
+    {
+      "name": "verself_web",
+      "source": "src/frontends/viteplus-monorepo/apps/verself-web/nftables/verself-web.nft",
+      "table": "verself_web",
+      "target": "/etc/nftables.d/verself-web.nft"
+    }
+  ],
+  "nomad_component_label": "//src/frontends/viteplus-monorepo/apps/verself-web:nomad_component",
+  "order": 110,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "verself-web", "mode": "0750", "owner": "root", "path": "/etc/credstore/verself-web"},
+      {"group": "verself-web", "mode": "0700", "owner": "verself-web", "path": "/var/lib/verself-web"}
+    ],
+    "secret_refs": [
+      {
+        "group": "verself-web",
+        "mode": "0640",
+        "name": "electric-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/verself-web/electric-api-secret",
+        "source": {"kind": "remote_src", "remote_src": "/etc/credstore/electric/api-secret"}
+      },
+      {
+        "group": "verself-web",
+        "mode": "0640",
+        "name": "electric-notifications-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/verself-web/electric-notifications-api-secret",
+        "source": {"kind": "remote_src", "remote_src": "/etc/credstore/electric-notifications/api-secret"}
+      }
+    ],
+    "units": [{"home": "/var/lib/verself-web", "name": "verself-web", "user": "verself-web"}]
+  }
+}
+""",
+)
+
+component_substrate_json(
+    name = "billing_component_substrate",
+    srcs = [
+        "//src/integrations/stripe/webhook-bootstrap:billing_stripe_webhook.yml",
+        "//src/services/billing-service:nftables/billing.nft",
+    ],
+    definition_json = """{"component":"billing","kind":"service","nftables_rulesets":[{"name":"billing","table":"verself_billing","target":"/etc/nftables.d/billing.nft","source":"src/services/billing-service/nftables/billing.nft"}],"nomad_component_label":"//src/services/billing-service:nomad_component","order":80,"postgres":{"connection_limit":30,"database":"billing","password_ref":{"kind":"ansible_var","name":"postgresql_billing_password","no_log":true}},"workload":{"auth":{"kind":"identity_project_audience","project_name":"iam-service"},"bootstrap":[{"class":"external_provider","name":"billing_stripe_webhook","reason":"Reconciles the Stripe webhook endpoint and runtime provider secret outside the generic service shape.","source":"src/integrations/stripe/webhook-bootstrap/billing_stripe_webhook.yml"}],"clickhouse":{"grants":[{"action":"INSERT","table":"verself.billing_events"},{"action":"INSERT","table":"verself.metering"}],"spiffe_identity_key":"billing.default","user":"billing_service"},"directories":[{"group":"billing","mode":"0750","owner":"root","path":"/etc/credstore/billing"}],"secret_refs":[{"group":"billing","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/billing/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}},{"group":"billing","mode":"0640","name":"stripe-test-publishable-key","no_log":true,"owner":"root","path":"/etc/credstore/billing/stripe-test-publishable-key","restart_units":[],"source":{"ansible_var":"stripe_publishable_key","kind":"ansible_var"}},{"group":"billing","mode":"0640","name":"stripe-test-webhook-endpoint-id","no_log":true,"owner":"root","path":"/etc/credstore/billing/stripe-test-webhook-endpoint-id","restart_units":[],"source":{"ansible_var":"stripe_test_webhook_endpoint_id","kind":"ansible_var"}}],"units":[{"name":"billing-service","supplementary_groups":["spire_workload"],"user":"billing"}]}}""",
+)
+
+component_substrate_json(
+    name = "governance_service_component_substrate",
+    srcs = [
+        "//src/services/governance-service:nftables/governance-service.nft",
+    ],
+    definition_json = """{"component":"governance_service","kind":"service","nftables_rulesets":[{"name":"governance_service","table":"verself_governance_service","target":"/etc/nftables.d/governance-service.nft","source":"src/services/governance-service/nftables/governance-service.nft"}],"nomad_component_label":"//src/services/governance-service:nomad_component","order":20,"postgres":{"connection_limit":15,"database":"governance_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"clickhouse":{"grants":[{"action":"INSERT","table":"verself.audit_events"},{"action":"SELECT","table":"verself.audit_events"}],"spiffe_identity_key":"governance_service.default","user":"governance_service"},"directories":[{"group":"governance_service","mode":"0750","owner":"root","path":"/etc/credstore/governance-service"},{"group":"governance_service","mode":"0750","owner":"governance_service","path":"/var/lib/governance-service"},{"group":"governance_service","mode":"0750","owner":"governance_service","path":"/var/lib/governance-service/exports"}],"secret_refs":[{"expose_as":"postgres_password","group":"governance_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/governance-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"governance_service","mode":"0640","name":"audit-hmac-key","no_log":true,"owner":"root","path":"/etc/credstore/governance-service/audit-hmac-key","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"governance_service","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/governance-service/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}}],"units":[{"name":"governance-service","supplementary_groups":["spire_workload"],"user":"governance_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "iam_service_component_substrate",
+    srcs = [
+        "//src/integrations/zitadel/project-tenants:browser_oidc.yml",
+        "//src/integrations/zitadel/project-tenants:iam_zitadel_actions.yml",
+        "//src/services/iam-service:nftables/iam-service.nft",
+    ],
+    definition_json = """{"component":"iam_service","kind":"service","nftables_rulesets":[{"name":"iam_service","table":"verself_iam_service","target":"/etc/nftables.d/iam-service.nft","source":"src/services/iam-service/nftables/iam-service.nft"}],"nomad_component_label":"//src/services/iam-service:nomad_component","order":10,"postgres":{"database":"iam_service","password_ref":{"kind":"ansible_var","name":"postgresql_iam_service_password","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"owned_project","project_name":"iam-service","project_role_assertion":true,"project_role_check":true,"roles":[{"display_name":"Owner","group":"identity","key":"owner"},{"display_name":"Admin","group":"identity","key":"admin"},{"display_name":"Member","group":"identity","key":"member"}]},"bootstrap":[{"class":"identity_provider","name":"iam_zitadel_actions","reason":"Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state.","source":"src/integrations/zitadel/project-tenants/iam_zitadel_actions.yml"},{"class":"identity_provider","name":"browser_oidc","reason":"Reconciles the console OIDC application and persists runtime client credentials for iam-service browser auth.","source":"src/integrations/zitadel/project-tenants/browser_oidc.yml"}],"bootstrap_config":{"browser_oidc":{"app_name":"verself-web","credstore_dir":"/etc/credstore/iam-service","credstore_group":"iam_service","grant_types":["OIDC_GRANT_TYPE_AUTHORIZATION_CODE","OIDC_GRANT_TYPE_REFRESH_TOKEN","OIDC_GRANT_TYPE_TOKEN_EXCHANGE"],"post_logout_redirect_uris":["https://verself.sh"],"project_name":"sandbox-rental","project_roles":[{"display_name":"Owner","group":"sandbox","key":"owner"},{"display_name":"Admin","group":"sandbox","key":"admin"},{"display_name":"Member","group":"sandbox","key":"member"}],"redirect_uris":["https://verself.sh/api/v1/auth/callback"],"role_assertions":true}},"clickhouse":{"grants":[{"action":"INSERT","table":"verself.domain_update_ledger"},{"action":"SELECT","table":"verself.domain_update_ledger"}],"spiffe_identity_key":"iam_service.default","user":"iam_service"},"directories":[{"group":"iam_service","mode":"0750","owner":"root","path":"/etc/credstore/iam-service"}],"secret_refs":[{"group":"iam_service","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/iam-service/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}},{"group":"iam_service","mode":"0640","name":"spicedb-grpc-preshared-key","no_log":true,"owner":"root","path":"/etc/credstore/iam-service/spicedb-grpc-preshared-key","restart_units":["iam-service"],"source":{"kind":"remote_src","remote_src":"/etc/credstore/spicedb/grpc-preshared-key"}}],"units":[{"name":"iam-service","supplementary_groups":["spire_workload"],"user":"iam_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "mailbox_service_component_substrate",
+    srcs = [
+        "//src/services/mailbox-service:nftables/mailbox-service.nft",
+    ],
+    definition_json = """{"component":"mailbox_service","kind":"service","nftables_rulesets":[{"name":"mailbox_service","table":"verself_mailbox_service","target":"/etc/nftables.d/mailbox-service.nft","source":"src/services/mailbox-service/nftables/mailbox-service.nft"}],"nomad_component_label":"//src/services/mailbox-service:nomad_component","order":100,"postgres":{"database":"mailbox_service","password_ref":{"kind":"ansible_var","name":"postgresql_mailbox_service_password","no_log":true}},"workload":{"auth":{"kind":"owned_project","project_name":"mailbox-service","project_role_assertion":true,"project_role_check":true,"roles":[{"display_name":"Mailbox User","group":"mailbox","key":"mailbox_user"}]},"directories":[{"group":"mailbox_service","mode":"0750","owner":"root","path":"/etc/credstore/mailbox-service"},{"group":"mailbox_service","mode":"0750","owner":"mailbox_service","path":"/var/lib/mailbox-service"}],"secret_refs":[{"group":"mailbox_service","mode":"0640","name":"stalwart-ceo-password","no_log":true,"owner":"root","path":"/etc/credstore/mailbox-service/stalwart-ceo-password","restart_units":["mailbox-service"],"source":{"ansible_var":"stalwart_ceo_password","kind":"ansible_var"}},{"group":"mailbox_service","mode":"0640","name":"stalwart-agents-password","no_log":true,"owner":"root","path":"/etc/credstore/mailbox-service/stalwart-agents-password","restart_units":["mailbox-service"],"source":{"ansible_var":"stalwart_agents_password","kind":"ansible_var"}},{"group":"mailbox_service","mode":"0640","name":"forward-to","no_log":true,"owner":"root","path":"/etc/credstore/mailbox-service/forward-to","restart_units":["mailbox-service"],"source":{"ansible_var":"stalwart_operator_forward_to","kind":"ansible_var"}}],"units":[{"name":"mailbox-service","supplementary_groups":["spire_workload"],"user":"mailbox_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "notifications_service_component_substrate",
+    srcs = [
+        "//src/services/notifications-service:nftables/notifications-service.nft",
+    ],
+    definition_json = """{"component":"notifications_service","kind":"service","nftables_rulesets":[{"name":"notifications_service","table":"verself_notifications_service","target":"/etc/nftables.d/notifications-service.nft","source":"src/services/notifications-service/nftables/notifications-service.nft"}],"nomad_component_label":"//src/services/notifications-service:nomad_component","order":40,"postgres":{"connection_limit":32,"database":"notifications_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"clickhouse":{"grants":[{"action":"INSERT","table":"verself.notification_events"},{"action":"SELECT","table":"verself.notification_events"}],"spiffe_identity_key":"notifications_service.default","user":"notifications_service"},"directories":[{"group":"notifications_service","mode":"0750","owner":"root","path":"/etc/credstore/notifications-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"notifications_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/notifications-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"notifications_service","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/notifications-service/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}}],"units":[{"name":"notifications-service","supplementary_groups":["spire_workload"],"user":"notifications_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "object_storage_service_component_substrate",
+    srcs = [
+        "//src/services/object-storage-service:ansible/bootstrap/object_storage_garage_proxy.yml",
+        "//src/services/object-storage-service:ansible/bootstrap/object_storage_tls.yml",
+        "//src/services/object-storage-service:nftables/object-storage-admin.nft",
+        "//src/services/object-storage-service:nftables/object-storage-service.nft",
+    ],
+    definition_json = """{"component":"object_storage_service","kind":"service","nftables_rulesets":[{"name":"object_storage_admin","table":"verself_object_storage_admin","target":"/etc/nftables.d/object-storage-admin.nft","source":"src/services/object-storage-service/nftables/object-storage-admin.nft"},{"name":"object_storage_service","table":"verself_object_storage_service","target":"/etc/nftables.d/object-storage-service.nft","source":"src/services/object-storage-service/nftables/object-storage-service.nft"}],"nomad_component_label":"//src/services/object-storage-service:nomad_component","order":70,"postgres":{"database":"object_storage_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"bootstrap":[{"class":"storage_provider","name":"object_storage_tls","phase":"before_credentials","reason":"Creates the local S3 TLS CA, server certificate, and operator CA bundle for Garage proxy traffic.","source":"src/services/object-storage-service/ansible/bootstrap/object_storage_tls.yml"},{"class":"storage_provider","name":"object_storage_garage_proxy","reason":"Creates Garage proxy credentials for object-storage-service S3 traffic.","source":"src/services/object-storage-service/ansible/bootstrap/object_storage_garage_proxy.yml"}],"clickhouse":{"grants":[{"action":"INSERT","table":"verself.object_access_events"},{"action":"SELECT","table":"verself.object_access_events"}],"spiffe_identity_key":"object_storage_service.service","user":"object_storage_service"},"directories":[{"group":"object_storage_service","mode":"0750","owner":"root","path":"/etc/credstore/object-storage-service"},{"group":"object_storage_service","mode":"0750","owner":"root","path":"/etc/object-storage-service"},{"group":"object_storage_service","mode":"0750","owner":"root","path":"/etc/object-storage-service/tls"},{"group":"root","mode":"0755","owner":"root","path":"/etc/verself"},{"group":"root","mode":"0755","owner":"root","path":"/etc/verself/local-cas"},{"group":"object_storage_service","mode":"0750","owner":"object_storage_service","path":"/var/lib/object-storage-service"},{"group":"object_storage_admin","mode":"0750","owner":"object_storage_admin","path":"/var/lib/object-storage-admin"}],"secret_refs":[{"expose_as":"postgres_password","group":"object_storage_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/object-storage-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"object_storage_service","mode":"0640","name":"credential-kek","no_log":true,"owner":"root","path":"/etc/credstore/object-storage-service/credential-kek","restart_units":[],"source":{"generate":{"chars":"hexdigits","kind":"password","length":64},"kind":"generated"}},{"group":"object_storage_service","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/object-storage-service/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}},{"group":"object_storage_service","mode":"0640","name":"s3-tls-cert","no_log":true,"owner":"root","path":"/etc/credstore/object-storage-service/s3-tls-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/object-storage-service/tls/server-cert.pem"}},{"group":"object_storage_service","mode":"0640","name":"s3-tls-key","no_log":true,"owner":"root","path":"/etc/credstore/object-storage-service/s3-tls-key","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/object-storage-service/tls/server-key.pem"}},{"group":"object_storage_service","mode":"0640","name":"garage-admin-token","no_log":true,"owner":"root","path":"/etc/credstore/object-storage-service/garage-admin-token","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/garage/admin-token"}}],"units":[{"home":"/var/lib/object-storage-service","name":"object-storage-service","supplementary_groups":["spire_workload"],"uid":960,"user":"object_storage_service"},{"home":"/var/lib/object-storage-admin","name":"object-storage-admin","supplementary_groups":["object_storage_service","spire_workload"],"uid":961,"user":"object_storage_admin"}]}}""",
+)
+
+component_substrate_json(
+    name = "profile_service_component_substrate",
+    srcs = [
+        "//src/services/profile-service:nftables/profile-service.nft",
+    ],
+    definition_json = """{"component":"profile_service","kind":"service","nftables_rulesets":[{"name":"profile_service","table":"verself_profile_service","target":"/etc/nftables.d/profile-service.nft","source":"src/services/profile-service/nftables/profile-service.nft"}],"nomad_component_label":"//src/services/profile-service:nomad_component","order":30,"postgres":{"database":"profile","owner":"profile_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"directories":[{"group":"profile_service","mode":"0750","owner":"root","path":"/etc/credstore/profile-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"profile_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/profile-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}}],"units":[{"name":"profile-service","supplementary_groups":["spire_workload"],"user":"profile_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "projects_service_component_substrate",
+    srcs = [
+        "//src/services/projects-service:nftables/projects-service.nft",
+    ],
+    definition_json = """{"component":"projects_service","kind":"service","nftables_rulesets":[{"name":"projects_service","table":"verself_projects_service","target":"/etc/nftables.d/projects-service.nft","source":"src/services/projects-service/nftables/projects-service.nft"}],"nomad_component_label":"//src/services/projects-service:nomad_component","order":50,"postgres":{"database":"projects_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"directories":[{"group":"projects_service","mode":"0750","owner":"root","path":"/etc/credstore/projects-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"projects_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/projects-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}}],"units":[{"name":"projects-service","supplementary_groups":["spire_workload"],"user":"projects_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "sandbox_rental_component_substrate",
+    srcs = [
+        "//src/services/sandbox-rental-service:ansible/bootstrap/sandbox_vm_socket_acl.yml",
+        "//src/services/sandbox-rental-service:nftables/sandbox-rental.nft",
+    ],
+    definition_json = """{"component":"sandbox_rental","kind":"service","nftables_rulesets":[{"name":"sandbox_rental","table":"verself_sandbox_rental","target":"/etc/nftables.d/sandbox-rental.nft","source":"src/services/sandbox-rental-service/nftables/sandbox-rental.nft"}],"nomad_component_label":"//src/services/sandbox-rental-service:nomad_component","order":90,"postgres":{"connection_limit":30,"database":"sandbox_rental","password_ref":{"kind":"ansible_var","name":"postgresql_sandbox_rental_password","no_log":true}},"workload":{"auth":{"audience":"370200928688586084","kind":"owned_project","project_name":"sandbox-rental","project_role_assertion":true,"project_role_check":true,"roles":[{"display_name":"Owner","group":"sandbox","key":"owner"},{"display_name":"Admin","group":"sandbox","key":"admin"},{"display_name":"Member","group":"sandbox","key":"member"}]},"bootstrap":[{"class":"security_audit","name":"sandbox_vm_socket_acl","reason":"Asserts the vm-clients privileged group remains limited to the sandbox rental runtime.","source":"src/services/sandbox-rental-service/ansible/bootstrap/sandbox_vm_socket_acl.yml"}],"bootstrap_config":{"sandbox_github_app":{"api_base_url":"https://api.github.com","app_id":"3370540","client_id":"Iv23liDpxGOmBSQwSJ5i","slug":"verself-ci","web_base_url":"https://github.com"}},"clickhouse":{"grants":[{"action":"INSERT","table":"verself.job_logs"},{"action":"INSERT","table":"verself.job_events"},{"action":"SELECT","table":"verself.job_logs"},{"action":"SELECT","table":"verself.job_events"},{"action":"SELECT","table":"verself.job_cache_events"}],"spiffe_identity_key":"sandbox_rental.default","user":"sandbox_rental"},"directories":[{"group":"sandbox_rental","mode":"0750","owner":"root","path":"/etc/credstore/sandbox-rental"},{"group":"sandbox_rental","mode":"0700","owner":"sandbox_rental","path":"/var/lib/verself/sandbox-rental/github-checkout"}],"secret_refs":[{"group":"sandbox_rental","mode":"0640","name":"clickhouse-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/sandbox-rental/clickhouse-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/clickhouse-server/tls/server-ca.pem"}},{"group":"sandbox_rental","mode":"0640","name":"forgejo-token","no_log":true,"owner":"root","path":"/etc/credstore/sandbox-rental/forgejo-token","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/credstore/forgejo/automation-token"}},{"group":"sandbox_rental","mode":"0640","name":"forgejo-webhook-secret","no_log":true,"owner":"root","path":"/etc/credstore/sandbox-rental/forgejo-webhook-secret","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"sandbox_rental","mode":"0640","name":"forgejo-bootstrap-secret","no_log":true,"owner":"root","path":"/etc/credstore/sandbox-rental/forgejo-bootstrap-secret","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}}],"units":[{"name":"sandbox-rental-service","supplementary_groups":["vm-clients","spire_workload"],"user":"sandbox_rental"},{"name":"sandbox-rental-recurring-worker","supplementary_groups":["spire_workload"],"user":"sandbox_rental"}]}}""",
+)
+
+component_substrate_json(
+    name = "secrets_service_component_substrate",
+    srcs = [
+        "//src/services/secrets-service:nftables/secrets-service.nft",
+    ],
+    definition_json = """{"component":"secrets_service","kind":"service","nftables_rulesets":[{"name":"secrets_service","table":"verself_secrets_service","target":"/etc/nftables.d/secrets-service.nft","source":"src/services/secrets-service/nftables/secrets-service.nft"}],"nomad_component_label":"//src/services/secrets-service:nomad_component","order":60,"postgres":{},"workload":{"auth":{"audience":"370207425749368164","kind":"owned_project","project_name":"secrets-service","project_role_assertion":true,"project_role_check":true,"roles":[{"display_name":"Owner","group":"secrets","key":"owner"},{"display_name":"Admin","group":"secrets","key":"admin"},{"display_name":"Member","group":"secrets","key":"member"}]},"directories":[{"group":"secrets_service","mode":"0750","owner":"root","path":"/etc/credstore/secrets-service"}],"secret_refs":[{"group":"secrets_service","mode":"0640","name":"openbao-ca-cert","no_log":true,"owner":"root","path":"/etc/credstore/secrets-service/openbao-ca-cert","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/openbao/tls/cert.pem"}}],"units":[{"name":"secrets-service","supplementary_groups":["spire_workload"],"user":"secrets_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "source_code_hosting_service_component_substrate",
+    srcs = [
+        "//src/services/source-code-hosting-service:nftables/source-code-hosting-service.nft",
+    ],
+    definition_json = """{"component":"source_code_hosting_service","kind":"service","nftables_rulesets":[{"name":"source_code_hosting_service","table":"verself_source_code_hosting_service","target":"/etc/nftables.d/source-code-hosting-service.nft","source":"src/services/source-code-hosting-service/nftables/source-code-hosting-service.nft"}],"nomad_component_label":"//src/services/source-code-hosting-service:nomad_component","order":75,"postgres":{"database":"source_code_hosting","owner":"source_code_hosting_service","password_ref":{"expose_as":"postgres_password","kind":"secret_ref","no_log":true}},"workload":{"auth":{"audience":"370200564807548260","kind":"identity_project_audience","project_name":"iam-service"},"directories":[{"group":"source_code_hosting_service","mode":"0750","owner":"root","path":"/etc/credstore/source-code-hosting-service"}],"secret_refs":[{"expose_as":"postgres_password","group":"source_code_hosting_service","mode":"0640","name":"pg-password","no_log":true,"owner":"root","path":"/etc/credstore/source-code-hosting-service/pg-password","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}},{"group":"source_code_hosting_service","mode":"0640","name":"forgejo-token","no_log":true,"owner":"root","path":"/etc/credstore/source-code-hosting-service/forgejo-token","restart_units":[],"source":{"kind":"remote_src","remote_src":"/etc/credstore/forgejo/automation-token"}},{"group":"source_code_hosting_service","mode":"0640","name":"webhook-secret","no_log":true,"owner":"root","path":"/etc/credstore/source-code-hosting-service/webhook-secret","restart_units":[],"source":{"generate":{"chars":"ascii_letters,digits","kind":"password","length":64},"kind":"generated"}}],"units":[{"name":"source-code-hosting-service","supplementary_groups":["spire_workload"],"user":"source_code_hosting_service"}]}}""",
+)
+
+component_substrate_json(
+    name = "vm_orchestrator_component_substrate",
+    srcs = [],
+    definition_json = """
+{
+  "component": "vm_orchestrator",
+  "deployment": {
+    "nomad_component_label": "",
+    "supervisor": "host_bootstrap"
+  },
+  "kind": "privileged_substrate",
+  "order": 1,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "root", "mode": "0755", "owner": "root", "path": "/var/lib/verself"},
+      {"group": "root", "mode": "0755", "owner": "root", "path": "/var/lib/verself/guest-images"}
+    ],
+    "units": [{"name": "vm-orchestrator", "user": "root"}]
+  }
+}
+""",
+)
+
+component_substrate_registry(
+    name = "component_substrate_registry",
+    components = [
+        ":electric_component_substrate",
+        ":garage_component_substrate",
+        ":nats_component_substrate",
+        ":openbao_component_substrate",
+        ":stalwart_component_substrate",
+        ":company_component_substrate",
+        ":verself_web_component_substrate",
+        ":billing_component_substrate",
+        ":governance_service_component_substrate",
+        ":iam_service_component_substrate",
+        ":mailbox_service_component_substrate",
+        ":notifications_service_component_substrate",
+        ":object_storage_service_component_substrate",
+        ":profile_service_component_substrate",
+        ":projects_service_component_substrate",
+        ":sandbox_rental_component_substrate",
+        ":secrets_service_component_substrate",
+        ":source_code_hosting_service_component_substrate",
+        ":vm_orchestrator_component_substrate",
+    ],
+)
+
+filegroup(
+    name = "host_firewall_inputs",
+    srcs = [
+        ":component_substrate_registry",
+        "//src/host:nftables_sources",
+    ],
+)

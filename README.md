@@ -93,7 +93,7 @@ Versions of record live as constants at the top of each `scripts/bootstrap-*` en
 | Task | Description |
 | --- | --- |
 | `edit-secrets` | Open encrypted host configuration secrets in `$EDITOR` via sops. |
-| `firewall` | Converge host and owner-local nftables rulesets. |
+| `firewall` | Converge host and configuration-referenced nftables rulesets. |
 | `operator-access-handoff` | Manually hand public SSH :22 to Pomerium and keep direct recovery on :2222. |
 
 ### `aspect integrations`

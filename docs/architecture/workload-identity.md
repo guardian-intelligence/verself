@@ -89,8 +89,8 @@ spiffe://spiffe.verself.sh/ops/admin-cli
 OpenBao via JWT-SVID during manual recovery or inspection. It is not used by
 any repo-owned service at runtime.
 
-SPIRE registration entries are declared in owner-local repo metadata and
-converged by the workload-identity substrate. Services MUST NOT self-register
+SPIRE registration entries are declared in `src/configuration` and converged by
+the workload-identity substrate. Services MUST NOT self-register
 identities. OpenBao auth roles are generated from the same inventory. Drift
 between SPIRE registrations and OpenBao role subject bindings is a convergence
 failure, tagged
@@ -400,7 +400,7 @@ Smoke-test queries assert:
 - Audit actor fields:
   [audit-data-contract.md](../../src/services/governance-service/docs/audit-data-contract.md).
 - Listener and port ownership:
-  Nomad job specs and owner-local deployment metadata.
+  Nomad job specs and static deployment metadata in `src/configuration`.
 - Trust domain exclusion for the privileged host daemon:
   [`src/substrate/vm-orchestrator/AGENTS.md`](../../src/substrate/vm-orchestrator/AGENTS.md).
 - SPIRE trust domains and attestation:
