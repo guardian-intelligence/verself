@@ -28,7 +28,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	applyPublicSecurityScheme(api)
-	RegisterRoutes(api, cfg.Service)
+	registerProjectOperations(api, cfg.Service, apiSurfacePublic)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

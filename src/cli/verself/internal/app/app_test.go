@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -140,6 +142,53 @@ func TestBootstrapRendersEncryptedCompanyCloneArtifacts(t *testing.T) {
 	runCLI(t, &companyJSON, "company", "inspect", "guardian", "--json")
 	if strings.Contains(companyJSON.String(), `"value": "DFW"`) {
 		t.Fatalf("one-run bootstrap override persisted into company record:\n%s", companyJSON.String())
+	}
+}
+
+func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
+	var createIDKey string
+	var createAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects":
+			if r.Header.Get("Authorization") != "Bearer tok_test" {
+				t.Fatalf("list Authorization = %q", r.Header.Get("Authorization"))
+			}
+			if r.URL.Query().Get("state") != "active" {
+				t.Fatalf("list query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"projects":[{"project_id":"11111111-1111-1111-1111-111111111111","org_id":"370200542594579812","slug":"api","display_name":"API","description":"","state":"active","version":"1","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects":
+			createIDKey = r.Header.Get("Idempotency-Key")
+			createAuth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"project_id":"22222222-2222-2222-2222-222222222222","org_id":"370200542594579812","slug":"web","display_name":"Web","description":"Console","state":"active","version":"1","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_TOKEN", "tok_test")
+	t.Setenv("VERSELF_PROJECTS_API_URL", server.URL)
+
+	var listOut bytes.Buffer
+	runCLI(t, &listOut, "projects", "list", "--state", "active")
+	if !strings.Contains(listOut.String(), "api\t11111111-1111-1111-1111-111111111111\tAPI") {
+		t.Fatalf("projects list output:\n%s", listOut.String())
+	}
+
+	var createOut bytes.Buffer
+	runCLI(t, &createOut, "projects", "create", "Web", "--slug", "web", "--description", "Console", "--idempotency-key", "project:test")
+	if createAuth != "Bearer tok_test" {
+		t.Fatalf("create Authorization = %q", createAuth)
+	}
+	if createIDKey != "project:test" {
+		t.Fatalf("create idempotency key = %q", createIDKey)
+	}
+	if !strings.Contains(createOut.String(), "web\t22222222-2222-2222-2222-222222222222\tWeb") {
+		t.Fatalf("projects create output:\n%s", createOut.String())
 	}
 }
 

@@ -36,6 +36,7 @@ filegroup(
         "//src/frontends/viteplus-monorepo/packages/auth-web:sources",
         "//src/frontends/viteplus-monorepo/packages/brand:sources",
         "//src/frontends/viteplus-monorepo/packages/nitro-plugins:sources",
+        "//src/frontends/viteplus-monorepo/packages/sdk:sources",
         "//src/frontends/viteplus-monorepo/packages/ui:sources",
         "//src/frontends/viteplus-monorepo/packages/web-env:sources",
     ] + glob([
@@ -58,6 +59,7 @@ filegroup(
         "//src/frontends/viteplus-monorepo/packages/auth-web:sources",
         "//src/frontends/viteplus-monorepo/packages/brand:sources",
         "//src/frontends/viteplus-monorepo/packages/nitro-plugins:sources",
+        "//src/frontends/viteplus-monorepo/packages/sdk:sources",
         "//src/frontends/viteplus-monorepo/packages/ui:sources",
         "//src/frontends/viteplus-monorepo/packages/web-env:sources",
     ] + glob([

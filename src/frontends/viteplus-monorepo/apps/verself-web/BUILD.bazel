@@ -48,6 +48,7 @@ viteplus_node_app_artifact(
         ":route_tree_generated_sources",
         ":openapi_clients_generated_sources",
         ":openapi_spec_copies_generated_sources",
+        "//src/frontends/viteplus-monorepo/packages/sdk:openapi_clients_generated_sources",
     ],
     output = "verself-web",
 )
@@ -68,7 +69,6 @@ viteplus_openapi_clients(
         ("governance-api", "//src/services/governance-service/openapi:openapi-3.1.yaml.bin"),
         ("profile-api", "//src/services/profile-service/openapi:openapi-3.1.yaml.bin"),
         ("notifications-api", "//src/services/notifications-service/openapi:openapi-3.1.yaml.bin"),
-        ("projects-api", "//src/services/projects-service/openapi:openapi-3.1.yaml.bin"),
         ("source-code-hosting-api", "//src/services/source-code-hosting-service/openapi:openapi-3.1.yaml.bin"),
     ],
 )

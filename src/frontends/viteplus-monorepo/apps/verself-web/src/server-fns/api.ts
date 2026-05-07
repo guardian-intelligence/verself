@@ -55,12 +55,13 @@ import {
 } from "~/lib/notifications-api";
 import {
   ProjectsApiError,
-  createNewProject as createProjectRequest,
   createProjectRequestSchema,
-  getProjectByID as getProjectRequest,
   isProjectsApiError,
-  listActiveProjects as listProjectsRequest,
-} from "~/lib/projects-api";
+  type CreateProjectRequest,
+  type Project,
+  type ProjectList,
+  Verself,
+} from "@verself/sdk";
 import {
   SourceCodeHostingApiError,
   createCheckoutGrant as createSourceCheckoutGrantRequest,
@@ -112,7 +113,6 @@ import type {
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
 } from "~/lib/notifications-api";
-import type { CreateProjectRequest, Project, ProjectList } from "~/lib/projects-api";
 import type {
   CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
@@ -341,12 +341,9 @@ async function notificationsClientOptions(context: ConsoleAuthContext | undefine
   };
 }
 
-async function projectsClientOptions(context: ConsoleAuthContext | undefined) {
+async function projectsSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getAccessTokenForAudience(context, PROJECTS_SERVICE_AUTH_AUDIENCE);
-  return {
-    accessToken,
-    baseUrl: PROJECTS_SERVICE_BASE_URL,
-  };
+  return new Verself({ bearerToken: accessToken, projectsURL: PROJECTS_SERVICE_BASE_URL });
 }
 
 async function sourceCodeHostingClientOptions(context: ConsoleAuthContext | undefined) {
@@ -527,17 +524,14 @@ export const publishTestNotification = createServerFn({ method: "POST" })
 export const listProjects = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return listProjectsRequest(await projectsClientOptions(context));
+    return (await projectsSDK(context)).projects.list();
   });
 
 export const createProject = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(createProjectRequestSchema)
   .handler(async ({ context, data }) => {
-    return createProjectRequest({
-      ...(await projectsClientOptions(context)),
-      body: data,
-    });
+    return (await projectsSDK(context)).projects.create(data);
   });
 
 const projectIDInputSchema = v.strictObject({
@@ -548,10 +542,7 @@ export const getProject = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(projectIDInputSchema)
   .handler(async ({ context, data }) => {
-    return getProjectRequest({
-      ...(await projectsClientOptions(context)),
-      projectId: data.projectId,
-    });
+    return (await projectsSDK(context)).projects.get(data.projectId);
   });
 
 const sourceRepositoryIDInputSchema = v.strictObject({

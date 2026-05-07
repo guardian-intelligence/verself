@@ -15,7 +15,7 @@ func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalSecurityScheme(api)
-	RegisterInternalRoutes(api, svc)
+	registerProjectOperations(api, svc, apiSurfaceInternal)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

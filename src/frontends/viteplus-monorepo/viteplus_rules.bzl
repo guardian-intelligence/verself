@@ -303,12 +303,24 @@ for generated in {generated_locations}; do
     /*) generated_abs="$$generated" ;;
     *) generated_abs="$$execroot/$$generated" ;;
   esac
-  case "$$generated" in
-    *"{package_dir}/__generated_sources/"*) generated_rel="$${{generated#*{package_dir}/__generated_sources/}}" ;;
-    *"{package_dir}/"*) generated_rel="$${{generated#*{package_dir}/}}" ;;
-    *) echo "generated source $$generated is not under {package_dir}" >&2; exit 1 ;;
+  generated_workspace_rel="$${{generated_abs#$$execroot/}}"
+  case "$$generated_workspace_rel" in
+    bazel-out/*/bin/*) generated_workspace_rel="$${{generated_workspace_rel#bazel-out/*/bin/}}" ;;
   esac
-  generated_dest="$$execroot/{package_dir}/$$generated_rel"
+  case "$$generated_workspace_rel" in
+    */__generated_sources/*)
+      generated_pkg="$${{generated_workspace_rel%%/__generated_sources/*}}"
+      generated_rel="$${{generated_workspace_rel#*/__generated_sources/}}"
+      generated_dest="$$execroot/$$generated_pkg/$$generated_rel"
+      ;;
+    {package_dir}/*)
+      generated_dest="$$execroot/$$generated_workspace_rel"
+      ;;
+    *)
+      echo "generated source $$generated is not under a source package" >&2
+      exit 1
+      ;;
+  esac
   if [ -e "$$generated_dest" ]; then
     chmod -R u+w "$$generated_dest"
   fi

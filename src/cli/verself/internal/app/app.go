@@ -49,6 +49,8 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runCompany(ctx, args[1:])
 	case "env":
 		return c.runEnv(ctx, args[1:])
+	case "projects":
+		return c.runProjects(ctx, args[1:])
 	case "bootstrap":
 		return c.runBootstrap(args[1:])
 	case "help", "--help", "-h":
@@ -63,6 +65,8 @@ func (c CLI) usage() error {
   %[1]s company configure <name> [flags]
   %[1]s company options add <company> <key> [--from-env KEY|--stdin|--from-file PATH|--value VALUE]
   %[1]s company secret generate <company> --all|--key KEY
+  %[1]s projects list [--state active|archived] [--json]
+  %[1]s projects create <display-name> [--slug SLUG] [--description TEXT] [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
   %[1]s bootstrap --company <name> [--repo-root PATH]

@@ -72,8 +72,8 @@ type environmentListOutput struct {
 	Body dto.ProjectEnvironmentList
 }
 
-func RegisterRoutes(api huma.API, svc *projects.Service) {
-	registerProjectsRoute(api, huma.Operation{
+func createProjectOperation() projectOperation {
+	return publicProjectOperation[createProjectInput, projectOutput](huma.Operation{
 		OperationID:   "create-project",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/projects",
@@ -83,7 +83,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectWrite,
 		Resource:         "project",
 		Action:           "create",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.project.create",
@@ -91,9 +91,11 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "write",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, createProject(svc))
+	}, createProject)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func listProjectsOperation() projectOperation {
+	return publicProjectOperation[listProjectsInput, projectListOutput](huma.Operation{
 		OperationID: "list-projects",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/projects",
@@ -102,15 +104,17 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectRead,
 		Resource:         "project",
 		Action:           "list",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "read",
 		AuditEvent:       "projects.project.list",
 		OperationDisplay: "list projects",
 		OperationType:    "read",
 		RiskLevel:        "low",
-	}, listProjects(svc))
+	}, listProjects)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func getProjectOperation() projectOperation {
+	return publicProjectOperation[projectPath, projectOutput](huma.Operation{
 		OperationID: "get-project",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/projects/{project_id}",
@@ -119,15 +123,17 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectRead,
 		Resource:         "project",
 		Action:           "read",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "read",
 		AuditEvent:       "projects.project.read",
 		OperationDisplay: "read project",
 		OperationType:    "read",
 		RiskLevel:        "low",
-	}, getProject(svc))
+	}, getProject)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func updateProjectOperation() projectOperation {
+	return publicProjectOperation[updateProjectInput, projectOutput](huma.Operation{
 		OperationID:   "patch-project",
 		Method:        http.MethodPatch,
 		Path:          "/api/v1/projects/{project_id}",
@@ -137,7 +143,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectWrite,
 		Resource:         "project",
 		Action:           "update",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.project.update",
@@ -145,9 +151,11 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "write",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, updateProject(svc))
+	}, updateProject)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func archiveProjectOperation() projectOperation {
+	return publicProjectOperation[projectLifecycleInput, projectOutput](huma.Operation{
 		OperationID:   "archive-project",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/projects/{project_id}/archive",
@@ -157,7 +165,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectWrite,
 		Resource:         "project",
 		Action:           "archive",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.project.archive",
@@ -165,9 +173,11 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "delete",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, archiveProject(svc))
+	}, archiveProject)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func restoreProjectOperation() projectOperation {
+	return publicProjectOperation[projectLifecycleInput, projectOutput](huma.Operation{
 		OperationID:   "restore-project",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/projects/{project_id}/restore",
@@ -177,7 +187,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectWrite,
 		Resource:         "project",
 		Action:           "restore",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.project.restore",
@@ -185,9 +195,11 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "write",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, restoreProject(svc))
+	}, restoreProject)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func listProjectEnvironmentsOperation() projectOperation {
+	return publicProjectOperation[listEnvironmentsInput, environmentListOutput](huma.Operation{
 		OperationID: "list-project-environments",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/projects/{project_id}/environments",
@@ -196,15 +208,17 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionEnvironmentRead,
 		Resource:         "project_environment",
 		Action:           "list",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "read",
 		AuditEvent:       "projects.environment.list",
 		OperationDisplay: "list project environments",
 		OperationType:    "read",
 		RiskLevel:        "low",
-	}, listEnvironments(svc))
+	}, listEnvironments)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func createProjectEnvironmentOperation() projectOperation {
+	return publicProjectOperation[createEnvironmentInput, environmentOutput](huma.Operation{
 		OperationID:   "create-project-environment",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/projects/{project_id}/environments",
@@ -214,7 +228,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionEnvironmentWrite,
 		Resource:         "project_environment",
 		Action:           "create",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.environment.create",
@@ -222,9 +236,11 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "write",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, createEnvironment(svc))
+	}, createEnvironment)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func updateProjectEnvironmentOperation() projectOperation {
+	return publicProjectOperation[updateEnvironmentInput, environmentOutput](huma.Operation{
 		OperationID:   "patch-project-environment",
 		Method:        http.MethodPatch,
 		Path:          "/api/v1/projects/{project_id}/environments/{environment_id}",
@@ -234,7 +250,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionEnvironmentWrite,
 		Resource:         "project_environment",
 		Action:           "update",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.environment.update",
@@ -242,9 +258,11 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "write",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, updateEnvironment(svc))
+	}, updateEnvironment)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func archiveProjectEnvironmentOperation() projectOperation {
+	return publicProjectOperation[environmentLifecycleInput, environmentOutput](huma.Operation{
 		OperationID:   "archive-project-environment",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/projects/{project_id}/environments/{environment_id}/archive",
@@ -254,7 +272,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionEnvironmentWrite,
 		Resource:         "project_environment",
 		Action:           "archive",
-		OrgScope:         "token_org_id",
+		OrgScope:         orgScopeTokenOrgID,
 		RateLimitClass:   "projects_mutation",
 		Idempotency:      idempotencyHeaderKey,
 		AuditEvent:       "projects.environment.archive",
@@ -262,7 +280,7 @@ func RegisterRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "delete",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, archiveEnvironment(svc))
+	}, archiveEnvironment)
 }
 
 func createProject(svc *projects.Service) func(context.Context, projects.Principal, *createProjectInput) (*projectOutput, error) {

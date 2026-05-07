@@ -37,6 +37,7 @@
     "@verself/auth-web": "workspace:*",
     "@verself/brand": "workspace:*",
     "@verself/nitro-plugins": "workspace:*",
+    "@verself/sdk": "workspace:*",
     "@verself/ui": "workspace:*",
     "@verself/web-env": "workspace:*",
     "lucide-react": "catalog:",

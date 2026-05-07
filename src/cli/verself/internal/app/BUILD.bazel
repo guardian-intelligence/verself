@@ -6,12 +6,14 @@ go_library(
         "app.go",
         "models.go",
         "paths.go",
+        "projects.go",
         "render.go",
         "secrets.go",
         "store.go",
     ],
     importpath = "github.com/verself/verself-cli/internal/app",
     visibility = ["//visibility:public"],
+    deps = ["//src/sdks/go/verself"],
 )
 
 go_test(

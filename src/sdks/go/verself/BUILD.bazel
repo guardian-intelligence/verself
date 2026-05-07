@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "verself",
+    srcs = [
+        "client.go",
+        "projects.go",
+    ],
+    importpath = "github.com/verself/verself-go",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/services/projects-service/client",
+        "//src/services/projects-service/internalclient",
+        "//src/services/service-runtime/go/workload",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//propagation",
+    ],
+)
+
+go_test(
+    name = "verself_test",
+    srcs = ["projects_test.go"],
+    embed = [":verself"],
+)

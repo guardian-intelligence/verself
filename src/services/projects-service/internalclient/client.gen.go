@@ -22,6 +22,43 @@ const (
 	MutualTLSScopes = "mutualTLS.Scopes"
 )
 
+// Defines values for ListProjectsParamsState.
+const (
+	Active   ListProjectsParamsState = "active"
+	Archived ListProjectsParamsState = "archived"
+)
+
+// Valid indicates whether the value is a known member of the ListProjectsParamsState enum.
+func (e ListProjectsParamsState) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Archived:
+		return true
+	default:
+		return false
+	}
+}
+
+// CreateProjectEnvironmentRequest defines model for CreateProjectEnvironmentRequest.
+type CreateProjectEnvironmentRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string            `json:"$schema,omitempty"`
+	DisplayName      string             `json:"display_name"`
+	Kind             string             `json:"kind"`
+	ProtectionPolicy *map[string]string `json:"protection_policy,omitempty"`
+	Slug             string             `json:"slug"`
+}
+
+// CreateProjectRequest defines model for CreateProjectRequest.
+type CreateProjectRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	Description *string `json:"description,omitempty"`
+	DisplayName string  `json:"display_name"`
+	Slug        *string `json:"slug,omitempty"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -60,6 +97,8 @@ type ErrorModel struct {
 
 // Project defines model for Project.
 type Project struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema             *string            `json:"$schema,omitempty"`
 	ArchivedAt         *time.Time         `json:"archived_at,omitempty"`
 	CreatedAt          time.Time          `json:"created_at"`
 	CreatedBy          string             `json:"created_by"`
@@ -77,6 +116,8 @@ type Project struct {
 
 // ProjectEnvironment defines model for ProjectEnvironment.
 type ProjectEnvironment struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string            `json:"$schema,omitempty"`
 	ArchivedAt       *time.Time         `json:"archived_at,omitempty"`
 	CreatedAt        time.Time          `json:"created_at"`
 	CreatedBy        string             `json:"created_by"`
@@ -91,6 +132,14 @@ type ProjectEnvironment struct {
 	UpdatedAt        time.Time          `json:"updated_at"`
 	UpdatedBy        string             `json:"updated_by"`
 	Version          string             `json:"version"`
+}
+
+// ProjectEnvironmentList defines model for ProjectEnvironmentList.
+type ProjectEnvironmentList struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string               `json:"$schema,omitempty"`
+	Environments *[]ProjectEnvironment `json:"environments"`
+	NextCursor   *string               `json:"next_cursor,omitempty"`
 }
 
 // ProjectEvent defines model for ProjectEvent.
@@ -112,6 +161,21 @@ type ProjectEventList struct {
 	Schema     *string         `json:"$schema,omitempty"`
 	Events     *[]ProjectEvent `json:"events"`
 	NextCursor *string         `json:"next_cursor,omitempty"`
+}
+
+// ProjectLifecycleRequest defines model for ProjectLifecycleRequest.
+type ProjectLifecycleRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Version string  `json:"version"`
+}
+
+// ProjectList defines model for ProjectList.
+type ProjectList struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string    `json:"$schema,omitempty"`
+	NextCursor *string    `json:"next_cursor,omitempty"`
+	Projects   *[]Project `json:"projects"`
 }
 
 // ResolveProjectEnvironmentRequest defines model for ResolveProjectEnvironmentRequest.
@@ -149,12 +213,200 @@ type ResolveProjectResponse struct {
 	Project Project `json:"project"`
 }
 
+// UpdateProjectEnvironmentRequest defines model for UpdateProjectEnvironmentRequest.
+type UpdateProjectEnvironmentRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string            `json:"$schema,omitempty"`
+	DisplayName      *string            `json:"display_name,omitempty"`
+	ProtectionPolicy *map[string]string `json:"protection_policy,omitempty"`
+	Version          string             `json:"version"`
+}
+
+// UpdateProjectRequest defines model for UpdateProjectRequest.
+type UpdateProjectRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	Description *string `json:"description,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Version     string  `json:"version"`
+}
+
+// ListProjectsParams defines parameters for ListProjects.
+type ListProjectsParams struct {
+	State  *ListProjectsParamsState `form:"state,omitempty" json:"state,omitempty"`
+	Limit  *int64                   `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string                  `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// ListProjectsParamsState defines parameters for ListProjects.
+type ListProjectsParamsState string
+
+// CreateProjectParams defines parameters for CreateProject.
+type CreateProjectParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// GetProjectParams defines parameters for GetProject.
+type GetProjectParams struct {
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// PatchProjectParams defines parameters for PatchProject.
+type PatchProjectParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// ArchiveProjectParams defines parameters for ArchiveProject.
+type ArchiveProjectParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// ListProjectEnvironmentsParams defines parameters for ListProjectEnvironments.
+type ListProjectEnvironmentsParams struct {
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// CreateProjectEnvironmentParams defines parameters for CreateProjectEnvironment.
+type CreateProjectEnvironmentParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// PatchProjectEnvironmentParams defines parameters for PatchProjectEnvironment.
+type PatchProjectEnvironmentParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// ArchiveProjectEnvironmentParams defines parameters for ArchiveProjectEnvironment.
+type ArchiveProjectEnvironmentParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
+// RestoreProjectParams defines parameters for RestoreProject.
+type RestoreProjectParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+
+	// XVerselfOriginOrgID Origin organization ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginOrgID string `json:"X-Verself-Origin-Org-ID"`
+
+	// XVerselfOriginSubject Origin subject ID asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginSubject string `json:"X-Verself-Origin-Subject"`
+
+	// XVerselfOriginEmail Origin subject email asserted by the SPIFFE-authenticated caller.
+	XVerselfOriginEmail *string `json:"X-Verself-Origin-Email,omitempty"`
+}
+
 // ListProjectEventsInternalParams defines parameters for ListProjectEventsInternal.
 type ListProjectEventsInternalParams struct {
 	OrgId  string  `form:"org_id" json:"org_id"`
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
+
+// CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
+type CreateProjectJSONRequestBody = CreateProjectRequest
+
+// PatchProjectJSONRequestBody defines body for PatchProject for application/json ContentType.
+type PatchProjectJSONRequestBody = UpdateProjectRequest
+
+// ArchiveProjectJSONRequestBody defines body for ArchiveProject for application/json ContentType.
+type ArchiveProjectJSONRequestBody = ProjectLifecycleRequest
+
+// CreateProjectEnvironmentJSONRequestBody defines body for CreateProjectEnvironment for application/json ContentType.
+type CreateProjectEnvironmentJSONRequestBody = CreateProjectEnvironmentRequest
+
+// PatchProjectEnvironmentJSONRequestBody defines body for PatchProjectEnvironment for application/json ContentType.
+type PatchProjectEnvironmentJSONRequestBody = UpdateProjectEnvironmentRequest
+
+// ArchiveProjectEnvironmentJSONRequestBody defines body for ArchiveProjectEnvironment for application/json ContentType.
+type ArchiveProjectEnvironmentJSONRequestBody = ProjectLifecycleRequest
+
+// RestoreProjectJSONRequestBody defines body for RestoreProject for application/json ContentType.
+type RestoreProjectJSONRequestBody = ProjectLifecycleRequest
 
 // ResolveProjectEnvironmentJSONRequestBody defines body for ResolveProjectEnvironment for application/json ContentType.
 type ResolveProjectEnvironmentJSONRequestBody = ResolveProjectEnvironmentRequest
@@ -235,6 +487,50 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ListProjects request
+	ListProjects(ctx context.Context, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateProjectWithBody request with any body
+	CreateProjectWithBody(ctx context.Context, params *CreateProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateProject(ctx context.Context, params *CreateProjectParams, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProject request
+	GetProject(ctx context.Context, projectId openapi_types.UUID, params *GetProjectParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchProjectWithBody request with any body
+	PatchProjectWithBody(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchProject(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, body PatchProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ArchiveProjectWithBody request with any body
+	ArchiveProjectWithBody(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ArchiveProject(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, body ArchiveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListProjectEnvironments request
+	ListProjectEnvironments(ctx context.Context, projectId openapi_types.UUID, params *ListProjectEnvironmentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateProjectEnvironmentWithBody request with any body
+	CreateProjectEnvironmentWithBody(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateProjectEnvironment(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, body CreateProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchProjectEnvironmentWithBody request with any body
+	PatchProjectEnvironmentWithBody(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchProjectEnvironment(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, body PatchProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ArchiveProjectEnvironmentWithBody request with any body
+	ArchiveProjectEnvironmentWithBody(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ArchiveProjectEnvironment(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, body ArchiveProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RestoreProjectWithBody request with any body
+	RestoreProjectWithBody(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RestoreProject(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, body RestoreProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ResolveProjectEnvironmentWithBody request with any body
 	ResolveProjectEnvironmentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -247,6 +543,210 @@ type ClientInterface interface {
 	ResolveProjectWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	ResolveProject(ctx context.Context, body ResolveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ListProjects(ctx context.Context, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProjectsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateProjectWithBody(ctx context.Context, params *CreateProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProjectRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateProject(ctx context.Context, params *CreateProjectParams, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProjectRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetProject(ctx context.Context, projectId openapi_types.UUID, params *GetProjectParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectRequest(c.Server, projectId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchProjectWithBody(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchProjectRequestWithBody(c.Server, projectId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchProject(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, body PatchProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchProjectRequest(c.Server, projectId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ArchiveProjectWithBody(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewArchiveProjectRequestWithBody(c.Server, projectId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ArchiveProject(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, body ArchiveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewArchiveProjectRequest(c.Server, projectId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListProjectEnvironments(ctx context.Context, projectId openapi_types.UUID, params *ListProjectEnvironmentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProjectEnvironmentsRequest(c.Server, projectId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateProjectEnvironmentWithBody(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProjectEnvironmentRequestWithBody(c.Server, projectId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateProjectEnvironment(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, body CreateProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProjectEnvironmentRequest(c.Server, projectId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchProjectEnvironmentWithBody(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchProjectEnvironmentRequestWithBody(c.Server, projectId, environmentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchProjectEnvironment(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, body PatchProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchProjectEnvironmentRequest(c.Server, projectId, environmentId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ArchiveProjectEnvironmentWithBody(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewArchiveProjectEnvironmentRequestWithBody(c.Server, projectId, environmentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ArchiveProjectEnvironment(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, body ArchiveProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewArchiveProjectEnvironmentRequest(c.Server, projectId, environmentId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RestoreProjectWithBody(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestoreProjectRequestWithBody(c.Server, projectId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RestoreProject(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, body RestoreProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestoreProjectRequest(c.Server, projectId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) ResolveProjectEnvironmentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -307,6 +807,884 @@ func (c *Client) ResolveProject(ctx context.Context, body ResolveProjectJSONRequ
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewListProjectsRequest generates requests for ListProjects
+func NewListProjectsRequest(server string, params *ListProjectsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam1)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam2 string
+
+			headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam2)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewCreateProjectRequest calls the generic CreateProject builder with application/json body
+func NewCreateProjectRequest(server string, params *CreateProjectParams, body CreateProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateProjectRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewCreateProjectRequestWithBody generates requests for CreateProject with any type of body
+func NewCreateProjectRequestWithBody(server string, params *CreateProjectParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetProjectRequest generates requests for GetProject
+func NewGetProjectRequest(server string, projectId openapi_types.UUID, params *GetProjectParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam1)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam2 string
+
+			headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam2)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewPatchProjectRequest calls the generic PatchProject builder with application/json body
+func NewPatchProjectRequest(server string, projectId openapi_types.UUID, params *PatchProjectParams, body PatchProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchProjectRequestWithBody(server, projectId, params, "application/json", bodyReader)
+}
+
+// NewPatchProjectRequestWithBody generates requests for PatchProject with any type of body
+func NewPatchProjectRequestWithBody(server string, projectId openapi_types.UUID, params *PatchProjectParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewArchiveProjectRequest calls the generic ArchiveProject builder with application/json body
+func NewArchiveProjectRequest(server string, projectId openapi_types.UUID, params *ArchiveProjectParams, body ArchiveProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewArchiveProjectRequestWithBody(server, projectId, params, "application/json", bodyReader)
+}
+
+// NewArchiveProjectRequestWithBody generates requests for ArchiveProject with any type of body
+func NewArchiveProjectRequestWithBody(server string, projectId openapi_types.UUID, params *ArchiveProjectParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s/archive", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewListProjectEnvironmentsRequest generates requests for ListProjectEnvironments
+func NewListProjectEnvironmentsRequest(server string, projectId openapi_types.UUID, params *ListProjectEnvironmentsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s/environments", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam1)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam2 string
+
+			headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam2)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewCreateProjectEnvironmentRequest calls the generic CreateProjectEnvironment builder with application/json body
+func NewCreateProjectEnvironmentRequest(server string, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, body CreateProjectEnvironmentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateProjectEnvironmentRequestWithBody(server, projectId, params, "application/json", bodyReader)
+}
+
+// NewCreateProjectEnvironmentRequestWithBody generates requests for CreateProjectEnvironment with any type of body
+func NewCreateProjectEnvironmentRequestWithBody(server string, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s/environments", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewPatchProjectEnvironmentRequest calls the generic PatchProjectEnvironment builder with application/json body
+func NewPatchProjectEnvironmentRequest(server string, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, body PatchProjectEnvironmentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchProjectEnvironmentRequestWithBody(server, projectId, environmentId, params, "application/json", bodyReader)
+}
+
+// NewPatchProjectEnvironmentRequestWithBody generates requests for PatchProjectEnvironment with any type of body
+func NewPatchProjectEnvironmentRequestWithBody(server string, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "environment_id", environmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s/environments/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewArchiveProjectEnvironmentRequest calls the generic ArchiveProjectEnvironment builder with application/json body
+func NewArchiveProjectEnvironmentRequest(server string, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, body ArchiveProjectEnvironmentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewArchiveProjectEnvironmentRequestWithBody(server, projectId, environmentId, params, "application/json", bodyReader)
+}
+
+// NewArchiveProjectEnvironmentRequestWithBody generates requests for ArchiveProjectEnvironment with any type of body
+func NewArchiveProjectEnvironmentRequestWithBody(server string, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "environment_id", environmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s/environments/%s/archive", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewRestoreProjectRequest calls the generic RestoreProject builder with application/json body
+func NewRestoreProjectRequest(server string, projectId openapi_types.UUID, params *RestoreProjectParams, body RestoreProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRestoreProjectRequestWithBody(server, projectId, params, "application/json", bodyReader)
+}
+
+// NewRestoreProjectRequestWithBody generates requests for RestoreProject with any type of body
+func NewRestoreProjectRequestWithBody(server string, projectId openapi_types.UUID, params *RestoreProjectParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/projects/%s/restore", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Org-ID", params.XVerselfOriginOrgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Org-ID", headerParam1)
+
+		var headerParam2 string
+
+		headerParam2, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Subject", params.XVerselfOriginSubject, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Verself-Origin-Subject", headerParam2)
+
+		if params.XVerselfOriginEmail != nil {
+			var headerParam3 string
+
+			headerParam3, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Origin-Email", *params.XVerselfOriginEmail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("X-Verself-Origin-Email", headerParam3)
+		}
+
+	}
+
+	return req, nil
 }
 
 // NewResolveProjectEnvironmentRequest calls the generic ResolveProjectEnvironment builder with application/json body
@@ -509,6 +1887,50 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ListProjectsWithResponse request
+	ListProjectsWithResponse(ctx context.Context, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*ListProjectsHTTPResponse, error)
+
+	// CreateProjectWithBodyWithResponse request with any body
+	CreateProjectWithBodyWithResponse(ctx context.Context, params *CreateProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProjectHTTPResponse, error)
+
+	CreateProjectWithResponse(ctx context.Context, params *CreateProjectParams, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectHTTPResponse, error)
+
+	// GetProjectWithResponse request
+	GetProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *GetProjectParams, reqEditors ...RequestEditorFn) (*GetProjectHTTPResponse, error)
+
+	// PatchProjectWithBodyWithResponse request with any body
+	PatchProjectWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchProjectHTTPResponse, error)
+
+	PatchProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, body PatchProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchProjectHTTPResponse, error)
+
+	// ArchiveProjectWithBodyWithResponse request with any body
+	ArchiveProjectWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ArchiveProjectHTTPResponse, error)
+
+	ArchiveProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, body ArchiveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*ArchiveProjectHTTPResponse, error)
+
+	// ListProjectEnvironmentsWithResponse request
+	ListProjectEnvironmentsWithResponse(ctx context.Context, projectId openapi_types.UUID, params *ListProjectEnvironmentsParams, reqEditors ...RequestEditorFn) (*ListProjectEnvironmentsHTTPResponse, error)
+
+	// CreateProjectEnvironmentWithBodyWithResponse request with any body
+	CreateProjectEnvironmentWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProjectEnvironmentHTTPResponse, error)
+
+	CreateProjectEnvironmentWithResponse(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, body CreateProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectEnvironmentHTTPResponse, error)
+
+	// PatchProjectEnvironmentWithBodyWithResponse request with any body
+	PatchProjectEnvironmentWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchProjectEnvironmentHTTPResponse, error)
+
+	PatchProjectEnvironmentWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, body PatchProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchProjectEnvironmentHTTPResponse, error)
+
+	// ArchiveProjectEnvironmentWithBodyWithResponse request with any body
+	ArchiveProjectEnvironmentWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ArchiveProjectEnvironmentHTTPResponse, error)
+
+	ArchiveProjectEnvironmentWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, body ArchiveProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*ArchiveProjectEnvironmentHTTPResponse, error)
+
+	// RestoreProjectWithBodyWithResponse request with any body
+	RestoreProjectWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreProjectHTTPResponse, error)
+
+	RestoreProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, body RestoreProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RestoreProjectHTTPResponse, error)
+
 	// ResolveProjectEnvironmentWithBodyWithResponse request with any body
 	ResolveProjectEnvironmentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveProjectEnvironmentHTTPResponse, error)
 
@@ -521,6 +1943,236 @@ type ClientWithResponsesInterface interface {
 	ResolveProjectWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveProjectHTTPResponse, error)
 
 	ResolveProjectWithResponse(ctx context.Context, body ResolveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveProjectHTTPResponse, error)
+}
+
+type ListProjectsHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectList
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProjectsHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProjectsHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateProjectHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *Project
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateProjectHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateProjectHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetProjectHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Project
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PatchProjectHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Project
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchProjectHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchProjectHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ArchiveProjectHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Project
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ArchiveProjectHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ArchiveProjectHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListProjectEnvironmentsHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectEnvironmentList
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProjectEnvironmentsHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProjectEnvironmentsHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateProjectEnvironmentHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *ProjectEnvironment
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateProjectEnvironmentHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateProjectEnvironmentHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PatchProjectEnvironmentHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectEnvironment
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchProjectEnvironmentHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchProjectEnvironmentHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ArchiveProjectEnvironmentHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectEnvironment
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ArchiveProjectEnvironmentHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ArchiveProjectEnvironmentHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RestoreProjectHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Project
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RestoreProjectHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RestoreProjectHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type ResolveProjectEnvironmentHTTPResponse struct {
@@ -592,6 +2244,152 @@ func (r ResolveProjectHTTPResponse) StatusCode() int {
 	return 0
 }
 
+// ListProjectsWithResponse request returning *ListProjectsHTTPResponse
+func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*ListProjectsHTTPResponse, error) {
+	rsp, err := c.ListProjects(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProjectsHTTPResponse(rsp)
+}
+
+// CreateProjectWithBodyWithResponse request with arbitrary body returning *CreateProjectHTTPResponse
+func (c *ClientWithResponses) CreateProjectWithBodyWithResponse(ctx context.Context, params *CreateProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProjectHTTPResponse, error) {
+	rsp, err := c.CreateProjectWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProjectHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateProjectWithResponse(ctx context.Context, params *CreateProjectParams, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectHTTPResponse, error) {
+	rsp, err := c.CreateProject(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProjectHTTPResponse(rsp)
+}
+
+// GetProjectWithResponse request returning *GetProjectHTTPResponse
+func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *GetProjectParams, reqEditors ...RequestEditorFn) (*GetProjectHTTPResponse, error) {
+	rsp, err := c.GetProject(ctx, projectId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectHTTPResponse(rsp)
+}
+
+// PatchProjectWithBodyWithResponse request with arbitrary body returning *PatchProjectHTTPResponse
+func (c *ClientWithResponses) PatchProjectWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchProjectHTTPResponse, error) {
+	rsp, err := c.PatchProjectWithBody(ctx, projectId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchProjectHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *PatchProjectParams, body PatchProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchProjectHTTPResponse, error) {
+	rsp, err := c.PatchProject(ctx, projectId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchProjectHTTPResponse(rsp)
+}
+
+// ArchiveProjectWithBodyWithResponse request with arbitrary body returning *ArchiveProjectHTTPResponse
+func (c *ClientWithResponses) ArchiveProjectWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ArchiveProjectHTTPResponse, error) {
+	rsp, err := c.ArchiveProjectWithBody(ctx, projectId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseArchiveProjectHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) ArchiveProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *ArchiveProjectParams, body ArchiveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*ArchiveProjectHTTPResponse, error) {
+	rsp, err := c.ArchiveProject(ctx, projectId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseArchiveProjectHTTPResponse(rsp)
+}
+
+// ListProjectEnvironmentsWithResponse request returning *ListProjectEnvironmentsHTTPResponse
+func (c *ClientWithResponses) ListProjectEnvironmentsWithResponse(ctx context.Context, projectId openapi_types.UUID, params *ListProjectEnvironmentsParams, reqEditors ...RequestEditorFn) (*ListProjectEnvironmentsHTTPResponse, error) {
+	rsp, err := c.ListProjectEnvironments(ctx, projectId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProjectEnvironmentsHTTPResponse(rsp)
+}
+
+// CreateProjectEnvironmentWithBodyWithResponse request with arbitrary body returning *CreateProjectEnvironmentHTTPResponse
+func (c *ClientWithResponses) CreateProjectEnvironmentWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProjectEnvironmentHTTPResponse, error) {
+	rsp, err := c.CreateProjectEnvironmentWithBody(ctx, projectId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProjectEnvironmentHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateProjectEnvironmentWithResponse(ctx context.Context, projectId openapi_types.UUID, params *CreateProjectEnvironmentParams, body CreateProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectEnvironmentHTTPResponse, error) {
+	rsp, err := c.CreateProjectEnvironment(ctx, projectId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProjectEnvironmentHTTPResponse(rsp)
+}
+
+// PatchProjectEnvironmentWithBodyWithResponse request with arbitrary body returning *PatchProjectEnvironmentHTTPResponse
+func (c *ClientWithResponses) PatchProjectEnvironmentWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchProjectEnvironmentHTTPResponse, error) {
+	rsp, err := c.PatchProjectEnvironmentWithBody(ctx, projectId, environmentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchProjectEnvironmentHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchProjectEnvironmentWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *PatchProjectEnvironmentParams, body PatchProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchProjectEnvironmentHTTPResponse, error) {
+	rsp, err := c.PatchProjectEnvironment(ctx, projectId, environmentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchProjectEnvironmentHTTPResponse(rsp)
+}
+
+// ArchiveProjectEnvironmentWithBodyWithResponse request with arbitrary body returning *ArchiveProjectEnvironmentHTTPResponse
+func (c *ClientWithResponses) ArchiveProjectEnvironmentWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ArchiveProjectEnvironmentHTTPResponse, error) {
+	rsp, err := c.ArchiveProjectEnvironmentWithBody(ctx, projectId, environmentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseArchiveProjectEnvironmentHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) ArchiveProjectEnvironmentWithResponse(ctx context.Context, projectId openapi_types.UUID, environmentId openapi_types.UUID, params *ArchiveProjectEnvironmentParams, body ArchiveProjectEnvironmentJSONRequestBody, reqEditors ...RequestEditorFn) (*ArchiveProjectEnvironmentHTTPResponse, error) {
+	rsp, err := c.ArchiveProjectEnvironment(ctx, projectId, environmentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseArchiveProjectEnvironmentHTTPResponse(rsp)
+}
+
+// RestoreProjectWithBodyWithResponse request with arbitrary body returning *RestoreProjectHTTPResponse
+func (c *ClientWithResponses) RestoreProjectWithBodyWithResponse(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreProjectHTTPResponse, error) {
+	rsp, err := c.RestoreProjectWithBody(ctx, projectId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestoreProjectHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) RestoreProjectWithResponse(ctx context.Context, projectId openapi_types.UUID, params *RestoreProjectParams, body RestoreProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RestoreProjectHTTPResponse, error) {
+	rsp, err := c.RestoreProject(ctx, projectId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestoreProjectHTTPResponse(rsp)
+}
+
 // ResolveProjectEnvironmentWithBodyWithResponse request with arbitrary body returning *ResolveProjectEnvironmentHTTPResponse
 func (c *ClientWithResponses) ResolveProjectEnvironmentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveProjectEnvironmentHTTPResponse, error) {
 	rsp, err := c.ResolveProjectEnvironmentWithBody(ctx, contentType, body, reqEditors...)
@@ -633,6 +2431,336 @@ func (c *ClientWithResponses) ResolveProjectWithResponse(ctx context.Context, bo
 		return nil, err
 	}
 	return ParseResolveProjectHTTPResponse(rsp)
+}
+
+// ParseListProjectsHTTPResponse parses an HTTP response from a ListProjectsWithResponse call
+func ParseListProjectsHTTPResponse(rsp *http.Response) (*ListProjectsHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProjectsHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateProjectHTTPResponse parses an HTTP response from a CreateProjectWithResponse call
+func ParseCreateProjectHTTPResponse(rsp *http.Response) (*CreateProjectHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateProjectHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Project
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProjectHTTPResponse parses an HTTP response from a GetProjectWithResponse call
+func ParseGetProjectHTTPResponse(rsp *http.Response) (*GetProjectHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Project
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchProjectHTTPResponse parses an HTTP response from a PatchProjectWithResponse call
+func ParsePatchProjectHTTPResponse(rsp *http.Response) (*PatchProjectHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchProjectHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Project
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseArchiveProjectHTTPResponse parses an HTTP response from a ArchiveProjectWithResponse call
+func ParseArchiveProjectHTTPResponse(rsp *http.Response) (*ArchiveProjectHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ArchiveProjectHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Project
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListProjectEnvironmentsHTTPResponse parses an HTTP response from a ListProjectEnvironmentsWithResponse call
+func ParseListProjectEnvironmentsHTTPResponse(rsp *http.Response) (*ListProjectEnvironmentsHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProjectEnvironmentsHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectEnvironmentList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateProjectEnvironmentHTTPResponse parses an HTTP response from a CreateProjectEnvironmentWithResponse call
+func ParseCreateProjectEnvironmentHTTPResponse(rsp *http.Response) (*CreateProjectEnvironmentHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateProjectEnvironmentHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ProjectEnvironment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchProjectEnvironmentHTTPResponse parses an HTTP response from a PatchProjectEnvironmentWithResponse call
+func ParsePatchProjectEnvironmentHTTPResponse(rsp *http.Response) (*PatchProjectEnvironmentHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchProjectEnvironmentHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectEnvironment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseArchiveProjectEnvironmentHTTPResponse parses an HTTP response from a ArchiveProjectEnvironmentWithResponse call
+func ParseArchiveProjectEnvironmentHTTPResponse(rsp *http.Response) (*ArchiveProjectEnvironmentHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ArchiveProjectEnvironmentHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectEnvironment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRestoreProjectHTTPResponse parses an HTTP response from a RestoreProjectWithResponse call
+func ParseRestoreProjectHTTPResponse(rsp *http.Response) (*RestoreProjectHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RestoreProjectHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Project
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseResolveProjectEnvironmentHTTPResponse parses an HTTP response from a ResolveProjectEnvironmentWithResponse call

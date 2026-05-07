@@ -33,8 +33,16 @@ const (
 	roleMember = "member"
 
 	idempotencyHeaderKey    = "idempotency_key_header"
+	orgScopeTokenOrgID      = "token_org_id"
+	orgScopeRequestOrgID    = "request_org_id"
 	maxIdempotencyKeyLength = 128
+	maxOriginSubjectLength  = 256
+	maxOriginEmailLength    = 320
 	bodyLimitSmallJSON      = 64 << 10
+
+	originOrgIDHeader   = "X-Verself-Origin-Org-ID"
+	originSubjectHeader = "X-Verself-Origin-Subject"
+	originEmailHeader   = "X-Verself-Origin-Email"
 )
 
 var apiTracer = otel.Tracer("projects-service/internal/api")
@@ -75,6 +83,9 @@ type operationRequestInfoKey struct{}
 
 type operationRequestInfo struct {
 	IdempotencyKey string
+	OriginOrgID    string
+	OriginSubject  string
+	OriginEmail    string
 }
 
 func registerProjectsRoute[I, O any](api huma.API, op huma.Operation, policy operationPolicy, handler func(context.Context, projects.Principal, *I) (*O, error)) {
@@ -170,6 +181,9 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.Idempotency == idempotencyHeaderKey {
 		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
 	}
+	if policy.Internal && policy.OrgScope == orgScopeTokenOrgID {
+		op.Parameters = appendOriginHeaderParameters(op.Parameters)
+	}
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
@@ -185,6 +199,19 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		"event_category":      policy.EventCategory,
 		"risk_level":          policy.RiskLevel,
 		"data_classification": policy.DataClassification,
+	}
+	if policy.Idempotency != "" {
+		op.Extensions["x-verself-iam"].(map[string]any)["idempotency"] = policy.Idempotency
+	}
+	if policy.BodyLimitBytes > 0 {
+		op.Extensions["x-verself-iam"].(map[string]any)["request_body_max_bytes"] = policy.BodyLimitBytes
+	}
+	if policy.Internal && policy.OrgScope == orgScopeTokenOrgID {
+		op.Extensions["x-verself-origin"] = map[string]any{
+			"org_id_header":  originOrgIDHeader,
+			"subject_header": originSubjectHeader,
+			"email_header":   originEmailHeader,
+		}
 	}
 	if policy.Internal {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
@@ -221,6 +248,43 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
+func appendOriginHeaderParameters(parameters []*huma.Param) []*huma.Param {
+	parameters = appendRequiredStringHeader(parameters, originOrgIDHeader, "Origin organization ID asserted by the SPIFFE-authenticated caller.", 1, 32)
+	parameters = appendRequiredStringHeader(parameters, originSubjectHeader, "Origin subject ID asserted by the SPIFFE-authenticated caller.", 1, maxOriginSubjectLength)
+	return appendOptionalStringHeader(parameters, originEmailHeader, "Origin subject email asserted by the SPIFFE-authenticated caller.", maxOriginEmailLength)
+}
+
+func appendRequiredStringHeader(parameters []*huma.Param, name, description string, minLength, maxLength int) []*huma.Param {
+	for _, param := range parameters {
+		if param != nil && strings.EqualFold(param.Name, name) && param.In == "header" {
+			param.Required = true
+			return parameters
+		}
+	}
+	return append(parameters, &huma.Param{
+		Name:        name,
+		In:          "header",
+		Description: description,
+		Required:    true,
+		Schema:      &huma.Schema{Type: "string", MinLength: &minLength, MaxLength: &maxLength},
+	})
+}
+
+func appendOptionalStringHeader(parameters []*huma.Param, name, description string, maxLength int) []*huma.Param {
+	for _, param := range parameters {
+		if param != nil && strings.EqualFold(param.Name, name) && param.In == "header" {
+			return parameters
+		}
+	}
+	return append(parameters, &huma.Param{
+		Name:        name,
+		In:          "header",
+		Description: description,
+		Required:    false,
+		Schema:      &huma.Schema{Type: "string", MaxLength: &maxLength},
+	})
+}
+
 func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projects.Principal, error) {
 	if policy.Internal {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
@@ -229,6 +293,16 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projec
 		}
 		if !internalPeerAllowed(peerID.String(), policy.InternalPeers) {
 			return projects.Principal{Subject: peerID.String()}, forbidden(ctx, "internal-peer-denied", "SPIFFE peer is not allowed to call this projects operation")
+		}
+		if policy.OrgScope == orgScopeTokenOrgID {
+			principal, err := principalFromInternalOrigin(ctx)
+			if err != nil {
+				return principal, err
+			}
+			if err := requireOperationIdempotency(ctx, policy); err != nil {
+				return principal, err
+			}
+			return principal, nil
 		}
 		return projects.Principal{Subject: peerID.String()}, requireOperationIdempotency(ctx, policy)
 	}
@@ -249,6 +323,32 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projec
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, err
+	}
+	return principal, nil
+}
+
+func principalFromInternalOrigin(ctx context.Context) (projects.Principal, error) {
+	info := operationRequestInfoFromContext(ctx)
+	orgID, err := strconv.ParseUint(strings.TrimSpace(info.OriginOrgID), 10, 64)
+	if err != nil || orgID == 0 {
+		return projects.Principal{}, badRequest(ctx, "origin-organization-required", originOrgIDHeader+" must be a non-zero decimal organization ID", err)
+	}
+	principal := projects.Principal{
+		Subject: strings.TrimSpace(info.OriginSubject),
+		OrgID:   orgID,
+		Email:   strings.TrimSpace(info.OriginEmail),
+	}
+	if principal.Subject == "" {
+		return principal, badRequest(ctx, "origin-subject-required", originSubjectHeader+" is required for SPIFFE-authenticated org-scoped operations", nil)
+	}
+	if len(principal.Subject) > maxOriginSubjectLength {
+		return principal, badRequest(ctx, "origin-subject-too-long", originSubjectHeader+" is too long", nil)
+	}
+	if len(principal.Email) > maxOriginEmailLength {
+		return principal, badRequest(ctx, "origin-email-too-long", originEmailHeader+" is too long", nil)
+	}
+	if err := projects.ValidatePrincipal(principal); err != nil {
+		return principal, forbidden(ctx, "projects-origin-principal-required", "SPIFFE-authenticated org-scoped operations require an origin subject")
 	}
 	return principal, nil
 }
@@ -280,7 +380,12 @@ func requireOperationIdempotency(ctx context.Context, policy operationPolicy) er
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
-	info := operationRequestInfo{IdempotencyKey: ctx.Header("Idempotency-Key")}
+	info := operationRequestInfo{
+		IdempotencyKey: ctx.Header("Idempotency-Key"),
+		OriginOrgID:    ctx.Header(originOrgIDHeader),
+		OriginSubject:  ctx.Header(originSubjectHeader),
+		OriginEmail:    ctx.Header(originEmailHeader),
+	}
 	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
 }
 

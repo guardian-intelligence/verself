@@ -1,0 +1,35 @@
+{
+  "name": "@verself/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Curated Verself SDK. Source-only wrappers over generated OpenAPI clients.",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./projects": {
+      "types": "./src/projects.ts",
+      "default": "./src/projects.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "generate": "bazelisk run //src/frontends/viteplus-monorepo/packages/sdk:dev_update",
+    "typecheck": "vp exec tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

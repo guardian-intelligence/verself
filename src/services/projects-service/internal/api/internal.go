@@ -38,8 +38,8 @@ type projectEventsOutput struct {
 	Body dto.ProjectEventList
 }
 
-func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
-	registerProjectsRoute(api, huma.Operation{
+func resolveProjectOperation() projectOperation {
+	return internalProjectOperation[resolveProjectInput, resolveProjectOutput](huma.Operation{
 		OperationID:   "resolve-project",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/projects/resolve",
@@ -49,7 +49,7 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectResolve,
 		Resource:         "project",
 		Action:           "resolve",
-		OrgScope:         "request_org_id",
+		OrgScope:         orgScopeRequestOrgID,
 		RateLimitClass:   "internal_read",
 		AuditEvent:       "projects.project.resolve",
 		OperationDisplay: "resolve project",
@@ -61,9 +61,11 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
 		},
-	}, resolveProject(svc))
+	}, resolveProject)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func resolveProjectEnvironmentOperation() projectOperation {
+	return internalProjectOperation[resolveEnvironmentInput, resolveEnvironmentOutput](huma.Operation{
 		OperationID:   "resolve-project-environment",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/project-environments/resolve",
@@ -73,7 +75,7 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectResolve,
 		Resource:         "project_environment",
 		Action:           "resolve",
-		OrgScope:         "request_org_id",
+		OrgScope:         orgScopeRequestOrgID,
 		RateLimitClass:   "internal_read",
 		AuditEvent:       "projects.environment.resolve",
 		OperationDisplay: "resolve project environment",
@@ -85,9 +87,11 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
 		},
-	}, resolveEnvironment(svc))
+	}, resolveEnvironment)
+}
 
-	registerProjectsRoute(api, huma.Operation{
+func listProjectEventsOperation() projectOperation {
+	return internalProjectOperation[projectEventsInput, projectEventsOutput](huma.Operation{
 		OperationID: "list-project-events-internal",
 		Method:      http.MethodGet,
 		Path:        "/internal/v1/project-events",
@@ -96,7 +100,7 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		Permission:       permissionProjectEventRead,
 		Resource:         "project_event",
 		Action:           "list",
-		OrgScope:         "request_org_id",
+		OrgScope:         orgScopeRequestOrgID,
 		RateLimitClass:   "internal_read",
 		AuditEvent:       "projects.event.list",
 		OperationDisplay: "list project events",
@@ -104,7 +108,7 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		RiskLevel:        "medium",
 		Internal:         true,
 		InternalPeers:    []string{workloadauth.ServiceGovernance},
-	}, listEvents(svc))
+	}, listEvents)
 }
 
 func resolveProject(svc *projects.Service) func(context.Context, projects.Principal, *resolveProjectInput) (*resolveProjectOutput, error) {
