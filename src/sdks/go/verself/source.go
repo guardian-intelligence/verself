@@ -146,7 +146,6 @@ type GetSourceBlobOptions struct {
 type CreateSourceCheckoutGrantInput struct {
 	RepoID         string
 	Ref            string
-	PathPrefix     string
 	IdempotencyKey string
 }
 
@@ -352,10 +351,6 @@ func (c *SourceClient) CreateCheckoutGrant(ctx context.Context, input CreateSour
 	if strings.TrimSpace(input.Ref) != "" {
 		ref := strings.TrimSpace(input.Ref)
 		body.Ref = &ref
-	}
-	if strings.TrimSpace(input.PathPrefix) != "" {
-		pathPrefix := strings.TrimSpace(input.PathPrefix)
-		body.PathPrefix = &pathPrefix
 	}
 	response, err := c.client.CreateSourceCheckoutGrantWithResponse(ctx, repoID, &sourcecore.CreateSourceCheckoutGrantParams{IdempotencyKey: key}, body)
 	if err != nil {

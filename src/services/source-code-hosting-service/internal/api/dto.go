@@ -88,8 +88,7 @@ type Blob struct {
 }
 
 type CreateCheckoutGrantRequest struct {
-	Ref        string `json:"ref,omitempty" maxLength:"255"`
-	PathPrefix string `json:"path_prefix,omitempty" maxLength:"1024"`
+	Ref string `json:"ref,omitempty" maxLength:"255"`
 }
 
 type CheckoutGrant struct {

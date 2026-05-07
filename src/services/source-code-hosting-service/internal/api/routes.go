@@ -528,7 +528,7 @@ func createCheckoutGrant(svc *source.Service) func(context.Context, source.Princ
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
 		}
-		grant, err := svc.CreateCheckoutGrant(ctx, principal, repoID, input.Body.Ref, input.Body.PathPrefix)
+		grant, err := svc.CreateCheckoutGrant(ctx, principal, repoID, input.Body.Ref, "")
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}

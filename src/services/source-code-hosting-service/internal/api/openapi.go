@@ -16,7 +16,7 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) huma.API
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
 	api := humago.New(mux, config)
-	applySecuritySchemes(api)
+	applySecuritySchemes(api, "bearerAuth")
 	RegisterRoutes(api, cfg)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
@@ -45,7 +45,7 @@ func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) 
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
 	api := humago.New(mux, config)
-	applySecuritySchemes(api)
+	applySecuritySchemes(api, "mutualTLS")
 	RegisterInternalRoutes(api, cfg)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
@@ -59,22 +59,26 @@ func NewInternalAPIYAML(version, listenAddr string, downgrade bool) ([]byte, err
 	return api.OpenAPI().YAML()
 }
 
-func applySecuritySchemes(api huma.API) {
+func applySecuritySchemes(api huma.API, scheme string) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {
 		openapi.Components = &huma.Components{}
 	}
-	if openapi.Components.SecuritySchemes == nil {
-		openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
-	}
-	openapi.Components.SecuritySchemes["bearerAuth"] = &huma.SecurityScheme{
-		Type:         "http",
-		Scheme:       "bearer",
-		BearerFormat: "JWT",
-		Description:  "Zitadel OIDC access token for a human subject.",
-	}
-	openapi.Components.SecuritySchemes["mutualTLS"] = &huma.SecurityScheme{
-		Type:        "mutualTLS",
-		Description: "SPIFFE mTLS between Verself workloads.",
+	openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
+	switch scheme {
+	case "bearerAuth":
+		openapi.Components.SecuritySchemes["bearerAuth"] = &huma.SecurityScheme{
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+			Description:  "Zitadel OIDC access token for a human subject.",
+		}
+	case "mutualTLS":
+		openapi.Components.SecuritySchemes["mutualTLS"] = &huma.SecurityScheme{
+			Type:        "mutualTLS",
+			Description: "SPIFFE mTLS between Verself workloads.",
+		}
+	default:
+		panic("unknown Source OpenAPI security scheme " + scheme)
 	}
 }

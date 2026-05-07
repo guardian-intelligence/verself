@@ -432,12 +432,15 @@ func TestReposCommandsUseSourceSDKBackedAPI(t *testing.T) {
 	}
 
 	var checkoutOut bytes.Buffer
-	runCLI(t, &checkoutOut, "repos", "checkout-grants", "create", repoID, "--ref", "main", "--path-prefix", ".github", "--idempotency-key", "source:checkout")
+	runCLI(t, &checkoutOut, "repos", "checkout-grants", "create", repoID, "--ref", "main", "--idempotency-key", "source:checkout")
 	if checkoutKey != "source:checkout" {
 		t.Fatalf("checkout idempotency key = %q", checkoutKey)
 	}
-	if checkoutBody["ref"] != "main" || checkoutBody["path_prefix"] != ".github" {
+	if checkoutBody["ref"] != "main" {
 		t.Fatalf("unexpected checkout body: %#v", checkoutBody)
+	}
+	if _, ok := checkoutBody["path_prefix"]; ok {
+		t.Fatalf("checkout body must not send path_prefix: %#v", checkoutBody)
 	}
 	if !strings.Contains(checkoutOut.String(), "token\tcheckout_test") {
 		t.Fatalf("checkout output:\n%s", checkoutOut.String())

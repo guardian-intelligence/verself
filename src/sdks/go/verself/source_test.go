@@ -189,6 +189,9 @@ func TestSourceMutationsUsePublicAPI(t *testing.T) {
 	if checkoutKey != "source:checkout" || checkoutBody["ref"] != "main" || grant.Token != "checkout_test" {
 		t.Fatalf("unexpected checkout mutation: %q %#v %#v", checkoutKey, checkoutBody, grant)
 	}
+	if _, ok := checkoutBody["path_prefix"]; ok {
+		t.Fatalf("checkout body must not send path_prefix: %#v", checkoutBody)
+	}
 	run, err := client.Source.CreateWorkflowRun(context.Background(), CreateSourceWorkflowRunInput{
 		RepoID:         repoID,
 		ProjectID:      projectID,

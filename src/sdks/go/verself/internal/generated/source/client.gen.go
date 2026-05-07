@@ -49,9 +49,8 @@ type CheckoutGrant struct {
 // CreateCheckoutGrantRequest defines model for CreateCheckoutGrantRequest.
 type CreateCheckoutGrantRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string `json:"$schema,omitempty"`
-	PathPrefix *string `json:"path_prefix,omitempty"`
-	Ref        *string `json:"ref,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+	Ref    *string `json:"ref,omitempty"`
 }
 
 // CreateGitCredentialRequest defines model for CreateGitCredentialRequest.

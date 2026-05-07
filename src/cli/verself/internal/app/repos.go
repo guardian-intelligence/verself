@@ -281,7 +281,6 @@ func (c CLI) repoCheckoutGrantsCreate(ctx context.Context, args []string) error 
 	fs, serviceFlags := serviceFlagSet("repos checkout-grants create", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	ref := fs.String("ref", "", "git ref")
-	pathPrefix := fs.String("path-prefix", "", "allowed checkout path prefix")
 	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
@@ -296,7 +295,6 @@ func (c CLI) repoCheckoutGrantsCreate(ctx context.Context, args []string) error 
 	grant, err := client.Source.CreateCheckoutGrant(ctx, verself.CreateSourceCheckoutGrantInput{
 		RepoID:         fs.Arg(0),
 		Ref:            *ref,
-		PathPrefix:     *pathPrefix,
 		IdempotencyKey: *idempotencyKey,
 	})
 	if err != nil {

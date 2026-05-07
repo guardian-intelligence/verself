@@ -175,7 +175,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	op.Extensions["x-verself-iam"] = map[string]any{
+	iam := map[string]any{
 		"permission":          string(policy.Permission),
 		"resource":            policy.Resource,
 		"action":              policy.Action,
@@ -188,7 +188,15 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		"event_category":      policy.EventCategory,
 		"risk_level":          policy.RiskLevel,
 		"data_classification": policy.DataClassification,
+		"internal":            policy.Internal,
 	}
+	if policy.Idempotency != "" {
+		iam["idempotency"] = policy.Idempotency
+	}
+	if policy.BodyLimitBytes > 0 {
+		iam["request_body_max_bytes"] = policy.BodyLimitBytes
+	}
+	op.Extensions["x-verself-iam"] = iam
 	if policy.Internal {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
 	} else {
