@@ -70,7 +70,6 @@ job "electric" {
       healthy_deadline = "300s"
       progress_deadline = "600s"
       auto_revert = true
-      auto_promote = true
     }
   }
 
@@ -141,7 +140,6 @@ job "electric" {
       healthy_deadline = "300s"
       progress_deadline = "600s"
       auto_revert = true
-      auto_promote = true
     }
   }
 }
