@@ -3,8 +3,9 @@ load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
 verself_oapi_go_client(
     name = "client",
     importpath = "github.com/verself/source-code-hosting-service/client",
-    package = "sourcecodehostingclient",
-    spec = "//src/services/source-code-hosting-service/openapi:openapi-3.0.yaml",
+    package = "sourcehostingclient",
+    spec = "//src/services/source-code-hosting-service/openapi:internal-openapi-3.0.yaml",
+    visibility = ["//src/services:__subpackages__"],
     deps = [
         "@com_github_oapi_codegen_runtime//:runtime",
         "@com_github_oapi_codegen_runtime//types",
@@ -14,5 +15,5 @@ verself_oapi_go_client(
 alias(
     name = "go_default_library",
     actual = ":client",
-    visibility = ["//visibility:public"],
+    visibility = ["//src/services:__subpackages__"],
 )

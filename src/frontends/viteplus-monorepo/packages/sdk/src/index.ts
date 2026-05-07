@@ -1,15 +1,18 @@
 import { IAM } from "./iam";
 import { Projects } from "./projects";
+import { Source } from "./source";
 
 export const DEFAULT_SERVER_URL = "https://verself.sh";
 export const DEFAULT_IAM_URL = "https://iam.api.verself.sh";
 export const DEFAULT_PROJECTS_URL = "https://projects.api.verself.sh";
+export const DEFAULT_SOURCE_URL = "https://source.api.verself.sh";
 
 export type VerselfOptions = {
   bearerToken: string;
   serverURL?: string | undefined;
   iamURL?: string | undefined;
   projectsURL?: string | undefined;
+  sourceURL?: string | undefined;
   fetch?: typeof fetch | undefined;
   traceparent?: string | undefined;
 };
@@ -17,6 +20,7 @@ export type VerselfOptions = {
 export class Verself {
   readonly iam: IAM;
   readonly projects: Projects;
+  readonly source: Source;
 
   constructor(options: VerselfOptions) {
     const token = options.bearerToken.trim();
@@ -35,6 +39,12 @@ export class Verself {
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.traceparent ? { traceparent: options.traceparent } : {}),
     });
+    this.source = new Source({
+      accessToken: token,
+      baseUrl: resolveSourceURL(options),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.traceparent ? { traceparent: options.traceparent } : {}),
+    });
   }
 }
 
@@ -46,8 +56,12 @@ function resolveProjectsURL(options: VerselfOptions): string {
   return resolveServiceURL("projects", options.projectsURL, options.serverURL, DEFAULT_PROJECTS_URL);
 }
 
+function resolveSourceURL(options: VerselfOptions): string {
+  return resolveServiceURL("source", options.sourceURL, options.serverURL, DEFAULT_SOURCE_URL);
+}
+
 function resolveServiceURL(
-  service: "iam" | "projects",
+  service: "iam" | "projects" | "source",
   serviceURL: string | undefined,
   serverURL: string | undefined,
   defaultURL: string,
@@ -135,3 +149,31 @@ export {
   type UpdateProjectEnvironmentRequest,
   type UpdateProjectRequest,
 } from "./projects";
+
+export {
+  Source,
+  SourceApiError,
+  createCheckoutGrantRequestSchema,
+  createGitCredentialRequestSchema,
+  createRepositoryRequestSchema,
+  createWorkflowRunRequestSchema,
+  isSourceApiError,
+  type CreateCheckoutGrantRequest,
+  type CreateGitCredentialRequest,
+  type CreateRepositoryRequest,
+  type CreateWorkflowRunRequest,
+  type ListRepositoriesInput,
+  type SourceBlob,
+  type SourceBlobInput,
+  type SourceCheckoutGrant,
+  type SourceClientOptions,
+  type SourceGitCredential,
+  type SourceMutationOptions,
+  type SourceRefs,
+  type SourceRepository,
+  type SourceRepositoryList,
+  type SourceTree,
+  type SourceTreeInput,
+  type SourceWorkflowRun,
+  type SourceWorkflowRunList,
+} from "./source";

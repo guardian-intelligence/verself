@@ -7,7 +7,7 @@ go_library(
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
     deps = [
         "//src/services/sandbox-rental-service/internal/recurring",
-        "//src/services/source-code-hosting-service/internalclient",
+        "//src/services/source-code-hosting-service/client",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",

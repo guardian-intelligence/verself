@@ -51,6 +51,7 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
       { id: "organizations", label: "Organizations" },
       { id: "api-credentials", label: "API credentials" },
       { id: "projects", label: "Projects" },
+      { id: "repositories", label: "Repositories" },
     ],
   },
   {

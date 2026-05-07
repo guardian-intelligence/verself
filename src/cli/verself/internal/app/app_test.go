@@ -294,6 +294,174 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 }
 
+func TestReposCommandsUseSourceSDKBackedAPI(t *testing.T) {
+	const projectID = "11111111-1111-1111-1111-111111111111"
+	const repoID = "22222222-2222-2222-2222-222222222222"
+	const credentialID = "33333333-3333-3333-3333-333333333333"
+	const grantID = "44444444-4444-4444-4444-444444444444"
+	const workflowRunID = "55555555-5555-5555-5555-555555555555"
+	repoJSON := `{"repo_id":"` + repoID + `","org_id":"370200542594579812","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"Builds","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	workflowJSON := `{"workflow_run_id":"` + workflowRunID + `","org_id":"370200542594579812","project_id":"` + projectID + `","repo_id":"` + repoID + `","actor_id":"user_1","backend":"forgejo","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"state":"queued","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	var createRepoKey string
+	var createRepoBody map[string]any
+	var credentialKey string
+	var credentialBody map[string]any
+	var checkoutKey string
+	var checkoutBody map[string]any
+	var workflowKey string
+	var workflowBody map[string]any
+	var treeQuery string
+	var blobQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer tok_source" {
+			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos":
+			if r.URL.Query().Get("project_id") != projectID {
+				t.Fatalf("repos list query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"repositories":[` + repoJSON + `]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos":
+			createRepoKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&createRepoBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(repoJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID:
+			_, _ = w.Write([]byte(repoJSON))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/git-credentials":
+			credentialKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&credentialBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"credential_id":"` + credentialID + `","org_id":"370200542594579812","username":"x-access-token","token":"vsrc_test","token_prefix":"vsrc_","scopes":["repo:read","repo:write"],"expires_at":"2026-05-06T01:00:00Z","created_at":"2026-05-06T00:00:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/refs":
+			_, _ = w.Write([]byte(`{"refs":[{"name":"refs/heads/main","commit":"abc123"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/tree":
+			treeQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"entries":[{"path":".github/workflows/build.yml","type":"blob","sha":"abc123","size":12}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/blob":
+			blobQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"name":"README.md","path":"README.md","sha":"abc123","size":4,"encoding":"base64","content":"SGk="}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/"+repoID+"/checkout-grants":
+			checkoutKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&checkoutBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"grant_id":"` + grantID + `","repo_id":"` + repoID + `","ref":"main","token":"checkout_test","expires_at":"2026-05-06T00:15:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/workflow-runs":
+			_, _ = w.Write([]byte(`{"workflow_runs":[` + workflowJSON + `]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/"+repoID+"/workflow-runs":
+			workflowKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&workflowBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(workflowJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workflow-runs/"+workflowRunID:
+			_, _ = w.Write([]byte(workflowJSON))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_TOKEN", "tok_source")
+	t.Setenv("VERSELF_SOURCE_API_URL", server.URL)
+
+	var listOut bytes.Buffer
+	runCLI(t, &listOut, "repos", "list", "--project-id", projectID)
+	if !strings.Contains(listOut.String(), "api/runner\t"+repoID+"\tactive") {
+		t.Fatalf("repos list output:\n%s", listOut.String())
+	}
+
+	var createOut bytes.Buffer
+	runCLI(t, &createOut, "repos", "create", projectID, "--description", "Builds", "--default-branch", "main", "--idempotency-key", "source:repo")
+	if createRepoKey != "source:repo" {
+		t.Fatalf("repo create idempotency key = %q", createRepoKey)
+	}
+	if createRepoBody["project_id"] != projectID || createRepoBody["description"] != "Builds" || createRepoBody["default_branch"] != "main" {
+		t.Fatalf("unexpected repo create body: %#v", createRepoBody)
+	}
+	if !strings.Contains(createOut.String(), "api/runner\t"+repoID+"\tactive") {
+		t.Fatalf("repos create output:\n%s", createOut.String())
+	}
+
+	runCLI(t, nil, "repos", "get", repoID)
+	var credentialOut bytes.Buffer
+	runCLI(t, &credentialOut, "repos", "credentials", "create", "--scope", "repo:read", "--scope", "repo:write", "--label", "CI", "--expires-in-seconds", "3600", "--idempotency-key", "source:credential")
+	if credentialKey != "source:credential" {
+		t.Fatalf("credential idempotency key = %q", credentialKey)
+	}
+	if credentialBody["label"] != "CI" {
+		t.Fatalf("unexpected credential body: %#v", credentialBody)
+	}
+	scopes, ok := credentialBody["scopes"].([]any)
+	if !ok || len(scopes) != 2 || scopes[0] != "repo:read" || scopes[1] != "repo:write" {
+		t.Fatalf("unexpected credential scopes: %#v", credentialBody)
+	}
+	if !strings.Contains(credentialOut.String(), "token\tvsrc_test") {
+		t.Fatalf("credential output:\n%s", credentialOut.String())
+	}
+
+	var refsOut bytes.Buffer
+	runCLI(t, &refsOut, "repos", "refs", repoID)
+	if !strings.Contains(refsOut.String(), "refs/heads/main\tabc123") {
+		t.Fatalf("refs output:\n%s", refsOut.String())
+	}
+	var treeOut bytes.Buffer
+	runCLI(t, &treeOut, "repos", "tree", repoID, "--ref", "main", "--path", ".github")
+	if !strings.Contains(treeQuery, "ref=main") || !strings.Contains(treeQuery, "path=.github") {
+		t.Fatalf("tree query = %s", treeQuery)
+	}
+	if !strings.Contains(treeOut.String(), "blob\tabc123\t.github/workflows/build.yml\t12") {
+		t.Fatalf("tree output:\n%s", treeOut.String())
+	}
+	var blobOut bytes.Buffer
+	runCLI(t, &blobOut, "repos", "blob", repoID, "--ref", "main", "--path", "README.md")
+	if !strings.Contains(blobQuery, "ref=main") || !strings.Contains(blobQuery, "path=README.md") {
+		t.Fatalf("blob query = %s", blobQuery)
+	}
+	if !strings.Contains(blobOut.String(), "SGk=") {
+		t.Fatalf("blob output:\n%s", blobOut.String())
+	}
+
+	var checkoutOut bytes.Buffer
+	runCLI(t, &checkoutOut, "repos", "checkout-grants", "create", repoID, "--ref", "main", "--path-prefix", ".github", "--idempotency-key", "source:checkout")
+	if checkoutKey != "source:checkout" {
+		t.Fatalf("checkout idempotency key = %q", checkoutKey)
+	}
+	if checkoutBody["ref"] != "main" || checkoutBody["path_prefix"] != ".github" {
+		t.Fatalf("unexpected checkout body: %#v", checkoutBody)
+	}
+	if !strings.Contains(checkoutOut.String(), "token\tcheckout_test") {
+		t.Fatalf("checkout output:\n%s", checkoutOut.String())
+	}
+
+	var workflowListOut bytes.Buffer
+	runCLI(t, &workflowListOut, "repos", "workflow-runs", "list", repoID)
+	if !strings.Contains(workflowListOut.String(), workflowRunID+"\t"+repoID+"\tqueued") {
+		t.Fatalf("workflow list output:\n%s", workflowListOut.String())
+	}
+	runCLI(t, nil, "repos", "workflow-runs", "dispatch", repoID, "--project-id", projectID, "--workflow-path", ".github/workflows/build.yml", "--ref", "main", "--input", "target=linux", "--idempotency-key", "source:workflow")
+	if workflowKey != "source:workflow" {
+		t.Fatalf("workflow idempotency key = %q", workflowKey)
+	}
+	if workflowBody["project_id"] != projectID || workflowBody["workflow_path"] != ".github/workflows/build.yml" || workflowBody["ref"] != "main" {
+		t.Fatalf("unexpected workflow body: %#v", workflowBody)
+	}
+	inputs, ok := workflowBody["inputs"].(map[string]any)
+	if !ok || inputs["target"] != "linux" {
+		t.Fatalf("unexpected workflow inputs: %#v", workflowBody)
+	}
+	runCLI(t, nil, "repos", "workflow-runs", "get", workflowRunID)
+}
+
 func TestAuthOrgsAndCredentialsUseIAMSDK(t *testing.T) {
 	xdgRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))

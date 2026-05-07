@@ -1,0 +1,13 @@
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
+
+verself_oapi_go_client(
+    name = "source",
+    importpath = "github.com/verself/verself-go/internal/generated/source",
+    package = "source",
+    spec = "//src/services/source-code-hosting-service/openapi:openapi-3.0.yaml",
+    visibility = ["//src/sdks/go/verself:__pkg__"],
+    deps = [
+        "@com_github_oapi_codegen_runtime//:runtime",
+        "@com_github_oapi_codegen_runtime//types",
+    ],
+)

@@ -12,12 +12,14 @@ import (
 
 	iamcore "github.com/verself/verself-go/internal/generated/iam"
 	projectscore "github.com/verself/verself-go/internal/generated/projects"
+	sourcecore "github.com/verself/verself-go/internal/generated/source"
 )
 
 const (
 	DefaultServerURL   = "https://verself.sh"
 	DefaultIAMURL      = "https://iam.api.verself.sh"
 	DefaultProjectsURL = "https://projects.api.verself.sh"
+	DefaultSourceURL   = "https://source.api.verself.sh"
 )
 
 type Options struct {
@@ -25,6 +27,7 @@ type Options struct {
 	ServerURL   string
 	IAMURL      string
 	ProjectsURL string
+	SourceURL   string
 	HTTPClient  *http.Client
 	Traceparent string
 }
@@ -32,6 +35,7 @@ type Options struct {
 type Client struct {
 	IAM      *IAMClient
 	Projects *ProjectsClient
+	Source   *SourceClient
 }
 
 func New(options Options) (*Client, error) {
@@ -44,6 +48,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	projectsURL, err := serviceURL(options.ProjectsURL, options.ServerURL, "projects")
+	if err != nil {
+		return nil, err
+	}
+	sourceURL, err := serviceURL(options.SourceURL, options.ServerURL, "source")
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +77,19 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	sourceEditor := sourceRequestEditor(token, options.Traceparent)
+	generatedSource, err := sourcecore.NewClientWithResponses(
+		sourceURL,
+		sourcecore.WithHTTPClient(httpClient),
+		sourcecore.WithRequestEditorFn(sourceEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
 		IAM:      &IAMClient{client: generatedIAM},
 		Projects: &ProjectsClient{client: generatedProjects},
+		Source:   &SourceClient{client: generatedSource},
 	}, nil
 }
 
@@ -82,6 +100,12 @@ func iamRequestEditor(token, traceparent string) iamcore.RequestEditorFn {
 }
 
 func projectsRequestEditor(token, traceparent string) projectscore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, token, traceparent)
+	}
+}
+
+func sourceRequestEditor(token, traceparent string) sourcecore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, token, traceparent)
 	}
@@ -113,6 +137,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultIAMURL
 	case "projects":
 		return DefaultProjectsURL
+	case "source":
+		return DefaultSourceURL
 	default:
 		return DefaultServerURL
 	}

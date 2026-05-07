@@ -16,6 +16,7 @@ type serviceClientFlags struct {
 	tokenFile   string
 	iamURL      string
 	projectsURL string
+	sourceURL   string
 	traceparent string
 }
 
@@ -383,6 +384,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs.StringVar(&flags.tokenFile, "token-file", "", "read bearer token from owner-only file")
 	fs.StringVar(&flags.iamURL, "iam-url", "", "IAM service base URL")
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
+	fs.StringVar(&flags.sourceURL, "source-url", "", "source service base URL")
 	fs.StringVar(&flags.traceparent, "traceparent", "", "trace context to join")
 	return fs, flags
 }
@@ -406,10 +408,18 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	if projectsURL == "" && profile != nil {
 		projectsURL = profile.ProjectsURL
 	}
+	sourceURL := strings.TrimSpace(flags.sourceURL)
+	if sourceURL == "" {
+		sourceURL = strings.TrimSpace(c.getenv("VERSELF_SOURCE_API_URL"))
+	}
+	if sourceURL == "" && profile != nil {
+		sourceURL = profile.SourceURL
+	}
 	return verself.New(verself.Options{
 		BearerToken: token,
 		IAMURL:      iamURL,
 		ProjectsURL: projectsURL,
+		SourceURL:   sourceURL,
 		Traceparent: flags.traceparent,
 	})
 }

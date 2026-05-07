@@ -9,6 +9,7 @@ go_library(
         "orgs.go",
         "paths.go",
         "projects.go",
+        "repos.go",
         "render.go",
         "secrets.go",
         "store.go",

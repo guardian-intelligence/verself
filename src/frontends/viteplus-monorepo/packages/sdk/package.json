@@ -21,6 +21,10 @@
       "types": "./src/projects.ts",
       "default": "./src/projects.ts"
     },
+    "./source": {
+      "types": "./src/source.ts",
+      "default": "./src/source.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

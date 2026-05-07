@@ -78,6 +78,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	audience := fs.String("audience", "", "Zitadel project audience ID")
 	iamURL := fs.String("iam-url", "", "IAM service base URL")
 	projectsURL := fs.String("projects-url", "", "Projects service base URL")
+	sourceURL := fs.String("source-url", "", "Source service base URL")
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
@@ -90,6 +91,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		Name:        strings.TrimSpace(*profileName),
 		IAMURL:      strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"))),
 		ProjectsURL: strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
+		SourceURL:   strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
 	}
 	if profile.Name == "" {
 		return errors.New("auth login profile name is required")
@@ -107,6 +109,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		BearerToken: credential.AccessToken,
 		IAMURL:      profile.IAMURL,
 		ProjectsURL: profile.ProjectsURL,
+		SourceURL:   profile.SourceURL,
 	})
 	if err != nil {
 		return err

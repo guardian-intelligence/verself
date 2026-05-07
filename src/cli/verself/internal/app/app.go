@@ -55,6 +55,8 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runOrgs(ctx, args[1:])
 	case "projects":
 		return c.runProjects(ctx, args[1:])
+	case "repos":
+		return c.runRepos(ctx, args[1:])
 	case "bootstrap":
 		return c.runBootstrap(args[1:])
 	case "help", "--help", "-h":
@@ -86,6 +88,17 @@ func (c CLI) usage() error {
   %[1]s projects restore <project-id> --version VERSION [--json]
   %[1]s projects environments list <project-id> [--json]
   %[1]s projects environments create <project-id> <display-name> --slug SLUG --kind KIND [--json]
+  %[1]s repos list [--project-id PROJECT_ID] [--json]
+  %[1]s repos get <repo-id> [--json]
+  %[1]s repos create <project-id> [--description TEXT] [--default-branch BRANCH] [--json]
+  %[1]s repos credentials create --scope SCOPE [--label LABEL] [--json]
+  %[1]s repos refs <repo-id> [--json]
+  %[1]s repos tree <repo-id> [--ref REF] [--path PATH] [--json]
+  %[1]s repos blob <repo-id> --path PATH [--ref REF] [--json]
+  %[1]s repos checkout-grants create <repo-id> [--ref REF] [--json]
+  %[1]s repos workflow-runs list <repo-id> [--json]
+  %[1]s repos workflow-runs get <workflow-run-id> [--json]
+  %[1]s repos workflow-runs dispatch <repo-id> --project-id PROJECT_ID --workflow-path PATH [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
   %[1]s bootstrap --company <name> [--repo-root PATH]

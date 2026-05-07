@@ -40,7 +40,8 @@ function CLIDocs() {
         </Prose>
         <Command>{`verself auth login --token-file /run/secrets/verself-token \
   --iam-url https://iam.api.example.com \
-  --projects-url https://projects.api.example.com
+  --projects-url https://projects.api.example.com \
+  --source-url https://source.api.example.com
 verself auth whoami
 verself auth token`}</Command>
       </section>
@@ -90,6 +91,30 @@ verself orgs credentials revoke cred_123`}</Command>
         <Command>{`verself projects list
 verself projects create "Console" --slug console
 verself projects environments list <project-id>`}</Command>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <SectionHeading id="repositories">Repositories</SectionHeading>
+        <SummaryPanel>
+          <SummaryItem term="Source API">
+            Repository commands use the Go SDK over the public Source OpenAPI contract.
+          </SummaryItem>
+          <SummaryItem term="Checkout grants">
+            Short-lived checkout tokens are minted through Source, so consumers do not handle
+            durable Git credentials.
+          </SummaryItem>
+          <SummaryItem term="Workflow dispatch">
+            Dispatch records are created through Source before sandbox execution consumes them.
+          </SummaryItem>
+        </SummaryPanel>
+        <Command>{`verself repos list --project-id <project-id>
+verself repos create <project-id> --default-branch main
+verself repos credentials create --scope repo:read --scope repo:write --json
+verself repos checkout-grants create <repo-id> --ref main --json
+verself repos workflow-runs dispatch <repo-id> \
+  --project-id <project-id> \
+  --workflow-path .github/workflows/build.yml \
+  --input target=linux`}</Command>
       </section>
     </article>
   );

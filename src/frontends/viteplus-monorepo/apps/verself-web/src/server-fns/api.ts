@@ -40,14 +40,22 @@ import {
 import {
   IAMApiError,
   ProjectsApiError,
+  SourceApiError as SourceCodeHostingApiError,
   createProjectRequestSchema,
+  createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
+  createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
+  createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
   inviteMemberRequestSchema,
   isIAMApiError,
   isProjectsApiError,
+  isSourceApiError as isSourceCodeHostingApiError,
   putMemberCapabilitiesRequestSchema,
   updateMemberRolesRequestSchema,
   updateOrganizationRequestSchema,
+  type CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
+  type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
+  type CreateRepositoryRequest as CreateSourceRepositoryRequest,
   type InviteMemberRequest,
   type InviteMemberResponse,
   type Member,
@@ -59,26 +67,18 @@ import {
   type PutMemberCapabilitiesRequest,
   type Project,
   type ProjectList,
+  type SourceBlob,
+  type SourceCheckoutGrant,
+  type SourceGitCredential,
+  type SourceRefs,
+  type SourceRepository,
+  type SourceRepositoryList,
+  type SourceTree,
+  type SourceWorkflowRunList,
   type UpdateMemberRolesRequest,
   type UpdateOrganizationRequest,
   Verself,
 } from "@verself/sdk";
-import {
-  SourceCodeHostingApiError,
-  createCheckoutGrant as createSourceCheckoutGrantRequest,
-  createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
-  createGitCredential as createSourceGitCredentialRequest,
-  createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
-  createRepository as createSourceRepositoryRequest,
-  createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
-  getBlob as getSourceBlobRequest,
-  getRepository as getSourceRepositoryRequest,
-  getTree as getSourceTreeRequest,
-  isSourceCodeHostingApiError,
-  listRefs as listSourceRefsRequest,
-  listRepositories as listSourceRepositoriesRequest,
-  listWorkflowRuns as listSourceWorkflowRunsRequest,
-} from "~/lib/source-code-hosting-api";
 import type {
   CreateExportRequest,
   GovernanceAuditEvent,
@@ -101,19 +101,6 @@ import type {
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
 } from "~/lib/notifications-api";
-import type {
-  CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
-  CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
-  CreateRepositoryRequest as CreateSourceRepositoryRequest,
-  SourceBlob,
-  SourceCheckoutGrant,
-  SourceGitCredential,
-  SourceRefs,
-  SourceRepository,
-  SourceRepositoryList,
-  SourceTree,
-  SourceWorkflowRunList,
-} from "~/lib/source-code-hosting-api";
 import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
@@ -346,15 +333,12 @@ async function projectsSDK(context: ConsoleAuthContext | undefined) {
   return new Verself({ bearerToken: accessToken, projectsURL: PROJECTS_SERVICE_BASE_URL });
 }
 
-async function sourceCodeHostingClientOptions(context: ConsoleAuthContext | undefined) {
+async function sourceCodeHostingSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getAccessTokenForAudience(
     context,
     SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
   );
-  return {
-    accessToken,
-    baseUrl: SOURCE_CODE_HOSTING_SERVICE_BASE_URL,
-  };
+  return new Verself({ bearerToken: accessToken, sourceURL: SOURCE_CODE_HOSTING_SERVICE_BASE_URL });
 }
 
 export const getOrganization = createServerFn({ method: "GET" })
@@ -566,60 +550,44 @@ export const listSourceRepositories = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(sourceRepositoryListInputSchema)
   .handler(async ({ context, data }) => {
-    return listSourceRepositoriesRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      ...(data?.projectId ? { projectId: data.projectId } : {}),
-    });
+    return (await sourceCodeHostingSDK(context)).source.listRepositories(
+      data?.projectId ? { projectId: data.projectId } : {},
+    );
   });
 
 export const createSourceRepository = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(createSourceRepositoryRequestSchema)
   .handler(async ({ context, data }) => {
-    return createSourceRepositoryRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      body: data,
-    });
+    return (await sourceCodeHostingSDK(context)).source.createRepository(data);
   });
 
 export const createSourceGitCredential = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(sourceGitCredentialInputSchema)
   .handler(async ({ context, data }) => {
-    return createSourceGitCredentialRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      body: data,
-    });
+    return (await sourceCodeHostingSDK(context)).source.createGitCredential(data);
   });
 
 export const getSourceRepository = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(sourceRepositoryIDInputSchema)
   .handler(async ({ context, data }) => {
-    return getSourceRepositoryRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      repoId: data.repoId,
-    });
+    return (await sourceCodeHostingSDK(context)).source.getRepository(data.repoId);
   });
 
 export const listSourceRefs = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(sourceRepositoryIDInputSchema)
   .handler(async ({ context, data }) => {
-    return listSourceRefsRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      repoId: data.repoId,
-    });
+    return (await sourceCodeHostingSDK(context)).source.listRefs(data.repoId);
   });
 
 export const listSourceWorkflowRuns = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(sourceRepositoryIDInputSchema)
   .handler(async ({ context, data }) => {
-    return listSourceWorkflowRunsRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      repoId: data.repoId,
-    });
+    return (await sourceCodeHostingSDK(context)).source.listWorkflowRuns(data.repoId);
   });
 
 export const getSourceTree = createServerFn({ method: "GET" })
@@ -631,10 +599,7 @@ export const getSourceTree = createServerFn({ method: "GET" })
       ...(data.ref !== undefined ? { ref: data.ref } : {}),
       ...(data.path !== undefined ? { path: data.path } : {}),
     };
-    return getSourceTreeRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      ...treeInput,
-    });
+    return (await sourceCodeHostingSDK(context)).source.getTree(treeInput);
   });
 
 export const getSourceBlob = createServerFn({ method: "GET" })
@@ -646,21 +611,14 @@ export const getSourceBlob = createServerFn({ method: "GET" })
       path: data.path,
       ...(data.ref !== undefined ? { ref: data.ref } : {}),
     };
-    return getSourceBlobRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      ...blobInput,
-    });
+    return (await sourceCodeHostingSDK(context)).source.getBlob(blobInput);
   });
 
 export const createSourceCheckoutGrant = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(sourceCheckoutGrantInputSchema)
   .handler(async ({ context, data }) => {
-    return createSourceCheckoutGrantRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      repoId: data.repoId,
-      body: data.body,
-    });
+    return (await sourceCodeHostingSDK(context)).source.createCheckoutGrant(data.repoId, data.body);
   });
 
 export const listGovernanceAuditEvents = createServerFn({ method: "GET" })

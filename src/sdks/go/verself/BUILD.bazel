@@ -6,12 +6,14 @@ go_library(
         "client.go",
         "iam.go",
         "projects.go",
+        "source.go",
     ],
     importpath = "github.com/verself/verself-go",
     visibility = ["//visibility:public"],
     deps = [
         "//src/sdks/go/verself/internal/generated/iam",
         "//src/sdks/go/verself/internal/generated/projects",
+        "//src/sdks/go/verself/internal/generated/source",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//propagation",
@@ -23,6 +25,7 @@ go_test(
     srcs = [
         "client_test.go",
         "projects_test.go",
+        "source_test.go",
     ],
     embed = [":verself"],
 )

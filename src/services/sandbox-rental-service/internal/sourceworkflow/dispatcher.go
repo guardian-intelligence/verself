@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	sourceclient "github.com/verself/source-code-hosting-service/internalclient"
+	sourceclient "github.com/verself/source-code-hosting-service/client"
 
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
