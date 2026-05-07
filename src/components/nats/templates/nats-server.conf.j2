@@ -1,5 +1,5 @@
 server_name: verself-nats
-pid_file: "/run/nats/nats.pid"
+pid_file: "{{ nats_pid_path }}"
 host: {{ nats_host }}
 port: {{ nats_client_port }}
 http: {{ nats_monitoring_port }}

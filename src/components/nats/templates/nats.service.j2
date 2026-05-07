@@ -10,7 +10,7 @@ User=nats
 Group=nats
 SupplementaryGroups={{ spire_workload_group }}
 ExecStart={{ verself_bin }}/nats-server -c {{ nats_config_dir }}/nats-server.conf
-ExecReload={{ verself_bin }}/nats-server --signal reload=/run/nats/nats.pid
+ExecReload={{ verself_bin }}/nats-server --signal reload={{ nats_pid_path }}
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=131072
@@ -18,7 +18,7 @@ RuntimeDirectory=nats
 RuntimeDirectoryMode=0750
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths={{ nats_data_dir }} /run/nats
+ReadWritePaths={{ nats_data_dir }}
 PrivateDevices=true
 PrivateTmp=true
 ProtectClock=true
