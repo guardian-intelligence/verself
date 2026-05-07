@@ -1,6 +1,6 @@
 # Directory Structure
 
-Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; each Go service keeps its own `go.mod`, and the TypeScript monorepo is pnpm-driven under `src/frontends/viteplus-monorepo/`.
+Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; each Go service keeps its own `go.mod`, and the TypeScript monorepo is pnpm-driven under `src/websites/`.
 
 ## Top level
 
@@ -22,8 +22,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `domain-transfer-objects/` — shared data-transfer contracts for service
   boundaries, OpenAPI-compatible DTOs, shared protobuf schemas, numeric wire
   primitives, and generated-client contract rules.
-- `frontends/` — browser and future client applications. The current
-  TypeScript workspace is `frontends/viteplus-monorepo/`.
+- `websites/` — browser applications and shared web packages.
 - `sdks/` — generated and curated client layers, validators, and package-local
   SDK adapters.
 - `services/` — product API services, service-local workers, service-owned
@@ -61,7 +60,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `observability/` — shared telemetry packages and operational query tools.
 - `provisioning/` — OpenTofu bare-metal allocation and inventory production.
 
-## Frontend (`src/frontends/viteplus-monorepo/`)
+## Frontend (`src/websites/`)
 
 - `apps/` — TanStack Start applications:
   - `company` — Guardian Intelligence company site on `company_domain` (guardianintelligence.org). Owns landing, `/design`, `/letters` (+ RSS), `/solutions`, `/company`, `/careers`, `/press`, `/changelog`, `/contact`, `/og/*` dynamic OG cards. Forker-friendly split: `src/content/`, `src/brand/`, `src/routes/`, `src/components/`.
@@ -96,7 +95,7 @@ Nomad jobs live with their owning service, frontend, or component as
 `nomad.hcl`. The deploy runner wires owner-local jobs to artifact delivery and
 rollout inputs directly through Bazel and Nomad.
 
-## Platform Components (`src/components/`)
+## Platform Components (`src/infrastructure-components/`)
 
 - `<component>/BUILD.bazel` — component descriptor, Nomad packaging, runtime
   user metadata, SPIRE identities, credential bindings, route metadata, and
@@ -110,9 +109,9 @@ rollout inputs directly through Bazel and Nomad.
   written as typed binaries.
 
 ClickHouse keeps the server bootstrap split in `src/host` and owns subsequent
-migrations under `src/components/clickhouse`. HAProxy keeps the edge process in
+migrations under `src/infrastructure-components/clickhouse`. HAProxy keeps the edge process in
 host bootstrap and owns Nomad-discovered upstream reconciliation under
-`src/components/haproxy`. PostgreSQL and Garage are regular Nomad components;
+`src/infrastructure-components/haproxy`. PostgreSQL and Garage are regular Nomad components;
 Garage also participates in the pre-artifact deploy wave.
 
 ## Service- and host-local docs

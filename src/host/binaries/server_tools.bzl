@@ -98,19 +98,19 @@ SERVER_TOOL_DEPS = [
     ":temporal_server",
     ":temporal_sql_tool",
     ":tigerbeetle",
-    "//src/components/verdaccio:verdaccio_runtime",
+    "//src/infrastructure-components/verdaccio:verdaccio_runtime",
     ":zed",
     ":zitadel",
     ":zot",
 ]
 
 PROFILE_GO_TOOLS = [
-    ("//src/components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
-    ("//src/components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
-    ("//src/components/zot/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
-    ("//src/components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
-    ("//src/components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
-    ("//src/components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
+    ("//src/infrastructure-components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
+    ("//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
+    ("//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
+    ("//src/infrastructure-components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
+    ("//src/infrastructure-components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
+    ("//src/infrastructure-components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
     ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator", "vm-orchestrator"),
     ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli", "vm-orchestrator-cli"),
 ]

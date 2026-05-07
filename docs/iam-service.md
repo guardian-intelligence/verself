@@ -69,7 +69,7 @@ The current deployment uses a Nomad-managed SpiceDB process backed by
 PostgreSQL:
 
 ```text
-src/components/spicedb/nomad.hcl
+src/infrastructure-components/spicedb/nomad.hcl
   gRPC API:       Nomad service spicedb-grpc, loopback dynamic port
   metrics/pprof:  Nomad service spicedb-metrics, loopback dynamic port
   HTTP gateway:   disabled
@@ -305,8 +305,8 @@ Wire contract locations:
 | SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
 | Generated service Go transport client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
 | Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
-| Curated TypeScript IAM SDK | `src/frontends/viteplus-monorepo/packages/sdk/src/iam.ts` | `//src/frontends/viteplus-monorepo/packages/sdk:pkg` |
-| Generated SDK TypeScript transport clients | `src/frontends/viteplus-monorepo/packages/sdk/src/__generated/iam-api/` | `//src/frontends/viteplus-monorepo/packages/sdk:openapi_clients` |
+| Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
+| Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-api/` | `//src/websites/packages/sdk:openapi_clients` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema assertions | `src/services/iam-service/schema/assertions.yaml`, `src/services/iam-service/schema/expected-relations.yaml` | `//src/services/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
@@ -528,7 +528,7 @@ The service should create these targets:
 
 //src/services/iam-service/client:client
 //src/sdks/go/verself:verself
-//src/frontends/viteplus-monorepo/packages/sdk:openapi_clients
+//src/websites/packages/sdk:openapi_clients
 //src/services/iam-service/migrations:migrations
 //src/services/iam-service/schema:schema
 //src/services/iam-service/schema:schema_tests

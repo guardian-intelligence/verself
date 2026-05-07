@@ -1,0 +1,29 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/infrastructure-components:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    component = "spicedb",
+    deploy_phase = "platform",
+    job_id = "spicedb",
+    job_spec = "nomad.hcl",
+    requires = ["postgres:server"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

@@ -90,13 +90,13 @@ PostgreSQL and OTel collector.
 - `src/host/` owns host bootstrap roles, site facts, SOPS bootstrap material,
   host binary admission, bootstrap ClickHouse schema, and Nomad agent
   convergence.
-- `src/components/<name>/` owns each platform component's `BUILD.bazel`,
+- `src/infrastructure-components/<name>/` owns each platform component's `BUILD.bazel`,
   `nomad.hcl`, runtime users, directories, SPIRE identities, endpoint exports,
   credential bindings, migrations, and reconcilers.
 - `src/services/<name>/` owns product service `nomad.hcl`, OpenAPI contracts,
   PostgreSQL migrations, ClickHouse projections, service-to-service clients,
   and public route metadata.
-- `src/frontends/viteplus-monorepo/apps/<name>/` owns frontend `nomad.hcl`,
+- `src/websites/apps/<name>/` owns frontend `nomad.hcl`,
   server-function bindings, route metadata, browser canaries, and static/runtime
   assets.
 - `src/tools/deployment/` owns deploy graph resolution, artifact publication,
@@ -112,7 +112,7 @@ PostgreSQL and OTel collector.
   foundation, recovery networking, SPIRE, HAProxy, ClickHouse initial schema,
   Nomad, devtools, and privileged substrate.
 
-- `src/components/postgresql/`
+- `src/infrastructure-components/postgresql/`
   owns PostgreSQL host-state preparation while the server process is supervised
   by the component Nomad job. Initialization and readiness checks converge
   toward component-local Nomad lifecycle tasks.
@@ -121,42 +121,42 @@ PostgreSQL and OTel collector.
   shrinks as runtime accounts, PostgreSQL bindings, ClickHouse grants, OpenBao
   policies, and endpoint files move into owner-local Nomad components.
 
-- `src/components/postgresql/`
+- `src/infrastructure-components/postgresql/`
   becomes the PostgreSQL Nomad component: server job, init prestart task,
   role/database convergence batch job, endpoint metadata, and component
   descriptor provides for `postgres:server` and `postgres:bindings`.
 
-- `src/components/garage/`
+- `src/infrastructure-components/garage/`
   becomes the artifact-origin Nomad component. It must run in the pre-artifact
   wave from host-admitted binaries and publish `artifact-origin` before normal
   artifact publication.
 
-- `src/components/openbao/`
+- `src/infrastructure-components/openbao/`
   owns the OpenBao server job, unseal/recovery ceremony hooks, SPIRE JWT auth
   roles, runtime secret seeding, and credential-store reconciliation.
 
-- `src/components/zitadel/`
+- `src/infrastructure-components/zitadel/`
   owns the Zitadel Nomad job, setup/init tasks, project/application
   reconciliation, OAuth application exports, and service discovery metadata.
 
-- `src/components/nats/`, `src/components/tigerbeetle/`,
-  `src/components/zot/`, `src/components/verdaccio/`,
-  `src/components/stalwart/`, `src/components/forgejo/`,
-  `src/components/grafana/`, and `src/components/electric/`
+- `src/infrastructure-components/nats/`, `src/infrastructure-components/tigerbeetle/`,
+  `src/infrastructure-components/zot/`, `src/infrastructure-components/verdaccio/`,
+  `src/infrastructure-components/stalwart/`, `src/infrastructure-components/forgejo/`,
+  `src/infrastructure-components/grafana/`, and `src/infrastructure-components/electric/`
   each receive a component-local Nomad descriptor, host-volume declarations,
   endpoint metadata, and migration/reconcile jobs specific to the component.
 
-- `src/components/spicedb/` and `src/components/temporal-platform/`
+- `src/infrastructure-components/spicedb/` and `src/infrastructure-components/temporal-platform/`
   already have Nomad component shape. The migration removes remaining host
   systemd ownership and leaves their database/schema prerequisites as explicit
   Nomad graph requirements.
 
-- `src/components/clickhouse/`
+- `src/infrastructure-components/clickhouse/`
   keeps the server in bootstrap and owns post-initial migration jobs. The
   package continues to exclude `001_initial_schema.up.sql` from the Nomad
   migration bundle.
 
-- `src/components/haproxy/`
+- `src/infrastructure-components/haproxy/`
   keeps the HAProxy process in bootstrap and owns deployable upstream-map
   reconciliation from Nomad service discovery.
 

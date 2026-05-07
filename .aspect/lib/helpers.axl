@@ -25,7 +25,7 @@ GO_DIRS = [
     "src/tools/deployment",
     "src/tools/dev",
     "src/tools/operator",
-    "src/cli/verself",
+    "src/verself-cli",
     "src/domain-transfer-objects/go",
     "src/services/governance-service",
     "src/services/iam-service",
@@ -40,7 +40,7 @@ GO_DIRS = [
     "src/services/secrets-service",
     "src/services/service-runtime/go",
     "src/services/source-code-hosting-service",
-    "src/components/temporal-platform",
+    "src/infrastructure-components/temporal-platform",
     "src/substrate/vm-orchestrator",
 ]
 

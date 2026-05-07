@@ -12,7 +12,7 @@ import (
 
 const (
 	DefaultPolicyPath = "src/host/supply-chain/__generated/policy.json"
-	PnpmWorkspacePath = "src/frontends/viteplus-monorepo/pnpm-workspace.yaml"
+	PnpmWorkspacePath = "src/websites/pnpm-workspace.yaml"
 
 	ResultAccepted    = "accepted"
 	ResultProvisional = "provisional"

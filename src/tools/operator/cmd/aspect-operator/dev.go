@@ -89,7 +89,7 @@ func cmdDevVerselfWeb(args []string) error {
 		summary["state"] = *stateFile
 		printDevSummary(summary)
 		cmd := exec.CommandContext(rt.Ctx, "vp", "run", "@verself/verself-web#dev")
-		cmd.Dir = filepath.Join(rt.RepoRoot, "src", "frontends", "viteplus-monorepo")
+		cmd.Dir = filepath.Join(rt.RepoRoot, "src", "websites")
 		cmd.Env = envMapToList(env)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -229,7 +229,7 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 }
 
 func verselfWebJobEnv(repoRoot, site string) (map[string]string, error) {
-	path := filepath.Join(repoRoot, "src", "frontends", "viteplus-monorepo", "apps", "verself-web", "nomad.hcl")
+	path := filepath.Join(repoRoot, "src", "websites", "apps", "verself-web", "nomad.hcl")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)

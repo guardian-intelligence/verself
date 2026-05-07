@@ -11,7 +11,7 @@ def _viteplus(ctx):
         ctx,
         "vp",
         ["check", "--fix"],
-        cwd = ws_path(ctx, "src/frontends/viteplus-monorepo"),
+        cwd = ws_path(ctx, "src/websites"),
         label = "vp check --fix",
     )
 

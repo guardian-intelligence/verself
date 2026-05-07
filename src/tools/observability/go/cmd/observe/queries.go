@@ -817,7 +817,7 @@ LIMIT {row_limit:UInt32}`
 // for one deploy. The spans are emitted by
 // src/tools/observability/go/cmd/bazel-execlog-to-otel from --execution_log_json_file.
 // Mnemonics come from package-owned OpenAPI genrules, direct oapi-codegen
-// actions, and src/frontends/viteplus-monorepo/viteplus_rules.bzl (OpenapiTsGen for
+// actions, and src/websites/viteplus_rules.bzl (OpenapiTsGen for
 // the frontend TS SDK gen). The cache_hit column distinguishes "the action
 // graph correctly invalidated and re-ran" (cache_hit=0) from "every
 // codegen target was already cached" (cache_hit=1) — both are valid

@@ -53,7 +53,7 @@ Single-node is the default deployment — everything runs on one box with no rep
 
 ## Safety Rings
 
-- **Internet-Exposed:** frontend TanStack apps (`src/frontends/viteplus-monorepo/apps/*`), Go services (`src/services/sandbox-rental-service`, `src/services/mailbox-service`, `src/services/billing-service`'s webhook handler), Forgejo, Grafana. Hardened via nftables.
+- **Internet-Exposed:** frontend TanStack apps (`src/websites/apps/*`), Go services (`src/services/sandbox-rental-service`, `src/services/mailbox-service`, `src/services/billing-service`'s webhook handler), Forgejo, Grafana. Hardened via nftables.
 - **Private Subnet / Linux Userspace:** internal Go services (billing-service), databases (PostgreSQL, ClickHouse, TigerBeetle), self-hosted platform components (Zitadel, Stalwart).
 - **Linux Root:** ZFS, `src/substrate/vm-orchestrator`.
 

@@ -38,7 +38,7 @@ public projection under `src/sdks/` or frontend SDK packages.
 ## Invariants
 
 ```shell
-rg -n "github.com/verself/projects-service/client" src/sdks src/cli src/frontends/viteplus-monorepo/packages/sdk src/frontends/viteplus-monorepo/apps/verself-web
+rg -n "github.com/verself/projects-service/client" src/sdks src/verself-cli src/websites/packages/sdk src/websites/apps/verself-web
 rg -n "spec = \"//src/services/projects-service/openapi:internal-openapi-3.0.yaml\"" src/services/projects-service/client/BUILD.bazel
 rg -n "projects-internal-openapi" src/services/projects-service src/host .aspect
 rg -n "unknown module path version unknown version" src/services/projects-service src/sdks/go/verself

@@ -1,0 +1,148 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load(
+    "@npm//src/websites/apps/verself-web:@hey-api/openapi-ts/package_json.bzl",
+    openapi_ts_bin = "bin",
+)
+load("//src/websites:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree")
+load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+package(default_visibility = ["//visibility:public"])
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        ":node_app_nomad_artifact": "verself-web",
+        "//src/websites:nodejs_runtime_nomad_artifact": "nodejs-runtime",
+    },
+    component = "verself_web",
+    depends_on = ["electric"],
+    job_id = "verself-web",
+    job_spec = "nomad.hcl",
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+component_substrate_json(
+    name = "component_substrate",
+    srcs = [
+        "nftables/verself-web.nft",
+    ],
+    definition_json = """
+{
+  "component": "verself_web",
+  "kind": "frontend",
+  "nftables_rulesets": [
+    {
+      "name": "verself_web",
+      "source": "src/websites/apps/verself-web/nftables/verself-web.nft",
+      "table": "verself_web",
+      "target": "/etc/nftables.d/verself-web.nft"
+    }
+  ],
+  "nomad_component_label": "//src/websites/apps/verself-web:nomad_component",
+  "order": 110,
+  "postgres": {},
+  "workload": {
+    "directories": [
+      {"group": "verself-web", "mode": "0750", "owner": "root", "path": "/etc/credstore/verself-web"},
+      {"group": "verself-web", "mode": "0700", "owner": "verself-web", "path": "/var/lib/verself-web"}
+    ],
+    "secret_refs": [
+      {
+        "group": "verself-web",
+        "mode": "0640",
+        "name": "electric-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/verself-web/electric-api-secret",
+        "source": {"kind": "remote_src", "remote_src": "/etc/credstore/electric/api-secret"}
+      },
+      {
+        "group": "verself-web",
+        "mode": "0640",
+        "name": "electric-notifications-api-secret",
+        "no_log": true,
+        "owner": "root",
+        "path": "/etc/credstore/verself-web/electric-notifications-api-secret",
+        "source": {"kind": "remote_src", "remote_src": "/etc/credstore/electric-notifications/api-secret"}
+      }
+    ],
+    "units": [{"home": "/var/lib/verself-web", "name": "verself-web", "user": "verself-web"}]
+  }
+}
+""",
+    visibility = ["//src/host:__pkg__"],
+)
+
+viteplus_app(
+    srcs = [
+        "instrumentation.mts",
+        "package.json",
+        "public/**/*",
+        "src/**/*",
+        "tsconfig.json",
+        "vite.config.ts",
+    ],
+    npm_name = "@verself/verself-web",
+)
+
+viteplus_node_app_artifact(
+    name = "node_app_nomad_artifact",
+    generated_srcs = [
+        ":route_tree_generated_sources",
+        ":openapi_clients_generated_sources",
+        ":openapi_spec_copies_generated_sources",
+        "//src/websites/packages/sdk:openapi_clients_generated_sources",
+    ],
+    output = "verself-web",
+)
+
+viteplus_route_tree(name = "route_tree")
+
+# Customer-facing OpenAPI client SDKs for every service the verself-web app
+# talks to. Outputs are written to bazel-out, projected into src/__generated
+# for local tools via write_source_files, and materialized by the app artifact
+# build before `vp build` so service spec changes flow through the graph.
+viteplus_openapi_clients(
+    name = "openapi_clients",
+    openapi_ts_bin = openapi_ts_bin,
+    plugin_packages = [":node_modules/valibot"],
+    specs = [
+        ("profile-api", "//src/services/profile-service/openapi:openapi-3.1.yaml.bin"),
+    ],
+)
+
+viteplus_openapi_spec_copies(
+    name = "openapi_spec_copies",
+    specs = [
+        ("projects-api", "//src/services/projects-service/openapi:openapi-3.1.yaml"),
+        ("notifications-api", "//src/services/notifications-service/openapi:openapi-3.1.yaml"),
+        ("governance-api", "//src/services/governance-service/openapi:openapi-3.1.yaml"),
+        ("source-api", "//src/services/source-code-hosting-service/openapi:openapi-3.1.yaml"),
+        ("sandbox-rental-api", "//src/services/sandbox-rental-service/openapi:openapi-3.1.yaml"),
+        ("secrets-api", "//src/services/secrets-service/openapi:openapi-3.1.yaml"),
+        ("iam-api", "//src/services/iam-service/openapi:openapi-3.1.yaml"),
+        ("mailbox-api", "//src/services/mailbox-service/openapi:openapi-3.1.yaml"),
+        ("billing-api", "//src/services/billing-service/openapi:openapi-3.1.yaml"),
+    ],
+)
+
+test_suite(
+    name = "dev_check",
+    tags = ["manual"],
+    tests = [
+        ":openapi_clients_tests",
+        ":openapi_spec_copies_tests",
+        ":route_tree_tests",
+    ],
+)
+
+write_source_files(
+    name = "dev_update",
+    additional_update_targets = [
+        ":route_tree",
+        ":openapi_clients",
+        ":openapi_spec_copies",
+    ],
+    tags = ["manual"],
+)

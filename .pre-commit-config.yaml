@@ -48,12 +48,12 @@ repos:
             set -e
             vp_bin="$HOME/.vite-plus/bin/vp"
             [ -x "$vp_bin" ] || { echo "vp not found at $vp_bin; run scripts/bootstrap-*" >&2; exit 1; }
-            cd src/frontends/viteplus-monorepo
+            cd src/websites
             files=()
-            for f in "$@"; do files+=("${f#src/frontends/viteplus-monorepo/}"); done
+            for f in "$@"; do files+=("${f#src/websites/}"); done
             [ ${#files[@]} -eq 0 ] && exit 0
             "$vp_bin" lint "${files[@]}"
           ' --
         language: system
-        files: ^src/frontends/viteplus-monorepo/.*\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$
+        files: ^src/websites/.*\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$
         pass_filenames: true

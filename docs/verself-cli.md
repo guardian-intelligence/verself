@@ -563,7 +563,7 @@ verself bootstrap --company guardian --option stripe.default_currency=usd
 - `src/host/sites/<site>/vars.yml`;
 - `src/host/sites/<site>/provisioning.tfvars.json.template`;
 - `src/host/sites/<site>/secrets/*.sops.yml`;
-- `src/cli/<cli_name>/` when rendering a named CLI;
+- `src/<cli_name>-cli/` when rendering a named CLI;
 - bootstrap run records under `$XDG_STATE_HOME/verself/bootstrap/<run-id>.json`.
 
 Out of scope for `verself bootstrap`:
@@ -808,7 +808,7 @@ record:
 | --- | --- |
 | `.verself/bootstrap/manifest.yaml` | Canonical bootstrap manifest with company, owner, CLI, site, domain, and provider capability metadata. |
 | `.sops.yaml` | SOPS creation rules addressed to the root Age recipient. |
-| `src/cli/<cli_name>/` | CLI package or build target that emits the chosen command name. |
+| `src/<cli_name>-cli/` | CLI package or build target that emits the chosen command name. |
 | `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, company/org defaults, and platform org defaults. |
 | `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
 | `src/host/sites/<site>/secrets/*.sops.yml` | Encrypted SOPS bags for generated and supplied secrets. |
@@ -818,10 +818,10 @@ The intended operator-local flow is:
 
 ```text
 ./scripts/bootstrap-linux-amd64
-bazelisk build //src/cli/<cli_name>:<cli_name>
-./bazel-bin/src/cli/<cli_name>/<cli_name> env get VERSELF_SOPS_AGE_IDENTITY --org <org> --project <project> --environment bootstrap
-./bazel-bin/src/cli/<cli_name>/<cli_name> company inspect <company> --json
-./bazel-bin/src/cli/<cli_name>/<cli_name> env run --org <org> --project <project> --environment bootstrap -- aspect deploy --site=prod --sha=HEAD
+bazelisk build //src/<cli_name>-cli:<cli_name>
+./bazel-bin/src/<cli_name>-cli/<cli_name> env get VERSELF_SOPS_AGE_IDENTITY --org <org> --project <project> --environment bootstrap
+./bazel-bin/src/<cli_name>-cli/<cli_name> company inspect <company> --json
+./bazel-bin/src/<cli_name>-cli/<cli_name> env run --org <org> --project <project> --environment bootstrap -- aspect deploy --site=prod --sha=HEAD
 ```
 
 If a hosted renderer is reintroduced, expose it as a separate self-hosted
@@ -1024,8 +1024,8 @@ Suggested source layout:
 
 ```text
 src/sdks/go/verself/             curated public Go SDK
-src/frontends/viteplus-monorepo/packages/sdk/  curated public TypeScript SDK
-src/cli/verself/                 public CLI binary
+src/websites/packages/sdk/  curated public TypeScript SDK
+src/verself-cli/                 public CLI binary
 src/tools/operator/              legacy/internal operator helpers during cutover
 src/services/iam-service/        owner-claim and organization APIs
 src/host/sites/<site>/           pre-service site variable store

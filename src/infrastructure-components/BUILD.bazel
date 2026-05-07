@@ -1,0 +1,29 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "*/defaults/**",
+            "*/files/**",
+            "*/handlers/**",
+            "*/meta/**",
+            "*/migrations/**",
+            "*/tasks/**",
+            "*/templates/**",
+            "*/vars/**",
+        ],
+        allow_empty = True,
+    ) + [
+        "//src/infrastructure-components/clickhouse:role_sources",
+        "//src/infrastructure-components/electric:role_sources",
+        "//src/infrastructure-components/grafana:role_sources",
+        "//src/infrastructure-components/haproxy:role_sources",
+        "//src/infrastructure-components/nats:role_sources",
+        "//src/infrastructure-components/otelcol:role_sources",
+        "//src/infrastructure-components/postgresql:role_sources",
+        "//src/infrastructure-components/spicedb:role_sources",
+        "//src/infrastructure-components/temporal-platform:role_sources",
+        "//src/infrastructure-components/verdaccio:role_sources",
+    ],
+)

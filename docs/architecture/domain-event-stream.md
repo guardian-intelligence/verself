@@ -90,7 +90,7 @@ SVID TTL and fail-closed startup semantics from
 - Per-subject authorization failures.
 - Consumer lag per subject pattern.
 
-Grafana dashboard metadata for NATS belongs under `src/components/grafana/`.
+Grafana dashboard metadata for NATS belongs under `src/infrastructure-components/grafana/`.
 
 ## Live verification
 

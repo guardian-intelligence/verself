@@ -1,0 +1,45 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/infrastructure-components:__pkg__"],
+)
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "grafana",
+    entry_id = "verself-grafana",
+    key = "grafana.default",
+    path = "/svc/grafana",
+    restart_units = [],
+    user = "grafana",
+    visibility = ["//src/host:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    component = "grafana",
+    deploy_phase = "platform",
+    job_id = "grafana",
+    job_spec = "nomad.hcl",
+    provides = ["grafana:http"],
+    requires = [
+        "clickhouse:migrations",
+        "postgres:server",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

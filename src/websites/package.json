@@ -1,0 +1,28 @@
+{
+  "name": "@verself/websites",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp run @verself/verself-web#dev",
+    "generate": "vp run -r generate",
+    "check": "vp check",
+    "node:temporal": "node --harmony-temporal",
+    "typecheck": "vp run -r typecheck && vp run -w typecheck:scripts",
+    "typecheck:scripts": "tsc -p tsconfig.json",
+    "test": "vp test run",
+    "build": "vp run -r build",
+    "ready": "vp check && vp test run && vp run -r typecheck && vp run -w typecheck:scripts && vp run -r build"
+  },
+  "devDependencies": {
+    "@tanstack/router-generator": "catalog:",
+    "@types/node": "catalog:",
+    "rolldown": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+}

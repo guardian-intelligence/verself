@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "electric-nomad-runner_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/electric/cmd/electric-nomad-runner",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "electric-nomad-runner",
+    embed = [":electric-nomad-runner_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "electric-nomad-runner_nomad_artifact",
+    binary = ":electric-nomad-runner",
+    output = "electric-nomad-runner",
+)

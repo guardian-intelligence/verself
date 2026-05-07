@@ -59,7 +59,7 @@ Top-level landmarks:
 
 - `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or raw `bazelisk`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
-- Local Verself CLI: build `//src/cli/verself/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/cli/verself/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
+- Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
 
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
 
@@ -73,7 +73,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 
 <product_policy>
 
-Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/frontends/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy`.
+Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/websites/apps/verself-web/src/routes/_workshop/policy`.
 
 </product_policy>
 

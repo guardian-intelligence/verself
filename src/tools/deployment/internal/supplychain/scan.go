@@ -95,7 +95,7 @@ func shouldScanFile(rel string) bool {
 	if !strings.HasPrefix(rel, "src/") {
 		return false
 	}
-	if rel == "src/frontends/viteplus-monorepo/.npmrc" {
+	if rel == "src/websites/.npmrc" {
 		return true
 	}
 	if strings.HasPrefix(rel, "src/tools/deployment/internal/supplychain/") {
@@ -134,10 +134,10 @@ func scanFile(path, rel string) ([]Finding, error) {
 	if isBootstrapScript(rel) {
 		findings = append(findings, scanShellURLVars(rel, text)...)
 	}
-	if rel == "src/frontends/viteplus-monorepo/pnpm-workspace.yaml" {
+	if rel == "src/websites/pnpm-workspace.yaml" {
 		findings = append(findings, scanPnpmSettings(rel, text)...)
 	}
-	if rel == "src/frontends/viteplus-monorepo/.npmrc" {
+	if rel == "src/websites/.npmrc" {
 		findings = append(findings, scanNpmrcSettings(rel, text)...)
 	}
 	if strings.HasSuffix(rel, "catalog.yml") {
@@ -536,7 +536,7 @@ func goInstallArtifact(line string) string {
 
 func classifySurface(rel, kind, artifact string) string {
 	switch {
-	case rel == "src/frontends/viteplus-monorepo/.npmrc":
+	case rel == "src/websites/.npmrc":
 		return "build-time"
 	case strings.HasPrefix(rel, "src/substrate/vm-orchestrator/guest-images/"):
 		return "guest-rootfs"
