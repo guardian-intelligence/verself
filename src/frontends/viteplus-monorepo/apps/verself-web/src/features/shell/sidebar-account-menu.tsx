@@ -4,7 +4,6 @@ import { ClientOnly, Link, useHydrated, useRouter } from "@tanstack/react-router
 import {
   BookOpen,
   Check,
-  ChevronDown,
   ChevronsUpDown,
   CircleHelp,
   Home,
@@ -109,22 +108,32 @@ function OrganizationSwitcherMenu() {
   return (
     <ClientOnly fallback={<OrganizationTriggerSkeleton />}>
       <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <button
-              type="button"
-              data-testid="shell-account-trigger"
-              className="group/trigger flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center"
-            >
-              <OrganizationMark label={activeLabel} />
-              <span className="min-w-0 flex-1 truncate font-medium group-data-[collapsible=icon]:hidden">
-                {activeLabel}
-              </span>
-              <PlanBadge label={tierLabel} className="group-data-[collapsible=icon]:hidden" />
-              <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden" />
-            </button>
-          }
-        />
+        <div className="flex h-9 min-w-0 flex-1 items-center group-data-[collapsible=icon]:justify-center">
+          <Link
+            to={orgPath(orgSlug, "/settings/organization")}
+            data-testid="shell-organization-link"
+            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden"
+          >
+            <OrganizationMark label={activeLabel} />
+            <span className="min-w-0 flex-1 truncate font-medium">{activeLabel}</span>
+            <PlanBadge label={tierLabel} />
+          </Link>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Switch organization"
+                data-testid="shell-account-trigger"
+                className="flex h-full shrink-0 items-center justify-center rounded-md px-1.5 text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-foreground group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:px-0"
+              >
+                <span className="hidden group-data-[collapsible=icon]:inline-flex">
+                  <OrganizationMark label={activeLabel} />
+                </span>
+                <ChevronsUpDown className="size-3.5 shrink-0 group-data-[collapsible=icon]:hidden" />
+              </button>
+            }
+          />
+        </div>
         <DropdownMenuContent
           data-testid="shell-organization-menu"
           side="bottom"
@@ -132,25 +141,6 @@ function OrganizationSwitcherMenu() {
           sideOffset={7}
           className="w-[min(23.5rem,calc(100vw-0.75rem))] overflow-hidden rounded-lg border border-white/10 bg-[#050505] p-0 text-[#ededed] shadow-2xl ring-0"
         >
-          <div className="grid h-12 grid-cols-[minmax(0,1fr)_9rem] border-b border-white/10">
-            <button
-              type="button"
-              className="flex min-w-0 items-center gap-2 px-2.5 text-left transition-colors hover:bg-white/8"
-            >
-              <OrganizationMark label={activeLabel} />
-              <span className="min-w-0 truncate text-sm font-medium">{activeLabel}</span>
-              <PlanBadge label={tierLabel} />
-              <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-white/55" />
-            </button>
-            <Link
-              to={orgPath(orgSlug, "/builds")}
-              className="flex items-center justify-center gap-1 border-l border-white/10 px-3 text-xs font-medium text-white/85 transition-colors hover:bg-white/8 hover:text-white"
-            >
-              All Projects
-              <ChevronDown className="size-3.5 text-white/50" />
-            </Link>
-          </div>
-
           <label className="m-2 flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 text-white/55 focus-within:border-white/20 focus-within:text-white/70">
             <Search className="size-4 shrink-0" />
             <input
@@ -235,16 +225,11 @@ function OrganizationSwitcherMenu() {
           <DropdownMenuItem
             render={
               <Link
-                to={orgPath(orgSlug, "/settings/organization")}
-                className="flex h-12 items-center gap-3 px-3 text-white/85 focus:bg-white/10 focus:text-white"
+                to={orgPath(orgSlug, "/settings/organization/new")}
+                className="flex h-10 items-center gap-3 px-3 text-sm font-medium text-white/85 focus:bg-white/10 focus:text-white"
               >
                 <Plus className="size-4 text-white/70" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">Manage organization</span>
-                  <span className="block truncate text-xs text-white/50">
-                    Members, governance, and organization profile
-                  </span>
-                </span>
+                Create team
               </Link>
             }
           />
