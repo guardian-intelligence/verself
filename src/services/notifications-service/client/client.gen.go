@@ -130,18 +130,26 @@ type NotificationMarkReadRequest struct {
 
 // NotificationPreferences defines model for NotificationPreferences.
 type NotificationPreferences struct {
-	Enabled   bool      `json:"enabled"`
-	UpdatedAt time.Time `json:"updated_at"`
-	UpdatedBy string    `json:"updated_by"`
-	Version   int32     `json:"version"`
+	EmailEnabled bool      `json:"email_enabled"`
+	Enabled      bool      `json:"enabled"`
+	PushEnabled  bool      `json:"push_enabled"`
+	SmsEnabled   bool      `json:"sms_enabled"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	UpdatedBy    string    `json:"updated_by"`
+	Version      int32     `json:"version"`
+	WebEnabled   bool      `json:"web_enabled"`
 }
 
 // NotificationPutPreferencesRequest defines model for NotificationPutPreferencesRequest.
 type NotificationPutPreferencesRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string `json:"$schema,omitempty"`
-	Enabled bool    `json:"enabled"`
-	Version int32   `json:"version"`
+	Schema       *string `json:"$schema,omitempty"`
+	EmailEnabled *bool   `json:"email_enabled,omitempty"`
+	Enabled      bool    `json:"enabled"`
+	PushEnabled  *bool   `json:"push_enabled,omitempty"`
+	SmsEnabled   *bool   `json:"sms_enabled,omitempty"`
+	Version      int32   `json:"version"`
+	WebEnabled   *bool   `json:"web_enabled,omitempty"`
 }
 
 // NotificationSummary defines model for NotificationSummary.

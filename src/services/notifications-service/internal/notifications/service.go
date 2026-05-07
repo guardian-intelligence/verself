@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ type Service struct {
 	PG        *pgxpool.Pool
 	CH        driver.Conn
 	Publisher Publisher
+	Email     EmailSender
 	Runtime   *Runtime
 	Now       func() time.Time
 }
@@ -196,11 +198,18 @@ func (s *Service) PutPreferences(ctx context.Context, principal Principal, input
 	}
 	now := s.now()
 	nextVersion := old.Version + 1
+	webEnabled := valueOr(input.WebEnabled, input.Enabled)
+	emailEnabled := valueOr(input.EmailEnabled, input.Enabled)
+	pushEnabled := valueOr(input.PushEnabled, false)
+	smsEnabled := valueOr(input.SMSEnabled, false)
 	rowsAffected, err := q.UpsertPreferences(ctx, notificationstore.UpsertPreferencesParams{
-		OrgID:           principal.OrgID,
 		SubjectID:       principal.Subject,
 		NextVersion:     nextVersion,
 		Enabled:         input.Enabled,
+		WebEnabled:      webEnabled,
+		EmailEnabled:    emailEnabled,
+		PushEnabled:     pushEnabled,
+		SmsEnabled:      smsEnabled,
 		UpdatedAt:       timestamptz(now),
 		ExpectedVersion: input.Version,
 	})
@@ -485,6 +494,448 @@ func (s *Service) PublishSyntheticTest(ctx context.Context, principal Principal,
 	return Accepted{EventID: event.EventID, Traceparent: event.Traceparent}, nil
 }
 
+func (s *Service) TriggerWorkflow(ctx context.Context, input WorkflowTriggerRequest) (WorkflowTriggerResult, error) {
+	ctx, span := tracer.Start(ctx, "notifications.workflow.trigger")
+	defer span.End()
+	input, err := NormalizeWorkflowTrigger(input)
+	if err != nil {
+		return WorkflowTriggerResult{}, err
+	}
+	for idx := range input.Recipients {
+		if input.Recipients[idx].Email != "" {
+			email, err := normalizeEmail(input.Recipients[idx].Email)
+			if err != nil {
+				return WorkflowTriggerResult{}, err
+			}
+			input.Recipients[idx].Email = email
+		}
+	}
+	now := s.now()
+	contentHash := WorkflowContentSHA256(input)
+	workflowRunID := deterministicWorkflowRunID(input.WorkflowKey, input.OrgID, input.IdempotencyKey)
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	q := notificationstore.New(tx)
+	result := WorkflowTriggerResult{
+		WorkflowRunID:  workflowRunID,
+		WorkflowKey:    input.WorkflowKey,
+		OrgID:          input.OrgID,
+		AcceptedAt:     now,
+		RecipientCount: uint16(len(input.Recipients)),
+		Traceparent:    input.Traceparent,
+	}
+	rowsAffected, err := q.InsertWorkflowRun(ctx, notificationstore.InsertWorkflowRunParams{
+		WorkflowRunID:            workflowRunID,
+		WorkflowKey:              input.WorkflowKey,
+		OrgID:                    input.OrgID,
+		TriggeredBy:              input.TriggeredBy,
+		IdempotencyKey:           input.IdempotencyKey,
+		Priority:                 input.Priority,
+		Title:                    input.Title,
+		Body:                     input.Body,
+		ActionUrl:                input.ActionURL,
+		ResourceKind:             input.ResourceKind,
+		ResourceID:               input.ResourceID,
+		ContentSha256:            contentHash,
+		Data:                     []byte(input.Data),
+		Traceparent:              input.Traceparent,
+		RecipientCount:           int32(result.RecipientCount),
+		WebNotificationsAccepted: 0,
+		EmailDeliveriesQueued:    0,
+		SuppressedCount:          0,
+		CreatedAt:                timestamptz(now),
+	})
+	if err != nil {
+		return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if rowsAffected == 0 {
+		row, err := q.GetWorkflowRun(ctx, notificationstore.GetWorkflowRunParams{
+			WorkflowKey:    input.WorkflowKey,
+			OrgID:          input.OrgID,
+			IdempotencyKey: input.IdempotencyKey,
+		})
+		if err != nil {
+			return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		createdAt, err := requiredTime(row.CreatedAt)
+		if err != nil {
+			return WorkflowTriggerResult{}, err
+		}
+		result = WorkflowTriggerResult{
+			WorkflowRunID:            row.WorkflowRunID,
+			WorkflowKey:              row.WorkflowKey,
+			OrgID:                    row.OrgID,
+			AcceptedAt:               createdAt,
+			RecipientCount:           uint16(row.RecipientCount),
+			WebNotificationsAccepted: uint16(row.WebNotificationsAccepted),
+			EmailDeliveriesQueued:    uint16(row.EmailDeliveriesQueued),
+			SuppressedCount:          uint16(row.SuppressedCount),
+			Traceparent:              row.Traceparent,
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		return result, nil
+	}
+	for _, recipient := range input.Recipients {
+		preferences := Preferences{Enabled: true, WebEnabled: true, EmailEnabled: true}
+		if recipient.SubjectID != "" {
+			preferences, err = s.preferences(ctx, q, input.OrgID, recipient.SubjectID)
+			if err != nil {
+				return WorkflowTriggerResult{}, err
+			}
+		}
+		if recipient.SubjectID != "" {
+			if preferences.Enabled && preferences.WebEnabled {
+				eventID := deterministicWorkflowChildID("web", workflowRunID, recipient.SubjectID)
+				event := DomainEvent{
+					EventSource:        ServiceName,
+					EventID:            eventID,
+					Subject:            "workflow." + input.WorkflowKey,
+					OrgID:              input.OrgID,
+					ActorSubjectID:     input.TriggeredBy,
+					RecipientSubjectID: recipient.SubjectID,
+					DedupeKey:          "workflow:" + workflowRunID.String() + ":web:" + recipient.SubjectID,
+					Kind:               input.WorkflowKey,
+					Priority:           input.Priority,
+					Title:              input.Title,
+					Body:               input.Body,
+					ActionURL:          input.ActionURL,
+					ResourceKind:       input.ResourceKind,
+					ResourceID:         input.ResourceID,
+					OccurredAt:         now,
+					Payload: map[string]any{
+						"workflow_run_id": workflowRunID.String(),
+						"workflow_key":    input.WorkflowKey,
+					},
+					Traceparent: input.Traceparent,
+				}
+				payload, err := json.Marshal(event.Payload)
+				if err != nil {
+					return WorkflowTriggerResult{}, fmt.Errorf("%w: marshal workflow payload: %v", ErrStoreUnavailable, err)
+				}
+				rowsAffected, err := q.InsertEvent(ctx, notificationstore.InsertEventParams{
+					EventSource:        event.EventSource,
+					EventID:            event.EventID,
+					Subject:            event.Subject,
+					OrgID:              event.OrgID,
+					ActorSubjectID:     event.ActorSubjectID,
+					RecipientSubjectID: event.RecipientSubjectID,
+					DedupeKey:          event.DedupeKey,
+					Kind:               event.Kind,
+					Priority:           event.Priority,
+					Title:              event.Title,
+					Body:               event.Body,
+					ActionUrl:          event.ActionURL,
+					ResourceKind:       event.ResourceKind,
+					ResourceID:         event.ResourceID,
+					ContentSha256:      contentHash,
+					Payload:            payload,
+					Traceparent:        event.Traceparent,
+					OccurredAt:         timestamptz(now),
+					ReceivedAt:         timestamptz(now),
+				})
+				if err != nil {
+					return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+				}
+				if rowsAffected > 0 {
+					result.WebNotificationsAccepted++
+					if err := s.enqueueProjectionTx(ctx, q, projectionInput{
+						EventType:          LedgerEventReceived,
+						OrgID:              input.OrgID,
+						RecipientSubjectID: recipient.SubjectID,
+						EventSource:        ServiceName,
+						EventIDText:        eventID.String(),
+						SourceSubject:      event.Subject,
+						Kind:               input.WorkflowKey,
+						Priority:           input.Priority,
+						ContentSHA256:      contentHash,
+						Status:             "received",
+						OccurredAt:         now,
+						Traceparent:        input.Traceparent,
+					}); err != nil {
+						return WorkflowTriggerResult{}, err
+					}
+					if s.Runtime != nil {
+						if err := s.Runtime.EnqueueEventFanoutTx(ctx, tx, ServiceName, eventID.String(), input.Traceparent); err != nil {
+							return WorkflowTriggerResult{}, err
+						}
+					}
+				}
+			} else {
+				result.SuppressedCount++
+				if err := s.enqueueWorkflowSuppression(ctx, q, input, workflowRunID, recipient.SubjectID, "web_preferences_disabled", contentHash, now); err != nil {
+					return WorkflowTriggerResult{}, err
+				}
+			}
+		}
+		if recipient.Email != "" {
+			if recipient.SubjectID == "" || (preferences.Enabled && preferences.EmailEnabled) {
+				deliveryID := deterministicWorkflowChildID("email", workflowRunID, recipient.Email)
+				rowsAffected, err := q.InsertDeliveryAttempt(ctx, notificationstore.InsertDeliveryAttemptParams{
+					DeliveryAttemptID:  deliveryID,
+					WorkflowRunID:      workflowRunID,
+					OrgID:              input.OrgID,
+					RecipientSubjectID: recipient.SubjectID,
+					RecipientAddress:   recipient.Email,
+					WorkflowKey:        input.WorkflowKey,
+					IdempotencyKey:     "workflow:" + workflowRunID.String() + ":email:" + deliveryID.String(),
+					Priority:           input.Priority,
+					Title:              input.Title,
+					Body:               input.Body,
+					ActionUrl:          input.ActionURL,
+					ResourceKind:       input.ResourceKind,
+					ResourceID:         input.ResourceID,
+					ContentSha256:      contentHash,
+					Traceparent:        input.Traceparent,
+					QueuedAt:           timestamptz(now),
+					NextAttemptAt:      timestamptz(now),
+					UpdatedAt:          timestamptz(now),
+				})
+				if err != nil {
+					return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+				}
+				if rowsAffected > 0 {
+					result.EmailDeliveriesQueued++
+					if err := s.enqueueProjectionTx(ctx, q, projectionInput{
+						EventType:          LedgerDeliveryQueued,
+						OrgID:              input.OrgID,
+						RecipientSubjectID: projectionRecipient(recipient.SubjectID),
+						EventSource:        ServiceName,
+						EventIDText:        deliveryID.String(),
+						SourceSubject:      input.WorkflowKey,
+						Kind:               input.WorkflowKey,
+						Priority:           input.Priority,
+						ContentSHA256:      contentHash,
+						Status:             "queued",
+						OccurredAt:         now,
+						Traceparent:        input.Traceparent,
+					}); err != nil {
+						return WorkflowTriggerResult{}, err
+					}
+					if s.Runtime != nil {
+						if err := s.Runtime.EnqueueEmailDeliveryTx(ctx, tx, deliveryID.String(), input.Traceparent); err != nil {
+							return WorkflowTriggerResult{}, err
+						}
+					}
+				}
+			} else {
+				result.SuppressedCount++
+				if err := s.enqueueWorkflowSuppression(ctx, q, input, workflowRunID, projectionRecipient(recipient.SubjectID), "email_preferences_disabled", contentHash, now); err != nil {
+					return WorkflowTriggerResult{}, err
+				}
+			}
+		}
+	}
+	if err := q.UpdateWorkflowRunCounts(ctx, notificationstore.UpdateWorkflowRunCountsParams{
+		WorkflowRunID:            workflowRunID,
+		WebNotificationsAccepted: int32(result.WebNotificationsAccepted),
+		EmailDeliveriesQueued:    int32(result.EmailDeliveriesQueued),
+		SuppressedCount:          int32(result.SuppressedCount),
+	}); err != nil {
+		return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if s.Runtime != nil {
+		if err := s.Runtime.EnqueueProjectionPendingTx(ctx, tx, input.Traceparent); err != nil {
+			return WorkflowTriggerResult{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	span.SetAttributes(
+		attribute.String("notification.workflow_key", result.WorkflowKey),
+		attribute.String("notification.workflow_run_id", result.WorkflowRunID.String()),
+		attribute.Int("notification.recipient_count", int(result.RecipientCount)),
+		attribute.Int("notification.email_deliveries_queued", int(result.EmailDeliveriesQueued)),
+	)
+	return result, nil
+}
+
+func (s *Service) SendEmailDelivery(ctx context.Context, deliveryAttemptID string) error {
+	ctx, span := tracer.Start(ctx, "notifications.delivery.email")
+	defer span.End()
+	deliveryID, err := uuid.Parse(strings.TrimSpace(deliveryAttemptID))
+	if err != nil {
+		return fmt.Errorf("%w: delivery_attempt_id is invalid", ErrInvalidInput)
+	}
+	delivery, claimed, err := s.claimEmailDelivery(ctx, deliveryID)
+	if err != nil || !claimed {
+		return err
+	}
+	span.SetAttributes(
+		attribute.String("notification.delivery_attempt_id", delivery.DeliveryAttemptID.String()),
+		attribute.String("notification.workflow_key", delivery.WorkflowKey),
+		attribute.String("notification.workflow_run_id", delivery.WorkflowRunID.String()),
+	)
+	if s.Email == nil {
+		err := fmt.Errorf("%w: email sender is unavailable", ErrStoreUnavailable)
+		_ = s.failEmailDelivery(ctx, delivery, err)
+		return err
+	}
+	providerMessage, err := s.Email.Send(ctx, EmailMessage{
+		To:             delivery.RecipientAddress,
+		Subject:        delivery.Title,
+		Text:           delivery.Body,
+		IdempotencyKey: delivery.DeliveryAttemptID.String(),
+		WorkflowKey:    delivery.WorkflowKey,
+		WorkflowRunID:  delivery.WorkflowRunID.String(),
+	})
+	if err != nil {
+		_ = s.failEmailDelivery(ctx, delivery, err)
+		return err
+	}
+	return s.completeEmailDelivery(ctx, delivery, providerMessage)
+}
+
+type claimedEmailDelivery struct {
+	DeliveryAttemptID  uuid.UUID
+	WorkflowRunID      uuid.UUID
+	OrgID              string
+	RecipientSubjectID string
+	RecipientAddress   string
+	WorkflowKey        string
+	Priority           string
+	Title              string
+	Body               string
+	ContentSHA256      string
+	Traceparent        string
+}
+
+func (s *Service) claimEmailDelivery(ctx context.Context, deliveryID uuid.UUID) (claimedEmailDelivery, bool, error) {
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	q := notificationstore.New(tx)
+	row, err := q.GetDeliveryAttemptForUpdate(ctx, notificationstore.GetDeliveryAttemptForUpdateParams{DeliveryAttemptID: deliveryID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return claimedEmailDelivery{}, false, ErrNotFound
+	}
+	if err != nil {
+		return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if row.Status != "queued" && row.Status != "failed" && row.Status != "sending" {
+		if err := tx.Commit(ctx); err != nil {
+			return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		return claimedEmailDelivery{}, false, nil
+	}
+	now := s.now()
+	if err := q.MarkDeliverySending(ctx, notificationstore.MarkDeliverySendingParams{
+		DeliveryAttemptID: deliveryID,
+		UpdatedAt:         timestamptz(now),
+	}); err != nil {
+		return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return claimedEmailDelivery{
+		DeliveryAttemptID:  row.DeliveryAttemptID,
+		WorkflowRunID:      row.WorkflowRunID,
+		OrgID:              row.OrgID,
+		RecipientSubjectID: row.RecipientSubjectID,
+		RecipientAddress:   row.RecipientAddress,
+		WorkflowKey:        row.WorkflowKey,
+		Priority:           row.Priority,
+		Title:              row.Title,
+		Body:               row.Body,
+		ContentSHA256:      row.ContentSha256,
+		Traceparent:        row.Traceparent,
+	}, true, nil
+}
+
+func (s *Service) completeEmailDelivery(ctx context.Context, delivery claimedEmailDelivery, provider ProviderMessage) error {
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	q := notificationstore.New(tx)
+	now := s.now()
+	if err := q.MarkDeliverySent(ctx, notificationstore.MarkDeliverySentParams{
+		DeliveryAttemptID: delivery.DeliveryAttemptID,
+		ProviderMessageID: provider.ID,
+		SentAt:            timestamptz(now),
+	}); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if err := s.enqueueProjectionTx(ctx, q, projectionInput{
+		EventType:          LedgerDeliverySent,
+		OrgID:              delivery.OrgID,
+		RecipientSubjectID: projectionRecipient(delivery.RecipientSubjectID),
+		EventSource:        ServiceName,
+		EventIDText:        delivery.DeliveryAttemptID.String(),
+		SourceSubject:      delivery.WorkflowKey,
+		Kind:               delivery.WorkflowKey,
+		Priority:           delivery.Priority,
+		ContentSHA256:      delivery.ContentSHA256,
+		Status:             "sent",
+		OccurredAt:         now,
+		Traceparent:        delivery.Traceparent,
+	}); err != nil {
+		return err
+	}
+	if s.Runtime != nil {
+		if err := s.Runtime.EnqueueProjectionPendingTx(ctx, tx, delivery.Traceparent); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
+func (s *Service) failEmailDelivery(ctx context.Context, delivery claimedEmailDelivery, cause error) error {
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	q := notificationstore.New(tx)
+	now := s.now()
+	if err := q.MarkDeliveryFailed(ctx, notificationstore.MarkDeliveryFailedParams{
+		DeliveryAttemptID: delivery.DeliveryAttemptID,
+		FailureReason:     truncateReason(cause),
+		FailedAt:          timestamptz(now),
+		NextAttemptAt:     timestamptz(now.Add(5 * time.Second)),
+	}); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if err := s.enqueueProjectionTx(ctx, q, projectionInput{
+		EventType:          LedgerDeliveryFailed,
+		OrgID:              delivery.OrgID,
+		RecipientSubjectID: projectionRecipient(delivery.RecipientSubjectID),
+		EventSource:        ServiceName,
+		EventIDText:        delivery.DeliveryAttemptID.String(),
+		SourceSubject:      delivery.WorkflowKey,
+		Kind:               delivery.WorkflowKey,
+		Priority:           delivery.Priority,
+		ContentSHA256:      delivery.ContentSHA256,
+		Status:             "failed",
+		Reason:             truncateReason(cause),
+		OccurredAt:         now,
+		Traceparent:        delivery.Traceparent,
+	}); err != nil {
+		return err
+	}
+	if s.Runtime != nil {
+		if err := s.Runtime.EnqueueProjectionPendingTx(ctx, tx, delivery.Traceparent); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
 func (s *Service) AcceptEvent(ctx context.Context, event DomainEvent) (bool, error) {
 	ctx, span := tracer.Start(ctx, "notifications.event.persist")
 	defer span.End()
@@ -606,7 +1057,11 @@ func (s *Service) ProcessEvent(ctx context.Context, eventSource string, eventID 
 		return err
 	}
 	now := s.now()
-	if !preferences.Enabled {
+	if !preferences.Enabled || !preferences.WebEnabled {
+		reason := "preferences_disabled"
+		if preferences.Enabled {
+			reason = "web_preferences_disabled"
+		}
 		if err := q.SuppressEvent(ctx, notificationstore.SuppressEventParams{
 			SuppressedAt: timestamptz(now),
 			EventSource:  event.EventSource,
@@ -625,7 +1080,7 @@ func (s *Service) ProcessEvent(ctx context.Context, eventSource string, eventID 
 			Priority:           event.Priority,
 			ContentSHA256:      ContentSHA256(event),
 			Status:             "suppressed",
-			Reason:             "preferences_disabled",
+			Reason:             reason,
 			OccurredAt:         now,
 			Traceparent:        event.Traceparent,
 		}); err != nil {
@@ -918,11 +1373,20 @@ func (s *Service) notificationExistsTx(ctx context.Context, q *notificationstore
 	return exists, nil
 }
 
-func (s *Service) preferences(ctx context.Context, q *notificationstore.Queries, orgID string, subjectID string) (Preferences, error) {
-	row, err := q.GetPreferences(ctx, notificationstore.GetPreferencesParams{OrgID: orgID, SubjectID: subjectID})
+func (s *Service) preferences(ctx context.Context, q *notificationstore.Queries, _ string, subjectID string) (Preferences, error) {
+	row, err := q.GetPreferences(ctx, notificationstore.GetPreferencesParams{SubjectID: subjectID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		now := s.now()
-		return Preferences{Version: 0, Enabled: true, UpdatedAt: now, UpdatedBy: ""}, nil
+		return Preferences{
+			Version:      0,
+			Enabled:      true,
+			WebEnabled:   true,
+			EmailEnabled: true,
+			PushEnabled:  false,
+			SMSEnabled:   false,
+			UpdatedAt:    now,
+			UpdatedBy:    "",
+		}, nil
 	}
 	if err != nil {
 		return Preferences{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -931,7 +1395,16 @@ func (s *Service) preferences(ctx context.Context, q *notificationstore.Queries,
 	if err != nil {
 		return Preferences{}, err
 	}
-	return Preferences{Version: row.Version, Enabled: row.Enabled, UpdatedAt: updatedAt, UpdatedBy: row.UpdatedBy}, nil
+	return Preferences{
+		Version:      row.Version,
+		Enabled:      row.Enabled,
+		WebEnabled:   row.WebEnabled,
+		EmailEnabled: row.EmailEnabled,
+		PushEnabled:  row.PushEnabled,
+		SMSEnabled:   row.SmsEnabled,
+		UpdatedAt:    updatedAt,
+		UpdatedBy:    row.UpdatedBy,
+	}, nil
 }
 
 func (s *Service) latestNotification(ctx context.Context, q *notificationstore.Queries, orgID string, subjectID string) (*Notification, error) {
@@ -1037,6 +1510,24 @@ func (s *Service) enqueueProjectionTx(ctx context.Context, q *notificationstore.
 	return nil
 }
 
+func (s *Service) enqueueWorkflowSuppression(ctx context.Context, q *notificationstore.Queries, input WorkflowTriggerRequest, runID uuid.UUID, recipient string, reason string, contentHash string, now time.Time) error {
+	return s.enqueueProjectionTx(ctx, q, projectionInput{
+		EventType:          LedgerDeliverySuppressed,
+		OrgID:              input.OrgID,
+		RecipientSubjectID: projectionRecipient(recipient),
+		EventSource:        ServiceName,
+		EventIDText:        deterministicWorkflowChildID(reason, runID, recipient).String(),
+		SourceSubject:      input.WorkflowKey,
+		Kind:               input.WorkflowKey,
+		Priority:           input.Priority,
+		ContentSHA256:      contentHash,
+		Status:             "suppressed",
+		Reason:             reason,
+		OccurredAt:         now,
+		Traceparent:        input.Traceparent,
+	})
+}
+
 func deterministicLedgerID(input projectionInput) uuid.UUID {
 	seed := strings.Join([]string{
 		input.EventType,
@@ -1051,6 +1542,50 @@ func deterministicLedgerID(input projectionInput) uuid.UUID {
 	}, "|")
 	sum := sha256.Sum256([]byte(seed))
 	return uuid.NewHash(sha256.New(), uuid.Nil, []byte(hex.EncodeToString(sum[:])), 5)
+}
+
+func deterministicWorkflowRunID(workflowKey, orgID, idempotencyKey string) uuid.UUID {
+	seed := strings.Join([]string{"workflow", workflowKey, orgID, idempotencyKey}, "|")
+	return uuid.NewHash(sha256.New(), uuid.Nil, []byte(seed), 5)
+}
+
+func deterministicWorkflowChildID(kind string, runID uuid.UUID, value string) uuid.UUID {
+	seed := strings.Join([]string{"workflow-child", kind, runID.String(), value}, "|")
+	return uuid.NewHash(sha256.New(), uuid.Nil, []byte(seed), 5)
+}
+
+func projectionRecipient(subjectID string) string {
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" {
+		return "external_email"
+	}
+	return subjectID
+}
+
+func normalizeEmail(value string) (string, error) {
+	address, err := mail.ParseAddress(strings.TrimSpace(value))
+	if err != nil {
+		return "", fmt.Errorf("%w: email is invalid", ErrInvalidInput)
+	}
+	return strings.ToLower(address.Address), nil
+}
+
+func valueOr(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func truncateReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	reason := strings.TrimSpace(err.Error())
+	if len(reason) > 500 {
+		return reason[:500]
+	}
+	return reason
 }
 
 func (s *Service) ledgerEventProjected(ctx context.Context, eventID uuid.UUID) (bool, error) {

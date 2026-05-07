@@ -7,6 +7,7 @@ const (
 	SandboxGitHubWebhookSecretName    = "sandbox-rental-service.github.webhook_secret"
 	SandboxGitHubClientSecretName     = "sandbox-rental-service.github.client_secret"
 	MailboxResendAPIKeyName           = "mailbox-service.resend.api_key"
+	NotificationsResendAPIKeyName     = MailboxResendAPIKeyName
 	MailboxStalwartAdminPasswordName  = "mailbox-service.stalwart.admin_password"
 	ObjectStorageGarageAdminTokenName = "object-storage-service.garage.admin_token"
 )

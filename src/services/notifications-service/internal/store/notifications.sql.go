@@ -299,6 +299,55 @@ func (q *Queries) EnsureInboxState(ctx context.Context, arg EnsureInboxStatePara
 	return err
 }
 
+const getDeliveryAttemptForUpdate = `-- name: GetDeliveryAttemptForUpdate :one
+SELECT delivery_attempt_id, workflow_run_id, org_id, recipient_subject_id,
+       recipient_address, channel, workflow_key, idempotency_key, status,
+       provider, provider_message_id, failure_reason, priority, title, body,
+       action_url, resource_kind, resource_id, content_sha256, traceparent,
+       queued_at, next_attempt_at, updated_at, sent_at, failed_at, attempt_count
+FROM notification_delivery_attempts
+WHERE delivery_attempt_id = $1
+FOR UPDATE
+`
+
+type GetDeliveryAttemptForUpdateParams struct {
+	DeliveryAttemptID uuid.UUID
+}
+
+func (q *Queries) GetDeliveryAttemptForUpdate(ctx context.Context, arg GetDeliveryAttemptForUpdateParams) (NotificationDeliveryAttempt, error) {
+	row := q.db.QueryRow(ctx, getDeliveryAttemptForUpdate, arg.DeliveryAttemptID)
+	var i NotificationDeliveryAttempt
+	err := row.Scan(
+		&i.DeliveryAttemptID,
+		&i.WorkflowRunID,
+		&i.OrgID,
+		&i.RecipientSubjectID,
+		&i.RecipientAddress,
+		&i.Channel,
+		&i.WorkflowKey,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.Provider,
+		&i.ProviderMessageID,
+		&i.FailureReason,
+		&i.Priority,
+		&i.Title,
+		&i.Body,
+		&i.ActionUrl,
+		&i.ResourceKind,
+		&i.ResourceID,
+		&i.ContentSha256,
+		&i.Traceparent,
+		&i.QueuedAt,
+		&i.NextAttemptAt,
+		&i.UpdatedAt,
+		&i.SentAt,
+		&i.FailedAt,
+		&i.AttemptCount,
+	)
+	return i, err
+}
+
 const getEventForUpdate = `-- name: GetEventForUpdate :one
 SELECT event_source, event_id, subject, org_id, actor_subject_id, recipient_subject_id,
        dedupe_key, kind, priority, title, body, action_url, resource_kind, resource_id,
@@ -418,29 +467,36 @@ func (q *Queries) GetLatestNotification(ctx context.Context, arg GetLatestNotifi
 }
 
 const getPreferences = `-- name: GetPreferences :one
-SELECT version, enabled, updated_at, updated_by
+SELECT version, enabled, web_enabled, email_enabled, push_enabled, sms_enabled, updated_at, updated_by
 FROM notification_preferences
-WHERE org_id = $1 AND subject_id = $2
+WHERE subject_id = $1
 `
 
 type GetPreferencesParams struct {
-	OrgID     string
 	SubjectID string
 }
 
 type GetPreferencesRow struct {
-	Version   int32
-	Enabled   bool
-	UpdatedAt pgtype.Timestamptz
-	UpdatedBy string
+	Version      int32
+	Enabled      bool
+	WebEnabled   bool
+	EmailEnabled bool
+	PushEnabled  bool
+	SmsEnabled   bool
+	UpdatedAt    pgtype.Timestamptz
+	UpdatedBy    string
 }
 
 func (q *Queries) GetPreferences(ctx context.Context, arg GetPreferencesParams) (GetPreferencesRow, error) {
-	row := q.db.QueryRow(ctx, getPreferences, arg.OrgID, arg.SubjectID)
+	row := q.db.QueryRow(ctx, getPreferences, arg.SubjectID)
 	var i GetPreferencesRow
 	err := row.Scan(
 		&i.Version,
 		&i.Enabled,
+		&i.WebEnabled,
+		&i.EmailEnabled,
+		&i.PushEnabled,
+		&i.SmsEnabled,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
 	)
@@ -522,6 +578,114 @@ func (q *Queries) GetSummaryState(ctx context.Context, arg GetSummaryStateParams
 		&i.UnreadCount,
 	)
 	return i, err
+}
+
+const getWorkflowRun = `-- name: GetWorkflowRun :one
+SELECT workflow_run_id, workflow_key, org_id, triggered_by, idempotency_key,
+       priority, title, body, action_url, resource_kind, resource_id,
+       content_sha256, data, traceparent, recipient_count,
+       web_notifications_accepted, email_deliveries_queued, suppressed_count, created_at
+FROM notification_workflow_runs
+WHERE workflow_key = $1 AND org_id = $2 AND idempotency_key = $3
+`
+
+type GetWorkflowRunParams struct {
+	WorkflowKey    string
+	OrgID          string
+	IdempotencyKey string
+}
+
+func (q *Queries) GetWorkflowRun(ctx context.Context, arg GetWorkflowRunParams) (NotificationWorkflowRun, error) {
+	row := q.db.QueryRow(ctx, getWorkflowRun, arg.WorkflowKey, arg.OrgID, arg.IdempotencyKey)
+	var i NotificationWorkflowRun
+	err := row.Scan(
+		&i.WorkflowRunID,
+		&i.WorkflowKey,
+		&i.OrgID,
+		&i.TriggeredBy,
+		&i.IdempotencyKey,
+		&i.Priority,
+		&i.Title,
+		&i.Body,
+		&i.ActionUrl,
+		&i.ResourceKind,
+		&i.ResourceID,
+		&i.ContentSha256,
+		&i.Data,
+		&i.Traceparent,
+		&i.RecipientCount,
+		&i.WebNotificationsAccepted,
+		&i.EmailDeliveriesQueued,
+		&i.SuppressedCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertDeliveryAttempt = `-- name: InsertDeliveryAttempt :execrows
+INSERT INTO notification_delivery_attempts (
+    delivery_attempt_id, workflow_run_id, org_id, recipient_subject_id,
+    recipient_address, channel, workflow_key, idempotency_key, status,
+    provider, priority, title, body, action_url, resource_kind, resource_id,
+    content_sha256, traceparent, queued_at, next_attempt_at, updated_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5, 'email',
+    $6, $7, 'queued', 'resend',
+    $8, $9, $10, $11,
+    $12, $13, $14,
+    $15, $16, $17,
+    $18
+)
+ON CONFLICT (idempotency_key) DO NOTHING
+`
+
+type InsertDeliveryAttemptParams struct {
+	DeliveryAttemptID  uuid.UUID
+	WorkflowRunID      uuid.UUID
+	OrgID              string
+	RecipientSubjectID string
+	RecipientAddress   string
+	WorkflowKey        string
+	IdempotencyKey     string
+	Priority           string
+	Title              string
+	Body               string
+	ActionUrl          string
+	ResourceKind       string
+	ResourceID         string
+	ContentSha256      string
+	Traceparent        string
+	QueuedAt           pgtype.Timestamptz
+	NextAttemptAt      pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) InsertDeliveryAttempt(ctx context.Context, arg InsertDeliveryAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertDeliveryAttempt,
+		arg.DeliveryAttemptID,
+		arg.WorkflowRunID,
+		arg.OrgID,
+		arg.RecipientSubjectID,
+		arg.RecipientAddress,
+		arg.WorkflowKey,
+		arg.IdempotencyKey,
+		arg.Priority,
+		arg.Title,
+		arg.Body,
+		arg.ActionUrl,
+		arg.ResourceKind,
+		arg.ResourceID,
+		arg.ContentSha256,
+		arg.Traceparent,
+		arg.QueuedAt,
+		arg.NextAttemptAt,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertEvent = `-- name: InsertEvent :execrows
@@ -644,6 +808,73 @@ func (q *Queries) InsertUserNotification(ctx context.Context, arg InsertUserNoti
 	return err
 }
 
+const insertWorkflowRun = `-- name: InsertWorkflowRun :execrows
+INSERT INTO notification_workflow_runs (
+    workflow_run_id, workflow_key, org_id, triggered_by, idempotency_key,
+    priority, title, body, action_url, resource_kind, resource_id,
+    content_sha256, data, traceparent, recipient_count,
+    web_notifications_accepted, email_deliveries_queued, suppressed_count, created_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9, $10,
+    $11, $12, $13,
+    $14, $15, $16,
+    $17, $18, $19
+)
+ON CONFLICT (workflow_key, org_id, idempotency_key) DO NOTHING
+`
+
+type InsertWorkflowRunParams struct {
+	WorkflowRunID            uuid.UUID
+	WorkflowKey              string
+	OrgID                    string
+	TriggeredBy              string
+	IdempotencyKey           string
+	Priority                 string
+	Title                    string
+	Body                     string
+	ActionUrl                string
+	ResourceKind             string
+	ResourceID               string
+	ContentSha256            string
+	Data                     []byte
+	Traceparent              string
+	RecipientCount           int32
+	WebNotificationsAccepted int32
+	EmailDeliveriesQueued    int32
+	SuppressedCount          int32
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) InsertWorkflowRun(ctx context.Context, arg InsertWorkflowRunParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertWorkflowRun,
+		arg.WorkflowRunID,
+		arg.WorkflowKey,
+		arg.OrgID,
+		arg.TriggeredBy,
+		arg.IdempotencyKey,
+		arg.Priority,
+		arg.Title,
+		arg.Body,
+		arg.ActionUrl,
+		arg.ResourceKind,
+		arg.ResourceID,
+		arg.ContentSha256,
+		arg.Data,
+		arg.Traceparent,
+		arg.RecipientCount,
+		arg.WebNotificationsAccepted,
+		arg.EmailDeliveriesQueued,
+		arg.SuppressedCount,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listNotifications = `-- name: ListNotifications :many
 SELECT notification_id, org_id, recipient_subject_id, recipient_sequence, kind, priority, title, body,
        action_url, resource_kind, resource_id, created_at, expires_at, read_at, dismissed_at
@@ -711,6 +942,73 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const markDeliveryFailed = `-- name: MarkDeliveryFailed :exec
+UPDATE notification_delivery_attempts
+SET status = 'failed',
+    failure_reason = $1,
+    failed_at = $2,
+    updated_at = $2,
+    next_attempt_at = $3
+WHERE delivery_attempt_id = $4
+`
+
+type MarkDeliveryFailedParams struct {
+	FailureReason     string
+	FailedAt          pgtype.Timestamptz
+	NextAttemptAt     pgtype.Timestamptz
+	DeliveryAttemptID uuid.UUID
+}
+
+func (q *Queries) MarkDeliveryFailed(ctx context.Context, arg MarkDeliveryFailedParams) error {
+	_, err := q.db.Exec(ctx, markDeliveryFailed,
+		arg.FailureReason,
+		arg.FailedAt,
+		arg.NextAttemptAt,
+		arg.DeliveryAttemptID,
+	)
+	return err
+}
+
+const markDeliverySending = `-- name: MarkDeliverySending :exec
+UPDATE notification_delivery_attempts
+SET status = 'sending',
+    attempt_count = attempt_count + 1,
+    updated_at = $1
+WHERE delivery_attempt_id = $2
+  AND status IN ('queued', 'failed', 'sending')
+`
+
+type MarkDeliverySendingParams struct {
+	UpdatedAt         pgtype.Timestamptz
+	DeliveryAttemptID uuid.UUID
+}
+
+func (q *Queries) MarkDeliverySending(ctx context.Context, arg MarkDeliverySendingParams) error {
+	_, err := q.db.Exec(ctx, markDeliverySending, arg.UpdatedAt, arg.DeliveryAttemptID)
+	return err
+}
+
+const markDeliverySent = `-- name: MarkDeliverySent :exec
+UPDATE notification_delivery_attempts
+SET status = 'sent',
+    provider_message_id = $1,
+    failure_reason = '',
+    sent_at = $2,
+    updated_at = $2
+WHERE delivery_attempt_id = $3
+`
+
+type MarkDeliverySentParams struct {
+	ProviderMessageID string
+	SentAt            pgtype.Timestamptz
+	DeliveryAttemptID uuid.UUID
+}
+
+func (q *Queries) MarkDeliverySent(ctx context.Context, arg MarkDeliverySentParams) error {
+	_, err := q.db.Exec(ctx, markDeliverySent, arg.ProviderMessageID, arg.SentAt, arg.DeliveryAttemptID)
+	return err
 }
 
 const markEventProcessed = `-- name: MarkEventProcessed :exec
@@ -957,32 +1255,73 @@ func (q *Queries) TouchInboxState(ctx context.Context, arg TouchInboxStateParams
 	return result.RowsAffected(), nil
 }
 
+const updateWorkflowRunCounts = `-- name: UpdateWorkflowRunCounts :exec
+UPDATE notification_workflow_runs
+SET web_notifications_accepted = $1,
+    email_deliveries_queued = $2,
+    suppressed_count = $3
+WHERE workflow_run_id = $4
+`
+
+type UpdateWorkflowRunCountsParams struct {
+	WebNotificationsAccepted int32
+	EmailDeliveriesQueued    int32
+	SuppressedCount          int32
+	WorkflowRunID            uuid.UUID
+}
+
+func (q *Queries) UpdateWorkflowRunCounts(ctx context.Context, arg UpdateWorkflowRunCountsParams) error {
+	_, err := q.db.Exec(ctx, updateWorkflowRunCounts,
+		arg.WebNotificationsAccepted,
+		arg.EmailDeliveriesQueued,
+		arg.SuppressedCount,
+		arg.WorkflowRunID,
+	)
+	return err
+}
+
 const upsertPreferences = `-- name: UpsertPreferences :execrows
-INSERT INTO notification_preferences (org_id, subject_id, version, enabled, updated_at, updated_by)
-VALUES ($1, $2, $3, $4, $5, $2)
-ON CONFLICT (org_id, subject_id) DO UPDATE
+INSERT INTO notification_preferences (
+    subject_id, version, enabled, web_enabled, email_enabled, push_enabled,
+    sms_enabled, updated_at, updated_by
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $1
+)
+ON CONFLICT (subject_id) DO UPDATE
 SET version = notification_preferences.version + 1,
     enabled = EXCLUDED.enabled,
+    web_enabled = EXCLUDED.web_enabled,
+    email_enabled = EXCLUDED.email_enabled,
+    push_enabled = EXCLUDED.push_enabled,
+    sms_enabled = EXCLUDED.sms_enabled,
     updated_at = EXCLUDED.updated_at,
     updated_by = EXCLUDED.updated_by
-WHERE notification_preferences.version = $6
+WHERE notification_preferences.version = $9
 `
 
 type UpsertPreferencesParams struct {
-	OrgID           string
 	SubjectID       string
 	NextVersion     int32
 	Enabled         bool
+	WebEnabled      bool
+	EmailEnabled    bool
+	PushEnabled     bool
+	SmsEnabled      bool
 	UpdatedAt       pgtype.Timestamptz
 	ExpectedVersion int32
 }
 
 func (q *Queries) UpsertPreferences(ctx context.Context, arg UpsertPreferencesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, upsertPreferences,
-		arg.OrgID,
 		arg.SubjectID,
 		arg.NextVersion,
 		arg.Enabled,
+		arg.WebEnabled,
+		arg.EmailEnabled,
+		arg.PushEnabled,
+		arg.SmsEnabled,
 		arg.UpdatedAt,
 		arg.ExpectedVersion,
 	)

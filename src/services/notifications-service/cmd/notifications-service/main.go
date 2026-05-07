@@ -20,6 +20,7 @@ import (
 	"github.com/verself/notifications-service/internal/notifications"
 	"github.com/verself/notifications-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -71,12 +72,18 @@ func run() error {
 	cfg := envconfig.New()
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4260")
+	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4261")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	secretsURL := cfg.RequireURL("NOTIFICATIONS_SECRETS_URL")
 	natsURL := cfg.String("NOTIFICATIONS_NATS_URL", notifications.NATSDefaultURL)
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "notifications_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
+	resendFromAddress := cfg.String("NOTIFICATIONS_RESEND_FROM_ADDRESS", "noreply@notify.verself.sh")
+	resendFromName := cfg.String("NOTIFICATIONS_RESEND_FROM_NAME", "verself")
+	platformAlertOrgID := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_ORG_ID")
+	platformAlertEmail := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_EMAIL")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -141,6 +148,23 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("notifications readiness: %w", err)
 	}
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
+	if err != nil {
+		return fmt.Errorf("notifications secrets mtls: %w", err)
+	}
+	secrets, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("notifications secrets client: %w", err)
+	}
+	resendAPIKey, err := readRuntimeSecret(ctx, secrets, secretsclient.NotificationsResendAPIKeyName)
+	if err != nil {
+		return fmt.Errorf("notifications resend provider secret: %w", err)
+	}
+	emailSender, err := notifications.NewResendSender(resendAPIKey, resendFromAddress, resendFromName, &http.Client{Timeout: 5 * time.Second})
+	if err != nil {
+		return fmt.Errorf("notifications email sender: %w", err)
+	}
+	svc.Email = emailSender
 	runtime, err := notifications.NewRuntime(pg, svc, logger)
 	if err != nil {
 		return fmt.Errorf("create notifications river runtime: %w", err)
@@ -193,8 +217,58 @@ func run() error {
 	})(privateMux)
 	rootMux.Handle("/", authenticated)
 
+	internalPeerIDs, err := workloadauth.PeerIDsForSource(
+		spiffeSource,
+		workloadauth.ServiceBilling,
+		workloadauth.ServiceGrafana,
+		workloadauth.ServiceGovernance,
+		workloadauth.ServiceIAM,
+		workloadauth.ServiceProjects,
+		workloadauth.ServiceSandboxRental,
+		workloadauth.ServiceSourceCodeHosting,
+	)
+	if err != nil {
+		return err
+	}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
+	if err != nil {
+		return fmt.Errorf("notifications internal tls: %w", err)
+	}
+	internalMux := http.NewServeMux()
+	notificationsapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, notificationsapi.InternalConfig{
+		Service:            svc,
+		PlatformAlertOrgID: platformAlertOrgID,
+		PlatformAlertEmail: platformAlertEmail,
+	})
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
+	if err != nil {
+		return fmt.Errorf("notifications internal allowlist: %w", err)
+	}
+
 	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	return httpserver.Run(ctx, logger, public)
+	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	internal.TLSConfig = internalTLSConfig
+	return httpserver.RunPair(ctx, logger, public, internal)
+}
+
+func readRuntimeSecret(ctx context.Context, client *secretsclient.ClientWithResponses, secretName string) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+	if err != nil {
+		return "", fmt.Errorf("read runtime secret %s: %w", secretName, err)
+	}
+	if resp.JSON200 == nil {
+		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+	}
+	value := strings.TrimSpace(resp.JSON200.Value)
+	if value == "" {
+		return "", fmt.Errorf("runtime secret %s is empty", secretName)
+	}
+	return value, nil
 }
 
 func openPool(ctx context.Context, dsn string, maxConns, minConns, maxLifetimeSeconds, maxIdleSeconds int) (*pgxpool.Pool, error) {

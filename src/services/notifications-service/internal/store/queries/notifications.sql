@@ -7,9 +7,9 @@ VALUES (sqlc.arg(inbox_state_id), sqlc.arg(org_id), sqlc.arg(recipient_subject_i
 ON CONFLICT (org_id, recipient_subject_id) DO NOTHING;
 
 -- name: GetPreferences :one
-SELECT version, enabled, updated_at, updated_by
+SELECT version, enabled, web_enabled, email_enabled, push_enabled, sms_enabled, updated_at, updated_by
 FROM notification_preferences
-WHERE org_id = $1 AND subject_id = $2;
+WHERE subject_id = $1;
 
 -- name: GetSummaryState :one
 SELECT state.next_sequence,
@@ -43,14 +43,55 @@ ORDER BY recipient_sequence DESC
 LIMIT 1;
 
 -- name: UpsertPreferences :execrows
-INSERT INTO notification_preferences (org_id, subject_id, version, enabled, updated_at, updated_by)
-VALUES (sqlc.arg(org_id), sqlc.arg(subject_id), sqlc.arg(next_version), sqlc.arg(enabled), sqlc.arg(updated_at), sqlc.arg(subject_id))
-ON CONFLICT (org_id, subject_id) DO UPDATE
+INSERT INTO notification_preferences (
+    subject_id, version, enabled, web_enabled, email_enabled, push_enabled,
+    sms_enabled, updated_at, updated_by
+) VALUES (
+    sqlc.arg(subject_id), sqlc.arg(next_version), sqlc.arg(enabled), sqlc.arg(web_enabled),
+    sqlc.arg(email_enabled), sqlc.arg(push_enabled), sqlc.arg(sms_enabled),
+    sqlc.arg(updated_at), sqlc.arg(subject_id)
+)
+ON CONFLICT (subject_id) DO UPDATE
 SET version = notification_preferences.version + 1,
     enabled = EXCLUDED.enabled,
+    web_enabled = EXCLUDED.web_enabled,
+    email_enabled = EXCLUDED.email_enabled,
+    push_enabled = EXCLUDED.push_enabled,
+    sms_enabled = EXCLUDED.sms_enabled,
     updated_at = EXCLUDED.updated_at,
     updated_by = EXCLUDED.updated_by
 WHERE notification_preferences.version = sqlc.arg(expected_version);
+
+-- name: InsertWorkflowRun :execrows
+INSERT INTO notification_workflow_runs (
+    workflow_run_id, workflow_key, org_id, triggered_by, idempotency_key,
+    priority, title, body, action_url, resource_kind, resource_id,
+    content_sha256, data, traceparent, recipient_count,
+    web_notifications_accepted, email_deliveries_queued, suppressed_count, created_at
+) VALUES (
+    sqlc.arg(workflow_run_id), sqlc.arg(workflow_key), sqlc.arg(org_id),
+    sqlc.arg(triggered_by), sqlc.arg(idempotency_key), sqlc.arg(priority),
+    sqlc.arg(title), sqlc.arg(body), sqlc.arg(action_url), sqlc.arg(resource_kind),
+    sqlc.arg(resource_id), sqlc.arg(content_sha256), sqlc.arg(data),
+    sqlc.arg(traceparent), sqlc.arg(recipient_count), sqlc.arg(web_notifications_accepted),
+    sqlc.arg(email_deliveries_queued), sqlc.arg(suppressed_count), sqlc.arg(created_at)
+)
+ON CONFLICT (workflow_key, org_id, idempotency_key) DO NOTHING;
+
+-- name: GetWorkflowRun :one
+SELECT workflow_run_id, workflow_key, org_id, triggered_by, idempotency_key,
+       priority, title, body, action_url, resource_kind, resource_id,
+       content_sha256, data, traceparent, recipient_count,
+       web_notifications_accepted, email_deliveries_queued, suppressed_count, created_at
+FROM notification_workflow_runs
+WHERE workflow_key = $1 AND org_id = $2 AND idempotency_key = $3;
+
+-- name: UpdateWorkflowRunCounts :exec
+UPDATE notification_workflow_runs
+SET web_notifications_accepted = sqlc.arg(web_notifications_accepted),
+    email_deliveries_queued = sqlc.arg(email_deliveries_queued),
+    suppressed_count = sqlc.arg(suppressed_count)
+WHERE workflow_run_id = sqlc.arg(workflow_run_id);
 
 -- name: AdvanceReadCursor :one
 UPDATE notification_inbox_state
@@ -152,6 +193,59 @@ INSERT INTO user_notifications (
     sqlc.arg(action_url), sqlc.arg(resource_kind), sqlc.arg(resource_id), sqlc.arg(content_sha256),
     sqlc.arg(created_at)
 );
+
+-- name: InsertDeliveryAttempt :execrows
+INSERT INTO notification_delivery_attempts (
+    delivery_attempt_id, workflow_run_id, org_id, recipient_subject_id,
+    recipient_address, channel, workflow_key, idempotency_key, status,
+    provider, priority, title, body, action_url, resource_kind, resource_id,
+    content_sha256, traceparent, queued_at, next_attempt_at, updated_at
+) VALUES (
+    sqlc.arg(delivery_attempt_id), sqlc.arg(workflow_run_id), sqlc.arg(org_id),
+    sqlc.arg(recipient_subject_id), sqlc.arg(recipient_address), 'email',
+    sqlc.arg(workflow_key), sqlc.arg(idempotency_key), 'queued', 'resend',
+    sqlc.arg(priority), sqlc.arg(title), sqlc.arg(body), sqlc.arg(action_url),
+    sqlc.arg(resource_kind), sqlc.arg(resource_id), sqlc.arg(content_sha256),
+    sqlc.arg(traceparent), sqlc.arg(queued_at), sqlc.arg(next_attempt_at),
+    sqlc.arg(updated_at)
+)
+ON CONFLICT (idempotency_key) DO NOTHING;
+
+-- name: GetDeliveryAttemptForUpdate :one
+SELECT delivery_attempt_id, workflow_run_id, org_id, recipient_subject_id,
+       recipient_address, channel, workflow_key, idempotency_key, status,
+       provider, provider_message_id, failure_reason, priority, title, body,
+       action_url, resource_kind, resource_id, content_sha256, traceparent,
+       queued_at, next_attempt_at, updated_at, sent_at, failed_at, attempt_count
+FROM notification_delivery_attempts
+WHERE delivery_attempt_id = $1
+FOR UPDATE;
+
+-- name: MarkDeliverySending :exec
+UPDATE notification_delivery_attempts
+SET status = 'sending',
+    attempt_count = attempt_count + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE delivery_attempt_id = sqlc.arg(delivery_attempt_id)
+  AND status IN ('queued', 'failed', 'sending');
+
+-- name: MarkDeliverySent :exec
+UPDATE notification_delivery_attempts
+SET status = 'sent',
+    provider_message_id = sqlc.arg(provider_message_id),
+    failure_reason = '',
+    sent_at = sqlc.arg(sent_at),
+    updated_at = sqlc.arg(sent_at)
+WHERE delivery_attempt_id = sqlc.arg(delivery_attempt_id);
+
+-- name: MarkDeliveryFailed :exec
+UPDATE notification_delivery_attempts
+SET status = 'failed',
+    failure_reason = sqlc.arg(failure_reason),
+    failed_at = sqlc.arg(failed_at),
+    updated_at = sqlc.arg(failed_at),
+    next_attempt_at = sqlc.arg(next_attempt_at)
+WHERE delivery_attempt_id = sqlc.arg(delivery_attempt_id);
 
 -- name: MarkEventProcessed :exec
 UPDATE notification_events

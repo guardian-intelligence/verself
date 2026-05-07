@@ -173,6 +173,9 @@ func run() error {
 				secretsclient.MailboxResendAPIKeyName,
 				secretsclient.MailboxStalwartAdminPasswordName,
 			}},
+			{Service: workloadauth.ServiceNotifications, SecretNames: []string{
+				secretsclient.NotificationsResendAPIKeyName,
+			}},
 		},
 	})
 	if err != nil {

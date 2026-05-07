@@ -22,10 +22,12 @@ import (
 
 const (
 	QueueFanout     = "notifications_fanout"
+	QueueDelivery   = "notifications_delivery"
 	QueueProjection = "notifications_projection"
 	QueueReconcile  = "notifications_reconcile"
 
 	EventFanoutKind           = "notifications.event.fanout"
+	EmailDeliveryKind         = "notifications.delivery.email"
 	ProjectionPendingKind     = "notifications.projection.project_pending"
 	NotificationReconcileKind = "notifications.reconcile"
 )
@@ -43,6 +45,14 @@ type EventFanoutArgs struct {
 }
 
 func (EventFanoutArgs) Kind() string { return EventFanoutKind }
+
+type EmailDeliveryArgs struct {
+	DeliveryAttemptID string `json:"delivery_attempt_id" river:"unique"`
+	TraceParent       string `json:"trace_parent,omitempty"`
+	SubmittedAt       string `json:"submitted_at"`
+}
+
+func (EmailDeliveryArgs) Kind() string { return EmailDeliveryKind }
 
 type ProjectionPendingArgs struct {
 	Limit       int    `json:"limit"`
@@ -62,6 +72,11 @@ func (ReconcileArgs) Kind() string { return NotificationReconcileKind }
 
 type EventFanoutWorker struct {
 	river.WorkerDefaults[EventFanoutArgs]
+	service *Service
+}
+
+type EmailDeliveryWorker struct {
+	river.WorkerDefaults[EmailDeliveryArgs]
 	service *Service
 }
 
@@ -87,6 +102,7 @@ func NewRuntime(pool *pgxpool.Pool, svc *Service, logger *slog.Logger) (*Runtime
 	}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &EventFanoutWorker{service: svc})
+	river.AddWorker(workers, &EmailDeliveryWorker{service: svc})
 	river.AddWorker(workers, &ProjectionPendingWorker{service: svc})
 	river.AddWorker(workers, &ReconcileWorker{service: svc})
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
@@ -101,6 +117,7 @@ func NewRuntime(pool *pgxpool.Pool, svc *Service, logger *slog.Logger) (*Runtime
 		},
 		Queues: map[string]river.QueueConfig{
 			QueueFanout:     {MaxWorkers: 4},
+			QueueDelivery:   {MaxWorkers: 4},
 			QueueProjection: {MaxWorkers: 2},
 			QueueReconcile:  {MaxWorkers: 1},
 		},
@@ -143,6 +160,23 @@ func (r *Runtime) EnqueueEventFanoutTx(ctx context.Context, tx pgx.Tx, eventSour
 	})
 	if err != nil {
 		return fmt.Errorf("enqueue notification fanout: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) EnqueueEmailDeliveryTx(ctx context.Context, tx pgx.Tx, deliveryAttemptID string, traceparent string) error {
+	_, err := r.client.InsertTx(ctx, tx, EmailDeliveryArgs{
+		DeliveryAttemptID: strings.TrimSpace(deliveryAttemptID),
+		TraceParent:       strings.TrimSpace(traceparent),
+		SubmittedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+	}, &river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueDelivery,
+		Tags:        []string{"delivery", "email"},
+		UniqueOpts:  river.UniqueOpts{ByArgs: true, ByQueue: true},
+	})
+	if err != nil {
+		return fmt.Errorf("enqueue notification email delivery: %w", err)
 	}
 	return nil
 }
@@ -215,6 +249,22 @@ func (w *EventFanoutWorker) Work(ctx context.Context, job *river.Job[EventFanout
 		attribute.String("river.queue", QueueFanout),
 	)
 	err := w.service.ProcessEvent(ctx, job.Args.EventSource, job.Args.EventID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *EmailDeliveryWorker) Work(ctx context.Context, job *river.Job[EmailDeliveryArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("notification.delivery_attempt_id", job.Args.DeliveryAttemptID),
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", EmailDeliveryKind),
+		attribute.String("river.queue", QueueDelivery),
+	)
+	err := w.service.SendEmailDelivery(ctx, job.Args.DeliveryAttemptID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

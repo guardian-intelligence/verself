@@ -34,6 +34,9 @@ const (
 	LedgerInboxDismissed     = "notification.inbox.dismissed"
 	LedgerInboxRead          = "notification.inbox.read"
 	LedgerReadCursorAdvanced = "notification.read_cursor_advanced"
+	LedgerDeliveryQueued     = "notification.delivery.queued"
+	LedgerDeliverySent       = "notification.delivery.sent"
+	LedgerDeliveryFailed     = "notification.delivery.failed"
 	LedgerDeliverySuppressed = "notification.delivery.suppressed"
 	LedgerPreferencesUpdated = "notification.preferences.updated"
 	defaultSyntheticSubject  = "events.notifications.test.requested"
@@ -62,10 +65,14 @@ type Principal struct {
 }
 
 type Preferences struct {
-	Version   int32
-	Enabled   bool
-	UpdatedAt time.Time
-	UpdatedBy string
+	Version      int32
+	Enabled      bool
+	WebEnabled   bool
+	EmailEnabled bool
+	PushEnabled  bool
+	SMSEnabled   bool
+	UpdatedAt    time.Time
+	UpdatedBy    string
 }
 
 type Summary struct {
@@ -102,8 +109,12 @@ type Notification struct {
 }
 
 type PutPreferencesRequest struct {
-	Version int32
-	Enabled bool
+	Version      int32
+	Enabled      bool
+	WebEnabled   *bool
+	EmailEnabled *bool
+	PushEnabled  *bool
+	SMSEnabled   *bool
 }
 
 type MarkReadRequest struct {
@@ -131,6 +142,39 @@ type TestRequest struct {
 type Accepted struct {
 	EventID     uuid.UUID
 	Traceparent string
+}
+
+type WorkflowRecipient struct {
+	SubjectID string
+	Email     string
+}
+
+type WorkflowTriggerRequest struct {
+	WorkflowKey    string
+	OrgID          string
+	TriggeredBy    string
+	IdempotencyKey string
+	Recipients     []WorkflowRecipient
+	Title          string
+	Body           string
+	ActionURL      string
+	Priority       string
+	ResourceKind   string
+	ResourceID     string
+	Data           json.RawMessage
+	Traceparent    string
+}
+
+type WorkflowTriggerResult struct {
+	WorkflowRunID            uuid.UUID
+	WorkflowKey              string
+	OrgID                    string
+	AcceptedAt               time.Time
+	RecipientCount           uint16
+	WebNotificationsAccepted uint16
+	EmailDeliveriesQueued    uint16
+	SuppressedCount          uint16
+	Traceparent              string
 }
 
 type DomainEvent struct {
@@ -182,6 +226,77 @@ func hasGenericProjectRolesClaim(claims map[string]any) bool {
 func NormalizePutPreferences(input PutPreferencesRequest) (PutPreferencesRequest, error) {
 	if input.Version < 0 {
 		return input, fmt.Errorf("%w: version must be non-negative", ErrInvalidInput)
+	}
+	return input, nil
+}
+
+func NormalizeWorkflowTrigger(input WorkflowTriggerRequest) (WorkflowTriggerRequest, error) {
+	input.WorkflowKey = strings.TrimSpace(input.WorkflowKey)
+	input.OrgID = strings.TrimSpace(input.OrgID)
+	input.TriggeredBy = strings.TrimSpace(input.TriggeredBy)
+	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	input.Title = normalizeText(input.Title)
+	input.Body = normalizeText(input.Body)
+	input.ActionURL = strings.TrimSpace(input.ActionURL)
+	input.Priority = strings.TrimSpace(input.Priority)
+	input.ResourceKind = strings.TrimSpace(input.ResourceKind)
+	input.ResourceID = strings.TrimSpace(input.ResourceID)
+	input.Traceparent = strings.TrimSpace(input.Traceparent)
+	if err := validateWorkflowKey(input.WorkflowKey); err != nil {
+		return input, err
+	}
+	if input.OrgID == "" {
+		return input, fmt.Errorf("%w: org_id is required", ErrInvalidInput)
+	}
+	if input.TriggeredBy == "" {
+		return input, fmt.Errorf("%w: triggered_by is required", ErrInvalidInput)
+	}
+	if input.IdempotencyKey == "" {
+		return input, fmt.Errorf("%w: idempotency key is required", ErrInvalidInput)
+	}
+	if len(input.IdempotencyKey) > 128 {
+		return input, fmt.Errorf("%w: idempotency key is too long", ErrInvalidInput)
+	}
+	switch input.Priority {
+	case PriorityLow, PriorityNormal, PriorityHigh:
+	case "":
+		input.Priority = DefaultPriority
+	default:
+		return input, fmt.Errorf("%w: priority is invalid", ErrInvalidInput)
+	}
+	if input.Title == "" {
+		input.Title = input.WorkflowKey
+	}
+	if input.Body == "" {
+		return input, fmt.Errorf("%w: body is required", ErrInvalidInput)
+	}
+	if err := validateText("title", input.Title, 120); err != nil {
+		return input, err
+	}
+	if err := validateText("body", input.Body, 500); err != nil {
+		return input, err
+	}
+	if len(input.ActionURL) > 500 {
+		return input, fmt.Errorf("%w: action_url is too long", ErrInvalidInput)
+	}
+	if len(input.Recipients) == 0 {
+		return input, fmt.Errorf("%w: at least one recipient is required", ErrInvalidInput)
+	}
+	if len(input.Recipients) > 100 {
+		return input, fmt.Errorf("%w: at most 100 recipients are supported", ErrInvalidInput)
+	}
+	for idx := range input.Recipients {
+		input.Recipients[idx].SubjectID = strings.TrimSpace(input.Recipients[idx].SubjectID)
+		input.Recipients[idx].Email = strings.TrimSpace(input.Recipients[idx].Email)
+		if input.Recipients[idx].SubjectID == "" && input.Recipients[idx].Email == "" {
+			return input, fmt.Errorf("%w: recipient subject_id or email is required", ErrInvalidInput)
+		}
+	}
+	if len(input.Data) == 0 {
+		input.Data = json.RawMessage(`{}`)
+	}
+	if !json.Valid(input.Data) {
+		return input, fmt.Errorf("%w: data must be valid JSON", ErrInvalidInput)
 	}
 	return input, nil
 }
@@ -335,6 +450,44 @@ func ContentSHA256(event DomainEvent) string {
 	})
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+func WorkflowContentSHA256(input WorkflowTriggerRequest) string {
+	body, _ := json.Marshal(struct {
+		WorkflowKey  string          `json:"workflow_key"`
+		Title        string          `json:"title"`
+		Body         string          `json:"body"`
+		ActionURL    string          `json:"action_url"`
+		ResourceKind string          `json:"resource_kind"`
+		ResourceID   string          `json:"resource_id"`
+		Data         json.RawMessage `json:"data"`
+	}{
+		WorkflowKey:  input.WorkflowKey,
+		Title:        input.Title,
+		Body:         input.Body,
+		ActionURL:    input.ActionURL,
+		ResourceKind: input.ResourceKind,
+		ResourceID:   input.ResourceID,
+		Data:         input.Data,
+	})
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
+}
+
+func validateWorkflowKey(value string) error {
+	if value == "" {
+		return fmt.Errorf("%w: workflow_key is required", ErrInvalidInput)
+	}
+	if len(value) > 128 {
+		return fmt.Errorf("%w: workflow_key is too long", ErrInvalidInput)
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return fmt.Errorf("%w: workflow_key contains unsupported characters", ErrInvalidInput)
+	}
+	return nil
 }
 
 func normalizeText(value string) string {

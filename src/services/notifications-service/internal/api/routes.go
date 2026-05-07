@@ -215,8 +215,12 @@ func putPreferences(svc *notifications.Service) func(context.Context, *putPrefer
 			return nil, err
 		}
 		summary, err := svc.PutPreferences(ctx, principal, notifications.PutPreferencesRequest{
-			Version: input.Body.Version,
-			Enabled: input.Body.Enabled,
+			Version:      input.Body.Version,
+			Enabled:      input.Body.Enabled,
+			WebEnabled:   input.Body.WebEnabled,
+			EmailEnabled: input.Body.EmailEnabled,
+			PushEnabled:  input.Body.PushEnabled,
+			SMSEnabled:   input.Body.SMSEnabled,
 		})
 		if err != nil {
 			return nil, notificationError(ctx, err)
@@ -380,10 +384,14 @@ func summaryDTO(summary notifications.Summary) dto.NotificationSummary {
 
 func preferencesDTO(preferences notifications.Preferences) dto.NotificationPreferences {
 	return dto.NotificationPreferences{
-		Enabled:   preferences.Enabled,
-		Version:   preferences.Version,
-		UpdatedAt: preferences.UpdatedAt,
-		UpdatedBy: preferences.UpdatedBy,
+		Enabled:      preferences.Enabled,
+		WebEnabled:   preferences.WebEnabled,
+		EmailEnabled: preferences.EmailEnabled,
+		PushEnabled:  preferences.PushEnabled,
+		SMSEnabled:   preferences.SMSEnabled,
+		Version:      preferences.Version,
+		UpdatedAt:    preferences.UpdatedAt,
+		UpdatedBy:    preferences.UpdatedBy,
 	}
 }
 

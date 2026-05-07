@@ -3,3 +3,59 @@
 //   sqlc v1.30.0
 
 package store
+
+import (
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type NotificationDeliveryAttempt struct {
+	DeliveryAttemptID  uuid.UUID
+	WorkflowRunID      uuid.UUID
+	OrgID              string
+	RecipientSubjectID string
+	RecipientAddress   string
+	Channel            string
+	WorkflowKey        string
+	IdempotencyKey     string
+	Status             string
+	Provider           string
+	ProviderMessageID  string
+	FailureReason      string
+	Priority           string
+	Title              string
+	Body               string
+	ActionUrl          string
+	ResourceKind       string
+	ResourceID         string
+	ContentSha256      string
+	Traceparent        string
+	QueuedAt           pgtype.Timestamptz
+	NextAttemptAt      pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	SentAt             pgtype.Timestamptz
+	FailedAt           pgtype.Timestamptz
+	AttemptCount       int32
+}
+
+type NotificationWorkflowRun struct {
+	WorkflowRunID            uuid.UUID
+	WorkflowKey              string
+	OrgID                    string
+	TriggeredBy              string
+	IdempotencyKey           string
+	Priority                 string
+	Title                    string
+	Body                     string
+	ActionUrl                string
+	ResourceKind             string
+	ResourceID               string
+	ContentSha256            string
+	Data                     []byte
+	Traceparent              string
+	RecipientCount           int32
+	WebNotificationsAccepted int32
+	EmailDeliveriesQueued    int32
+	SuppressedCount          int32
+	CreatedAt                pgtype.Timestamptz
+}

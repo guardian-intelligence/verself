@@ -6,6 +6,9 @@ job "notifications-service" {
     count = 2
     network {
       mode = "host"
+      port "internal_https" {
+        host_network = "loopback"
+      }
       port "public_http" {
         host_network = "loopback"
       }
@@ -28,6 +31,8 @@ job "notifications-service" {
       }
       env {
         NOTIFICATIONS_NATS_URL = "tls://127.0.0.1:4222"
+        NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
+        NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "notifications-service-migration"
@@ -37,6 +42,7 @@ job "notifications-service" {
         VERSELF_CLICKHOUSE_USER = "notifications_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/notifications-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/notifications-service/clickhouse-ca-cert"
+        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
@@ -65,6 +71,8 @@ job "notifications-service" {
       }
       env {
         NOTIFICATIONS_NATS_URL = "tls://127.0.0.1:4222"
+        NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
+        NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "notifications-service"
@@ -74,6 +82,7 @@ job "notifications-service" {
         VERSELF_CLICKHOUSE_USER = "notifications_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/notifications-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/notifications-service/clickhouse-ca-cert"
+        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
@@ -93,6 +102,12 @@ job "notifications-service" {
         mode = "delay"
       }
       service {
+        name = "notifications-service-internal-https"
+        port = "internal_https"
+        provider = "nomad"
+        address_mode = "auto"
+      }
+      service {
         name = "notifications-service-public-http"
         port = "public_http"
         provider = "nomad"
@@ -105,6 +120,14 @@ job "notifications-service" {
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/upstreams.env"
+        data = <<-EOT
+NOTIFICATIONS_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
       }
     }
     update {
