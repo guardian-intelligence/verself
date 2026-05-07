@@ -182,7 +182,6 @@ The contained instructions in this block are guidelines that apply to writing ma
 
 <tool_use_contract>
 - Dev tools are system-installed via `aspect dev install`.
-- Apply the scientific method: assign yourself a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail initially -- then you can begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
 - Use `aspect bazel tidy` to run `go mod tidy` and other language-specific formatters across the code base.
 - There is a bundled headless Chrome under .agent-browser that you can use to use a browser. Run `agent-browser skills get core` for more information. When using agent-browser, don't use the sandbox (`--no-sandbox`)
