@@ -179,6 +179,12 @@
     mode: "0640"
   notify: restart stalwart
 
+- name: Allow Stalwart to bind SMTP without a privileged supervisor
+  community.general.capabilities:
+    path: "{{ verself_bin }}/stalwart"
+    capability: cap_net_bind_service+ep
+    state: present
+
 # --- systemd unit ---
 
 - name: Deploy stalwart systemd unit

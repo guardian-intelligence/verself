@@ -7,6 +7,7 @@ NomadComponentInfo = provider(
         "component": "Topology component key.",
         "depends_on": "List of Nomad job IDs that must be submitted before this component.",
         "descriptor": "Component descriptor JSON file.",
+        "deploy_phase": "Deployment phase for graph wave submission.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
         "provides": "Logical resources this component provides.",
@@ -42,6 +43,8 @@ def _nomad_component_impl(ctx):
         fail("component is required")
     if not ctx.attr.job_id:
         fail("job_id is required")
+    if ctx.attr.deploy_phase not in ["pre_artifact", "artifact"]:
+        fail("deploy_phase must be pre_artifact or artifact")
 
     inputs = [job_spec]
     artifacts = []
@@ -71,10 +74,11 @@ def _nomad_component_impl(ctx):
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 2,
+        "schema_version": 3,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "depends_on": ctx.attr.depends_on,
+        "deploy_phase": ctx.attr.deploy_phase,
         "job_id": ctx.attr.job_id,
         "job_spec": job_spec.short_path,
         "job_spec_path": job_spec.path,
@@ -93,6 +97,7 @@ def _nomad_component_impl(ctx):
             component = ctx.attr.component,
             depends_on = ctx.attr.depends_on,
             descriptor = descriptor,
+            deploy_phase = ctx.attr.deploy_phase,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
             provides = provides,
@@ -113,6 +118,10 @@ nomad_component = rule(
         ),
         "depends_on": attr.string_list(
             doc = "Nomad job IDs that must be submitted before this component.",
+        ),
+        "deploy_phase": attr.string(
+            default = "artifact",
+            doc = "Deployment phase. pre_artifact jobs are submitted before artifact publication; artifact jobs are submitted after publication.",
         ),
         "job_id": attr.string(
             mandatory = True,

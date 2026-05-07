@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/runtime"
@@ -124,7 +125,10 @@ type jobApplyIntent struct {
 	Changed  bool
 }
 
-func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) ([]jobApplyResult, error) {
+func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, db *deploydb.Client, plan *deployPlan) ([]jobApplyResult, error) {
+	if db == nil {
+		return nil, fmt.Errorf("deploy evidence ClickHouse client is required")
+	}
 	forward, err := openNomadForward(ctx, rt, plan.SiteCfg.NomadAddr)
 	if err != nil {
 		return nil, err
@@ -136,36 +140,83 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 	}
 	intents := make([]jobApplyIntent, 0, len(plan.Jobs))
 	for _, job := range plan.Jobs {
-		intent, err := prepareNomadJob(ctx, rt, client, job)
+		intent, err := prepareNomadJob(ctx, rt, db, client, job)
 		if err != nil {
 			return applyResults(intents), fmt.Errorf("%s: %w", job.JobID, err)
 		}
 		intents = append(intents, intent)
 	}
-	artifacts, err := artifactsForChangedJobs(plan, intents)
+	preArtifactIntents, artifactIntents, err := splitIntentsByPhase(intents)
 	if err != nil {
 		return applyResults(intents), err
 	}
-	if err := publishArtifacts(ctx, rt, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, artifacts); err != nil {
+	if err := applyNomadWave(ctx, rt, db, client, deployPhasePreArtifact, deploymodel.ArtifactDelivery{}, preArtifactIntents, nil); err != nil {
 		return applyResults(intents), err
 	}
-	for i, intent := range intents {
-		if !intent.Changed {
-			continue
-		}
-		if err := submitNomadJob(ctx, rt, client, intent); err != nil {
-			return applyResults(intents[:i+1]), fmt.Errorf("%s: %w", intent.Job.JobID, err)
-		}
+	artifacts, err := artifactsForChangedJobs(plan, artifactIntents)
+	if err != nil {
+		return applyResults(intents), err
+	}
+	if err := applyNomadWave(ctx, rt, db, client, deployPhaseArtifact, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, artifactIntents, artifacts); err != nil {
+		return applyResults(intents), err
 	}
 	results := applyResults(intents)
 	return results, nil
 }
 
-func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, job deploymodel.NomadJob) (jobApplyIntent, error) {
+func applyNomadWave(ctx context.Context, rt *runtime.Runtime, db *deploydb.Client, client *nomadclient.Client, wave string, delivery deploymodel.ArtifactDelivery, intents []jobApplyIntent, artifacts []deploymodel.Artifact) error {
+	if len(intents) == 0 {
+		return nil
+	}
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.wave",
+		trace.WithAttributes(
+			attribute.String("verself.deploy_wave", wave),
+			attribute.Int("verself.nomad_job_count", len(intents)),
+			attribute.Int("verself.changed_job_count", changedIntentCount(intents)),
+			attribute.Int("verself.artifact_count", len(artifacts)),
+		),
+	)
+	defer span.End()
+	started := time.Now()
+	if err := recordDeployWaveStarted(ctx, span, db, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if wave == deployPhaseArtifact {
+		if err := publishArtifacts(ctx, rt, delivery, artifacts); err != nil {
+			_ = recordDeployWaveFailed(ctx, span, db, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+	}
+	for i, intent := range intents {
+		if !intent.Changed {
+			continue
+		}
+		if err := submitNomadJob(ctx, rt, db, client, intent); err != nil {
+			_ = recordDeployWaveFailed(ctx, span, db, rt.Identity.RunKey(), rt.Site, wave, intents[:i+1], artifacts, started, err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return fmt.Errorf("%s: %w", intent.Job.JobID, err)
+		}
+	}
+	if err := recordDeployWaveSucceeded(ctx, span, db, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetStatus(codes.Ok, "")
+	return nil
+}
+
+func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, db *deploydb.Client, client *nomadclient.Client, job deploymodel.NomadJob) (jobApplyIntent, error) {
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.apply")
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("nomad.job_id", job.JobID),
+		attribute.String("verself.deploy_wave", job.DeployPhase),
 		attribute.StringSlice("verself.artifact_outputs", job.ArtifactOutputs),
 	)
 	spec, err := nomadclient.ParseSpec(job.Spec, "nomad job "+job.JobID)
@@ -190,11 +241,17 @@ func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclie
 	decision, err := client.Decide(ctx, spec)
 	if err != nil {
 		recordNomadSubmitFailed(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted), err)
+		_ = persistNomadSubmitFailed(ctx, db, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted), err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return jobApplyIntent{}, err
 	}
 	recordNomadDecision(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted))
+	if err := persistNomadDecision(ctx, db, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted)); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return jobApplyIntent{}, err
+	}
 	if decision.NoOp {
 		recordNomadSkipped(span, rt.Identity.RunKey(), rt.Site, job, decision)
 		fmt.Printf("verself-deploy: %s already at desired digests; no submit\n", job.JobID)
@@ -206,15 +263,19 @@ func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclie
 	return jobApplyIntent{Job: job, Spec: spec, Decision: decision, Changed: true}, nil
 }
 
-func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, intent jobApplyIntent) error {
+func submitNomadJob(ctx context.Context, rt *runtime.Runtime, db *deploydb.Client, client *nomadclient.Client, intent jobApplyIntent) error {
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.submit",
-		trace.WithAttributes(attribute.String("nomad.job_id", intent.Job.JobID)),
+		trace.WithAttributes(
+			attribute.String("nomad.job_id", intent.Job.JobID),
+			attribute.String("verself.deploy_wave", intent.Job.DeployPhase),
+		),
 	)
 	defer span.End()
 	submitStarted := time.Now()
 	submitted, err := client.Submit(ctx, intent.Spec, intent.Decision.PriorJobModifyIndex)
 	if err != nil {
 		recordNomadSubmitFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, intent.Decision, time.Since(submitStarted), err)
+		_ = persistNomadSubmitFailed(ctx, db, rt.Identity.RunKey(), rt.Site, intent.Job, intent.Decision, time.Since(submitStarted), err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -222,19 +283,59 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	fmt.Printf("verself-deploy: %s submitted job_modify_index=%d eval_id=%s deployment_id=%s\n",
 		submitted.JobID, submitted.JobModifyIndex, submitted.EvalID, submitted.DeploymentID)
 	recordNomadSubmitted(span, rt.Identity.RunKey(), rt.Site, intent.Job, intent.Decision, submitted, time.Since(submitStarted))
+	if err := persistNomadSubmitted(ctx, db, rt.Identity.RunKey(), rt.Site, intent.Job, intent.Decision, submitted, time.Since(submitStarted)); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	monitorStarted := time.Now()
 	monitor, err := client.Monitor(ctx, submitted)
 	if err != nil {
 		recordNomadDeploymentFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, submitted, monitor, time.Since(monitorStarted), err)
+		_ = persistNomadDeploymentFailed(ctx, db, rt.Identity.RunKey(), rt.Site, intent.Job, submitted, monitor, time.Since(monitorStarted), err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	recordNomadDeploymentSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, submitted, monitor, time.Since(monitorStarted))
+	if err := persistNomadDeploymentSucceeded(ctx, db, rt.Identity.RunKey(), rt.Site, intent.Job, submitted, monitor, time.Since(monitorStarted)); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	fmt.Printf("verself-deploy: %s healthy\n", submitted.JobID)
 	span.SetAttributes(attribute.String("nomad.terminal_status", monitor.TerminalStatus))
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func splitIntentsByPhase(intents []jobApplyIntent) ([]jobApplyIntent, []jobApplyIntent, error) {
+	preArtifact := []jobApplyIntent{}
+	artifact := []jobApplyIntent{}
+	for _, intent := range intents {
+		switch intent.Job.DeployPhase {
+		case deployPhasePreArtifact:
+			if len(intent.Job.ArtifactOutputs) > 0 {
+				return nil, nil, fmt.Errorf("%s: %s jobs cannot reference artifacts", intent.Job.JobID, deployPhasePreArtifact)
+			}
+			preArtifact = append(preArtifact, intent)
+		case deployPhaseArtifact:
+			artifact = append(artifact, intent)
+		default:
+			return nil, nil, fmt.Errorf("%s: unsupported deploy phase %q", intent.Job.JobID, intent.Job.DeployPhase)
+		}
+	}
+	return preArtifact, artifact, nil
+}
+
+func changedIntentCount(intents []jobApplyIntent) int {
+	count := 0
+	for _, intent := range intents {
+		if intent.Changed {
+			count++
+		}
+	}
+	return count
 }
 
 func applyResults(intents []jobApplyIntent) []jobApplyResult {

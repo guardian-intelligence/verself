@@ -31,7 +31,6 @@ job "iam-service" {
       }
       env {
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "https://verself.sh"
-        IAM_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
         IAM_ZITADEL_HOST = "auth.verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -61,6 +60,14 @@ job "iam-service" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/zitadel.env"
+        data = <<-EOT
+IAM_ZITADEL_BASE_URL=http://{{- with nomadService "zitadel-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
+      }
     }
     task "iam-service" {
       driver = "raw_exec"
@@ -77,7 +84,6 @@ job "iam-service" {
       }
       env {
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "https://verself.sh"
-        IAM_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
         IAM_ZITADEL_HOST = "auth.verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -144,6 +150,7 @@ job "iam-service" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+IAM_ZITADEL_BASE_URL=http://{{- with nomadService "zitadel-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 IAM_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 IAM_SPICEDB_GRPC_ENDPOINT={{- with nomadService "spicedb-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT

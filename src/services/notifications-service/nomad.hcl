@@ -30,7 +30,6 @@ job "notifications-service" {
         command = "local/bin/notifications-service"
       }
       env {
-        NOTIFICATIONS_NATS_URL = "tls://127.0.0.1:4222"
         NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
         NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -55,6 +54,14 @@ job "notifications-service" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/platform.env"
+        data = <<-EOT
+NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
+      }
     }
     task "notifications-service" {
       driver = "raw_exec"
@@ -70,7 +77,6 @@ job "notifications-service" {
         command = "local/bin/notifications-service"
       }
       env {
-        NOTIFICATIONS_NATS_URL = "tls://127.0.0.1:4222"
         NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
         NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -125,6 +131,7 @@ job "notifications-service" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 NOTIFICATIONS_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true

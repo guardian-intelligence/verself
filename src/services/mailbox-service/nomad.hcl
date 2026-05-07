@@ -31,7 +31,6 @@ job "mailbox-service" {
         MAILBOX_SERVICE_FORWARDER_FROM_NAME = "verself"
         MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL = "5s"
         MAILBOX_SERVICE_FORWARDER_STATE_PATH = "/var/lib/mailbox-service/forwarder-state.json"
-        MAILBOX_SERVICE_STALWART_BASE_URL = "http://127.0.0.1:8090"
         MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN = "verself.sh"
         MAILBOX_SERVICE_STALWART_MAILBOX = "ceo"
         MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL = "https://mail.verself.sh"
@@ -58,6 +57,14 @@ job "mailbox-service" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/stalwart.env"
+        data = <<-EOT
+MAILBOX_SERVICE_STALWART_BASE_URL=http://{{- with nomadService "stalwart-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
+      }
     }
     task "mailbox-service" {
       driver = "raw_exec"
@@ -77,7 +84,6 @@ job "mailbox-service" {
         MAILBOX_SERVICE_FORWARDER_FROM_NAME = "verself"
         MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL = "5s"
         MAILBOX_SERVICE_FORWARDER_STATE_PATH = "/var/lib/mailbox-service/forwarder-state.json"
-        MAILBOX_SERVICE_STALWART_BASE_URL = "http://127.0.0.1:8090"
         MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN = "verself.sh"
         MAILBOX_SERVICE_STALWART_MAILBOX = "ceo"
         MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL = "https://mail.verself.sh"
@@ -128,6 +134,7 @@ job "mailbox-service" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+MAILBOX_SERVICE_STALWART_BASE_URL=http://{{- with nomadService "stalwart-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 MAILBOX_SERVICE_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true

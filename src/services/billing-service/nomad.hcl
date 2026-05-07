@@ -30,7 +30,6 @@ job "billing" {
         command = "local/bin/billing-service"
       }
       env {
-        BILLING_TB_ADDRESS = "127.0.0.1:3320"
         BILLING_TB_CLUSTER_ID = "0"
         BILLING_RETURN_ORIGINS = "https://verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -55,6 +54,14 @@ job "billing" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/platform.env"
+        data = <<-EOT
+BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
+      }
     }
     task "billing-service" {
       driver = "raw_exec"
@@ -70,7 +77,6 @@ job "billing" {
         command = "local/bin/billing-service"
       }
       env {
-        BILLING_TB_ADDRESS = "127.0.0.1:3320"
         BILLING_TB_CLUSTER_ID = "0"
         BILLING_RETURN_ORIGINS = "https://verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -125,6 +131,7 @@ job "billing" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 BILLING_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true

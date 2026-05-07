@@ -28,7 +28,6 @@ job "object-storage-service" {
       }
       env {
         OBJECT_STORAGE_GARAGE_REGION = "garage"
-        OBJECT_STORAGE_GARAGE_S3_URLS = "http://127.0.0.1:3900,http://127.0.0.1:3910,http://127.0.0.1:3920"
         OBJECT_STORAGE_ROLE = "s3"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -54,6 +53,14 @@ job "object-storage-service" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/garage.env"
+        data = <<-EOT
+OBJECT_STORAGE_GARAGE_S3_URLS={{ range $i, $service := nomadService "garage-s3" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
+EOT
+        env = true
+      }
     }
     task "object-storage-service" {
       driver = "raw_exec"
@@ -70,7 +77,6 @@ job "object-storage-service" {
       }
       env {
         OBJECT_STORAGE_GARAGE_REGION = "garage"
-        OBJECT_STORAGE_GARAGE_S3_URLS = "http://127.0.0.1:3900,http://127.0.0.1:3910,http://127.0.0.1:3920"
         OBJECT_STORAGE_ROLE = "s3"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -101,6 +107,14 @@ job "object-storage-service" {
         delay = "15s"
         interval = "300s"
         mode = "delay"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/garage.env"
+        data = <<-EOT
+OBJECT_STORAGE_GARAGE_S3_URLS={{ range $i, $service := nomadService "garage-s3" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
+EOT
+        env = true
       }
       service {
         name = "object-storage-service-public-http"
@@ -153,7 +167,6 @@ job "object-storage-service" {
       }
       env {
         OBJECT_STORAGE_ADMIN_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_admin_http}"
-        OBJECT_STORAGE_GARAGE_ADMIN_URLS = "http://127.0.0.1:3903,http://127.0.0.1:3913,http://127.0.0.1:3923"
         OBJECT_STORAGE_GARAGE_REGION = "garage"
         OBJECT_STORAGE_ROLE = "admin"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -197,6 +210,7 @@ job "object-storage-service" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+OBJECT_STORAGE_GARAGE_ADMIN_URLS={{ range $i, $service := nomadService "garage-admin" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
 OBJECT_STORAGE_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true

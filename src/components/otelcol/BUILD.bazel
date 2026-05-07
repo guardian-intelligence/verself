@@ -1,3 +1,4 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 filegroup(
@@ -30,4 +31,14 @@ spire_identity(
     ],
     user = "otelcol",
     visibility = ["//src/host:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    component = "otelcol",
+    deploy_phase = "pre_artifact",
+    job_id = "otelcol",
+    job_spec = "nomad.hcl",
+    provides = ["otelcol:otlp"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

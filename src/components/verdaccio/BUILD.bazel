@@ -1,3 +1,5 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
 filegroup(
     name = "role_sources",
     srcs = glob(
@@ -17,6 +19,15 @@ filegroup(
         "//src/components:__pkg__",
         "//src/host:__pkg__",
     ],
+)
+
+nomad_component(
+    name = "nomad_component",
+    component = "verdaccio",
+    job_id = "verdaccio",
+    job_spec = "nomad.hcl",
+    provides = ["verdaccio:http"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
 genrule(

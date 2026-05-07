@@ -18,7 +18,12 @@ import (
 	"github.com/verself/deployment-tools/internal/runtime"
 )
 
-const artifactSourcePrefix = "verself-artifact://"
+const (
+	artifactSourcePrefix = "verself-artifact://"
+
+	deployPhasePreArtifact = "pre_artifact"
+	deployPhaseArtifact    = "artifact"
+)
 
 type deployPlan struct {
 	Identity  identity.Snapshot
@@ -51,6 +56,7 @@ type nomadComponentDescriptor struct {
 	Label         string                    `json:"label"`
 	Component     string                    `json:"component"`
 	DependsOn     []string                  `json:"depends_on"`
+	DeployPhase   string                    `json:"deploy_phase"`
 	JobID         string                    `json:"job_id"`
 	JobSpec       string                    `json:"job_spec"`
 	JobSpecPath   string                    `json:"job_spec_path"`
@@ -162,7 +168,7 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		if err := json.Unmarshal(body, &component); err != nil {
 			return nil, fmt.Errorf("decode %s: %w", path, err)
 		}
-		if component.SchemaVersion != 2 {
+		if component.SchemaVersion != 3 {
 			return nil, fmt.Errorf("%s: unsupported nomad_component schema_version=%d", path, component.SchemaVersion)
 		}
 		if !componentInSite(component.Sites, site) {
@@ -170,6 +176,9 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		}
 		if component.Label == "" || component.Component == "" || component.JobID == "" || component.JobSpec == "" || component.JobSpecPath == "" {
 			return nil, fmt.Errorf("%s: component descriptor requires label, component, job_id, job_spec, and job_spec_path", path)
+		}
+		if !validDeployPhase(component.DeployPhase) {
+			return nil, fmt.Errorf("%s: deploy_phase must be %s or %s", path, deployPhasePreArtifact, deployPhaseArtifact)
 		}
 		if component.UnitID == "" {
 			component.UnitID = component.JobID
@@ -327,6 +336,7 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		jobs = append(jobs, deploymodel.NomadJob{
 			JobID:           component.JobID,
 			Component:       component.Component,
+			DeployPhase:     component.DeployPhase,
 			DependsOn:       append([]string(nil), component.Requires...),
 			ArtifactOutputs: artifactOutputs,
 			SpecSHA256:      specSHA,
@@ -340,6 +350,10 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		}
 	}
 	return jobs, nil
+}
+
+func validDeployPhase(value string) bool {
+	return value == deployPhasePreArtifact || value == deployPhaseArtifact
 }
 
 func sortedArtifactOutputs(seen map[string]bool) []string {

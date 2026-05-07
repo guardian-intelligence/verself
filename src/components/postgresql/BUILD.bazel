@@ -1,0 +1,11 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    component = "postgresql",
+    deploy_phase = "pre_artifact",
+    job_id = "postgresql",
+    job_spec = "nomad.hcl",
+    provides = ["postgres:server"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

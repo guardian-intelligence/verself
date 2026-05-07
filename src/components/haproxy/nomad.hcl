@@ -32,6 +32,68 @@ job "haproxy-upstreams" {
         data = <<-EOT
 # Authored Nomad service-catalog template for HAProxy upstream membership.
 
+backend be_firecracker_forgejo
+  guid be_firecracker_forgejo
+  http-request set-header Host git.verself.sh
+  http-request set-header X-Forwarded-Host git.verself.sh
+[[ with nomadService "forgejo-http" ]]
+[[ range $i, $svc := . ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_firecracker_forgejo_srv_[[ $i ]]
+[[ end ]]
+[[ else ]]
+  http-request return status 503 content-type text/plain string "service unavailable"
+[[ end ]]
+
+backend be_garage_nomad_artifacts
+  guid be_garage_nomad_artifacts
+  balance random
+[[ with nomadService "garage-s3" ]]
+[[ range $i, $svc := . ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_garage_nomad_artifacts_srv_[[ $i ]]
+[[ end ]]
+[[ else ]]
+  http-request return status 503 content-type text/plain string "service unavailable"
+[[ end ]]
+
+backend be_route_product_npm_registry_verdaccio
+  guid be_route_product_npm_registry_verdaccio
+  http-request del-header Authorization
+  http-request set-header X-Forwarded-Host %[req.hdr(host)]
+  http-request set-header X-Forwarded-Proto https if { ssl_fc }
+[[ with nomadService "verdaccio-http" ]]
+[[ range $i, $svc := . ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_npm_registry_verdaccio_srv_[[ $i ]]
+[[ end ]]
+[[ else ]]
+  http-request return status 503 content-type text/plain string "service unavailable"
+[[ end ]]
+
+backend be_route_product_auth_zitadel_oidc
+  guid be_route_product_auth_zitadel_oidc
+[[ with nomadService "zitadel-http" ]]
+[[ range $i, $svc := . ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_auth_zitadel_oidc_srv_[[ $i ]]
+[[ end ]]
+[[ else ]]
+  http-request return status 503 content-type text/plain string "service unavailable"
+[[ end ]]
+
+backend be_route_product_mail_stalwart_jmap
+  guid be_route_product_mail_stalwart_jmap
+  acl stalwart_direct path -i /.well-known/jmap
+  acl stalwart_direct path_beg /jmap/ /auth/
+  acl mail_allowed path -i /.well-known/jmap
+  acl mail_allowed path_beg /jmap/ /auth/
+  http-request return status 404 unless mail_allowed
+[[ with nomadService "stalwart-http" ]]
+[[ range $i, $svc := . ]]
+  use-server srv_[[ $i ]] if stalwart_direct
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_mail_stalwart_jmap_srv_[[ $i ]]
+[[ end ]]
+[[ else ]]
+  http-request return status 503 content-type text/plain string "service unavailable"
+[[ end ]]
+
 backend be_billing_stripe_webhook
   guid be_billing_stripe_webhook
   balance random

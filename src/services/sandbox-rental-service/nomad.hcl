@@ -34,7 +34,6 @@ job "sandbox-rental" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service-migration"
         SANDBOX_EXECUTION_MAX_WORKERS = "4"
-        SANDBOX_FORGEJO_API_BASE_URL = "http://127.0.0.1:3000"
         SANDBOX_FORGEJO_RUNNER_BASE_URL = "http://10.255.0.1:18080"
         SANDBOX_FORGEJO_WEBHOOK_BASE_URL = "https://sandbox.api.verself.sh"
         SANDBOX_GITHUB_API_BASE_URL = "https://api.github.com"
@@ -70,6 +69,14 @@ job "sandbox-rental" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/forgejo.env"
+        data = <<-EOT
+SANDBOX_FORGEJO_API_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
+      }
     }
     task "sandbox-rental-service" {
       driver = "raw_exec"
@@ -89,7 +96,6 @@ job "sandbox-rental" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service"
         SANDBOX_EXECUTION_MAX_WORKERS = "4"
-        SANDBOX_FORGEJO_API_BASE_URL = "http://127.0.0.1:3000"
         SANDBOX_FORGEJO_RUNNER_BASE_URL = "http://10.255.0.1:18080"
         SANDBOX_FORGEJO_WEBHOOK_BASE_URL = "https://sandbox.api.verself.sh"
         SANDBOX_GITHUB_API_BASE_URL = "https://api.github.com"
@@ -161,6 +167,7 @@ job "sandbox-rental" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+SANDBOX_FORGEJO_API_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_BILLING_URL=https://{{- with nomadService "billing-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}

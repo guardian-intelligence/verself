@@ -1,3 +1,4 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 filegroup(
@@ -30,4 +31,17 @@ spire_identity(
     ],
     user = "grafana",
     visibility = ["//src/host:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    component = "grafana",
+    job_id = "grafana",
+    job_spec = "nomad.hcl",
+    provides = ["grafana:http"],
+    requires = [
+        "clickhouse:migrations",
+        "postgres:server",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -23,6 +23,10 @@ nomad_component(
     depends_on = ["secrets-service"],
     job_id = "mailbox-service",
     job_spec = "nomad.hcl",
+    requires = [
+        "postgres:server",
+        "stalwart:http",
+    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

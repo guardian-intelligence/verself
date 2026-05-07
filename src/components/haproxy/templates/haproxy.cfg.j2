@@ -187,26 +187,6 @@ backend be_forbidden
   guid be_forbidden
   http-request return status 403
 
-backend be_firecracker_forgejo
-  guid be_firecracker_forgejo
-  http-request set-header Host git.verself.sh
-  http-request set-header X-Forwarded-Host git.verself.sh
-  server forgejo 127.0.0.1:3000 guid be_firecracker_forgejo_srv_forgejo
-
-backend be_garage_nomad_artifacts
-  guid be_garage_nomad_artifacts
-  balance random
-  server garage_0 127.0.0.1:3900 guid be_garage_nomad_artifacts_srv_garage_0
-  server garage_1 127.0.0.1:3910 guid be_garage_nomad_artifacts_srv_garage_1
-  server garage_2 127.0.0.1:3920 guid be_garage_nomad_artifacts_srv_garage_2
-
-backend be_route_product_npm_registry_verdaccio
-  guid be_route_product_npm_registry_verdaccio
-  http-request del-header Authorization
-  http-request set-header X-Forwarded-Host %[req.hdr(host)]
-  http-request set-header X-Forwarded-Proto https if { ssl_fc }
-  server verdaccio 127.0.0.1:4873 guid be_route_product_npm_registry_verdaccio_srv_verdaccio
-
 backend be_route_product_access_pomerium_access_portal
   guid be_route_product_access_pomerium_access_portal
   http-request set-header Host %[req.hdr(host)]
@@ -214,23 +194,9 @@ backend be_route_product_access_pomerium_access_portal
   http-request set-header X-Forwarded-Proto https
   server pomerium 127.0.0.1:4180 guid be_route_product_access_pomerium_access_portal_srv_pomerium
 
-backend be_route_product_auth_zitadel_oidc
-  guid be_route_product_auth_zitadel_oidc
-  server zitadel 127.0.0.1:8085 proto h2 guid be_route_product_auth_zitadel_oidc_srv_zitadel
-
 backend be_route_product_dashboard_grafana_operator_ui
   guid be_route_product_dashboard_grafana_operator_ui
   http-request set-header Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Proto https
   server pomerium 127.0.0.1:4180 guid be_route_product_dashboard_grafana_operator_ui_srv_pomerium
-
-backend be_route_product_mail_stalwart_jmap
-  guid be_route_product_mail_stalwart_jmap
-  acl stalwart_direct path -i /.well-known/jmap
-  acl stalwart_direct path_beg /jmap/ /auth/
-  acl mail_allowed path -i /.well-known/jmap
-  acl mail_allowed path_beg /jmap/ /auth/
-  http-request return status 404 unless mail_allowed
-  use-server stalwart if stalwart_direct
-  server stalwart 127.0.0.1:8090 guid be_route_product_mail_stalwart_jmap_srv_stalwart

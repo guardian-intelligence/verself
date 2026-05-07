@@ -43,6 +43,7 @@ type Artifact struct {
 type NomadJob struct {
 	JobID           string          `json:"job_id"`
 	Component       string          `json:"component"`
+	DeployPhase     string          `json:"deploy_phase"`
 	DependsOn       []string        `json:"depends_on,omitempty"`
 	ArtifactOutputs []string        `json:"artifact_outputs,omitempty"`
 	SpecSHA256      string          `json:"spec_sha256"`

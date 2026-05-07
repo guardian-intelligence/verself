@@ -33,7 +33,6 @@ job "source-code-hosting-service" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "source-code-hosting-service-migration"
-        SOURCE_FORGEJO_BASE_URL = "http://127.0.0.1:3000"
         SOURCE_FORGEJO_OWNER = "forgejo-automation"
         SOURCE_PUBLIC_BASE_URL = "https://git.verself.sh"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
@@ -54,6 +53,14 @@ job "source-code-hosting-service" {
         cpu = 100
         memory = 128
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/forgejo.env"
+        data = <<-EOT
+SOURCE_FORGEJO_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EOT
+        env = true
+      }
     }
     task "source-code-hosting-service" {
       driver = "raw_exec"
@@ -72,7 +79,6 @@ job "source-code-hosting-service" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "source-code-hosting-service"
-        SOURCE_FORGEJO_BASE_URL = "http://127.0.0.1:3000"
         SOURCE_FORGEJO_OWNER = "forgejo-automation"
         SOURCE_PUBLIC_BASE_URL = "https://git.verself.sh"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
@@ -123,6 +129,7 @@ job "source-code-hosting-service" {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
+SOURCE_FORGEJO_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SOURCE_IAM_INTERNAL_URL=https://{{- with nomadService "iam-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SOURCE_PROJECTS_SERVICE_URL=https://{{- with nomadService "projects-service-service-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SOURCE_SANDBOX_INTERNAL_URL=https://{{- with nomadService "sandbox-rental-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
