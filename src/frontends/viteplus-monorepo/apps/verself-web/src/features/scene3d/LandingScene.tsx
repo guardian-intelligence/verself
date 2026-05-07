@@ -13,7 +13,7 @@ const LandingSceneCanvas = lazy(() =>
 export function LandingScene({ motion = true }: LandingSceneProps) {
   if (!motion) {
     return (
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <SceneFallback />
       </div>
     );
@@ -21,7 +21,7 @@ export function LandingScene({ motion = true }: LandingSceneProps) {
 
   return (
     <SceneHost
-      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+      className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
       fallback={<SceneFallback />}
     >
       <LandingSceneCanvas />

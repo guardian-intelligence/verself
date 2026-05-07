@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { LandingTopBar } from "~/features/landing/landing-top-bar";
-import { LandingScene } from "~/features/scene3d";
+import { LandingScene, captureScenePointer, releaseScenePointer } from "~/features/scene3d";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
 import { getClientAuthSnapshot } from "~/server-fns/auth";
 
@@ -25,13 +25,18 @@ export const Route = createFileRoute("/")({
 
 function LandingPage() {
   return (
-    <main className="relative isolate min-h-svh overflow-hidden bg-black text-white">
+    <main
+      className="relative isolate min-h-[178svh] overflow-hidden bg-black text-white"
+      onPointerCancel={releaseScenePointer}
+      onPointerLeave={releaseScenePointer}
+      onPointerMove={captureScenePointer}
+    >
       <LandingScene />
       <LandingTopBar />
 
-      <div className="relative z-10 mx-auto flex min-h-svh max-w-3xl flex-col items-center px-6 pt-28 text-center md:pt-36">
+      <div className="relative z-10 mx-auto flex min-h-[92svh] max-w-3xl flex-col items-center px-6 pt-28 text-center md:pt-36">
         <h1
-          className="text-5xl font-light leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl"
+          className="text-5xl font-light leading-[1.05] text-white sm:text-6xl md:text-7xl"
           style={{ fontFamily: "Fraunces, serif", fontVariationSettings: "'opsz' 144, 'SOFT' 0" }}
         >
           It&rsquo;s Better on Metal
@@ -56,6 +61,28 @@ function LandingPage() {
           </Link>
         </div>
       </div>
+
+      <section className="relative z-10 mx-auto grid min-h-[86svh] max-w-5xl grid-cols-1 gap-10 border-t border-white/10 bg-black/35 px-6 py-24 text-left md:grid-cols-[0.82fr_1fr] md:py-32">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-white/40">Bare metal substrate</p>
+          <h2
+            className="mt-5 max-w-lg text-3xl font-light leading-tight text-white md:text-5xl"
+            style={{ fontFamily: "Fraunces, serif", fontVariationSettings: "'opsz' 144, 'SOFT' 0" }}
+          >
+            Rented sandboxes with hardware-level isolation.
+          </h2>
+        </div>
+        <div className="max-w-xl space-y-5 text-sm leading-7 text-white/58 md:pt-11 md:text-base">
+          <p>
+            Verself turns operator-owned Latitude metal into short-lived Firecracker capacity for CI
+            runs today, with persistent dev VMs and Lambda-style workloads on the same control plane.
+          </p>
+          <p>
+            The public surface stays API-first: rent compute, observe execution, settle usage, and
+            carry the same tenant and billing model across every sandbox product.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }

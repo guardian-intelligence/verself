@@ -1,5 +1,6 @@
 import { Canvas, type CanvasProps } from "@react-three/fiber";
 import type { ReactNode } from "react";
+import { ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace } from "three";
 import { SceneFallback } from "./scene-fallback";
 
 interface SceneCanvasProps {
@@ -16,9 +17,15 @@ export function SceneCanvas({ camera, children, className, fallback }: SceneCanv
     <Canvas
       camera={camera}
       className={className ?? "absolute inset-0"}
-      dpr={[1, 2]}
+      dpr={[1.25, 2]}
       fallback={fallbackNode}
-      gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+      gl={{ alpha: true, antialias: false, powerPreference: "high-performance" }}
+      onCreated={({ gl }) => {
+        gl.outputColorSpace = SRGBColorSpace;
+        gl.shadowMap.type = PCFSoftShadowMap;
+        gl.toneMapping = ACESFilmicToneMapping;
+        gl.toneMappingExposure = 1.08;
+      }}
       shadows
       style={{ pointerEvents: "none" }}
     >
