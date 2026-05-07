@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	verself "github.com/verself/verself-go"
 )
@@ -19,8 +20,14 @@ func (c CLI) runRuns(ctx context.Context, args []string) error {
 		return c.runsList(ctx, args[1:])
 	case "get":
 		return c.runsGet(ctx, args[1:])
+	case "get-run":
+		return c.runsGetRun(ctx, args[1:])
 	case "logs":
 		return c.runsLogs(ctx, args[1:])
+	case "search-logs":
+		return c.runsSearchLogs(ctx, args[1:])
+	case "analytics":
+		return c.runsAnalytics(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown runs command %q", args[0])
 	}
@@ -97,6 +104,29 @@ func (c CLI) runsGet(ctx context.Context, args []string) error {
 	return writeSandboxRun(c.out, run)
 }
 
+func (c CLI) runsGetRun(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("runs get-run", c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: runs get-run <run-id> [--json]")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	run, err := client.Sandbox.GetRun(ctx, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(c.out, run)
+	}
+	return writeSandboxRun(c.out, run)
+}
+
 func (c CLI) runsLogs(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("runs logs", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
@@ -118,6 +148,133 @@ func (c CLI) runsLogs(ctx context.Context, args []string) error {
 		return writeJSON(c.out, logs)
 	}
 	return writef(c.out, "%s", logs.Logs)
+}
+
+func (c CLI) runsSearchLogs(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("runs search-logs", c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	limit := fs.Int64("limit", 50, "page size")
+	cursor := fs.String("cursor", "", "pagination cursor")
+	query := fs.String("query", "", "substring search")
+	runID := fs.String("run-id", "", "run UUID")
+	attemptID := fs.String("attempt-id", "", "attempt UUID")
+	sourceKind := fs.String("source-kind", "", "source kind")
+	repository := fs.String("repository", "", "repository filter")
+	workflow := fs.String("workflow", "", "workflow filter")
+	branch := fs.String("branch", "", "branch filter")
+	runnerClass := fs.String("runner-class", "", "runner class")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: runs search-logs [--query TEXT] [--run-id RUN_ID] [--json]")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	page, err := client.Sandbox.SearchRunLogs(ctx, verself.SearchSandboxRunLogsOptions{
+		Limit:       *limit,
+		Cursor:      *cursor,
+		Query:       *query,
+		RunID:       *runID,
+		AttemptID:   *attemptID,
+		SourceKind:  *sourceKind,
+		Repository:  *repository,
+		Workflow:    *workflow,
+		Branch:      *branch,
+		RunnerClass: *runnerClass,
+	})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(c.out, page)
+	}
+	for _, result := range page.Results {
+		if err := writef(c.out, "%s\t%s\t%d\t%s\t%s", result.ExecutionID, result.AttemptID, result.Seq, result.Stream, result.Chunk); err != nil {
+			return err
+		}
+		if !strings.HasSuffix(result.Chunk, "\n") {
+			if err := writef(c.out, "\n"); err != nil {
+				return err
+			}
+		}
+	}
+	if page.NextCursor != "" {
+		return writef(c.out, "next_cursor\t%s\n", page.NextCursor)
+	}
+	return nil
+}
+
+func (c CLI) runsAnalytics(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("runs analytics command is required")
+	}
+	command := args[0]
+	fs, serviceFlags := serviceFlagSet("runs analytics "+command, c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	start := fs.String("start", "", "RFC3339 inclusive window start")
+	end := fs.String("end", "", "RFC3339 inclusive window end")
+	if err := parseInterspersed(fs, args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: runs analytics jobs|costs|caches|runner-sizing [--json]")
+	}
+	options, err := sandboxAnalyticsOptions(*start, *end)
+	if err != nil {
+		return err
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	switch command {
+	case "jobs":
+		analytics, err := client.Sandbox.GetJobsAnalytics(ctx, options)
+		if err != nil {
+			return err
+		}
+		if *jsonOut {
+			return writeJSON(c.out, analytics)
+		}
+		return writef(c.out, "total_runs\t%s\nsucceeded_runs\t%s\nfailed_runs\t%s\n", analytics.TotalRuns, analytics.SucceededRuns, analytics.FailedRuns)
+	case "costs":
+		analytics, err := client.Sandbox.GetCostsAnalytics(ctx, options)
+		if err != nil {
+			return err
+		}
+		if *jsonOut {
+			return writeJSON(c.out, analytics)
+		}
+		return writef(c.out, "reserved_charge_units\t%s\nbilled_charge_units\t%s\nwriteoff_charge_units\t%s\n", analytics.ReservedChargeUnits, analytics.BilledChargeUnits, analytics.WriteoffChargeUnits)
+	case "caches":
+		analytics, err := client.Sandbox.GetCachesAnalytics(ctx, options)
+		if err != nil {
+			return err
+		}
+		if *jsonOut {
+			return writeJSON(c.out, analytics)
+		}
+		return writef(c.out, "checkout_requests\t%s\ncheckout_hits\t%s\nsticky_commits\t%s\n", analytics.CheckoutRequests, analytics.CheckoutHits, analytics.StickyCommits)
+	case "runner-sizing":
+		analytics, err := client.Sandbox.GetRunnerSizingAnalytics(ctx, options)
+		if err != nil {
+			return err
+		}
+		if *jsonOut {
+			return writeJSON(c.out, analytics)
+		}
+		for _, sample := range analytics.ByRunnerClass {
+			if err := writef(c.out, "%s\t%s\t%s\n", sample.RunnerClass, sample.RunCount, sample.P95DurationMs); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown runs analytics command %q", command)
+	}
 }
 
 func (c CLI) runSchedules(ctx context.Context, args []string) error {
@@ -267,6 +424,168 @@ func (c CLI) schedulesLifecycle(ctx context.Context, command, action string, arg
 	return writeSandboxSchedule(c.out, schedule)
 }
 
+func (c CLI) runStickyDisks(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("sticky-disks command is required")
+	}
+	switch args[0] {
+	case "list", "ls":
+		return c.stickyDisksList(ctx, args[1:])
+	case "reset":
+		return c.stickyDisksReset(ctx, args[1:])
+	default:
+		return fmt.Errorf("unknown sticky-disks command %q", args[0])
+	}
+}
+
+func (c CLI) stickyDisksList(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("sticky-disks list", c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	limit := fs.Int64("limit", 50, "page size")
+	cursor := fs.String("cursor", "", "pagination cursor")
+	repository := fs.String("repository", "", "repository filter")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: sticky-disks list [--repository REPO] [--json]")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	page, err := client.Sandbox.ListStickyDisks(ctx, verself.ListSandboxStickyDisksOptions{
+		Limit:      *limit,
+		Cursor:     *cursor,
+		Repository: *repository,
+	})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(c.out, page)
+	}
+	for _, disk := range page.Disks {
+		if err := writef(c.out, "%s\t%s\t%s\t%s\t%s\t%s\n", disk.InstallationID, disk.RepositoryID, disk.KeyHash, disk.Key, disk.CurrentGeneration, disk.CurrentSourceRef); err != nil {
+			return err
+		}
+	}
+	if page.NextCursor != "" {
+		return writef(c.out, "next_cursor\t%s\n", page.NextCursor)
+	}
+	return nil
+}
+
+func (c CLI) stickyDisksReset(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("sticky-disks reset", c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	installationID := fs.String("installation-id", "", "GitHub installation ID")
+	repositoryID := fs.String("repository-id", "", "GitHub repository ID")
+	keyHash := fs.String("key-hash", "", "sticky disk key hash")
+	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: sticky-disks reset --installation-id ID --repository-id ID --key-hash HASH [--json]")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	reset, err := client.Sandbox.ResetStickyDisk(ctx, verself.ResetSandboxStickyDiskInput{
+		InstallationID: *installationID,
+		RepositoryID:   *repositoryID,
+		KeyHash:        *keyHash,
+		IdempotencyKey: *idempotencyKey,
+	})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(c.out, reset)
+	}
+	return writef(c.out, "%s\t%s\t%s\t%s\n", reset.InstallationID, reset.RepositoryID, reset.KeyHash, stringValue(reset.DeletedSourceRef))
+}
+
+func (c CLI) runGitHub(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("github command is required")
+	}
+	switch args[0] {
+	case "installations":
+		return c.githubInstallations(ctx, args[1:])
+	default:
+		return fmt.Errorf("unknown github command %q", args[0])
+	}
+}
+
+func (c CLI) githubInstallations(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("github installations command is required")
+	}
+	switch args[0] {
+	case "list", "ls":
+		return c.githubInstallationsList(ctx, args[1:])
+	case "connect":
+		return c.githubInstallationsConnect(ctx, args[1:])
+	default:
+		return fmt.Errorf("unknown github installations command %q", args[0])
+	}
+}
+
+func (c CLI) githubInstallationsList(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("github installations list", c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: github installations list [--json]")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	installations, err := client.Sandbox.ListGitHubInstallations(ctx)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(c.out, installations)
+	}
+	for _, installation := range installations {
+		if err := writef(c.out, "%s\t%s\t%s\t%t\n", installation.InstallationID, installation.AccountLogin, installation.AccountType, installation.Active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c CLI) githubInstallationsConnect(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("github installations connect", c.err)
+	jsonOut := fs.Bool("json", false, "json output")
+	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: github installations connect [--json]")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	connect, err := client.Sandbox.BeginGitHubInstallation(ctx, verself.SandboxMutationOptions{IdempotencyKey: *idempotencyKey})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(c.out, connect)
+	}
+	return writef(c.out, "%s\t%s\t%s\n", connect.State, connect.SetupURL, connect.ExpiresAt.Format(time.RFC3339))
+}
+
 func (c CLI) runBilling(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("billing command is required")
@@ -405,4 +724,23 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func sandboxAnalyticsOptions(startValue, endValue string) (verself.SandboxAnalyticsOptions, error) {
+	var options verself.SandboxAnalyticsOptions
+	if strings.TrimSpace(startValue) != "" {
+		start, err := time.Parse(time.RFC3339, strings.TrimSpace(startValue))
+		if err != nil {
+			return options, fmt.Errorf("parse analytics start: %w", err)
+		}
+		options.Start = start
+	}
+	if strings.TrimSpace(endValue) != "" {
+		end, err := time.Parse(time.RFC3339, strings.TrimSpace(endValue))
+		if err != nil {
+			return options, fmt.Errorf("parse analytics end: %w", err)
+		}
+		options.End = end
+	}
+	return options, nil
 }

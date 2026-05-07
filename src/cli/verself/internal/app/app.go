@@ -59,6 +59,10 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runRepos(ctx, args[1:])
 	case "runs":
 		return c.runRuns(ctx, args[1:])
+	case "sticky-disks":
+		return c.runStickyDisks(ctx, args[1:])
+	case "github":
+		return c.runGitHub(ctx, args[1:])
 	case "schedules":
 		return c.runSchedules(ctx, args[1:])
 	case "billing":
@@ -107,7 +111,14 @@ func (c CLI) usage() error {
   %[1]s repos workflow-runs dispatch <repo-id> --project-id PROJECT_ID --workflow-path PATH [--json]
   %[1]s runs list [--status STATUS] [--json]
   %[1]s runs get <execution-id> [--json]
+  %[1]s runs get-run <run-id> [--json]
   %[1]s runs logs <execution-id> [--json]
+  %[1]s runs search-logs [--query TEXT] [--run-id RUN_ID] [--json]
+  %[1]s runs analytics jobs|costs|caches|runner-sizing [--json]
+  %[1]s sticky-disks list [--repository REPO] [--json]
+  %[1]s sticky-disks reset --installation-id ID --repository-id ID --key-hash HASH [--json]
+  %[1]s github installations list [--json]
+  %[1]s github installations connect [--json]
   %[1]s schedules list [--json]
   %[1]s schedules create --project-id PROJECT_ID --source-repository-id REPO_ID --workflow-path PATH --interval-seconds SECONDS [--json]
   %[1]s schedules get <schedule-id> [--json]

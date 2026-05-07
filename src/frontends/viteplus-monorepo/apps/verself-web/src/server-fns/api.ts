@@ -57,6 +57,7 @@ import {
   executionScheduleIdInputSchema,
   executionScheduleRequestSchema,
   inviteMemberRequestSchema,
+  runIdInputSchema,
   isBillingApiError,
   isIAMApiError,
   isProjectsApiError,
@@ -65,6 +66,10 @@ import {
   isSourceApiError as isSourceCodeHostingApiError,
   putMemberCapabilitiesRequestSchema,
   runListQuerySchema,
+  runLogSearchQuerySchema,
+  sandboxAnalyticsQuerySchema,
+  stickyDiskListQuerySchema,
+  stickyDiskResetRequestSchema,
   updateMemberRolesRequestSchema,
   updateOrganizationRequestSchema,
   type BillingCheckoutRequest as CheckoutRequest,
@@ -85,7 +90,10 @@ import {
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
   type CreateRepositoryRequest as CreateSourceRepositoryRequest,
+  type CachesAnalytics,
+  type CostsAnalytics,
   type Execution,
+  type ExecutionLogs,
   type ExecutionSchedule,
   type ExecutionScheduleIdInput,
   type ExecutionScheduleRequest,
@@ -101,9 +109,17 @@ import {
   type PutMemberCapabilitiesRequest,
   type Project,
   type ProjectList,
+  type GitHubInstallation,
+  type GitHubInstallationConnect,
+  type JobsAnalytics,
   type RunListQuery,
   type RunListQueryInput,
+  type RunLogSearchPage,
+  type RunnerSizingAnalytics,
   type RunsPage,
+  type StickyDiskResetRequest,
+  type StickyDiskResetResult,
+  type StickyDisksPage,
   type SourceBlob,
   type SourceCheckoutGrant,
   type SourceGitCredential,
@@ -241,9 +257,20 @@ export type {
   ContractRequest,
   ContractChangeRequest,
   ContractsResponse,
+  CachesAnalytics,
+  CostsAnalytics,
   RunListQuery,
   RunListQueryInput,
+  RunLogSearchPage,
   RunsPage,
+  ExecutionLogs,
+  GitHubInstallation,
+  GitHubInstallationConnect,
+  JobsAnalytics,
+  RunnerSizingAnalytics,
+  StickyDiskResetRequest,
+  StickyDiskResetResult,
+  StickyDisksPage,
 };
 export type {
   InviteMemberRequest,
@@ -745,11 +772,86 @@ export const getExecution = createServerFn({ method: "GET" })
     return (await sandboxRentalSDK(context)).sandbox.getExecution(data.executionId);
   });
 
+export const getExecutionLogs = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(executionIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.getExecutionLogs(data.executionId);
+  });
+
+export const getRun = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(runIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.getRun(data.runId);
+  });
+
 export const listRuns = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(v.optional(runListQuerySchema))
   .handler(async ({ context, data }) => {
     return (await sandboxRentalSDK(context)).sandbox.listRuns(data);
+  });
+
+export const searchRunLogs = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(runLogSearchQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.searchRunLogs(data);
+  });
+
+export const getJobsAnalytics = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.getJobsAnalytics(data);
+  });
+
+export const getCostsAnalytics = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.getCostsAnalytics(data);
+  });
+
+export const getCachesAnalytics = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.getCachesAnalytics(data);
+  });
+
+export const getRunnerSizingAnalytics = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.getRunnerSizingAnalytics(data);
+  });
+
+export const listStickyDisks = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(v.optional(stickyDiskListQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.listStickyDisks(data);
+  });
+
+export const resetStickyDisk = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(stickyDiskResetRequestSchema)
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.resetStickyDisk(data);
+  });
+
+export const listGitHubInstallations = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async ({ context }) => {
+    return (await sandboxRentalSDK(context)).sandbox.listGitHubInstallations();
+  });
+
+export const beginGitHubInstallation = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async ({ context }) => {
+    return (await sandboxRentalSDK(context)).sandbox.beginGitHubInstallation();
   });
 
 export const listExecutionSchedules = createServerFn({ method: "GET" })

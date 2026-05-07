@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/verself/sandbox-rental-service/internal/jobs"
 	auth "github.com/verself/service-runtime/auth"
 )
 
@@ -59,6 +60,103 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 
 	if checked == 0 {
 		t.Fatal("checked no public API operations")
+	}
+}
+
+func TestOpenAPIPublicProjectionIsBearerOnly(t *testing.T) {
+	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, PublicAPIConfig{})
+	openAPI := api.OpenAPI()
+
+	schemes := openAPI.Components.SecuritySchemes
+	if len(schemes) != 1 || schemes["bearerAuth"] == nil {
+		t.Fatalf("public security schemes = %#v, want only bearerAuth", schemes)
+	}
+	expected := map[string]bool{
+		"begin-github-installation":   false,
+		"list-github-installations":   false,
+		"get-execution":               false,
+		"get-execution-logs":          false,
+		"list-runs":                   false,
+		"get-run":                     false,
+		"search-run-logs":             false,
+		"get-jobs-analytics":          false,
+		"get-costs-analytics":         false,
+		"get-caches-analytics":        false,
+		"get-runner-sizing-analytics": false,
+		"list-sticky-disks":           false,
+		"reset-sticky-disk":           false,
+		"create-execution-schedule":   false,
+		"list-execution-schedules":    false,
+		"get-execution-schedule":      false,
+		"pause-execution-schedule":    false,
+		"resume-execution-schedule":   false,
+	}
+	for path, pathItem := range openAPI.Paths {
+		if !strings.HasPrefix(path, "/api/") {
+			t.Fatalf("public projection contains non-public path %s", path)
+		}
+		for _, op := range operationsForPath(pathItem) {
+			if op == nil {
+				continue
+			}
+			seen, ok := expected[op.OperationID]
+			if !ok {
+				t.Fatalf("unexpected public operation %q at %s", op.OperationID, path)
+			}
+			if seen {
+				t.Fatalf("duplicate public operation %q", op.OperationID)
+			}
+			expected[op.OperationID] = true
+			if len(op.Security) != 1 || len(op.Security[0]) != 1 {
+				t.Fatalf("%s %s security = %#v, want only bearerAuth", op.Method, path, op.Security)
+			}
+			if _, ok := op.Security[0]["bearerAuth"]; !ok {
+				t.Fatalf("%s %s security = %#v, want bearerAuth", op.Method, path, op.Security)
+			}
+		}
+	}
+	for operationID, seen := range expected {
+		if !seen {
+			t.Fatalf("missing public operation %q", operationID)
+		}
+	}
+}
+
+func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
+	api := NewInternalAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", &jobs.Service{})
+	openAPI := api.OpenAPI()
+
+	schemes := openAPI.Components.SecuritySchemes
+	if len(schemes) != 1 || schemes["mutualTLS"] == nil {
+		t.Fatalf("internal security schemes = %#v, want only mutualTLS", schemes)
+	}
+	var checked int
+	for path, pathItem := range openAPI.Paths {
+		if !strings.HasPrefix(path, "/internal/") {
+			t.Fatalf("internal projection contains non-internal path %s", path)
+		}
+		for _, op := range operationsForPath(pathItem) {
+			if op == nil {
+				continue
+			}
+			checked++
+			if op.OperationID != "internal-register-runner-repository" {
+				t.Fatalf("unexpected internal operation %q at %s", op.OperationID, path)
+			}
+			if len(op.Security) != 1 || len(op.Security[0]) != 1 {
+				t.Fatalf("%s %s security = %#v, want only mutualTLS", op.Method, path, op.Security)
+			}
+			if _, ok := op.Security[0]["mutualTLS"]; !ok {
+				t.Fatalf("%s %s security = %#v, want mutualTLS", op.Method, path, op.Security)
+			}
+			rawPolicy, ok := op.Extensions["x-verself-iam"].(map[string]any)
+			if !ok || rawPolicy["org_scope"] != "body_org_id" || rawPolicy["audit_event"] != "sandbox.runner_repository.register" {
+				t.Fatalf("%s %s internal IAM policy = %#v", op.Method, path, rawPolicy)
+			}
+		}
+	}
+	if checked != 1 {
+		t.Fatalf("checked %d internal operations, want 1", checked)
 	}
 }
 

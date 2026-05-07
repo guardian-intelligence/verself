@@ -18,9 +18,20 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	const traceparent = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
 	runJSON := `{"execution_id":"` + executionID + `","run_id":"` + runID + `","org_id":"370200542594579812","actor_id":"user_1","product_id":"sandbox-ci","kind":"ci","status":"succeeded","source_kind":"github","workload_kind":"github_actions","runner_class":"linux-2vcpu","latest_attempt":{"attempt_id":"attempt_1","attempt_seq":1,"state":"succeeded","trace_id":"trace_1","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:01:00Z"},"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:01:00Z"}`
 	scheduleJSON := `{"schedule_id":"` + scheduleID + `","org_id":"370200542594579812","project_id":"` + projectID + `","source_repository_id":"` + repoID + `","actor_id":"user_1","display_name":"Nightly","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"interval_seconds":900,"state":"active","task_queue":"sandbox-recurring","temporal_namespace":"default","temporal_schedule_id":"verself-schedule","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	analyticsWindow := `{"window_start":"2026-05-06T00:00:00Z","window_end":"2026-05-07T00:00:00Z"`
+	jobsAnalyticsJSON := analyticsWindow + `,"total_runs":"1","succeeded_runs":"1","failed_runs":"0","p50_duration_ms":"1000","p95_duration_ms":"1000","p99_duration_ms":"1000","by_source":[{"key":"github","count":"1"}],"by_runner_class":[{"key":"linux-2vcpu","count":"1"}],"slowest_runs":[{"execution_id":"` + executionID + `","status":"succeeded","duration_ms":1000,"completed_at":"2026-05-06T00:01:00Z"}]}`
+	costsAnalyticsJSON := analyticsWindow + `,"reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1","by_source":[{"key":"github","count":"1","reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1"}],"by_runner_class":[],"by_repository":[]}`
+	cachesAnalyticsJSON := analyticsWindow + `,"checkout_requests":"1","checkout_hits":"1","checkout_misses":"0","sticky_restore_hits":"0","sticky_restore_misses":"0","sticky_save_requests":"1","sticky_commits":"1","by_repository":[{"key":"guardian/verself","count":"1"}]}`
+	runnerSizingAnalyticsJSON := analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`
+	logSearchJSON := `{"filters":{"query":"build","run_id":"` + runID + `"},"limit":1,"next_cursor":"logs_cursor","results":[{"execution_id":"` + executionID + `","attempt_id":"attempt_1","seq":1,"stream":"stdout","chunk":"build log\n","created_at":"2026-05-06T00:00:30Z","source_kind":"github"}]}`
+	stickyDisksJSON := `{"filters":{"repository":"guardian/verself"},"limit":1,"next_cursor":"sticky_cursor","disks":[{"installation_id":"123","repository_id":"456","repository_full_name":"guardian/verself","key_hash":"cache_hash","key":"go-build","current_generation":"7","current_source_ref":"zfs://cache","last_execution_id":"` + executionID + `","last_attempt_id":"attempt_1","last_save_state":"committed","last_used_at":"2026-05-06T00:01:00Z"}]}`
+	githubInstallationJSON := `{"installation_id":"123","org_id":"370200542594579812","account_login":"guardian","account_type":"Organization","active":true,"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	var createBody map[string]any
 	var pauseKey string
 	var resumeKey string
+	var githubInstallKey string
+	var stickyResetKey string
+	var stickyResetBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer tok_sandbox" {
@@ -39,6 +50,38 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 			_, _ = w.Write([]byte(runJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/executions/"+executionID+"/logs":
 			_, _ = w.Write([]byte(`{"execution_id":"` + executionID + `","attempt_id":"attempt_1","logs":"build log\n"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/runs/"+runID:
+			_, _ = w.Write([]byte(runJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-logs/search":
+			if r.URL.Query().Get("limit") != "1" || r.URL.Query().Get("query") != "build" || r.URL.Query().Get("run_id") != runID {
+				t.Fatalf("run logs query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(logSearchJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/jobs":
+			_, _ = w.Write([]byte(jobsAnalyticsJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/costs":
+			_, _ = w.Write([]byte(costsAnalyticsJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/caches":
+			_, _ = w.Write([]byte(cachesAnalyticsJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
+			_, _ = w.Write([]byte(runnerSizingAnalyticsJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sticky-disks":
+			if r.URL.Query().Get("limit") != "1" || r.URL.Query().Get("repository") != "guardian/verself" {
+				t.Fatalf("sticky disks query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(stickyDisksJSON))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sticky-disks/reset":
+			stickyResetKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&stickyResetBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"installation_id":"123","repository_id":"456","key_hash":"cache_hash","deleted_source_ref":"zfs://cache","reset_at":"2026-05-06T00:02:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
+			_, _ = w.Write([]byte(`[` + githubInstallationJSON + `]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/github/installations/connect":
+			githubInstallKey = r.Header.Get("Idempotency-Key")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"setup_url":"https://github.com/apps/verself/installations/new","state":"github_state","expires_at":"2026-05-06T00:10:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/execution-schedules":
 			_, _ = w.Write([]byte(`[` + scheduleJSON + `]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/execution-schedules":
@@ -85,6 +128,81 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	}
 	if logs.Logs != "build log\n" {
 		t.Fatalf("unexpected logs: %#v", logs)
+	}
+	runByID, err := client.Sandbox.GetRun(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runByID.RunID != runID {
+		t.Fatalf("unexpected run: %#v", runByID)
+	}
+	logMatches, err := client.Sandbox.SearchRunLogs(context.Background(), SearchSandboxRunLogsOptions{Limit: 1, Query: "build", RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logMatches.Results) != 1 || logMatches.Results[0].Chunk != "build log\n" || logMatches.NextCursor != "logs_cursor" {
+		t.Fatalf("unexpected log search page: %#v", logMatches)
+	}
+	jobsAnalytics, err := client.Sandbox.GetJobsAnalytics(context.Background(), SandboxAnalyticsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobsAnalytics.TotalRuns != "1" || len(jobsAnalytics.SlowestRuns) != 1 {
+		t.Fatalf("unexpected jobs analytics: %#v", jobsAnalytics)
+	}
+	costsAnalytics, err := client.Sandbox.GetCostsAnalytics(context.Background(), SandboxAnalyticsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if costsAnalytics.BilledChargeUnits != "9" {
+		t.Fatalf("unexpected costs analytics: %#v", costsAnalytics)
+	}
+	cachesAnalytics, err := client.Sandbox.GetCachesAnalytics(context.Background(), SandboxAnalyticsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cachesAnalytics.CheckoutHits != "1" || cachesAnalytics.StickyCommits != "1" {
+		t.Fatalf("unexpected caches analytics: %#v", cachesAnalytics)
+	}
+	runnerSizingAnalytics, err := client.Sandbox.GetRunnerSizingAnalytics(context.Background(), SandboxAnalyticsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runnerSizingAnalytics.ByRunnerClass) != 1 || runnerSizingAnalytics.ByRunnerClass[0].RunnerClass != "linux-2vcpu" {
+		t.Fatalf("unexpected runner sizing analytics: %#v", runnerSizingAnalytics)
+	}
+	stickyDisks, err := client.Sandbox.ListStickyDisks(context.Background(), ListSandboxStickyDisksOptions{Limit: 1, Repository: "guardian/verself"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stickyDisks.Disks) != 1 || stickyDisks.Disks[0].KeyHash != "cache_hash" || stickyDisks.NextCursor != "sticky_cursor" {
+		t.Fatalf("unexpected sticky disks page: %#v", stickyDisks)
+	}
+	reset, err := client.Sandbox.ResetStickyDisk(context.Background(), ResetSandboxStickyDiskInput{
+		InstallationID: "123",
+		RepositoryID:   "456",
+		KeyHash:        "cache_hash",
+		IdempotencyKey: "sandbox:sticky-reset",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.DeletedSourceRef == nil || *reset.DeletedSourceRef != "zfs://cache" || stickyResetKey != "sandbox:sticky-reset" || stickyResetBody["key_hash"] != "cache_hash" {
+		t.Fatalf("unexpected sticky reset: result=%#v key=%q body=%#v", reset, stickyResetKey, stickyResetBody)
+	}
+	installations, err := client.Sandbox.ListGitHubInstallations(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installations) != 1 || installations[0].InstallationID != "123" {
+		t.Fatalf("unexpected github installations: %#v", installations)
+	}
+	connect, err := client.Sandbox.BeginGitHubInstallation(context.Background(), SandboxMutationOptions{IdempotencyKey: "sandbox:github-connect"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connect.State != "github_state" || githubInstallKey != "sandbox:github-connect" {
+		t.Fatalf("unexpected github connect: response=%#v key=%q", connect, githubInstallKey)
 	}
 	schedules, err := client.Sandbox.ListSchedules(context.Background())
 	if err != nil {

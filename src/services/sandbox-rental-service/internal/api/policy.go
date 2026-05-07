@@ -759,14 +759,13 @@ func applyPublicAPISecurityScheme(api huma.API) {
 	if openapi.Components == nil {
 		openapi.Components = &huma.Components{}
 	}
-	if openapi.Components.SecuritySchemes == nil {
-		openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
-	}
-	openapi.Components.SecuritySchemes["bearerAuth"] = &huma.SecurityScheme{
-		Type:         "http",
-		Scheme:       "bearer",
-		BearerFormat: "JWT",
-		Description:  "Zitadel-issued bearer token scoped to the sandbox-rental API audience.",
+	openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"bearerAuth": {
+			Type:         "http",
+			Scheme:       "bearer",
+			BearerFormat: "JWT",
+			Description:  "Zitadel-issued bearer token scoped to the sandbox-rental API audience.",
+		},
 	}
 }
 
@@ -775,11 +774,10 @@ func applyInternalAPISecurityScheme(api huma.API) {
 	if openapi.Components == nil {
 		openapi.Components = &huma.Components{}
 	}
-	if openapi.Components.SecuritySchemes == nil {
-		openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
-	}
-	openapi.Components.SecuritySchemes["mutualTLS"] = &huma.SecurityScheme{
-		Type:        "mutualTLS",
-		Description: "SPIFFE X.509-SVID mutual TLS on the sandbox-rental-service internal listener.",
+	openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"mutualTLS": {
+			Type:        "mutualTLS",
+			Description: "SPIFFE X.509-SVID mutual TLS on the sandbox-rental-service internal listener.",
+		},
 	}
 }

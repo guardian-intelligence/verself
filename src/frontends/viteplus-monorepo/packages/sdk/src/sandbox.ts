@@ -1,30 +1,69 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/sandbox-rental-api/client/index.js";
 import {
+  type GetCachesAnalyticsData,
+  type GetCostsAnalyticsData,
+  type GetJobsAnalyticsData,
+  type GetRunnerSizingAnalyticsData,
   type ListRunsData,
+  type ListStickyDisksData,
+  type SearchRunLogsData,
+  beginGithubInstallation as beginGeneratedGithubInstallation,
   createExecutionSchedule as createGeneratedExecutionSchedule,
+  getCachesAnalytics as getGeneratedCachesAnalytics,
+  getCostsAnalytics as getGeneratedCostsAnalytics,
   getExecution as getGeneratedExecution,
+  getExecutionLogs as getGeneratedExecutionLogs,
   getExecutionSchedule as getGeneratedExecutionSchedule,
+  getJobsAnalytics as getGeneratedJobsAnalytics,
+  getRun as getGeneratedRun,
+  getRunnerSizingAnalytics as getGeneratedRunnerSizingAnalytics,
   listExecutionSchedules as listGeneratedExecutionSchedules,
+  listGithubInstallations as listGeneratedGithubInstallations,
   listRuns as listGeneratedRuns,
+  listStickyDisks as listGeneratedStickyDisks,
   pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
+  resetStickyDisk as resetGeneratedStickyDisk,
   resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
+  searchRunLogs as searchGeneratedRunLogs,
 } from "./__generated/sandbox-rental-api/index.js";
 import {
   vCreateExecutionScheduleBody,
   vCreateExecutionScheduleResponse,
+  vBeginGithubInstallationHeaders,
+  vBeginGithubInstallationResponse,
+  vGetCachesAnalyticsQuery,
+  vGetCachesAnalyticsResponse,
+  vGetCostsAnalyticsQuery,
+  vGetCostsAnalyticsResponse,
   vGetExecutionPath,
+  vGetExecutionLogsPath,
+  vGetExecutionLogsResponse,
   vGetExecutionSchedulePath,
   vGetExecutionScheduleResponse,
+  vGetJobsAnalyticsQuery,
+  vGetJobsAnalyticsResponse,
+  vGetRunPath,
+  vGetRunResponse,
+  vGetRunnerSizingAnalyticsQuery,
+  vGetRunnerSizingAnalyticsResponse,
   vListExecutionSchedulesResponse,
+  vListGithubInstallationsResponse,
+  vListStickyDisksQuery,
+  vListStickyDisksResponse,
   vListRunsQuery,
   vListRunsResponse,
   vPauseExecutionScheduleHeaders,
   vPauseExecutionSchedulePath,
   vPauseExecutionScheduleResponse,
+  vResetStickyDiskBody,
+  vResetStickyDiskHeaders,
+  vResetStickyDiskResponse,
   vResumeExecutionScheduleHeaders,
   vResumeExecutionSchedulePath,
   vResumeExecutionScheduleResponse,
+  vSearchRunLogsQuery,
+  vSearchRunLogsResponse,
   vSandboxAttemptRecord,
   vSandboxBillingWindow,
   vSandboxExecutionRecord,
@@ -55,8 +94,65 @@ export class SandboxRental {
     return getExecution({ ...this.#options, executionId });
   }
 
+  getExecutionLogs(executionId: string): Promise<ExecutionLogs> {
+    return getExecutionLogs({ ...this.#options, executionId });
+  }
+
+  getRun(runId: string): Promise<Execution> {
+    return getRun({ ...this.#options, runId });
+  }
+
   listRuns(query?: RunListQueryInput): Promise<RunsPage> {
     return listRuns({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  searchRunLogs(query?: RunLogSearchQueryInput): Promise<RunLogSearchPage> {
+    return searchRunLogs({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  getJobsAnalytics(query?: SandboxAnalyticsQueryInput): Promise<JobsAnalytics> {
+    return getJobsAnalytics({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  getCostsAnalytics(query?: SandboxAnalyticsQueryInput): Promise<CostsAnalytics> {
+    return getCostsAnalytics({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  getCachesAnalytics(query?: SandboxAnalyticsQueryInput): Promise<CachesAnalytics> {
+    return getCachesAnalytics({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  getRunnerSizingAnalytics(query?: SandboxAnalyticsQueryInput): Promise<RunnerSizingAnalytics> {
+    return getRunnerSizingAnalytics({
+      ...this.#options,
+      ...(query === undefined ? {} : { query }),
+    });
+  }
+
+  listStickyDisks(query?: StickyDiskListQueryInput): Promise<StickyDisksPage> {
+    return listStickyDisks({ ...this.#options, ...(query === undefined ? {} : { query }) });
+  }
+
+  resetStickyDisk(
+    body: StickyDiskResetRequest,
+    options?: SandboxMutationOptions,
+  ): Promise<StickyDiskResetResult> {
+    return resetStickyDisk({
+      ...this.#options,
+      body,
+      ...(options === undefined ? {} : { options }),
+    });
+  }
+
+  listGitHubInstallations(): Promise<GitHubInstallation[]> {
+    return listGitHubInstallations(this.#options);
+  }
+
+  beginGitHubInstallation(options?: SandboxMutationOptions): Promise<GitHubInstallationConnect> {
+    return beginGitHubInstallation({
+      ...this.#options,
+      ...(options === undefined ? {} : { options }),
+    });
   }
 
   listExecutionSchedules(): Promise<ExecutionSchedules> {
@@ -71,12 +167,20 @@ export class SandboxRental {
     return getExecutionSchedule({ ...this.#options, scheduleId });
   }
 
-  pauseSchedule(scheduleId: string): Promise<ExecutionSchedule> {
-    return pauseSchedule({ ...this.#options, scheduleId });
+  pauseSchedule(scheduleId: string, options?: SandboxMutationOptions): Promise<ExecutionSchedule> {
+    return pauseSchedule({
+      ...this.#options,
+      scheduleId,
+      ...(options === undefined ? {} : { options }),
+    });
   }
 
-  resumeSchedule(scheduleId: string): Promise<ExecutionSchedule> {
-    return resumeSchedule({ ...this.#options, scheduleId });
+  resumeSchedule(scheduleId: string, options?: SandboxMutationOptions): Promise<ExecutionSchedule> {
+    return resumeSchedule({
+      ...this.#options,
+      scheduleId,
+      ...(options === undefined ? {} : { options }),
+    });
   }
 }
 
@@ -171,6 +275,100 @@ function parseExecution(input: unknown) {
 
 export type Execution = ReturnType<typeof parseExecution>;
 
+function parseExecutionLogs(input: unknown) {
+  return v.parse(vGetExecutionLogsResponse, input);
+}
+
+export type ExecutionLogs = ReturnType<typeof parseExecutionLogs>;
+
+function parseGitHubInstallations(input: unknown) {
+  return v.parse(vListGithubInstallationsResponse, input) ?? [];
+}
+
+export type GitHubInstallation = ReturnType<typeof parseGitHubInstallations>[number];
+
+function parseGitHubInstallationConnect(input: unknown) {
+  return v.parse(vBeginGithubInstallationResponse, input);
+}
+
+export type GitHubInstallationConnect = ReturnType<typeof parseGitHubInstallationConnect>;
+
+function parseRunLogSearchPage(input: unknown) {
+  const parsed = v.parse(vSearchRunLogsResponse, input);
+  return {
+    ...parsed,
+    nextCursor: parsed.next_cursor ?? "",
+    results: parsed.results ?? [],
+  };
+}
+
+export type RunLogSearchPage = ReturnType<typeof parseRunLogSearchPage>;
+
+function parseJobsAnalytics(input: unknown) {
+  const parsed = v.parse(vGetJobsAnalyticsResponse, input);
+  return {
+    ...parsed,
+    by_runner_class: parsed.by_runner_class ?? [],
+    by_source: parsed.by_source ?? [],
+    slowest_runs:
+      parsed.slowest_runs?.map((run) => ({
+        ...run,
+        duration_ms: toSafeNumber(run.duration_ms, "duration_ms"),
+      })) ?? [],
+  };
+}
+
+export type JobsAnalytics = ReturnType<typeof parseJobsAnalytics>;
+
+function parseCostsAnalytics(input: unknown) {
+  const parsed = v.parse(vGetCostsAnalyticsResponse, input);
+  return {
+    ...parsed,
+    by_repository: parsed.by_repository ?? [],
+    by_runner_class: parsed.by_runner_class ?? [],
+    by_source: parsed.by_source ?? [],
+  };
+}
+
+export type CostsAnalytics = ReturnType<typeof parseCostsAnalytics>;
+
+function parseCachesAnalytics(input: unknown) {
+  const parsed = v.parse(vGetCachesAnalyticsResponse, input);
+  return {
+    ...parsed,
+    by_repository: parsed.by_repository ?? [],
+  };
+}
+
+export type CachesAnalytics = ReturnType<typeof parseCachesAnalytics>;
+
+function parseRunnerSizingAnalytics(input: unknown) {
+  const parsed = v.parse(vGetRunnerSizingAnalyticsResponse, input);
+  return {
+    ...parsed,
+    by_runner_class: parsed.by_runner_class ?? [],
+  };
+}
+
+export type RunnerSizingAnalytics = ReturnType<typeof parseRunnerSizingAnalytics>;
+
+function parseStickyDisksPage(input: unknown) {
+  const parsed = v.parse(vListStickyDisksResponse, input);
+  return {
+    ...parsed,
+    disks: parsed.disks ?? [],
+    nextCursor: parsed.next_cursor ?? "",
+  };
+}
+
+export type StickyDisksPage = ReturnType<typeof parseStickyDisksPage>;
+
+function parseStickyDiskResetResult(input: unknown) {
+  return v.parse(vResetStickyDiskResponse, input);
+}
+
+export type StickyDiskResetResult = ReturnType<typeof parseStickyDiskResetResult>;
+
 type RawRunsPage = v.InferOutput<typeof vListRunsResponse>;
 
 function parseRunsFilters(input: RawRunsPage["filters"]) {
@@ -239,6 +437,95 @@ export const runListQuerySchema = v.pipe(
 export type RunListQueryInput = v.InferInput<typeof runListQuerySchema>;
 export type RunListQuery = v.InferOutput<typeof runListQuerySchema>;
 
+export const runLogSearchQuerySchema = v.pipe(
+  v.strictObject({
+    limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(500))),
+    cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
+    query: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    runId: v.optional(v.pipe(v.string(), v.uuid())),
+    attemptId: v.optional(v.pipe(v.string(), v.uuid())),
+    sourceKind: v.optional(v.pipe(v.string(), v.maxLength(64))),
+    repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    workflow: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    runnerClass: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  }),
+  v.transform((query) => {
+    const parsed = v.parse(vSearchRunLogsQuery, {
+      limit: query.limit,
+      cursor: normalizeRunListFilter(query.cursor),
+      query: normalizeRunListFilter(query.query),
+      run_id: normalizeRunListFilter(query.runId),
+      attempt_id: normalizeRunListFilter(query.attemptId),
+      source_kind: normalizeRunListFilter(query.sourceKind),
+      repository: normalizeRunListFilter(query.repository),
+      workflow: normalizeRunListFilter(query.workflow),
+      branch: normalizeRunListFilter(query.branch),
+      runner_class: normalizeRunListFilter(query.runnerClass),
+    });
+    return {
+      ...(parsed.limit === undefined ? {} : { limit: toSafeNumber(parsed.limit, "logs.limit") }),
+      ...(parsed.cursor === undefined ? {} : { cursor: parsed.cursor }),
+      ...(parsed.query === undefined ? {} : { query: parsed.query }),
+      ...(parsed.run_id === undefined ? {} : { runId: parsed.run_id }),
+      ...(parsed.attempt_id === undefined ? {} : { attemptId: parsed.attempt_id }),
+      ...(parsed.source_kind === undefined ? {} : { sourceKind: parsed.source_kind }),
+      ...(parsed.repository === undefined ? {} : { repository: parsed.repository }),
+      ...(parsed.workflow === undefined ? {} : { workflow: parsed.workflow }),
+      ...(parsed.branch === undefined ? {} : { branch: parsed.branch }),
+      ...(parsed.runner_class === undefined ? {} : { runnerClass: parsed.runner_class }),
+    };
+  }),
+);
+
+export type RunLogSearchQueryInput = v.InferInput<typeof runLogSearchQuerySchema>;
+export type RunLogSearchQuery = v.InferOutput<typeof runLogSearchQuerySchema>;
+
+export const sandboxAnalyticsQuerySchema = v.strictObject({
+  start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+});
+
+export type SandboxAnalyticsQueryInput = v.InferInput<typeof sandboxAnalyticsQuerySchema>;
+
+export const stickyDiskListQuerySchema = v.pipe(
+  v.strictObject({
+    limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
+    cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
+    repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  }),
+  v.transform((query) => {
+    const parsed = v.parse(vListStickyDisksQuery, {
+      limit: query.limit,
+      cursor: normalizeRunListFilter(query.cursor),
+      repository: normalizeRunListFilter(query.repository),
+    });
+    return {
+      ...(parsed.limit === undefined ? {} : { limit: toSafeNumber(parsed.limit, "sticky.limit") }),
+      ...(parsed.cursor === undefined ? {} : { cursor: parsed.cursor }),
+      ...(parsed.repository === undefined ? {} : { repository: parsed.repository }),
+    };
+  }),
+);
+
+export type StickyDiskListQueryInput = v.InferInput<typeof stickyDiskListQuerySchema>;
+export type StickyDiskListQuery = v.InferOutput<typeof stickyDiskListQuerySchema>;
+
+export const stickyDiskResetRequestSchema = v.pipe(
+  v.strictObject({
+    installation_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+    repository_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+    key_hash: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+  }),
+  v.transform((body) => v.parse(vResetStickyDiskBody, body)),
+);
+
+export type StickyDiskResetRequest = v.InferInput<typeof stickyDiskResetRequestSchema>;
+
+export type SandboxMutationOptions = {
+  idempotencyKey?: string | undefined;
+};
+
 function toGeneratedRunListQuery(query: RunListQueryInput | undefined) {
   if (query === undefined) return undefined;
   const parsed = v.parse(runListQuerySchema, query);
@@ -252,6 +539,65 @@ function toGeneratedRunListQuery(query: RunListQueryInput | undefined) {
     branch: parsed.branch,
     runner_class: parsed.runnerClass,
   }) as NonNullable<ListRunsData["query"]>;
+}
+
+function toGeneratedRunLogSearchQuery(query: RunLogSearchQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  const parsed = v.parse(runLogSearchQuerySchema, query);
+  return removeUndefined({
+    limit: parsed.limit,
+    cursor: parsed.cursor,
+    query: parsed.query,
+    run_id: parsed.runId,
+    attempt_id: parsed.attemptId,
+    source_kind: parsed.sourceKind,
+    repository: parsed.repository,
+    workflow: parsed.workflow,
+    branch: parsed.branch,
+    runner_class: parsed.runnerClass,
+  }) as NonNullable<SearchRunLogsData["query"]>;
+}
+
+function toGeneratedStickyDiskListQuery(query: StickyDiskListQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  const parsed = v.parse(stickyDiskListQuerySchema, query);
+  return removeUndefined({
+    limit: parsed.limit,
+    cursor: parsed.cursor,
+    repository: parsed.repository,
+  }) as NonNullable<ListStickyDisksData["query"]>;
+}
+
+function toGeneratedJobsAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  return v.parse(
+    vGetJobsAnalyticsQuery,
+    v.parse(sandboxAnalyticsQuerySchema, query),
+  ) as NonNullable<GetJobsAnalyticsData["query"]>;
+}
+
+function toGeneratedCostsAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  return v.parse(
+    vGetCostsAnalyticsQuery,
+    v.parse(sandboxAnalyticsQuerySchema, query),
+  ) as NonNullable<GetCostsAnalyticsData["query"]>;
+}
+
+function toGeneratedCachesAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  return v.parse(
+    vGetCachesAnalyticsQuery,
+    v.parse(sandboxAnalyticsQuerySchema, query),
+  ) as NonNullable<GetCachesAnalyticsData["query"]>;
+}
+
+function toGeneratedRunnerSizingAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  return v.parse(
+    vGetRunnerSizingAnalyticsQuery,
+    v.parse(sandboxAnalyticsQuerySchema, query),
+  ) as NonNullable<GetRunnerSizingAnalyticsData["query"]>;
 }
 
 type ExecutionScheduleRequestBody = {
@@ -308,6 +654,17 @@ export const executionIdInputSchema = v.pipe(
 );
 
 export type ExecutionIdInput = v.InferOutput<typeof executionIdInputSchema>;
+
+export const runIdInputSchema = v.pipe(
+  v.strictObject({
+    runId: v.string(),
+  }),
+  v.transform(({ runId }) => ({
+    runId: v.parse(vGetRunPath, { run_id: runId }).run_id,
+  })),
+);
+
+export type RunIdInput = v.InferOutput<typeof runIdInputSchema>;
 
 export const executionScheduleIdInputSchema = v.pipe(
   v.strictObject({
@@ -376,6 +733,46 @@ export async function getExecution(
   return parseExecution(result.data);
 }
 
+export async function getExecutionLogs(
+  options: SandboxRentalClientOptions & { executionId: string },
+): Promise<ExecutionLogs> {
+  const client = createSandboxRentalClient(options);
+  const { executionId } = v.parse(executionIdInputSchema, { executionId: options.executionId });
+  const path = `/api/v1/executions/${executionId}/logs`;
+  const result = await getGeneratedExecutionLogs({
+    client,
+    path: v.parse(vGetExecutionLogsPath, { execution_id: executionId }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecutionLogs(result.data);
+}
+
+export async function getRun(
+  options: SandboxRentalClientOptions & { runId: string },
+): Promise<Execution> {
+  const client = createSandboxRentalClient(options);
+  const { runId } = v.parse(runIdInputSchema, { runId: options.runId });
+  const path = `/api/v1/runs/${runId}`;
+  const result = await getGeneratedRun({
+    client,
+    path: { run_id: runId },
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecution(v.parse(vGetRunResponse, result.data));
+}
+
 export async function listRuns(
   options: SandboxRentalClientOptions & { query?: RunListQueryInput },
 ): Promise<RunsPage> {
@@ -394,6 +791,195 @@ export async function listRuns(
   }
 
   return parseRunsPage(result.data);
+}
+
+export async function searchRunLogs(
+  options: SandboxRentalClientOptions & { query?: RunLogSearchQueryInput },
+): Promise<RunLogSearchPage> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedRunLogSearchQuery(options.query);
+  const path = "/api/v1/run-logs/search";
+  const result = await searchGeneratedRunLogs({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseRunLogSearchPage(result.data);
+}
+
+export async function getJobsAnalytics(
+  options: SandboxRentalClientOptions & { query?: SandboxAnalyticsQueryInput },
+): Promise<JobsAnalytics> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedJobsAnalyticsQuery(options.query);
+  const path = "/api/v1/run-analytics/jobs";
+  const result = await getGeneratedJobsAnalytics({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseJobsAnalytics(result.data);
+}
+
+export async function getCostsAnalytics(
+  options: SandboxRentalClientOptions & { query?: SandboxAnalyticsQueryInput },
+): Promise<CostsAnalytics> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedCostsAnalyticsQuery(options.query);
+  const path = "/api/v1/run-analytics/costs";
+  const result = await getGeneratedCostsAnalytics({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseCostsAnalytics(result.data);
+}
+
+export async function getCachesAnalytics(
+  options: SandboxRentalClientOptions & { query?: SandboxAnalyticsQueryInput },
+): Promise<CachesAnalytics> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedCachesAnalyticsQuery(options.query);
+  const path = "/api/v1/run-analytics/caches";
+  const result = await getGeneratedCachesAnalytics({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseCachesAnalytics(result.data);
+}
+
+export async function getRunnerSizingAnalytics(
+  options: SandboxRentalClientOptions & { query?: SandboxAnalyticsQueryInput },
+): Promise<RunnerSizingAnalytics> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedRunnerSizingAnalyticsQuery(options.query);
+  const path = "/api/v1/run-analytics/runner-sizing";
+  const result = await getGeneratedRunnerSizingAnalytics({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseRunnerSizingAnalytics(result.data);
+}
+
+export async function listStickyDisks(
+  options: SandboxRentalClientOptions & { query?: StickyDiskListQueryInput },
+): Promise<StickyDisksPage> {
+  const client = createSandboxRentalClient(options);
+  const query = toGeneratedStickyDiskListQuery(options.query);
+  const path = "/api/v1/sticky-disks";
+  const result = await listGeneratedStickyDisks({
+    client,
+    ...(query === undefined ? {} : { query }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseStickyDisksPage(result.data);
+}
+
+export async function resetStickyDisk(
+  options: SandboxRentalClientOptions & {
+    body: StickyDiskResetRequest;
+    options?: SandboxMutationOptions;
+  },
+): Promise<StickyDiskResetResult> {
+  const client = createSandboxRentalClient(options);
+  const body = v.parse(stickyDiskResetRequestSchema, options.body);
+  const headers = v.parse(
+    vResetStickyDiskHeaders,
+    idempotencyHeaders("sticky-disk-reset", options.options?.idempotencyKey),
+  );
+  const path = "/api/v1/sticky-disks/reset";
+  const result = await resetGeneratedStickyDisk({
+    body,
+    client,
+    headers,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseStickyDiskResetResult(result.data);
+}
+
+export async function listGitHubInstallations(
+  options: SandboxRentalClientOptions,
+): Promise<GitHubInstallation[]> {
+  const client = createSandboxRentalClient(options);
+  const path = "/api/v1/github/installations";
+  const result = await listGeneratedGithubInstallations({
+    client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseGitHubInstallations(result.data);
+}
+
+export async function beginGitHubInstallation(
+  options: SandboxRentalClientOptions & { options?: SandboxMutationOptions },
+): Promise<GitHubInstallationConnect> {
+  const client = createSandboxRentalClient(options);
+  const headers = v.parse(
+    vBeginGithubInstallationHeaders,
+    idempotencyHeaders("github-installation", options.options?.idempotencyKey),
+  );
+  const path = "/api/v1/github/installations/connect";
+  const result = await beginGeneratedGithubInstallation({
+    client,
+    headers,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseGitHubInstallationConnect(result.data);
 }
 
 export async function listExecutionSchedules(
@@ -457,7 +1043,10 @@ export async function getExecutionSchedule(
 }
 
 export async function pauseSchedule(
-  options: SandboxRentalClientOptions & { scheduleId: string },
+  options: SandboxRentalClientOptions & {
+    scheduleId: string;
+    options?: SandboxMutationOptions;
+  },
 ): Promise<ExecutionSchedule> {
   const client = createSandboxRentalClient(options);
   const { scheduleId } = v.parse(executionScheduleIdInputSchema, {
@@ -465,7 +1054,7 @@ export async function pauseSchedule(
   });
   const headers = v.parse(
     vPauseExecutionScheduleHeaders,
-    idempotencyHeaders("execution-schedule-pause"),
+    idempotencyHeaders("execution-schedule-pause", options.options?.idempotencyKey),
   );
   const path = `/api/v1/execution-schedules/${scheduleId}/pause`;
   const result = await pauseGeneratedExecutionSchedule({
@@ -484,7 +1073,10 @@ export async function pauseSchedule(
 }
 
 export async function resumeSchedule(
-  options: SandboxRentalClientOptions & { scheduleId: string },
+  options: SandboxRentalClientOptions & {
+    scheduleId: string;
+    options?: SandboxMutationOptions;
+  },
 ): Promise<ExecutionSchedule> {
   const client = createSandboxRentalClient(options);
   const { scheduleId } = v.parse(executionScheduleIdInputSchema, {
@@ -492,7 +1084,7 @@ export async function resumeSchedule(
   });
   const headers = v.parse(
     vResumeExecutionScheduleHeaders,
-    idempotencyHeaders("execution-schedule-resume"),
+    idempotencyHeaders("execution-schedule-resume", options.options?.idempotencyKey),
   );
   const path = `/api/v1/execution-schedules/${scheduleId}/resume`;
   const result = await resumeGeneratedExecutionSchedule({
