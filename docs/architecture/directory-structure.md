@@ -13,9 +13,12 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 
 ## Source Owners (`src/`)
 
-- `host-configuration/` — Ansible host convergence, server tool admission,
-  host-local operators, host component roles, component-owned ClickHouse
-  migrations, and authored HAProxy templates. Ansible lives here only.
+- `host/` — Ansible host bootstrap, server tool admission, site facts, SOPS
+  bootstrap material, bootstrap ClickHouse schema, and host-local operators.
+- `components/` — platform components such as PostgreSQL, Garage, OpenBao,
+  Zitadel, NATS, TigerBeetle, Electric, ClickHouse migrations, and HAProxy
+  upstream reconciliation. Component Nomad descriptors live with their owning
+  component.
 - `domain-transfer-objects/` — shared data-transfer contracts for service
   boundaries, OpenAPI-compatible DTOs, shared protobuf schemas, numeric wire
   primitives, and generated-client contract rules.
@@ -85,17 +88,38 @@ The former centralized topology vars have been split: host bootstrap facts live
 under `src/host/sites/<site>/`, while component/service/frontend deployment
 metadata lives with the owning package.
 Host firewall files are authored in `src/host/ansible/host-files/`.
+The host bootstrap boundary covers the machine foundation, recovery access,
+ZFS, SPIRE, HAProxy, ClickHouse initial schema, Nomad, and devtools.
 Nomad jobs live with their owning service, frontend, or component as
 `nomad.hcl`. The deploy runner wires owner-local jobs to artifact delivery and
 rollout inputs directly through Bazel and Nomad.
 
+## Platform Components (`src/components/`)
+
+- `<component>/BUILD.bazel` — component descriptor, Nomad packaging, runtime
+  user metadata, SPIRE identities, credential bindings, route metadata, and
+  dependency `requires`/`provides`.
+- `<component>/nomad.hcl` — Nomad job for service tasks, prestart tasks, batch
+  migrations, and component-local service registration.
+- `<component>/tasks/` — temporary Ansible substrate tasks while a component is
+  being cut over; the target owner for runtime convergence is the component's
+  Nomad job or batch reconciler.
+- `<component>/cmd/` — component-specific reconcilers or lifecycle helpers
+  written as typed binaries.
+
+ClickHouse keeps the server bootstrap split in `src/host` and owns subsequent
+migrations under `src/components/clickhouse`. HAProxy keeps the edge process in
+host bootstrap and owns Nomad-discovered upstream reconciliation under
+`src/components/haproxy`. PostgreSQL and Garage are regular Nomad components;
+Garage also participates in the pre-artifact deploy wave.
+
 ## Service- and host-local docs
 
 Host convergence, OpenTofu provisioning, and deploy wrappers live in
-`src/host-configuration/`, `src/tools/provisioning/`, and `.aspect/`.
+`src/host/`, `src/tools/provisioning/`, and `.aspect/`.
 
 Bazel-owned package definitions live with their owners:
-`src/host-configuration/binaries/` for server and host configuration tools,
+`src/host/binaries/` for server and host configuration tools,
 `src/tools/dev/binaries/` for controller dev tools, and
 `src/substrate/vm-orchestrator/guest-images/` for guest-image inputs.
 

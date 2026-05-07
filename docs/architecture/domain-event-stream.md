@@ -85,21 +85,19 @@ SVID TTL and fail-closed startup semantics from
 
 `aspect observe --what=nats` surfaces:
 
-- `nats-server` systemd state, SVID TTL.
+- `nats-server` Nomad allocation/service state, SVID TTL.
 - JetStream stream state: bytes, messages, consumers per stream.
 - Per-subject authorization failures.
 - Consumer lag per subject pattern.
 
-Grafana receives one dashboard under
-`src/host-configuration/components/grafana/dashboards/nats.json`.
+Grafana dashboard metadata for NATS belongs under `src/components/grafana/`.
 
 ## Live verification
 
 Live evidence asserts the NATS rotation contract: no legacy restart watcher
-units exist, `spiffe-helper` is
-configured with `pid_file_name` plus `renew_signal = "SIGHUP"`, and
-`systemctl reload nats.service` leaves the broker PID stable while the
-health endpoint remains ready. The check should emit
+units exist, `spiffe-helper` is configured with `pid_file_name` plus
+`renew_signal = "SIGHUP"`, and SVID renewal leaves the broker PID stable while
+the health endpoint remains ready. The check should emit
 `workload_identity.rotation.*` spans and assert them in ClickHouse.
 
 A NATS publish/subscribe canary (authorized vs. unauthorized subjects,

@@ -69,7 +69,7 @@ The current deployment uses a Nomad-managed SpiceDB process backed by
 PostgreSQL:
 
 ```text
-src/host-configuration/components/spicedb/nomad.hcl
+src/components/spicedb/nomad.hcl
   gRPC API:       Nomad service spicedb-grpc, loopback dynamic port
   metrics/pprof:  Nomad service spicedb-metrics, loopback dynamic port
   HTTP gateway:   disabled
@@ -79,8 +79,9 @@ src/host-configuration/components/spicedb/nomad.hcl
 
 PostgreSQL is the initial datastore because the platform is currently
 single-region and single-node. PostgreSQL is also the substrate the platform
-already operates, backs up, observes, and provisions through Ansible. PostgreSQL
-must run with `track_commit_timestamp=on` before the SpiceDB Watch API is used.
+already operates, backs up, observes, and converges through owner-local
+deployment metadata. PostgreSQL must run with `track_commit_timestamp=on` before
+the SpiceDB Watch API is used.
 
 CockroachDB is the later datastore when one of these becomes material:
 

@@ -1,5 +1,9 @@
 # Verself CLI
 
+Product pitch:
+
+"The solo-founder's superweapon" — "Your software company, an API call away" demonstrates a software company being constructed from just a Latitude API key. Hand Verself a few provider keys and walk away with a configured repo that builds and deploys an opinionated platform on the operator's own bare metal.
+
 `verself` is the public CLI and SDK facade for hosted Verself APIs. It sits
 above curated SDKs, which wrap generated OpenAPI clients for product services.
 Browser server functions, the CLI, and customer automation use the same service
@@ -441,6 +445,10 @@ verself company options list|add|set|remove
 verself company secret list|generate|reveal|set|remove
 verself bootstrap
 ```
+
+`verself deploy` is local to an operator checkout and deploys the Verself
+installation itself through repo-owned deployment tooling. It is not a customer
+application deployment command.
 
 `teams` can be accepted as an alias for `orgs` for migration ergonomics:
 

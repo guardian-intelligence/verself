@@ -5,6 +5,19 @@ Zitadel remains the human identity provider. OpenBao remains the workload
 secret store and runtime relying party, but it does not issue operator SSH
 certificates.
 
+note:
+
+Pomerium is a manual operator-access handoff, outside bootstrap convergence and
+regular Nomad deploys:
+
+```shell
+aspect host operator-access-handoff --site=prod --confirm
+```
+
+The handoff connects through WireGuard recovery SSH because it mutates Pomerium
+and sshd listeners. If Pomerium and WireGuard are unavailable, IPMI/reprovision
+is the emergency path. Pomerium operator sessions expire after 48 hours.
+
 ## SSH Path
 
 Public `:22` terminates at Pomerium native SSH. Pomerium authenticates the
@@ -135,5 +148,5 @@ The Pomerium SSH user CA key lives in `/etc/credstore/pomerium/`; deleting that
 credstore and rerunning host convergence rotates operator SSH trust.
 
 OpenBao recovery remains independent of operator SSH. OpenBao runtime-secret
-bindings are reconciled by the `openbao_runtime_secrets` role after the OpenBao
-daemon is healthy.
+bindings are reconciled by Nomad-managed OpenBao/component reconcilers after
+the OpenBao service is healthy.

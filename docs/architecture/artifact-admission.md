@@ -60,10 +60,9 @@ admissions and records the scanner version and database digest with each result.
 ## Metadata
 
 Each artifact source has a policy identity and an admission record in
-`src/host-configuration/supply-chain/__generated/policy.json` (generated
-output, gitignored). The supply-chain scanner regenerates it on demand when
-the file is missing; admission state is sourced from ClickHouse, not from
-hand-edited JSON.
+`src/host/supply-chain/__generated/policy.json` (generated output, gitignored).
+The supply-chain scanner regenerates it on demand when the file is missing;
+admission state is sourced from ClickHouse, not from hand-edited JSON.
 
 - source path, source kind, surface, and artifact name
 - upstream URL
@@ -109,11 +108,11 @@ source metadata and upstream provenance pointers when available.
 
 ## Enforcement
 
-Supply-chain admission is a separate control surface from deployment
-orchestration. `verself-deploy` does not own policy evaluation or ClickHouse
-evidence writes; it is the Bazel-to-Nomad adapter. The supply-chain surface
-should be implemented as `aspect supply-chain check|admit|inventory|assert`
-with its own binary, policy inputs, spans, and ClickHouse evidence rows.
+Supply-chain admission is a distinct control surface inside the deployment
+tooling. `verself-deploy` remains the Bazel-to-Nomad adapter, while the
+artifact/supply-chain packages own policy evaluation, inventory rendering, and
+ClickHouse evidence rows. The operator-facing task surface is
+`aspect artifacts publish|inventory|evidence|admission-evidence`.
 
 During admission rollout, the policy mode is provisional: unknown or rejected
 sources fail the gate, while tracked-but-not-yet-admitted artifacts continue as
@@ -142,7 +141,7 @@ GROUP BY deploy_run_key, site, surface, source_kind, policy_result, admission_st
 ORDER BY surface, source_kind, policy_result;
 ```
 
-`aspect supply-chain assert --run-key=<deploy-run-key>` is the assertion gate.
+`aspect artifacts evidence --run-key=<deploy-run-key>` is the assertion gate.
 It recomputes the local policy evaluation, then verifies that ClickHouse
 contains exactly the expected number of policy rows for the run, zero rejected
 rows, non-empty trace IDs, one supply-chain trace ID, and OK `policy_check` and
@@ -161,9 +160,9 @@ digests, and records the installer, surface, artifact, OCI reference, policy
 result, and trace/span IDs in
 `verself.artifact_install_verification_events`.
 
-`aspect supply-chain assert --run-key=<deploy-run-key>` verifies the artifact
-admission and install verification rows and the corresponding `artifacts.admit`
-and `artifacts.install_verify` spans.
+`aspect artifacts admission-evidence --run-key=<deploy-run-key>` verifies the
+artifact admission and install verification rows and the corresponding
+`artifacts.admit` and `artifacts.install_verify` spans.
 
 Installers emit verification events with artifact name, OCI reference, manifest
 digest, signature digest, attestation digest, policy result, deploy run key, and
@@ -203,11 +202,11 @@ contract.
    `provenance_digest`, `scanner_result_digest`, `scanner_name`,
    `scanner_version`, `scanner_database_digest`, and `guac_subject`.
 
-2. Add a `zot` host role backed by an admitted zot artifact. Configure local ZFS
-   storage for the single-node topology, S3-compatible storage when Garage is
-   ready, authenticated push access for the Artifacts Service, and read access
-   for host convergence and build clients. Disable unauthenticated pushes and
-   public upstream egress from zot.
+2. Add a `zot` Nomad component backed by an admitted zot artifact. Configure
+   local ZFS storage for the single-node topology, S3-compatible storage when
+   Garage is ready, authenticated push access for the artifact admission
+   publisher, and read access for bootstrap and build clients. Disable
+   unauthenticated pushes and public upstream egress from zot.
 
 3. Implement admission inside the deployment-tools artifact package. Admission
    fetches upstream bytes, verifies the expected digest, enforces quarantine

@@ -1,6 +1,9 @@
 # System Context
 
-How the platform is currently wired together. Direction and target state are in `docs/product-direction.md`; when the two disagree, this doc describes what exists today.
+How the platform is wired together and where the settled deployment boundaries
+sit. Product direction lives in `docs/product-direction.md`; detailed migration
+notes for the host-to-Nomad cutover live in
+[`docs/architecture/nomad-managed-substrate-migration.md`](architecture/nomad-managed-substrate-migration.md).
 
 ## Product Surface
 
@@ -14,7 +17,16 @@ The platform itself is open-source and self-hostable. The bootstrap CLI (`docs/v
 
 Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall files are authored in `src/host/ansible/host-files/`; service/component nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages, including `src/host/binaries/` and `src/substrate/vm-orchestrator/guest-images/`.
 
-Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Systemd units consume host credentials with `LoadCredential=` where they still run under systemd; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
+The bootstrap ring contains the host foundation required to start Nomad, plus
+HAProxy, SPIRE, ZFS, and ClickHouse server state required for deploy evidence.
+ClickHouse bootstrap applies only `001_initial_schema.up.sql`; subsequent
+ClickHouse migrations are Nomad-managed deployable units. PostgreSQL, Garage,
+OpenBao, Zitadel, NATS, TigerBeetle, Verdaccio, Zot, Stalwart, Forgejo,
+Grafana, OTel collector, Electric, SpiceDB, Temporal, services, and frontends
+are Nomad-managed. Devtools remain controller-local/host-local tooling outside
+Nomad.
+
+Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
 Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits public OpenAPI 3.0/3.1 projections for customer, CLI, browser-server-route, documentation, and SDK callers. Services with repo-owned operations also commit service OpenAPI projections that use SPIFFE mTLS and may include repo-only routes. Repo-owned service callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated service client so trace propagation and peer authorization stay centralized. Shared cross-service transfer contracts live in `src/domain-transfer-objects`; use them for Huma boundary DTOs, protobuf schemas, and generated-client contracts instead of service-local 64-bit JSON encodings.
 
@@ -30,7 +42,7 @@ the same-origin CSP and attach service credentials server-side.
 HAProxy 3.3 with AWS-LC terminates public TLS. Ansible renders `haproxy.cfg`
 from authored routes, and deployment reconciles `/etc/haproxy/maps/upstreams.map`
 from Nomad's native service catalog after Nomad allocations become healthy.
-Nomad-supervised public origins are therefore keyed by topology route/backend
+Nomad-supervised public origins are therefore keyed by owner-local route/backend
 identity and Nomad service name, not by committed static ports. HAProxy GUIDs
 use those stable frontend, backend, and server identities so reload-persistent
 statistics can match objects across reloads via `shm-stats-file`.

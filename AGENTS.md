@@ -18,46 +18,48 @@ Polyglot monorepo structured as a modular monolith.
 
 Layers:
 
-1. Host layer: machine + OS configuration and binaries like vm-orchestrator, guest telemetry, HAProxy, nftables, ClickHouse, Postgres, Forgejo, domain registration, SPIRE and so on. Ansible operates here (target state, not necessarily the case today). Nomad manages everything beyond this layer.
-2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
-3. Generated client layer: pure transport clients, validators, DTOs, schemas.
+1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer.
+2. Service API layer: Go Huma APIs at <service>.api.<domain> expose public + internal APIs.
+3. Generated client layer: pure transport clients, validators, DTOs, schemas. Cross service calls happen via generated clients authenticating to each other via SPIFFE mTLS.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
-5. Facades: the verself-web app on the `<domain>` apex (console + docs + policy), CLI, docs examples, Terraform provider later. These use the SDK, not private service shortcuts.
+5. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
-Tech Stack:
+Tech Stack (partial description):
 
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
-* TigerBeetle for OTLP. Currently using for financial truth and treating as a ledger -- we model debits/credits for 
+* TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
 * Zitadel for human identity & OIDC/SAML with third parties. We support multi-tenancy in that all users belong to an org (users belonging to multiple orgs not yet supported)
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
-* HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders `haproxy.cfg` and the per-service nftables drop-ins from Jinja2 templates
+* HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
+* Stalwart over JMAP for inbound mail, Resend API integration for outbound
 
 Invariant patterns:
 
 * Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `scripts/bootstrap-*`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
 * Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. Bazel cache state is local-only through the invoking user's disk and repository caches; do not add shared remote cache or remote-writer profiles. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
-* New server tools such as SpiceDB enter through the host server-tools catalog and artifact admission flow, with policy/evidence recorded before Ansible installs them; see `docs/architecture/artifact-admission.md`.
+* New server tools such as SpiceDB enter through the host server-tools catalog and artifact admission flow, with policy/evidence recorded before host bootstrap or Nomad jobs consume them; see `docs/architecture/artifact-admission.md`.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
 * Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through service OpenAPI projections of the same Huma operation catalogs that produce public APIs. Service projections use SPIFFE mTLS and may include repo-only operations; public projections use Zitadel bearer auth.
 * Service-owned generated Go clients are transport clients for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public OpenAPI projections, and product services must not import those SDKs.
 * Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through generated secrets-service clients over SPIFFE.
-* Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount. 
+* Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
 
 Boundary components that sit outside the usual service shape:
 
 - `src/substrate/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/substrate/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/host/` — host and daemon convergence: Ansible runner, host scripts, controller OTLP agent, and ClickHouse schema.
+- `src/host/` — host bootstrap convergence: Ansible runner, server-tool catalog, site facts, Nomad agent, and ClickHouse initial schema.
 - `src/tools/provisioning/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
 
 Top-level landmarks:
 
 - `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or raw `bazelisk`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
+- Local Verself CLI: build `//src/cli/verself/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/cli/verself/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
 
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
 
@@ -116,17 +118,6 @@ access handoff, public SSH is Pomerium-only and fallback access is WireGuard:
 ssh -p 2222 ubuntu@10.66.66.1
 ```
 
-Pomerium is a manual operator-access handoff, outside bootstrap convergence and
-regular Nomad deploys:
-
-```shell
-aspect host operator-access-handoff --site=prod --confirm
-```
-
-The handoff connects through WireGuard recovery SSH because it mutates Pomerium
-and sshd listeners. If Pomerium and WireGuard are unavailable, IPMI/reprovision
-is the emergency path. Pomerium operator sessions expire after 48 hours.
-
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
 Nomad deploys are driven directly by the checked-in `nomad_component` targets for the requested SHA:
@@ -153,7 +144,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
-- **Deployment ownership boundary:** `docs/architecture/component-owned-host-config-inventory.md`; host bootstrap lives in `src/host`, workload identity and runtime inputs live with the owning component/service/frontend.
+- **Nomad-managed substrate boundary:** `docs/architecture/nomad-managed-substrate-migration.md`; host bootstrap lives in `src/host`, workload identity and runtime inputs live with the owning component/service/frontend.
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 
@@ -244,9 +235,4 @@ The site directory owns checked-in `vars.yml`, checked-in `inventory.ini`, local
 
 To add a site, copy `src/host/sites/prod/` to the new site name, replace the three SOPS bags, update `src/host/sites/<site>/vars.yml`, and let Bazel-discovered deployable units declare their own `site_scope`, `requires`, and `provides` relationships. Site variables do not decide which Nomad jobs exist.
 
-
-Product pitch:
-
-"The solo-founder's superweapon" — "Your software company, an API call away" demonstrates a software company being constructed from just a Latitude API key. The pitch is about the bootstrap/clone surface: hand Verself a few provider keys and walk away with a configured repo that builds and deploys an opinionated platform on the operator's own bare metal.
-
-CLI shape borrows ergonomics from Vercel — `verself auth login`, `verself orgs use`, `verself env pull` — because the grammar is good. Semantics are different: Verself does not deploy customer applications. `verself deploy` runs the customer's own `aspect deploy` against their cloned installation, not against verself.sh. The same binary covers operating verself.sh, operating a cloned installation, and consuming the sandbox-rental API as a customer; auth context decides which surface a given command targets.
+CLI borrows the Vercel command grammar where it fits: `verself auth login`, `verself orgs use`, `verself env pull`. Semantics are different because Verself does not deploy customer applications. `verself deploy` is an operator-local checkout command for deploying this Verself installation, not a customer app deploy. We'll dogfood the CLI by using it to seed our organization and run automations. Auth context decides which surface a given command targets.

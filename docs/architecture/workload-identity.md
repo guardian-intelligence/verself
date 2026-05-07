@@ -89,10 +89,11 @@ spiffe://spiffe.verself.sh/ops/admin-cli
 OpenBao via JWT-SVID during manual recovery or inspection. It is not used by
 any repo-owned service at runtime.
 
-SPIRE registration entries are declared by Ansible from repo-owned inventory.
-Services MUST NOT self-register identities. OpenBao auth roles are generated
-from the same inventory. Drift between SPIRE registrations and OpenBao role
-subject bindings is a convergence failure, tagged
+SPIRE registration entries are declared in owner-local repo metadata and
+converged by the workload-identity substrate. Services MUST NOT self-register
+identities. OpenBao auth roles are generated from the same inventory. Drift
+between SPIRE registrations and OpenBao role subject bindings is a convergence
+failure, tagged
 `workload_identity.spiffe_bao_drift`.
 
 ## Trust Domain Exclusions
@@ -109,12 +110,12 @@ Two components are deliberately outside the SPIFFE trust domain:
 Neither component issues nor consumes SVIDs. Attempts to register a SPIFFE ID
 under `/host/` or `/guest/` are rejected by inventory validation.
 
-## Systemd-Native Attestation
+## Unix Workload Attestation
 
-The deployment is systemd-native on bare metal. SPIRE Agent exposes the
-Workload API over a Unix domain socket to service users in the workload socket
-group. The Unix workload attestor derives selectors from kernel process
-metadata at Workload API call time.
+Repo workloads run as local Unix processes on bare metal, including Nomad
+`raw_exec` allocations. SPIRE Agent exposes the Workload API over a Unix domain
+socket to service users in the workload socket group. The Unix workload attestor
+derives selectors from kernel process metadata at Workload API call time.
 
 Single-node bootstrap uses SPIRE join-token node attestation. The token is
 generated at agent start, written only under `/run/spire-agent/private`, and
@@ -206,8 +207,8 @@ model.
 Repo-owned services on the single bare-metal host authenticate to PostgreSQL
 through local Unix socket peer authentication with `pg_ident.conf` mappings.
 PostgreSQL peer auth obtains the client operating-system user from the kernel
-and is supported only for local connections, matching the systemd service-user
-boundary.
+and is supported only for local connections, matching the stable host users used
+by Nomad `raw_exec` allocations and bootstrap services.
 
 PostgreSQL `trust` authentication is prohibited. Service PostgreSQL password
 DSNs are prohibited where peer auth covers the service.
@@ -245,8 +246,9 @@ below, because mail clients authenticate to Stalwart over SMTP/IMAP/JMAP and
 those protocols do not speak SPIFFE.
 
 **Persistent bootstrap material.** The following remain outside SPIFFE and
-OpenBao runtime reads and are managed through SOPS and systemd
-`LoadCredential=`:
+OpenBao runtime reads and are managed through SOPS. Bootstrap units consume them
+with `LoadCredential=`; Nomad allocations consume them through job-local
+credential templates:
 
 ```text
 Zitadel masterkey
@@ -283,7 +285,7 @@ Services fail closed if they cannot obtain required SVID material at startup.
 - JWT-SVID TTL: `5m` per audience. Refresh: cached per audience, refreshed at
   `TTL/2`.
 - Startup readiness: fails if no X.509-SVID is available within `30s` of
-  systemd unit start. Tagged error:
+  workload process start. Tagged error:
   `workload_identity.svid_bootstrap_timeout`.
 - Streaming refresh stall: readiness flips to `NOT READY` at `TTL - 2m` if
   refresh has not succeeded. Tagged error:
@@ -301,9 +303,11 @@ rotation via the Workload API stream. Services consuming X.509-SVIDs via the
 SPIFFE Workload API pick up bundle rotation without restart.
 
 File-backed consumers use the same operating contract everywhere:
-`spiffe-helper` runs as a systemd-managed sibling process, renders SVID and
-bundle material to a private runtime directory, and wakes the workload using
-the narrowest reload primitive that workload supports. Current consumers:
+`spiffe-helper` runs as a workload companion process, renders SVID and bundle
+material to a private runtime directory, and wakes the workload using the
+narrowest reload primitive that workload supports. Under Nomad it runs in the
+same allocation or task group; bootstrap consumers can still use a systemd
+helper unit. Current consumers:
 
 | Consumer | Rotation contract |
 | --- | --- |
@@ -332,7 +336,7 @@ credentials, not as SPIFFE peers.
 Workload identity is operator-visible through
 `aspect observe --what=workload-identity`. The surface exposes:
 
-- SPIRE server and bundle endpoint state, plus SPIRE agent systemd state.
+- SPIRE server and bundle endpoint state, plus SPIRE agent bootstrap state.
 - Workload API socket ownership and reachability.
 - Desired vs live SPIRE registration entries.
 - Per-service SVID status: SPIFFE ID, issuer, expiration, and TTL remaining.

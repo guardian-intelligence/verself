@@ -93,7 +93,7 @@ Versions of record live as constants at the top of each `scripts/bootstrap-*` en
 | Task | Description |
 | --- | --- |
 | `edit-secrets` | Open encrypted host configuration secrets in `$EDITOR` via sops. |
-| `npm-edge` | Converge Verdaccio, nftables, and HAProxy for the public npm registry edge. |
+| `npm-edge` | Transitional public npm registry edge convergence while Verdaccio moves to Nomad. |
 | `operator-access-handoff` | Manually hand public SSH :22 to Pomerium and keep direct recovery on :2222. |
 
 ### `aspect integrations`
@@ -223,6 +223,7 @@ after changing inventory inputs.
 High-signal documents to read directly:
 
 - Repo layout: [`docs/architecture/directory-structure.md`](docs/architecture/directory-structure.md)
+- Nomad-managed substrate migration: [`docs/architecture/nomad-managed-substrate-migration.md`](docs/architecture/nomad-managed-substrate-migration.md)
 - Public origins: [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md)
 - Onboarding device or VM (operator SSH, Pomerium + Zitadel): [`docs/architecture/onboarding-device-or-vm.md`](docs/architecture/onboarding-device-or-vm.md)
 - Identity and IAM (Zitadel, SCIM, three-role model, API credentials): [`src/platform/docs/identity-and-iam.md`](src/platform/docs/identity-and-iam.md)
