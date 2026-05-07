@@ -17,7 +17,7 @@ consistency modes directly, or infer product authorization from browser state.
 
 | Concern | Authority |
 | --- | --- |
-| Human authentication, org directory, OIDC, MFA, passkeys, customer API credential identity | Zitadel |
+| Human authentication, org directory, OIDC, MFA, passkeys, service-account credential authentication | Zitadel |
 | Repo-owned workload authentication | SPIRE |
 | Product authorization graph | SpiceDB |
 | Product authorization API, schema lifecycle, relationship writes, audit, revocation epochs | `iam-service` |
@@ -35,6 +35,9 @@ several SpiceDB processes.
 - Raw SpiceDB imports are confined to `iam-service/internal/spicedb`.
 - Product services use typed authorization operations, not arbitrary
   object-type, relation, permission, or subject strings.
+- Human users, service accounts, and workloads are distinct SpiceDB subject
+  types. API keys, private keys, and client secrets authenticate a service
+  account; they are not authorization subjects.
 - Public IAM policy APIs follow Google Cloud IAM semantics:
   `getIamPolicy`, `setIamPolicy`, and `testIamPermissions`.
 - Public HTTP routes are OpenAPI-native concrete resource routes. SDKs may
@@ -123,14 +126,15 @@ use typechecking
 
 definition user {}
 definition service_account {}
+definition workload {}
 
 definition role {
   relation member: user | service_account
 }
 
 definition org {
-  relation owner: user
-  relation admin: user
+  relation owner: user | service_account
+  relation admin: user | service_account
   relation member: user | service_account
   relation execution_lister: user | service_account | role#member
 
@@ -157,6 +161,12 @@ definition attempt {
 
   permission read_logs = execution->read
 }
+
+definition operation_permission {
+  relation grantee: user | service_account | workload
+
+  permission use = grantee
+}
 ```
 
 This graph makes broad revocation cheap. If a role with 1,000 members loses
@@ -173,6 +183,7 @@ Model authorization-relevant resources and inheritance boundaries:
 - `role`
 - `service_account`
 - `api_credential`
+- `operation_permission`
 - `project`
 - `environment`
 - `repository`
@@ -187,10 +198,12 @@ Avoid relationships for high-volume append-only leaf data. Execution log chunks
 inherit access from `attempt`; they do not receive one SpiceDB relationship per
 chunk.
 
-Customer-facing capability toggles are represented as durable authorization
-relations or role grants. They are not copied into every resource row. A toggle
-change increments a coarse scope epoch and forces affected active streams to
-recheck.
+Customer-facing capability toggles and API-credential permission grants are
+represented as durable authorization relationships. Direct operation grants use
+`operation_permission:{permission}#grantee@service_account:{id}`. Role and
+membership grants remain resource relationships such as
+`org:{org_id}#member@service_account:{id}`. A toggle change increments a coarse
+scope epoch and forces affected active streams to recheck.
 
 ## Go Service Shape
 
@@ -453,6 +466,7 @@ Policy member strings use a small fixed vocabulary:
 ```text
 user:{zitadel_subject}
 serviceAccount:{service_account_id}
+workload:{workload_id}
 ```
 
 Role names use resource-name-like strings:
@@ -602,13 +616,14 @@ surface:
 | Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance requires a typed authorization plan and records token audience, org, scope, and freshness. |
 | Available organizations for the caller | `internal/orgs` | Uses token role assignments and directory-backed org metadata; returns only orgs the token proves. |
 | Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
-| Organization members | `internal/members` | Directory-backed read model; filters service accounts out of the member table and exposes them through credentials. |
+| Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |
 | Member invite and role update | `internal/members` plus `internal/roles` | Mutations write directory state and SpiceDB relationships through command envelopes. |
 | Member capability replacement | `internal/roles` | Represented as role grants and SpiceDB relationships; no customer-editable policy language in the first cut. |
 | IAM policy get/set/test | `internal/policies` plus `internal/authz` | Google-IAM-style resource policy operations over Huma/OpenAPI. `setIamPolicy` requires `etag` and idempotency after bootstrap. |
 | Permission and role catalog | `internal/roles` plus `internal/policies` | Exposes predefined roles, org-scoped roles, and permission metadata for SDKs, CLI, and console affordances. |
-| API credential list/read/create/roll/revoke | `internal/credentials` | Secret material is returned only at create or roll. Metadata and grants are durable IAM state. |
-| API credential claim resolution | `internal/actions` plus `internal/credentials` | Zitadel action calls resolve non-secret credential metadata and exact allowed permissions. |
+| Service account list/read/disable | `internal/identity` plus `internal/authz` | Service accounts are non-human authorization subjects inside an organization. Direct permission grants are reconciled into SpiceDB. |
+| API credential list/read/create/roll/revoke | `internal/identity` | Secret material is returned only at create or roll. Credentials authenticate service accounts and keep credential metadata in PostgreSQL. |
+| API credential claim resolution | `internal/actions` plus `internal/identity` | Zitadel action calls resolve non-secret credential metadata, service-account identity, and exact allowed permissions from the authorization graph. |
 | Human profile sync | `internal/orgs` or `internal/members` | Narrow internal operation for directory/profile propagation. |
 | Resolve organization by ID or slug | `internal/orgs` | Narrow internal operation for other services and frontend server functions. |
 | Authorization checks and list helpers | `internal/authz` | Typed `Check`, `CheckBulk`, `LookupResources`, and `LookupSubjects`. |
@@ -1188,8 +1203,8 @@ customer credentials. The public surface is intentionally conventional:
 | IAM policy | `getIamPolicy`, `setIamPolicy`, `testIamPermissions` on supported resources. |
 | Roles | list predefined roles, list org roles, create org role, update org role, delete org role. |
 | Members | list members, invite member, update member role bindings, remove member. |
-| Service accounts | list, create, update display metadata, disable, delete. |
-| API credentials | list, read metadata, create, roll, revoke. |
+| Service accounts | list, read metadata, disable. Creation is currently coupled to API credential creation; standalone create/update/delete are resource-surface extensions. |
+| API credentials | list, read metadata, create, roll, revoke. API credential creation can create the backing service account or attach a new credential to an existing service account. |
 | Permission catalog | list permissions, inspect role-to-permission expansion, list effective permissions. |
 | Authorization history | audit-backed inspection by resource, actor, role, credential, and command ID. |
 
