@@ -22,6 +22,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "openbao",
+    deploy_phase = "platform",
     job_id = "openbao",
     job_spec = "nomad.hcl",
     provides = ["openbao:api"],

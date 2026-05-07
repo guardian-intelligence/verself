@@ -21,6 +21,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "zot",
+    deploy_phase = "platform",
     job_id = "zot",
     job_spec = "nomad.hcl",
     provides = ["zot:http"],

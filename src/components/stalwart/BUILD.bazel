@@ -22,6 +22,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "stalwart",
+    deploy_phase = "platform",
     job_id = "stalwart",
     job_spec = "nomad.hcl",
     provides = [

@@ -37,6 +37,7 @@ usage:
 
 The run command assumes host bootstrap is complete. It discovers Bazel
 nomad_component targets, builds their artifacts, publishes missing artifacts,
-submits changed Nomad jobs, monitors deployments, and emits deploy spans.
+submits changed Nomad jobs by deploy wave, monitors deployments, and emits
+deploy spans.
 `)
 }

@@ -79,8 +79,11 @@ PostgreSQL and OTel collector.
    component-owned reconcilers.
 
 4. Nomad product surface:
-   Go services, TanStack frontends, background workers, public route helpers,
-   and HAProxy upstream-map reconciliation.
+   Go services, TanStack frontends, background workers, and public route
+   helpers.
+
+5. Nomad edge reconciliation:
+   HAProxy upstream-map reconciliation from Nomad service discovery.
 
 ## Directory Structure
 
@@ -158,8 +161,9 @@ PostgreSQL and OTel collector.
   reconciliation from Nomad service discovery.
 
 - `src/tools/deployment/`
-  adds deploy-wave semantics, pre-artifact component filtering, health waits
-  for `artifact-origin`, and ClickHouse evidence for each wave.
+  owns deploy-wave semantics, dependency validation across wave ordering,
+  health checks for the Garage S3 artifact origin before post-bootstrap artifact
+  publication, and ClickHouse evidence for each wave.
 
 ## Endpoint Allocation
 

@@ -21,6 +21,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "tigerbeetle",
+    deploy_phase = "platform",
     job_id = "tigerbeetle",
     job_spec = "nomad.hcl",
     provides = ["tigerbeetle:client"],

@@ -21,6 +21,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "spicedb",
+    deploy_phase = "platform",
     job_id = "spicedb",
     job_spec = "nomad.hcl",
     requires = ["postgres:server"],

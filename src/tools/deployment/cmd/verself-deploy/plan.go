@@ -22,8 +22,24 @@ const (
 	artifactSourcePrefix = "verself-artifact://"
 
 	deployPhasePreArtifact = "pre_artifact"
-	deployPhaseArtifact    = "artifact"
+	deployPhasePlatform    = "platform"
+	deployPhaseProduct     = "product"
+	deployPhaseEdge        = "edge"
 )
+
+var deployPhaseOrder = []string{
+	deployPhasePreArtifact,
+	deployPhasePlatform,
+	deployPhaseProduct,
+	deployPhaseEdge,
+}
+
+var deployPhaseRank = map[string]int{
+	deployPhasePreArtifact: 0,
+	deployPhasePlatform:    1,
+	deployPhaseProduct:     2,
+	deployPhaseEdge:        3,
+}
 
 type deployPlan struct {
 	Identity  identity.Snapshot
@@ -178,7 +194,7 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 			return nil, fmt.Errorf("%s: component descriptor requires label, component, job_id, job_spec, and job_spec_path", path)
 		}
 		if !validDeployPhase(component.DeployPhase) {
-			return nil, fmt.Errorf("%s: deploy_phase must be %s or %s", path, deployPhasePreArtifact, deployPhaseArtifact)
+			return nil, fmt.Errorf("%s: deploy_phase must be one of %s", path, strings.Join(deployPhaseOrder, ", "))
 		}
 		if component.UnitID == "" {
 			component.UnitID = component.JobID
@@ -279,6 +295,10 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 			if dep == jobID {
 				return fmt.Errorf("%s depends on itself", jobID)
 			}
+			depComponent := byJobID[dep]
+			if deployPhaseRank[depComponent.DeployPhase] > deployPhaseRank[component.DeployPhase] {
+				return fmt.Errorf("%s in deploy_phase=%s requires %s in later deploy_phase=%s", jobID, component.DeployPhase, dep, depComponent.DeployPhase)
+			}
 			if err := visit(dep, append(stack, jobID)); err != nil {
 				return err
 			}
@@ -353,7 +373,8 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 }
 
 func validDeployPhase(value string) bool {
-	return value == deployPhasePreArtifact || value == deployPhaseArtifact
+	_, ok := deployPhaseRank[value]
+	return ok
 }
 
 func sortedArtifactOutputs(seen map[string]bool) []string {

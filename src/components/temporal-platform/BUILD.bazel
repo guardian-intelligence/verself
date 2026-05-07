@@ -35,6 +35,7 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     component = "temporal",
+    deploy_phase = "platform",
     job_id = "temporal",
     job_spec = "nomad.hcl",
     requires = ["postgres:server"],

@@ -24,6 +24,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "haproxy_upstreams",
+    deploy_phase = "edge",
     job_id = "haproxy-upstreams",
     job_spec = "nomad.hcl",
     requires = [

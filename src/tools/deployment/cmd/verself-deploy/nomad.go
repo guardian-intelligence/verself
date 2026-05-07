@@ -146,19 +146,22 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, db *deploydb.Clien
 		}
 		intents = append(intents, intent)
 	}
-	preArtifactIntents, artifactIntents, err := splitIntentsByPhase(intents)
+	intentsByPhase, err := groupIntentsByPhase(intents)
 	if err != nil {
 		return applyResults(intents), err
 	}
-	if err := applyNomadWave(ctx, rt, db, client, deployPhasePreArtifact, deploymodel.ArtifactDelivery{}, preArtifactIntents, nil); err != nil {
-		return applyResults(intents), err
-	}
-	artifacts, err := artifactsForChangedJobs(plan, artifactIntents)
-	if err != nil {
-		return applyResults(intents), err
-	}
-	if err := applyNomadWave(ctx, rt, db, client, deployPhaseArtifact, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, artifactIntents, artifacts); err != nil {
-		return applyResults(intents), err
+	for _, phase := range deployPhaseOrder {
+		phaseIntents := intentsByPhase[phase]
+		var artifacts []deploymodel.Artifact
+		if phase != deployPhasePreArtifact {
+			artifacts, err = artifactsForChangedJobs(plan, phaseIntents)
+			if err != nil {
+				return applyResults(intents), err
+			}
+		}
+		if err := applyNomadWave(ctx, rt, db, client, phase, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, phaseIntents, artifacts); err != nil {
+			return applyResults(intents), err
+		}
 	}
 	results := applyResults(intents)
 	return results, nil
@@ -183,7 +186,13 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, db *deploydb.Clien
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if wave == deployPhaseArtifact {
+	if wave != deployPhasePreArtifact && len(artifacts) > 0 {
+		if err := ensureArtifactOriginAvailable(ctx, rt, client); err != nil {
+			_ = recordDeployWaveFailed(ctx, span, db, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
 		if err := publishArtifacts(ctx, rt, delivery, artifacts); err != nil {
 			_ = recordDeployWaveFailed(ctx, span, db, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
 			span.RecordError(err)
@@ -309,23 +318,47 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, db *deploydb.Clien
 	return nil
 }
 
-func splitIntentsByPhase(intents []jobApplyIntent) ([]jobApplyIntent, []jobApplyIntent, error) {
-	preArtifact := []jobApplyIntent{}
-	artifact := []jobApplyIntent{}
+func groupIntentsByPhase(intents []jobApplyIntent) (map[string][]jobApplyIntent, error) {
+	byPhase := map[string][]jobApplyIntent{}
 	for _, intent := range intents {
-		switch intent.Job.DeployPhase {
-		case deployPhasePreArtifact:
+		if !validDeployPhase(intent.Job.DeployPhase) {
+			return nil, fmt.Errorf("%s: unsupported deploy phase %q", intent.Job.JobID, intent.Job.DeployPhase)
+		}
+		if intent.Job.DeployPhase == deployPhasePreArtifact {
 			if len(intent.Job.ArtifactOutputs) > 0 {
-				return nil, nil, fmt.Errorf("%s: %s jobs cannot reference artifacts", intent.Job.JobID, deployPhasePreArtifact)
+				return nil, fmt.Errorf("%s: %s jobs cannot reference artifacts", intent.Job.JobID, deployPhasePreArtifact)
 			}
-			preArtifact = append(preArtifact, intent)
-		case deployPhaseArtifact:
-			artifact = append(artifact, intent)
-		default:
-			return nil, nil, fmt.Errorf("%s: unsupported deploy phase %q", intent.Job.JobID, intent.Job.DeployPhase)
+		}
+		byPhase[intent.Job.DeployPhase] = append(byPhase[intent.Job.DeployPhase], intent)
+	}
+	return byPhase, nil
+}
+
+func ensureArtifactOriginAvailable(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client) error {
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.origin_health")
+	defer span.End()
+
+	services, err := client.ListServiceAddresses(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	var garageS3 int
+	for _, service := range services {
+		if service.Name == "garage-s3" {
+			garageS3++
 		}
 	}
-	return preArtifact, artifact, nil
+	span.SetAttributes(attribute.Int("verself.artifact_origin.garage_s3_count", garageS3))
+	if garageS3 == 0 {
+		err := fmt.Errorf("artifact origin is unavailable: no healthy garage-s3 Nomad service registrations")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetStatus(codes.Ok, "")
+	return nil
 }
 
 func changedIntentCount(intents []jobApplyIntent) int {

@@ -88,5 +88,10 @@ func validateDeployWaveEvent(ev DeployWaveEvent) error {
 }
 
 func validDeployWave(wave string) bool {
-	return wave == "pre_artifact" || wave == "artifact"
+	switch wave {
+	case "pre_artifact", "platform", "product", "edge":
+		return true
+	default:
+		return false
+	}
 }

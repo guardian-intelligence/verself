@@ -21,6 +21,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "forgejo",
+    deploy_phase = "platform",
     job_id = "forgejo",
     job_spec = "nomad.hcl",
     provides = ["forgejo:http"],

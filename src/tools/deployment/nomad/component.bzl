@@ -15,6 +15,13 @@ NomadComponentInfo = provider(
     },
 )
 
+_ALLOWED_DEPLOY_PHASES = [
+    "pre_artifact",
+    "platform",
+    "product",
+    "edge",
+]
+
 def _single_file(target, what):
     files = target.files.to_list()
     if len(files) != 1:
@@ -43,8 +50,8 @@ def _nomad_component_impl(ctx):
         fail("component is required")
     if not ctx.attr.job_id:
         fail("job_id is required")
-    if ctx.attr.deploy_phase not in ["pre_artifact", "artifact"]:
-        fail("deploy_phase must be pre_artifact or artifact")
+    if ctx.attr.deploy_phase not in _ALLOWED_DEPLOY_PHASES:
+        fail("deploy_phase must be one of %s" % ", ".join(_ALLOWED_DEPLOY_PHASES))
 
     inputs = [job_spec]
     artifacts = []
@@ -120,8 +127,8 @@ nomad_component = rule(
             doc = "Nomad job IDs that must be submitted before this component.",
         ),
         "deploy_phase": attr.string(
-            default = "artifact",
-            doc = "Deployment phase. pre_artifact jobs are submitted before artifact publication; artifact jobs are submitted after publication.",
+            default = "product",
+            doc = "Deployment phase. pre_artifact jobs are submitted before artifact publication; platform/product/edge jobs are submitted after artifact publication is available.",
         ),
         "job_id": attr.string(
             mandatory = True,

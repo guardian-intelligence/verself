@@ -34,6 +34,7 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     component = "nats",
+    deploy_phase = "platform",
     job_id = "nats",
     job_spec = "nomad.hcl",
     provides = ["nats:client"],

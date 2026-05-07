@@ -24,6 +24,7 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     component = "verdaccio",
+    deploy_phase = "platform",
     job_id = "verdaccio",
     job_spec = "nomad.hcl",
     provides = ["verdaccio:http"],

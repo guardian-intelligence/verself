@@ -33,6 +33,7 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     component = "grafana",
+    deploy_phase = "platform",
     job_id = "grafana",
     job_spec = "nomad.hcl",
     provides = ["grafana:http"],
