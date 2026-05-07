@@ -1,8 +1,7 @@
 [Unit]
 Description=Pomerium operator access gateway
-After=verself-firewall.target network.target postgresql.service zitadel.service otelcol.service grafana.service
-Requires=verself-firewall.target postgresql.service zitadel.service
-Wants=otelcol.service grafana.service
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
 
 [Service]
 Type=simple
