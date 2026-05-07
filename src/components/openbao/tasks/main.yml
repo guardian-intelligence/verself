@@ -52,13 +52,6 @@
       datastore and root/unseal credentials before bootstrapping a new node.
   when: openbao_rebootstrap | bool
 
-- name: Stop OpenBao before rebootstrap wipe
-  ansible.builtin.systemd:
-    name: openbao
-    state: stopped
-  failed_when: false
-  when: openbao_rebootstrap | bool
-
 - name: Remove OpenBao bootstrap state
   ansible.builtin.file:
     path: "{{ item }}"
@@ -128,7 +121,6 @@
     creates: "{{ openbao_tls_dir }}/cert.pem"
   when: not openbao_cert_check.stat.exists or (openbao_cert_san_drift | bool)
   changed_when: true
-  notify: restart openbao
 
 - name: Set OpenBao TLS certificate ownership
   ansible.builtin.file:
@@ -153,7 +145,6 @@
       {% for host in openbao_oidc_loopback_hosts %}
       127.0.0.1 {{ host }}
       {% endfor %}
-  notify: restart openbao
 
 - name: Deploy OpenBao nftables ruleset
   ansible.builtin.copy:
@@ -169,67 +160,6 @@
     owner: root
     group: openbao
     mode: "0640"
-  notify: restart openbao
-
-- name: Deploy OpenBao systemd unit
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=OpenBao
-      After=verself-firewall.target network.target
-      Requires=verself-firewall.target
-
-      [Service]
-      Type=simple
-      User=openbao
-      Group=openbao
-      BindReadOnlyPaths={{ openbao_hosts_file }}:/etc/hosts
-      Environment=BAO_ADDR=https://{{ openbao_api_address }}
-      Environment=BAO_CACERT={{ openbao_tls_dir }}/cert.pem
-      Environment=VAULT_ADDR=https://{{ openbao_api_address }}
-      Environment=VAULT_CACERT={{ openbao_tls_dir }}/cert.pem
-      ExecStart={{ verself_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
-      ExecReload=/bin/kill -HUP $MAINPID
-      Restart=on-failure
-      RestartSec=5
-      AmbientCapabilities=CAP_IPC_LOCK
-      CapabilityBoundingSet=CAP_IPC_LOCK
-      LimitMEMLOCK=infinity
-      ProtectHome=true
-      ProtectSystem=strict
-      PrivateDevices=true
-      PrivateTmp=true
-      ProtectClock=true
-      ProtectControlGroups=true
-      ProtectKernelLogs=true
-      ProtectKernelModules=true
-      ProtectKernelTunables=true
-      LockPersonality=true
-      NoNewPrivileges=true
-      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-      RestrictNamespaces=true
-      RestrictRealtime=true
-      RestrictSUIDSGID=true
-      SystemCallArchitectures=native
-      UMask=0077
-      ReadOnlyPaths={{ openbao_config_dir }}
-      ReadWritePaths={{ openbao_data_dir }} {{ openbao_log_dir }}
-
-      [Install]
-      WantedBy=multi-user.target
-    dest: /etc/systemd/system/openbao.service
-    mode: "0644"
-  notify: restart openbao
-
-- name: Apply OpenBao unit and config changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start OpenBao
-  ansible.builtin.systemd:
-    name: openbao
-    enabled: true
-    state: started
-    daemon_reload: true
 
 - name: Wait for OpenBao listener
   ansible.builtin.wait_for:

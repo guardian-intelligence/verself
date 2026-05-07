@@ -150,55 +150,6 @@
   loop_control:
     loop_var: garage_node
     label: "garage-{{ garage_node.instance }}"
-  notify: restart garage instances
-
-- name: Deploy garage systemd template
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/garage@.service
-    mode: "0644"
-    content: |
-      [Unit]
-      Description=Garage instance %i
-      After=verself-firewall.target network.target
-      Requires=verself-firewall.target
-
-      [Service]
-      Type=simple
-      User=garage
-      Group=garage
-      ExecStart={{ verself_bin }}/garage -c /etc/garage/garage-%i.toml server
-      Restart=on-failure
-      RestartSec=5
-      LimitNOFILE=65536
-      ProtectSystem=strict
-      ProtectHome=true
-      ProtectKernelTunables=true
-      ProtectKernelModules=true
-      ProtectControlGroups=true
-      LockPersonality=true
-      NoNewPrivileges=true
-      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-      RestrictNamespaces=true
-      PrivateTmp=true
-      ReadWritePaths=/var/lib/garage-%i
-      UMask=0077
-
-      [Install]
-      WantedBy=multi-user.target
-  notify: restart garage instances
-
-- name: Apply garage unit changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start garage instances
-  ansible.builtin.systemd:
-    name: "garage@{{ item.instance }}"
-    enabled: true
-    state: started
-    daemon_reload: true
-  loop: "{{ garage_cluster.nodes }}"
-  loop_control:
-    label: "garage@{{ item.instance }}"
 
 - name: Wait for garage admin ports
   ansible.builtin.wait_for:

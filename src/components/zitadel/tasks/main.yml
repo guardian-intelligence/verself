@@ -111,8 +111,6 @@
     group: zitadel
     mode: "0640"
   no_log: true
-  notify:
-    - restart zitadel
 
 - name: Deploy Zitadel config
   ansible.builtin.template:
@@ -121,8 +119,6 @@
     owner: zitadel
     group: zitadel
     mode: "0600"
-  notify:
-    - restart zitadel
 
 - name: Deploy Zitadel first-instance steps
   ansible.builtin.template:
@@ -131,36 +127,6 @@
     owner: zitadel
     group: zitadel
     mode: "0600"
-
-# --- systemd unit ---
-# Deployed before init/setup so the restart handler has a valid target.
-
-- name: Deploy Zitadel systemd unit
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=Zitadel Identity Provider
-      After=verself-firewall.target network.target postgresql.service
-      Requires=verself-firewall.target postgresql.service
-
-      [Service]
-      Type=simple
-      User=zitadel
-      Group=zitadel
-      LoadCredential=masterkey:/etc/credstore/zitadel/masterkey
-      ExecStart={{ verself_bin }}/zitadel start \
-        --masterkeyFile %d/masterkey \
-        --config {{ zitadel_config_dir }}/config.yaml
-      Restart=always
-      RestartSec=5
-      LimitNOFILE=65536
-
-      [Install]
-      WantedBy=multi-user.target
-    dest: /etc/systemd/system/zitadel.service
-    mode: "0644"
-  notify:
-    - restart zitadel
 
 # --- First-run initialization ---
 # Zitadel has a three-phase lifecycle: init (create schemas), setup (run
@@ -187,12 +153,6 @@
   ansible.builtin.set_fact:
     zitadel_setup_required: >-
       {{ not (zitadel_schema_state.query_result[0].schema_ready | bool) }}
-
-- name: Stop Zitadel before database setup
-  ansible.builtin.systemd:
-    name: zitadel
-    state: stopped
-  when: zitadel_setup_required
 
 - name: Remove stale Zitadel admin PAT before database setup
   ansible.builtin.file:
@@ -285,18 +245,6 @@
     zitadel_admin_pat_sops_current.rc != 0
     or (zitadel_admin_pat_sops_current.stdout | trim) != zitadel_admin_pat
 
-- name: Apply Zitadel unit changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
-# --- Enable and start ---
-
-- name: Enable and start Zitadel
-  ansible.builtin.systemd:
-    name: zitadel
-    enabled: true
-    state: started
-    daemon_reload: true
-
 # --- Readiness gate ---
 
 - name: Wait for Zitadel to be ready
@@ -363,11 +311,6 @@
     | list | length > 0
   changed_when: true
   no_log: true
-  notify:
-    - restart zitadel
-
-- name: Apply Login V2 disable before Admin API calls
-  ansible.builtin.meta: flush_handlers
 
 - name: Wait for Zitadel to be ready after Login V2 disable
   ansible.builtin.wait_for:

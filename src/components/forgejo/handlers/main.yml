@@ -1,7 +1,0 @@
----
-- name: Restart Forgejo
-  listen: restart forgejo
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: forgejo
-    state: restarted

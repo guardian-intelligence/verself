@@ -1,7 +1,0 @@
----
-- name: Restart Verdaccio
-  listen: restart verdaccio
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: verdaccio
-    state: restarted

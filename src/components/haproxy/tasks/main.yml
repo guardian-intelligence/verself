@@ -462,8 +462,7 @@
         [
           '--split-cert-out', item.split_cert_path,
           '--split-key-out', item.split_key_path,
-          '--split-group', item.split_group | default('stalwart'),
-          '--restart-unit', 'stalwart.service'
+          '--split-group', item.split_group | default('stalwart')
         ]
         if item.split_cert_path is defined and item.split_key_path is defined else []
       }}

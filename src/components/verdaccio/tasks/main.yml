@@ -80,19 +80,3 @@
     src: config.yaml.j2
     dest: /etc/verdaccio/config.yaml
     mode: "0644"
-  notify: restart verdaccio
-
-- name: Deploy Verdaccio systemd unit
-  ansible.builtin.template:
-    src: verdaccio.service.j2
-    dest: /etc/systemd/system/verdaccio.service
-    mode: "0644"
-  notify:
-    - restart verdaccio
-
-- name: Enable and start Verdaccio
-  ansible.builtin.systemd:
-    name: verdaccio
-    daemon_reload: true
-    enabled: true
-    state: started

@@ -269,8 +269,8 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
-      # log.format: json is set in verdaccio's config, so every verdaccio.service
-      # line on journald is pino JSON. on_error: send_quiet keeps the entry
+      # log.format: json is set in Verdaccio's config, so every captured line
+      # is pino JSON. on_error: send_quiet keeps the entry
       # flowing if a future pre-pino line ever sneaks through.
       - type: json_parser
         parse_from: body

@@ -35,7 +35,6 @@ ExecStart={{ verself_bin }}/haproxy-lego-renew \
   --split-cert-out {{ cert.split_cert_path }} \
   --split-key-out {{ cert.split_key_path }} \
   --split-group {{ cert.split_group | default('stalwart') }} \
-  --restart-unit stalwart.service \
 {% endif %}
   --reload-unit haproxy.service
 {% endfor %}

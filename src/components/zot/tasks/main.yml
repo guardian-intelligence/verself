@@ -101,31 +101,11 @@
     owner: root
     group: "{{ zot_group }}"
     mode: "0640"
-  notify: restart zot
 
 - name: Verify zot configuration
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/zot verify {{ zot_config_path }}"
   changed_when: false
-
-- name: Deploy zot systemd unit
-  ansible.builtin.template:
-    src: zot.service.j2
-    dest: /etc/systemd/system/zot.service
-    owner: root
-    group: root
-    mode: "0644"
-  notify: restart zot
-
-- name: Apply zot unit and config changes before readiness
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start zot
-  ansible.builtin.systemd:
-    name: zot
-    enabled: true
-    state: started
-    daemon_reload: true
 
 - name: Wait for zot listener
   ansible.builtin.wait_for:

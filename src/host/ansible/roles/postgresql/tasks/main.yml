@@ -109,8 +109,6 @@
     owner: postgres
     group: postgres
     mode: "0600"
-  notify:
-    - restart postgresql
 
 - name: Deploy pg_hba.conf
   ansible.builtin.template:
@@ -119,8 +117,6 @@
     owner: postgres
     group: postgres
     mode: "0600"
-  notify:
-    - restart postgresql
 
 - name: Deploy pg_ident.conf
   ansible.builtin.template:
@@ -129,47 +125,6 @@
     owner: postgres
     group: postgres
     mode: "0600"
-  notify:
-    - restart postgresql
-
-# --- systemd unit ---
-
-- name: Deploy PostgreSQL systemd unit
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=PostgreSQL
-      After=verself-firewall.target network.target
-      Requires=verself-firewall.target
-
-      [Service]
-      Type=simple
-      User=postgres
-      Group=postgres
-      ExecStart={{ verself_bin }}/postgres -D {{ postgresql_data_dir }} -c config_file={{ postgresql_config_dir }}/postgresql.conf
-      ExecReload=/bin/kill -HUP $MAINPID
-      Restart=on-failure
-      RestartSec=5
-      LimitNOFILE=65536
-
-      [Install]
-      WantedBy=multi-user.target
-    dest: /etc/systemd/system/postgresql.service
-    mode: "0644"
-  notify:
-    - restart postgresql
-
-- name: Apply PostgreSQL unit changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
-# --- Enable and start ---
-
-- name: Enable and start PostgreSQL
-  ansible.builtin.systemd:
-    name: postgresql
-    enabled: true
-    state: started
-    daemon_reload: true
 
 # --- Readiness gate ---
 

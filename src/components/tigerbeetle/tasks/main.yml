@@ -48,70 +48,11 @@
   changed_when: true
   when: not tigerbeetle_data_stat.stat.exists
 
-- name: Allow TigerBeetle to lock memory without a privileged supervisor
+- name: Allow TigerBeetle to lock memory
   community.general.capabilities:
     path: "{{ verself_bin }}/tigerbeetle"
     capability: cap_ipc_lock+ep
     state: present
-
-# --- systemd unit ---
-
-- name: Deploy TigerBeetle systemd unit
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=TigerBeetle
-      After=verself-firewall.target network.target
-      Requires=verself-firewall.target
-
-      [Service]
-      Type=simple
-      User=tigerbeetle
-      Group=tigerbeetle
-      ExecStart={{ verself_bin }}/tigerbeetle start \
-        --addresses={{ tigerbeetle_client_address }} \
-        --experimental \
-        --statsd={{ tigerbeetle_statsd_address }} \
-        {{ tigerbeetle_data_file }}
-      Restart=on-failure
-      RestartSec=5
-      AmbientCapabilities=CAP_IPC_LOCK
-      LimitMEMLOCK=infinity
-      DevicePolicy=closed
-      LockPersonality=true
-      ProtectClock=true
-      ProtectControlGroups=true
-      ProtectHome=true
-      ProtectHostname=true
-      ProtectKernelLogs=true
-      ProtectKernelModules=true
-      ProtectKernelTunables=true
-      ProtectProc=noaccess
-      ProtectSystem=strict
-      RestrictAddressFamilies=AF_INET AF_INET6
-      RestrictNamespaces=true
-      RestrictRealtime=true
-      RestrictSUIDSGID=true
-      ReadWritePaths={{ tigerbeetle_data_dir }}
-
-      [Install]
-      WantedBy=multi-user.target
-    dest: /etc/systemd/system/tigerbeetle.service
-    mode: "0644"
-  notify:
-    - restart tigerbeetle
-
-- name: Apply TigerBeetle unit changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
-# --- Enable and start ---
-
-- name: Enable and start TigerBeetle
-  ansible.builtin.systemd:
-    name: tigerbeetle
-    enabled: true
-    state: started
-    daemon_reload: true
 
 # --- Readiness gate ---
 

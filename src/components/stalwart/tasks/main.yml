@@ -177,66 +177,12 @@
     owner: root
     group: stalwart
     mode: "0640"
-  notify: restart stalwart
 
-- name: Allow Stalwart to bind SMTP without a privileged supervisor
+- name: Allow Stalwart to bind SMTP
   community.general.capabilities:
     path: "{{ verself_bin }}/stalwart"
     capability: cap_net_bind_service+ep
     state: present
-
-# --- systemd unit ---
-
-- name: Deploy stalwart systemd unit
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=Stalwart Mail Server
-      After=verself-firewall.target network.target postgresql.service
-      Requires=verself-firewall.target
-      Wants=postgresql.service
-
-      [Service]
-      Type=simple
-      User=stalwart
-      Group=stalwart
-      LoadCredential=admin-password:/etc/credstore/stalwart/admin-password
-      ExecStart={{ verself_bin }}/stalwart --config /etc/stalwart/config.toml
-      ExecReload=/bin/kill -HUP $MAINPID
-      Restart=on-failure
-      RestartSec=5
-      AmbientCapabilities=CAP_NET_BIND_SERVICE
-      CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-      ProtectSystem=strict
-      ProtectHome=true
-      ProtectKernelTunables=true
-      ProtectKernelModules=true
-      ProtectControlGroups=true
-      NoNewPrivileges=true
-      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-      RestrictNamespaces=true
-      LockPersonality=true
-      ReadWritePaths={{ stalwart_data_dir }}
-      ReadOnlyPaths=/etc/stalwart {{ stalwart_tls_cert_dir }}
-
-      [Install]
-      WantedBy=multi-user.target
-    dest: /etc/systemd/system/stalwart.service
-    mode: "0644"
-  notify:
-    - restart stalwart
-
-- name: Apply stalwart unit changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
-# --- Enable and start ---
-
-- name: Enable and start stalwart
-  ansible.builtin.systemd:
-    name: stalwart
-    enabled: true
-    state: started
-    daemon_reload: true
 
 # --- Readiness gate ---
 

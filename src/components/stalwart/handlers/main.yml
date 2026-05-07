@@ -1,7 +1,0 @@
----
-- name: Restart stalwart
-  listen: restart stalwart
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: stalwart.service
-    state: restarted

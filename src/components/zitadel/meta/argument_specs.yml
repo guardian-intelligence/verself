@@ -4,8 +4,8 @@ argument_specs:
     short_description: "Zitadel identity provider"
     description:
       - "Deploys Zitadel. Creates the PostgreSQL"
-      - "database and user, generates the masterkey, runs start-from-init"
-      - "(idempotent first-run), and configures the systemd unit."
+      - "database and user, generates the masterkey, and runs start-from-init"
+      - "(idempotent first-run)."
       - "Exports OTel traces to the collector on localhost:4317."
       - "Service ports are component defaults or Nomad service registrations."
     options:
