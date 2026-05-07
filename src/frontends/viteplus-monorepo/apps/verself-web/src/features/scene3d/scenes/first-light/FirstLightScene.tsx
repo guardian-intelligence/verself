@@ -2,6 +2,7 @@ import { CameraRig } from "../../camera-rig";
 import { LightingRig } from "../../lighting-rig";
 import { SceneInputs } from "../../scene-inputs";
 import { FirstLightWorld } from "./FirstLightWorld";
+import { ViewportRoom } from "./ViewportRoom";
 
 export function FirstLightScene() {
   return (
@@ -12,6 +13,7 @@ export function FirstLightScene() {
       <fog attach="fog" args={["#080706", 5.8, 11.8]} />
       <ambientLight color="#283447" intensity={0.095} />
       <LightingRig />
+      <ViewportRoom />
       <FirstLightWorld />
     </>
   );
