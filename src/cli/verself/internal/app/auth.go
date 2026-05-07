@@ -80,6 +80,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	projectsURL := fs.String("projects-url", "", "Projects service base URL")
 	billingURL := fs.String("billing-url", "", "Billing service base URL")
 	sandboxURL := fs.String("sandbox-url", "", "Sandbox rental service base URL")
+	secretsURL := fs.String("secrets-url", "", "Secrets service base URL")
 	sourceURL := fs.String("source-url", "", "Source service base URL")
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
@@ -95,6 +96,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		ProjectsURL: strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
 		BillingURL:  strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"))),
 		SandboxURL:  strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"))),
+		SecretsURL:  strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"))),
 		SourceURL:   strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
 	}
 	if profile.Name == "" {
@@ -115,6 +117,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		ProjectsURL: profile.ProjectsURL,
 		BillingURL:  profile.BillingURL,
 		SandboxURL:  profile.SandboxURL,
+		SecretsURL:  profile.SecretsURL,
 		SourceURL:   profile.SourceURL,
 	})
 	if err != nil {

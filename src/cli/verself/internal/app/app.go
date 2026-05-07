@@ -11,8 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
+
+	verself "github.com/verself/verself-go"
 )
 
 var slugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$`)
@@ -129,7 +132,10 @@ func (c CLI) usage() error {
   %[1]s billing plans --product-id PRODUCT_ID [--json]
   %[1]s billing statement --product-id PRODUCT_ID [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
+  %[1]s env add <key> --org ORG --project PROJECT --environment ENV --from-env NAME|--from-file PATH|--stdin
+  %[1]s env pull [file] --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
+  %[1]s env rm <key> --org ORG --project PROJECT --environment ENV
   %[1]s bootstrap --company <name> [--repo-root PATH]
 `, c.binary)
 }
@@ -623,24 +629,24 @@ func (c CLI) runEnv(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "get":
-		return c.envGet(args[1:])
+		return c.envGet(ctx, args[1:])
 	case "run":
 		return c.envRun(ctx, args[1:])
 	case "pull":
-		return c.envPull(args[1:])
+		return c.envPull(ctx, args[1:])
 	case "ls", "list":
-		return c.envList(args[1:])
+		return c.envList(ctx, args[1:])
 	case "add", "set", "update":
-		return c.envSet(args[1:])
+		return c.envSet(ctx, args[1:])
 	case "rm", "remove":
-		return c.envRemove(args[1:])
+		return c.envRemove(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown env command %q", args[0])
 	}
 }
 
-func (c CLI) envGet(args []string) error {
-	fs, scope, err := envFlagSet("env get", c.err)
+func (c CLI) envGet(ctx context.Context, args []string) error {
+	fs, scope, serviceFlags, err := envFlagSet("env get", c.err)
 	if err != nil {
 		return err
 	}
@@ -659,30 +665,59 @@ func (c CLI) envGet(args []string) error {
 	if !*reveal && !outputIsTerminal(c.out) {
 		return errors.New("env get refuses to print secrets to non-terminal stdout without --reveal-secret")
 	}
-	store, err := newStore(c.getenv)
+	if isBootstrapScope(*scope) {
+		value, err := c.localEnvValue(*scope, key)
+		if err != nil {
+			return err
+		}
+		if *jsonOut {
+			return writeJSON(c.out, map[string]string{"key": key, "value": value})
+		}
+		return writeln(c.out, value)
+	}
+	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	env, err := store.LoadEnv(*scope)
+	resolved, err := client.Secrets.Resolve(ctx, verself.ResolveSecretsInput{
+		Scope: secretScopeFromEnvScope(*scope),
+		Names: []string{key},
+	})
 	if err != nil {
 		return err
 	}
-	item, ok := env.Values[key]
-	if !ok {
+	if len(resolved.Values) == 0 {
 		return fmt.Errorf("env key %s not found", key)
 	}
-	value, err := store.ReadCredential(item.ValueRef)
-	if err != nil {
-		return err
-	}
+	value := resolved.Values[0].Value
 	if *jsonOut {
 		return writeJSON(c.out, map[string]string{"key": key, "value": value})
 	}
 	return writeln(c.out, value)
 }
 
+func (c CLI) localEnvValue(scope EnvScope, key string) (string, error) {
+	store, err := newStore(c.getenv)
+	if err != nil {
+		return "", err
+	}
+	env, err := store.LoadEnv(scope)
+	if err != nil {
+		return "", err
+	}
+	item, ok := env.Values[key]
+	if !ok {
+		return "", fmt.Errorf("env key %s not found", key)
+	}
+	value, err := store.ReadCredential(item.ValueRef)
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
 func (c CLI) envRun(ctx context.Context, args []string) error {
-	fs, scope, err := envFlagSet("env run", c.err)
+	fs, scope, serviceFlags, err := envFlagSet("env run", c.err)
 	if err != nil {
 		return err
 	}
@@ -696,11 +731,7 @@ func (c CLI) envRun(ctx context.Context, args []string) error {
 	if len(cmdArgs) == 0 {
 		return errors.New("usage: env run [flags] -- <command>")
 	}
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	env, err := store.LoadEnv(*scope)
+	values, err := c.envValues(ctx, *scope, *serviceFlags)
 	if err != nil {
 		return err
 	}
@@ -709,18 +740,14 @@ func (c CLI) envRun(ctx context.Context, args []string) error {
 	cmd.Stdout = c.out
 	cmd.Stderr = c.err
 	cmd.Env = os.Environ()
-	for key, item := range env.Values {
-		value, err := store.ReadCredential(item.ValueRef)
-		if err != nil {
-			return err
-		}
+	for key, value := range values {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
 	return cmd.Run()
 }
 
-func (c CLI) envPull(args []string) error {
-	fs, scope, err := envFlagSet("env pull", c.err)
+func (c CLI) envPull(ctx context.Context, args []string) error {
+	fs, scope, serviceFlags, err := envFlagSet("env pull", c.err)
 	if err != nil {
 		return err
 	}
@@ -745,27 +772,19 @@ func (c CLI) envPull(args []string) error {
 			return err
 		}
 	}
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	env, err := store.LoadEnv(*scope)
+	values, err := c.envValues(ctx, *scope, *serviceFlags)
 	if err != nil {
 		return err
 	}
 	var b strings.Builder
-	for key, item := range env.Values {
-		value, err := store.ReadCredential(item.ValueRef)
-		if err != nil {
-			return err
-		}
-		b.WriteString(key + "=" + shellQuote(value) + "\n")
+	for _, key := range sortedKeys(values) {
+		b.WriteString(key + "=" + shellQuote(values[key]) + "\n")
 	}
 	return atomicWriteFile(file, []byte(b.String()), 0o600)
 }
 
-func (c CLI) envList(args []string) error {
-	fs, scope, err := envFlagSet("env ls", c.err)
+func (c CLI) envList(ctx context.Context, args []string) error {
+	fs, scope, serviceFlags, err := envFlagSet("env ls", c.err)
 	if err != nil {
 		return err
 	}
@@ -775,15 +794,11 @@ func (c CLI) envList(args []string) error {
 	if err := requireScope(*scope); err != nil {
 		return err
 	}
-	store, err := newStore(c.getenv)
+	values, err := c.envValues(ctx, *scope, *serviceFlags)
 	if err != nil {
 		return err
 	}
-	env, err := store.LoadEnv(*scope)
-	if err != nil {
-		return err
-	}
-	for key := range env.Values {
+	for _, key := range sortedKeys(values) {
 		if err := writeln(c.out, key); err != nil {
 			return err
 		}
@@ -791,14 +806,15 @@ func (c CLI) envList(args []string) error {
 	return nil
 }
 
-func (c CLI) envSet(args []string) error {
-	fs, scope, err := envFlagSet("env add", c.err)
+func (c CLI) envSet(ctx context.Context, args []string) error {
+	fs, scope, serviceFlags, err := envFlagSet("env add", c.err)
 	if err != nil {
 		return err
 	}
 	fromEnv := fs.String("from-env", "", "read value from environment variable")
 	fromFile := fs.String("from-file", "", "read value from file")
 	stdin := fs.Bool("stdin", false, "read value from stdin")
+	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
@@ -812,19 +828,32 @@ func (c CLI) envSet(args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := newStore(c.getenv)
+	if isBootstrapScope(*scope) {
+		store, err := newStore(c.getenv)
+		if err != nil {
+			return err
+		}
+		_, err = store.PutEnvSecret(*scope, fs.Arg(0), value)
+		return err
+	}
+	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	_, err = store.PutEnvSecret(*scope, fs.Arg(0), value)
+	_, err = client.Secrets.Put(ctx, fs.Arg(0), verself.PutSecretInput{
+		Scope:          secretScopeFromEnvScope(*scope),
+		Value:          value,
+		IdempotencyKey: *idempotencyKey,
+	})
 	return err
 }
 
-func (c CLI) envRemove(args []string) error {
-	fs, scope, err := envFlagSet("env rm", c.err)
+func (c CLI) envRemove(ctx context.Context, args []string) error {
+	fs, scope, serviceFlags, err := envFlagSet("env rm", c.err)
 	if err != nil {
 		return err
 	}
+	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
@@ -834,16 +863,68 @@ func (c CLI) envRemove(args []string) error {
 	if err := requireScope(*scope); err != nil {
 		return err
 	}
+	if isBootstrapScope(*scope) {
+		store, err := newStore(c.getenv)
+		if err != nil {
+			return err
+		}
+		env, err := store.LoadEnv(*scope)
+		if err != nil {
+			return err
+		}
+		delete(env.Values, fs.Arg(0))
+		return store.SaveEnv(env)
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	_, err = client.Secrets.Delete(ctx, fs.Arg(0), verself.DeleteSecretInput{
+		Scope:          secretScopeFromEnvScope(*scope),
+		IdempotencyKey: *idempotencyKey,
+	})
+	return err
+}
+
+func (c CLI) envValues(ctx context.Context, scope EnvScope, serviceFlags serviceClientFlags) (map[string]string, error) {
+	if isBootstrapScope(scope) {
+		return c.localEnvValues(scope)
+	}
+	client, err := c.serviceClient(serviceFlags)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := client.Secrets.Resolve(ctx, verself.ResolveSecretsInput{
+		Scope: secretScopeFromEnvScope(scope),
+	})
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, len(resolved.Values))
+	for _, value := range resolved.Values {
+		values[value.Name] = value.Value
+	}
+	return values, nil
+}
+
+func (c CLI) localEnvValues(scope EnvScope) (map[string]string, error) {
 	store, err := newStore(c.getenv)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	env, err := store.LoadEnv(*scope)
+	env, err := store.LoadEnv(scope)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(env.Values, fs.Arg(0))
-	return store.SaveEnv(env)
+	values := make(map[string]string, len(env.Values))
+	for key, item := range env.Values {
+		value, err := store.ReadCredential(item.ValueRef)
+		if err != nil {
+			return nil, err
+		}
+		values[key] = value
+	}
+	return values, nil
 }
 
 func (c CLI) runBootstrap(args []string) error {
@@ -882,14 +963,13 @@ func (c CLI) runBootstrap(args []string) error {
 	return writef(c.out, "rendered bootstrap artifacts for %s at %s\n", run.Company, run.RepoRoot)
 }
 
-func envFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *EnvScope, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(stderr)
+func envFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *EnvScope, *serviceClientFlags, error) {
+	fs, serviceFlags := serviceFlagSet(name, stderr)
 	scope := &EnvScope{}
 	fs.StringVar(&scope.Org, "org", "", "organization")
 	fs.StringVar(&scope.Project, "project", "", "project")
 	fs.StringVar(&scope.Environment, "environment", "development", "environment")
-	return fs, scope, nil
+	return fs, scope, serviceFlags, nil
 }
 
 func requireScope(scope EnvScope) error {
@@ -897,6 +977,27 @@ func requireScope(scope EnvScope) error {
 		return errors.New("org, project, and environment are required")
 	}
 	return nil
+}
+
+func isBootstrapScope(scope EnvScope) bool {
+	return strings.TrimSpace(scope.Environment) == envBootstrap
+}
+
+func secretScopeFromEnvScope(scope EnvScope) verself.SecretScope {
+	return verself.SecretScope{
+		Level:    verself.SecretScopeEnvironment,
+		SourceID: scope.Project,
+		EnvID:    scope.Environment,
+	}
+}
+
+func sortedKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (c CLI) readInputValue(fromEnv, fromFile string, stdin bool, literal string, allowSecret bool) (value string, source string, secret bool, err error) {

@@ -294,6 +294,111 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 }
 
+func TestEnvCommandsUseSecretsSDKBackedAPI(t *testing.T) {
+	var putBody map[string]any
+	var resolveNamedBody map[string]any
+	var resolveAllBody map[string]any
+	var deleteKey string
+	var putKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer tok_secret" {
+			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/secrets/API_TOKEN":
+			putKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&putBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"secret_id":"sec_1","kind":"secret","name":"API_TOKEN","scope_level":"environment","source_id":"proj_1","env_id":"production","current_version":"1","created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:00Z"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/secrets:resolve":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := body["names"]; ok {
+				resolveNamedBody = body
+				_, _ = w.Write([]byte(`{"values":[{"secret_id":"sec_1","kind":"secret","name":"API_TOKEN","scope_level":"environment","source_id":"proj_1","env_id":"production","current_version":"1","created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:00Z","value":"tok_live"}]}`))
+				return
+			}
+			resolveAllBody = body
+			_, _ = w.Write([]byte(`{"values":[{"secret_id":"sec_1","kind":"secret","name":"API_TOKEN","scope_level":"environment","source_id":"proj_1","env_id":"production","current_version":"1","created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:00Z","value":"tok_live"}]}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/secrets/API_TOKEN":
+			deleteKey = r.Header.Get("Idempotency-Key")
+			if r.URL.Query().Get("scope_level") != "environment" || r.URL.Query().Get("source_id") != "proj_1" || r.URL.Query().Get("env_id") != "production" {
+				t.Fatalf("delete query = %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"secret_id":"sec_1","kind":"secret","name":"API_TOKEN","scope_level":"environment","source_id":"proj_1","env_id":"production","current_version":"1","created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:00Z"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_TOKEN", "tok_secret")
+	t.Setenv("VERSELF_SECRETS_API_URL", server.URL)
+	t.Setenv("API_TOKEN_VALUE", "tok_live")
+
+	runCLI(t, nil,
+		"env", "add", "API_TOKEN",
+		"--org", "guardian",
+		"--project", "proj_1",
+		"--environment", "production",
+		"--from-env", "API_TOKEN_VALUE",
+		"--idempotency-key", "secret:add",
+	)
+	if putKey != "secret:add" {
+		t.Fatalf("put idempotency key = %q", putKey)
+	}
+	if putBody["scope_level"] != "environment" || putBody["source_id"] != "proj_1" || putBody["env_id"] != "production" || putBody["value"] != "tok_live" {
+		t.Fatalf("unexpected put body: %#v", putBody)
+	}
+
+	var getOut bytes.Buffer
+	runCLI(t, &getOut,
+		"env", "get", "API_TOKEN",
+		"--org", "guardian",
+		"--project", "proj_1",
+		"--environment", "production",
+		"--reveal-secret",
+	)
+	if strings.TrimSpace(getOut.String()) != "tok_live" {
+		t.Fatalf("env get output:\n%s", getOut.String())
+	}
+	names, ok := resolveNamedBody["names"].([]any)
+	if !ok || len(names) != 1 || names[0] != "API_TOKEN" || resolveNamedBody["scope_level"] != "environment" {
+		t.Fatalf("unexpected named resolve body: %#v", resolveNamedBody)
+	}
+
+	pulled := filepath.Join(t.TempDir(), ".env.verself")
+	runCLI(t, nil,
+		"env", "pull", pulled,
+		"--org", "guardian",
+		"--project", "proj_1",
+		"--environment", "production",
+		"--yes",
+	)
+	pulledEnv := readFile(t, pulled)
+	if !strings.Contains(pulledEnv, "API_TOKEN='tok_live'") {
+		t.Fatalf("env pull output:\n%s", pulledEnv)
+	}
+	if resolveAllBody["scope_level"] != "environment" || resolveAllBody["source_id"] != "proj_1" || resolveAllBody["env_id"] != "production" {
+		t.Fatalf("unexpected all resolve body: %#v", resolveAllBody)
+	}
+
+	runCLI(t, nil,
+		"env", "rm", "API_TOKEN",
+		"--org", "guardian",
+		"--project", "proj_1",
+		"--environment", "production",
+		"--idempotency-key", "secret:rm",
+	)
+	if deleteKey != "secret:rm" {
+		t.Fatalf("delete idempotency key = %q", deleteKey)
+	}
+}
+
 func TestReposCommandsUseSourceSDKBackedAPI(t *testing.T) {
 	const projectID = "11111111-1111-1111-1111-111111111111"
 	const repoID = "22222222-2222-2222-2222-222222222222"

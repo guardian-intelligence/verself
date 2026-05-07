@@ -76,6 +76,7 @@ viteplus_openapi_spec_copies(
         ("projects-api", "//src/services/projects-service/openapi:openapi-3.1.yaml"),
         ("source-api", "//src/services/source-code-hosting-service/openapi:openapi-3.1.yaml"),
         ("sandbox-rental-api", "//src/services/sandbox-rental-service/openapi:openapi-3.1.yaml"),
+        ("secrets-api", "//src/services/secrets-service/openapi:openapi-3.1.yaml"),
         ("iam-api", "//src/services/iam-service/openapi:openapi-3.1.yaml"),
         ("mailbox-api", "//src/services/mailbox-service/openapi:openapi-3.1.yaml"),
         ("billing-api", "//src/services/billing-service/openapi:openapi-3.1.yaml"),

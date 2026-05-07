@@ -11,6 +11,7 @@ import { parse as parseYaml } from "yaml";
 import projectsYaml from "../__generated/openapi-specs/projects-api/openapi-3.1.yaml?raw";
 import sourceYaml from "../__generated/openapi-specs/source-api/openapi-3.1.yaml?raw";
 import sandboxRentalYaml from "../__generated/openapi-specs/sandbox-rental-api/openapi-3.1.yaml?raw";
+import secretsYaml from "../__generated/openapi-specs/secrets-api/openapi-3.1.yaml?raw";
 import identityYaml from "../__generated/openapi-specs/iam-api/openapi-3.1.yaml?raw";
 import mailboxYaml from "../__generated/openapi-specs/mailbox-api/openapi-3.1.yaml?raw";
 import billingYaml from "../__generated/openapi-specs/billing-api/openapi-3.1.yaml?raw";
@@ -167,6 +168,13 @@ export const SERVICE_CATALOG: readonly ServiceCatalogEntry[] = [
     subdomain: "sandbox.api",
     publicSurface: true,
     document: parseDocument(sandboxRentalYaml, "sandbox-rental-service"),
+  },
+  {
+    id: "secrets",
+    title: "Secrets",
+    subdomain: "secrets.api",
+    publicSurface: true,
+    document: parseDocument(secretsYaml, "secrets-service"),
   },
   {
     id: "identity",

@@ -2,6 +2,7 @@ import { Billing } from "./billing";
 import { IAM } from "./iam";
 import { Projects } from "./projects";
 import { SandboxRental } from "./sandbox";
+import { Secrets } from "./secrets";
 import { Source } from "./source";
 
 export const DEFAULT_SERVER_URL = "https://verself.sh";
@@ -9,6 +10,7 @@ export const DEFAULT_IAM_URL = "https://iam.api.verself.sh";
 export const DEFAULT_PROJECTS_URL = "https://projects.api.verself.sh";
 export const DEFAULT_BILLING_URL = "https://billing.api.verself.sh";
 export const DEFAULT_SANDBOX_URL = "https://sandbox.api.verself.sh";
+export const DEFAULT_SECRETS_URL = "https://secrets.api.verself.sh";
 export const DEFAULT_SOURCE_URL = "https://source.api.verself.sh";
 
 export type VerselfOptions = {
@@ -18,6 +20,7 @@ export type VerselfOptions = {
   projectsURL?: string | undefined;
   billingURL?: string | undefined;
   sandboxURL?: string | undefined;
+  secretsURL?: string | undefined;
   sourceURL?: string | undefined;
   fetch?: typeof fetch | undefined;
   traceparent?: string | undefined;
@@ -28,6 +31,7 @@ export class Verself {
   readonly projects: Projects;
   readonly billing: Billing;
   readonly sandbox: SandboxRental;
+  readonly secrets: Secrets;
   readonly source: Source;
 
   constructor(options: VerselfOptions) {
@@ -56,6 +60,12 @@ export class Verself {
     this.sandbox = new SandboxRental({
       accessToken: token,
       baseUrl: resolveSandboxURL(options),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.traceparent ? { traceparent: options.traceparent } : {}),
+    });
+    this.secrets = new Secrets({
+      accessToken: token,
+      baseUrl: resolveSecretsURL(options),
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.traceparent ? { traceparent: options.traceparent } : {}),
     });
@@ -89,12 +99,16 @@ function resolveSandboxURL(options: VerselfOptions): string {
   return resolveServiceURL("sandbox", options.sandboxURL, options.serverURL, DEFAULT_SANDBOX_URL);
 }
 
+function resolveSecretsURL(options: VerselfOptions): string {
+  return resolveServiceURL("secrets", options.secretsURL, options.serverURL, DEFAULT_SECRETS_URL);
+}
+
 function resolveSourceURL(options: VerselfOptions): string {
   return resolveServiceURL("source", options.sourceURL, options.serverURL, DEFAULT_SOURCE_URL);
 }
 
 function resolveServiceURL(
-  service: "iam" | "projects" | "billing" | "sandbox" | "source",
+  service: "iam" | "projects" | "billing" | "sandbox" | "secrets" | "source",
   serviceURL: string | undefined,
   serverURL: string | undefined,
   defaultURL: string,
@@ -230,6 +244,24 @@ export {
 } from "./projects";
 
 export * from "./sandbox";
+
+export {
+  Secrets,
+  SecretsApiError,
+  isSecretsApiError,
+  putSecretRequestSchema,
+  resolveSecretsRequestSchema,
+  type DeleteSecretScope,
+  type ListSecretsInput,
+  type PutSecretRequest,
+  type ResolveSecretsRequest,
+  type ResolvedSecrets,
+  type Secret,
+  type SecretList,
+  type SecretValue,
+  type SecretsClientOptions,
+  type SecretsMutationOptions,
+} from "./secrets";
 
 export {
   Source,

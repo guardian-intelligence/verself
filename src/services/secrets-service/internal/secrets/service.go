@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,8 @@ const (
 	ScopeSource      = "source"
 	ScopeEnvironment = "environment"
 	ScopeBranch      = "branch"
+
+	MaxResolveSecrets = 200
 )
 
 var (
@@ -187,6 +190,47 @@ func (s *Service) ListSecrets(ctx context.Context, principal Principal, kind str
 	}
 	span.SetAttributes(attribute.String("verself.org_id", principal.OrgID), attribute.Int("verself.secret_count", len(records)))
 	return records, nil
+}
+
+func (s *Service) ResolveSecrets(ctx context.Context, principal Principal, kind string, scope Scope, names []string, limit int) ([]SecretValue, error) {
+	ctx, span := tracer.Start(ctx, kvSpanName(kind, "resolve"))
+	defer span.End()
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	scope = normalizeScope(scope)
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
+	names, err := uniqueSecretNames(names)
+	if err != nil {
+		return nil, err
+	}
+	limit, err = resolveLimit(limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		records, err := s.Store.ListSecrets(ctx, principal, kind, limit)
+		if err != nil {
+			return nil, err
+		}
+		names = resolveNames(records, scope)
+	}
+	values := make([]SecretValue, 0, len(names))
+	for _, name := range names {
+		value, err := s.Store.ReadSecret(ctx, principal, kind, name, scope)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	span.SetAttributes(
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_kind", normalizeKind(kind)),
+		attribute.Int("verself.secret_count", len(values)),
+	)
+	return values, nil
 }
 
 func (s *Service) DeleteSecret(ctx context.Context, principal Principal, kind, name string, scope Scope) (SecretRecord, error) {
@@ -381,6 +425,78 @@ func resolutionCandidates(scope Scope) ([]Scope, error) {
 	}
 	candidates = append(candidates, Scope{Level: ScopeOrg})
 	return candidates, nil
+}
+
+func uniqueSecretNames(names []string) ([]string, error) {
+	if len(names) > MaxResolveSecrets {
+		return nil, fmt.Errorf("%w: at most %d secret names can be resolved", ErrInvalidArgument, MaxResolveSecrets)
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = normalizeName(name)
+		if name == "" {
+			return nil, fmt.Errorf("%w: secret name is required", ErrInvalidArgument)
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
+func resolveLimit(limit int) (int, error) {
+	switch {
+	case limit == 0:
+		return MaxResolveSecrets, nil
+	case limit < 0 || limit > MaxResolveSecrets:
+		return 0, fmt.Errorf("%w: resolve limit must be between 1 and %d", ErrInvalidArgument, MaxResolveSecrets)
+	default:
+		return limit, nil
+	}
+}
+
+func resolveNames(records []SecretRecord, scope Scope) []string {
+	candidates, err := resolutionCandidates(scope)
+	if err != nil {
+		return nil
+	}
+	rank := make(map[string]int, len(candidates))
+	for i, candidate := range candidates {
+		rank[scopeKey(candidate)] = i
+	}
+	type selected struct {
+		name string
+		rank int
+	}
+	selectedByName := map[string]selected{}
+	for _, record := range records {
+		name := normalizeName(record.Name)
+		if name == "" {
+			continue
+		}
+		recordRank, ok := rank[scopeKey(record.Scope)]
+		if !ok {
+			continue
+		}
+		current, ok := selectedByName[name]
+		if !ok || recordRank < current.rank {
+			selectedByName[name] = selected{name: name, rank: recordRank}
+		}
+	}
+	names := make([]string, 0, len(selectedByName))
+	for name := range selectedByName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func scopeKey(scope Scope) string {
+	scope = normalizeScope(scope)
+	return strings.Join([]string{scope.Level, scope.SourceID, scope.EnvID, scope.Branch}, "\x00")
 }
 
 func hashBranch(branch string) string {

@@ -29,6 +29,10 @@
       "types": "./src/sandbox.ts",
       "default": "./src/sandbox.ts"
     },
+    "./secrets": {
+      "types": "./src/secrets.ts",
+      "default": "./src/secrets.ts"
+    },
     "./source": {
       "types": "./src/source.ts",
       "default": "./src/source.ts"

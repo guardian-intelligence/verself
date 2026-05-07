@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -68,6 +69,25 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		OpenBaoRole:     "secrets-direct-list-secrets",
 		BillingSKU:      billingSKUSecretsKV,
 	}), listSecrets(svc, secrets.KindSecret))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID: "resolve-secrets",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/secrets:resolve",
+		Summary:     "Resolve scoped secret values",
+	}, operationPolicy{
+		Permission:      permissionSecretRead,
+		TargetKind:      "secret",
+		Action:          "read",
+		OrgScope:        "token_org_id",
+		RateLimitClass:  "read",
+		AuditEvent:      "secrets.secret.resolve",
+		RiskLevel:       "critical",
+		BodyLimitBytes:  bodyLimitSmallJSON,
+		SecretOperation: "read",
+		OpenBaoRole:     "secrets-direct-read-secret",
+		BillingSKU:      billingSKUSecretsKV,
+	}), resolveSecrets(svc, secrets.KindSecret))
 
 	registerSecured(api, svc, secured(huma.Operation{
 		OperationID: "delete-secret",
@@ -388,13 +408,6 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 	}), verifyTransit(svc))
 }
 
-type secretScopeQuery struct {
-	ScopeLevel string `query:"scope_level,omitempty" enum:"org,source,environment,branch"`
-	SourceID   string `query:"source_id,omitempty" maxLength:"255"`
-	EnvID      string `query:"env_id,omitempty" maxLength:"255"`
-	Branch     string `query:"branch,omitempty" maxLength:"255"`
-}
-
 type putSecretInput struct {
 	Name string `path:"name" minLength:"1" maxLength:"255"`
 	Body putSecretBody
@@ -409,12 +422,28 @@ type putSecretBody struct {
 }
 
 type readSecretInput struct {
-	Name string `path:"name" minLength:"1" maxLength:"255"`
-	secretScopeQuery
+	Name       string `path:"name" minLength:"1" maxLength:"255"`
+	ScopeLevel string `query:"scope_level,omitempty" enum:"org,source,environment,branch"`
+	SourceID   string `query:"source_id,omitempty" maxLength:"255"`
+	EnvID      string `query:"env_id,omitempty" maxLength:"255"`
+	Branch     string `query:"branch,omitempty" maxLength:"255"`
 }
 
 type listSecretsInput struct {
 	Limit int `query:"limit,omitempty" minimum:"1" maximum:"200"`
+}
+
+type resolveSecretsInput struct {
+	Body resolveSecretsBody
+}
+
+type resolveSecretsBody struct {
+	ScopeLevel string   `json:"scope_level,omitempty" enum:"org,source,environment,branch"`
+	SourceID   string   `json:"source_id,omitempty" maxLength:"255"`
+	EnvID      string   `json:"env_id,omitempty" maxLength:"255"`
+	Branch     string   `json:"branch,omitempty" maxLength:"255"`
+	Names      []string `json:"names,omitempty" maxItems:"200"`
+	Limit      int      `json:"limit,omitempty" minimum:"1" maximum:"200"`
 }
 
 type deleteSecretInput struct {
@@ -436,6 +465,10 @@ type secretValueOutput struct {
 
 type secretsOutput struct {
 	Body SecretsDTO
+}
+
+type resolvedSecretsOutput struct {
+	Body ResolvedSecretsDTO
 }
 
 type variableOutput struct {
@@ -505,6 +538,10 @@ type SecretValueDTO struct {
 
 type SecretsDTO struct {
 	Secrets []SecretDTO `json:"secrets"`
+}
+
+type ResolvedSecretsDTO struct {
+	Values []SecretValueDTO `json:"values"`
 }
 
 type VariableDTO struct {
@@ -616,6 +653,29 @@ func listSecrets(svc *secrets.Service, kind string) func(context.Context, secret
 			out.Secrets = append(out.Secrets, secretDTO(record))
 		}
 		return &secretsOutput{Body: out}, nil
+	}
+}
+
+func resolveSecrets(svc *secrets.Service, kind string) func(context.Context, secrets.Principal, *resolveSecretsInput) (*resolvedSecretsOutput, error) {
+	return func(ctx context.Context, principal secrets.Principal, input *resolveSecretsInput) (*resolvedSecretsOutput, error) {
+		values, err := svc.ResolveSecrets(ctx, principal, kind, secrets.Scope{
+			Level:    input.Body.ScopeLevel,
+			SourceID: input.Body.SourceID,
+			EnvID:    input.Body.EnvID,
+			Branch:   input.Body.Branch,
+		}, input.Body.Names, input.Body.Limit)
+		if err != nil {
+			return nil, err
+		}
+		out := ResolvedSecretsDTO{Values: make([]SecretValueDTO, 0, len(values))}
+		for _, value := range values {
+			dto := secretDTO(value.Record)
+			out.Values = append(out.Values, SecretValueDTO{SecretDTO: dto, Value: value.Value})
+		}
+		sort.Slice(out.Values, func(i, j int) bool {
+			return out.Values[i].Name < out.Values[j].Name
+		})
+		return &resolvedSecretsOutput{Body: out}, nil
 	}
 }
 

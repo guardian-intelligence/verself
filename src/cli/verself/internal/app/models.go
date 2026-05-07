@@ -24,6 +24,7 @@ type ProfileRecord struct {
 	ProjectsURL string    `json:"projects_url,omitempty"`
 	BillingURL  string    `json:"billing_url,omitempty"`
 	SandboxURL  string    `json:"sandbox_url,omitempty"`
+	SecretsURL  string    `json:"secrets_url,omitempty"`
 	SourceURL   string    `json:"source_url,omitempty"`
 	SelectedOrg *OrgRef   `json:"selected_org,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`

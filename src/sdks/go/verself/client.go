@@ -14,6 +14,7 @@ import (
 	iamcore "github.com/verself/verself-go/internal/generated/iam"
 	projectscore "github.com/verself/verself-go/internal/generated/projects"
 	sandboxcore "github.com/verself/verself-go/internal/generated/sandbox"
+	secretscore "github.com/verself/verself-go/internal/generated/secrets"
 	sourcecore "github.com/verself/verself-go/internal/generated/source"
 )
 
@@ -23,6 +24,7 @@ const (
 	DefaultProjectsURL = "https://projects.api.verself.sh"
 	DefaultBillingURL  = "https://billing.api.verself.sh"
 	DefaultSandboxURL  = "https://sandbox.api.verself.sh"
+	DefaultSecretsURL  = "https://secrets.api.verself.sh"
 	DefaultSourceURL   = "https://source.api.verself.sh"
 )
 
@@ -33,6 +35,7 @@ type Options struct {
 	ProjectsURL string
 	BillingURL  string
 	SandboxURL  string
+	SecretsURL  string
 	SourceURL   string
 	HTTPClient  *http.Client
 	Traceparent string
@@ -43,6 +46,7 @@ type Client struct {
 	Projects *ProjectsClient
 	Billing  *BillingClient
 	Sandbox  *SandboxClient
+	Secrets  *SecretsClient
 	Source   *SourceClient
 }
 
@@ -68,6 +72,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	sandboxURL, err := serviceURL(options.SandboxURL, options.ServerURL, "sandbox")
+	if err != nil {
+		return nil, err
+	}
+	secretsURL, err := serviceURL(options.SecretsURL, options.ServerURL, "secrets")
 	if err != nil {
 		return nil, err
 	}
@@ -120,11 +128,21 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	secretsEditor := secretsRequestEditor(token, options.Traceparent)
+	generatedSecrets, err := secretscore.NewClientWithResponses(
+		secretsURL,
+		secretscore.WithHTTPClient(httpClient),
+		secretscore.WithRequestEditorFn(secretsEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
 		IAM:      &IAMClient{client: generatedIAM},
 		Projects: &ProjectsClient{client: generatedProjects},
 		Billing:  &BillingClient{client: generatedBilling},
 		Sandbox:  &SandboxClient{client: generatedSandbox},
+		Secrets:  &SecretsClient{client: generatedSecrets},
 		Source:   &SourceClient{client: generatedSource},
 	}, nil
 }
@@ -154,6 +172,12 @@ func sourceRequestEditor(token, traceparent string) sourcecore.RequestEditorFn {
 }
 
 func sandboxRequestEditor(token, traceparent string) sandboxcore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, token, traceparent)
+	}
+}
+
+func secretsRequestEditor(token, traceparent string) secretscore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, token, traceparent)
 	}
@@ -189,6 +213,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultBillingURL
 	case "sandbox":
 		return DefaultSandboxURL
+	case "secrets":
+		return DefaultSecretsURL
 	case "source":
 		return DefaultSourceURL
 	default:

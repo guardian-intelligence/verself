@@ -199,10 +199,8 @@ function Secrets() {
         <SubHeading id="secrets-versions">Versions</SubHeading>
         <Prose>
           <p>
-            Every secret has a current version and retains its previous versions for a configurable
-            retention window. Reads return the current version by default; callers can request a
-            specific version by label (<code>current</code>, <code>previous</code>) or by version
-            number.
+            Every secret has a current version. Updating a secret advances that version and new
+            reads resolve to the current value for the requested scope.
           </p>
           <p>
             Rotation never takes effect mid-request. A workload that reads <code>STRIPE_KEY</code>{" "}
@@ -216,11 +214,13 @@ function Secrets() {
         <Prose>
           <p>
             Create or update a secret with <code>PUT /api/v1/secrets/{"{name}"}</code>, read the
-            current version with <code>GET</code>, list organization secrets with{" "}
-            <code>GET /api/v1/secrets</code>, and delete with <code>DELETE</code>. Mutating calls
-            require an <code>Idempotency-Key</code> header; retrying with the same key is safe and
-            returns the original result without double-writing. The full surface is documented in
-            the <a href="/docs/reference">API reference</a>.
+            current value with <code>GET</code> or <code>POST /api/v1/secrets:resolve</code>, list
+            metadata with <code>GET /api/v1/secrets</code>, and delete with <code>DELETE</code>. The
+            CLI wraps the same API as <code>verself env add</code>, <code>verself env get</code>,{" "}
+            <code>verself env pull</code>, and <code>verself env rm</code>. Mutating calls require
+            an <code>Idempotency-Key</code> header; retrying with the same key is safe and returns
+            the original result without double-writing. The full surface is documented in the{" "}
+            <a href="/docs/reference">API reference</a>.
           </p>
         </Prose>
       </div>

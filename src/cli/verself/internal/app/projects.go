@@ -18,6 +18,7 @@ type serviceClientFlags struct {
 	projectsURL string
 	billingURL  string
 	sandboxURL  string
+	secretsURL  string
 	sourceURL   string
 	traceparent string
 }
@@ -388,6 +389,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
 	fs.StringVar(&flags.billingURL, "billing-url", "", "billing service base URL")
 	fs.StringVar(&flags.sandboxURL, "sandbox-url", "", "sandbox rental service base URL")
+	fs.StringVar(&flags.secretsURL, "secrets-url", "", "secrets service base URL")
 	fs.StringVar(&flags.sourceURL, "source-url", "", "source service base URL")
 	fs.StringVar(&flags.traceparent, "traceparent", "", "trace context to join")
 	return fs, flags
@@ -426,6 +428,13 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	if sandboxURL == "" && profile != nil {
 		sandboxURL = profile.SandboxURL
 	}
+	secretsURL := strings.TrimSpace(flags.secretsURL)
+	if secretsURL == "" {
+		secretsURL = strings.TrimSpace(c.getenv("VERSELF_SECRETS_API_URL"))
+	}
+	if secretsURL == "" && profile != nil {
+		secretsURL = profile.SecretsURL
+	}
 	sourceURL := strings.TrimSpace(flags.sourceURL)
 	if sourceURL == "" {
 		sourceURL = strings.TrimSpace(c.getenv("VERSELF_SOURCE_API_URL"))
@@ -439,6 +448,7 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 		ProjectsURL: projectsURL,
 		BillingURL:  billingURL,
 		SandboxURL:  sandboxURL,
+		SecretsURL:  secretsURL,
 		SourceURL:   sourceURL,
 		Traceparent: flags.traceparent,
 	})
