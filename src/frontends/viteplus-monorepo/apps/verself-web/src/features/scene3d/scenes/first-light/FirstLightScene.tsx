@@ -8,9 +8,9 @@ export function FirstLightScene() {
     <>
       <SceneInputs />
       <CameraRig />
-      <color attach="background" args={["#050403"]} />
-      <fog attach="fog" args={["#060504", 5.6, 11.5]} />
-      <ambientLight color="#2d3c50" intensity={0.055} />
+      <color attach="background" args={["#070605"]} />
+      <fog attach="fog" args={["#080706", 5.8, 11.8]} />
+      <ambientLight color="#283447" intensity={0.095} />
       <LightingRig />
       <FirstLightWorld />
     </>

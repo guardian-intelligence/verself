@@ -11,8 +11,9 @@ export function FirstLightWorld() {
       return;
     }
 
-    cube.current.rotation.x += delta * 0.18;
-    cube.current.rotation.y += delta * 0.28;
+    cube.current.rotation.x += delta * 0.13;
+    cube.current.rotation.y += delta * 0.18;
+    cube.current.rotation.z += delta * 0.025;
   });
 
   return (
@@ -21,15 +22,15 @@ export function FirstLightWorld() {
       castShadow
       receiveShadow
       position={firstLightCubePosition}
-      rotation={[0.46, 0.64, 0.08]}
+      rotation={[0.58, 0.78, 0.1]}
     >
-      <boxGeometry args={[1.08, 1.08, 1.08]} />
+      <boxGeometry args={[0.82, 0.82, 0.82]} />
       <meshStandardMaterial
-        color="#d9dde2"
-        emissive="#4a3723"
-        emissiveIntensity={0.025}
-        metalness={0.08}
-        roughness={0.46}
+        color="#d8d6cf"
+        emissive="#3d2b1d"
+        emissiveIntensity={0.04}
+        metalness={0.02}
+        roughness={0.72}
       />
     </mesh>
   );
