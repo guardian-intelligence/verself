@@ -1,5 +1,5 @@
 ---
-- name: "Converge Electric instance {{ electric_instance_config.electric_service_name }}"
+- name: "Converge Electric instances"
   ansible.builtin.include_role:
     name: electric
   vars:
