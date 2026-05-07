@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,21 @@ func TestBootstrapRendersEncryptedCompanyCloneArtifacts(t *testing.T) {
 func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	var createIDKey string
 	var createAuth string
+	var updateBody map[string]any
+	var archiveBody map[string]any
+	var restoreBody map[string]any
+	var environmentCreateKey string
+	var environmentUpdateBody map[string]any
+	var environmentArchiveBody map[string]any
+	const projectID = "11111111-1111-1111-1111-111111111111"
+	const createdProjectID = "22222222-2222-2222-2222-222222222222"
+	const environmentID = "33333333-3333-3333-3333-333333333333"
+	projectJSON := func(id, slug, displayName, description, state, version string) string {
+		return `{"project_id":"` + id + `","org_id":"370200542594579812","slug":"` + slug + `","display_name":"` + displayName + `","description":"` + description + `","state":"` + state + `","version":"` + version + `","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	}
+	environmentJSON := func(slug, displayName, kind, state, version string) string {
+		return `{"environment_id":"` + environmentID + `","project_id":"` + projectID + `","org_id":"370200542594579812","slug":"` + slug + `","display_name":"` + displayName + `","kind":"` + kind + `","state":"` + state + `","version":"` + version + `","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -158,12 +174,48 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 			if r.URL.Query().Get("state") != "active" {
 				t.Fatalf("list query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"projects":[{"project_id":"11111111-1111-1111-1111-111111111111","org_id":"370200542594579812","slug":"api","display_name":"API","description":"","state":"active","version":"1","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"projects":[` + projectJSON(projectID, "api", "API", "", "active", "1") + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects":
 			createIDKey = r.Header.Get("Idempotency-Key")
 			createAuth = r.Header.Get("Authorization")
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"project_id":"22222222-2222-2222-2222-222222222222","org_id":"370200542594579812","slug":"web","display_name":"Web","description":"Console","state":"active","version":"1","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
+			_, _ = w.Write([]byte(projectJSON(createdProjectID, "web", "Web", "Console", "active", "1")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/"+projectID:
+			_, _ = w.Write([]byte(projectJSON(projectID, "api", "API", "", "active", "1")))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/projects/"+projectID:
+			if r.Header.Get("Idempotency-Key") != "project:update" {
+				t.Fatalf("update idempotency key = %q", r.Header.Get("Idempotency-Key"))
+			}
+			if err := json.NewDecoder(r.Body).Decode(&updateBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(projectJSON(projectID, "api-core", "API Core", "Core", "active", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/"+projectID+"/archive":
+			if err := json.NewDecoder(r.Body).Decode(&archiveBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(projectJSON(projectID, "api-core", "API Core", "Core", "archived", "3")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/"+projectID+"/restore":
+			if err := json.NewDecoder(r.Body).Decode(&restoreBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(projectJSON(projectID, "api-core", "API Core", "Core", "active", "4")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/"+projectID+"/environments":
+			_, _ = w.Write([]byte(`{"environments":[` + environmentJSON("production", "Production", "production", "active", "1") + `]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/"+projectID+"/environments":
+			environmentCreateKey = r.Header.Get("Idempotency-Key")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(environmentJSON("staging", "Staging", "custom", "active", "1")))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/projects/"+projectID+"/environments/"+environmentID:
+			if err := json.NewDecoder(r.Body).Decode(&environmentUpdateBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(environmentJSON("staging", "Staging 2", "custom", "active", "2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects/"+projectID+"/environments/"+environmentID+"/archive":
+			if err := json.NewDecoder(r.Body).Decode(&environmentArchiveBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(environmentJSON("staging", "Staging 2", "custom", "archived", "3")))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -190,6 +242,136 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	if !strings.Contains(createOut.String(), "web\t22222222-2222-2222-2222-222222222222\tWeb") {
 		t.Fatalf("projects create output:\n%s", createOut.String())
 	}
+
+	var getOut bytes.Buffer
+	runCLI(t, &getOut, "projects", "get", projectID)
+	if !strings.Contains(getOut.String(), "api\t"+projectID+"\tAPI") {
+		t.Fatalf("projects get output:\n%s", getOut.String())
+	}
+
+	var updateOut bytes.Buffer
+	runCLI(t, &updateOut, "projects", "update", projectID, "--version", "1", "--slug", "api-core", "--display-name", "API Core", "--description", "Core", "--idempotency-key", "project:update")
+	if updateBody["version"] != "1" || updateBody["slug"] != "api-core" || updateBody["display_name"] != "API Core" || updateBody["description"] != "Core" {
+		t.Fatalf("unexpected update body: %#v", updateBody)
+	}
+	if !strings.Contains(updateOut.String(), "api-core\t"+projectID+"\tAPI Core") {
+		t.Fatalf("projects update output:\n%s", updateOut.String())
+	}
+
+	runCLI(t, nil, "projects", "archive", projectID, "--version", "2", "--idempotency-key", "project:archive")
+	if archiveBody["version"] != "2" {
+		t.Fatalf("unexpected archive body: %#v", archiveBody)
+	}
+	runCLI(t, nil, "projects", "restore", projectID, "--version", "3", "--idempotency-key", "project:restore")
+	if restoreBody["version"] != "3" {
+		t.Fatalf("unexpected restore body: %#v", restoreBody)
+	}
+
+	var environmentsOut bytes.Buffer
+	runCLI(t, &environmentsOut, "projects", "environments", "list", projectID)
+	if !strings.Contains(environmentsOut.String(), "production\t"+environmentID+"\tproduction\tProduction") {
+		t.Fatalf("projects environments list output:\n%s", environmentsOut.String())
+	}
+	var environmentCreateOut bytes.Buffer
+	runCLI(t, &environmentCreateOut, "projects", "environments", "create", projectID, "Staging", "--slug", "staging", "--kind", "custom", "--idempotency-key", "project-environment:create")
+	if environmentCreateKey != "project-environment:create" {
+		t.Fatalf("environment create idempotency key = %q", environmentCreateKey)
+	}
+	if !strings.Contains(environmentCreateOut.String(), "staging\t"+environmentID+"\tcustom\tStaging") {
+		t.Fatalf("projects environments create output:\n%s", environmentCreateOut.String())
+	}
+	runCLI(t, nil, "projects", "environments", "update", projectID, environmentID, "--version", "1", "--display-name", "Staging 2", "--policy", "deploy=manual", "--idempotency-key", "project-environment:update")
+	if environmentUpdateBody["version"] != "1" || environmentUpdateBody["display_name"] != "Staging 2" {
+		t.Fatalf("unexpected environment update body: %#v", environmentUpdateBody)
+	}
+	policy, ok := environmentUpdateBody["protection_policy"].(map[string]any)
+	if !ok || policy["deploy"] != "manual" {
+		t.Fatalf("unexpected environment update policy: %#v", environmentUpdateBody)
+	}
+	runCLI(t, nil, "projects", "environments", "archive", projectID, environmentID, "--version", "2", "--idempotency-key", "project-environment:archive")
+	if environmentArchiveBody["version"] != "2" {
+		t.Fatalf("unexpected environment archive body: %#v", environmentArchiveBody)
+	}
+}
+
+func TestAuthOrgsAndCredentialsUseIAMSDK(t *testing.T) {
+	xdgRoot := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(xdgRoot, "state"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(xdgRoot, "cache"))
+
+	tokenPath := filepath.Join(xdgRoot, "token")
+	if err := os.WriteFile(tokenPath, []byte("tok_iam_test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	orgJSON := `{"org_id":"370200542594579812","display_name":"Guardian Intelligence","slug":"guardian","version":1,"org_acl_version":1,"caller":{"user_id":"user_1","email":"shovon@example.com","login_name":"shovon","display_name":"Shovon Hasan","state":"active","role_keys":["owner"]},"member_capabilities":{"org_id":"370200542594579812","version":1,"enabled_keys":[],"updated_at":"2026-05-06T00:00:00Z","updated_by":"user_1"},"permissions":["iam:api_credential:write"]}`
+	credentialJSON := func(status string) string {
+		return `{"credential_id":"cred_1","org_id":"370200542594579812","subject_id":"svc_1","client_id":"client_1","display_name":"CI","status":"` + status + `","auth_method":"private_key_jwt","fingerprint":"fp_1","permissions":["projects:project:read"],"policy_version_at_issue":1,"created_at":"2026-05-06T00:00:00Z","created_by":"user_1","updated_at":"2026-05-06T00:00:00Z"}`
+	}
+	var createKey string
+	var createBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer tok_iam_test" {
+			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization":
+			_, _ = w.Write([]byte(orgJSON))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me/organizations":
+			_, _ = w.Write([]byte(`[{"org_id":"370200542594579812","display_name":"Guardian Intelligence","slug":"guardian"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/organization/api-credentials":
+			createKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"credential":` + credentialJSON("active") + `,"issued_material":{"auth_method":"private_key_jwt","client_id":"client_1","token_url":"https://auth.example/oauth/v2/token","key_id":"key_1","key_content":"pem_test","fingerprint":"fp_1"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization/api-credentials":
+			_, _ = w.Write([]byte(`{"credentials":[` + credentialJSON("active") + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization/api-credentials/cred_1":
+			_, _ = w.Write([]byte(credentialJSON("active")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/organization/api-credentials/cred_1/roll":
+			_, _ = w.Write([]byte(`{"credential":` + credentialJSON("active") + `,"issued_material":{"auth_method":"private_key_jwt","client_id":"client_1","token_url":"https://auth.example/oauth/v2/token","key_id":"key_2","key_content":"pem_roll","fingerprint":"fp_2"}}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/organization/api-credentials/cred_1":
+			_, _ = w.Write([]byte(credentialJSON("revoked")))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("VERSELF_IAM_API_URL", server.URL)
+
+	runCLI(t, nil, "auth", "login", "--token-file", tokenPath)
+	profilePath := filepath.Join(xdgRoot, "data", "verself", "profiles", "default.json")
+	profile := readFile(t, profilePath)
+	if strings.Contains(profile, "tok_iam_test") {
+		t.Fatalf("profile stored plaintext token:\n%s", profile)
+	}
+
+	var whoami bytes.Buffer
+	runCLI(t, &whoami, "auth", "whoami")
+	if !strings.Contains(whoami.String(), "Shovon Hasan") {
+		t.Fatalf("auth whoami output:\n%s", whoami.String())
+	}
+
+	runCLI(t, nil, "orgs", "use", "guardian")
+	var createOut bytes.Buffer
+	runCLI(t, &createOut, "orgs", "credentials", "create", "CI", "--permission", "projects:project:read", "--idempotency-key", "iam:test")
+	if createKey != "iam:test" {
+		t.Fatalf("create idempotency key = %q", createKey)
+	}
+	if createBody["display_name"] != "CI" || createBody["auth_method"] != "private_key_jwt" {
+		t.Fatalf("unexpected credential create body: %#v", createBody)
+	}
+	if !strings.Contains(createOut.String(), "key_content\tpem_test") {
+		t.Fatalf("credential create output:\n%s", createOut.String())
+	}
+	runCLI(t, nil, "orgs", "credentials", "list")
+	runCLI(t, nil, "orgs", "credentials", "get", "cred_1")
+	runCLI(t, nil, "orgs", "credentials", "roll", "cred_1")
+	runCLI(t, nil, "orgs", "credentials", "revoke", "cred_1")
 }
 
 func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {

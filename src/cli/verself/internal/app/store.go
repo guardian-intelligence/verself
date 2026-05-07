@@ -45,6 +45,92 @@ func (s *Store) SaveConfig(cfg Config) error {
 	return writeJSONFile(s.paths.configPath(), cfg, 0o600)
 }
 
+func (s *Store) SaveProfile(p ProfileRecord) error {
+	if p.Version == 0 {
+		p.Version = 1
+	}
+	now := time.Now().UTC()
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = now
+	}
+	p.UpdatedAt = now
+	return writeJSONFile(s.paths.profilePath(p.Name), p, 0o600)
+}
+
+func (s *Store) LoadProfile(name string) (ProfileRecord, error) {
+	if name == "" {
+		cfg, err := s.LoadConfig()
+		if err != nil {
+			return ProfileRecord{}, err
+		}
+		name = cfg.ActiveProfile
+	}
+	if name == "" {
+		return ProfileRecord{}, errors.New("profile is required; run `verself auth login --token-file PATH`")
+	}
+	var p ProfileRecord
+	if err := readJSONFile(s.paths.profilePath(name), &p); err != nil {
+		return ProfileRecord{}, err
+	}
+	if p.Version == 0 {
+		p.Version = 1
+	}
+	return p, nil
+}
+
+func (s *Store) ListProfiles() ([]string, error) {
+	dir := filepath.Join(s.paths.DataDir, "profiles")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(entry.Name(), ".json"))
+	}
+	return out, nil
+}
+
+func (s *Store) DeleteProfile(name string) error {
+	if name == "" {
+		cfg, err := s.LoadConfig()
+		if err != nil {
+			return err
+		}
+		name = cfg.ActiveProfile
+	}
+	if name == "" {
+		return nil
+	}
+	profile, err := s.LoadProfile(name)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil && profile.TokenRef != "" {
+		if deleteErr := s.DeleteCredential(profile.TokenRef); deleteErr != nil {
+			return deleteErr
+		}
+	}
+	if err := os.Remove(s.paths.profilePath(name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	cfg, err := s.LoadConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.ActiveProfile == name {
+		cfg.ActiveProfile = ""
+		return s.SaveConfig(cfg)
+	}
+	return nil
+}
+
 func (s *Store) SaveCompany(c CompanyRecord) error {
 	if c.Version == 0 {
 		c.Version = currentCompanyVersion
@@ -116,6 +202,17 @@ func (s *Store) ReadCredential(ref string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func (s *Store) DeleteCredential(ref string) error {
+	id, ok := strings.CutPrefix(ref, "verself-cred://")
+	if !ok || id == "" || strings.ContainsAny(id, `/\`) {
+		return fmt.Errorf("credential ref invalid: %s", ref)
+	}
+	if err := os.Remove(filepath.Join(s.paths.credentialDir(), id+".secret")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) LoadEnv(scope EnvScope) (EnvStore, error) {

@@ -7,7 +7,7 @@ go_library(
     importpath = "github.com/verself/profile-service/cmd/profile-service",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/services/iam-service/internalclient",
+        "//src/services/iam-service/client",
         "//src/services/profile-service/internal/api",
         "//src/services/profile-service/internal/profile",
         "//src/services/profile-service/migrations",

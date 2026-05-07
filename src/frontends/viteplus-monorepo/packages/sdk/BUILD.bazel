@@ -21,6 +21,7 @@ viteplus_openapi_clients(
     openapi_ts_bin = openapi_ts_bin,
     plugin_packages = [":node_modules/valibot"],
     specs = [
+        ("iam-api", "//src/services/iam-service/openapi:openapi-3.1.yaml.bin"),
         ("projects-api", "//src/services/projects-service/openapi:openapi-3.1.yaml.bin"),
     ],
 )

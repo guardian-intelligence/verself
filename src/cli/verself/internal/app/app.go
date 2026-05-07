@@ -45,10 +45,14 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.usage()
 	}
 	switch args[0] {
+	case "auth":
+		return c.runAuth(ctx, args[1:])
 	case "company":
 		return c.runCompany(ctx, args[1:])
 	case "env":
 		return c.runEnv(ctx, args[1:])
+	case "orgs":
+		return c.runOrgs(ctx, args[1:])
 	case "projects":
 		return c.runProjects(ctx, args[1:])
 	case "bootstrap":
@@ -62,11 +66,26 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 
 func (c CLI) usage() error {
 	return writef(c.out, `Usage:
+  %[1]s auth login --token-file PATH [--profile NAME]
+  %[1]s auth whoami [--json]
+  %[1]s auth token [--audience AUDIENCE]
+  %[1]s orgs list [--json]
+  %[1]s orgs use <org-id|slug>
+  %[1]s orgs inspect [--json]
+  %[1]s orgs update --version VERSION [--display-name NAME] [--slug SLUG] [--json]
+  %[1]s orgs credentials list [--json]
+  %[1]s orgs credentials create <display-name> --permission PERMISSION [--auth-method private_key_jwt|client_secret] [--json]
   %[1]s company configure <name> [flags]
   %[1]s company options add <company> <key> [--from-env KEY|--stdin|--from-file PATH|--value VALUE]
   %[1]s company secret generate <company> --all|--key KEY
   %[1]s projects list [--state active|archived] [--json]
+  %[1]s projects get <project-id> [--json]
   %[1]s projects create <display-name> [--slug SLUG] [--description TEXT] [--json]
+  %[1]s projects update <project-id> --version VERSION [--slug SLUG] [--display-name NAME] [--description TEXT] [--json]
+  %[1]s projects archive <project-id> --version VERSION [--json]
+  %[1]s projects restore <project-id> --version VERSION [--json]
+  %[1]s projects environments list <project-id> [--json]
+  %[1]s projects environments create <project-id> <display-name> --slug SLUG --kind KIND [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
   %[1]s bootstrap --company <name> [--repo-root PATH]

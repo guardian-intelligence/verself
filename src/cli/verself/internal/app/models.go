@@ -13,6 +13,24 @@ const (
 type Config struct {
 	Version       int    `json:"version"`
 	ActiveCompany string `json:"active_company,omitempty"`
+	ActiveProfile string `json:"active_profile,omitempty"`
+}
+
+type ProfileRecord struct {
+	Version     int       `json:"version"`
+	Name        string    `json:"name"`
+	TokenRef    string    `json:"token_ref"`
+	IAMURL      string    `json:"iam_url,omitempty"`
+	ProjectsURL string    `json:"projects_url,omitempty"`
+	SelectedOrg *OrgRef   `json:"selected_org,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type OrgRef struct {
+	OrgID       string `json:"org_id"`
+	Slug        string `json:"slug"`
+	DisplayName string `json:"display_name"`
 }
 
 type CompanyRecord struct {

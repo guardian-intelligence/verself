@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	iaminternalclient "github.com/verself/iam-service/internalclient"
+	iamclient "github.com/verself/iam-service/client"
 )
 
 type IAMInternalClient struct {
-	Client *iaminternalclient.ClientWithResponses
+	Client *iamclient.ClientWithResponses
 }
 
 func (c IAMInternalClient) UpdateHumanProfile(ctx context.Context, subjectID string, input UpdateIdentityRequest, bearerToken string) (IdentitySummary, error) {
@@ -19,7 +19,7 @@ func (c IAMInternalClient) UpdateHumanProfile(ctx context.Context, subjectID str
 		return IdentitySummary{}, ErrIdentityUnavailable
 	}
 	displayName := strings.TrimSpace(input.DisplayName)
-	req := iaminternalclient.IAMUpdateHumanProfileRequest{
+	req := iamclient.IAMUpdateHumanProfileRequest{
 		GivenName:   input.GivenName,
 		FamilyName:  input.FamilyName,
 		DisplayName: &displayName,

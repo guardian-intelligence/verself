@@ -15,14 +15,13 @@ def _spec_rule(name, out, tool, fmt):
         tools = [tool],
     )
 
-def verself_openapi_specs(name = "openapi_specs", public_tool = None, service_tool = None, internal_tool = None):
+def verself_openapi_specs(name = "openapi_specs", public_tool = None, internal_tool = None):
     """Declare committed OpenAPI 3.0/3.1 spec generation targets.
 
     Args:
       name: Conventional macro name for tooling; generated target names are stable.
       public_tool: Label of the public API spec generator binary.
-      service_tool: Label of the service-to-service API spec generator binary.
-      internal_tool: Legacy label of an internal API spec generator binary.
+      internal_tool: Label of the repo-internal API spec generator binary.
     """
 
     # Existing service OpenAPI packages rely on macro-owned public visibility for generated spec targets.
@@ -44,23 +43,6 @@ def verself_openapi_specs(name = "openapi_specs", public_tool = None, service_to
         copy_to_bin(
             name = "openapi-3.1.yaml.bin",
             srcs = [":openapi-3.1.yaml"],
-        )
-    if service_tool:
-        _spec_rule(
-            name = "service_spec_3_0",
-            out = "service-openapi-3.0.yaml",
-            tool = service_tool,
-            fmt = "3.0",
-        )
-        _spec_rule(
-            name = "service_spec_3_1",
-            out = "service-openapi-3.1.yaml",
-            tool = service_tool,
-            fmt = "3.1",
-        )
-        copy_to_bin(
-            name = "service-openapi-3.1.yaml.bin",
-            srcs = [":service-openapi-3.1.yaml"],
         )
     if internal_tool:
         _spec_rule(

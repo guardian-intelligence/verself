@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	iaminternalclient "github.com/verself/iam-service/internalclient"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	profileapi "github.com/verself/profile-service/internal/api"
 	"github.com/verself/profile-service/internal/profile"
@@ -104,7 +104,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("profile identity mtls: %w", err)
 	}
-	iamClient, err := iaminternalclient.NewClientWithResponses(iamInternalURL, iaminternalclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("identity internal client: %w", err)
 	}

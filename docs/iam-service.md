@@ -211,11 +211,6 @@ src/services/iam-service/
   openapi/
 
   client/
-  internalclient/
-
-  sdk/
-    go/
-    typescript/
 
   migrations/
 
@@ -307,11 +302,10 @@ Wire contract locations:
 | --- | --- | --- |
 | Public IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
 | SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
-| Generated public Go client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
-| Generated internal Go client | `src/services/iam-service/internalclient/client.gen.go` | `//src/services/iam-service/internalclient:internalclient` |
-| Curated Go IAM SDK | `src/services/iam-service/sdk/go/` | `//src/services/iam-service/sdk/go:iam` |
-| Browser TypeScript clients | `src/frontends/viteplus-monorepo/apps/verself-web/src/__generated/iam-api/` | frontend OpenAPI generation target |
-| Curated TypeScript IAM SDK | `src/services/iam-service/sdk/typescript/` | TypeScript SDK generation target |
+| Generated service Go transport client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
+| Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
+| Curated TypeScript IAM SDK | `src/frontends/viteplus-monorepo/packages/sdk/src/iam.ts` | `//src/frontends/viteplus-monorepo/packages/sdk:pkg` |
+| Generated SDK TypeScript transport clients | `src/frontends/viteplus-monorepo/packages/sdk/src/__generated/iam-api/` | `//src/frontends/viteplus-monorepo/packages/sdk:openapi_clients` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema assertions | `src/services/iam-service/schema/assertions.yaml`, `src/services/iam-service/schema/expected-relations.yaml` | `//src/services/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
@@ -532,9 +526,8 @@ The service should create these targets:
 //src/services/iam-service/openapi:internal-openapi-3.1.yaml
 
 //src/services/iam-service/client:client
-//src/services/iam-service/internalclient:internalclient
-//src/services/iam-service/sdk/go:iam
-//src/services/iam-service/sdk/typescript:iam
+//src/sdks/go/verself:verself
+//src/frontends/viteplus-monorepo/packages/sdk:openapi_clients
 //src/services/iam-service/migrations:migrations
 //src/services/iam-service/schema:schema
 //src/services/iam-service/schema:schema_tests
@@ -1225,13 +1218,15 @@ Internal APIs are SPIFFE-only and serve product services:
 
 Internal APIs carry origin subject fields explicitly. They do not accept
 browser cookies, console session IDs, or customer refresh tokens. Product
-services call generated `internalclient` packages with SPIFFE mTLS and typed
-origin context.
+services call generated transport clients with SPIFFE mTLS and typed origin
+context.
 
 Public route declarations include IAM metadata, audit metadata, idempotency
 metadata, body limits, rate-limit class, and response problem types in the Huma
 operation definition. Internal routes authorize exact SPIFFE peer IDs and carry
-their own operation policies.
+their own operation policies. Service callers use generated transport clients
+from the service `client` package and provide SPIFFE-aware `http.Client`
+values at the call site.
 
 ## PostgreSQL State
 

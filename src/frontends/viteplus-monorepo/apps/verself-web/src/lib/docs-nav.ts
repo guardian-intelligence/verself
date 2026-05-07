@@ -44,8 +44,14 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     label: "CLI",
     to: "/docs/cli",
     matchPrefix: "/docs/cli",
-    status: "coming-soon",
+    status: "available",
     description: "Command reference for operating Verself and cloned installations.",
+    children: [
+      { id: "profiles", label: "Profiles" },
+      { id: "organizations", label: "Organizations" },
+      { id: "api-credentials", label: "API credentials" },
+      { id: "projects", label: "Projects" },
+    ],
   },
   {
     id: "sandboxes",

@@ -1,19 +1,49 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/projects-api/client/index.js";
 import {
+  type CreateProjectEnvironmentRequestWritable,
   type CreateProjectRequestWritable,
   type ListProjectsData,
+  type ProjectLifecycleRequestWritable,
+  type UpdateProjectEnvironmentRequestWritable,
+  type UpdateProjectRequestWritable,
+  archiveProject,
+  archiveProjectEnvironment,
   createProject,
+  createProjectEnvironment,
   getProject,
+  listProjectEnvironments,
   listProjects,
+  patchProject,
+  patchProjectEnvironment,
+  restoreProject,
 } from "./__generated/projects-api/index.js";
 import {
+  vArchiveProjectBody,
+  vArchiveProjectEnvironmentBody,
+  vArchiveProjectEnvironmentPath,
+  vArchiveProjectPath,
+  vCreateProjectEnvironmentBody,
+  vCreateProjectEnvironmentPath,
   vCreateProjectBody,
+  vCreateProjectEnvironmentRequest,
   vCreateProjectRequest,
   vGetProjectPath,
   vListProjectsQuery,
+  vListProjectEnvironmentsPath,
+  vPatchProjectBody,
+  vPatchProjectEnvironmentBody,
+  vPatchProjectEnvironmentPath,
+  vPatchProjectPath,
   vProject,
+  vProjectEnvironment,
+  vProjectEnvironmentList,
+  vProjectLifecycleRequest,
   vProjectList,
+  vRestoreProjectBody,
+  vRestoreProjectPath,
+  vUpdateProjectEnvironmentRequest,
+  vUpdateProjectRequest,
 } from "./__generated/projects-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -24,6 +54,10 @@ import {
 } from "./service-api";
 
 export type ProjectsClientOptions = BearerClientOptions;
+
+export type ProjectsMutationOptions = {
+  idempotencyKey?: string | undefined;
+};
 
 export class ProjectsApiError extends ServiceApiError {
   constructor(status: number, path: string, body: string) {
@@ -58,6 +92,12 @@ function parseProject(input: unknown) {
 
 export type Project = ReturnType<typeof parseProject>;
 
+function parseProjectEnvironment(input: unknown) {
+  return v.parse(vProjectEnvironment, input);
+}
+
+export type ProjectEnvironment = ReturnType<typeof parseProjectEnvironment>;
+
 function parseProjectList(input: unknown) {
   const parsed = v.parse(vProjectList, input);
   return {
@@ -68,9 +108,32 @@ function parseProjectList(input: unknown) {
 
 export type ProjectList = ReturnType<typeof parseProjectList>;
 
+function parseProjectEnvironmentList(input: unknown) {
+  const parsed = v.parse(vProjectEnvironmentList, input);
+  return {
+    next_cursor: parsed.next_cursor ?? "",
+    environments:
+      parsed.environments?.map((environment) => parseProjectEnvironment(environment)) ?? [],
+  };
+}
+
+export type ProjectEnvironmentList = ReturnType<typeof parseProjectEnvironmentList>;
+
 export const createProjectRequestSchema = vCreateProjectRequest;
+export const createProjectEnvironmentRequestSchema = vCreateProjectEnvironmentRequest;
+export const updateProjectRequestSchema = vUpdateProjectRequest;
+export const updateProjectEnvironmentRequestSchema = vUpdateProjectEnvironmentRequest;
+export const projectLifecycleRequestSchema = vProjectLifecycleRequest;
 
 export type CreateProjectRequest = v.InferOutput<typeof createProjectRequestSchema>;
+export type CreateProjectEnvironmentRequest = v.InferOutput<
+  typeof createProjectEnvironmentRequestSchema
+>;
+export type UpdateProjectRequest = v.InferOutput<typeof updateProjectRequestSchema>;
+export type UpdateProjectEnvironmentRequest = v.InferOutput<
+  typeof updateProjectEnvironmentRequestSchema
+>;
+export type ProjectLifecycleRequest = v.InferOutput<typeof projectLifecycleRequestSchema>;
 
 export type ListProjectsInput = {
   state?: "active" | "archived" | undefined;
@@ -110,7 +173,10 @@ export class Projects {
     return parseProjectList(result.data);
   }
 
-  async create(body: CreateProjectRequest): Promise<Project> {
+  async create(
+    body: CreateProjectRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<Project> {
     const client = createProjectsClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(vCreateProjectBody, body),
@@ -119,7 +185,7 @@ export class Projects {
     const result = await createProject({
       client,
       body: parsedBody,
-      headers: idempotencyHeaders("project"),
+      headers: idempotencyHeaders("project", options.idempotencyKey),
       responseStyle: "fields",
       throwOnError: false,
     });
@@ -143,5 +209,176 @@ export class Projects {
       throwProjectsError(path, result.response, result.error);
     }
     return parseProject(result.data);
+  }
+
+  async update(
+    projectId: string,
+    body: UpdateProjectRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<Project> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vPatchProjectPath, { project_id: projectId });
+    const parsedBody = removeUndefined(
+      v.parse(vPatchProjectBody, body),
+    ) as UpdateProjectRequestWritable;
+    const path = `/api/v1/projects/${projectId}`;
+    const result = await patchProject({
+      client,
+      path: pathParams,
+      body: parsedBody,
+      headers: idempotencyHeaders("project", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProject(result.data);
+  }
+
+  async archive(
+    projectId: string,
+    body: ProjectLifecycleRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<Project> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vArchiveProjectPath, { project_id: projectId });
+    const parsedBody = v.parse(vArchiveProjectBody, body) as ProjectLifecycleRequestWritable;
+    const path = `/api/v1/projects/${projectId}/archive`;
+    const result = await archiveProject({
+      client,
+      path: pathParams,
+      body: parsedBody,
+      headers: idempotencyHeaders("project", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProject(result.data);
+  }
+
+  async restore(
+    projectId: string,
+    body: ProjectLifecycleRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<Project> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vRestoreProjectPath, { project_id: projectId });
+    const parsedBody = v.parse(vRestoreProjectBody, body) as ProjectLifecycleRequestWritable;
+    const path = `/api/v1/projects/${projectId}/restore`;
+    const result = await restoreProject({
+      client,
+      path: pathParams,
+      body: parsedBody,
+      headers: idempotencyHeaders("project", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProject(result.data);
+  }
+
+  async listEnvironments(projectId: string): Promise<ProjectEnvironmentList> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vListProjectEnvironmentsPath, { project_id: projectId });
+    const path = `/api/v1/projects/${projectId}/environments`;
+    const result = await listProjectEnvironments({
+      client,
+      path: pathParams,
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProjectEnvironmentList(result.data);
+  }
+
+  async createEnvironment(
+    projectId: string,
+    body: CreateProjectEnvironmentRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<ProjectEnvironment> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vCreateProjectEnvironmentPath, { project_id: projectId });
+    const parsedBody = removeUndefined(
+      v.parse(vCreateProjectEnvironmentBody, body),
+    ) as CreateProjectEnvironmentRequestWritable;
+    const path = `/api/v1/projects/${projectId}/environments`;
+    const result = await createProjectEnvironment({
+      client,
+      path: pathParams,
+      body: parsedBody,
+      headers: idempotencyHeaders("project-environment", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProjectEnvironment(result.data);
+  }
+
+  async updateEnvironment(
+    projectId: string,
+    environmentId: string,
+    body: UpdateProjectEnvironmentRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<ProjectEnvironment> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vPatchProjectEnvironmentPath, {
+      project_id: projectId,
+      environment_id: environmentId,
+    });
+    const parsedBody = removeUndefined(
+      v.parse(vPatchProjectEnvironmentBody, body),
+    ) as UpdateProjectEnvironmentRequestWritable;
+    const path = `/api/v1/projects/${projectId}/environments/${environmentId}`;
+    const result = await patchProjectEnvironment({
+      client,
+      path: pathParams,
+      body: parsedBody,
+      headers: idempotencyHeaders("project-environment", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProjectEnvironment(result.data);
+  }
+
+  async archiveEnvironment(
+    projectId: string,
+    environmentId: string,
+    body: ProjectLifecycleRequest,
+    options: ProjectsMutationOptions = {},
+  ): Promise<ProjectEnvironment> {
+    const client = createProjectsClient(this.#options);
+    const pathParams = v.parse(vArchiveProjectEnvironmentPath, {
+      project_id: projectId,
+      environment_id: environmentId,
+    });
+    const parsedBody = v.parse(
+      vArchiveProjectEnvironmentBody,
+      body,
+    ) as ProjectLifecycleRequestWritable;
+    const path = `/api/v1/projects/${projectId}/environments/${environmentId}/archive`;
+    const result = await archiveProjectEnvironment({
+      client,
+      path: pathParams,
+      body: parsedBody,
+      headers: idempotencyHeaders("project-environment", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    if (result.error !== undefined) {
+      throwProjectsError(path, result.response, result.error);
+    }
+    return parseProjectEnvironment(result.data);
   }
 }

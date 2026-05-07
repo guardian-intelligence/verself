@@ -140,7 +140,7 @@ func run() error {
 		return fmt.Errorf("projects spiffe service tls: %w", err)
 	}
 	serviceMux := http.NewServeMux()
-	projectsapi.NewServiceAPI(serviceMux, serviceVersion, "https://"+serviceListenAddr, svc)
+	projectsapi.NewInternalAPI(serviceMux, serviceVersion, "https://"+serviceListenAddr, svc)
 	serviceAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(servicePeerIDs, serviceMux)
 	if err != nil {
 		return fmt.Errorf("projects service allowlist: %w", err)

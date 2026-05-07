@@ -13,7 +13,7 @@ type apiProjection uint8
 
 const (
 	apiProjectionPublic apiProjection = 1 << iota
-	apiProjectionService
+	apiProjectionInternal
 )
 
 var publicServicePeers = []string{
@@ -45,7 +45,7 @@ func (o projectOperationDef[I, O]) projections() apiProjection {
 
 func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection) {
 	policy := o.policy
-	if projection == apiProjectionService && !policy.Service {
+	if projection == apiProjectionInternal && !policy.Service {
 		policy.Service = true
 		policy.ServicePeers = append([]string(nil), o.serviceMirrorPeers...)
 	}
@@ -69,7 +69,7 @@ func publicProjectOperation[I, O any](
 	return projectOperationDef[I, O]{
 		op:                 op,
 		policy:             policy,
-		enabledProjections: apiProjectionPublic | apiProjectionService,
+		enabledProjections: apiProjectionPublic | apiProjectionInternal,
 		serviceMirrorPeers: publicServicePeers,
 		handler:            handler,
 	}
@@ -84,7 +84,7 @@ func serviceOnlyProjectOperation[I, O any](
 	return projectOperationDef[I, O]{
 		op:                 op,
 		policy:             policy,
-		enabledProjections: apiProjectionService,
+		enabledProjections: apiProjectionInternal,
 		handler:            handler,
 	}
 }

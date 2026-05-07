@@ -16,7 +16,7 @@ go_library(
     importpath = "github.com/verself/source-code-hosting-service/internal/source",
     visibility = ["//src/services/source-code-hosting-service:__subpackages__"],
     deps = [
-        "//src/services/iam-service/internalclient",
+        "//src/services/iam-service/client",
         "//src/services/projects-service/client",
         "//src/services/sandbox-rental-service/internalclient",
         "//src/services/secrets-service/internalclient",

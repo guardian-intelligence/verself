@@ -3,22 +3,6 @@ import * as v from "valibot";
 import { readFileSync } from "node:fs";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
-  IAMApiError,
-  getMembers as getMembersRequest,
-  getMemberCapabilities as getMemberCapabilitiesRequest,
-  getOrganization as getOrganizationRequest,
-  inviteMember as inviteMemberRequest,
-  inviteMemberRequestSchema,
-  isIAMApiError,
-  listMyOrganizations as listMyOrganizationsRequest,
-  putMemberCapabilities as putMemberCapabilitiesRequest,
-  putMemberCapabilitiesRequestSchema,
-  updateOrganization as updateOrganizationRequest,
-  updateOrganizationRequestSchema,
-  updateMemberRoles as updateMemberRolesRequest,
-  updateMemberRolesRequestSchema,
-} from "~/lib/iam-api";
-import {
   GovernanceApiError,
   auditEventsQuerySchema,
   createDataExport as createDataExportRequest,
@@ -54,12 +38,29 @@ import {
   putNotificationPreferencesRequestSchema,
 } from "~/lib/notifications-api";
 import {
+  IAMApiError,
   ProjectsApiError,
   createProjectRequestSchema,
+  inviteMemberRequestSchema,
+  isIAMApiError,
   isProjectsApiError,
+  putMemberCapabilitiesRequestSchema,
+  updateMemberRolesRequestSchema,
+  updateOrganizationRequestSchema,
   type CreateProjectRequest,
+  type InviteMemberRequest,
+  type InviteMemberResponse,
+  type Member,
+  type MemberCapabilities,
+  type MemberCapabilitiesDocument,
+  type MemberCapability,
+  type Organization,
+  type OrganizationMetadata,
+  type PutMemberCapabilitiesRequest,
   type Project,
   type ProjectList,
+  type UpdateMemberRolesRequest,
+  type UpdateOrganizationRequest,
   Verself,
 } from "@verself/sdk";
 import {
@@ -78,19 +79,6 @@ import {
   listRepositories as listSourceRepositoriesRequest,
   listWorkflowRuns as listSourceWorkflowRunsRequest,
 } from "~/lib/source-code-hosting-api";
-import type {
-  InviteMemberRequest,
-  InviteMemberResponse,
-  Member,
-  MemberCapabilities,
-  MemberCapabilitiesDocument,
-  MemberCapability,
-  Organization,
-  OrganizationMetadata,
-  PutMemberCapabilitiesRequest,
-  UpdateOrganizationRequest,
-  UpdateMemberRolesRequest,
-} from "~/lib/iam-api";
 import type {
   CreateExportRequest,
   GovernanceAuditEvent,
@@ -317,6 +305,18 @@ async function iamClientOptions(
   };
 }
 
+async function iamSDK(
+  context: ConsoleAuthContext | undefined,
+  options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
+) {
+  const accessToken = await getAccessTokenForAudience(context, IAM_SERVICE_AUTH_AUDIENCE, options);
+  return new Verself({
+    bearerToken: accessToken,
+    iamURL: IAM_SERVICE_BASE_URL,
+    projectsURL: PROJECTS_SERVICE_BASE_URL,
+  });
+}
+
 async function governanceClientOptions(context: ConsoleAuthContext | undefined) {
   const iamOptions = await iamClientOptions(context);
   return {
@@ -360,67 +360,55 @@ async function sourceCodeHostingClientOptions(context: ConsoleAuthContext | unde
 export const getOrganization = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getOrganizationRequest(await iamClientOptions(context));
+    return (await iamSDK(context)).iam.getOrganization();
   });
 
 export const listMyOrganizations = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return listMyOrganizationsRequest(
-      await iamClientOptions(context, { roleAssignmentScope: "all_granted_orgs" }),
-    );
+    return (
+      await iamSDK(context, { roleAssignmentScope: "all_granted_orgs" })
+    ).iam.listMyOrganizations();
   });
 
 export const updateOrganization = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(updateOrganizationRequestSchema)
   .handler(async ({ context, data }) => {
-    return updateOrganizationRequest({
-      ...(await iamClientOptions(context)),
-      body: data,
-    });
+    return (await iamSDK(context)).iam.updateOrganization(data);
   });
 
 export const getMembers = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getMembersRequest(await iamClientOptions(context));
+    return (await iamSDK(context)).iam.listMembers();
   });
 
 export const inviteMember = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(inviteMemberRequestSchema)
   .handler(async ({ context, data }) => {
-    return inviteMemberRequest({
-      ...(await iamClientOptions(context)),
-      body: data,
-    });
+    return (await iamSDK(context)).iam.inviteMember(data);
   });
 
 export const updateMemberRoles = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(updateMemberRolesRequestSchema)
   .handler(async ({ context, data }) => {
-    return updateMemberRolesRequest({
-      ...(await iamClientOptions(context)),
-      body: data,
-    });
+    return (await iamSDK(context)).iam.updateMemberRoles(data);
   });
 
 export const getMemberCapabilities = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return getMemberCapabilitiesRequest(await iamClientOptions(context));
+    return (await iamSDK(context)).iam.getMemberCapabilities();
   });
 
 export const putMemberCapabilities = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(putMemberCapabilitiesRequestSchema)
   .handler(async ({ context, data }) => {
-    return putMemberCapabilitiesRequest({
-      ...(await iamClientOptions(context)),
-      body: data,
-    });
+    return (await iamSDK(context)).iam.putMemberCapabilities(data);
   });
 
 export const getProfile = createServerFn({ method: "GET" })

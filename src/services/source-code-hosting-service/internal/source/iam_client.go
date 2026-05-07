@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	iamclient "github.com/verself/iam-service/internalclient"
+	iamclient "github.com/verself/iam-service/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

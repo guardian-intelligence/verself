@@ -10,39 +10,39 @@ import (
 	"github.com/verself/projects-service/internal/projects"
 )
 
-func TestProjectsServiceProjectionContainsPublicOperations(t *testing.T) {
+func TestProjectsInternalProjectionContainsPublicOperations(t *testing.T) {
 	publicAPI := NewAPI(http.NewServeMux(), Config{Version: "1.0.0", ListenAddr: "127.0.0.1:0", Service: &projects.Service{}})
-	serviceAPI := NewServiceAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{})
+	internalAPI := NewInternalAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{})
 
 	publicSpec := publicAPI.OpenAPI()
-	serviceSpec := serviceAPI.OpenAPI()
+	internalSpec := internalAPI.OpenAPI()
 
 	assertOnlySecuritySchemes(t, publicSpec.Components.SecuritySchemes, "bearerAuth")
-	assertOnlySecuritySchemes(t, serviceSpec.Components.SecuritySchemes, "mutualTLS")
+	assertOnlySecuritySchemes(t, internalSpec.Components.SecuritySchemes, "mutualTLS")
 
 	var checked int
 	for path, publicPath := range publicSpec.Paths {
 		if !strings.HasPrefix(path, "/api/") {
 			continue
 		}
-		servicePath := serviceSpec.Paths[path]
-		if servicePath == nil {
-			t.Fatalf("service OpenAPI projection is missing public path %s", path)
+		internalPath := internalSpec.Paths[path]
+		if internalPath == nil {
+			t.Fatalf("internal OpenAPI projection is missing public path %s", path)
 		}
 		for _, publicOp := range operationsForPath(publicPath) {
 			if publicOp == nil {
 				continue
 			}
 			checked++
-			serviceOp := operationByMethod(servicePath, publicOp.Method)
-			if serviceOp == nil {
-				t.Fatalf("service OpenAPI projection is missing %s %s", publicOp.Method, path)
+			internalOp := operationByMethod(internalPath, publicOp.Method)
+			if internalOp == nil {
+				t.Fatalf("internal OpenAPI projection is missing %s %s", publicOp.Method, path)
 			}
-			if serviceOp.OperationID != publicOp.OperationID {
-				t.Fatalf("%s %s operation ID drift: public=%s service=%s", publicOp.Method, path, publicOp.OperationID, serviceOp.OperationID)
+			if internalOp.OperationID != publicOp.OperationID {
+				t.Fatalf("%s %s operation ID drift: public=%s internal=%s", publicOp.Method, path, publicOp.OperationID, internalOp.OperationID)
 			}
 			assertOnlySecurity(t, publicOp, path, "bearerAuth")
-			assertOnlySecurity(t, serviceOp, path, "mutualTLS")
+			assertOnlySecurity(t, internalOp, path, "mutualTLS")
 			for _, header := range []string{originOrgIDHeader, originSubjectHeader, originEmailHeader} {
 				if operationHasParameter(publicOp, "header", header) {
 					t.Fatalf("%s %s public projection must not expose %s", publicOp.Method, path, header)
@@ -52,12 +52,12 @@ func TestProjectsServiceProjectionContainsPublicOperations(t *testing.T) {
 				t.Fatalf("%s %s public projection must not expose x-verself-origin extension", publicOp.Method, path)
 			}
 			for _, header := range []string{originOrgIDHeader, originSubjectHeader} {
-				if !operationHasRequiredParameter(serviceOp, "header", header) {
-					t.Fatalf("%s %s service projection must require %s", publicOp.Method, path, header)
+				if !operationHasRequiredParameter(internalOp, "header", header) {
+					t.Fatalf("%s %s internal projection must require %s", publicOp.Method, path, header)
 				}
 			}
-			if _, ok := serviceOp.Extensions["x-verself-origin"].(map[string]any); !ok {
-				t.Fatalf("%s %s service projection missing x-verself-origin extension", publicOp.Method, path)
+			if _, ok := internalOp.Extensions["x-verself-origin"].(map[string]any); !ok {
+				t.Fatalf("%s %s internal projection missing x-verself-origin extension", publicOp.Method, path)
 			}
 		}
 	}

@@ -10,27 +10,27 @@ import (
 	"github.com/verself/projects-service/internal/projects"
 )
 
-func NewServiceAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service) huma.API {
-	config := huma.DefaultConfig("Projects Service API", version)
+func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service) huma.API {
+	config := huma.DefaultConfig("Projects Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
-	applyServiceSecurityScheme(api)
-	registerProjectOperations(api, svc, apiProjectionService)
+	applyInternalSecurityScheme(api)
+	registerProjectOperations(api, svc, apiProjectionInternal)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
-func ServiceOpenAPIYAML(version, serverURL string) ([]byte, error) {
-	api := NewServiceAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
+func InternalOpenAPIYAML(version, serverURL string) ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
 	return api.OpenAPI().YAML()
 }
 
-func ServiceOpenAPIDowngradeYAML(version, serverURL string) ([]byte, error) {
-	api := NewServiceAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
+func InternalOpenAPIDowngradeYAML(version, serverURL string) ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
 	return api.OpenAPI().DowngradeYAML()
 }
 
-func applyServiceSecurityScheme(api huma.API) {
+func applyInternalSecurityScheme(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {
 		openapi.Components = &huma.Components{}

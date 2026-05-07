@@ -8,6 +8,7 @@
 import * as v from "valibot";
 import { parse as parseYaml } from "yaml";
 
+import projectsYaml from "../__generated/openapi-specs/projects-api/openapi-3.1.yaml?raw";
 import sandboxRentalYaml from "../__generated/openapi-specs/sandbox-rental-api/openapi-3.1.yaml?raw";
 import identityYaml from "../__generated/openapi-specs/iam-api/openapi-3.1.yaml?raw";
 import mailboxYaml from "../__generated/openapi-specs/mailbox-api/openapi-3.1.yaml?raw";
@@ -145,6 +146,13 @@ function parseDocument(yaml: string, label: string): OpenApiDocument {
 // order they appear in the docs rail. Keep the customer-facing services
 // first (*.api.<domain>) so the most-read pages are at the top of the TOC.
 export const SERVICE_CATALOG: readonly ServiceCatalogEntry[] = [
+  {
+    id: "projects",
+    title: "Projects",
+    subdomain: "projects.api",
+    publicSurface: true,
+    document: parseDocument(projectsYaml, "projects-service"),
+  },
   {
     id: "sandbox-rental",
     title: "Sandbox Rental",

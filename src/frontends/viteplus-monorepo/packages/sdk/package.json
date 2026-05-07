@@ -13,6 +13,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./iam": {
+      "types": "./src/iam.ts",
+      "default": "./src/iam.ts"
+    },
     "./projects": {
       "types": "./src/projects.ts",
       "default": "./src/projects.ts"

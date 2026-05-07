@@ -72,6 +72,13 @@ export function createIdempotencyKey(namespace: string): string {
   return `${namespace}:${suffix}`.slice(0, idempotencyKeyMaxLength);
 }
 
-export function idempotencyHeaders(namespace: string): IdempotencyHeaders {
-  return { "Idempotency-Key": createIdempotencyKey(namespace) };
+export function idempotencyHeaders(
+  namespace: string,
+  explicitKey?: string | undefined,
+): IdempotencyHeaders {
+  const key = explicitKey?.trim() || createIdempotencyKey(namespace);
+  if (key.length > idempotencyKeyMaxLength) {
+    throw new Error("Idempotency-Key must be 128 characters or fewer");
+  }
+  return { "Idempotency-Key": key };
 }

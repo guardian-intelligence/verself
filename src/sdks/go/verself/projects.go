@@ -16,9 +16,27 @@ import (
 
 type ProjectState string
 
+const maxIdempotencyKeyLength = 128
+
 const (
 	ProjectStateActive   ProjectState = "active"
 	ProjectStateArchived ProjectState = "archived"
+)
+
+type ProjectEnvironmentKind string
+
+const (
+	ProjectEnvironmentKindProduction  ProjectEnvironmentKind = "production"
+	ProjectEnvironmentKindPreview     ProjectEnvironmentKind = "preview"
+	ProjectEnvironmentKindDevelopment ProjectEnvironmentKind = "development"
+	ProjectEnvironmentKindCustom      ProjectEnvironmentKind = "custom"
+)
+
+type ProjectEnvironmentState string
+
+const (
+	ProjectEnvironmentStateActive   ProjectEnvironmentState = "active"
+	ProjectEnvironmentStateArchived ProjectEnvironmentState = "archived"
 )
 
 type Project struct {
@@ -37,9 +55,31 @@ type Project struct {
 	ArchivedAt         *time.Time `json:"archived_at,omitempty"`
 }
 
+type ProjectEnvironment struct {
+	EnvironmentID    string            `json:"environment_id"`
+	ProjectID        string            `json:"project_id"`
+	OrgID            string            `json:"org_id"`
+	Slug             string            `json:"slug"`
+	DisplayName      string            `json:"display_name"`
+	Kind             string            `json:"kind"`
+	State            string            `json:"state"`
+	ProtectionPolicy map[string]string `json:"protection_policy,omitempty"`
+	Version          string            `json:"version"`
+	CreatedBy        string            `json:"created_by"`
+	UpdatedBy        string            `json:"updated_by"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+	ArchivedAt       *time.Time        `json:"archived_at,omitempty"`
+}
+
 type ProjectList struct {
 	Projects   []Project `json:"projects"`
 	NextCursor string    `json:"next_cursor,omitempty"`
+}
+
+type ProjectEnvironmentList struct {
+	Environments []ProjectEnvironment `json:"environments"`
+	NextCursor   string               `json:"next_cursor,omitempty"`
 }
 
 type ListProjectsOptions struct {
@@ -52,6 +92,46 @@ type CreateProjectInput struct {
 	Slug           string
 	DisplayName    string
 	Description    string
+	IdempotencyKey string
+}
+
+type UpdateProjectInput struct {
+	ProjectID      string
+	Version        string
+	Slug           *string
+	DisplayName    *string
+	Description    *string
+	IdempotencyKey string
+}
+
+type ProjectLifecycleInput struct {
+	ProjectID      string
+	Version        string
+	IdempotencyKey string
+}
+
+type CreateProjectEnvironmentInput struct {
+	ProjectID        string
+	Slug             string
+	DisplayName      string
+	Kind             ProjectEnvironmentKind
+	ProtectionPolicy map[string]string
+	IdempotencyKey   string
+}
+
+type UpdateProjectEnvironmentInput struct {
+	ProjectID        string
+	EnvironmentID    string
+	Version          string
+	DisplayName      *string
+	ProtectionPolicy map[string]string
+	IdempotencyKey   string
+}
+
+type ProjectEnvironmentLifecycleInput struct {
+	ProjectID      string
+	EnvironmentID  string
+	Version        string
 	IdempotencyKey string
 }
 
@@ -165,6 +245,225 @@ func (c *ProjectsClient) Get(ctx context.Context, projectID string) (Project, er
 	return projectFromGenerated(*response.JSON200), nil
 }
 
+func (c *ProjectsClient) Update(ctx context.Context, input UpdateProjectInput) (Project, error) {
+	if c == nil || c.client == nil {
+		return Project{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	projectID, err := parseUUIDInput(input.ProjectID, "project id")
+	if err != nil {
+		return Project{}, err
+	}
+	version, err := requireVersion(input.Version)
+	if err != nil {
+		return Project{}, err
+	}
+	key, err := mutationKey("project", input.IdempotencyKey)
+	if err != nil {
+		return Project{}, err
+	}
+	body := projectscore.UpdateProjectRequest{
+		Version: version,
+	}
+	if input.Slug != nil {
+		body.Slug = trimStringPointer(input.Slug)
+	}
+	if input.DisplayName != nil {
+		body.DisplayName = trimStringPointer(input.DisplayName)
+	}
+	if input.Description != nil {
+		body.Description = trimStringPointer(input.Description)
+	}
+	response, err := c.client.PatchProjectWithResponse(ctx, projectID, &projectscore.PatchProjectParams{
+		IdempotencyKey: key,
+	}, body)
+	if err != nil {
+		return Project{}, err
+	}
+	if response.JSON200 == nil {
+		return Project{}, apiError("Projects API", "update project", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return projectFromGenerated(*response.JSON200), nil
+}
+
+func (c *ProjectsClient) Archive(ctx context.Context, input ProjectLifecycleInput) (Project, error) {
+	if c == nil || c.client == nil {
+		return Project{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	projectID, err := parseUUIDInput(input.ProjectID, "project id")
+	if err != nil {
+		return Project{}, err
+	}
+	version, err := requireVersion(input.Version)
+	if err != nil {
+		return Project{}, err
+	}
+	key, err := mutationKey("project", input.IdempotencyKey)
+	if err != nil {
+		return Project{}, err
+	}
+	response, err := c.client.ArchiveProjectWithResponse(ctx, projectID, &projectscore.ArchiveProjectParams{
+		IdempotencyKey: key,
+	}, projectscore.ProjectLifecycleRequest{Version: version})
+	if err != nil {
+		return Project{}, err
+	}
+	if response.JSON200 == nil {
+		return Project{}, apiError("Projects API", "archive project", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return projectFromGenerated(*response.JSON200), nil
+}
+
+func (c *ProjectsClient) Restore(ctx context.Context, input ProjectLifecycleInput) (Project, error) {
+	if c == nil || c.client == nil {
+		return Project{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	projectID, err := parseUUIDInput(input.ProjectID, "project id")
+	if err != nil {
+		return Project{}, err
+	}
+	version, err := requireVersion(input.Version)
+	if err != nil {
+		return Project{}, err
+	}
+	key, err := mutationKey("project", input.IdempotencyKey)
+	if err != nil {
+		return Project{}, err
+	}
+	response, err := c.client.RestoreProjectWithResponse(ctx, projectID, &projectscore.RestoreProjectParams{
+		IdempotencyKey: key,
+	}, projectscore.ProjectLifecycleRequest{Version: version})
+	if err != nil {
+		return Project{}, err
+	}
+	if response.JSON200 == nil {
+		return Project{}, apiError("Projects API", "restore project", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return projectFromGenerated(*response.JSON200), nil
+}
+
+func (c *ProjectsClient) ListEnvironments(ctx context.Context, projectID string) (ProjectEnvironmentList, error) {
+	if c == nil || c.client == nil {
+		return ProjectEnvironmentList{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	id, err := parseUUIDInput(projectID, "project id")
+	if err != nil {
+		return ProjectEnvironmentList{}, err
+	}
+	response, err := c.client.ListProjectEnvironmentsWithResponse(ctx, id)
+	if err != nil {
+		return ProjectEnvironmentList{}, err
+	}
+	if response.JSON200 == nil {
+		return ProjectEnvironmentList{}, apiError("Projects API", "list project environments", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return environmentListFromGenerated(*response.JSON200), nil
+}
+
+func (c *ProjectsClient) CreateEnvironment(ctx context.Context, input CreateProjectEnvironmentInput) (ProjectEnvironment, error) {
+	if c == nil || c.client == nil {
+		return ProjectEnvironment{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	projectID, err := parseUUIDInput(input.ProjectID, "project id")
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	key, err := mutationKey("project-environment", input.IdempotencyKey)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	body := projectscore.CreateProjectEnvironmentRequest{
+		Slug:        strings.TrimSpace(input.Slug),
+		DisplayName: strings.TrimSpace(input.DisplayName),
+		Kind:        strings.TrimSpace(string(input.Kind)),
+	}
+	if policy := copyStringMapPointer(input.ProtectionPolicy); policy != nil {
+		body.ProtectionPolicy = policy
+	}
+	response, err := c.client.CreateProjectEnvironmentWithResponse(ctx, projectID, &projectscore.CreateProjectEnvironmentParams{
+		IdempotencyKey: key,
+	}, body)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	if response.JSON201 == nil {
+		return ProjectEnvironment{}, apiError("Projects API", "create project environment", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return environmentFromGenerated(*response.JSON201), nil
+}
+
+func (c *ProjectsClient) UpdateEnvironment(ctx context.Context, input UpdateProjectEnvironmentInput) (ProjectEnvironment, error) {
+	if c == nil || c.client == nil {
+		return ProjectEnvironment{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	projectID, err := parseUUIDInput(input.ProjectID, "project id")
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	environmentID, err := parseUUIDInput(input.EnvironmentID, "environment id")
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	version, err := requireVersion(input.Version)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	key, err := mutationKey("project-environment", input.IdempotencyKey)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	body := projectscore.UpdateProjectEnvironmentRequest{
+		Version: version,
+	}
+	if input.DisplayName != nil {
+		body.DisplayName = trimStringPointer(input.DisplayName)
+	}
+	if policy := copyStringMapPointer(input.ProtectionPolicy); policy != nil {
+		body.ProtectionPolicy = policy
+	}
+	response, err := c.client.PatchProjectEnvironmentWithResponse(ctx, projectID, environmentID, &projectscore.PatchProjectEnvironmentParams{
+		IdempotencyKey: key,
+	}, body)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	if response.JSON200 == nil {
+		return ProjectEnvironment{}, apiError("Projects API", "update project environment", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return environmentFromGenerated(*response.JSON200), nil
+}
+
+func (c *ProjectsClient) ArchiveEnvironment(ctx context.Context, input ProjectEnvironmentLifecycleInput) (ProjectEnvironment, error) {
+	if c == nil || c.client == nil {
+		return ProjectEnvironment{}, fmt.Errorf("verself sdk: projects client is not initialized")
+	}
+	projectID, err := parseUUIDInput(input.ProjectID, "project id")
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	environmentID, err := parseUUIDInput(input.EnvironmentID, "environment id")
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	version, err := requireVersion(input.Version)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	key, err := mutationKey("project-environment", input.IdempotencyKey)
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	response, err := c.client.ArchiveProjectEnvironmentWithResponse(ctx, projectID, environmentID, &projectscore.ArchiveProjectEnvironmentParams{
+		IdempotencyKey: key,
+	}, projectscore.ProjectLifecycleRequest{Version: version})
+	if err != nil {
+		return ProjectEnvironment{}, err
+	}
+	if response.JSON200 == nil {
+		return ProjectEnvironment{}, apiError("Projects API", "archive project environment", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return environmentFromGenerated(*response.JSON200), nil
+}
+
 func projectListFromGenerated(input projectscore.ProjectList) ProjectList {
 	out := ProjectList{}
 	if input.NextCursor != nil {
@@ -174,6 +473,20 @@ func projectListFromGenerated(input projectscore.ProjectList) ProjectList {
 		out.Projects = make([]Project, 0, len(*input.Projects))
 		for _, project := range *input.Projects {
 			out.Projects = append(out.Projects, projectFromGenerated(project))
+		}
+	}
+	return out
+}
+
+func environmentListFromGenerated(input projectscore.ProjectEnvironmentList) ProjectEnvironmentList {
+	out := ProjectEnvironmentList{}
+	if input.NextCursor != nil {
+		out.NextCursor = *input.NextCursor
+	}
+	if input.Environments != nil {
+		out.Environments = make([]ProjectEnvironment, 0, len(*input.Environments))
+		for _, environment := range *input.Environments {
+			out.Environments = append(out.Environments, environmentFromGenerated(environment))
 		}
 	}
 	return out
@@ -201,6 +514,29 @@ func projectFromGenerated(input projectscore.Project) Project {
 	}
 }
 
+func environmentFromGenerated(input projectscore.ProjectEnvironment) ProjectEnvironment {
+	protectionPolicy := map[string]string(nil)
+	if input.ProtectionPolicy != nil {
+		protectionPolicy = copyStringMap(*input.ProtectionPolicy)
+	}
+	return ProjectEnvironment{
+		EnvironmentID:    input.EnvironmentId.String(),
+		ProjectID:        input.ProjectId.String(),
+		OrgID:            input.OrgId,
+		Slug:             input.Slug,
+		DisplayName:      input.DisplayName,
+		Kind:             input.Kind,
+		State:            input.State,
+		ProtectionPolicy: protectionPolicy,
+		Version:          input.Version,
+		CreatedBy:        input.CreatedBy,
+		UpdatedBy:        input.UpdatedBy,
+		CreatedAt:        input.CreatedAt,
+		UpdatedAt:        input.UpdatedAt,
+		ArchivedAt:       input.ArchivedAt,
+	}
+}
+
 func apiError(service, operation string, statusCode int, model *projectscore.ErrorModel, body []byte) error {
 	var title *string
 	var detail *string
@@ -225,6 +561,54 @@ func apiErrorFields(service, operation string, statusCode int, title *string, de
 		err.Detail = *detail
 	}
 	return err
+}
+
+func parseUUIDInput(value, field string) (uuid.UUID, error) {
+	id, err := uuid.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("verself sdk: invalid %s: %w", field, err)
+	}
+	return id, nil
+}
+
+func requireVersion(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("verself sdk: version is required")
+	}
+	return trimmed, nil
+}
+
+func mutationKey(namespace, explicit string) (string, error) {
+	key := strings.TrimSpace(explicit)
+	if key != "" {
+		if len(key) > maxIdempotencyKeyLength {
+			return "", fmt.Errorf("verself sdk: Idempotency-Key must be %d characters or fewer", maxIdempotencyKeyLength)
+		}
+		return key, nil
+	}
+	return generateIdempotencyKey(namespace)
+}
+
+func trimStringPointer(input *string) *string {
+	trimmed := strings.TrimSpace(*input)
+	return &trimmed
+}
+
+func copyStringMapPointer(input map[string]string) *map[string]string {
+	if input == nil {
+		return nil
+	}
+	copied := copyStringMap(input)
+	return &copied
+}
+
+func copyStringMap(input map[string]string) map[string]string {
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func generateIdempotencyKey(namespace string) (string, error) {

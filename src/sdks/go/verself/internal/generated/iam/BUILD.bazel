@@ -1,0 +1,10 @@
+load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
+
+verself_oapi_go_client(
+    name = "iam",
+    importpath = "github.com/verself/verself-go/internal/generated/iam",
+    package = "iam",
+    spec = "//src/services/iam-service/openapi:openapi-3.0.yaml",
+    visibility = ["//src/sdks/go/verself:__pkg__"],
+    deps = ["@com_github_oapi_codegen_runtime//:runtime"],
+)

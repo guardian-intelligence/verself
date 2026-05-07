@@ -49,6 +49,10 @@ func (p XDGPaths) companyPath(name string) string {
 	return filepath.Join(p.DataDir, "companies", name+".json")
 }
 
+func (p XDGPaths) profilePath(name string) string {
+	return filepath.Join(p.DataDir, "profiles", name+".json")
+}
+
 func (p XDGPaths) credentialDir() string {
 	return filepath.Join(p.StateDir, "credentials")
 }
