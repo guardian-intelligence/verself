@@ -12,3 +12,6 @@ substrate_profile_staging_dir: /opt/verself/staging
 
 # PostgreSQL major version (determines apt package and binary paths)
 substrate_profile_postgresql_version: "16"
+
+# Host images are Ubuntu 24.04; use gathered facts when available.
+substrate_profile_distribution_release: "{{ ansible_facts.get('distribution_release', 'noble') }}"
