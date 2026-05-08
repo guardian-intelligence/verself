@@ -394,6 +394,11 @@ callback listener state live only under the runtime directory. Refresh tokens
 are stored in the credential store. Access tokens are held in process memory
 and refreshed as needed.
 
+The repo-local npm registry credential helper reads the active auth profile
+written by `auth login`. A fresh developer or agent VM can log in once and run
+Bazel/Vite+ builds against `npm.verself.sh` without provisioning a static npm
+API key.
+
 Headless auth:
 
 ```text
@@ -404,10 +409,10 @@ verself auth login --token-file /run/secrets/verself-token
 Token files must be regular files with owner-only permissions. The CLI refuses
 world-readable token files.
 
-Until `auth login` and profile storage exist, SDK-backed Projects commands read
-`VERSELF_TOKEN`, `VERSELF_TOKEN_FILE`, or `--token-file`, and use
-`VERSELF_PROJECTS_API_URL` or `--projects-url` for non-production service
-selection.
+SDK-backed commands read the active auth profile by default. `VERSELF_TOKEN`,
+`VERSELF_TOKEN_FILE`, and `--token-file` override the profile for headless
+sessions; service URL flags and `VERSELF_*_API_URL` environment variables select
+non-production services.
 
 ## Public Command Surface
 

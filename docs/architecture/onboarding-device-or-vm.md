@@ -99,11 +99,25 @@ Grafana uses Grafana's JWT auth provider with `X-Pomerium-Jwt-Assertion` and
 Pomerium's JWKS endpoint. Grafana's local admin remains enabled for host-level
 recovery through direct credential-store access.
 
+`npm.<domain>` is also a Pomerium HTTP route. Public package-manager traffic
+uses the same Zitadel human identity boundary as operator HTTP access, then
+Pomerium strips `Authorization` before forwarding read-only registry requests
+to the loopback Verdaccio mirror. A development checkout uses the active
+`verself auth login` profile as the default registry credential source; the
+same helper also accepts `VERSELF_NPM_REGISTRY_TOKEN`, `VERSELF_TOKEN_FILE`, or
+`VERSELF_TOKEN` for headless sessions. Bazel's npm credential helper and the
+Vite+ install path forward that token as the registry bearer credential.
+
 ## Authorization
 
 The initial policy is an explicit operator email allow-list in the Pomerium
 role defaults. Domain-wide access is available through
 `pomerium_operator_allowed_domains`, but the default is empty.
+
+The npm registry policy is separate from the operator SSH/browser allow-list.
+It admits authenticated users whose Zitadel resource owner is the platform
+organization. This keeps CI and agent development sessions off host-scoped
+static npm API keys without widening SSH authorization.
 
 SSH authorization constrains two dimensions:
 

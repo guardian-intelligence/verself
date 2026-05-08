@@ -36,14 +36,17 @@
     that:
       - (pomerium_operator_allowed_domains | length) + (pomerium_operator_allowed_emails | length) > 0
       - pomerium_operator_http_routes | length > 0
+      - pomerium_npm_registry_domain | length > 0
+      - pomerium_npm_registry_upstream | length > 0
+      - (pomerium_npm_registry_org_id | length) + (pomerium_npm_registry_allowed_domains | length) + (pomerium_npm_registry_allowed_emails | length) > 0
       - pomerium_ssh_address | length > 0
       - pomerium_ssh_route_name | length > 0
       - pomerium_ssh_upstream | length > 0
       - pomerium_ssh_allowed_user | length > 0
     fail_msg: >-
       Pomerium operator access needs at least one allowed email domain or
-      explicit email, at least one operator HTTP upstream, and an
-      SSH route definition.
+      explicit email, at least one operator HTTP upstream, an npm registry
+      policy subject, and an SSH route definition.
 
 - name: Check Pomerium shared secret
   ansible.builtin.stat:

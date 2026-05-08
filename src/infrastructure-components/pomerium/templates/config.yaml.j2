@@ -15,6 +15,19 @@
 {{ ' ' * (indent + 4) }}is: {{ email | to_json }}
 {%- endfor %}
 {%- endmacro -%}
+{% macro npm_registry_subjects(indent) -%}
+{%- if pomerium_npm_registry_org_id | default('', true) | length > 0 %}
+{{ ' ' * indent }}- "claim/urn:zitadel:iam:user:resourceowner:id": {{ pomerium_npm_registry_org_id | to_json }}
+{%- endif %}
+{%- for domain in pomerium_npm_registry_allowed_domains %}
+{{ ' ' * indent }}- domain:
+{{ ' ' * (indent + 4) }}is: {{ domain | to_json }}
+{%- endfor %}
+{%- for email in pomerium_npm_registry_allowed_emails %}
+{{ ' ' * indent }}- email:
+{{ ' ' * (indent + 4) }}is: {{ email | to_json }}
+{%- endfor %}
+{%- endmacro -%}
 authenticate_service_url: "https://{{ pomerium_domain }}"
 address: "{{ pomerium_listen_address }}"
 grpc_address: "{{ pomerium_grpc_address }}"
@@ -52,6 +65,18 @@ routes:
           or:
 {{ operator_subjects(12) }}
 {% endfor %}
+  - from: "https://{{ pomerium_npm_registry_domain }}"
+    to: "{{ pomerium_npm_registry_upstream }}"
+    pass_identity_headers: false
+    preserve_host_header: true
+    bearer_token_format: idp_access_token
+    remove_request_headers:
+      - Authorization
+      - Cookie
+    policy:
+      - allow:
+          or:
+{{ npm_registry_subjects(12) }}
   - from: "ssh://{{ pomerium_ssh_route_name }}"
     to: "ssh://{{ pomerium_ssh_upstream }}"
     policy:
