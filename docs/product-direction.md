@@ -12,7 +12,7 @@
 
 The three customer-facing products:
 
-1. A Blacksmith-like clean-room Actions runner: customers install a Verself GitHub Action or Forgejo Actions equivalent and run repository workflows on Verself Firecracker VMs for a 2–10x CI speedup.
+1. A Blacksmith-like clean-room Actions runner: customers connect GitHub or Forgejo repositories and run workflows on Verself Firecracker VMs for a 2–10x CI speedup. The product contract is [`docs/product/hosted-actions-runners.md`](product/hosted-actions-runners.md).
 2. Arbitrary workload execution: customers define Lambda-like workloads with a persistent filesystem, first invoked manually and later schedulable as minimum-60-second loops.
 3. Long-running VMs: customers run persistent VM sessions on the same isolation, telemetry, billing, and checkpoint substrate.
 

@@ -1,6 +1,6 @@
 # Verself
 
-Verself sells sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement; Lambda-style workloads and persistent dev VMs are planned on the same isolation substrate. Customer code runs inside short-lived sandboxes the customer rents — Verself does not host customer applications as managed long-lived services.
+Verself sells sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement; Lambda-style workloads and persistent dev VMs are planned on the same isolation substrate. Customer code runs inside short-lived sandboxes the customer rents — Verself does not host customer applications as managed long-lived services. The hosted runner product contract lives in [`docs/product/hosted-actions-runners.md`](docs/product/hosted-actions-runners.md).
 
 The platform itself is open-source and self-hostable. The self-hosted bootstrap path is currently an operator/internal surface that renders site artifacts for operator-supplied Latitude.sh bare metal; public SDK and CLI docs lead with hosted `verself.sh` APIs. See [`docs/verself-cli.md`](docs/verself-cli.md).
 

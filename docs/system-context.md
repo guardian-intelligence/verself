@@ -7,7 +7,7 @@ notes for the host-to-Nomad cutover live in
 
 ## Product Surface
 
-What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see `docs/product-direction.md`).
+What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. The hosted runner product contract is [`docs/product/hosted-actions-runners.md`](product/hosted-actions-runners.md). Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see `docs/product-direction.md`).
 
 Verself does not run customer-authored applications as managed long-lived services. The sandbox products rent compute time; they do not host applications. There is no PaaS surface and no roadmap toward one.
 
