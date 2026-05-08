@@ -32,7 +32,7 @@ function LettersIndex() {
   const letters = sortedLetters();
 
   return (
-    <div className="mx-auto w-full max-w-[60rem] px-5 py-16 sm:px-8 sm:py-24 md:px-10 md:py-32">
+    <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:py-24 md:px-6 md:py-32">
       <ul className="flex flex-col gap-10 sm:gap-12 md:gap-14">
         {letters.map((letter) => (
           <li key={letter.slug}>

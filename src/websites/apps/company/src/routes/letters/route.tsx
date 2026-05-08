@@ -99,7 +99,7 @@ function LinkAdapter(props: {
 function LettersFooter() {
   return (
     <footer className="bg-[var(--treatment-ground)] text-[var(--treatment-ink)]">
-      <div className="mx-auto w-full max-w-[60rem] px-5 md:px-10">
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
         <div className="py-10 font-mono text-[11px] leading-5 tracking-[0.01em] text-[var(--treatment-muted-faint)] sm:whitespace-nowrap">
           © 2026 Guardian Intelligence LLC · Seattle, Washington
         </div>

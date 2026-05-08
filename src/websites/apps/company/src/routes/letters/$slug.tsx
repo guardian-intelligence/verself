@@ -43,7 +43,7 @@ function formatDate(iso: string): string {
 }
 
 const letterProseClassName = [
-  "mt-12 w-full max-w-full font-display text-[var(--treatment-muted-strong)]",
+  "mt-12 w-full max-w-full font-display text-[var(--treatment-muted-strong)] md:max-w-[86ch]",
   "[font-variation-settings:'opsz'_18,'SOFT'_0]",
   "[overflow-wrap:break-word]",
   "[&>*+*]:mt-7",
@@ -68,7 +68,7 @@ function LetterPost() {
   }, [letter.slug, letter.publishedAt]);
 
   return (
-    <article className="mx-auto w-full max-w-[60rem] px-6 pb-24 pt-16 sm:px-8 md:px-10 md:pb-32 md:pt-24">
+    <article className="mx-auto w-full max-w-6xl px-4 pb-24 pt-16 md:px-6 md:pb-32 md:pt-24">
       <header className="flex justify-end">
         <p
           className="font-display italic text-[var(--treatment-muted-strong)] [font-variation-settings:'opsz'_18,'SOFT'_30]"
