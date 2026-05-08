@@ -18,6 +18,8 @@ service VMService {
   rpc WaitExec(WaitExecRequest) returns (WaitExecResponse);
 
   rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
+  rpc AttachFilesystemMount(AttachFilesystemMountRequest) returns (AttachFilesystemMountResponse);
+  rpc DeleteFilesystemSource(DeleteFilesystemSourceRequest) returns (DeleteFilesystemSourceResponse);
   rpc SaveCheckpoint(SaveCheckpointRequest) returns (SaveCheckpointResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
 
@@ -100,6 +102,7 @@ message LeaseSpec {
   repeated string checkpoint_save_allowlist = 7;
   NetworkAttach network = 8;
   repeated FilesystemMount filesystem_mounts = 9;
+  uint32 checkpoint_slot_count = 10;
 }
 
 message FilesystemMount {
@@ -296,6 +299,38 @@ message CommitFilesystemMountResponse {
   string target_source_ref = 3;
   string snapshot = 4;
   uint64 committed_at_unix_ns = 5;
+}
+
+message AttachFilesystemMountRequest {
+  string lease_id = 1;
+  string idempotency_key = 2;
+  string mount_name = 3;
+  string source_ref = 4;
+  string mount_path = 5;
+  string fs_type = 6;
+  bool read_only = 7;
+  uint64 empty_size_bytes = 8;
+}
+
+message AttachFilesystemMountResponse {
+  string lease_id = 1;
+  string mount_name = 2;
+  string source_ref = 3;
+  string mount_path = 4;
+  string fs_type = 5;
+  bool read_only = 6;
+  string guest_device_path = 7;
+  uint64 attached_at_unix_ns = 8;
+}
+
+message DeleteFilesystemSourceRequest {
+  string source_ref = 1;
+  string idempotency_key = 2;
+}
+
+message DeleteFilesystemSourceResponse {
+  string source_ref = 1;
+  uint64 deleted_at_unix_ns = 2;
 }
 
 message VMMetrics {

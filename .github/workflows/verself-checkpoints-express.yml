@@ -1,0 +1,45 @@
+name: Verself Checkpoints Express
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  express:
+    name: Express npm checkpoint
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
+    timeout-minutes: 20
+    steps:
+      - name: Check out Verself
+        uses: actions/checkout@v6
+        with:
+          path: verself-sh
+          persist-credentials: false
+
+      - name: Check out Express
+        uses: actions/checkout@v6
+        with:
+          repository: expressjs/express
+          path: express
+          persist-credentials: false
+
+      - name: Mount npm checkpoint
+        uses: ./verself-sh/.github/actions/checkpoint
+        with:
+          key: express-npm-${{ runner.os }}-${{ hashFiles('express/package-lock.json') }}
+          path: ~/.npm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: express
+
+      - name: Test
+        run: npm test
+        working-directory: express

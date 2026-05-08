@@ -1,0 +1,20 @@
+name: Verself Checkpoint
+description: Mount a Verself Checkpoints zvol for a workflow cache path.
+inputs:
+  key:
+    description: Checkpoint key.
+    required: true
+  path:
+    description: Absolute path or path relative to GITHUB_WORKSPACE.
+    required: true
+outputs:
+  cache-hit:
+    description: true when the checkpoint restored an existing generation.
+  mount-id:
+    description: Verself checkpoint mount identifier.
+  generation:
+    description: Source generation restored into the checkpoint mount.
+runs:
+  using: node24
+  main: dist/index.js
+  post: dist/index.js

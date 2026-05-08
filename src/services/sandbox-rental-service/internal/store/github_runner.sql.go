@@ -260,9 +260,13 @@ SELECT
     a.provider_installation_id,
     a.provider_repository_id,
     COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.head_branch, '')::text AS head_branch,
     COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    e.runner_class,
     a.runner_name
 FROM runner_allocations a
+JOIN executions e ON e.execution_id = a.execution_id
 JOIN github_installations i ON i.installation_id = a.provider_installation_id
 JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
 JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id
@@ -284,7 +288,10 @@ type GetGitHubExecutionIdentityRow struct {
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
+	ProviderRunID          int64
+	HeadBranch             string
 	ProviderJobID          int64
+	RunnerClass            string
 	RunnerName             string
 }
 
@@ -297,7 +304,10 @@ func (q *Queries) GetGitHubExecutionIdentity(ctx context.Context, arg GetGitHubE
 		&i.ProviderInstallationID,
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
+		&i.ProviderRunID,
+		&i.HeadBranch,
 		&i.ProviderJobID,
+		&i.RunnerClass,
 		&i.RunnerName,
 	)
 	return i, err

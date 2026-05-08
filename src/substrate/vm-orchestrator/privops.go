@@ -17,6 +17,7 @@ type PrivOps interface {
 	TapUp(ctx context.Context, tapName string) error
 	TapDelete(ctx context.Context, tapName string) error
 	SetupJail(ctx context.Context, jailRoot, kernelSrc string, uid, gid int, devices []JailBlockDevice) error
+	PlaceJailBlockDevice(ctx context.Context, jailRoot string, device JailBlockDevice, uid, gid int) error
 	StartJailer(ctx context.Context, leaseID string, cfg JailerConfig) (*JailerProcess, error)
 	Chmod(ctx context.Context, path string, mode uint32) error
 }

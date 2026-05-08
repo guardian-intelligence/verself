@@ -48,6 +48,11 @@ type driveReq struct {
 	IsReadOnly   bool   `json:"is_read_only"`
 }
 
+type drivePatchReq struct {
+	DriveID    string `json:"drive_id"`
+	PathOnHost string `json:"path_on_host"`
+}
+
 type machineConfigReq struct {
 	VCPUCount  int  `json:"vcpu_count"`
 	MemSizeMiB int  `json:"mem_size_mib"`
@@ -93,6 +98,10 @@ func (c *apiClient) putDrive(ctx context.Context, driveID, path string, rootDevi
 	})
 }
 
+func (c *apiClient) patchDrive(ctx context.Context, driveID, path string) error {
+	return c.patch(ctx, "/drives/"+driveID, drivePatchReq{DriveID: driveID, PathOnHost: path})
+}
+
 func (c *apiClient) putMachineConfig(ctx context.Context, vcpus, memMiB int) error {
 	return c.put(ctx, "/machine-config", machineConfigReq{
 		VCPUCount:  vcpus,
@@ -133,6 +142,10 @@ func (c *apiClient) startInstance(ctx context.Context) error {
 // put sends a PUT request with JSON body.
 func (c *apiClient) put(ctx context.Context, path string, body interface{}) error {
 	return c.doJSON(ctx, http.MethodPut, path, body)
+}
+
+func (c *apiClient) patch(ctx context.Context, path string, body interface{}) error {
+	return c.doJSON(ctx, http.MethodPatch, path, body)
 }
 
 func (c *apiClient) doJSON(ctx context.Context, method, path string, body interface{}) error {

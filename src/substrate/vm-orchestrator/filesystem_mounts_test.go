@@ -14,7 +14,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 		SourceRef: "checkpoint-empty",
 		MountPath: "/mnt/data/",
 		ReadOnly:  false,
-	}})
+	}}, filesystemMountSourceRequired)
 	if err != nil {
 		t.Fatalf("normalizeFilesystemMounts returned error: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 		Name:      "bad",
 		SourceRef: "checkpoint-empty",
 		MountPath: "/proc/verself",
-	}})
+	}}, filesystemMountSourceRequired)
 	if err == nil {
 		t.Fatal("expected unsafe mount path to be rejected")
 	}
@@ -49,9 +49,22 @@ func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 		{Name: "data", SourceRef: "checkpoint-empty@ready", MountPath: "/mnt/data"},
 	}
 	for _, tc := range cases {
-		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}); err == nil {
+		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}, filesystemMountSourceRequired); err == nil {
 			t.Fatalf("expected host-shaped ref to be rejected: %#v", tc)
 		}
+	}
+}
+
+func TestNormalizeFilesystemMountsAllowsEmptySourceForDynamicAttach(t *testing.T) {
+	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
+		Name:      "ckpt-empty",
+		MountPath: "/mnt/data",
+	}}, filesystemMountSourceOptional)
+	if err != nil {
+		t.Fatalf("normalizeFilesystemMounts returned error: %v", err)
+	}
+	if got := mounts[0].SourceRef; got != "" {
+		t.Fatalf("source ref = %q, want empty", got)
 	}
 }
 

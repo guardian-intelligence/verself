@@ -28,3 +28,49 @@ type ExecutionSchedule struct {
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
 }
+
+type ExecutionVolumeMount struct {
+	MountID               uuid.UUID
+	ExecutionID           uuid.UUID
+	AttemptID             uuid.UUID
+	AllocationID          *uuid.UUID
+	VolumeID              uuid.UUID
+	MountName             string
+	MountPath             string
+	MountPathHash         string
+	KeyHash               string
+	SourceGenerationID    *uuid.UUID
+	SourceGeneration      pgtype.Int4
+	SourceRef             string
+	TargetSourceRef       string
+	GuestDevicePath       string
+	MountState            string
+	SaveRequested         bool
+	SaveState             string
+	CommittedGenerationID *uuid.UUID
+	FailureReason         string
+	RequestedAt           pgtype.Timestamptz
+	MountedAt             pgtype.Timestamptz
+	CompletedAt           pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+}
+
+type VolumeGeneration struct {
+	VolumeGenerationID   uuid.UUID
+	VolumeID             uuid.UUID
+	OrgID                int64
+	Generation           int32
+	ParentGenerationID   *uuid.UUID
+	TrustClass           string
+	ZfsSourceRef         string
+	ZfsSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	State                string
+	CreatedByExecutionID *uuid.UUID
+	CreatedByAttemptID   *uuid.UUID
+	CreatedAt            pgtype.Timestamptz
+	LastUsedAt           pgtype.Timestamptz
+	ExpiresAt            pgtype.Timestamptz
+}

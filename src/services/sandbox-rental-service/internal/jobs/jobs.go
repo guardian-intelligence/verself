@@ -86,7 +86,9 @@ type Runner interface {
 	StartExec(ctx context.Context, leaseID, key string, spec vmorchestrator.ExecSpec) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
+	AttachFilesystemMount(ctx context.Context, leaseID, key string, mount vmorchestrator.FilesystemMount, emptySizeBytes uint64) (vmorchestrator.FilesystemAttachRecord, error)
 	CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, targetSourceRef string) (vmorchestrator.FilesystemCommitRecord, error)
+	DeleteFilesystemSource(ctx context.Context, key, sourceRef string) (vmorchestrator.FilesystemDeleteRecord, error)
 }
 
 type SchedulerRuntime interface {
@@ -540,11 +542,12 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		Resources:        item.Resources,
-		TTLSeconds:       300,
-		TrustClass:       "trusted",
-		NetworkMode:      "nat",
-		FilesystemMounts: item.FilesystemMounts,
+		Resources:           item.Resources,
+		TTLSeconds:          300,
+		TrustClass:          "trusted",
+		NetworkMode:         "nat",
+		FilesystemMounts:    item.FilesystemMounts,
+		CheckpointSlotCount: checkpointSlotCount,
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
@@ -601,8 +604,20 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	stopRenew()
+	checkpointErr := s.FinalizeCheckpoints(ctx, item, lease.LeaseID)
+	if checkpointErr != nil {
+		span.RecordError(checkpointErr)
+		span.SetStatus(codes.Error, checkpointErr.Error())
+	}
 	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
 		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", lease.LeaseID, "error", err)
+	}
+	if checkpointErr == nil {
+		if pruneErr := s.PruneCheckpointGenerations(ctx, item); pruneErr != nil {
+			span.RecordError(pruneErr)
+			span.SetStatus(codes.Error, pruneErr.Error())
+			checkpointErr = pruneErr
+		}
 	}
 
 	completedAt := finalExec.ExitedAt
@@ -626,6 +641,10 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		if finalExec.TerminalReason != "" {
 			reason = "exec_failed: " + finalExec.TerminalReason
 		}
+	}
+	if checkpointErr != nil {
+		state = StateFailed
+		reason = "checkpoint_finalize_failed: " + checkpointErr.Error()
 	}
 	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
 		return err

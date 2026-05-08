@@ -24,6 +24,7 @@ func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {
 		CheckpointSaveAllowlist: append([]string(nil), spec.GetCheckpointSaveAllowlist()...),
 		NetworkMode:             networkMode,
 		FilesystemMounts:        filesystemMountsFromProto(spec.GetFilesystemMounts()),
+		CheckpointSlotCount:     spec.GetCheckpointSlotCount(),
 	}, cfg)
 }
 

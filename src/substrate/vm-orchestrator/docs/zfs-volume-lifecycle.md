@@ -55,6 +55,12 @@ as a product-owned API without leaking storage node IDs, pool IDs, dataset refs,
 snapshot refs, zvol device paths, host mount paths, or orchestrator
 implementation names.
 
+The v0 Checkpoints product follows the Blacksmith sticky-disk API shape under
+Verself naming: a workflow action supplies `key` and `path`, the platform mounts
+an ext4 filesystem at that path, and the post-job phase commits the writable
+generation. The first run for a key has no current generation, so
+vm-orchestrator prepares an empty ext4 zvol and sandbox-rental records a miss.
+
 ## Privilege Boundary
 
 vm-orchestrator is the only runtime process allowed to hold host privileges for
@@ -105,10 +111,10 @@ API DTOs.
 
 ```
 pool/tenants/<org_id>/
-  volumes/<component_kind>/<key_hash>/
+  volumes/<scope_kind>/<scope_ref>/<component_kind>/<key_hash>/
     gen-<monotonic>           clone dataset for the generation
     gen-<monotonic>@live      snapshot that locks it as immutable
-  fork-pr-scoped/<component_kind>/<key_hash>/<pr_id>/gen-N
+  fork-pr-scoped/<pr_id>/<component_kind>/<key_hash>/gen-N
 ```
 
 - `refquota` on `pool/tenants/<org_id>` bounds live bytes per tenant.
@@ -124,8 +130,9 @@ pool/tenants/<org_id>/
 sandbox-rental-service owns the product state:
 
 - `volumes(volume_id, org_id, product_kind, component_kind, key_hash,
-  display_name, retention_policy, state, created_at, updated_at, last_used_at)`
-  is the stable customer-visible object.
+  scope_kind, scope_ref, default_scope_ref, display_name, retention_policy,
+  state, created_at, updated_at, last_used_at)` is the stable
+  customer-visible object.
 - `volume_generations(volume_generation_id, volume_id, org_id,
   component_kind, key_hash, generation, parent_generation_id, kind,
   zfs_dataset, zfs_snapshot, trust_class, retention_policy, used_bytes,
@@ -155,6 +162,72 @@ A commit produces an immutable generation even if it loses the current-pointer
 race. The losing rotation emits `runtime.volume.rotation_lost` so cache thrash
 is visible in ClickHouse instead of being hidden as a failed save.
 
+First-run restore is an empty generation plan. sandbox-rental creates or
+resolves the `volumes` row, records that no `source_generation_id` exists, and
+asks vm-orchestrator to create a fresh ext4 writable zvol. That mount is still a
+valid Checkpoint. The post-job commit creates generation `1` if saveback is
+requested.
+
+## Runtime Mount Lifecycle
+
+The customer action is runtime-driven: GitHub evaluates the workflow
+expressions, then `verself/checkpoint@v0` sends a concrete `key` and `path`
+from inside the runner attempt. vm-orchestrator therefore must support binding
+Checkpoint zvols after the guest has booted. v0 reserves a bounded set of drive
+slots during runner boot and later binds a prepared zvol to one reserved slot
+when sandbox-rental authorizes a mount request.
+
+Host lifecycle events map to sandbox-rental lifecycle events:
+
+| Host action | Product event |
+|---|---|
+| Create empty ext4 zvol for a miss | `checkpoint.source.missed` then `checkpoint.host.prepare_succeeded` |
+| Clone selected generation for a hit | `checkpoint.source.hit` then `checkpoint.host.prepare_succeeded` |
+| Bind zvol to reserved drive slot | `checkpoint.host.prepare_succeeded` |
+| Guest discovers and mounts ext4 filesystem | `checkpoint.mount.ready` |
+| Guest seals and unmounts filesystem | `checkpoint.commit.started` |
+| Host flushes block device and snapshots zvol | `checkpoint.commit.succeeded` |
+| sandbox-rental rotates current pointer | `checkpoint.promotion.succeeded`, `checkpoint.promotion.conflicted`, or `checkpoint.promotion.skipped` |
+
+vm-orchestrator emits host facts and returns storage metadata. It does not write
+product state, compute branch trust, or decide generation promotion. The full
+event contract lives in
+`src/services/sandbox-rental-service/docs/checkpoint-event-contract.md`.
+
+## Filesystem Semantics
+
+Checkpoints restore filesystem bytes. They do not prove that arbitrary restored
+outputs are valid for the current source tree. Correctness comes from the tool
+owning the mounted directory:
+
+- Content-addressed tools such as Bazel validate action/cache entries from
+  their own action keys and content hashes. The Checkpoint makes Bazel's local
+  disk and repository caches fast to restore; Bazel decides cache validity.
+- Package managers reconcile restored stores against lockfiles and manifests.
+  npm `ci` removes `node_modules`, so strict CI installs should checkpoint
+  `~/.npm`. npm `install` can reuse a restored `node_modules` tree when the key
+  includes the lockfile and runtime shape.
+- Opaque output directories such as `dist`, `build`, `.next`, and arbitrary
+  generated source trees are advanced use cases. They are safe only when the
+  customer's toolchain performs complete invalidation before reuse.
+
+v0 should expose raw `key`/`path` Checkpoints plus documented recipes. Tool
+presets such as `verself/setup-bazel` or package-manager-specific helpers can
+arrive after the raw primitive proves serial restore/save performance.
+
+For Bazel, the first target is:
+
+```text
+--disk_cache=<checkpoint>/disk-cache
+--repository_cache=<checkpoint>/repository-cache
+```
+
+Do not use Bazel's entire `output_base` as the first recipe. It contains server
+state, execroot, symlink forest, logs, and action-cache internals in addition to
+outputs. The narrower disk/repository cache directories exercise ZFS
+restore/save while leaving Bazel's own cache protocol responsible for semantic
+validity.
+
 ## Trust Classes
 
 Trust class is computed inside sandbox-rental from persisted, validated GitHub
@@ -167,13 +240,41 @@ volume is explicitly allowed.
 
 | Class | Reads | Writes | Rotates `current` |
 |---|---|---|---|
-| `protected` | protected + same_repo_pr + operator | new protected generation | yes, protected pointer |
-| `same_repo_pr` | protected + operator | same_repo_pr generation | yes, same_repo_pr pointer |
-| `fork_pr` | operator + this PR's fork-pr-scoped subtree | fork-pr-scoped generation | never |
-| `operator` | everything | operator generation | yes, operator pointer |
+| `protected` | protected/default scope | new protected generation | yes, protected pointer |
+| `same_repo_pr` | branch scope with default-scope fallback | branch generation | yes, branch pointer |
+| `fork_pr` | explicitly allowed safe base + this PR's fork-pr-scoped subtree | fork-pr-scoped generation | never |
+| `operator` | everything in the organization | operator generation | yes, operator pointer |
 
 This mirrors branch-write allowlists used by CI cache-volume systems: untrusted
 fork code can consume safe bases but cannot poison protected caches.
+
+Scope is a product decision before vm-orchestrator sees the request. The stable
+volume key includes organization, repository, `scope_kind`, `scope_ref`,
+component kind, and key hash. Typical scopes are:
+
+- `default_branch`: protected branch current pointer.
+- `branch`: same-repository branch current pointer with optional fallback to
+  default branch.
+- `pull_request`: fork or PR-scoped namespace with short retention.
+
+## Concurrency And Merge Semantics
+
+Checkpoint commits are observed-state rotations:
+
+1. The mount records the source generation chosen at load time.
+2. The commit always creates an immutable generation if vm-orchestrator
+   snapshots the writable clone successfully.
+3. sandbox-rental promotes the generation only when the current pointer still
+   matches the source generation observed at load time.
+4. A losing promotion keeps the generation for audit/retention and emits an
+   explicit conflict event.
+
+This design solves the v0 parallel-writer problem without merging raw
+filesystems. Union merge is deferred to content-aware consumers. It is
+reasonable for stores whose format is additive and content-addressed, such as
+Bazel-like CAS directories or BuildKit content stores, but it is unsafe as a
+generic ext4 operation because ordinary files can encode deletion, replacement,
+absolute paths, timestamps, mutable indexes, or tool-version-specific state.
 
 ## Atomic ZFS Rotation
 
@@ -341,6 +442,16 @@ The Grafana dashboard should show:
 - OpenZFS `zfs-program(8)` for channel program atomicity and resource-limit
   behavior: https://openzfs.github.io/openzfs-docs/man/master/8/zfs-program.8.html
 - zrepl pruning rules: https://zrepl.github.io/configuration/prune.html
+- Blacksmith sticky disks API shape:
+  https://docs.blacksmith.sh/blacksmith-caching/dependencies-sticky-disks
+- Bazel remote caching and disk cache:
+  https://bazel.build/remote/caching
+- Bazel output directory layout:
+  https://bazel.build/docs/output_directories
+- npm `ci` behavior:
+  https://docs.npmjs.com/cli/v11/commands/npm-ci
+- npm package lock and hidden lockfile behavior:
+  https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json/
 - containerd snapshotter metastore:
   `github.com/containerd/containerd/core/snapshots/storage/bolt.go`
 - containerd/zfs reference snapshotter:

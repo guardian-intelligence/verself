@@ -96,6 +96,16 @@ type commitFilesystemMountReply struct {
 	result FilesystemCommitResult
 	err    error
 }
+type attachFilesystemMountCmd struct {
+	ctx            context.Context
+	mount          FilesystemMount
+	emptySizeBytes uint64
+	reply          chan attachFilesystemMountReply
+}
+type attachFilesystemMountReply struct {
+	result FilesystemAttachResult
+	err    error
+}
 type cancelExecCmd struct {
 	execID string
 	reason string
@@ -605,6 +615,102 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 	return resp, nil
 }
 
+func (s *APIServer) AttachFilesystemMount(ctx context.Context, req *vmrpc.AttachFilesystemMountRequest) (*vmrpc.AttachFilesystemMountResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.AttachFilesystemMount")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	mountName := strings.TrimSpace(req.GetMountName())
+	mountPath := strings.TrimSpace(req.GetMountPath())
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if leaseID == "" || mountName == "" || mountPath == "" || key == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id, mount_name, mount_path, and idempotency_key are required")
+	}
+	scope := "attach_filesystem_mount:" + leaseID
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.AttachFilesystemMountResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	mount := FilesystemMount{
+		Name:      mountName,
+		SourceRef: strings.TrimSpace(req.GetSourceRef()),
+		MountPath: mountPath,
+		FSType:    firstNonEmpty(strings.TrimSpace(req.GetFsType()), "ext4"),
+		ReadOnly:  req.GetReadOnly(),
+	}
+	reply := make(chan attachFilesystemMountReply, 1)
+	actor.send(attachFilesystemMountCmd{ctx: ctx, mount: mount, emptySizeBytes: req.GetEmptySizeBytes(), reply: reply})
+	out := <-reply
+	if out.err != nil {
+		span.RecordError(out.err)
+		span.SetStatus(otelcodes.Error, out.err.Error())
+		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
+	}
+	resp := &vmrpc.AttachFilesystemMountResponse{
+		LeaseId:          out.result.LeaseID,
+		MountName:        out.result.MountName,
+		SourceRef:        out.result.SourceRef,
+		MountPath:        out.result.MountPath,
+		FsType:           out.result.FSType,
+		ReadOnly:         out.result.ReadOnly,
+		GuestDevicePath:  out.result.GuestDevicePath,
+		AttachedAtUnixNs: uint64(out.result.AttachedAt.UnixNano()),
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("filesystem.name", mountName), attribute.String("guest.device_path", out.result.GuestDevicePath))
+	return resp, nil
+}
+
+func (s *APIServer) DeleteFilesystemSource(ctx context.Context, req *vmrpc.DeleteFilesystemSourceRequest) (*vmrpc.DeleteFilesystemSourceResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.DeleteFilesystemSource")
+	defer span.End()
+	sourceRef := strings.TrimSpace(req.GetSourceRef())
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if sourceRef == "" || key == "" {
+		return nil, status.Error(codes.InvalidArgument, "source_ref and idempotency_key are required")
+	}
+	if !strings.HasPrefix(sourceRef, "ckpt-") {
+		return nil, status.Error(codes.InvalidArgument, "source_ref is not a checkpoint source")
+	}
+	scope := "delete_filesystem_source:" + sourceRef
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.DeleteFilesystemSourceResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	image, imgErr := zfs.NewImage(s.roots, sourceRef)
+	if imgErr != nil {
+		return nil, status.Error(codes.InvalidArgument, imgErr.Error())
+	}
+	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
+	if err := volumes.DestroyImage(ctx, image); err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	resp := &vmrpc.DeleteFilesystemSourceResponse{
+		SourceRef:       sourceRef,
+		DeletedAtUnixNs: uint64(time.Now().UTC().UnixNano()),
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	span.SetAttributes(attribute.String("filesystem.source_ref", sourceRef))
+	return resp, nil
+}
+
 func (s *APIServer) SaveCheckpoint(ctx context.Context, req *vmrpc.SaveCheckpointRequest) (*vmrpc.SaveCheckpointResponse, error) {
 	_, span := tracer.Start(ctx, "rpc.SaveCheckpoint")
 	defer span.End()
@@ -780,6 +886,8 @@ func (a *vmActor) run() {
 				msg.reply <- a.handleStartExec(msg.ctx, msg.execID, msg.spec)
 			case commitFilesystemMountCmd:
 				msg.reply <- a.handleCommitFilesystemMount(msg.ctx, msg.mountName, msg.targetSourceRef)
+			case attachFilesystemMountCmd:
+				msg.reply <- a.handleAttachFilesystemMount(msg.ctx, msg.mount, msg.emptySizeBytes)
 			case cancelExecCmd:
 				msg.reply <- a.handleCancelExec(msg.execID, msg.reason)
 			case execDoneCmd:
@@ -947,6 +1055,24 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		"snapshot":          result.Snapshot,
 	})
 	return commitFilesystemMountReply{result: result}
+}
+
+func (a *vmActor) handleAttachFilesystemMount(callerCtx context.Context, mount FilesystemMount, emptySizeBytes uint64) attachFilesystemMountReply {
+	if a.state != LeaseStateReady || a.runtime == nil {
+		return attachFilesystemMountReply{err: fmt.Errorf("lease is not ready")}
+	}
+	attachCtx := detachedTraceContext(callerCtx)
+	result, err := New(a.server.cfg, a.server.logger).AttachFilesystemMount(attachCtx, a.runtime, mount, emptySizeBytes)
+	if err != nil {
+		return attachFilesystemMountReply{err: err}
+	}
+	_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventCheckpointSaved, "", map[string]string{
+		"filesystem_mount": result.MountName,
+		"source_ref":       result.SourceRef,
+		"guest_device":     result.GuestDevicePath,
+		"mount_path":       result.MountPath,
+	})
+	return attachFilesystemMountReply{result: result}
 }
 
 func (a *vmActor) handleCancelExec(execID, reason string) bool {

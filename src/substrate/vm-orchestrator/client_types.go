@@ -29,6 +29,22 @@ type FilesystemCommitRecord struct {
 	CommittedAt     time.Time
 }
 
+type FilesystemAttachRecord struct {
+	LeaseID         string
+	MountName       string
+	SourceRef       string
+	MountPath       string
+	FSType          string
+	ReadOnly        bool
+	GuestDevicePath string
+	AttachedAt      time.Time
+}
+
+type FilesystemDeleteRecord struct {
+	SourceRef string
+	DeletedAt time.Time
+}
+
 type ExecRecord struct {
 	LeaseID                string
 	ExecID                 string

@@ -205,9 +205,15 @@ func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid
 	if err != nil {
 		return nil
 	}
+	checkpointToken, err := s.deriveCheckpointToken(row.Provider, executionID, attemptID)
+	if err != nil {
+		return nil
+	}
 	env := map[string]string{
 		"VERSELF_RUNNER_BOOTSTRAP_TOKEN": token,
 		"VERSELF_RUNNER_BOOTSTRAP_PATH":  runnerBootstrapPath,
+		"VERSELF_CHECKPOINT_TOKEN":       checkpointToken,
+		"VERSELF_CHECKPOINT_PATH":        checkpointPath,
 	}
 	if parent := traceParent(ctx); parent != "" {
 		env["VERSELF_TRACEPARENT"] = parent

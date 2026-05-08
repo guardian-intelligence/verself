@@ -38,6 +38,8 @@ const (
 	TypeExecResult            MessageType = "exec_result"
 	TypeCheckpointRequest     MessageType = "checkpoint_request"
 	TypeCheckpointResponse    MessageType = "checkpoint_response"
+	TypeFilesystemMountRequest MessageType = "filesystem_mount_request"
+	TypeFilesystemMountResult  MessageType = "filesystem_mount_result"
 	TypeFilesystemSealRequest MessageType = "filesystem_seal_request"
 	TypeFilesystemSealResult  MessageType = "filesystem_seal_result"
 	TypeFatal                 MessageType = "fatal"
@@ -166,6 +168,17 @@ type CheckpointResponse struct {
 	Ref       string `json:"ref"`
 	Accepted  bool   `json:"accepted"`
 	VersionID string `json:"version_id,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type FilesystemMountRequest struct {
+	Filesystem FilesystemMount `json:"filesystem"`
+}
+
+type FilesystemMountResult struct {
+	Name      string `json:"name"`
+	MountPath string `json:"mount_path"`
+	Mounted   bool   `json:"mounted"`
 	Error     string `json:"error,omitempty"`
 }
 

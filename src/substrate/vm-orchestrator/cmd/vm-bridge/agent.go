@@ -644,58 +644,82 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 	if len(filesystems) == 0 {
 		return nil
 	}
-	mounted := make([]vmproto.FilesystemMount, 0, len(filesystems))
 	for _, fs := range filesystems {
-		if err := validateFilesystemMount(fs); err != nil {
-			return err
+		result := s.mountFilesystem(fs)
+		if !result.Mounted {
+			return fmt.Errorf("mount composed filesystem %s at %s: %s", result.Name, result.MountPath, result.Error)
 		}
-		if err := waitForBlockDevice(fs.DevicePath, 5*time.Second); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(fs.MountPath, 0o755); err != nil {
-			return fmt.Errorf("mkdir composed filesystem mount %s: %w", fs.MountPath, err)
-		}
-		if !fs.ReadOnly {
-			if err := prepareWritableMountPath(fs.MountPath); err != nil {
-				return err
-			}
-		}
-		flags := uintptr(syscall.MS_NOATIME)
-		data := ""
-		if fs.ReadOnly {
-			flags |= syscall.MS_RDONLY
-			data = "ro"
-		}
-		if err := syscall.Mount(fs.DevicePath, fs.MountPath, firstNonEmpty(fs.FSType, "ext4"), flags, data); err != nil {
-			if err == syscall.EBUSY {
-				mounted = append(mounted, fs)
-				continue
-			}
-			return fmt.Errorf("mount composed filesystem %s (%s) on %s: %w", fs.Name, fs.DevicePath, fs.MountPath, err)
-		}
-		if !fs.ReadOnly {
-			if err := removeEmptyLostFound(fs.MountPath); err != nil {
-				return fmt.Errorf("prepare composed filesystem %s root %s: %w", fs.Name, fs.MountPath, err)
-			}
-			if err := os.Chown(fs.MountPath, runnerUID, runnerGID); err != nil {
-				return fmt.Errorf("chown composed filesystem %s root %s: %w", fs.Name, fs.MountPath, err)
-			}
-		} else {
-			// Read-only toolchain images carry an overlay contract:
-			// /etc-overlay/ is copied into /etc, .verself-writable-overlays
-			// lists paths to tmpfs-mount on top of the read-only base, and
-			// any /etc-overlay/passwd entries get their $HOME materialised.
-			// Substrate-only images and writable mounts skip this; they
-			// don't have somewhere to publish overlay metadata.
-			if err := s.applyToolchainOverlays(fs.Name, fs.MountPath); err != nil {
-				return fmt.Errorf("apply overlays for %s: %w", fs.Name, err)
-			}
-		}
-		_, _ = fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
-		mounted = append(mounted, fs)
 	}
-	s.filesystems = mounted
 	return nil
+}
+
+func (s *agentSession) mountFilesystem(fs vmproto.FilesystemMount) vmproto.FilesystemMountResult {
+	result := vmproto.FilesystemMountResult{Name: fs.Name, MountPath: fs.MountPath}
+	if err := validateFilesystemMount(fs); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	for _, mounted := range s.filesystems {
+		if mounted.Name == fs.Name {
+			if mounted.MountPath == fs.MountPath {
+				result.Mounted = true
+				return result
+			}
+			result.Error = fmt.Sprintf("filesystem %s is already mounted at %s", fs.Name, mounted.MountPath)
+			return result
+		}
+	}
+	if err := waitForBlockDevice(fs.DevicePath, 5*time.Second); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if err := os.MkdirAll(fs.MountPath, 0o755); err != nil {
+		result.Error = fmt.Sprintf("mkdir composed filesystem mount %s: %v", fs.MountPath, err)
+		return result
+	}
+	if !fs.ReadOnly {
+		if err := prepareWritableMountPath(fs.MountPath); err != nil {
+			result.Error = err.Error()
+			return result
+		}
+	}
+	flags := uintptr(syscall.MS_NOATIME)
+	data := ""
+	if fs.ReadOnly {
+		flags |= syscall.MS_RDONLY
+		data = "ro"
+	}
+	if err := syscall.Mount(fs.DevicePath, fs.MountPath, firstNonEmpty(fs.FSType, "ext4"), flags, data); err != nil {
+		if err != syscall.EBUSY {
+			result.Error = fmt.Sprintf("mount composed filesystem %s (%s) on %s: %v", fs.Name, fs.DevicePath, fs.MountPath, err)
+			return result
+		}
+	}
+	if !fs.ReadOnly {
+		if err := removeEmptyLostFound(fs.MountPath); err != nil {
+			result.Error = fmt.Sprintf("prepare composed filesystem %s root %s: %v", fs.Name, fs.MountPath, err)
+			return result
+		}
+		if err := os.Chown(fs.MountPath, runnerUID, runnerGID); err != nil {
+			result.Error = fmt.Sprintf("chown composed filesystem %s root %s: %v", fs.Name, fs.MountPath, err)
+			return result
+		}
+	} else {
+		// Read-only toolchain images carry an overlay contract:
+		// /etc-overlay/ is copied into /etc, .verself-writable-overlays
+		// lists paths to tmpfs-mount on top of the read-only base, and
+		// any /etc-overlay/passwd entries get their $HOME materialised.
+		// Substrate-only images and writable mounts skip this; they
+		// don't have somewhere to publish overlay metadata.
+		if err := s.applyToolchainOverlays(fs.Name, fs.MountPath); err != nil {
+			result.Error = fmt.Sprintf("apply overlays for %s: %v", fs.Name, err)
+			return result
+		}
+	}
+	_, _ = fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
+	s.filesystems = append(s.filesystems, fs)
+	result.Mounted = true
+	return result
 }
 
 func removeEmptyLostFound(mountPath string) error {
@@ -739,8 +763,12 @@ func validateFilesystemMount(fs vmproto.FilesystemMount) error {
 	if strings.TrimSpace(fs.Name) == "" {
 		return fmt.Errorf("composed filesystem name is required")
 	}
-	if strings.TrimSpace(fs.DevicePath) == "" || !strings.HasPrefix(fs.DevicePath, "/dev/") {
+	devicePath := strings.TrimSpace(fs.DevicePath)
+	if devicePath == "" || !strings.HasPrefix(devicePath, "/dev/vd") || strings.Contains(strings.TrimPrefix(devicePath, "/dev/"), "/") {
 		return fmt.Errorf("composed filesystem %s has invalid device path %q", fs.Name, fs.DevicePath)
+	}
+	if devicePath == "/dev/vda" {
+		return fmt.Errorf("composed filesystem %s must not mount the root device", fs.Name)
 	}
 	if strings.TrimSpace(fs.MountPath) == "" || !strings.HasPrefix(fs.MountPath, "/") {
 		return fmt.Errorf("composed filesystem %s has invalid mount path %q", fs.Name, fs.MountPath)

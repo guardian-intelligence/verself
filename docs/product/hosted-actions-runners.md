@@ -75,6 +75,23 @@ subsequent CI runs can start from a local ZFS clone instead of downloading and
 extracting archives. The term "sticky disk" appears only in Blacksmith
 migration material and refers to Blacksmith's product.
 
+The v0 Checkpoints action intentionally follows the Blacksmith `key` and
+`path` shape under Verself naming:
+
+```yaml
+- uses: verself/checkpoint@v0
+  with:
+    key: ${{ github.repository }}-npm-cache
+    path: ~/.npm
+```
+
+The action restores before dependent workflow steps run and saves through its
+post step. The first run for a key creates an empty ext4 filesystem and reports
+a miss. A restored generation reports a hit. v0 should launch with the same
+per-job planning shape customers expect from Blacksmith: a small bounded number
+of mounted Checkpoints, keyed by customer-provided strings, restored from the
+last committed generation in the selected scope.
+
 Checkout caching, Docker caching, and dependency acceleration are either
 Checkpoint consumers or separate Verself-owned cache features with familiar
 workflow shapes. Verself does not rename outputs or environment variables under
@@ -292,6 +309,105 @@ transfer is the bottleneck, such as Bazel repository caches, Bazel disk caches,
 Docker build state, package manager stores, browser binary caches, and large
 `node_modules` directories.
 
+Checkpoint restore is byte restoration. The restored filesystem is useful when
+the workload or package manager can validate or reconcile the prior state
+against the current source tree, lockfile, manifest, or content-addressed cache
+index. Verself guarantees atomic filesystem-generation restore/save,
+attempt-scoped authority, branch/trust isolation, and observed saveback state.
+The build tool remains responsible for deciding whether restored bytes are
+semantically valid inputs for the current run.
+
+Tool-reconciled directories are the primary target:
+
+- Bazel `--disk_cache` and `--repository_cache`.
+- npm `~/.npm` with `npm ci` for strict clean-install semantics.
+- `node_modules` with `npm install` when the key includes the lockfile and
+  runtime shape.
+- `.pnpm-store`, `.yarn/cache`, Gradle caches, Cargo registry/git caches,
+  browser binary caches, compiler caches, and BuildKit local-cache state.
+
+Opaque build outputs are higher risk because many tools do not validate them
+fully before reuse:
+
+- `dist`
+- `build`
+- `.next`
+- `target`
+- arbitrary generated source trees
+
+Customers can checkpoint those paths, but product docs should present them as
+advanced use cases that depend on the customer's toolchain invalidation model.
+
+Bazel is the first serial proof case. The recommended v0 recipe mounts a
+Checkpoint away from the workspace and points Bazel cache flags at directories
+inside it:
+
+```yaml
+- uses: verself/checkpoint@v0
+  with:
+    key: bazel-${{ github.repository }}-${{ github.ref_name }}
+    path: /mnt/verself-checkpoints/bazel
+
+- run: |
+    bazel \
+      --disk_cache=/mnt/verself-checkpoints/bazel/disk-cache \
+      --repository_cache=/mnt/verself-checkpoints/bazel/repository-cache \
+      build //...
+```
+
+The v0 product should avoid checkpointing Bazel's whole `output_base`.
+`output_base` includes Bazel server state, execroot, symlink forest, logs, and
+action-cache internals. Bazel's disk cache and repository cache are the clearer
+mount targets because Bazel already owns action keys, content hashes, and cache
+validation.
+
+npm has two separate recipes:
+
+```yaml
+# Strict CI install. node_modules is removed by npm ci, so checkpoint npm's
+# package cache instead.
+- uses: verself/checkpoint@v0
+  with:
+    key: npm-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    path: ~/.npm
+
+- run: npm ci
+```
+
+```yaml
+# Faster incremental install. npm reconciles node_modules against the lockfile.
+- uses: verself/checkpoint@v0
+  with:
+    key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    path: ./node_modules
+
+- run: npm install
+```
+
+The first OSS creation benchmark uses `expressjs/express` as a modest npm
+workload. Pin the repository ref and Node version in the benchmark harness so
+upstream dependency and test-suite changes do not silently change the measured
+surface. The checkpointed path is `~/.npm`; the first run proves empty-volume
+creation and generation promotion, and the second run proves restore from the
+committed generation.
+
+```yaml
+jobs:
+  express:
+    runs-on: verself-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: verself/checkpoint@v0
+        with:
+          key: npm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          path: ~/.npm
+      - run: npm ci
+      - run: npm test
+```
+
 The product should present these as separate features:
 
 - Use GitHub Actions cache passthrough for workflows already using
@@ -363,11 +479,13 @@ Checkpoint volume resources:
 
 - `volumes`: stable customer-visible storage resources. It stores `volume_id`,
   `org_id`, provider identity, repository identity, `repository_full_name`,
-  `product_kind`, `component_kind`, `key_hash`, restricted `key`,
-  `display_name`, `retention_policy`, `state`, `created_at`, `updated_at`, and
-  `last_used_at`. `product_kind = ci_checkpoint` identifies customer-visible
-  Checkpoints. `component_kind` distinguishes `checkpoint`,
-  `checkout_mirror`, and `docker_build_cache`.
+  `scope_kind`, `scope_ref`, `default_scope_ref`, `product_kind`,
+  `component_kind`, `key_hash`, restricted `key`, `display_name`,
+  `retention_policy`, `state`, `created_at`, `updated_at`, and `last_used_at`.
+  `product_kind = ci_checkpoint` identifies customer-visible Checkpoints.
+  `component_kind` distinguishes `checkpoint`, `checkout_mirror`, and
+  `docker_build_cache`. `scope_kind` and `scope_ref` distinguish default
+  branch, branch, and pull-request namespaces.
 - `volume_generations`: immutable generation ledger. It stores
   `volume_generation_id`, `volume_id`, `org_id`, `generation`,
   `parent_generation_id`, `trust_class`, `zfs_source_ref`, `zfs_snapshot_ref`,
@@ -382,6 +500,12 @@ Checkpoint volume resources:
   `target_source_ref`, `save_requested`, `save_state`,
   `committed_generation_id`, `failure_reason`, `created_at`, `requested_at`,
   and `completed_at`.
+- `checkpoint_lifecycle_events`: append-only transition ledger for Checkpoint
+  state changes. It stores event identity, event name, execution/attempt/mount
+  IDs, volume/generation IDs, provider run/job correlation, scope/trust
+  context, key/path hashes, from/to state values, result, reason code, storage
+  bytes, duration, trace IDs, and observation time. This table is the source
+  for future FSM verification and ClickHouse projection backfill.
 
 Checkpoint volume invariants:
 
@@ -400,33 +524,37 @@ created lazily on first use or explicitly through the public API, but the
 customer-visible acceleration event is the creation and promotion of a
 `volume_generations` row.
 
-Checkpoint load:
+Checkpoint mount:
 
-1. The runner integration compiles Checkpoint requests before the VM is
-   submitted. Requests include key, mount path, save policy, and optional
-   retention policy. Tenant, repository, provider installation, run, and job
-   identity come from the runner allocation and execution records.
-2. sandbox-rental normalizes the key, stores a restricted copy for inventory,
+1. The runner boots with reserved Checkpoint drive slots. v0 starts with five
+   slots per job so the runtime action can bind mounted filesystems after the
+   GitHub runner has evaluated workflow expressions.
+2. `verself/checkpoint@v0` runs as a normal GitHub Action step. The request
+   shape is `key` and `path`; save policy is implicit through the action post
+   step. Tenant, repository, provider installation, run, and job identity come
+   from the runner allocation and execution records.
+3. sandbox-rental normalizes the key, stores a restricted copy for inventory,
    computes the key hash, validates the mount path, and resolves or creates the
-   stable `volumes` row for `(org, provider, repository, component_kind,
-   key_hash)`.
-3. sandbox-rental selects the readable base generation from
-   `volume_current_generation` for the request trust class. A miss produces an
-   empty writable mount plan with no `source_generation_id` and records a
-   `checkpoint_operations` load miss. A hit records the selected
-   `source_generation_id` and the service-authorized source ref.
-4. sandbox-rental persists one `execution_volume_mounts` row per mount before
-   the attempt is submitted. This row is the attempt-scoped authority for
-   mounting and saveback.
-5. sandbox-rental calls vm-orchestrator `StartExec` with mount refs only.
-   vm-orchestrator resolves the refs to ZFS snapshots, clones zvols, attaches
-   them to Firecracker, and returns guest mount metadata. Host paths, zvol
-   names, and device paths remain inside vm-orchestrator and guest telemetry.
-6. The guest exposes each mounted filesystem at the requested path before the
-   workflow step that needs it starts. Checkpoint load is considered successful
-   only when the control plane has the mount plan, vm-orchestrator has attached
-   the clone, and ClickHouse has a `checkpoint_operations` row correlated to
-   the execution trace.
+   stable `volumes` row for `(org, provider, repository, scope_kind,
+   scope_ref, component_kind, key_hash)`.
+4. sandbox-rental selects the readable base generation from
+   `volume_current_generation` for the request scope and trust class. Branch
+   scopes may fall back to the default branch generation when product policy
+   allows it. A miss produces an empty writable mount plan with no
+   `source_generation_id` and records a `checkpoint_operations` load miss. A
+   hit records the selected `source_generation_id` and the service-authorized
+   source ref.
+5. sandbox-rental persists one `execution_volume_mounts` row. This row is the
+   attempt-scoped authority for mounting and saveback.
+6. sandbox-rental asks vm-orchestrator to prepare a writable zvol from either
+   the selected generation or an empty ext4 base, bind it to a reserved drive
+   slot, and ask vm-bridge to mount it at the resolved guest path. Host paths,
+   zvol names, dataset refs, and device paths remain inside vm-orchestrator and
+   guest telemetry.
+7. The action returns only after vm-bridge acknowledges the mount. Checkpoint
+   mount is considered successful only when Postgres has the mount state,
+   vm-orchestrator has attached the zvol, vm-bridge has mounted it, and
+   ClickHouse has a correlated `checkpoint_operations` row.
 
 Checkpoint saveback:
 
@@ -455,9 +583,36 @@ Checkpoint saveback:
    `checkpoint_operations` rows for commit and promotion with bytes, duration,
    generation IDs, result, and trace ID.
 
-The load path is optimized for pre-job latency. The save path is optimized for
-correctness and observability; generation creation is durable before current
-pointer rotation and every losing race remains explicit evidence.
+The mount path is optimized for latency before dependent workflow steps run.
+The save path is optimized for correctness and observability; generation
+creation is durable before current pointer rotation and every losing race
+remains explicit evidence.
+
+The event contract and full lifecycle are defined in
+`src/services/sandbox-rental-service/docs/checkpoint-event-contract.md`.
+Lifecycle events are stable names, not log messages. The future finite state
+machine should be generated from the same transition vocabulary so the product
+contract, Postgres state, ClickHouse projection, and runtime behavior cannot
+diverge silently.
+
+Checkpoint scope and promotion:
+
+- Default/protected branch runs read the protected current generation and may
+  promote the protected current pointer.
+- Same-repository PR and branch runs read their branch current generation, with
+  default branch fallback when configured, and may promote only their branch
+  current pointer.
+- Fork PR runs read only explicitly allowed safe bases and write to a
+  pull-request-scoped namespace with short retention. Fork PR writes never
+  promote protected or shared current pointers.
+- Promotion is compare-and-swap against the source generation observed at load
+  time. Parallel jobs that restore the same generation can each commit an
+  immutable generation, but only the first observed-state winner becomes
+  current. Losing generations remain auditable and are eligible for retention
+  cleanup.
+- Union merge is deferred. It is only appropriate for cache formats Verself
+  understands as additive/content-addressed stores. Raw ext4 directories use
+  generation rotation.
 
 Checkout cache resources:
 
@@ -543,6 +698,10 @@ Correctness:
   default-branch retry under provider scope rules.
 - Checkpoint saveback promotes a current generation only if the base generation
   has not changed while the job was running.
+- Checkpoints restore filesystem bytes. Tool-owned manifests, lockfiles, cache
+  indexes, or content-addressed stores decide semantic validity.
+- Product docs should recommend tool-reconciled cache directories before opaque
+  build-output directories.
 - Compatibility adapters fail loudly and observably. Verself-owned cache APIs
   do not fall back to provider-owned cache services on miss or failure.
 
@@ -675,6 +834,8 @@ operators, CLIs, and browser server functions.
 
 - VM execution control plane:
   `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
+- Checkpoint event contract and lifecycle:
+  `src/services/sandbox-rental-service/docs/checkpoint-event-contract.md`
 - GitHub runner allocation and JIT bootstrap:
   `src/services/sandbox-rental-service/internal/jobs/github_runner.go`
 - Guest-visible internal routes and provider webhooks:
@@ -692,12 +853,26 @@ operators, CLIs, and browser server functions.
   <https://github.com/actions/toolkit/tree/main/packages/cache>
 - GitHub Actions runner action environment setup:
   <https://github.com/actions/runner/tree/main/src/Runner.Worker/Handlers>
+- GitHub Actions metadata `runs.post` reference:
+  <https://docs.github.com/en/actions/reference/workflows-and-actions/metadata-syntax>
+- Firecracker block-device API capabilities:
+  <https://github.com/firecracker-microvm/firecracker>
 - Blacksmith dependency cache reference:
   <https://docs.blacksmith.sh/blacksmith-caching/dependencies-actions>
 - Blacksmith sticky disk migration reference:
   <https://docs.blacksmith.sh/blacksmith-caching/dependencies-sticky-disks>
 - Blacksmith checkout caching reference:
   <https://docs.blacksmith.sh/blacksmith-caching/git-checkout-caching>
+- Bazel remote caching and disk cache reference:
+  <https://bazel.build/remote/caching>
+- Bazel output directory layout:
+  <https://bazel.build/docs/output_directories>
+- npm `ci` reference:
+  <https://docs.npmjs.com/cli/v11/commands/npm-ci>
+- npm package lock and hidden lockfile reference:
+  <https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json/>
+- Express package manifest reference for the initial OSS benchmark:
+  <https://raw.githubusercontent.com/expressjs/express/master/package.json>
 
 ## Iteration Order
 
@@ -707,17 +882,23 @@ operators, CLIs, and browser server functions.
 3. Prove GitHub Actions cache passthrough on Verself runners with ClickHouse
    evidence.
 4. Add Verself archive cache data model, action/API, and ClickHouse evidence.
-5. Implement Verself Checkpoints on the volume model with action/API surfaces,
-   inventory, reset/delete, and `checkpoint_operations` evidence.
-6. Align CLI grammar with the product resources.
-7. Align public SDKs with the CLI and browser server functions.
-8. Add checkout, Docker, and container cache compatibility.
-9. Make scheduled browser/API canaries prove GitHub Actions cache passthrough,
+5. Implement v0 Checkpoints as the Blacksmith-shaped `key`/`path` action on
+   the volume model.
+6. Prove Checkpoint creation on a pinned `expressjs/express` npm benchmark and
+   verify `volume_generations`, ZFS snapshots, and `checkpoint_operations`.
+7. Prove serial Bazel speedup with `--disk_cache` and `--repository_cache`
+   mounted inside a Checkpoint.
+8. Add branch/trust scoped promotion and parallel-save conflict evidence.
+9. Add inventory, reset/delete, and `checkpoint_operations` evidence.
+10. Align CLI grammar with the product resources.
+11. Align public SDKs with the CLI and browser server functions.
+12. Add checkout, Docker, and container cache compatibility.
+13. Make scheduled browser/API canaries prove GitHub Actions cache passthrough,
     Verself archive cache restore, and Checkpoint restore with ClickHouse
     evidence.
-10. Add SSH-debug-into-runner with Pomerium-bounded sessions and ClickHouse
+14. Add SSH-debug-into-runner with Pomerium-bounded sessions and ClickHouse
     audit evidence.
-11. Add custom runner images through artifact admission with per-organization
+15. Add custom runner images through artifact admission with per-organization
     scoping.
-12. Add static egress IP pools per organization reconciled alongside HAProxy
+16. Add static egress IP pools per organization reconciled alongside HAProxy
     and nftables.

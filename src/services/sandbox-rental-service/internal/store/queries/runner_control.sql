@@ -22,6 +22,30 @@ SELECT allocation_id, provider
 FROM runner_allocations
 WHERE execution_id = sqlc.arg(execution_id);
 
+-- name: GetRunnerExecutionIdentity :one
+SELECT
+    a.allocation_id,
+    a.provider,
+    p.org_id,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.head_branch, '')::text AS head_branch,
+    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    e.runner_class,
+    a.runner_name
+FROM runner_allocations a
+JOIN executions e ON e.execution_id = a.execution_id
+JOIN runner_provider_repositories p ON p.provider = a.provider
+    AND p.provider_repository_id = a.provider_repository_id
+    AND p.active
+LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+LEFT JOIN runner_jobs j ON j.provider = a.provider
+    AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+WHERE a.execution_id = sqlc.arg(execution_id)
+  AND a.attempt_id = sqlc.arg(attempt_id);
+
 -- name: AttachRunnerAllocationExecution :execrows
 UPDATE runner_allocations
 SET execution_id = sqlc.arg(execution_id),

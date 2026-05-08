@@ -101,6 +101,10 @@ func (DirectPrivOps) SetupJail(context.Context, string, string, int, int, []Jail
 	return unsupportedHostMutation("setup jail")
 }
 
+func (DirectPrivOps) PlaceJailBlockDevice(context.Context, string, JailBlockDevice, int, int) error {
+	return unsupportedHostMutation("place jail block device")
+}
+
 func (DirectPrivOps) StartJailer(context.Context, string, JailerConfig) (*JailerProcess, error) {
 	return nil, unsupportedHostMutation("start jailer")
 }

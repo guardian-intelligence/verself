@@ -20,7 +20,10 @@ type GitHubExecutionIdentity struct {
 	Installation       int64
 	RepositoryID       int64
 	RepositoryFullName string
+	GitHubRunID        int64
 	GitHubJobID        int64
+	HeadBranch         string
+	RunnerClass        string
 	RunnerName         string
 }
 
@@ -62,7 +65,10 @@ func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executio
 		Installation:       row.ProviderInstallationID,
 		RepositoryID:       row.ProviderRepositoryID,
 		RepositoryFullName: row.RepositoryFullName,
+		GitHubRunID:        row.ProviderRunID,
 		GitHubJobID:        row.ProviderJobID,
+		HeadBranch:         row.HeadBranch,
+		RunnerClass:        row.RunnerClass,
 		RunnerName:         row.RunnerName,
 	}, nil
 }

@@ -76,11 +76,28 @@ func (s *agentSession) handleLocalControlConn(parent context.Context, conn net.C
 	if err != nil {
 		return
 	}
-	if env.Type != vmproto.TypeCheckpointRequest {
+	switch env.Type {
+	case vmproto.TypeCheckpointRequest:
+	case vmproto.TypeFilesystemMountRequest:
+	default:
 		writeLocalCheckpointResponse(codec, vmproto.CheckpointResponse{
 			Accepted: false,
 			Error:    fmt.Sprintf("unsupported local request type %s", env.Type),
 		})
+		return
+	}
+
+	if env.Type == vmproto.TypeFilesystemMountRequest {
+		req, err := vmproto.DecodePayload[vmproto.FilesystemMountRequest](env)
+		if err != nil {
+			writeLocalFilesystemMountResult(codec, vmproto.FilesystemMountResult{
+				Mounted: false,
+				Error:   err.Error(),
+			})
+			return
+		}
+		result := s.mountFilesystem(req.Filesystem)
+		writeLocalFilesystemMountResult(codec, result)
 		return
 	}
 
@@ -102,6 +119,14 @@ func (s *agentSession) handleLocalControlConn(parent context.Context, conn net.C
 
 func writeLocalCheckpointResponse(codec *vmproto.Codec, resp vmproto.CheckpointResponse) {
 	env, err := vmproto.NewEnvelope(vmproto.TypeCheckpointResponse, 1, time.Now().UnixNano(), resp)
+	if err != nil {
+		return
+	}
+	_ = codec.WriteEnvelope(env)
+}
+
+func writeLocalFilesystemMountResult(codec *vmproto.Codec, resp vmproto.FilesystemMountResult) {
+	env, err := vmproto.NewEnvelope(vmproto.TypeFilesystemMountResult, 1, time.Now().UnixNano(), resp)
 	if err != nil {
 		return
 	}

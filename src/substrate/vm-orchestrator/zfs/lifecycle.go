@@ -171,6 +171,53 @@ func (vl *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image 
 	return clone, nil
 }
 
+// PrepareEmptyMount creates a fresh ext4 zvol for a lease-scoped writable
+// mount. It is used for first-run Checkpoint misses where there is no source
+// generation to clone.
+func (vl *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, sizeBytes uint64) (MountClone, error) {
+	if sizeBytes == 0 {
+		return MountClone{}, fmt.Errorf("empty filesystem mount size is required")
+	}
+	clone := lease.Mount(index, name)
+	target := clone.Dataset()
+	createCtx, endCreate := startSpan(ctx, "vmorchestrator.zfs.empty_mount_create",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("filesystem.name", name),
+		attribute.String("zfs.dataset", target),
+		attribute.String("zfs.volume_requested_bytes", strconv.FormatUint(sizeBytes, 10)),
+	)
+	createErr := vl.ops.ZFSCreateVolume(createCtx, target, sizeBytes, "16K")
+	endCreate(createErr)
+	if createErr != nil {
+		return MountClone{}, fmt.Errorf("create empty filesystem zvol %s: %w", target, createErr)
+	}
+	devicePath := zvolDevicePath(target)
+	waitCtx, endWait := startSpan(ctx, "vmorchestrator.zfs.empty_mount_wait_device",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("filesystem.name", name),
+		attribute.String("zfs.dataset", target),
+		attribute.String("device.path", devicePath),
+	)
+	waitErr := waitForDevice(waitCtx, devicePath)
+	endWait(waitErr)
+	if waitErr != nil {
+		_ = vl.ops.ZFSDestroy(context.Background(), target)
+		return MountClone{}, fmt.Errorf("wait for empty filesystem zvol device %s: %w", devicePath, waitErr)
+	}
+	mkfsCtx, endMkfs := startSpan(ctx, "vmorchestrator.zfs.empty_mount_mkfs",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("filesystem.name", name),
+		attribute.String("zfs.dataset", target),
+	)
+	mkfsErr := vl.ops.ZFSMkfs(mkfsCtx, devicePath, "ext4", "verself")
+	endMkfs(mkfsErr)
+	if mkfsErr != nil {
+		_ = vl.ops.ZFSDestroy(context.Background(), target)
+		return MountClone{}, fmt.Errorf("mkfs empty filesystem zvol %s: %w", target, mkfsErr)
+	}
+	return clone, nil
+}
+
 // DestroyLeaseRoot destroys lease.RootDataset(). Containment is structural
 // via the Lease type; there is no runtime prefix check.
 func (vl *VolumeLifecycle) DestroyLeaseRoot(ctx context.Context, lease Lease) error {
@@ -181,6 +228,15 @@ func (vl *VolumeLifecycle) DestroyLeaseRoot(ctx context.Context, lease Lease) er
 // MountClone type.
 func (vl *VolumeLifecycle) DestroyMount(ctx context.Context, mount MountClone) error {
 	return vl.ops.ZFSDestroy(ctx, mount.Dataset())
+}
+
+// DestroyImage destroys a committed composable image dataset and its snapshots.
+func (vl *VolumeLifecycle) DestroyImage(ctx context.Context, image Image) error {
+	return vl.ops.ZFSDestroyRecursive(ctx, image.Dataset())
+}
+
+func zvolDevicePath(dataset string) string {
+	return "/dev/zvol/" + dataset
 }
 
 // startSpan opens a child span with the given attributes and returns a

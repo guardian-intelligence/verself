@@ -12,6 +12,7 @@ go_library(
         "client_types.go",
         "control.go",
         "doc.go",
+        "filesystem_attach.go",
         "filesystem_commit.go",
         "metrics.go",
         "network.go",

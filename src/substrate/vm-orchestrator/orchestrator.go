@@ -32,6 +32,8 @@ const (
 	firecrackerStepTimeout = 5 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 8
+	maxCheckpointSlots     = 5
+	defaultCheckpointBytes = 5 * 1024 * 1024 * 1024
 )
 
 // firecrackerStep is one PUT against the Firecracker API socket. The
@@ -147,6 +149,7 @@ type LeaseSpec struct {
 	CheckpointSaveAllowlist []string
 	NetworkMode             string
 	FilesystemMounts        []FilesystemMount
+	CheckpointSlotCount     uint32
 }
 
 type FilesystemMount struct {
@@ -165,6 +168,18 @@ type preparedFilesystemMount struct {
 	JailDevicePath  string
 	GuestDevicePath string
 	clone           zfs.MountClone
+}
+
+type checkpointDriveSlot struct {
+	Index             int
+	DriveID           string
+	ReserveJailPath   string
+	ReserveHostPath   string
+	ActiveJailPath    string
+	GuestDevicePath   string
+	InUse             bool
+	MountName         string
+	FilesystemMountID int
 }
 
 type ExecSpec struct {
@@ -195,7 +210,10 @@ type LeaseRuntime struct {
 	Dataset string
 	Network NetworkLease
 	Mounts  []preparedFilesystemMount
+	Slots   []checkpointDriveSlot
 
+	apiSocketPath   string
+	jailRoot        string
 	control         *guestControl
 	jailer          *JailerProcess
 	metricsPath     string
@@ -283,10 +301,13 @@ func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 	if err := spec.Resources.Validate(bounds); err != nil {
 		return LeaseSpec{}, err
 	}
+	if spec.CheckpointSlotCount > maxCheckpointSlots {
+		return LeaseSpec{}, fmt.Errorf("checkpoint_slot_count exceeds %d", maxCheckpointSlots)
+	}
 	if spec.TTLSeconds == 0 {
 		spec.TTLSeconds = 5 * 60
 	}
-	mounts, err := normalizeFilesystemMounts(spec.FilesystemMounts)
+	mounts, err := normalizeFilesystemMounts(spec.FilesystemMounts, filesystemMountSourceRequired)
 	if err != nil {
 		return LeaseSpec{}, err
 	}
@@ -294,7 +315,14 @@ func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 	return spec, nil
 }
 
-func normalizeFilesystemMounts(mounts []FilesystemMount) ([]FilesystemMount, error) {
+type filesystemMountSourceMode uint8
+
+const (
+	filesystemMountSourceRequired filesystemMountSourceMode = iota
+	filesystemMountSourceOptional
+)
+
+func normalizeFilesystemMounts(mounts []FilesystemMount, sourceMode filesystemMountSourceMode) ([]FilesystemMount, error) {
 	if len(mounts) == 0 {
 		return nil, nil
 	}
@@ -315,7 +343,10 @@ func normalizeFilesystemMounts(mounts []FilesystemMount) ([]FilesystemMount, err
 		if !zfs.IsValidRef(mount.Name) {
 			return nil, fmt.Errorf("filesystem_mounts[%d].name is invalid", idx)
 		}
-		if !zfs.IsValidRef(mount.SourceRef) {
+		if mount.SourceRef == "" && sourceMode == filesystemMountSourceRequired {
+			return nil, fmt.Errorf("filesystem_mounts[%d].source_ref is required", idx)
+		}
+		if mount.SourceRef != "" && !zfs.IsValidRef(mount.SourceRef) {
 			return nil, fmt.Errorf("filesystem_mounts[%d].source_ref is invalid", idx)
 		}
 		if mount.MountPath == "." || !strings.HasPrefix(mount.MountPath, "/") || mount.MountPath == "/" {
@@ -510,6 +541,56 @@ func guestFilesystemMounts(mounts []preparedFilesystemMount) []vmproto.Filesyste
 	return out
 }
 
+func prepareCheckpointDriveSlots(jailRoot string, mountCount, slotCount, uid, gid int) ([]checkpointDriveSlot, error) {
+	if slotCount == 0 {
+		return nil, nil
+	}
+	slots := make([]checkpointDriveSlot, 0, slotCount)
+	for i := 0; i < slotCount; i++ {
+		driveID := fmt.Sprintf("ckpt%d", i)
+		reserveName := fmt.Sprintf("checkpoint-reserve-%02d.img", i)
+		activeName := fmt.Sprintf("checkpoint-active-%02d", i)
+		reserveHostPath := filepath.Join(jailRoot, "drives", reserveName)
+		// This Firecracker build cannot rescan block devices, so the placeholder capacity must match the patched zvol.
+		if err := createReservedDriveFile(reserveHostPath, defaultCheckpointBytes, uid, gid); err != nil {
+			return nil, err
+		}
+		slots = append(slots, checkpointDriveSlot{
+			Index:           i,
+			DriveID:         driveID,
+			ReserveJailPath: "/drives/" + reserveName,
+			ReserveHostPath: reserveHostPath,
+			ActiveJailPath:  "/drives/" + activeName,
+			GuestDevicePath: guestVirtioDevicePath(mountCount + i),
+		})
+	}
+	return slots, nil
+}
+
+func createReservedDriveFile(path string, sizeBytes uint64, uid, gid int) error {
+	if sizeBytes == 0 {
+		return fmt.Errorf("checkpoint drive reserve size is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir checkpoint drive reserve dir: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create checkpoint drive reserve file %s: %w", path, err)
+	}
+	if err := file.Truncate(int64(sizeBytes)); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("size checkpoint drive reserve file %s: %w", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close checkpoint drive reserve file %s: %w", path, err)
+	}
+	if err := os.Chown(path, uid, gid); err != nil {
+		return fmt.Errorf("chown checkpoint drive reserve file %s: %w", path, err)
+	}
+	return nil
+}
+
 func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec LeaseSpec, dataset string, mounts []preparedFilesystemMount, observer LeaseObserver) (*LeaseRuntime, error) {
 	leaseID := lease.ID()
 	logger := o.logger.With("lease_id", leaseID, "dataset", dataset)
@@ -517,12 +598,14 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	if err != nil {
 		return nil, err
 	}
+	jailRoot := o.jailDir(leaseID)
 	runtime := &LeaseRuntime{
-		LeaseID: leaseID,
-		Lease:   lease,
-		Dataset: dataset,
-		Mounts:  mounts,
-		logger:  logger,
+		LeaseID:  leaseID,
+		Lease:    lease,
+		Dataset:  dataset,
+		Mounts:   mounts,
+		jailRoot: jailRoot,
+		logger:   logger,
 	}
 	cleanupOnErr := true
 	defer func() {
@@ -543,7 +626,6 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	}
 	endDeviceSpan(nil)
 
-	jailRoot := o.jailDir(leaseID)
 	jailDevices := []JailBlockDevice{{HostPath: devPath, JailPath: "/rootfs"}}
 	for _, mount := range mounts {
 		mountDeviceCtx, endMountDeviceSpan := startStepSpan(ctx, "vmorchestrator.zvol.mount_wait_device",
@@ -571,6 +653,12 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 		return nil, fmt.Errorf("setup jail: %w", err)
 	}
 	endJailSpan(nil)
+
+	slots, err := prepareCheckpointDriveSlots(jailRoot, len(mounts), int(spec.CheckpointSlotCount), o.cfg.JailerUID, o.cfg.JailerGID)
+	if err != nil {
+		return nil, err
+	}
+	runtime.Slots = slots
 
 	leaseJailDir := filepath.Dir(jailRoot)
 	runtime.cleanups = append(runtime.cleanups, func() {
@@ -602,6 +690,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
 	controlSockHost := filepath.Join(jailRoot, "run", "vs-control.sock")
 	runtime.metricsPath = filepath.Join(jailRoot, "metrics.json")
+	runtime.apiSocketPath = apiSockHost
 
 	jailerCtx, endJailerSpan := startStepSpan(ctx, "vmorchestrator.jailer.start",
 		attribute.String("lease.id", leaseID),
@@ -667,6 +756,15 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 			name: "drive-" + mount.DriveID,
 			fn: func(stepCtx context.Context) error {
 				return client.putDrive(stepCtx, mount.DriveID, mount.JailDevicePath, false, mount.Spec.ReadOnly)
+			},
+		})
+	}
+	for _, slot := range slots {
+		slot := slot
+		apiSteps = append(apiSteps, firecrackerStep{
+			name: "drive-" + slot.DriveID,
+			fn: func(stepCtx context.Context) error {
+				return client.putDrive(stepCtx, slot.DriveID, slot.ReserveJailPath, false, false)
 			},
 		})
 	}

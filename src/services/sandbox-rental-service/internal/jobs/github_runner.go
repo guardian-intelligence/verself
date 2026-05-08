@@ -740,6 +740,8 @@ func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.
 		"VERSELF_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
 		"VERSELF_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
 		"VERSELF_CHECKOUT_PATH":    githubCheckoutPath,
+		"VERSELF_CHECKPOINT_TOKEN": r.deriveCheckpointToken(executionID, attemptID),
+		"VERSELF_CHECKPOINT_PATH":  checkpointPath,
 	}
 }
 
@@ -1124,6 +1126,14 @@ func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) st
 
 func (r *GitHubRunner) deriveCheckoutToken(executionID, attemptID uuid.UUID) string {
 	mac := hmac.New(sha256.New, []byte("verself-checkout:"+r.cfg.WebhookSecret))
+	mac.Write([]byte(executionID.String()))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(attemptID.String()))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (r *GitHubRunner) deriveCheckpointToken(executionID, attemptID uuid.UUID) string {
+	mac := hmac.New(sha256.New, []byte("verself-checkpoint:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))

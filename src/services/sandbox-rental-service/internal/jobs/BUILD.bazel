@@ -4,7 +4,9 @@ go_library(
     name = "jobs",
     srcs = [
         "analytics.go",
+        "checkpoint_execution_auth.go",
         "checkout.go",
+        "checkpoints.go",
         "correlation.go",
         "forgejo_runner.go",
         "github_execution_auth.go",

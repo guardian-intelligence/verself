@@ -517,6 +517,10 @@ func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, kernelSrc string, 
 	return nil
 }
 
+func (DirectPrivOps) PlaceJailBlockDevice(ctx context.Context, jailRoot string, device JailBlockDevice, uid, gid int) error {
+	return createJailBlockDevice(ctx, jailRoot, device, uid, gid)
+}
+
 func createJailBlockDevice(ctx context.Context, jailRoot string, device JailBlockDevice, uid, gid int) error {
 	if strings.TrimSpace(device.HostPath) == "" || strings.TrimSpace(device.JailPath) == "" {
 		return fmt.Errorf("jail block device host and jail paths are required")

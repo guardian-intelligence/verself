@@ -15,6 +15,8 @@ Code pointers:
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
   logs, provider-neutral runner demand/allocation state, and schedule dispatch
   lineage.
+- `checkpoint-event-contract.md` - Checkpoint lifecycle event names, state
+  vocabulary, and future FSM transition contract.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
 - `../../dto/sandbox.go` - shared wire DTOs.
@@ -34,6 +36,9 @@ State model:
   job sync.
 - `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
+- Checkpoint control-plane state belongs beside executions: stable volume rows,
+  immutable generation rows, trust/scope current pointers, and per-attempt
+  mount/saveback rows.
 - `execution_schedules` and `execution_schedule_dispatches` are Temporal-backed
   recurring canary state.
 
@@ -47,6 +52,37 @@ Runner flow:
    selected runner class.
 3. The execution worker reserves billing, acquires a vm-orchestrator lease,
    starts the workload payload, streams logs, and settles billing.
+
+Checkpoint flow:
+
+1. The runner boots with a bounded set of reserved Checkpoint drive slots.
+   `verself/checkpoint@v0` runs as a normal action step after the GitHub runner
+   has evaluated workflow expressions, then sends concrete `key` and `path`
+   values to sandbox-rental through the guest-visible internal API.
+2. sandbox-rental authenticates the attempt-scoped token and derives
+   organization, repository, provider installation, run, job, branch, PR, and
+   trust context from persisted runner state. The guest never supplies tenant
+   or repository identity.
+3. sandbox-rental records lifecycle events using the contract in
+   `checkpoint-event-contract.md`; the same transition vocabulary is the input
+   to the future finite state machine.
+4. sandbox-rental resolves a scoped volume for `(org, repository, scope,
+   component_kind, key_hash)`, chooses the readable current generation, and
+   persists an attempt-scoped mount row. First use creates an empty mount plan
+   and records a miss.
+5. sandbox-rental asks vm-orchestrator to create or clone the writable ext4
+   zvol, bind it to a reserved runner drive slot, trigger guest discovery, and
+   mount it at the requested path through vm-bridge. vm-orchestrator returns
+   service results only; host paths, dataset names, and device paths stay
+   behind the privileged boundary.
+6. The action post step marks requested mounts for saveback with
+   attempt-scoped credentials. During finalization, sandbox-rental asks
+   vm-orchestrator to snapshot requested writable mounts, records immutable
+   generations, and promotes current pointers only by observed-state
+   compare-and-swap.
+7. Protected/default branch runs may promote protected current pointers.
+   Same-repository branch/PR runs may promote branch pointers. Fork PR runs
+   write only to PR-scoped short-retention namespaces.
 
 Recurring schedule flow:
 
