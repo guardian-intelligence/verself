@@ -37,7 +37,7 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     to: "/docs/getting-started",
     matchPrefix: "/docs/getting-started",
     status: "coming-soon",
-    description: "First run for the hosted sandbox product and clone bootstrap CLI.",
+    description: "First run for the hosted sandbox product and the self-host bootstrap CLI.",
   },
   {
     id: "cli",
@@ -45,7 +45,7 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     to: "/docs/cli",
     matchPrefix: "/docs/cli",
     status: "available",
-    description: "Command reference for operating Verself and cloned installations.",
+    description: "Command reference for operating any Verself installation.",
     children: [
       { id: "profiles", label: "Profiles" },
       { id: "organizations", label: "Organizations" },

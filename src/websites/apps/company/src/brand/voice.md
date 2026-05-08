@@ -4,7 +4,7 @@ One line: **Confident without ceremony.**
 
 ## Six attributes
 
-1. **Plural.** First-person plural. Never "I." Never "our company." "We", when necessary
+1. **Plural.** First-person plural. Never "I." Never "our company." "We", when necessary. Exception: signed letters under `/letters/` — see carve-out below.
 2. **Present.** Present tense. We describe what we do now.
 3. **Measured.** No hype, no scarcity. The work is the argument.
 4. **Grounded.** A specific noun or number in every paragraph.
@@ -42,3 +42,7 @@ When you are unsure, read a paragraph from one of these:
 - 37signals, _How We Work_
 
 If the paragraph reads like a VC deck, a LinkedIn post, or a keynote hook, it fails.
+
+## Carve-out: signed letters
+
+Letters under `/letters/` are the one place first-person singular is allowed. A letter is written by one person to one reader and signed by name. Date-led, no headlines on screen, no proclamatory geometry. The plural rule applies everywhere else — chrome, marketing, docs, policy, the company website outside of `/letters/`.

@@ -3,7 +3,7 @@ Set of services + console + marketing page for a sandbox-compute business (Firec
 
 Verself sells compute time, not application hosting — customer code runs in short-lived sandboxes the customer rents.
 
-The platform is also clone-deployable: operators can stand up their own installation on their own Latitude.sh bare metal via the bootstrap CLI (`docs/verself-cli.md`); a cloned installation has no runtime coupling to verself.sh. Almost entirely self-hosted on a single bare metal node.
+The platform is also self-hostable: an operator can stand up an independent Verself installation on their own Latitude.sh bare metal via the bootstrap CLI (`docs/verself-cli.md`). A self-hosted installation runs at its own domain under its own name, owns its own control plane, identity, data, and billing, and has no runtime coupling to verself.sh. Almost entirely self-hosted on a single bare metal node.
 
 product: verself.sh
 auth portal: auth.verself.sh
@@ -14,7 +14,16 @@ company website: guardianintelligence.org
 * `aspect` contains lots of helpful commands under .aspect/.
 * Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output)
 
-Polyglot monorepo structured as a modular monolith.
+Current product: Blacksmith.sh clone (GitHub app that runs on bare metal)
+3 runners should be running on every merge to main:
+
+Blacksmith
+GitHub
+our internal CI
+
+To reduce costs over time once our internal CI gets reliable enough we can run the other two only as a benchmarking tool.
+
+This is a polyglot monorepo structured as a modular monolith.
 
 Layers:
 
@@ -68,7 +77,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 <product_context>
 - The customer-facing product is sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement: customers point CI at Verself and workflows run on Verself Firecracker VMs for a 2–10x speedup. We dogfood it on every merge to main, comparing against Blacksmith.sh and GitHub Actions to verify we are faster.
 - Verself does not host customer applications. Customer code runs only inside short-lived sandboxes the customer rents (CI workflow runs today; Lambda-style invocations and persistent dev VMs later) on the same isolation, billing, and telemetry substrate.
-- The bootstrap CLI is a separate offering. It renders a configured clone of this repo onto operator-supplied Latitude.sh bare metal so an operator can stand up their own installation. After download a cloned installation has no runtime coupling to verself.sh — it is a peer installation, not a managed tenant. See `docs/verself-cli.md`.
+- The bootstrap CLI is a separate offering. It renders site artifacts onto operator-supplied Latitude.sh bare metal so an operator can stand up an independent Verself installation. Once deployed, that installation runs at its own domain under its own name and has no runtime coupling to verself.sh: there is no tenant relationship, no upstream control plane, no shared identity, no shared data. See `docs/verself-cli.md`.
 </product_context>
 
 <product_policy>
@@ -130,7 +139,7 @@ aspect deploy --site=prod --sha=HEAD
 
 ### High-signal Documents.
 
-@README.md -- mp
+@README.md -- map to other documents.
 
 Recommended that you read relevant ones directly. You can have a subagent summarize the ones that are not related to your task.
 
@@ -139,7 +148,6 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **ZFS volume lifecycle, zvol, clone, snapshot, checkpoint, restore:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
 - **Wire contracts, DTO patterns, protobuf schemas, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract gate:** `src/domain-transfer-objects/docs/wire-contracts.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
-- **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, OIDC discovery, Verself policy split:** `src/platform/docs/identity-and-iam.md`
 - **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`

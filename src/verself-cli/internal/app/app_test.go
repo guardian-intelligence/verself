@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func TestBootstrapRendersEncryptedCompanyCloneArtifacts(t *testing.T) {
+func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	requireTool(t, "age-keygen")
 	requireTool(t, "sops")
 

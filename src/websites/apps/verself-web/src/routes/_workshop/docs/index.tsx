@@ -21,8 +21,8 @@ function DocsOverview() {
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Verself Platform</h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-            Public documentation for sandbox compute, clone operation, service APIs, and the
-            security model behind customer-rented Firecracker workloads.
+            Public documentation for sandbox compute, service APIs, and the security model
+            behind customer-rented Firecracker workloads.
           </p>
         </div>
       </header>

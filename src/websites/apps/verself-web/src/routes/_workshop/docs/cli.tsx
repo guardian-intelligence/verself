@@ -30,7 +30,7 @@ function CLIDocs() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">CLI</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-          Operate Verself, cloned installations, organization state, API credentials, Projects,
+          Operate any Verself installation: organization state, API credentials, Projects,
           Governance, Source, and Sandbox Rental from one binary.
         </p>
       </header>
