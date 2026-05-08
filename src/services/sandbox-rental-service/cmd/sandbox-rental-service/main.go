@@ -92,7 +92,9 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "sandbox_rental")
 	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
-	iamInternalURL := cfg.URL("SANDBOX_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
+	// IAM's internal listener is Nomad-dynamic in production; a default here
+	// dials stale localhost and turns authorization into a five-second timeout.
+	iamInternalURL := cfg.RequireURL("SANDBOX_IAM_INTERNAL_URL")
 	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")

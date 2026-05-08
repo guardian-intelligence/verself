@@ -170,6 +170,7 @@ EOT
 SANDBOX_FORGEJO_API_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_BILLING_URL=https://{{- with nomadService "billing-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+SANDBOX_IAM_INTERNAL_URL=https://{{- with nomadService "iam-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService "source-code-hosting-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}

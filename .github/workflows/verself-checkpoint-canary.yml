@@ -2,8 +2,6 @@ name: Verself Checkpoint Canary
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 8 * * *"
 
 permissions:
   contents: read
