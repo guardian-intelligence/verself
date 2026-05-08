@@ -66,29 +66,13 @@ export const governanceAuditEventsQuerySchema = v.strictObject({
   audit_event: v.optional(v.string()),
   credential_id: v.optional(v.string()),
   cursor: v.optional(v.string()),
-  high_risk: v.optional(v.boolean()),
+  event_name: v.optional(v.string()),
+  event_source: v.optional(v.string()),
   limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
-  operation_id: v.optional(v.string()),
-  operation_type: v.optional(
-    v.picklist([
-      "read",
-      "write",
-      "delete",
-      "authn",
-      "authz",
-      "billing",
-      "export",
-      "system",
-      "unknown",
-    ]),
-  ),
   order: v.optional(v.picklist(["asc", "desc"])),
-  result: v.optional(v.picklist(["allowed", "denied", "error"])),
-  risk_level: v.optional(v.picklist(["low", "medium", "high", "critical"])),
-  service_name: v.optional(v.string()),
-  source_product_area: v.optional(v.string()),
+  outcome: v.optional(v.picklist(["allowed", "denied", "error"])),
   target_id: v.optional(v.string()),
-  target_kind: v.optional(v.string()),
+  target_type: v.optional(v.string()),
 });
 
 export type GovernanceCreateExportRequest = v.InferOutput<

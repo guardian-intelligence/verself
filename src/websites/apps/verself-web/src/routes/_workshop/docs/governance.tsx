@@ -57,10 +57,9 @@ function GovernanceDocs() {
         <SectionHeading id="audit-events">Audit Events</SectionHeading>
         <Prose>
           <p>
-            Audit queries support exact filters for actor, credential, target, event name, operation
-            ID, operation type, service, source product area, result, risk level, cursor, and
-            ordering. The high-risk view expands to high or critical risk events, write, delete,
-            export, denied, and error outcomes.
+            Audit queries support exact filters for actor, credential, target, event source,
+            event name, audit event, outcome, cursor, and ordering. Large operation-specific
+            payloads are stored as hashed detail records behind the canonical row.
           </p>
         </Prose>
         <Command>{`const verself = new Verself({
@@ -69,9 +68,9 @@ function GovernanceDocs() {
 });
 
 const page = await verself.governance.listAuditEvents({
-  high_risk: true,
+  event_source: "governance-service",
   limit: 50,
-  operation_type: "export",
+  outcome: "allowed",
 });`}</Command>
       </section>
 
@@ -106,8 +105,8 @@ artifact, err := client.Governance.DownloadDataExport(ctx, export.ExportID)`}</C
             <code>--traceparent</code> joins CLI calls to an existing trace for ClickHouse evidence.
           </SummaryItem>
         </SummaryPanel>
-        <Command>{`verself audit events --high-risk --limit 50
-verself audit events --operation-type export --result allowed --json
+        <Command>{`verself audit events --event-source governance-service --limit 50
+verself audit events --event-name create-data-export --outcome allowed --json
 verself audit exports list
 verself audit exports create --scope audit --idempotency-key audit-export:2026-05-07
 verself audit exports download <export-id> ./export.tar.gz --json`}</Command>

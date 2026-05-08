@@ -15,7 +15,7 @@ func TestGovernanceAuditAndExportAPI(t *testing.T) {
 	var createBody map[string]any
 	var createKey string
 	exportJSON := `{"export_id":"` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["audit"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"audit/audit_events.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
-	auditEventJSON := `{"action":"governance.data_export.create","actor_id":"user_1","actor_type":"user","audit_event":"governance.data_export.create","content_sha256":"hash","decision":"allowed","event_category":"data_export","event_id":"22222222-2222-2222-2222-222222222222","operation_display":"Create data export","operation_id":"create-data-export","operation_type":"export","org_id":"370200542594579812","org_scope":"same_org","permission":"governance.exports.write","prev_hmac":"prev","recorded_at":"2026-05-07T00:00:01Z","result":"allowed","risk_level":"high","row_hmac":"row","sequence":"1","service_name":"governance-service","source_product_area":"Governance","target_id":"` + exportID + `","target_kind":"data_export","trace_id":"11111111111111111111111111111111"}`
+	auditEventJSON := `{"actor_id":"user_1","actor_type":"user","audit_event":"governance.data_export.create","detail_sha256":"hash","event_id":"22222222-2222-2222-2222-222222222222","event_name":"create-data-export","event_source":"governance-service","org_id":"370200542594579812","outcome":"allowed","permission":"governance.exports.write","prev_hmac":"prev","recorded_at":"2026-05-07T00:00:01Z","row_hmac":"row","sequence":"1","target_id":"` + exportID + `","target_type":"data_export","trace_id":"11111111111111111111111111111111"}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok_governance" {
@@ -27,10 +27,10 @@ func TestGovernanceAuditAndExportAPI(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/audit/events":
-			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("high_risk") != "true" || r.URL.Query().Get("operation_type") != "export" {
+			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("event_source") != "governance-service" || r.URL.Query().Get("outcome") != "allowed" {
 				t.Fatalf("audit query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"events":[` + auditEventJSON + `],"filters":{"high_risk":true,"operation_type":"export"},"limit":2,"next_cursor":"cursor_1"}`))
+			_, _ = w.Write([]byte(`{"events":[` + auditEventJSON + `],"filters":{"event_source":"governance-service","outcome":"allowed"},"limit":2,"next_cursor":"cursor_1"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports":
 			_, _ = w.Write([]byte(`{"exports":[` + exportJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/governance/exports":
@@ -60,9 +60,9 @@ func TestGovernanceAuditAndExportAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, err := client.Governance.ListAuditEvents(context.Background(), ListGovernanceAuditEventsOptions{
-		Limit:         2,
-		HighRisk:      true,
-		OperationType: GovernanceOperationTypeExport,
+		Limit:       2,
+		EventSource: "governance-service",
+		Outcome:     GovernanceAuditOutcomeAllowed,
 	})
 	if err != nil {
 		t.Fatal(err)

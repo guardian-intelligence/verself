@@ -14,35 +14,12 @@ import (
 	governancecore "github.com/verself/verself-go/internal/generated/governance"
 )
 
-type GovernanceOperationType string
+type GovernanceAuditOutcome string
 
 const (
-	GovernanceOperationTypeRead    GovernanceOperationType = "read"
-	GovernanceOperationTypeWrite   GovernanceOperationType = "write"
-	GovernanceOperationTypeDelete  GovernanceOperationType = "delete"
-	GovernanceOperationTypeAuthn   GovernanceOperationType = "authn"
-	GovernanceOperationTypeAuthz   GovernanceOperationType = "authz"
-	GovernanceOperationTypeBilling GovernanceOperationType = "billing"
-	GovernanceOperationTypeExport  GovernanceOperationType = "export"
-	GovernanceOperationTypeSystem  GovernanceOperationType = "system"
-	GovernanceOperationTypeUnknown GovernanceOperationType = "unknown"
-)
-
-type GovernanceResult string
-
-const (
-	GovernanceResultAllowed GovernanceResult = "allowed"
-	GovernanceResultDenied  GovernanceResult = "denied"
-	GovernanceResultError   GovernanceResult = "error"
-)
-
-type GovernanceRiskLevel string
-
-const (
-	GovernanceRiskLevelLow      GovernanceRiskLevel = "low"
-	GovernanceRiskLevelMedium   GovernanceRiskLevel = "medium"
-	GovernanceRiskLevelHigh     GovernanceRiskLevel = "high"
-	GovernanceRiskLevelCritical GovernanceRiskLevel = "critical"
+	GovernanceAuditOutcomeAllowed GovernanceAuditOutcome = "allowed"
+	GovernanceAuditOutcomeDenied  GovernanceAuditOutcome = "denied"
+	GovernanceAuditOutcomeError   GovernanceAuditOutcome = "error"
 )
 
 type GovernanceAuditOrder string
@@ -62,90 +39,51 @@ const (
 )
 
 type ListGovernanceAuditEventsOptions struct {
-	Limit             int
-	Cursor            string
-	Order             GovernanceAuditOrder
-	ActorID           string
-	AuditEvent        string
-	CredentialID      string
-	HighRisk          bool
-	OperationID       string
-	OperationType     GovernanceOperationType
-	Result            GovernanceResult
-	RiskLevel         GovernanceRiskLevel
-	ServiceName       string
-	SourceProductArea string
-	TargetID          string
-	TargetKind        string
+	Limit        int
+	Cursor       string
+	Order        GovernanceAuditOrder
+	ActorID      string
+	AuditEvent   string
+	CredentialID string
+	EventName    string
+	EventSource  string
+	Outcome      GovernanceAuditOutcome
+	TargetID     string
+	TargetType   string
 }
 
 type GovernanceAuditEvent struct {
-	Action                string    `json:"action"`
-	ActorDisplay          string    `json:"actor_display,omitempty"`
-	ActorID               string    `json:"actor_id"`
-	ActorOwnerDisplay     string    `json:"actor_owner_display,omitempty"`
-	ActorOwnerID          string    `json:"actor_owner_id,omitempty"`
-	ActorType             string    `json:"actor_type"`
-	ASN                   string    `json:"asn,omitempty"`
-	ASNOrg                string    `json:"asn_org,omitempty"`
-	AuditEvent            string    `json:"audit_event"`
-	AuthMethod            string    `json:"auth_method,omitempty"`
-	ClientIP              string    `json:"client_ip,omitempty"`
-	ClientIPVersion       string    `json:"client_ip_version,omitempty"`
-	ContentSHA256         string    `json:"content_sha256"`
-	CredentialFingerprint string    `json:"credential_fingerprint,omitempty"`
-	CredentialID          string    `json:"credential_id,omitempty"`
-	CredentialName        string    `json:"credential_name,omitempty"`
-	Decision              string    `json:"decision"`
-	DenialReason          string    `json:"denial_reason,omitempty"`
-	ErrorCode             string    `json:"error_code,omitempty"`
-	ErrorMessage          string    `json:"error_message,omitempty"`
-	EventCategory         string    `json:"event_category"`
-	EventID               string    `json:"event_id"`
-	GeoCountry            string    `json:"geo_country,omitempty"`
-	GeoRegion             string    `json:"geo_region,omitempty"`
-	HMACKeyID             string    `json:"hmac_key_id,omitempty"`
-	IdempotencyKeyHash    string    `json:"idempotency_key_hash,omitempty"`
-	IPChain               string    `json:"ip_chain,omitempty"`
-	MFAPresent            *bool     `json:"mfa_present,omitempty"`
-	NetworkType           string    `json:"network_type,omitempty"`
-	OperationDisplay      string    `json:"operation_display"`
-	OperationID           string    `json:"operation_id"`
-	OperationType         string    `json:"operation_type"`
-	OrgID                 string    `json:"org_id"`
-	OrgScope              string    `json:"org_scope"`
-	Permission            string    `json:"permission"`
-	PrevHMAC              string    `json:"prev_hmac"`
-	RecordedAt            time.Time `json:"recorded_at"`
-	RequestID             string    `json:"request_id,omitempty"`
-	Result                string    `json:"result"`
-	RiskLevel             string    `json:"risk_level"`
-	RowHMAC               string    `json:"row_hmac"`
-	Sequence              string    `json:"sequence"`
-	ServiceName           string    `json:"service_name"`
-	SourceProductArea     string    `json:"source_product_area"`
-	TargetDisplay         string    `json:"target_display,omitempty"`
-	TargetID              string    `json:"target_id,omitempty"`
-	TargetKind            string    `json:"target_kind"`
-	TargetScope           string    `json:"target_scope,omitempty"`
-	TraceID               string    `json:"trace_id,omitempty"`
-	TrustClass            string    `json:"trust_class,omitempty"`
-	UserAgentHash         string    `json:"user_agent_hash,omitempty"`
+	ActorID      string    `json:"actor_id"`
+	ActorType    string    `json:"actor_type"`
+	AuditEvent   string    `json:"audit_event"`
+	CredentialID string    `json:"credential_id,omitempty"`
+	DetailSHA256 string    `json:"detail_sha256"`
+	ErrorCode    string    `json:"error_code,omitempty"`
+	EventID      string    `json:"event_id"`
+	EventName    string    `json:"event_name"`
+	EventSource  string    `json:"event_source"`
+	HMACKeyID    string    `json:"hmac_key_id,omitempty"`
+	OrgID        string    `json:"org_id"`
+	Outcome      string    `json:"outcome"`
+	Permission   string    `json:"permission"`
+	PrevHMAC     string    `json:"prev_hmac"`
+	RecordedAt   time.Time `json:"recorded_at"`
+	RowHMAC      string    `json:"row_hmac"`
+	Sequence     string    `json:"sequence"`
+	TargetID     string    `json:"target_id,omitempty"`
+	TargetType   string    `json:"target_type"`
+	TraceID      string    `json:"trace_id,omitempty"`
 }
 
 type GovernanceAuditFilters struct {
-	ActorID           string `json:"actor_id,omitempty"`
-	AuditEvent        string `json:"audit_event,omitempty"`
-	CredentialID      string `json:"credential_id,omitempty"`
-	HighRisk          *bool  `json:"high_risk,omitempty"`
-	OperationID       string `json:"operation_id,omitempty"`
-	OperationType     string `json:"operation_type,omitempty"`
-	Result            string `json:"result,omitempty"`
-	RiskLevel         string `json:"risk_level,omitempty"`
-	ServiceName       string `json:"service_name,omitempty"`
-	SourceProductArea string `json:"source_product_area,omitempty"`
-	TargetID          string `json:"target_id,omitempty"`
-	TargetKind        string `json:"target_kind,omitempty"`
+	ActorID      string `json:"actor_id,omitempty"`
+	AuditEvent   string `json:"audit_event,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
+	EventName    string `json:"event_name,omitempty"`
+	EventSource  string `json:"event_source,omitempty"`
+	Outcome      string `json:"outcome,omitempty"`
+	TargetID     string `json:"target_id,omitempty"`
+	TargetType   string `json:"target_type,omitempty"`
 }
 
 type GovernanceAuditEvents struct {
@@ -229,41 +167,25 @@ func (c *GovernanceClient) ListAuditEvents(ctx context.Context, options ListGove
 		credentialID := strings.TrimSpace(options.CredentialID)
 		params.CredentialId = &credentialID
 	}
-	if options.HighRisk {
-		highRisk := true
-		params.HighRisk = &highRisk
+	if strings.TrimSpace(options.EventName) != "" {
+		eventName := strings.TrimSpace(options.EventName)
+		params.EventName = &eventName
 	}
-	if strings.TrimSpace(options.OperationID) != "" {
-		operationID := strings.TrimSpace(options.OperationID)
-		params.OperationId = &operationID
+	if strings.TrimSpace(options.EventSource) != "" {
+		eventSource := strings.TrimSpace(options.EventSource)
+		params.EventSource = &eventSource
 	}
-	if options.OperationType != "" {
-		operationType := governancecore.ListAuditEventsParamsOperationType(options.OperationType)
-		params.OperationType = &operationType
-	}
-	if options.Result != "" {
-		result := governancecore.ListAuditEventsParamsResult(options.Result)
-		params.Result = &result
-	}
-	if options.RiskLevel != "" {
-		riskLevel := governancecore.ListAuditEventsParamsRiskLevel(options.RiskLevel)
-		params.RiskLevel = &riskLevel
-	}
-	if strings.TrimSpace(options.ServiceName) != "" {
-		serviceName := strings.TrimSpace(options.ServiceName)
-		params.ServiceName = &serviceName
-	}
-	if strings.TrimSpace(options.SourceProductArea) != "" {
-		sourceProductArea := strings.TrimSpace(options.SourceProductArea)
-		params.SourceProductArea = &sourceProductArea
+	if options.Outcome != "" {
+		outcome := governancecore.ListAuditEventsParamsOutcome(options.Outcome)
+		params.Outcome = &outcome
 	}
 	if strings.TrimSpace(options.TargetID) != "" {
 		targetID := strings.TrimSpace(options.TargetID)
 		params.TargetId = &targetID
 	}
-	if strings.TrimSpace(options.TargetKind) != "" {
-		targetKind := strings.TrimSpace(options.TargetKind)
-		params.TargetKind = &targetKind
+	if strings.TrimSpace(options.TargetType) != "" {
+		targetType := strings.TrimSpace(options.TargetType)
+		params.TargetType = &targetType
 	}
 
 	response, err := c.client.ListAuditEventsWithResponse(ctx, params)
@@ -411,74 +333,39 @@ func governanceAuditEventsFromGenerated(input governancecore.GovernanceAuditEven
 
 func governanceAuditFiltersFromGenerated(input governancecore.GovernanceAuditFilters) GovernanceAuditFilters {
 	return GovernanceAuditFilters{
-		ActorID:           stringValue(input.ActorId),
-		AuditEvent:        stringValue(input.AuditEvent),
-		CredentialID:      stringValue(input.CredentialId),
-		HighRisk:          input.HighRisk,
-		OperationID:       stringValue(input.OperationId),
-		OperationType:     stringValue(input.OperationType),
-		Result:            stringValue(input.Result),
-		RiskLevel:         stringValue(input.RiskLevel),
-		ServiceName:       stringValue(input.ServiceName),
-		SourceProductArea: stringValue(input.SourceProductArea),
-		TargetID:          stringValue(input.TargetId),
-		TargetKind:        stringValue(input.TargetKind),
+		ActorID:      stringValue(input.ActorId),
+		AuditEvent:   stringValue(input.AuditEvent),
+		CredentialID: stringValue(input.CredentialId),
+		EventName:    stringValue(input.EventName),
+		EventSource:  stringValue(input.EventSource),
+		Outcome:      stringValue(input.Outcome),
+		TargetID:     stringValue(input.TargetId),
+		TargetType:   stringValue(input.TargetType),
 	}
 }
 
 func governanceAuditEventFromGenerated(input governancecore.GovernanceAuditEvent) GovernanceAuditEvent {
 	return GovernanceAuditEvent{
-		Action:                input.Action,
-		ActorDisplay:          stringValue(input.ActorDisplay),
-		ActorID:               input.ActorId,
-		ActorOwnerDisplay:     stringValue(input.ActorOwnerDisplay),
-		ActorOwnerID:          stringValue(input.ActorOwnerId),
-		ActorType:             input.ActorType,
-		ASN:                   stringValue(input.Asn),
-		ASNOrg:                stringValue(input.AsnOrg),
-		AuditEvent:            input.AuditEvent,
-		AuthMethod:            stringValue(input.AuthMethod),
-		ClientIP:              stringValue(input.ClientIp),
-		ClientIPVersion:       stringValue(input.ClientIpVersion),
-		ContentSHA256:         input.ContentSha256,
-		CredentialFingerprint: stringValue(input.CredentialFingerprint),
-		CredentialID:          stringValue(input.CredentialId),
-		CredentialName:        stringValue(input.CredentialName),
-		Decision:              input.Decision,
-		DenialReason:          stringValue(input.DenialReason),
-		ErrorCode:             stringValue(input.ErrorCode),
-		ErrorMessage:          stringValue(input.ErrorMessage),
-		EventCategory:         input.EventCategory,
-		EventID:               input.EventId,
-		GeoCountry:            stringValue(input.GeoCountry),
-		GeoRegion:             stringValue(input.GeoRegion),
-		HMACKeyID:             stringValue(input.HmacKeyId),
-		IdempotencyKeyHash:    stringValue(input.IdempotencyKeyHash),
-		IPChain:               stringValue(input.IpChain),
-		MFAPresent:            input.MfaPresent,
-		NetworkType:           stringValue(input.NetworkType),
-		OperationDisplay:      input.OperationDisplay,
-		OperationID:           input.OperationId,
-		OperationType:         input.OperationType,
-		OrgID:                 input.OrgId,
-		OrgScope:              input.OrgScope,
-		Permission:            input.Permission,
-		PrevHMAC:              input.PrevHmac,
-		RecordedAt:            input.RecordedAt,
-		RequestID:             stringValue(input.RequestId),
-		Result:                input.Result,
-		RiskLevel:             input.RiskLevel,
-		RowHMAC:               input.RowHmac,
-		Sequence:              input.Sequence,
-		ServiceName:           input.ServiceName,
-		SourceProductArea:     input.SourceProductArea,
-		TargetDisplay:         stringValue(input.TargetDisplay),
-		TargetID:              stringValue(input.TargetId),
-		TargetKind:            input.TargetKind,
-		TargetScope:           stringValue(input.TargetScope),
-		TraceID:               stringValue(input.TraceId),
-		TrustClass:            stringValue(input.TrustClass),
-		UserAgentHash:         stringValue(input.UserAgentHash),
+		ActorID:      input.ActorId,
+		ActorType:    input.ActorType,
+		AuditEvent:   input.AuditEvent,
+		CredentialID: stringValue(input.CredentialId),
+		DetailSHA256: input.DetailSha256,
+		ErrorCode:    stringValue(input.ErrorCode),
+		EventID:      input.EventId,
+		EventName:    input.EventName,
+		EventSource:  input.EventSource,
+		HMACKeyID:    stringValue(input.HmacKeyId),
+		OrgID:        input.OrgId,
+		Outcome:      input.Outcome,
+		Permission:   input.Permission,
+		PrevHMAC:     input.PrevHmac,
+		RecordedAt:   input.RecordedAt,
+		RowHMAC:      input.RowHmac,
+		Sequence:     input.Sequence,
+		TargetID:     stringValue(input.TargetId),
+		TargetType:   input.TargetType,
+		TraceID:      stringValue(input.TraceId),
 	}
 }
 

@@ -40,84 +40,21 @@ func (e ListAuditEventsParamsOrder) Valid() bool {
 	}
 }
 
-// Defines values for ListAuditEventsParamsOperationType.
+// Defines values for ListAuditEventsParamsOutcome.
 const (
-	Authn   ListAuditEventsParamsOperationType = "authn"
-	Authz   ListAuditEventsParamsOperationType = "authz"
-	Billing ListAuditEventsParamsOperationType = "billing"
-	Delete  ListAuditEventsParamsOperationType = "delete"
-	Export  ListAuditEventsParamsOperationType = "export"
-	Read    ListAuditEventsParamsOperationType = "read"
-	System  ListAuditEventsParamsOperationType = "system"
-	Unknown ListAuditEventsParamsOperationType = "unknown"
-	Write   ListAuditEventsParamsOperationType = "write"
+	Allowed ListAuditEventsParamsOutcome = "allowed"
+	Denied  ListAuditEventsParamsOutcome = "denied"
+	Error   ListAuditEventsParamsOutcome = "error"
 )
 
-// Valid indicates whether the value is a known member of the ListAuditEventsParamsOperationType enum.
-func (e ListAuditEventsParamsOperationType) Valid() bool {
-	switch e {
-	case Authn:
-		return true
-	case Authz:
-		return true
-	case Billing:
-		return true
-	case Delete:
-		return true
-	case Export:
-		return true
-	case Read:
-		return true
-	case System:
-		return true
-	case Unknown:
-		return true
-	case Write:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ListAuditEventsParamsResult.
-const (
-	Allowed ListAuditEventsParamsResult = "allowed"
-	Denied  ListAuditEventsParamsResult = "denied"
-	Error   ListAuditEventsParamsResult = "error"
-)
-
-// Valid indicates whether the value is a known member of the ListAuditEventsParamsResult enum.
-func (e ListAuditEventsParamsResult) Valid() bool {
+// Valid indicates whether the value is a known member of the ListAuditEventsParamsOutcome enum.
+func (e ListAuditEventsParamsOutcome) Valid() bool {
 	switch e {
 	case Allowed:
 		return true
 	case Denied:
 		return true
 	case Error:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ListAuditEventsParamsRiskLevel.
-const (
-	Critical ListAuditEventsParamsRiskLevel = "critical"
-	High     ListAuditEventsParamsRiskLevel = "high"
-	Low      ListAuditEventsParamsRiskLevel = "low"
-	Medium   ListAuditEventsParamsRiskLevel = "medium"
-)
-
-// Valid indicates whether the value is a known member of the ListAuditEventsParamsRiskLevel enum.
-func (e ListAuditEventsParamsRiskLevel) Valid() bool {
-	switch e {
-	case Critical:
-		return true
-	case High:
-		return true
-	case Low:
-		return true
-	case Medium:
 		return true
 	default:
 		return false
@@ -162,109 +99,43 @@ type ErrorModel struct {
 
 // GovernanceAuditEvent defines model for GovernanceAuditEvent.
 type GovernanceAuditEvent struct {
-	// Action Action declared by the operation catalog.
-	Action string `json:"action"`
-
-	// ActorDisplay Display label for the actor when available.
-	ActorDisplay *string `json:"actor_display,omitempty"`
-
 	// ActorId Exact authenticated actor ID.
 	ActorId string `json:"actor_id"`
 
-	// ActorOwnerDisplay Display label for the actor owner when known.
-	ActorOwnerDisplay *string `json:"actor_owner_display,omitempty"`
-
-	// ActorOwnerId Owner of an API credential or workload actor when known.
-	ActorOwnerId *string `json:"actor_owner_id,omitempty"`
-
-	// ActorType Actor class, for example user, api_credential, workload, service, or operator.
+	// ActorType Actor class, for example user, service_account, workload, or service.
 	ActorType string `json:"actor_type"`
-
-	// Asn Locally enriched autonomous system number when configured.
-	Asn *string `json:"asn,omitempty"`
-
-	// AsnOrg Locally enriched autonomous system organization when configured.
-	AsnOrg *string `json:"asn_org,omitempty"`
 
 	// AuditEvent Stable audit event name.
 	AuditEvent string `json:"audit_event"`
 
-	// AuthMethod Authentication method used by the actor.
-	AuthMethod *string `json:"auth_method,omitempty"`
-
-	// ClientIp Client IP observed at the trusted service boundary.
-	ClientIp *string `json:"client_ip,omitempty"`
-
-	// ClientIpVersion IPv4 or IPv6.
-	ClientIpVersion *string `json:"client_ip_version,omitempty"`
-
-	// ContentSha256 Canonical payload SHA-256.
-	ContentSha256 string `json:"content_sha256"`
-
-	// CredentialFingerprint Non-secret credential fingerprint when known.
-	CredentialFingerprint *string `json:"credential_fingerprint,omitempty"`
-
-	// CredentialId Verself API credential ID when the actor is a credential.
+	// CredentialId Credential ID used to authenticate the actor when present.
 	CredentialId *string `json:"credential_id,omitempty"`
 
-	// CredentialName API credential display name when known.
-	CredentialName *string `json:"credential_name,omitempty"`
-
-	// Decision Authorization decision.
-	Decision string `json:"decision"`
-
-	// DenialReason Stable denial reason when authorization denied the operation.
-	DenialReason *string `json:"denial_reason,omitempty"`
+	// DetailSha256 SHA-256 hash of the optional audit detail payload.
+	DetailSha256 string `json:"detail_sha256"`
 
 	// ErrorCode Stable problem code when the operation failed.
 	ErrorCode *string `json:"error_code,omitempty"`
 
-	// ErrorMessage Redacted failure detail.
-	ErrorMessage *string `json:"error_message,omitempty"`
-
-	// EventCategory Audit event family for filtering.
-	EventCategory string `json:"event_category"`
-
 	// EventId Audit event UUID.
 	EventId string `json:"event_id"`
 
-	// GeoCountry Locally enriched country code when configured.
-	GeoCountry *string `json:"geo_country,omitempty"`
+	// EventName Stable operation name.
+	EventName string `json:"event_name"`
 
-	// GeoRegion Locally enriched region when configured.
-	GeoRegion *string `json:"geo_region,omitempty"`
+	// EventSource Service or system that recorded the event.
+	EventSource string `json:"event_source"`
 
 	// HmacKeyId Audit HMAC key identifier.
 	HmacKeyId *string `json:"hmac_key_id,omitempty"`
 
-	// IdempotencyKeyHash SHA-256 hash of the caller-provided idempotency key.
-	IdempotencyKeyHash *string `json:"idempotency_key_hash,omitempty"`
-
-	// IpChain Comma-separated proxy chain retained as request evidence.
-	IpChain *string `json:"ip_chain,omitempty"`
-
-	// MfaPresent Whether MFA was present in the authenticated request context.
-	MfaPresent *bool `json:"mfa_present,omitempty"`
-
-	// NetworkType Locally enriched network type when configured.
-	NetworkType *string `json:"network_type,omitempty"`
-
-	// OperationDisplay Short customer-facing operation label.
-	OperationDisplay string `json:"operation_display"`
-
-	// OperationId Stable OpenAPI operation ID.
-	OperationId string `json:"operation_id"`
-
-	// OperationType read, write, delete, authn, authz, billing, export, system, or unknown.
-	OperationType string `json:"operation_type"`
-
 	// OrgId Organization ID derived from the caller's token.
 	OrgId string `json:"org_id"`
 
-	// OrgScope Organization scoping rule used for the decision.
-	OrgScope string `json:"org_scope"`
+	// Outcome allowed, denied, or error.
+	Outcome string `json:"outcome"`
 
-	// Permission Verself operation permission.
+	// Permission Permission checked for the operation.
 	Permission string `json:"permission"`
 
 	// PrevHmac Previous audit row HMAC in the organization chain.
@@ -273,47 +144,20 @@ type GovernanceAuditEvent struct {
 	// RecordedAt UTC time when the event was recorded.
 	RecordedAt time.Time `json:"recorded_at"`
 
-	// RequestId Caller or service request ID when available.
-	RequestId *string `json:"request_id,omitempty"`
-
-	// Result allowed, denied, or error.
-	Result string `json:"result"`
-
-	// RiskLevel low, medium, high, or critical.
-	RiskLevel string `json:"risk_level"`
-
 	// RowHmac Current audit row HMAC.
 	RowHmac string `json:"row_hmac"`
 
 	// Sequence Per-organization tamper-evident sequence number.
 	Sequence string `json:"sequence"`
 
-	// ServiceName Internal service that enforced the operation.
-	ServiceName string `json:"service_name"`
-
-	// SourceProductArea Customer-facing product area, for example Governance or Sandbox.
-	SourceProductArea string `json:"source_product_area"`
-
-	// TargetDisplay Target display label when known.
-	TargetDisplay *string `json:"target_display,omitempty"`
-
 	// TargetId Target identifier when known and safe to expose.
 	TargetId *string `json:"target_id,omitempty"`
 
-	// TargetKind Resource kind declared by the operation catalog.
-	TargetKind string `json:"target_kind"`
-
-	// TargetScope Target scoping rule or resolved scope.
-	TargetScope *string `json:"target_scope,omitempty"`
+	// TargetType Resource type being authorized.
+	TargetType string `json:"target_type"`
 
 	// TraceId OpenTelemetry trace ID.
 	TraceId *string `json:"trace_id,omitempty"`
-
-	// TrustClass Trust class used by the policy decision.
-	TrustClass *string `json:"trust_class,omitempty"`
-
-	// UserAgentHash SHA-256 hash of the sanitized User-Agent.
-	UserAgentHash *string `json:"user_agent_hash,omitempty"`
 }
 
 // GovernanceAuditEvents defines model for GovernanceAuditEvents.
@@ -331,18 +175,14 @@ type GovernanceAuditEvents struct {
 
 // GovernanceAuditFilters defines model for GovernanceAuditFilters.
 type GovernanceAuditFilters struct {
-	ActorId           *string `json:"actor_id,omitempty"`
-	AuditEvent        *string `json:"audit_event,omitempty"`
-	CredentialId      *string `json:"credential_id,omitempty"`
-	HighRisk          *bool   `json:"high_risk,omitempty"`
-	OperationId       *string `json:"operation_id,omitempty"`
-	OperationType     *string `json:"operation_type,omitempty"`
-	Result            *string `json:"result,omitempty"`
-	RiskLevel         *string `json:"risk_level,omitempty"`
-	ServiceName       *string `json:"service_name,omitempty"`
-	SourceProductArea *string `json:"source_product_area,omitempty"`
-	TargetId          *string `json:"target_id,omitempty"`
-	TargetKind        *string `json:"target_kind,omitempty"`
+	ActorId      *string `json:"actor_id,omitempty"`
+	AuditEvent   *string `json:"audit_event,omitempty"`
+	CredentialId *string `json:"credential_id,omitempty"`
+	EventName    *string `json:"event_name,omitempty"`
+	EventSource  *string `json:"event_source,omitempty"`
+	Outcome      *string `json:"outcome,omitempty"`
+	TargetId     *string `json:"target_id,omitempty"`
+	TargetType   *string `json:"target_type,omitempty"`
 }
 
 // GovernanceCreateExportRequest defines model for GovernanceCreateExportRequest.
@@ -419,34 +259,22 @@ type ListAuditEventsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 
 	// Order Time ordering of results; defaults to 'desc' (newest first).
-	Order        *ListAuditEventsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
-	ActorId      *string                     `form:"actor_id,omitempty" json:"actor_id,omitempty"`
-	AuditEvent   *string                     `form:"audit_event,omitempty" json:"audit_event,omitempty"`
-	CredentialId *string                     `form:"credential_id,omitempty" json:"credential_id,omitempty"`
-
-	// HighRisk Return events that are high or critical risk, write/delete/export operations, denials, or errors.
-	HighRisk          *bool                               `form:"high_risk,omitempty" json:"high_risk,omitempty"`
-	OperationId       *string                             `form:"operation_id,omitempty" json:"operation_id,omitempty"`
-	OperationType     *ListAuditEventsParamsOperationType `form:"operation_type,omitempty" json:"operation_type,omitempty"`
-	Result            *ListAuditEventsParamsResult        `form:"result,omitempty" json:"result,omitempty"`
-	RiskLevel         *ListAuditEventsParamsRiskLevel     `form:"risk_level,omitempty" json:"risk_level,omitempty"`
-	ServiceName       *string                             `form:"service_name,omitempty" json:"service_name,omitempty"`
-	SourceProductArea *string                             `form:"source_product_area,omitempty" json:"source_product_area,omitempty"`
-	TargetId          *string                             `form:"target_id,omitempty" json:"target_id,omitempty"`
-	TargetKind        *string                             `form:"target_kind,omitempty" json:"target_kind,omitempty"`
+	Order        *ListAuditEventsParamsOrder   `form:"order,omitempty" json:"order,omitempty"`
+	ActorId      *string                       `form:"actor_id,omitempty" json:"actor_id,omitempty"`
+	AuditEvent   *string                       `form:"audit_event,omitempty" json:"audit_event,omitempty"`
+	CredentialId *string                       `form:"credential_id,omitempty" json:"credential_id,omitempty"`
+	EventName    *string                       `form:"event_name,omitempty" json:"event_name,omitempty"`
+	EventSource  *string                       `form:"event_source,omitempty" json:"event_source,omitempty"`
+	Outcome      *ListAuditEventsParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
+	TargetId     *string                       `form:"target_id,omitempty" json:"target_id,omitempty"`
+	TargetType   *string                       `form:"target_type,omitempty" json:"target_type,omitempty"`
 }
 
 // ListAuditEventsParamsOrder defines parameters for ListAuditEvents.
 type ListAuditEventsParamsOrder string
 
-// ListAuditEventsParamsOperationType defines parameters for ListAuditEvents.
-type ListAuditEventsParamsOperationType string
-
-// ListAuditEventsParamsResult defines parameters for ListAuditEvents.
-type ListAuditEventsParamsResult string
-
-// ListAuditEventsParamsRiskLevel defines parameters for ListAuditEvents.
-type ListAuditEventsParamsRiskLevel string
+// ListAuditEventsParamsOutcome defines parameters for ListAuditEvents.
+type ListAuditEventsParamsOutcome string
 
 // CreateDataExportParams defines parameters for CreateDataExport.
 type CreateDataExportParams struct {
@@ -738,9 +566,9 @@ func NewListAuditEventsRequest(server string, params *ListAuditEventsParams) (*h
 
 		}
 
-		if params.HighRisk != nil {
+		if params.EventName != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "high_risk", *params.HighRisk, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "event_name", *params.EventName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -754,9 +582,9 @@ func NewListAuditEventsRequest(server string, params *ListAuditEventsParams) (*h
 
 		}
 
-		if params.OperationId != nil {
+		if params.EventSource != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "operation_id", *params.OperationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "event_source", *params.EventSource, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -770,73 +598,9 @@ func NewListAuditEventsRequest(server string, params *ListAuditEventsParams) (*h
 
 		}
 
-		if params.OperationType != nil {
+		if params.Outcome != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "operation_type", *params.OperationType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Result != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "result", *params.Result, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.RiskLevel != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "risk_level", *params.RiskLevel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.ServiceName != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "service_name", *params.ServiceName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.SourceProductArea != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "source_product_area", *params.SourceProductArea, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "outcome", *params.Outcome, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -866,9 +630,9 @@ func NewListAuditEventsRequest(server string, params *ListAuditEventsParams) (*h
 
 		}
 
-		if params.TargetKind != nil {
+		if params.TargetType != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "target_kind", *params.TargetKind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "target_type", *params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

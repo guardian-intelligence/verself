@@ -31,23 +31,19 @@ func (c CLI) auditEvents(ctx context.Context, args []string) error {
 	limit := fs.Int("limit", 50, "page size")
 	cursor := fs.String("cursor", "", "pagination cursor")
 	order := fs.String("order", "", "asc or desc")
-	highRisk := fs.Bool("high-risk", false, "return high-risk audit events")
 	actorID := fs.String("actor-id", "", "actor id")
 	auditEvent := fs.String("audit-event", "", "audit event name")
 	credentialID := fs.String("credential-id", "", "credential id")
-	operationID := fs.String("operation-id", "", "operation id")
-	operationType := fs.String("operation-type", "", "operation type")
-	result := fs.String("result", "", "allowed, denied, or error")
-	riskLevel := fs.String("risk-level", "", "low, medium, high, or critical")
-	serviceName := fs.String("service-name", "", "service name")
-	sourceProductArea := fs.String("source-product-area", "", "source product area")
+	eventName := fs.String("event-name", "", "operation event name")
+	eventSource := fs.String("event-source", "", "recording service or system")
+	outcome := fs.String("outcome", "", "allowed, denied, or error")
 	targetID := fs.String("target-id", "", "target id")
-	targetKind := fs.String("target-kind", "", "target kind")
+	targetType := fs.String("target-type", "", "target type")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: audit events [--high-risk] [--limit N] [--json]")
+		return errors.New("usage: audit events [--event-source SOURCE] [--outcome allowed|denied|error] [--limit N] [--json]")
 	}
 	if *limit < 1 || *limit > 200 {
 		return errors.New("audit events requires --limit between 1 and 200")
@@ -57,21 +53,17 @@ func (c CLI) auditEvents(ctx context.Context, args []string) error {
 		return err
 	}
 	page, err := client.Governance.ListAuditEvents(ctx, verself.ListGovernanceAuditEventsOptions{
-		Limit:             *limit,
-		Cursor:            *cursor,
-		Order:             verself.GovernanceAuditOrder(*order),
-		ActorID:           *actorID,
-		AuditEvent:        *auditEvent,
-		CredentialID:      *credentialID,
-		HighRisk:          *highRisk,
-		OperationID:       *operationID,
-		OperationType:     verself.GovernanceOperationType(*operationType),
-		Result:            verself.GovernanceResult(*result),
-		RiskLevel:         verself.GovernanceRiskLevel(*riskLevel),
-		ServiceName:       *serviceName,
-		SourceProductArea: *sourceProductArea,
-		TargetID:          *targetID,
-		TargetKind:        *targetKind,
+		Limit:        *limit,
+		Cursor:       *cursor,
+		Order:        verself.GovernanceAuditOrder(*order),
+		ActorID:      *actorID,
+		AuditEvent:   *auditEvent,
+		CredentialID: *credentialID,
+		EventName:    *eventName,
+		EventSource:  *eventSource,
+		Outcome:      verself.GovernanceAuditOutcome(*outcome),
+		TargetID:     *targetID,
+		TargetType:   *targetType,
 	})
 	if err != nil {
 		return err
@@ -246,13 +238,13 @@ func writeAuditEvent(w interface {
 	return writef(
 		w,
 		"event\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-		event.AuditEvent,
 		event.EventID,
-		event.RiskLevel,
-		event.Result,
+		event.RecordedAt.Format("2006-01-02T15:04:05Z07:00"),
+		event.Outcome,
+		event.EventSource,
+		event.EventName,
 		event.ActorID,
-		event.OperationType,
-		event.TargetKind,
+		event.TargetType,
 		event.TargetID,
 		event.TraceID,
 	)
