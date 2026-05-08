@@ -66,8 +66,6 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runRepos(ctx, args[1:])
 	case "runs":
 		return c.runRuns(ctx, args[1:])
-	case "sticky-disks":
-		return c.runStickyDisks(ctx, args[1:])
 	case "github":
 		return c.runGitHub(ctx, args[1:])
 	case "schedules":
@@ -135,8 +133,6 @@ func (c CLI) usage() error {
   %[1]s runs logs <execution-id> [--json]
   %[1]s runs search-logs [--query TEXT] [--run-id RUN_ID] [--json]
   %[1]s runs analytics jobs|costs|caches|runner-sizing [--json]
-  %[1]s sticky-disks list [--repository REPO] [--json]
-  %[1]s sticky-disks reset --installation-id ID --repository-id ID --key-hash HASH [--json]
   %[1]s github installations list [--json]
   %[1]s github installations connect [--json]
   %[1]s schedules list [--json]

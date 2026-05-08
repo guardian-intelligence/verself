@@ -38,9 +38,9 @@ SeedImage RPC per image, idempotent via `vs:source_digest` on
 - **Runner class → mount list** lives in
   `runner_class_filesystem_mounts` (sandbox-rental Postgres). Each
   runner_class names the toolchain images it wants; sandbox-rental
-  resolves them into `LeaseSpec.FilesystemMounts` at acquire time.
-  Sticky-disk mounts (caches, persistent workspace) are per-execution
-  and arrive via `StartExecRequest`, not this table.
+	  resolves them into `LeaseSpec.FilesystemMounts` at acquire time.
+	  Checkpoint mounts and other per-execution writable volumes arrive via
+	  `StartExecRequest`, not this table.
 - **Customer-uploaded images** land later under
   `tier: customer_uploaded`. The seed path is uniform — whether the
   source artefact is a Bazel rule or a customer upload, the daemon's

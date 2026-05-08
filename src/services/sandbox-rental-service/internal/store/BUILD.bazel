@@ -11,8 +11,6 @@ go_library(
         "recurring.sql.go",
         "runner_control.sql.go",
         "runs.sql.go",
-        "sticky_disk.sql.go",
-        "sticky_inventory.sql.go",
     ],
     importpath = "github.com/verself/sandbox-rental-service/internal/store",
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],

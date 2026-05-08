@@ -47,18 +47,6 @@ INSERT INTO execution_filesystem_mounts (
     sqlc.arg(fs_type), sqlc.arg(read_only), sqlc.arg(sort_order), sqlc.arg(created_at)
 );
 
--- name: InsertExecutionStickyDiskMount :exec
-INSERT INTO execution_sticky_disk_mounts (
-    mount_id, execution_id, attempt_id, allocation_id, mount_name, key_hash, key, mount_path,
-    base_generation, source_ref, target_source_ref, save_requested, save_state, committed_generation,
-    failure_reason, sort_order, created_at, updated_at
-) VALUES (
-    sqlc.arg(mount_id), sqlc.arg(execution_id), sqlc.arg(attempt_id), sqlc.arg(allocation_id),
-    sqlc.arg(mount_name), sqlc.arg(key_hash), sqlc.arg(key), sqlc.arg(mount_path),
-    sqlc.arg(base_generation), sqlc.arg(source_ref), sqlc.arg(target_source_ref),
-    false, sqlc.arg(save_state), 0, '', sqlc.arg(sort_order), sqlc.arg(created_at), sqlc.arg(created_at)
-);
-
 -- name: GetExecutionWorkItem :one
 SELECT
     e.execution_id,

@@ -79,6 +79,25 @@ JOIN github_accounts a ON a.account_id = i.account_id
 WHERE c.org_id = sqlc.arg(org_id)
   AND i.installation_id = sqlc.arg(installation_id);
 
+-- name: GetGitHubExecutionIdentity :one
+SELECT
+    a.allocation_id,
+    p.org_id,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    a.runner_name
+FROM runner_allocations a
+JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id
+LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+WHERE a.provider = 'github'
+  AND a.execution_id = sqlc.arg(execution_id)
+  AND a.attempt_id = sqlc.arg(attempt_id);
+
 -- name: UpsertGitHubRunnerRepository :execrows
 INSERT INTO runner_provider_repositories (
     provider, provider_repository_id, org_id, project_id, source_repository_id,

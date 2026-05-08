@@ -6,7 +6,6 @@ import {
   type GetJobsAnalyticsData,
   type GetRunnerSizingAnalyticsData,
   type ListRunsData,
-  type ListStickyDisksData,
   type SearchRunLogsData,
   beginGithubInstallation as beginGeneratedGithubInstallation,
   createExecutionSchedule as createGeneratedExecutionSchedule,
@@ -21,9 +20,7 @@ import {
   listExecutionSchedules as listGeneratedExecutionSchedules,
   listGithubInstallations as listGeneratedGithubInstallations,
   listRuns as listGeneratedRuns,
-  listStickyDisks as listGeneratedStickyDisks,
   pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
-  resetStickyDisk as resetGeneratedStickyDisk,
   resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
   searchRunLogs as searchGeneratedRunLogs,
 } from "./__generated/sandbox-rental-api/index.js";
@@ -49,16 +46,11 @@ import {
   vGetRunnerSizingAnalyticsResponse,
   vListExecutionSchedulesResponse,
   vListGithubInstallationsResponse,
-  vListStickyDisksQuery,
-  vListStickyDisksResponse,
   vListRunsQuery,
   vListRunsResponse,
   vPauseExecutionScheduleHeaders,
   vPauseExecutionSchedulePath,
   vPauseExecutionScheduleResponse,
-  vResetStickyDiskBody,
-  vResetStickyDiskHeaders,
-  vResetStickyDiskResponse,
   vResumeExecutionScheduleHeaders,
   vResumeExecutionSchedulePath,
   vResumeExecutionScheduleResponse,
@@ -126,21 +118,6 @@ export class SandboxRental {
     return getRunnerSizingAnalytics({
       ...this.#options,
       ...(query === undefined ? {} : { query }),
-    });
-  }
-
-  listStickyDisks(query?: StickyDiskListQueryInput): Promise<StickyDisksPage> {
-    return listStickyDisks({ ...this.#options, ...(query === undefined ? {} : { query }) });
-  }
-
-  resetStickyDisk(
-    body: StickyDiskResetRequest,
-    options?: SandboxMutationOptions,
-  ): Promise<StickyDiskResetResult> {
-    return resetStickyDisk({
-      ...this.#options,
-      body,
-      ...(options === undefined ? {} : { options }),
     });
   }
 
@@ -257,19 +234,15 @@ function normalizeBillingWindow(input: v.InferOutput<typeof vSandboxBillingWindo
 export type BillingWindow = ReturnType<typeof normalizeBillingWindow>;
 
 function parseExecution(input: unknown) {
-  const {
-    $schema: _schema,
-    billing_windows,
-    latest_attempt,
-    sticky_disk_mounts,
-    ...execution
-  } = v.parse(vSandboxExecutionRecord, input);
+  const { $schema: _schema, billing_windows, latest_attempt, ...execution } = v.parse(
+    vSandboxExecutionRecord,
+    input,
+  );
   return {
     ...execution,
     billing_windows:
       billing_windows?.map((billingWindow) => normalizeBillingWindow(billingWindow)) ?? [],
     latest_attempt: normalizeAttempt(latest_attempt),
-    sticky_disk_mounts: sticky_disk_mounts ?? [],
   };
 }
 
@@ -351,23 +324,6 @@ function parseRunnerSizingAnalytics(input: unknown) {
 }
 
 export type RunnerSizingAnalytics = ReturnType<typeof parseRunnerSizingAnalytics>;
-
-function parseStickyDisksPage(input: unknown) {
-  const parsed = v.parse(vListStickyDisksResponse, input);
-  return {
-    ...parsed,
-    disks: parsed.disks ?? [],
-    nextCursor: parsed.next_cursor ?? "",
-  };
-}
-
-export type StickyDisksPage = ReturnType<typeof parseStickyDisksPage>;
-
-function parseStickyDiskResetResult(input: unknown) {
-  return v.parse(vResetStickyDiskResponse, input);
-}
-
-export type StickyDiskResetResult = ReturnType<typeof parseStickyDiskResetResult>;
 
 type RawRunsPage = v.InferOutput<typeof vListRunsResponse>;
 
@@ -488,40 +444,6 @@ export const sandboxAnalyticsQuerySchema = v.strictObject({
 
 export type SandboxAnalyticsQueryInput = v.InferInput<typeof sandboxAnalyticsQuerySchema>;
 
-export const stickyDiskListQuerySchema = v.pipe(
-  v.strictObject({
-    limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
-    cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
-    repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
-  }),
-  v.transform((query) => {
-    const parsed = v.parse(vListStickyDisksQuery, {
-      limit: query.limit,
-      cursor: normalizeRunListFilter(query.cursor),
-      repository: normalizeRunListFilter(query.repository),
-    });
-    return {
-      ...(parsed.limit === undefined ? {} : { limit: toSafeNumber(parsed.limit, "sticky.limit") }),
-      ...(parsed.cursor === undefined ? {} : { cursor: parsed.cursor }),
-      ...(parsed.repository === undefined ? {} : { repository: parsed.repository }),
-    };
-  }),
-);
-
-export type StickyDiskListQueryInput = v.InferInput<typeof stickyDiskListQuerySchema>;
-export type StickyDiskListQuery = v.InferOutput<typeof stickyDiskListQuerySchema>;
-
-export const stickyDiskResetRequestSchema = v.pipe(
-  v.strictObject({
-    installation_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-    repository_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-    key_hash: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
-  }),
-  v.transform((body) => v.parse(vResetStickyDiskBody, body)),
-);
-
-export type StickyDiskResetRequest = v.InferInput<typeof stickyDiskResetRequestSchema>;
-
 export type SandboxMutationOptions = {
   idempotencyKey?: string | undefined;
 };
@@ -556,16 +478,6 @@ function toGeneratedRunLogSearchQuery(query: RunLogSearchQueryInput | undefined)
     branch: parsed.branch,
     runner_class: parsed.runnerClass,
   }) as NonNullable<SearchRunLogsData["query"]>;
-}
-
-function toGeneratedStickyDiskListQuery(query: StickyDiskListQueryInput | undefined) {
-  if (query === undefined) return undefined;
-  const parsed = v.parse(stickyDiskListQuerySchema, query);
-  return removeUndefined({
-    limit: parsed.limit,
-    cursor: parsed.cursor,
-    repository: parsed.repository,
-  }) as NonNullable<ListStickyDisksData["query"]>;
 }
 
 function toGeneratedJobsAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
@@ -891,54 +803,6 @@ export async function getRunnerSizingAnalytics(
   }
 
   return parseRunnerSizingAnalytics(result.data);
-}
-
-export async function listStickyDisks(
-  options: SandboxRentalClientOptions & { query?: StickyDiskListQueryInput },
-): Promise<StickyDisksPage> {
-  const client = createSandboxRentalClient(options);
-  const query = toGeneratedStickyDiskListQuery(options.query);
-  const path = "/api/v1/sticky-disks";
-  const result = await listGeneratedStickyDisks({
-    client,
-    ...(query === undefined ? {} : { query }),
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseStickyDisksPage(result.data);
-}
-
-export async function resetStickyDisk(
-  options: SandboxRentalClientOptions & {
-    body: StickyDiskResetRequest;
-    options?: SandboxMutationOptions;
-  },
-): Promise<StickyDiskResetResult> {
-  const client = createSandboxRentalClient(options);
-  const body = v.parse(stickyDiskResetRequestSchema, options.body);
-  const headers = v.parse(
-    vResetStickyDiskHeaders,
-    idempotencyHeaders("sticky-disk-reset", options.options?.idempotencyKey),
-  );
-  const path = "/api/v1/sticky-disks/reset";
-  const result = await resetGeneratedStickyDisk({
-    body,
-    client,
-    headers,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseStickyDiskResetResult(result.data);
 }
 
 export async function listGitHubInstallations(

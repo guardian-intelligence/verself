@@ -133,10 +133,9 @@ Rules that are easy to get wrong:
   The human installer/updater is audit metadata and should be stored separately
   when that schema exists; do not overload runtime actor identity with the human
   actor.
-- Sticky-disk restore/commit requests are guest-originated internal calls. They
-  authenticate with attempt-scoped HMAC tokens tied to `execution_id` and
-  `attempt_id`; they inherit the org through the execution/allocation lookup,
-  not through a guest-supplied org field.
+- Guest-originated internal calls authenticate with attempt-scoped material tied
+  to `execution_id` and `attempt_id`; they inherit the org through the
+  execution/allocation lookup, not through a guest-supplied org field.
 
 Concrete code anchors:
 

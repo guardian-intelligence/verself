@@ -41,7 +41,6 @@ const (
 	githubAPIVersion         = "2022-11-28"
 	githubRunnerWorkFolder   = "_work"
 	githubJITConfigFetchPath = "/internal/sandbox/v1/github-runner-jit"
-	githubStickyDiskPath     = "/internal/sandbox/v1/stickydisk"
 	githubCheckoutPath       = "/internal/sandbox/v1/github-checkout"
 )
 
@@ -553,16 +552,6 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 	if allocation.State == "vm_submitted" || allocation.State == "assigned" || allocation.State == "cleaned" {
 		return nil
 	}
-	attemptID := uuid.New()
-	stickyMounts, err := r.prepareStickyDiskMounts(ctx, allocation, attemptID)
-	if err != nil {
-		failureReason := "sticky_disk_compile_failed"
-		if errors.Is(err, ErrGitHubWorkflowContentsPermission) {
-			failureReason = "github_app_contents_permission_required"
-		}
-		_ = r.setAllocationState(ctx, allocationID, "failed", failureReason)
-		return err
-	}
 	if err := r.setAllocationState(ctx, allocationID, "jit_creating", ""); err != nil {
 		return err
 	}
@@ -599,8 +588,6 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 		RunCommand:             githubRunnerCommand(),
 		MaxWallSeconds:         uint64((3 * time.Hour).Seconds()),
 		Resources:              allocation.Resources,
-		AttemptID:              attemptID,
-		StickyDiskMounts:       stickyMounts,
 		RunnerAllocationID:     allocationID,
 		RunnerBootstrapKind:    RunnerBootstrapGitHubJIT,
 		RunnerBootstrapPayload: jit.EncodedJITConfig,
@@ -751,8 +738,6 @@ func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.
 	return map[string]string{
 		"VERSELF_GITHUB_JIT_TOKEN": r.deriveJITFetchToken(allocationID, attemptID),
 		"VERSELF_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
-		"VERSELF_STICKY_TOKEN":     r.deriveStickyDiskToken(executionID, attemptID),
-		"VERSELF_STICKY_PATH":      githubStickyDiskPath,
 		"VERSELF_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
 		"VERSELF_CHECKOUT_PATH":    githubCheckoutPath,
 	}
@@ -1132,14 +1117,6 @@ func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer s
 func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) string {
 	mac := hmac.New(sha256.New, []byte("verself-github-jit:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(allocationID.String()))
-	mac.Write([]byte(":"))
-	mac.Write([]byte(attemptID.String()))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func (r *GitHubRunner) deriveStickyDiskToken(executionID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("verself-sticky-disk:"+r.cfg.WebhookSecret))
-	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

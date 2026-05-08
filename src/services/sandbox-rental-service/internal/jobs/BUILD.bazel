@@ -7,8 +7,8 @@ go_library(
         "checkout.go",
         "correlation.go",
         "forgejo_runner.go",
+        "github_execution_auth.go",
         "github_runner.go",
-        "github_workflow_sticky.go",
         "jobs.go",
         "logs_search.go",
         "reconcile.go",
@@ -16,8 +16,6 @@ go_library(
         "runs.go",
         "safeconv.go",
         "scheduler_workers.go",
-        "sticky_disk.go",
-        "sticky_inventory.go",
         "store_conversions.go",
     ],
     importpath = "github.com/verself/sandbox-rental-service/internal/jobs",
@@ -35,19 +33,12 @@ go_library(
         "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@com_github_riverqueue_river//:river",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
-)
-
-go_test(
-    name = "jobs_test",
-    srcs = ["sticky_disk_test.go"],
-    embed = [":jobs"],
 )
 
 alias(

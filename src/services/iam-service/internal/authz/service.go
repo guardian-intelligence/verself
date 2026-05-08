@@ -131,8 +131,6 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionSandboxExecutionScheduleWrite: "list_executions",
 	identity.PermissionSandboxLogsRead:               "list_executions",
 	identity.PermissionSandboxAnalyticsRead:          "list_executions",
-	identity.PermissionSandboxStickyDiskRead:         "list_executions",
-	identity.PermissionSandboxStickyDiskWrite:        "manage_iam",
 	identity.PermissionBillingRead:                   "view_billing",
 	identity.PermissionBillingCheckout:               "manage_iam",
 	identity.PermissionProjectRead:                   "view_source",

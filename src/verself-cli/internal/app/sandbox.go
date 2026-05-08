@@ -257,7 +257,7 @@ func (c CLI) runsAnalytics(ctx context.Context, args []string) error {
 		if *jsonOut {
 			return writeJSON(c.out, analytics)
 		}
-		return writef(c.out, "checkout_requests\t%s\ncheckout_hits\t%s\nsticky_commits\t%s\n", analytics.CheckoutRequests, analytics.CheckoutHits, analytics.StickyCommits)
+		return writef(c.out, "checkout_requests\t%s\ncheckout_hits\t%s\ncheckout_misses\t%s\n", analytics.CheckoutRequests, analytics.CheckoutHits, analytics.CheckoutMisses)
 	case "runner-sizing":
 		analytics, err := client.Sandbox.GetRunnerSizingAnalytics(ctx, options)
 		if err != nil {
@@ -426,90 +426,6 @@ func (c CLI) schedulesLifecycle(ctx context.Context, command, action string, arg
 		return writeJSON(c.out, schedule)
 	}
 	return writeSandboxSchedule(c.out, schedule)
-}
-
-func (c CLI) runStickyDisks(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("sticky-disks command is required")
-	}
-	switch args[0] {
-	case "list", "ls":
-		return c.stickyDisksList(ctx, args[1:])
-	case "reset":
-		return c.stickyDisksReset(ctx, args[1:])
-	default:
-		return fmt.Errorf("unknown sticky-disks command %q", args[0])
-	}
-}
-
-func (c CLI) stickyDisksList(ctx context.Context, args []string) error {
-	fs, serviceFlags := serviceFlagSet("sticky-disks list", c.err)
-	jsonOut := fs.Bool("json", false, "json output")
-	limit := fs.Int64("limit", 50, "page size")
-	cursor := fs.String("cursor", "", "pagination cursor")
-	repository := fs.String("repository", "", "repository filter")
-	if err := parseInterspersed(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() != 0 {
-		return errors.New("usage: sticky-disks list [--repository REPO] [--json]")
-	}
-	client, err := c.serviceClient(*serviceFlags)
-	if err != nil {
-		return err
-	}
-	page, err := client.Sandbox.ListStickyDisks(ctx, verself.ListSandboxStickyDisksOptions{
-		Limit:      *limit,
-		Cursor:     *cursor,
-		Repository: *repository,
-	})
-	if err != nil {
-		return err
-	}
-	if *jsonOut {
-		return writeJSON(c.out, page)
-	}
-	for _, disk := range page.Disks {
-		if err := writef(c.out, "%s\t%s\t%s\t%s\t%s\t%s\n", disk.InstallationID, disk.RepositoryID, disk.KeyHash, disk.Key, disk.CurrentGeneration, disk.CurrentSourceRef); err != nil {
-			return err
-		}
-	}
-	if page.NextCursor != "" {
-		return writef(c.out, "next_cursor\t%s\n", page.NextCursor)
-	}
-	return nil
-}
-
-func (c CLI) stickyDisksReset(ctx context.Context, args []string) error {
-	fs, serviceFlags := serviceFlagSet("sticky-disks reset", c.err)
-	jsonOut := fs.Bool("json", false, "json output")
-	installationID := fs.String("installation-id", "", "GitHub installation ID")
-	repositoryID := fs.String("repository-id", "", "GitHub repository ID")
-	keyHash := fs.String("key-hash", "", "sticky disk key hash")
-	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
-	if err := parseInterspersed(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() != 0 {
-		return errors.New("usage: sticky-disks reset --installation-id ID --repository-id ID --key-hash HASH [--json]")
-	}
-	client, err := c.serviceClient(*serviceFlags)
-	if err != nil {
-		return err
-	}
-	reset, err := client.Sandbox.ResetStickyDisk(ctx, verself.ResetSandboxStickyDiskInput{
-		InstallationID: *installationID,
-		RepositoryID:   *repositoryID,
-		KeyHash:        *keyHash,
-		IdempotencyKey: *idempotencyKey,
-	})
-	if err != nil {
-		return err
-	}
-	if *jsonOut {
-		return writeJSON(c.out, reset)
-	}
-	return writef(c.out, "%s\t%s\t%s\t%s\n", reset.InstallationID, reset.RepositoryID, reset.KeyHash, stringValue(reset.DeletedSourceRef))
 }
 
 func (c CLI) runGitHub(ctx context.Context, args []string) error {

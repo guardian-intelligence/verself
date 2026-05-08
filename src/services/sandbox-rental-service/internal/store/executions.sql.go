@@ -510,56 +510,6 @@ func (q *Queries) InsertExecutionLog(ctx context.Context, arg InsertExecutionLog
 	return err
 }
 
-const insertExecutionStickyDiskMount = `-- name: InsertExecutionStickyDiskMount :exec
-INSERT INTO execution_sticky_disk_mounts (
-    mount_id, execution_id, attempt_id, allocation_id, mount_name, key_hash, key, mount_path,
-    base_generation, source_ref, target_source_ref, save_requested, save_state, committed_generation,
-    failure_reason, sort_order, created_at, updated_at
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7, $8,
-    $9, $10, $11,
-    false, $12, 0, '', $13, $14, $14
-)
-`
-
-type InsertExecutionStickyDiskMountParams struct {
-	MountID         uuid.UUID
-	ExecutionID     uuid.UUID
-	AttemptID       uuid.UUID
-	AllocationID    uuid.UUID
-	MountName       string
-	KeyHash         string
-	Key             string
-	MountPath       string
-	BaseGeneration  int64
-	SourceRef       string
-	TargetSourceRef string
-	SaveState       string
-	SortOrder       int32
-	CreatedAt       pgtype.Timestamptz
-}
-
-func (q *Queries) InsertExecutionStickyDiskMount(ctx context.Context, arg InsertExecutionStickyDiskMountParams) error {
-	_, err := q.db.Exec(ctx, insertExecutionStickyDiskMount,
-		arg.MountID,
-		arg.ExecutionID,
-		arg.AttemptID,
-		arg.AllocationID,
-		arg.MountName,
-		arg.KeyHash,
-		arg.Key,
-		arg.MountPath,
-		arg.BaseGeneration,
-		arg.SourceRef,
-		arg.TargetSourceRef,
-		arg.SaveState,
-		arg.SortOrder,
-		arg.CreatedAt,
-	)
-	return err
-}
-
 const listCleanedRunnerAttempts = `-- name: ListCleanedRunnerAttempts :many
 SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')::text AS billing_window_id
 FROM executions e

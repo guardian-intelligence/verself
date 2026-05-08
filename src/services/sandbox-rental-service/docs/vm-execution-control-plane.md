@@ -9,12 +9,12 @@ vm-bridge control, and guest telemetry.
 Code pointers:
 
 - `internal/jobs/` - River workers, execution attempts, runner provider demand
-  records, runner allocations, sticky-disk saveback state, and reconciliation.
+  records, runner allocations, checkout cache state, and reconciliation.
 - `internal/api/` - secured Huma routes for GitHub installations, execution
   history/logs, recurring schedules, and billing views.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
-  logs, provider-neutral runner demand/allocation state, sticky disks, and
-  schedule dispatch lineage.
+  logs, provider-neutral runner demand/allocation state, and schedule dispatch
+  lineage.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
 - `../../dto/sandbox.go` - shared wire DTOs.
@@ -34,9 +34,6 @@ State model:
   job sync.
 - `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
-- `runner_sticky_disk_generations` and `execution_sticky_disk_mounts` track the
-  Blacksmith-style sticky-disk restore/saveback lifecycle. Sticky disks are
-  currently enabled only for GitHub Actions runs.
 - `execution_schedules` and `execution_schedule_dispatches` are Temporal-backed
   recurring canary state.
 
@@ -50,8 +47,6 @@ Runner flow:
    selected runner class.
 3. The execution worker reserves billing, acquires a vm-orchestrator lease,
    starts the workload payload, streams logs, and settles billing.
-4. Sticky-disk mounts are restored before the run and committed back to
-   `runner_sticky_disk_generations` when saveback succeeds.
 
 Recurring schedule flow:
 

@@ -191,42 +191,6 @@ func (q *Queries) ExportSandboxExecutionLogsJSONL(ctx context.Context, arg Expor
 	return items, nil
 }
 
-const exportSandboxExecutionStickyDiskMountsJSONL = `-- name: ExportSandboxExecutionStickyDiskMountsJSONL :many
-SELECT row_to_json(t)::text AS row_json
-FROM (
-    SELECT m.mount_id, m.execution_id, m.attempt_id, m.allocation_id, m.mount_name, m.key_hash, m.key, m.mount_path, m.base_generation, m.source_ref, m.target_source_ref, m.save_requested, m.save_state, m.committed_generation, m.committed_snapshot, m.failure_reason, m.sort_order, m.requested_at, m.started_at, m.completed_at, m.created_at, m.updated_at
-    FROM execution_sticky_disk_mounts m
-    JOIN executions e ON e.execution_id = m.execution_id
-    WHERE e.org_id::text = $1
-    ORDER BY m.created_at,
-             m.mount_id
-) t
-`
-
-type ExportSandboxExecutionStickyDiskMountsJSONLParams struct {
-	OrgID int64
-}
-
-func (q *Queries) ExportSandboxExecutionStickyDiskMountsJSONL(ctx context.Context, arg ExportSandboxExecutionStickyDiskMountsJSONLParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, exportSandboxExecutionStickyDiskMountsJSONL, arg.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var row_json string
-		if err := rows.Scan(&row_json); err != nil {
-			return nil, err
-		}
-		items = append(items, row_json)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const exportSandboxExecutionsJSONL = `-- name: ExportSandboxExecutionsJSONL :many
 SELECT row_to_json(t)::text AS row_json
 FROM (SELECT execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref, runner_class, external_provider, external_task_id, provider, product_id, state, correlation_id, idempotency_key, run_command, max_wall_seconds, requested_vcpus, requested_memory_mib, requested_root_disk_gib, requested_kernel_image, created_at, updated_at FROM executions WHERE org_id::text = $1 ORDER BY created_at, execution_id) t
@@ -430,45 +394,6 @@ type ExportSandboxRunnerProviderRepositoriesJSONLParams struct {
 
 func (q *Queries) ExportSandboxRunnerProviderRepositoriesJSONL(ctx context.Context, arg ExportSandboxRunnerProviderRepositoriesJSONLParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, exportSandboxRunnerProviderRepositoriesJSONL, arg.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var row_json string
-		if err := rows.Scan(&row_json); err != nil {
-			return nil, err
-		}
-		items = append(items, row_json)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const exportSandboxRunnerStickyDiskGenerationsJSONL = `-- name: ExportSandboxRunnerStickyDiskGenerationsJSONL :many
-SELECT row_to_json(t)::text AS row_json
-FROM (
-    SELECT g.provider, g.provider_installation_id, g.provider_repository_id, g.key_hash, g.key, g.current_generation, g.current_source_ref, g.created_at, g.updated_at
-    FROM runner_sticky_disk_generations g
-    LEFT JOIN runner_provider_repositories r ON r.provider = g.provider AND r.provider_repository_id = g.provider_repository_id
-    WHERE r.org_id::text = $1
-    ORDER BY g.updated_at,
-             g.provider,
-             g.provider_installation_id,
-             g.provider_repository_id,
-             g.key_hash
-) t
-`
-
-type ExportSandboxRunnerStickyDiskGenerationsJSONLParams struct {
-	OrgID int64
-}
-
-func (q *Queries) ExportSandboxRunnerStickyDiskGenerationsJSONL(ctx context.Context, arg ExportSandboxRunnerStickyDiskGenerationsJSONLParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, exportSandboxRunnerStickyDiskGenerationsJSONL, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}

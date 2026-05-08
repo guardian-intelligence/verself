@@ -45,7 +45,7 @@ var defaultCapabilities = []Capability{
 	{
 		Key:            "deploy_executions",
 		Label:          "Deploy executions",
-		Description:    "Read run history, stream logs, inspect analytics and sticky disks, and manage recurring canary schedules.",
+		Description:    "Read run history, stream logs, inspect analytics, and manage recurring canary schedules.",
 		DefaultEnabled: true,
 		Permissions: []string{
 			PermissionSandboxExecutionRead,
@@ -53,7 +53,6 @@ var defaultCapabilities = []Capability{
 			PermissionSandboxExecutionScheduleWrite,
 			PermissionSandboxLogsRead,
 			PermissionSandboxAnalyticsRead,
-			PermissionSandboxStickyDiskRead,
 		},
 	},
 	{

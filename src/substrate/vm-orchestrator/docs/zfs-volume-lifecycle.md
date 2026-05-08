@@ -1,11 +1,12 @@
 # Volume Lifecycle
 
-Per-customer durable storage for sticky disks, workspace generations, long-lived
-VM data volumes, and later service-data volumes. The product abstraction is
-**volume**; the current implementation uses OpenZFS zvol-backed datasets and
-snapshots. Customer APIs, browser UI, billing descriptions, IAM policies, and
-support language must not expose zvols, datasets, pool names, host paths,
-device paths, or Firecracker/jailer arguments.
+Per-customer durable storage for Verself Checkpoints, workspace generations,
+long-lived VM data volumes, and later service-data volumes. The product
+abstraction is **volume**; the current implementation uses OpenZFS
+zvol-backed datasets and snapshots. Customer APIs, browser UI, billing
+descriptions, IAM policies, and support language must not expose zvols,
+datasets, pool names, host paths, device paths, or Firecracker/jailer
+arguments.
 
 Lifecycle ownership is split:
 
@@ -48,12 +49,11 @@ The customer-facing concepts are:
 - `storage_usage`: measured durable storage at rest, derived from authoritative
   ZFS properties.
 
-There is no current customer-facing durable-volume API. The only live product
-path today is the internal sticky-disk lifecycle used by GitHub runner
-executions. If a long-lived VM data-volume product returns later, sandbox-rental
-should expose it as a product-owned API without leaking storage node IDs, pool
-IDs, dataset refs, snapshot refs, zvol device paths, host mount paths, or
-orchestrator implementation names.
+Verself Checkpoints are the first customer-facing durable-volume product. If a
+long-lived VM data-volume product returns later, sandbox-rental should expose it
+as a product-owned API without leaking storage node IDs, pool IDs, dataset refs,
+snapshot refs, zvol device paths, host mount paths, or orchestrator
+implementation names.
 
 ## Privilege Boundary
 
@@ -137,9 +137,7 @@ sandbox-rental-service owns the product state:
 - `retention_policies(policy_name, ttl_from_last_use, keep_last_n)` seeds
   `short_7d`, `medium_14d`, and `long_30d`.
 
-Sticky disks are the first consumer. `runner_sticky_disk_generations` and
-`execution_sticky_disk_mounts.committed_generation` collapse into this model in
-the same migration. There is no compatibility shim.
+Verself Checkpoints are the first consumer. The migration is a full cutover.
 
 ## Generation Semantics
 
@@ -262,10 +260,10 @@ base data. `logical*` is wrong unless the customer contract bills
 pre-compression bytes; it does not.
 
 For future customer-sized long-running VM data volumes, the contract may add a
-provisioned-capacity meter (`volume_provisioned_gib_ms`) because that is
-the industry-standard block-volume model. Sticky disks and managed workspace
-volumes should start with measured at-rest bytes because they are product-owned,
-thin, copy-on-write cache volumes rather than customer-sized raw disks.
+provisioned-capacity meter (`volume_provisioned_gib_ms`) because that is the
+industry-standard block-volume model. Checkpoints and managed workspace volumes
+should start with measured at-rest bytes because they are product-owned, thin,
+copy-on-write acceleration volumes rather than customer-sized raw disks.
 
 If durable-storage billing returns, the meter sweep should reserve and settle an
 exact billing-service time window for the sweep duration and emit product-owned
@@ -278,8 +276,9 @@ zero value preserves the default reservation duration; nonzero values choose the
 millisecond quantity used for authorization, `reserved_quantity`, expiry, and
 projection. Charge rounding happens after quantity:
 `ceil(allocation * quantity * unit_rate)`. Autobuilder, Routines, long-running
-VMs, sticky volumes, retained generations, and future storage products all reuse
-the same billing window machinery but may need different reservation durations:
+VMs, Checkpoint volumes, retained generations, and future storage products all
+reuse the same billing window machinery but may need different reservation
+durations:
 
 - VM executions can continue reserving multi-minute windows if that is the
   right credit-lock behavior for active workloads.
@@ -324,9 +323,8 @@ The Grafana dashboard should show:
   resolves image refs to ZFS clones.
 - `src/substrate/vm-orchestrator/filesystem_commit.go` - current commit RPC uses inline
   snapshot/send/receive; generation rotation replaces it.
-- `src/services/sandbox-rental-service/migrations/` - current sticky-disk control-plane
-  tables and any future volume-control-plane schema if a customer volume
-  product returns.
+- `src/services/sandbox-rental-service/migrations/` - target
+  volume-control-plane schema.
 - `src/infrastructure-components/grafana/` - provisioned dashboard target.
 
 ## Primary References

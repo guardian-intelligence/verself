@@ -155,14 +155,6 @@ firecracker_seed_images:
     strategy: dd_from_file
     tier: platform_toolchain
     volblocksize: 16K
-  - filesystem_label: stickydisk
-    ref: sticky-empty
-    size_bytes: 8589934592
-    source_path: ""
-    strategy: mkfs_ext4
-    tier: platform_toolchain
-    volblocksize: 16K
-
 spire_agent_id: spiffe://spiffe.verself.sh/node/single-node
 spire_agent_socket_path: /run/spire-agent/sockets/agent.sock
 spire_bundle_endpoint_bind_address: 127.0.0.1

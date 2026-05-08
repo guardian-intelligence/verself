@@ -152,7 +152,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OperationID: "get-caches-analytics",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/caches",
-		Summary:     "Get checkout and sticky disk cache analytics",
+		Summary:     "Get checkout cache analytics",
 	}, operationPolicy{
 		Permission:     permissionAnalyticsRead,
 		Resource:       "run_analytics_caches",
@@ -175,37 +175,6 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run_analytics.runner_sizing.read",
 	}), getRunnerSizingAnalytics(svc))
-
-	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
-		OperationID: "list-sticky-disks",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/sticky-disks",
-		Summary:     "List sticky disk inventory for the current org",
-	}, operationPolicy{
-		Permission:     permissionStickyDiskRead,
-		Resource:       "sticky_disk",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.sticky_disk.list",
-	}), listStickyDisks(svc))
-
-	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
-		OperationID:   "reset-sticky-disk",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/sticky-disks/reset",
-		Summary:       "Reset a sticky disk generation so future runs cold-start",
-		DefaultStatus: 200,
-	}, operationPolicy{
-		Permission:     permissionStickyDiskWrite,
-		Resource:       "sticky_disk",
-		Action:         "reset",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "sticky_disk_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.sticky_disk.reset",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}), resetStickyDisk(svc))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "create-execution-schedule",
@@ -367,30 +336,6 @@ type CachesAnalyticsOutput struct {
 
 type RunnerSizingAnalyticsOutput struct {
 	Body dto.SandboxRunnerSizingAnalytics
-}
-
-type StickyDisksInput struct {
-	Limit      int    `query:"limit,omitempty" minimum:"1" maximum:"500" doc:"Maximum sticky disks to return."`
-	Cursor     string `query:"cursor,omitempty" maxLength:"160" doc:"Opaque pagination cursor returned by the previous page."`
-	Repository string `query:"repository,omitempty" maxLength:"255"`
-}
-
-type StickyDisksOutput struct {
-	Body dto.SandboxStickyDisksPage
-}
-
-type StickyDiskResetRequest struct {
-	InstallationID string `json:"installation_id" required:"true" doc:"GitHub installation ID encoded as a decimal string."`
-	RepositoryID   string `json:"repository_id" required:"true" doc:"GitHub repository ID encoded as a decimal string."`
-	KeyHash        string `json:"key_hash" required:"true" minLength:"1" maxLength:"64" doc:"Sticky disk key hash to reset."`
-}
-
-type ResetStickyDiskInput struct {
-	Body StickyDiskResetRequest
-}
-
-type ResetStickyDiskOutput struct {
-	Body dto.SandboxStickyDiskResetResult
 }
 
 type ExecutionScheduleIDPath struct {
@@ -685,57 +630,6 @@ func getRunnerSizingAnalytics(svc *jobs.Service) func(context.Context, *Analytic
 			return nil, internalFailure(ctx, "get-runner-sizing-analytics-failed", "get runner sizing analytics failed", err)
 		}
 		return &RunnerSizingAnalyticsOutput{Body: runnerSizingAnalytics(analytics)}, nil
-	}
-}
-
-func listStickyDisks(svc *jobs.Service) func(context.Context, *StickyDisksInput) (*StickyDisksOutput, error) {
-	return func(ctx context.Context, input *StickyDisksInput) (*StickyDisksOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		filters := jobs.StickyDiskListFilters{
-			Limit:      input.Limit,
-			Cursor:     input.Cursor,
-			Repository: input.Repository,
-		}
-		page, err := svc.ListStickyDisks(ctx, orgID, filters)
-		if err != nil {
-			if errors.Is(err, jobs.ErrStickyDiskCursorInvalid) {
-				return nil, badRequest(ctx, "invalid-sticky-disk-cursor", "cursor must be a valid sticky disk pagination cursor", err)
-			}
-			return nil, internalFailure(ctx, "list-sticky-disks-failed", "list sticky disks failed", err)
-		}
-		return &StickyDisksOutput{Body: stickyDisksPage(page, filters)}, nil
-	}
-}
-
-func resetStickyDisk(svc *jobs.Service) func(context.Context, *ResetStickyDiskInput) (*ResetStickyDiskOutput, error) {
-	return func(ctx context.Context, input *ResetStickyDiskInput) (*ResetStickyDiskOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		installationID, err := dto.ParseInt64(input.Body.InstallationID)
-		if err != nil || installationID <= 0 {
-			return nil, badRequest(ctx, "invalid-installation-id", "installation_id must be a positive decimal string", err)
-		}
-		repositoryID, err := dto.ParseInt64(input.Body.RepositoryID)
-		if err != nil || repositoryID <= 0 {
-			return nil, badRequest(ctx, "invalid-repository-id", "repository_id must be a positive decimal string", err)
-		}
-		result, err := svc.ResetStickyDisk(ctx, orgID, installationID, repositoryID, input.Body.KeyHash)
-		if err != nil {
-			switch {
-			case errors.Is(err, jobs.ErrStickyDiskMissing):
-				return nil, notFound(ctx, "sticky-disk-not-found", "sticky disk not found")
-			case errors.Is(err, jobs.ErrStickyDiskInvalid):
-				return nil, badRequest(ctx, "invalid-sticky-disk", "sticky disk request is invalid", err)
-			default:
-				return nil, internalFailure(ctx, "reset-sticky-disk-failed", "reset sticky disk failed", err)
-			}
-		}
-		return &ResetStickyDiskOutput{Body: stickyDiskResetResult(result)}, nil
 	}
 }
 

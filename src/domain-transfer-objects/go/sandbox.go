@@ -23,31 +23,30 @@ type SandboxGitHubInstallationRecord struct {
 }
 
 type SandboxExecutionRecord struct {
-	RunID            uuid.UUID                         `json:"run_id"`
-	ExecutionID      uuid.UUID                         `json:"execution_id"`
-	OrgID            OrgID                             `json:"org_id"`
-	ActorID          string                            `json:"actor_id"`
-	Kind             string                            `json:"kind"`
-	SourceKind       string                            `json:"source_kind,omitempty"`
-	WorkloadKind     string                            `json:"workload_kind,omitempty"`
-	SourceRef        string                            `json:"source_ref,omitempty"`
-	RunnerClass      string                            `json:"runner_class,omitempty"`
-	ExternalProvider string                            `json:"external_provider,omitempty"`
-	ExternalTaskID   string                            `json:"external_task_id,omitempty"`
-	Provider         string                            `json:"provider,omitempty"`
-	ProductID        string                            `json:"product_id"`
-	Status           string                            `json:"status"`
-	CorrelationID    string                            `json:"correlation_id,omitempty"`
-	IdempotencyKey   string                            `json:"idempotency_key,omitempty"`
-	RunCommand       string                            `json:"run_command,omitempty"`
-	LatestAttempt    SandboxAttemptRecord              `json:"latest_attempt"`
-	CreatedAt        time.Time                         `json:"created_at"`
-	UpdatedAt        time.Time                         `json:"updated_at"`
-	BillingWindows   []SandboxBillingWindow            `json:"billing_windows,omitempty"`
-	BillingSummary   *SandboxRunBillingSummary         `json:"billing_summary,omitempty"`
-	Runner           *SandboxRunnerRunMetadata         `json:"runner,omitempty"`
-	Schedule         *SandboxScheduleRunMetadata       `json:"schedule,omitempty"`
-	StickyDiskMounts []SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
+	RunID            uuid.UUID                   `json:"run_id"`
+	ExecutionID      uuid.UUID                   `json:"execution_id"`
+	OrgID            OrgID                       `json:"org_id"`
+	ActorID          string                      `json:"actor_id"`
+	Kind             string                      `json:"kind"`
+	SourceKind       string                      `json:"source_kind,omitempty"`
+	WorkloadKind     string                      `json:"workload_kind,omitempty"`
+	SourceRef        string                      `json:"source_ref,omitempty"`
+	RunnerClass      string                      `json:"runner_class,omitempty"`
+	ExternalProvider string                      `json:"external_provider,omitempty"`
+	ExternalTaskID   string                      `json:"external_task_id,omitempty"`
+	Provider         string                      `json:"provider,omitempty"`
+	ProductID        string                      `json:"product_id"`
+	Status           string                      `json:"status"`
+	CorrelationID    string                      `json:"correlation_id,omitempty"`
+	IdempotencyKey   string                      `json:"idempotency_key,omitempty"`
+	RunCommand       string                      `json:"run_command,omitempty"`
+	LatestAttempt    SandboxAttemptRecord        `json:"latest_attempt"`
+	CreatedAt        time.Time                   `json:"created_at"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
+	BillingWindows   []SandboxBillingWindow      `json:"billing_windows,omitempty"`
+	BillingSummary   *SandboxRunBillingSummary   `json:"billing_summary,omitempty"`
+	Runner           *SandboxRunnerRunMetadata   `json:"runner,omitempty"`
+	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
 }
 
 type SandboxExecutionLogs struct {
@@ -81,20 +80,6 @@ type SandboxRunBillingSummary struct {
 	WriteoffChargeUnits DecimalUint64 `json:"writeoff_charge_units"`
 	CostPerUnit         DecimalUint64 `json:"cost_per_unit"`
 	PricingPhase        string        `json:"pricing_phase,omitempty"`
-}
-
-type SandboxExecutionStickyDiskMount struct {
-	MountID             uuid.UUID     `json:"mount_id"`
-	MountName           string        `json:"mount_name"`
-	KeyHash             string        `json:"key_hash"`
-	MountPath           string        `json:"mount_path"`
-	BaseGeneration      DecimalUint64 `json:"base_generation"`
-	CommittedGeneration DecimalUint64 `json:"committed_generation"`
-	SaveRequested       bool          `json:"save_requested"`
-	SaveState           string        `json:"save_state"`
-	FailureReason       string        `json:"failure_reason,omitempty"`
-	RequestedAt         *time.Time    `json:"requested_at,omitempty"`
-	CompletedAt         *time.Time    `json:"completed_at,omitempty"`
 }
 
 type SandboxRunsPage struct {
@@ -193,16 +178,12 @@ type SandboxCostsAnalytics struct {
 }
 
 type SandboxCachesAnalytics struct {
-	WindowStart         time.Time                `json:"window_start"`
-	WindowEnd           time.Time                `json:"window_end"`
-	CheckoutRequests    DecimalUint64            `json:"checkout_requests"`
-	CheckoutHits        DecimalUint64            `json:"checkout_hits"`
-	CheckoutMisses      DecimalUint64            `json:"checkout_misses"`
-	StickyRestoreHits   DecimalUint64            `json:"sticky_restore_hits"`
-	StickyRestoreMisses DecimalUint64            `json:"sticky_restore_misses"`
-	StickySaveRequests  DecimalUint64            `json:"sticky_save_requests"`
-	StickyCommits       DecimalUint64            `json:"sticky_commits"`
-	ByRepository        []SandboxAnalyticsBucket `json:"by_repository"`
+	WindowStart      time.Time                `json:"window_start"`
+	WindowEnd        time.Time                `json:"window_end"`
+	CheckoutRequests DecimalUint64            `json:"checkout_requests"`
+	CheckoutHits     DecimalUint64            `json:"checkout_hits"`
+	CheckoutMisses   DecimalUint64            `json:"checkout_misses"`
+	ByRepository     []SandboxAnalyticsBucket `json:"by_repository"`
 }
 
 type SandboxRunnerSizingSample struct {
@@ -219,44 +200,6 @@ type SandboxRunnerSizingAnalytics struct {
 	WindowStart   time.Time                   `json:"window_start"`
 	WindowEnd     time.Time                   `json:"window_end"`
 	ByRunnerClass []SandboxRunnerSizingSample `json:"by_runner_class"`
-}
-
-type SandboxStickyDiskRecord struct {
-	InstallationID     string        `json:"installation_id"`
-	RepositoryID       string        `json:"repository_id"`
-	RepositoryFullName string        `json:"repository_full_name,omitempty"`
-	KeyHash            string        `json:"key_hash"`
-	Key                string        `json:"key"`
-	CurrentGeneration  DecimalUint64 `json:"current_generation"`
-	CurrentSourceRef   string        `json:"current_source_ref"`
-	LastUsedAt         *time.Time    `json:"last_used_at,omitempty"`
-	LastCompletedAt    *time.Time    `json:"last_completed_at,omitempty"`
-	LastSaveState      string        `json:"last_save_state,omitempty"`
-	LastExecutionID    *uuid.UUID    `json:"last_execution_id,omitempty"`
-	LastAttemptID      *uuid.UUID    `json:"last_attempt_id,omitempty"`
-	LastRunnerClass    string        `json:"last_runner_class,omitempty"`
-	LastWorkflowName   string        `json:"last_workflow_name,omitempty"`
-	LastJobName        string        `json:"last_job_name,omitempty"`
-	LastMountPath      string        `json:"last_mount_path,omitempty"`
-}
-
-type SandboxStickyDisksPage struct {
-	Disks      []SandboxStickyDiskRecord `json:"disks"`
-	NextCursor string                    `json:"next_cursor,omitempty"`
-	Limit      int32                     `json:"limit"`
-	Filters    SandboxStickyDiskFilters  `json:"filters"`
-}
-
-type SandboxStickyDiskFilters struct {
-	Repository string `json:"repository,omitempty"`
-}
-
-type SandboxStickyDiskResetResult struct {
-	InstallationID   string    `json:"installation_id"`
-	RepositoryID     string    `json:"repository_id"`
-	KeyHash          string    `json:"key_hash"`
-	DeletedSourceRef string    `json:"deleted_source_ref,omitempty"`
-	ResetAt          time.Time `json:"reset_at"`
 }
 
 type SandboxExecutionScheduleCreateRequest struct {

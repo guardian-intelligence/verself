@@ -11,7 +11,7 @@ import (
 func TestNormalizeFilesystemMounts(t *testing.T) {
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "data",
-		SourceRef: "sticky-empty",
+		SourceRef: "checkpoint-empty",
 		MountPath: "/mnt/data/",
 		ReadOnly:  false,
 	}})
@@ -20,7 +20,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 	}
 	want := []FilesystemMount{{
 		Name:      "data",
-		SourceRef: "sticky-empty",
+		SourceRef: "checkpoint-empty",
 		MountPath: "/mnt/data",
 		FSType:    "ext4",
 		ReadOnly:  false,
@@ -33,7 +33,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 	_, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "bad",
-		SourceRef: "sticky-empty",
+		SourceRef: "checkpoint-empty",
 		MountPath: "/proc/verself",
 	}})
 	if err == nil {
@@ -43,10 +43,10 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 
 func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 	cases := []FilesystemMount{
-		{Name: "bad/name", SourceRef: "sticky-empty", MountPath: "/mnt/data"},
-		{Name: "bad@snap", SourceRef: "sticky-empty", MountPath: "/mnt/data"},
-		{Name: "data", SourceRef: "images/sticky-empty", MountPath: "/mnt/data"},
-		{Name: "data", SourceRef: "sticky-empty@ready", MountPath: "/mnt/data"},
+		{Name: "bad/name", SourceRef: "checkpoint-empty", MountPath: "/mnt/data"},
+		{Name: "bad@snap", SourceRef: "checkpoint-empty", MountPath: "/mnt/data"},
+		{Name: "data", SourceRef: "images/checkpoint-empty", MountPath: "/mnt/data"},
+		{Name: "data", SourceRef: "checkpoint-empty@ready", MountPath: "/mnt/data"},
 	}
 	for _, tc := range cases {
 		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}); err == nil {
@@ -59,7 +59,7 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 	manifest := guestFilesystemMounts([]preparedFilesystemMount{{
 		Spec: FilesystemMount{
 			Name:      "data",
-			SourceRef: "sticky-empty",
+			SourceRef: "checkpoint-empty",
 			MountPath: "/mnt/data",
 			FSType:    "ext4",
 			ReadOnly:  false,
@@ -82,11 +82,11 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 
 func TestImageSnapshotUsesConfiguredImageDataset(t *testing.T) {
 	roots := zfs.Roots{Pool: "pool", ImageDataset: "images", WorkloadDataset: "workloads"}
-	img, err := zfs.NewImage(roots, "sticky-empty")
+	img, err := zfs.NewImage(roots, "checkpoint-empty")
 	if err != nil {
 		t.Fatalf("NewImage: %v", err)
 	}
-	if got, want := img.Snapshot().String(), "pool/images/sticky-empty@ready"; got != want {
+	if got, want := img.Snapshot().String(), "pool/images/checkpoint-empty@ready"; got != want {
 		t.Fatalf("image snapshot = %q, want %q", got, want)
 	}
 }

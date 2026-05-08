@@ -83,46 +83,31 @@ type SandboxScheduleRunMetadata struct {
 	TemporalRunID      *string `json:"temporal_run_id,omitempty"`
 }
 
-type SandboxExecutionStickyDiskMount struct {
-	MountID             string     `json:"mount_id"`
-	MountName           string     `json:"mount_name"`
-	MountPath           string     `json:"mount_path"`
-	KeyHash             string     `json:"key_hash"`
-	BaseGeneration      string     `json:"base_generation"`
-	CommittedGeneration string     `json:"committed_generation"`
-	SaveRequested       bool       `json:"save_requested"`
-	SaveState           string     `json:"save_state"`
-	RequestedAt         *time.Time `json:"requested_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	FailureReason       *string    `json:"failure_reason,omitempty"`
-}
-
 type SandboxExecution struct {
-	ExecutionID      string                            `json:"execution_id"`
-	RunID            string                            `json:"run_id"`
-	OrgID            string                            `json:"org_id"`
-	ActorID          string                            `json:"actor_id"`
-	ProductID        string                            `json:"product_id"`
-	Kind             string                            `json:"kind"`
-	Status           string                            `json:"status"`
-	SourceKind       *string                           `json:"source_kind,omitempty"`
-	WorkloadKind     *string                           `json:"workload_kind,omitempty"`
-	SourceRef        *string                           `json:"source_ref,omitempty"`
-	RunnerClass      *string                           `json:"runner_class,omitempty"`
-	Provider         *string                           `json:"provider,omitempty"`
-	ExternalProvider *string                           `json:"external_provider,omitempty"`
-	ExternalTaskID   *string                           `json:"external_task_id,omitempty"`
-	CorrelationID    *string                           `json:"correlation_id,omitempty"`
-	IdempotencyKey   *string                           `json:"idempotency_key,omitempty"`
-	RunCommand       *string                           `json:"run_command,omitempty"`
-	Runner           *SandboxRunnerRunMetadata         `json:"runner,omitempty"`
-	Schedule         *SandboxScheduleRunMetadata       `json:"schedule,omitempty"`
-	BillingSummary   *SandboxRunBillingSummary         `json:"billing_summary,omitempty"`
-	BillingWindows   []SandboxBillingWindow            `json:"billing_windows,omitempty"`
-	StickyDiskMounts []SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
-	LatestAttempt    SandboxAttempt                    `json:"latest_attempt"`
-	CreatedAt        time.Time                         `json:"created_at"`
-	UpdatedAt        time.Time                         `json:"updated_at"`
+	ExecutionID      string                      `json:"execution_id"`
+	RunID            string                      `json:"run_id"`
+	OrgID            string                      `json:"org_id"`
+	ActorID          string                      `json:"actor_id"`
+	ProductID        string                      `json:"product_id"`
+	Kind             string                      `json:"kind"`
+	Status           string                      `json:"status"`
+	SourceKind       *string                     `json:"source_kind,omitempty"`
+	WorkloadKind     *string                     `json:"workload_kind,omitempty"`
+	SourceRef        *string                     `json:"source_ref,omitempty"`
+	RunnerClass      *string                     `json:"runner_class,omitempty"`
+	Provider         *string                     `json:"provider,omitempty"`
+	ExternalProvider *string                     `json:"external_provider,omitempty"`
+	ExternalTaskID   *string                     `json:"external_task_id,omitempty"`
+	CorrelationID    *string                     `json:"correlation_id,omitempty"`
+	IdempotencyKey   *string                     `json:"idempotency_key,omitempty"`
+	RunCommand       *string                     `json:"run_command,omitempty"`
+	Runner           *SandboxRunnerRunMetadata   `json:"runner,omitempty"`
+	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
+	BillingSummary   *SandboxRunBillingSummary   `json:"billing_summary,omitempty"`
+	BillingWindows   []SandboxBillingWindow      `json:"billing_windows,omitempty"`
+	LatestAttempt    SandboxAttempt              `json:"latest_attempt"`
+	CreatedAt        time.Time                   `json:"created_at"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
 }
 
 type SandboxRunsFilters struct {
@@ -192,16 +177,12 @@ type SandboxCostsAnalytics struct {
 }
 
 type SandboxCachesAnalytics struct {
-	WindowStart         time.Time                `json:"window_start"`
-	WindowEnd           time.Time                `json:"window_end"`
-	CheckoutRequests    string                   `json:"checkout_requests"`
-	CheckoutHits        string                   `json:"checkout_hits"`
-	CheckoutMisses      string                   `json:"checkout_misses"`
-	StickyRestoreHits   string                   `json:"sticky_restore_hits"`
-	StickyRestoreMisses string                   `json:"sticky_restore_misses"`
-	StickySaveRequests  string                   `json:"sticky_save_requests"`
-	StickyCommits       string                   `json:"sticky_commits"`
-	ByRepository        []SandboxAnalyticsBucket `json:"by_repository,omitempty"`
+	WindowStart      time.Time                `json:"window_start"`
+	WindowEnd        time.Time                `json:"window_end"`
+	CheckoutRequests string                   `json:"checkout_requests"`
+	CheckoutHits     string                   `json:"checkout_hits"`
+	CheckoutMisses   string                   `json:"checkout_misses"`
+	ByRepository     []SandboxAnalyticsBucket `json:"by_repository,omitempty"`
 }
 
 type SandboxRunnerSizingSample struct {
@@ -253,44 +234,6 @@ type SandboxRunLogSearchPage struct {
 	Filters    SandboxRunLogSearchFilters  `json:"filters"`
 	Limit      int32                       `json:"limit"`
 	NextCursor string                      `json:"next_cursor,omitempty"`
-}
-
-type SandboxStickyDiskFilters struct {
-	Repository *string `json:"repository,omitempty"`
-}
-
-type SandboxStickyDiskRecord struct {
-	InstallationID     string     `json:"installation_id"`
-	RepositoryID       string     `json:"repository_id"`
-	RepositoryFullName *string    `json:"repository_full_name,omitempty"`
-	KeyHash            string     `json:"key_hash"`
-	Key                string     `json:"key"`
-	CurrentGeneration  string     `json:"current_generation"`
-	CurrentSourceRef   string     `json:"current_source_ref"`
-	LastExecutionID    *string    `json:"last_execution_id,omitempty"`
-	LastAttemptID      *string    `json:"last_attempt_id,omitempty"`
-	LastSaveState      *string    `json:"last_save_state,omitempty"`
-	LastMountPath      *string    `json:"last_mount_path,omitempty"`
-	LastRunnerClass    *string    `json:"last_runner_class,omitempty"`
-	LastWorkflowName   *string    `json:"last_workflow_name,omitempty"`
-	LastJobName        *string    `json:"last_job_name,omitempty"`
-	LastCompletedAt    *time.Time `json:"last_completed_at,omitempty"`
-	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
-}
-
-type SandboxStickyDisksPage struct {
-	Disks      []SandboxStickyDiskRecord `json:"disks"`
-	Filters    SandboxStickyDiskFilters  `json:"filters"`
-	Limit      int32                     `json:"limit"`
-	NextCursor string                    `json:"next_cursor,omitempty"`
-}
-
-type SandboxStickyDiskResetResult struct {
-	InstallationID   string    `json:"installation_id"`
-	RepositoryID     string    `json:"repository_id"`
-	KeyHash          string    `json:"key_hash"`
-	DeletedSourceRef *string   `json:"deleted_source_ref,omitempty"`
-	ResetAt          time.Time `json:"reset_at"`
 }
 
 type SandboxGitHubInstallation struct {
@@ -381,19 +324,6 @@ type SearchSandboxRunLogsOptions struct {
 type SandboxAnalyticsOptions struct {
 	Start time.Time
 	End   time.Time
-}
-
-type ListSandboxStickyDisksOptions struct {
-	Limit      int64
-	Cursor     string
-	Repository string
-}
-
-type ResetSandboxStickyDiskInput struct {
-	InstallationID string
-	RepositoryID   string
-	KeyHash        string
-	IdempotencyKey string
 }
 
 type CreateSandboxExecutionScheduleInput struct {
@@ -607,60 +537,6 @@ func (c *SandboxClient) GetRunnerSizingAnalytics(ctx context.Context, options Sa
 		return SandboxRunnerSizingAnalytics{}, sandboxAPIError("get runner sizing analytics", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
 	}
 	return sandboxFromGenerated[SandboxRunnerSizingAnalytics](*response.JSON200)
-}
-
-func (c *SandboxClient) ListStickyDisks(ctx context.Context, options ListSandboxStickyDisksOptions) (SandboxStickyDisksPage, error) {
-	if c == nil || c.client == nil {
-		return SandboxStickyDisksPage{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
-	}
-	params := &sandboxcore.ListStickyDisksParams{}
-	if options.Limit > 0 {
-		params.Limit = &options.Limit
-	}
-	setStringParam(strings.TrimSpace(options.Cursor), &params.Cursor)
-	setStringParam(strings.TrimSpace(options.Repository), &params.Repository)
-	response, err := c.client.ListStickyDisksWithResponse(ctx, params)
-	if err != nil {
-		return SandboxStickyDisksPage{}, err
-	}
-	if response.JSON200 == nil {
-		return SandboxStickyDisksPage{}, sandboxAPIError("list sticky disks", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
-	}
-	return sandboxFromGenerated[SandboxStickyDisksPage](*response.JSON200)
-}
-
-func (c *SandboxClient) ResetStickyDisk(ctx context.Context, input ResetSandboxStickyDiskInput) (SandboxStickyDiskResetResult, error) {
-	if c == nil || c.client == nil {
-		return SandboxStickyDiskResetResult{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
-	}
-	installationID := strings.TrimSpace(input.InstallationID)
-	if installationID == "" {
-		return SandboxStickyDiskResetResult{}, fmt.Errorf("verself sdk: sandbox sticky disk installation id is required")
-	}
-	repositoryID := strings.TrimSpace(input.RepositoryID)
-	if repositoryID == "" {
-		return SandboxStickyDiskResetResult{}, fmt.Errorf("verself sdk: sandbox sticky disk repository id is required")
-	}
-	keyHash := strings.TrimSpace(input.KeyHash)
-	if keyHash == "" {
-		return SandboxStickyDiskResetResult{}, fmt.Errorf("verself sdk: sandbox sticky disk key hash is required")
-	}
-	key, err := mutationKey("sandbox-sticky-disk", input.IdempotencyKey)
-	if err != nil {
-		return SandboxStickyDiskResetResult{}, err
-	}
-	response, err := c.client.ResetStickyDiskWithResponse(ctx, &sandboxcore.ResetStickyDiskParams{IdempotencyKey: key}, sandboxcore.StickyDiskResetRequest{
-		InstallationId: installationID,
-		RepositoryId:   repositoryID,
-		KeyHash:        keyHash,
-	})
-	if err != nil {
-		return SandboxStickyDiskResetResult{}, err
-	}
-	if response.JSON200 == nil {
-		return SandboxStickyDiskResetResult{}, sandboxAPIError("reset sticky disk", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
-	}
-	return sandboxFromGenerated[SandboxStickyDiskResetResult](*response.JSON200)
 }
 
 func (c *SandboxClient) ListGitHubInstallations(ctx context.Context) ([]SandboxGitHubInstallation, error) {

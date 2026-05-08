@@ -41,7 +41,7 @@ type CheckoutBundleRequest struct {
 }
 
 type CheckoutBundle struct {
-	Identity   StickyDiskIdentity
+	Identity   GitHubExecutionIdentity
 	Repository string
 	Ref        string
 	SHA        string
@@ -51,7 +51,7 @@ type CheckoutBundle struct {
 	PreparedAt time.Time
 }
 
-func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity StickyDiskIdentity, req CheckoutBundleRequest) (CheckoutBundle, error) {
+func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHubExecutionIdentity, req CheckoutBundleRequest) (CheckoutBundle, error) {
 	ctx, span := tracer.Start(ctx, "github.checkout.bundle")
 	defer span.End()
 
@@ -154,15 +154,15 @@ func (r *GitHubRunner) checkoutRoot() string {
 	return root
 }
 
-func (r *GitHubRunner) checkoutMirrorDir(identity StickyDiskIdentity) string {
+func (r *GitHubRunner) checkoutMirrorDir(identity GitHubExecutionIdentity) string {
 	return filepath.Join(r.checkoutRoot(), "mirrors", checkoutCacheKey(identity))
 }
 
-func (r *GitHubRunner) checkoutBundlePath(identity StickyDiskIdentity, sha string) string {
+func (r *GitHubRunner) checkoutBundlePath(identity GitHubExecutionIdentity, sha string) string {
 	return filepath.Join(r.checkoutRoot(), "bundles", checkoutCacheKey(identity), sha, checkoutBundleFilename)
 }
 
-func checkoutCacheKey(identity StickyDiskIdentity) string {
+func checkoutCacheKey(identity GitHubExecutionIdentity) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d", identity.Installation, identity.RepositoryID)))
 	return hex.EncodeToString(sum[:])
 }
@@ -300,7 +300,7 @@ func writeCheckoutPack(ctx context.Context, mirrorDir, sha string, out *os.File)
 	return nil
 }
 
-func (r *GitHubRunner) checkoutFetchToken(ctx context.Context, identity StickyDiskIdentity, token string) (string, error) {
+func (r *GitHubRunner) checkoutFetchToken(ctx context.Context, identity GitHubExecutionIdentity, token string) (string, error) {
 	token = strings.TrimSpace(token)
 	if token != "" {
 		if strings.ContainsAny(token, "\x00\r\n") {
@@ -351,7 +351,7 @@ func normalizeCheckoutRef(ref string) (string, error) {
 	}
 }
 
-func checkoutAttributes(identity StickyDiskIdentity, repository, ref, sha string) []attribute.KeyValue {
+func checkoutAttributes(identity GitHubExecutionIdentity, repository, ref, sha string) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		traceOrgID(identity.OrgID),
 		attribute.String("execution.id", identity.ExecutionID.String()),

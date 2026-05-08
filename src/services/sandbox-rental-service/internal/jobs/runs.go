@@ -61,20 +61,6 @@ type ScheduleRunMetadata struct {
 	TemporalRunID      string
 }
 
-type StickyDiskMountRecord struct {
-	MountID             uuid.UUID
-	MountName           string
-	KeyHash             string
-	MountPath           string
-	BaseGeneration      int64
-	CommittedGeneration int64
-	SaveRequested       bool
-	SaveState           string
-	FailureReason       string
-	RequestedAt         *time.Time
-	CompletedAt         *time.Time
-}
-
 type runCursor struct {
 	UpdatedAt   time.Time
 	ExecutionID uuid.UUID
@@ -165,7 +151,7 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 func (s *Service) GetRun(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.runs.get")
 	defer span.End()
-	record, err := s.loadRun(ctx, orgID, executionID, true, true)
+	record, err := s.loadRun(ctx, orgID, executionID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +159,7 @@ func (s *Service) GetRun(ctx context.Context, orgID uint64, executionID uuid.UUI
 	return record, nil
 }
 
-func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UUID, includeWindows, includeSticky bool) (*ExecutionRecord, error) {
+func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UUID, includeWindows bool) (*ExecutionRecord, error) {
 	row, err := s.storeQueries().GetRun(ctx, store.GetRunParams{
 		OrgID:       dbOrgID(orgID),
 		ExecutionID: executionID,
@@ -196,13 +182,6 @@ func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UU
 			return nil, err
 		}
 		record.BillingWindows = windows
-	}
-	if includeSticky {
-		sticky, err := s.listStickyDiskMountsForAttempts(ctx, []uuid.UUID{record.LatestAttempt.AttemptID})
-		if err != nil {
-			return nil, err
-		}
-		record.StickyDiskMounts = sticky[record.LatestAttempt.AttemptID]
 	}
 	return &record, nil
 }
@@ -379,33 +358,6 @@ func (s *Service) attachRunBillingSummaries(ctx context.Context, runs []Executio
 		}
 	}
 	return runs, nil
-}
-
-func (s *Service) listStickyDiskMountsForAttempts(ctx context.Context, attemptIDs []uuid.UUID) (map[uuid.UUID][]StickyDiskMountRecord, error) {
-	if len(attemptIDs) == 0 {
-		return map[uuid.UUID][]StickyDiskMountRecord{}, nil
-	}
-	rows, err := s.storeQueries().ListStickyDiskMountsForAttempts(ctx, store.ListStickyDiskMountsForAttemptsParams{AttemptIds: attemptIDs})
-	if err != nil {
-		return nil, fmt.Errorf("list sticky disk mounts: %w", err)
-	}
-	out := map[uuid.UUID][]StickyDiskMountRecord{}
-	for _, row := range rows {
-		out[row.AttemptID] = append(out[row.AttemptID], StickyDiskMountRecord{
-			MountID:             row.MountID,
-			MountName:           row.MountName,
-			KeyHash:             row.KeyHash,
-			MountPath:           row.MountPath,
-			BaseGeneration:      row.BaseGeneration,
-			CommittedGeneration: row.CommittedGeneration,
-			SaveRequested:       row.SaveRequested,
-			SaveState:           row.SaveState,
-			FailureReason:       row.FailureReason,
-			RequestedAt:         timePtrFromPG(row.RequestedAt),
-			CompletedAt:         timePtrFromPG(row.CompletedAt),
-		})
-	}
-	return out, nil
 }
 
 func traceOrgID(orgID uint64) attribute.KeyValue {

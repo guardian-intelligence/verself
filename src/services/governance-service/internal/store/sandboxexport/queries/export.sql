@@ -115,31 +115,6 @@ FROM (
              m.mount_name
 ) t;
 
--- name: ExportSandboxRunnerStickyDiskGenerationsJSONL :many
-SELECT row_to_json(t)::text AS row_json
-FROM (
-    SELECT g.*
-    FROM runner_sticky_disk_generations g
-    LEFT JOIN runner_provider_repositories r ON r.provider = g.provider AND r.provider_repository_id = g.provider_repository_id
-    WHERE r.org_id::text = sqlc.arg(org_id)
-    ORDER BY g.updated_at,
-             g.provider,
-             g.provider_installation_id,
-             g.provider_repository_id,
-             g.key_hash
-) t;
-
--- name: ExportSandboxExecutionStickyDiskMountsJSONL :many
-SELECT row_to_json(t)::text AS row_json
-FROM (
-    SELECT m.*
-    FROM execution_sticky_disk_mounts m
-    JOIN executions e ON e.execution_id = m.execution_id
-    WHERE e.org_id::text = sqlc.arg(org_id)
-    ORDER BY m.created_at,
-             m.mount_id
-) t;
-
 -- name: ExportSandboxVMResourceBoundsJSONL :many
 SELECT row_to_json(t)::text AS row_json
 FROM (SELECT * FROM vm_resource_bounds WHERE org_id::text = sqlc.arg(org_id) ORDER BY updated_at) t;

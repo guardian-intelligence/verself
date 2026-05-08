@@ -53,8 +53,6 @@ import {
   runListQuerySchema,
   runLogSearchQuerySchema,
   sandboxAnalyticsQuerySchema,
-  stickyDiskListQuerySchema,
-  stickyDiskResetRequestSchema,
   updateMemberRolesRequestSchema,
   updateOrganizationRequestSchema,
   type BillingCheckoutRequest as CheckoutRequest,
@@ -115,9 +113,6 @@ import {
   type RunLogSearchPage,
   type RunnerSizingAnalytics,
   type RunsPage,
-  type StickyDiskResetRequest,
-  type StickyDiskResetResult,
-  type StickyDisksPage,
   type SourceBlob,
   type SourceCheckoutGrant,
   type SourceGitCredential,
@@ -250,9 +245,6 @@ export type {
   GitHubInstallationConnect,
   JobsAnalytics,
   RunnerSizingAnalytics,
-  StickyDiskResetRequest,
-  StickyDiskResetResult,
-  StickyDisksPage,
 };
 export type {
   InviteMemberRequest,
@@ -754,20 +746,6 @@ export const getRunnerSizingAnalytics = createServerFn({ method: "GET" })
   .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
   .handler(async ({ context, data }) => {
     return (await sandboxRentalSDK(context)).sandbox.getRunnerSizingAnalytics(data);
-  });
-
-export const listStickyDisks = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(v.optional(stickyDiskListQuerySchema))
-  .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.listStickyDisks(data);
-  });
-
-export const resetStickyDisk = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(stickyDiskResetRequestSchema)
-  .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.resetStickyDisk(data);
   });
 
 export const listGitHubInstallations = createServerFn({ method: "GET" })

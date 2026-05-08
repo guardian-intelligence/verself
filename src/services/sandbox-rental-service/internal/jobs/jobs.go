@@ -114,7 +114,6 @@ type SubmitRequest struct {
 	MaxWallSeconds         uint64                           `json:"max_wall_seconds,omitempty"`
 	Resources              dto.VMResources                  `json:"resources"`
 	FilesystemMounts       []vmorchestrator.FilesystemMount `json:"-"`
-	StickyDiskMounts       []StickyDiskMountSpec            `json:"-"`
 	AttemptID              uuid.UUID                        `json:"-"`
 	RunnerAllocationID     uuid.UUID                        `json:"-"`
 	RunnerBootstrapKind    string                           `json:"-"`
@@ -146,7 +145,6 @@ type ExecutionRecord struct {
 	BillingSummary   RunBillingSummary
 	Runner           RunnerRunMetadata
 	Schedule         ScheduleRunMetadata
-	StickyDiskMounts []StickyDiskMountRecord
 }
 
 type AttemptRecord struct {
@@ -409,13 +407,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 			return uuid.Nil, uuid.Nil, err
 		}
 	}
-	for _, sticky := range req.StickyDiskMounts {
-		mounts = append(mounts, stickyDiskFilesystemMount(sticky))
-	}
 	if err := s.insertExecutionFilesystemMounts(ctx, tx, executionID, mounts); err != nil {
-		return uuid.Nil, uuid.Nil, err
-	}
-	if err := s.insertExecutionStickyDiskMounts(ctx, tx, executionID, attemptID, req.StickyDiskMounts); err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
 	if req.WorkloadKind == WorkloadKindRunner && req.RunnerAllocationID != uuid.Nil {
@@ -518,34 +510,6 @@ func (s *Service) insertExecutionFilesystemMounts(ctx context.Context, tx pgx.Tx
 	return nil
 }
 
-func (s *Service) insertExecutionStickyDiskMounts(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, mounts []StickyDiskMountSpec) error {
-	qtx := store.New(tx)
-	for idx, mount := range mounts {
-		if mount.MountID == uuid.Nil {
-			mount.MountID = uuid.New()
-		}
-		if err := qtx.InsertExecutionStickyDiskMount(ctx, store.InsertExecutionStickyDiskMountParams{
-			MountID:         mount.MountID,
-			ExecutionID:     executionID,
-			AttemptID:       attemptID,
-			AllocationID:    mount.AllocationID,
-			MountName:       mount.MountName,
-			KeyHash:         mount.KeyHash,
-			Key:             mount.Key,
-			MountPath:       mount.MountPath,
-			BaseGeneration:  mount.BaseGeneration,
-			SourceRef:       mount.SourceRef,
-			TargetSourceRef: mount.TargetSourceRef,
-			SaveState:       stickyDiskStateNotRequested,
-			SortOrder:       int32(idx),
-			CreatedAt:       pgTime(time.Now().UTC()),
-		}); err != nil {
-			return fmt.Errorf("insert execution sticky disk mount %s: %w", mount.MountName, err)
-		}
-	}
-	return nil
-}
-
 func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID uuid.UUID) error {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.run", trace.WithAttributes(
 		attribute.String("execution.id", executionID.String()),
@@ -636,11 +600,6 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
-	if item.WorkloadKind == WorkloadKindRunner && s.GitHubRunner != nil && item.SourceKind == SourceKindGitHubAction {
-		if err := s.GitHubRunner.CommitPendingStickyDisks(ctx, item, lease.LeaseID); err != nil && s.Logger != nil {
-			s.Logger.WarnContext(ctx, "sticky disk async commits failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", err)
-		}
-	}
 	stopRenew()
 	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
 		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", lease.LeaseID, "error", err)
@@ -671,7 +630,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
 		return err
 	}
-	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false, false)
+	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false)
 	if err == nil {
 		runRecord.Status = state
 		runRecord.LatestAttempt.TraceID = span.SpanContext().TraceID().String()

@@ -21,17 +21,14 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	analyticsWindow := `{"window_start":"2026-05-06T00:00:00Z","window_end":"2026-05-07T00:00:00Z"`
 	jobsAnalyticsJSON := analyticsWindow + `,"total_runs":"1","succeeded_runs":"1","failed_runs":"0","p50_duration_ms":"1000","p95_duration_ms":"1000","p99_duration_ms":"1000","by_source":[{"key":"github","count":"1"}],"by_runner_class":[{"key":"linux-2vcpu","count":"1"}],"slowest_runs":[{"execution_id":"` + executionID + `","status":"succeeded","duration_ms":1000,"completed_at":"2026-05-06T00:01:00Z"}]}`
 	costsAnalyticsJSON := analyticsWindow + `,"reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1","by_source":[{"key":"github","count":"1","reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1"}],"by_runner_class":[],"by_repository":[]}`
-	cachesAnalyticsJSON := analyticsWindow + `,"checkout_requests":"1","checkout_hits":"1","checkout_misses":"0","sticky_restore_hits":"0","sticky_restore_misses":"0","sticky_save_requests":"1","sticky_commits":"1","by_repository":[{"key":"guardian/verself","count":"1"}]}`
+	cachesAnalyticsJSON := analyticsWindow + `,"checkout_requests":"1","checkout_hits":"1","checkout_misses":"0","by_repository":[{"key":"guardian/verself","count":"1"}]}`
 	runnerSizingAnalyticsJSON := analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`
 	logSearchJSON := `{"filters":{"query":"build","run_id":"` + runID + `"},"limit":1,"next_cursor":"logs_cursor","results":[{"execution_id":"` + executionID + `","attempt_id":"attempt_1","seq":1,"stream":"stdout","chunk":"build log\n","created_at":"2026-05-06T00:00:30Z","source_kind":"github"}]}`
-	stickyDisksJSON := `{"filters":{"repository":"guardian/verself"},"limit":1,"next_cursor":"sticky_cursor","disks":[{"installation_id":"123","repository_id":"456","repository_full_name":"guardian/verself","key_hash":"cache_hash","key":"go-build","current_generation":"7","current_source_ref":"zfs://cache","last_execution_id":"` + executionID + `","last_attempt_id":"attempt_1","last_save_state":"committed","last_used_at":"2026-05-06T00:01:00Z"}]}`
 	githubInstallationJSON := `{"installation_id":"123","org_id":"370200542594579812","account_login":"guardian","account_type":"Organization","active":true,"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	var createBody map[string]any
 	var pauseKey string
 	var resumeKey string
 	var githubInstallKey string
-	var stickyResetKey string
-	var stickyResetBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer tok_sandbox" {
@@ -65,17 +62,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 			_, _ = w.Write([]byte(cachesAnalyticsJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
 			_, _ = w.Write([]byte(runnerSizingAnalyticsJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/sticky-disks":
-			if r.URL.Query().Get("limit") != "1" || r.URL.Query().Get("repository") != "guardian/verself" {
-				t.Fatalf("sticky disks query = %s", r.URL.RawQuery)
-			}
-			_, _ = w.Write([]byte(stickyDisksJSON))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sticky-disks/reset":
-			stickyResetKey = r.Header.Get("Idempotency-Key")
-			if err := json.NewDecoder(r.Body).Decode(&stickyResetBody); err != nil {
-				t.Fatal(err)
-			}
-			_, _ = w.Write([]byte(`{"installation_id":"123","repository_id":"456","key_hash":"cache_hash","deleted_source_ref":"zfs://cache","reset_at":"2026-05-06T00:02:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
 			_, _ = w.Write([]byte(`[` + githubInstallationJSON + `]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/github/installations/connect":
@@ -161,7 +147,7 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cachesAnalytics.CheckoutHits != "1" || cachesAnalytics.StickyCommits != "1" {
+	if cachesAnalytics.CheckoutHits != "1" || cachesAnalytics.CheckoutMisses != "0" {
 		t.Fatalf("unexpected caches analytics: %#v", cachesAnalytics)
 	}
 	runnerSizingAnalytics, err := client.Sandbox.GetRunnerSizingAnalytics(context.Background(), SandboxAnalyticsOptions{})
@@ -170,25 +156,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	}
 	if len(runnerSizingAnalytics.ByRunnerClass) != 1 || runnerSizingAnalytics.ByRunnerClass[0].RunnerClass != "linux-2vcpu" {
 		t.Fatalf("unexpected runner sizing analytics: %#v", runnerSizingAnalytics)
-	}
-	stickyDisks, err := client.Sandbox.ListStickyDisks(context.Background(), ListSandboxStickyDisksOptions{Limit: 1, Repository: "guardian/verself"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stickyDisks.Disks) != 1 || stickyDisks.Disks[0].KeyHash != "cache_hash" || stickyDisks.NextCursor != "sticky_cursor" {
-		t.Fatalf("unexpected sticky disks page: %#v", stickyDisks)
-	}
-	reset, err := client.Sandbox.ResetStickyDisk(context.Background(), ResetSandboxStickyDiskInput{
-		InstallationID: "123",
-		RepositoryID:   "456",
-		KeyHash:        "cache_hash",
-		IdempotencyKey: "sandbox:sticky-reset",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reset.DeletedSourceRef == nil || *reset.DeletedSourceRef != "zfs://cache" || stickyResetKey != "sandbox:sticky-reset" || stickyResetBody["key_hash"] != "cache_hash" {
-		t.Fatalf("unexpected sticky reset: result=%#v key=%q body=%#v", reset, stickyResetKey, stickyResetBody)
 	}
 	installations, err := client.Sandbox.ListGitHubInstallations(context.Background())
 	if err != nil {

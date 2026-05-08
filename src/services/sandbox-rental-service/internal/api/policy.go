@@ -26,15 +26,13 @@ type permission string
 func (p permission) LogValue() slog.Value { return slog.StringValue(string(p)) }
 
 const (
-	permissionGitHubRead      permission = "sandbox:github_installation:read"
-	permissionGitHubWrite     permission = "sandbox:github_installation:write"
-	permissionExecutionRead   permission = "sandbox:execution:read"
-	permissionScheduleRead    permission = "sandbox:execution_schedule:read"
-	permissionScheduleWrite   permission = "sandbox:execution_schedule:write"
-	permissionLogsRead        permission = "sandbox:logs:read"
-	permissionAnalyticsRead   permission = "sandbox:analytics:read"
-	permissionStickyDiskRead  permission = "sandbox:sticky_disk:read"
-	permissionStickyDiskWrite permission = "sandbox:sticky_disk:write"
+	permissionGitHubRead    permission = "sandbox:github_installation:read"
+	permissionGitHubWrite   permission = "sandbox:github_installation:write"
+	permissionExecutionRead permission = "sandbox:execution:read"
+	permissionScheduleRead  permission = "sandbox:execution_schedule:read"
+	permissionScheduleWrite permission = "sandbox:execution_schedule:write"
+	permissionLogsRead      permission = "sandbox:logs:read"
+	permissionAnalyticsRead permission = "sandbox:analytics:read"
 
 	idempotencyRequestBodyKey   = "request_body_idempotency_key"
 	idempotencyHeaderKey        = "idempotency_key_header"

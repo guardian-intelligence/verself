@@ -614,14 +614,6 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 	if err := add("sandbox/execution_filesystem_mounts.jsonl", rows, err); err != nil {
 		return nil, err
 	}
-	rows, err = q.ExportSandboxRunnerStickyDiskGenerationsJSONL(ctx, sandboxexport.ExportSandboxRunnerStickyDiskGenerationsJSONLParams{OrgID: sandboxOrgID})
-	if err := add("sandbox/runner_sticky_disk_generations.jsonl", rows, err); err != nil {
-		return nil, err
-	}
-	rows, err = q.ExportSandboxExecutionStickyDiskMountsJSONL(ctx, sandboxexport.ExportSandboxExecutionStickyDiskMountsJSONLParams{OrgID: sandboxOrgID})
-	if err := add("sandbox/execution_sticky_disk_mounts.jsonl", rows, err); err != nil {
-		return nil, err
-	}
 	rows, err = q.ExportSandboxVMResourceBoundsJSONL(ctx, sandboxexport.ExportSandboxVMResourceBoundsJSONLParams{OrgID: sandboxOrgID})
 	if err := add("sandbox/vm_resource_bounds.jsonl", rows, err); err != nil {
 		return nil, err

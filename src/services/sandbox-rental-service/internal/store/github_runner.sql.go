@@ -253,6 +253,56 @@ func (q *Queries) GetGitHubAllocationIDByExecution(ctx context.Context, arg GetG
 	return allocation_id, err
 }
 
+const getGitHubExecutionIdentity = `-- name: GetGitHubExecutionIdentity :one
+SELECT
+    a.allocation_id,
+    p.org_id,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    a.runner_name
+FROM runner_allocations a
+JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id
+LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+WHERE a.provider = 'github'
+  AND a.execution_id = $1
+  AND a.attempt_id = $2
+`
+
+type GetGitHubExecutionIdentityParams struct {
+	ExecutionID *uuid.UUID
+	AttemptID   *uuid.UUID
+}
+
+type GetGitHubExecutionIdentityRow struct {
+	AllocationID           uuid.UUID
+	OrgID                  int64
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderJobID          int64
+	RunnerName             string
+}
+
+func (q *Queries) GetGitHubExecutionIdentity(ctx context.Context, arg GetGitHubExecutionIdentityParams) (GetGitHubExecutionIdentityRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubExecutionIdentity, arg.ExecutionID, arg.AttemptID)
+	var i GetGitHubExecutionIdentityRow
+	err := row.Scan(
+		&i.AllocationID,
+		&i.OrgID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RepositoryFullName,
+		&i.ProviderJobID,
+		&i.RunnerName,
+	)
+	return i, err
+}
+
 const getGitHubInstallationForOrg = `-- name: GetGitHubInstallationForOrg :one
 SELECT
     i.installation_id,

@@ -536,9 +536,6 @@ CREATE TABLE IF NOT EXISTS verself.job_cache_events
     repository_full_name       LowCardinality(String) DEFAULT '',
     runner_class               LowCardinality(String) DEFAULT '',
     checkout_cache_hit         UInt8 DEFAULT 0         CODEC(T64, ZSTD(3)),
-    sticky_restore_hit_count   UInt32 DEFAULT 0        CODEC(T64, ZSTD(3)),
-    sticky_restore_miss_count  UInt32 DEFAULT 0        CODEC(T64, ZSTD(3)),
-    sticky_state               LowCardinality(String) DEFAULT '',
     trace_id                   String DEFAULT ''       CODEC(ZSTD(3)),
     span_id                    String DEFAULT ''       CODEC(ZSTD(3))
 )
@@ -560,18 +557,12 @@ SELECT
     SpanAttributes['github.repository'] AS repository_full_name,
     SpanAttributes['github.runner_class'] AS runner_class,
     toUInt8(SpanAttributes['github.checkout.cache_hit'] = 'true') AS checkout_cache_hit,
-    toUInt32OrZero(SpanAttributes['github.stickydisk.restore_hit_count']) AS sticky_restore_hit_count,
-    toUInt32OrZero(SpanAttributes['github.stickydisk.restore_miss_count']) AS sticky_restore_miss_count,
-    SpanAttributes['github.stickydisk.state'] AS sticky_state,
     TraceId AS trace_id,
     SpanId AS span_id
 FROM default.otel_traces
 WHERE ServiceName = 'sandbox-rental-service'
   AND SpanName IN (
-    'github.checkout.bundle',
-    'github.stickydisk.compile',
-    'github.stickydisk.save_request',
-    'github.stickydisk.commit_zfs'
+    'github.checkout.bundle'
   )
   AND SpanAttributes['verself.org_id'] != '';
 

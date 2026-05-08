@@ -63,7 +63,6 @@ func executionRecord(record jobs.ExecutionRecord) dto.SandboxExecutionRecord {
 		BillingSummary:   runBillingSummary(record.BillingSummary),
 		Runner:           runnerRunMetadata(record.Runner),
 		Schedule:         scheduleRunMetadata(record.Schedule),
-		StickyDiskMounts: stickyDiskMounts(record.StickyDiskMounts),
 	}
 }
 
@@ -177,33 +176,6 @@ func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata) *dto.SandboxSchedule
 		out.ScheduleID = &scheduleID
 	}
 	return &out
-}
-
-func stickyDiskMount(record jobs.StickyDiskMountRecord) dto.SandboxExecutionStickyDiskMount {
-	return dto.SandboxExecutionStickyDiskMount{
-		MountID:             record.MountID,
-		MountName:           record.MountName,
-		KeyHash:             record.KeyHash,
-		MountPath:           record.MountPath,
-		BaseGeneration:      dto.Uint64(uint64FromInt64(record.BaseGeneration, "base generation")),
-		CommittedGeneration: dto.Uint64(uint64FromInt64(record.CommittedGeneration, "committed generation")),
-		SaveRequested:       record.SaveRequested,
-		SaveState:           record.SaveState,
-		FailureReason:       record.FailureReason,
-		RequestedAt:         record.RequestedAt,
-		CompletedAt:         record.CompletedAt,
-	}
-}
-
-func stickyDiskMounts(records []jobs.StickyDiskMountRecord) []dto.SandboxExecutionStickyDiskMount {
-	if len(records) == 0 {
-		return nil
-	}
-	out := make([]dto.SandboxExecutionStickyDiskMount, 0, len(records))
-	for _, record := range records {
-		out = append(out, stickyDiskMount(record))
-	}
-	return out
 }
 
 func runPage(page jobs.RunPage, filters jobs.RunListFilters) dto.SandboxRunsPage {
@@ -342,16 +314,12 @@ func costsAnalytics(analytics jobs.CostsAnalytics) dto.SandboxCostsAnalytics {
 
 func cachesAnalytics(analytics jobs.CachesAnalytics) dto.SandboxCachesAnalytics {
 	return dto.SandboxCachesAnalytics{
-		WindowStart:         analytics.WindowStart,
-		WindowEnd:           analytics.WindowEnd,
-		CheckoutRequests:    dto.Uint64(analytics.CheckoutRequests),
-		CheckoutHits:        dto.Uint64(analytics.CheckoutHits),
-		CheckoutMisses:      dto.Uint64(analytics.CheckoutMisses),
-		StickyRestoreHits:   dto.Uint64(analytics.StickyRestoreHits),
-		StickyRestoreMisses: dto.Uint64(analytics.StickyRestoreMisses),
-		StickySaveRequests:  dto.Uint64(analytics.StickySaveRequests),
-		StickyCommits:       dto.Uint64(analytics.StickyCommits),
-		ByRepository:        analyticsBuckets(analytics.ByRepository),
+		WindowStart:      analytics.WindowStart,
+		WindowEnd:        analytics.WindowEnd,
+		CheckoutRequests: dto.Uint64(analytics.CheckoutRequests),
+		CheckoutHits:     dto.Uint64(analytics.CheckoutHits),
+		CheckoutMisses:   dto.Uint64(analytics.CheckoutMisses),
+		ByRepository:     analyticsBuckets(analytics.ByRepository),
 	}
 }
 
@@ -373,52 +341,6 @@ func runnerSizingAnalytics(analytics jobs.RunnerSizingAnalytics) dto.SandboxRunn
 		})
 	}
 	return out
-}
-
-func stickyDiskRecord(record jobs.StickyDiskRecord) dto.SandboxStickyDiskRecord {
-	return dto.SandboxStickyDiskRecord{
-		InstallationID:     strconv.FormatInt(record.InstallationID, 10),
-		RepositoryID:       strconv.FormatInt(record.RepositoryID, 10),
-		RepositoryFullName: record.RepositoryFullName,
-		KeyHash:            record.KeyHash,
-		Key:                record.Key,
-		CurrentGeneration:  dto.Uint64(uint64FromInt64(record.CurrentGeneration, "current generation")),
-		CurrentSourceRef:   record.CurrentSourceRef,
-		LastUsedAt:         record.LastUsedAt,
-		LastCompletedAt:    record.LastCompletedAt,
-		LastSaveState:      record.LastSaveState,
-		LastExecutionID:    record.LastExecutionID,
-		LastAttemptID:      record.LastAttemptID,
-		LastRunnerClass:    record.LastRunnerClass,
-		LastWorkflowName:   record.LastWorkflowName,
-		LastJobName:        record.LastJobName,
-		LastMountPath:      record.LastMountPath,
-	}
-}
-
-func stickyDisksPage(page jobs.StickyDiskPage, filters jobs.StickyDiskListFilters) dto.SandboxStickyDisksPage {
-	out := dto.SandboxStickyDisksPage{
-		Disks:      make([]dto.SandboxStickyDiskRecord, 0, len(page.Disks)),
-		NextCursor: page.NextCursor,
-		Limit:      int32FromInt(page.Limit, "sticky disks page limit"),
-		Filters: dto.SandboxStickyDiskFilters{
-			Repository: filters.Repository,
-		},
-	}
-	for _, record := range page.Disks {
-		out.Disks = append(out.Disks, stickyDiskRecord(record))
-	}
-	return out
-}
-
-func stickyDiskResetResult(result jobs.StickyDiskResetResult) dto.SandboxStickyDiskResetResult {
-	return dto.SandboxStickyDiskResetResult{
-		InstallationID:   strconv.FormatInt(result.InstallationID, 10),
-		RepositoryID:     strconv.FormatInt(result.RepositoryID, 10),
-		KeyHash:          result.KeyHash,
-		DeletedSourceRef: result.DeletedSourceRef,
-		ResetAt:          result.ResetAt,
-	}
 }
 
 func executionScheduleCreateRequest(request dto.SandboxExecutionScheduleCreateRequest) recurring.CreateRequest {

@@ -19,7 +19,6 @@ const (
 	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
 	runnerBootstrapConfigPath      = "/internal/sandbox/v1/runner-bootstrap"
 	runnerBootstrapTokenHeader     = "X-Verself-Runner-Bootstrap"
-	githubStickyDiskSavePath       = "/internal/sandbox/v1/stickydisk/save"
 	githubCheckoutBundlePath       = "/internal/sandbox/v1/github-checkout/bundle"
 	publicWebhookBodyLimit         = 1 << 20
 )
@@ -37,11 +36,6 @@ type githubCheckoutBundleRequest struct {
 	GitHubToken string `json:"github_token"`
 }
 
-type githubStickyDiskSaveRequest struct {
-	Key  string `json:"key"`
-	Path string `json:"path"`
-}
-
 func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	if mux == nil || svc == nil {
 		return
@@ -51,7 +45,6 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc))
 	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
 	mux.HandleFunc(runnerBootstrapConfigPath, runnerBootstrapConfigHandler(svc))
-	mux.HandleFunc(githubStickyDiskSavePath, githubStickyDiskSaveHandler(svc))
 	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
 }
 
@@ -214,43 +207,6 @@ func runnerBootstrapConfigHandler(svc *jobs.Service) http.HandlerFunc {
 	}
 }
 
-func githubStickyDiskSaveHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		identity, ok := authenticateStickyDiskRequest(w, r, svc)
-		if !ok {
-			return
-		}
-		var req githubStickyDiskSaveRequest
-		body := http.MaxBytesReader(w, r.Body, 16<<10)
-		if err := json.NewDecoder(body).Decode(&req); err != nil {
-			writeStickyDiskError(w, jobs.ErrStickyDiskInvalid)
-			return
-		}
-		if strings.TrimSpace(req.Key) == "" {
-			req.Key = strings.TrimSpace(r.URL.Query().Get("key"))
-		}
-		save, err := svc.GitHubRunner.RequestStickyDiskCommit(r.Context(), identity, req.Key, req.Path)
-		if err != nil {
-			writeStickyDiskError(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"state":     "queued",
-			"commit_id": save.CommitID.String(),
-		})
-	}
-}
-
 func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -300,31 +256,6 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 		w.Header().Set("X-Verself-Checkout-Sha", bundle.SHA)
 		_, _ = io.Copy(w, file)
 	}
-}
-
-func authenticateStickyDiskRequest(w http.ResponseWriter, r *http.Request, svc *jobs.Service) (jobs.StickyDiskIdentity, bool) {
-	identity, err := svc.GitHubRunner.AuthenticateStickyDisk(
-		r.Context(),
-		r.Header.Get("X-Verself-Execution-Id"),
-		r.Header.Get("X-Verself-Attempt-Id"),
-		r.Header.Get("Authorization"),
-	)
-	if err != nil {
-		writePublicWebhookError(w, http.StatusUnauthorized, err)
-		return jobs.StickyDiskIdentity{}, false
-	}
-	return identity, true
-}
-
-func writeStickyDiskError(w http.ResponseWriter, err error) {
-	status := http.StatusInternalServerError
-	if errors.Is(err, jobs.ErrStickyDiskInvalid) {
-		status = http.StatusBadRequest
-	}
-	if errors.Is(err, jobs.ErrStickyDiskUnauthorized) {
-		status = http.StatusUnauthorized
-	}
-	writePublicWebhookError(w, status, err)
 }
 
 func writeCheckoutError(w http.ResponseWriter, err error) {

@@ -59,16 +59,12 @@ type CostsAnalytics struct {
 }
 
 type CachesAnalytics struct {
-	WindowStart         time.Time
-	WindowEnd           time.Time
-	CheckoutRequests    uint64
-	CheckoutHits        uint64
-	CheckoutMisses      uint64
-	StickyRestoreHits   uint64
-	StickyRestoreMisses uint64
-	StickySaveRequests  uint64
-	StickyCommits       uint64
-	ByRepository        []AnalyticsBucket
+	WindowStart      time.Time
+	WindowEnd        time.Time
+	CheckoutRequests uint64
+	CheckoutHits     uint64
+	CheckoutMisses   uint64
+	ByRepository     []AnalyticsBucket
 }
 
 type RunnerSizingSample struct {
@@ -243,11 +239,7 @@ func (s *Service) GetCachesAnalytics(ctx context.Context, orgID uint64, window A
 		SELECT
 			countIf(event_name = 'github.checkout.bundle'),
 			countIf(event_name = 'github.checkout.bundle' AND checkout_cache_hit = 1),
-			countIf(event_name = 'github.checkout.bundle' AND checkout_cache_hit = 0),
-			COALESCE(sumIf(sticky_restore_hit_count, event_name = 'github.stickydisk.compile'), 0),
-			COALESCE(sumIf(sticky_restore_miss_count, event_name = 'github.stickydisk.compile'), 0),
-			countIf(event_name = 'github.stickydisk.save_request'),
-			countIf(event_name = 'github.stickydisk.commit_zfs' AND sticky_state = 'committed')
+			countIf(event_name = 'github.checkout.bundle' AND checkout_cache_hit = 0)
 		FROM verself.job_cache_events
 		WHERE org_id = $1
 		  AND event_time BETWEEN $2 AND $3
@@ -255,10 +247,6 @@ func (s *Service) GetCachesAnalytics(ctx context.Context, orgID uint64, window A
 		&analytics.CheckoutRequests,
 		&analytics.CheckoutHits,
 		&analytics.CheckoutMisses,
-		&analytics.StickyRestoreHits,
-		&analytics.StickyRestoreMisses,
-		&analytics.StickySaveRequests,
-		&analytics.StickyCommits,
 	); err != nil {
 		return CachesAnalytics{}, fmt.Errorf("query caches analytics summary: %w", err)
 	}

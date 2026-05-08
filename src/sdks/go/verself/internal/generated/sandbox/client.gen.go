@@ -116,17 +116,13 @@ type SandboxBillingWindow struct {
 // SandboxCachesAnalytics defines model for SandboxCachesAnalytics.
 type SandboxCachesAnalytics struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string                   `json:"$schema,omitempty"`
-	ByRepository        *[]SandboxAnalyticsBucket `json:"by_repository"`
-	CheckoutHits        string                    `json:"checkout_hits"`
-	CheckoutMisses      string                    `json:"checkout_misses"`
-	CheckoutRequests    string                    `json:"checkout_requests"`
-	StickyCommits       string                    `json:"sticky_commits"`
-	StickyRestoreHits   string                    `json:"sticky_restore_hits"`
-	StickyRestoreMisses string                    `json:"sticky_restore_misses"`
-	StickySaveRequests  string                    `json:"sticky_save_requests"`
-	WindowEnd           time.Time                 `json:"window_end"`
-	WindowStart         time.Time                 `json:"window_start"`
+	Schema           *string                   `json:"$schema,omitempty"`
+	ByRepository     *[]SandboxAnalyticsBucket `json:"by_repository"`
+	CheckoutHits     string                    `json:"checkout_hits"`
+	CheckoutMisses   string                    `json:"checkout_misses"`
+	CheckoutRequests string                    `json:"checkout_requests"`
+	WindowEnd        time.Time                 `json:"window_end"`
+	WindowStart      time.Time                 `json:"window_start"`
 }
 
 // SandboxCostsAnalytics defines model for SandboxCostsAnalytics.
@@ -155,32 +151,31 @@ type SandboxExecutionLogs struct {
 // SandboxExecutionRecord defines model for SandboxExecutionRecord.
 type SandboxExecutionRecord struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                            `json:"$schema,omitempty"`
-	ActorId          string                             `json:"actor_id"`
-	BillingSummary   *SandboxRunBillingSummary          `json:"billing_summary,omitempty"`
-	BillingWindows   *[]SandboxBillingWindow            `json:"billing_windows,omitempty"`
-	CorrelationId    *string                            `json:"correlation_id,omitempty"`
-	CreatedAt        time.Time                          `json:"created_at"`
-	ExecutionId      string                             `json:"execution_id"`
-	ExternalProvider *string                            `json:"external_provider,omitempty"`
-	ExternalTaskId   *string                            `json:"external_task_id,omitempty"`
-	IdempotencyKey   *string                            `json:"idempotency_key,omitempty"`
-	Kind             string                             `json:"kind"`
-	LatestAttempt    SandboxAttemptRecord               `json:"latest_attempt"`
-	OrgId            string                             `json:"org_id"`
-	ProductId        string                             `json:"product_id"`
-	Provider         *string                            `json:"provider,omitempty"`
-	RunCommand       *string                            `json:"run_command,omitempty"`
-	RunId            string                             `json:"run_id"`
-	Runner           *SandboxRunnerRunMetadata          `json:"runner,omitempty"`
-	RunnerClass      *string                            `json:"runner_class,omitempty"`
-	Schedule         *SandboxScheduleRunMetadata        `json:"schedule,omitempty"`
-	SourceKind       *string                            `json:"source_kind,omitempty"`
-	SourceRef        *string                            `json:"source_ref,omitempty"`
-	Status           string                             `json:"status"`
-	StickyDiskMounts *[]SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
-	UpdatedAt        time.Time                          `json:"updated_at"`
-	WorkloadKind     *string                            `json:"workload_kind,omitempty"`
+	Schema           *string                     `json:"$schema,omitempty"`
+	ActorId          string                      `json:"actor_id"`
+	BillingSummary   *SandboxRunBillingSummary   `json:"billing_summary,omitempty"`
+	BillingWindows   *[]SandboxBillingWindow     `json:"billing_windows,omitempty"`
+	CorrelationId    *string                     `json:"correlation_id,omitempty"`
+	CreatedAt        time.Time                   `json:"created_at"`
+	ExecutionId      string                      `json:"execution_id"`
+	ExternalProvider *string                     `json:"external_provider,omitempty"`
+	ExternalTaskId   *string                     `json:"external_task_id,omitempty"`
+	IdempotencyKey   *string                     `json:"idempotency_key,omitempty"`
+	Kind             string                      `json:"kind"`
+	LatestAttempt    SandboxAttemptRecord        `json:"latest_attempt"`
+	OrgId            string                      `json:"org_id"`
+	ProductId        string                      `json:"product_id"`
+	Provider         *string                     `json:"provider,omitempty"`
+	RunCommand       *string                     `json:"run_command,omitempty"`
+	RunId            string                      `json:"run_id"`
+	Runner           *SandboxRunnerRunMetadata   `json:"runner,omitempty"`
+	RunnerClass      *string                     `json:"runner_class,omitempty"`
+	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
+	SourceKind       *string                     `json:"source_kind,omitempty"`
+	SourceRef        *string                     `json:"source_ref,omitempty"`
+	Status           string                      `json:"status"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
+	WorkloadKind     *string                     `json:"workload_kind,omitempty"`
 }
 
 // SandboxExecutionScheduleCreateRequest defines model for SandboxExecutionScheduleCreateRequest.
@@ -236,21 +231,6 @@ type SandboxExecutionScheduleRecord struct {
 	TemporalScheduleId string                                    `json:"temporal_schedule_id"`
 	UpdatedAt          time.Time                                 `json:"updated_at"`
 	WorkflowPath       string                                    `json:"workflow_path"`
-}
-
-// SandboxExecutionStickyDiskMount defines model for SandboxExecutionStickyDiskMount.
-type SandboxExecutionStickyDiskMount struct {
-	BaseGeneration      string     `json:"base_generation"`
-	CommittedGeneration string     `json:"committed_generation"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	FailureReason       *string    `json:"failure_reason,omitempty"`
-	KeyHash             string     `json:"key_hash"`
-	MountId             string     `json:"mount_id"`
-	MountName           string     `json:"mount_name"`
-	MountPath           string     `json:"mount_path"`
-	RequestedAt         *time.Time `json:"requested_at,omitempty"`
-	SaveRequested       bool       `json:"save_requested"`
-	SaveState           string     `json:"save_state"`
 }
 
 // SandboxGitHubInstallationConnectResponse defines model for SandboxGitHubInstallationConnectResponse.
@@ -420,67 +400,6 @@ type SandboxScheduleRunMetadata struct {
 	TemporalWorkflowId *string `json:"temporal_workflow_id,omitempty"`
 }
 
-// SandboxStickyDiskFilters defines model for SandboxStickyDiskFilters.
-type SandboxStickyDiskFilters struct {
-	Repository *string `json:"repository,omitempty"`
-}
-
-// SandboxStickyDiskRecord defines model for SandboxStickyDiskRecord.
-type SandboxStickyDiskRecord struct {
-	CurrentGeneration  string     `json:"current_generation"`
-	CurrentSourceRef   string     `json:"current_source_ref"`
-	InstallationId     string     `json:"installation_id"`
-	Key                string     `json:"key"`
-	KeyHash            string     `json:"key_hash"`
-	LastAttemptId      *string    `json:"last_attempt_id,omitempty"`
-	LastCompletedAt    *time.Time `json:"last_completed_at,omitempty"`
-	LastExecutionId    *string    `json:"last_execution_id,omitempty"`
-	LastJobName        *string    `json:"last_job_name,omitempty"`
-	LastMountPath      *string    `json:"last_mount_path,omitempty"`
-	LastRunnerClass    *string    `json:"last_runner_class,omitempty"`
-	LastSaveState      *string    `json:"last_save_state,omitempty"`
-	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
-	LastWorkflowName   *string    `json:"last_workflow_name,omitempty"`
-	RepositoryFullName *string    `json:"repository_full_name,omitempty"`
-	RepositoryId       string     `json:"repository_id"`
-}
-
-// SandboxStickyDiskResetResult defines model for SandboxStickyDiskResetResult.
-type SandboxStickyDiskResetResult struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema           *string   `json:"$schema,omitempty"`
-	DeletedSourceRef *string   `json:"deleted_source_ref,omitempty"`
-	InstallationId   string    `json:"installation_id"`
-	KeyHash          string    `json:"key_hash"`
-	RepositoryId     string    `json:"repository_id"`
-	ResetAt          time.Time `json:"reset_at"`
-}
-
-// SandboxStickyDisksPage defines model for SandboxStickyDisksPage.
-type SandboxStickyDisksPage struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string                    `json:"$schema,omitempty"`
-	Disks      *[]SandboxStickyDiskRecord `json:"disks"`
-	Filters    SandboxStickyDiskFilters   `json:"filters"`
-	Limit      int32                      `json:"limit"`
-	NextCursor *string                    `json:"next_cursor,omitempty"`
-}
-
-// StickyDiskResetRequest defines model for StickyDiskResetRequest.
-type StickyDiskResetRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
-	// InstallationId GitHub installation ID encoded as a decimal string.
-	InstallationId string `json:"installation_id"`
-
-	// KeyHash Sticky disk key hash to reset.
-	KeyHash string `json:"key_hash"`
-
-	// RepositoryId GitHub repository ID encoded as a decimal string.
-	RepositoryId string `json:"repository_id"`
-}
-
 // PauseExecutionScheduleParams defines parameters for PauseExecutionSchedule.
 type PauseExecutionScheduleParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
@@ -573,27 +492,8 @@ type ListRunsParams struct {
 	RunnerClass *string `form:"runner_class,omitempty" json:"runner_class,omitempty"`
 }
 
-// ListStickyDisksParams defines parameters for ListStickyDisks.
-type ListStickyDisksParams struct {
-	// Limit Maximum sticky disks to return.
-	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// Cursor Opaque pagination cursor returned by the previous page.
-	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
-}
-
-// ResetStickyDiskParams defines parameters for ResetStickyDisk.
-type ResetStickyDiskParams struct {
-	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
-	IdempotencyKey string `json:"Idempotency-Key"`
-}
-
 // CreateExecutionScheduleJSONRequestBody defines body for CreateExecutionSchedule for application/json ContentType.
 type CreateExecutionScheduleJSONRequestBody = SandboxExecutionScheduleCreateRequest
-
-// ResetStickyDiskJSONRequestBody defines body for ResetStickyDisk for application/json ContentType.
-type ResetStickyDiskJSONRequestBody = StickyDiskResetRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -717,14 +617,6 @@ type ClientInterface interface {
 
 	// GetRun request
 	GetRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListStickyDisks request
-	ListStickyDisks(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ResetStickyDiskWithBody request with any body
-	ResetStickyDiskWithBody(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	ResetStickyDisk(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListExecutionSchedules(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -921,42 +813,6 @@ func (c *Client) ListRuns(ctx context.Context, params *ListRunsParams, reqEditor
 
 func (c *Client) GetRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRunRequest(c.Server, runId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListStickyDisks(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListStickyDisksRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ResetStickyDiskWithBody(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResetStickyDiskRequestWithBody(c.Server, params, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ResetStickyDisk(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResetStickyDiskRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1945,140 +1801,6 @@ func NewGetRunRequest(server string, runId string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewListStickyDisksRequest generates requests for ListStickyDisks
-func NewListStickyDisksRequest(server string, params *ListStickyDisksParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/sticky-disks")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Repository != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repository", *params.Repository, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewResetStickyDiskRequest calls the generic ResetStickyDisk builder with application/json body
-func NewResetStickyDiskRequest(server string, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewResetStickyDiskRequestWithBody(server, params, "application/json", bodyReader)
-}
-
-// NewResetStickyDiskRequestWithBody generates requests for ResetStickyDisk with any type of body
-func NewResetStickyDiskRequestWithBody(server string, params *ResetStickyDiskParams, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/sticky-disks/reset")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		var headerParam0 string
-
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("Idempotency-Key", headerParam0)
-
-	}
-
-	return req, nil
-}
-
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -2171,14 +1893,6 @@ type ClientWithResponsesInterface interface {
 
 	// GetRunWithResponse request
 	GetRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
-
-	// ListStickyDisksWithResponse request
-	ListStickyDisksWithResponse(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*ListStickyDisksResponse, error)
-
-	// ResetStickyDiskWithBodyWithResponse request with any body
-	ResetStickyDiskWithBodyWithResponse(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error)
-
-	ResetStickyDiskWithResponse(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error)
 }
 
 type ListExecutionSchedulesResponse struct {
@@ -2549,52 +2263,6 @@ func (r GetRunResponse) StatusCode() int {
 	return 0
 }
 
-type ListStickyDisksResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *SandboxStickyDisksPage
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ListStickyDisksResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListStickyDisksResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ResetStickyDiskResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *SandboxStickyDiskResetResult
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ResetStickyDiskResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ResetStickyDiskResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 // ListExecutionSchedulesWithResponse request returning *ListExecutionSchedulesResponse
 func (c *ClientWithResponses) ListExecutionSchedulesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListExecutionSchedulesResponse, error) {
 	rsp, err := c.ListExecutionSchedules(ctx, reqEditors...)
@@ -2745,32 +2413,6 @@ func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId stri
 		return nil, err
 	}
 	return ParseGetRunResponse(rsp)
-}
-
-// ListStickyDisksWithResponse request returning *ListStickyDisksResponse
-func (c *ClientWithResponses) ListStickyDisksWithResponse(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*ListStickyDisksResponse, error) {
-	rsp, err := c.ListStickyDisks(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListStickyDisksResponse(rsp)
-}
-
-// ResetStickyDiskWithBodyWithResponse request with arbitrary body returning *ResetStickyDiskResponse
-func (c *ClientWithResponses) ResetStickyDiskWithBodyWithResponse(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error) {
-	rsp, err := c.ResetStickyDiskWithBody(ctx, params, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseResetStickyDiskResponse(rsp)
-}
-
-func (c *ClientWithResponses) ResetStickyDiskWithResponse(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error) {
-	rsp, err := c.ResetStickyDisk(ctx, params, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseResetStickyDiskResponse(rsp)
 }
 
 // ParseListExecutionSchedulesResponse parses an HTTP response from a ListExecutionSchedulesWithResponse call
@@ -3284,72 +2926,6 @@ func ParseGetRunResponse(rsp *http.Response) (*GetRunResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest SandboxExecutionRecord
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListStickyDisksResponse parses an HTTP response from a ListStickyDisksWithResponse call
-func ParseListStickyDisksResponse(rsp *http.Response) (*ListStickyDisksResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListStickyDisksResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SandboxStickyDisksPage
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseResetStickyDiskResponse parses an HTTP response from a ResetStickyDiskWithResponse call
-func ParseResetStickyDiskResponse(rsp *http.Response) (*ResetStickyDiskResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ResetStickyDiskResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SandboxStickyDiskResetResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

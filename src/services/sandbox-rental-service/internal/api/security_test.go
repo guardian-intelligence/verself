@@ -84,8 +84,6 @@ func TestOpenAPIPublicProjectionIsBearerOnly(t *testing.T) {
 		"get-costs-analytics":         false,
 		"get-caches-analytics":        false,
 		"get-runner-sizing-analytics": false,
-		"list-sticky-disks":           false,
-		"reset-sticky-disk":           false,
 		"create-execution-schedule":   false,
 		"list-execution-schedules":    false,
 		"get-execution-schedule":      false,

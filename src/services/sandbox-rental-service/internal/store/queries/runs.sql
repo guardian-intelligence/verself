@@ -216,21 +216,3 @@ SELECT
 FROM execution_billing_windows
 WHERE attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[])
 GROUP BY attempt_id;
-
--- name: ListStickyDiskMountsForAttempts :many
-SELECT
-    attempt_id,
-    mount_id,
-    mount_name,
-    key_hash,
-    mount_path,
-    base_generation,
-    committed_generation,
-    save_requested,
-    save_state,
-    failure_reason,
-    requested_at,
-    completed_at
-FROM execution_sticky_disk_mounts
-WHERE attempt_id = ANY(sqlc.arg(attempt_ids)::uuid[])
-ORDER BY sort_order, mount_name;
