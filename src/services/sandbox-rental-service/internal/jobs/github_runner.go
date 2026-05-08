@@ -83,6 +83,17 @@ type GitHubInstallationRecord struct {
 	UpdatedAt      time.Time
 }
 
+type GitHubRunnerRepositoryRecord struct {
+	InstallationID       int64
+	ProviderRepositoryID int64
+	ProviderOwner        string
+	ProviderRepo         string
+	RepositoryFullName   string
+	Private              bool
+	Active               bool
+	SyncedAt             time.Time
+}
+
 type GitHubWorkflowJobWebhook struct {
 	Action       string `json:"action"`
 	Installation struct {
@@ -164,6 +175,21 @@ type githubRunnerListResponse struct {
 		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	} `json:"runners"`
+}
+
+type githubInstallationRepositoriesResponse struct {
+	TotalCount   int                            `json:"total_count"`
+	Repositories []githubInstallationRepository `json:"repositories"`
+}
+
+type githubInstallationRepository struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	Private  bool   `json:"private"`
+	Owner    struct {
+		Login string `json:"login"`
+	} `json:"owner"`
 }
 
 type githubRunnerGroupResponse struct {
@@ -363,6 +389,137 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 		return GitHubInstallationRecord{}, err
 	}
 	return githubInstallationRecordFromGetRow(recordRow), nil
+}
+
+func (r *GitHubRunner) SyncInstallationRepositories(ctx context.Context, orgID uint64, installationID int64) ([]GitHubRunnerRepositoryRecord, error) {
+	if !r.Configured() {
+		return nil, ErrGitHubRunnerNotConfigured
+	}
+	if orgID == 0 || installationID <= 0 || r.service == nil || r.service.PGX == nil {
+		return nil, ErrGitHubInstallationInvalid
+	}
+	installation, err := r.service.storeQueries().GetGitHubInstallationForOrg(ctx, store.GetGitHubInstallationForOrgParams{
+		OrgID:          dbOrgID(orgID),
+		InstallationID: installationID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrGitHubInstallationInvalid
+		}
+		return nil, err
+	}
+	if !installation.Active {
+		return nil, ErrGitHubInstallationInvalid
+	}
+	repos, err := r.listInstallationRepositories(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	tx, err := r.service.PGX.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := store.New(tx)
+	ids := make([]int64, 0, len(repos))
+	records := make([]GitHubRunnerRepositoryRecord, 0, len(repos))
+	for _, repo := range repos {
+		owner := strings.TrimSpace(repo.Owner.Login)
+		name := strings.TrimSpace(repo.Name)
+		fullName := strings.TrimSpace(repo.FullName)
+		if fullName == "" && owner != "" && name != "" {
+			fullName = owner + "/" + name
+		}
+		if owner == "" {
+			owner, _, _ = strings.Cut(fullName, "/")
+		}
+		if name == "" {
+			_, name, _ = strings.Cut(fullName, "/")
+		}
+		if repo.ID <= 0 || owner == "" || name == "" || fullName == "" {
+			return nil, ErrGitHubInstallationInvalid
+		}
+		if !strings.EqualFold(owner, installation.AccountLogin) {
+			return nil, fmt.Errorf("%w: repository %s is outside installation account %s", ErrGitHubInstallationInvalid, fullName, installation.AccountLogin)
+		}
+		rows, err := qtx.UpsertGitHubRunnerRepository(ctx, store.UpsertGitHubRunnerRepositoryParams{
+			ProviderRepositoryID: repo.ID,
+			OrgID:                dbOrgID(orgID),
+			ProviderOwner:        owner,
+			ProviderRepo:         name,
+			RepositoryFullName:   fullName,
+			UpdatedAt:            pgTime(now),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if rows != 1 {
+			return nil, fmt.Errorf("%w: github repository %s is already registered to another org", ErrGitHubInstallationInvalid, fullName)
+		}
+		ids = append(ids, repo.ID)
+		records = append(records, GitHubRunnerRepositoryRecord{
+			InstallationID:       installationID,
+			ProviderRepositoryID: repo.ID,
+			ProviderOwner:        owner,
+			ProviderRepo:         name,
+			RepositoryFullName:   fullName,
+			Private:              repo.Private,
+			Active:               true,
+			SyncedAt:             now,
+		})
+	}
+	if err := qtx.DeactivateMissingGitHubRunnerRepositories(ctx, store.DeactivateMissingGitHubRunnerRepositoriesParams{
+		OrgID:                 dbOrgID(orgID),
+		ProviderOwner:         installation.AccountLogin,
+		ProviderRepositoryIds: ids,
+		UpdatedAt:             pgTime(now),
+	}); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (r *GitHubRunner) RegisterRepository(ctx context.Context, req RunnerRepositoryRegistration) error {
+	if !r.Configured() {
+		return ErrGitHubRunnerNotConfigured
+	}
+	if r.service == nil || r.service.PGX == nil || req.OrgID == 0 || req.ProviderRepositoryID <= 0 {
+		return ErrGitHubInstallationInvalid
+	}
+	owner := strings.TrimSpace(req.ProviderOwner)
+	repo := strings.TrimSpace(req.ProviderRepo)
+	fullName := strings.TrimSpace(req.RepositoryFullName)
+	if fullName == "" && owner != "" && repo != "" {
+		fullName = owner + "/" + repo
+	}
+	if owner == "" {
+		owner, _, _ = strings.Cut(fullName, "/")
+	}
+	if repo == "" {
+		_, repo, _ = strings.Cut(fullName, "/")
+	}
+	if owner == "" || repo == "" || fullName == "" {
+		return ErrGitHubInstallationInvalid
+	}
+	rows, err := r.service.storeQueries().UpsertGitHubRunnerRepository(ctx, store.UpsertGitHubRunnerRepositoryParams{
+		ProviderRepositoryID: req.ProviderRepositoryID,
+		OrgID:                dbOrgID(req.OrgID),
+		ProviderOwner:        owner,
+		ProviderRepo:         repo,
+		RepositoryFullName:   fullName,
+		UpdatedAt:            pgTime(time.Now().UTC()),
+	})
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("%w: github repository %s is already registered to another org", ErrGitHubInstallationInvalid, fullName)
+	}
+	return nil
 }
 
 func (r *GitHubRunner) VerifyWebhookSignature(payload []byte, signature string) bool {
@@ -974,6 +1131,27 @@ func (r *GitHubRunner) verifyUserInstallationAccess(ctx context.Context, userTok
 		}
 	}
 	return ErrGitHubInstallationInvalid
+}
+
+func (r *GitHubRunner) listInstallationRepositories(ctx context.Context, installationID int64) ([]githubInstallationRepository, error) {
+	token, err := r.installationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	const perPage = 100
+	var out []githubInstallationRepository
+	for page := 1; ; page++ {
+		var resp githubInstallationRepositoriesResponse
+		path := fmt.Sprintf("/installation/repositories?per_page=%d&page=%d", perPage, page)
+		if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+			return nil, err
+		}
+		out = append(out, resp.Repositories...)
+		if len(resp.Repositories) < perPage || page*perPage >= resp.TotalCount {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64, org string, repositoryID int64, runnerName, runnerClass string) (githubJITConfigResponse, error) {

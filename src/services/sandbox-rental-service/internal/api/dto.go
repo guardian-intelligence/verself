@@ -2,6 +2,7 @@ package api
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/verself/domain-transfer-objects"
@@ -35,6 +36,33 @@ func githubInstallationRecords(records []jobs.GitHubInstallationRecord) []dto.Sa
 		out = append(out, githubInstallationRecord(record))
 	}
 	return out
+}
+
+func githubInstallationRepositorySync(installationID string, records []jobs.GitHubRunnerRepositoryRecord) GitHubInstallationRepositorySync {
+	syncedAt := time.Now().UTC()
+	if len(records) > 0 {
+		syncedAt = records[0].SyncedAt
+	}
+	repos := make([]GitHubInstallationRepository, 0, len(records))
+	for _, record := range records {
+		if record.SyncedAt.After(syncedAt) {
+			syncedAt = record.SyncedAt
+		}
+		repos = append(repos, GitHubInstallationRepository{
+			ProviderRepositoryID: strconv.FormatInt(record.ProviderRepositoryID, 10),
+			ProviderOwner:        record.ProviderOwner,
+			ProviderRepo:         record.ProviderRepo,
+			RepositoryFullName:   record.RepositoryFullName,
+			Private:              record.Private,
+			Active:               record.Active,
+			SyncedAt:             record.SyncedAt,
+		})
+	}
+	return GitHubInstallationRepositorySync{
+		InstallationID: installationID,
+		SyncedAt:       syncedAt,
+		Repositories:   repos,
+	}
 }
 
 func executionRecord(record jobs.ExecutionRecord) dto.SandboxExecutionRecord {

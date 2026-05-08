@@ -24,7 +24,7 @@ type InternalRegisterRunnerRepositoryInput struct {
 }
 
 type InternalRegisterRunnerRepositoryRequest struct {
-	Provider             string    `json:"provider" required:"true" enum:"forgejo"`
+	Provider             string    `json:"provider" required:"true" enum:"forgejo,github"`
 	OrgID                string    `json:"org_id" required:"true"`
 	ProjectID            uuid.UUID `json:"project_id" required:"true"`
 	SourceRepositoryID   uuid.UUID `json:"source_repository_id,omitempty"`
@@ -130,6 +130,10 @@ func runnerRepositoryRegistrationError(ctx context.Context, err error) error {
 		return badRequest(ctx, "unsupported-runner-provider", "runner provider is not supported", err)
 	case errors.Is(err, jobs.ErrForgejoRunnerNotConfigured):
 		return serviceUnavailable(ctx, "forgejo-runner-not-configured", "forgejo runner is not configured", err)
+	case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
+		return serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", err)
+	case errors.Is(err, jobs.ErrGitHubInstallationInvalid):
+		return badRequest(ctx, "github-installation-invalid", "github installation or repository is invalid", err)
 	default:
 		return internalFailure(ctx, "runner-repository-registration-failed", "register runner repository failed", err)
 	}

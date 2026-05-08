@@ -79,7 +79,7 @@ The v0 Checkpoints action intentionally follows the Blacksmith `key` and
 `path` shape under Verself naming:
 
 ```yaml
-- uses: verself/checkpoint@v0
+- uses: useverself/checkpoint@v0
   with:
     key: ${{ github.repository }}-npm-cache
     path: ~/.npm
@@ -226,7 +226,7 @@ Actions ecosystem integrations:
   `actions/upload-artifact`, `actions/download-artifact`, `actions/setup-node`,
   `actions/setup-go`, `actions/setup-python`, `actions/setup-java`, and
   `docker/build-push-action`.
-- Verself actions such as `verself/cache`, `verself/checkpoint`, and
+- Verself actions such as `verself/cache`, `useverself/checkpoint`, and
   `verself/checkout` for workflows that opt into Verself-owned storage.
 - Migration docs for customers coming from Blacksmith actions. The migration
   target is the Verself API/action surface, not Blacksmith environment variables
@@ -243,7 +243,7 @@ entries, Checkpoints, artifacts, and usage.
 | Ephemeral runner VMs | Each job runs in an isolated Firecracker VM with a clean workspace and metered resources. | `runs-on` labels, run history, billing | Implemented foundation |
 | GitHub Actions cache passthrough | Upstream cache actions use GitHub Actions cache through the provider runtime environment. | `actions/cache@v5`, setup-action cache options, BuildKit `type=gha` | Required |
 | Verself archive cache | Explicit Verself cache APIs store archive blobs on Verself-owned storage with key, version, scope, and restore-key semantics. | Verself cache action/API | Required |
-| Verself Checkpoints | A keyed ext4 filesystem generation is restored from a ZFS snapshot, mounted at a requested path, and committed after successful saveback. | `verself/checkpoint`, API | Rewrite target |
+| Verself Checkpoints | A keyed ext4 filesystem generation is restored from a ZFS snapshot, mounted at a requested path, and committed after successful saveback. | `useverself/checkpoint`, API | Rewrite target |
 | Checkpoint deletion | Customers can delete a Checkpoint by key or reset its current generation through inventory surfaces. | API, CLI, SDK | Rewrite target |
 | GitHub checkout passthrough | `actions/checkout` uses the provider repository service and GitHub token behavior expected by upstream workflows. | `actions/checkout` | Required |
 | Checkout caching | Explicit checkout acceleration uses a colocated mirror or persistent checkout disk. | Verself checkout action/API | Partial custom action |
@@ -343,7 +343,7 @@ Checkpoint away from the workspace and points Bazel cache flags at directories
 inside it:
 
 ```yaml
-- uses: verself/checkpoint@v0
+- uses: useverself/checkpoint@v0
   with:
     key: bazel-${{ github.repository }}-${{ github.ref_name }}
     path: /mnt/verself-checkpoints/bazel
@@ -366,7 +366,7 @@ npm has two separate recipes:
 ```yaml
 # Strict CI install. node_modules is removed by npm ci, so checkpoint npm's
 # package cache instead.
-- uses: verself/checkpoint@v0
+- uses: useverself/checkpoint@v0
   with:
     key: npm-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
     path: ~/.npm
@@ -376,7 +376,7 @@ npm has two separate recipes:
 
 ```yaml
 # Faster incremental install. npm reconciles node_modules against the lockfile.
-- uses: verself/checkpoint@v0
+- uses: useverself/checkpoint@v0
   with:
     key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
     path: ./node_modules
@@ -400,13 +400,22 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: verself/checkpoint@v0
+      - uses: useverself/checkpoint@v0
         with:
           key: npm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           path: ~/.npm
       - run: npm ci
       - run: npm test
 ```
+
+`aspect-operator checkpoint-canary` is the repeatable product canary. For each
+configured workload it prepares a real repository commit, pushes it to a
+source-code-hosting-service repository in the Verself organization, pushes the
+same commit to a private GitHub repository in the configured GitHub
+organization, dispatches `.github/workflows/checkpoint-canary.yml`, and waits
+for sandbox-rental runs matching repository, workflow, branch, and head SHA.
+The harness uses `useverself/checkpoint@v0` in the workload workflow and keeps
+GitHub runner ownership behind the sandbox-rental GitHub installation sync API.
 
 The product should present these as separate features:
 
@@ -529,7 +538,7 @@ Checkpoint mount:
 1. The runner boots with reserved Checkpoint drive slots. v0 starts with five
    slots per job so the runtime action can bind mounted filesystems after the
    GitHub runner has evaluated workflow expressions.
-2. `verself/checkpoint@v0` runs as a normal GitHub Action step. The request
+2. `useverself/checkpoint@v0` runs as a normal GitHub Action step. The request
    shape is `key` and `path`; save policy is implicit through the action post
    step. Tenant, repository, provider installation, run, and job identity come
    from the runner allocation and execution records.

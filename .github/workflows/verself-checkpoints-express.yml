@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
 
       - name: Mount npm checkpoint
-        uses: ./verself-sh/.github/actions/checkpoint
+        uses: useverself/checkpoint@v0
         with:
           key: express-npm-${{ runner.os }}-${{ hashFiles('express/package-lock.json') }}
           path: ~/.npm

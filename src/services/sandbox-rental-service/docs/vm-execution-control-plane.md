@@ -56,7 +56,7 @@ Runner flow:
 Checkpoint flow:
 
 1. The runner boots with a bounded set of reserved Checkpoint drive slots.
-   `verself/checkpoint@v0` runs as a normal action step after the GitHub runner
+   `useverself/checkpoint@v0` runs as a normal action step after the GitHub runner
    has evaluated workflow expressions, then sends concrete `key` and `path`
    values to sandbox-rental through the guest-visible internal API.
 2. sandbox-rental authenticates the attempt-scoped token and derives

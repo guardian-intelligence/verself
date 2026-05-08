@@ -1,7 +1,7 @@
 # Checkpoint Event Contract
 
 Verself Checkpoints v0 are action-driven mounted filesystems. The GitHub
-runner evaluates workflow expressions, then `verself/checkpoint@v0` sends a
+runner evaluates workflow expressions, then `useverself/checkpoint@v0` sends a
 concrete `key` and `path` to sandbox-rental from inside the runner attempt.
 sandbox-rental derives tenant, repository, provider, run, job, branch, pull
 request, and trust context from persisted runner allocation state. Guest
@@ -14,6 +14,15 @@ The benchmark pins a repository ref and Node version, mounts `~/.npm`, runs
 promote generation `1`; the second run should mount that generation and show an
 npm package-cache hit from local filesystem bytes.
 
+The repeatable canary is `aspect-operator checkpoint-canary`. It prepares the
+same workload commit, pushes it to a source-code-hosting-service repository and
+a private GitHub repository, dispatches `.github/workflows/checkpoint-canary.yml`
+on each provider, and waits for sandbox-rental runs matching repository,
+workflow name, branch, and head SHA. GitHub canaries also sync the installed
+GitHub App repositories into `runner_provider_repositories` before dispatching,
+so runner ownership remains a product API operation instead of an operator-side
+database edit.
+
 Example workflow shape:
 
 ```yaml
@@ -25,7 +34,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: verself/checkpoint@v0
+      - uses: useverself/checkpoint@v0
         with:
           key: npm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           path: ~/.npm
@@ -155,7 +164,7 @@ returns the existing mount or save state and writes a ClickHouse row with
 1. GitHub sends a `workflow_job` webhook for the selected Express job.
 2. sandbox-rental records runner demand and allocates a Verself runner attempt.
 3. vm-orchestrator boots the runner with reserved Checkpoint drive slots.
-4. `verself/checkpoint@v0` receives concrete `key` and `path` values from the
+4. `useverself/checkpoint@v0` receives concrete `key` and `path` values from the
    runner after GitHub expression evaluation.
 5. The action sends a mount request with the attempt-scoped token.
 6. sandbox-rental appends `checkpoint.mount.requested`.

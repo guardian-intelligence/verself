@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "bazel.go",
         "billing.go",
+        "checkpoint_canary.go",
         "db.go",
         "db_ch.go",
         "db_common.go",

@@ -27,6 +27,9 @@
 //	aspect-operator platform --action=check|seed
 //	    Operator-side platform organization convergence for the dogfooded
 //	    first-party org, project, Forgejo repository, and source backend.
+//
+//	aspect-operator checkpoint-canary
+//	    Push and dispatch checkpoint workloads on source-hosted and GitHub repos.
 package main
 
 import (
@@ -75,6 +78,8 @@ func run(args []string) error {
 		return cmdDevice(rest)
 	case "platform":
 		return cmdPlatform(rest)
+	case "checkpoint-canary":
+		return cmdCheckpointCanary(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -96,6 +101,7 @@ Subcommands:
   dev               Local development helpers
   device            Configure this device for operator access
   platform          Platform org/project/source convergence
+  checkpoint-canary Push and dispatch checkpoint workloads
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)

@@ -119,6 +119,11 @@ func (s *Service) SyncRunnerRepository(ctx context.Context, provider string, pro
 
 func (s *Service) RegisterRunnerRepository(ctx context.Context, req RunnerRepositoryRegistration) error {
 	switch strings.TrimSpace(req.Provider) {
+	case RunnerProviderGitHub:
+		if s.GitHubRunner == nil {
+			return ErrGitHubRunnerNotConfigured
+		}
+		return s.GitHubRunner.RegisterRepository(ctx, req)
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return ErrForgejoRunnerNotConfigured

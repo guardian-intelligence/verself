@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -49,6 +50,23 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.github_installation.list",
 	}), listGitHubInstallations(svc))
+
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
+		OperationID:   "sync-github-installation-repositories",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/github/installations/{installation_id}/repositories/sync",
+		Summary:       "Sync GitHub App repositories into runner ownership",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionGitHubWrite,
+		Resource:       "github_installation_repository",
+		Action:         "sync",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "github_installation_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.github_installation.repositories.sync",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), syncGitHubInstallationRepositories(svc))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-execution",
@@ -265,6 +283,30 @@ type ListGitHubInstallationsOutput struct {
 	Body []dto.SandboxGitHubInstallationRecord
 }
 
+type SyncGitHubInstallationRepositoriesInput struct {
+	InstallationID string `path:"installation_id" required:"true"`
+}
+
+type SyncGitHubInstallationRepositoriesOutput struct {
+	Body GitHubInstallationRepositorySync
+}
+
+type GitHubInstallationRepositorySync struct {
+	InstallationID string                         `json:"installation_id"`
+	SyncedAt       time.Time                      `json:"synced_at"`
+	Repositories   []GitHubInstallationRepository `json:"repositories"`
+}
+
+type GitHubInstallationRepository struct {
+	ProviderRepositoryID string    `json:"provider_repository_id"`
+	ProviderOwner        string    `json:"provider_owner"`
+	ProviderRepo         string    `json:"provider_repo"`
+	RepositoryFullName   string    `json:"repository_full_name"`
+	Private              bool      `json:"private"`
+	Active               bool      `json:"active"`
+	SyncedAt             time.Time `json:"synced_at"`
+}
+
 type ExecutionIDPath struct {
 	ExecutionID string `path:"execution_id" doc:"Execution UUID"`
 }
@@ -417,6 +459,34 @@ func listGitHubInstallations(svc *jobs.Service) func(context.Context, *EmptyInpu
 			return nil, internalFailure(ctx, "github-installation-list-failed", "list github installations failed", err)
 		}
 		return &ListGitHubInstallationsOutput{Body: githubInstallationRecords(records)}, nil
+	}
+}
+
+func syncGitHubInstallationRepositories(svc *jobs.Service) func(context.Context, *SyncGitHubInstallationRepositoriesInput) (*SyncGitHubInstallationRepositoriesOutput, error) {
+	return func(ctx context.Context, input *SyncGitHubInstallationRepositoriesInput) (*SyncGitHubInstallationRepositoriesOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if svc == nil || svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
+			return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", jobs.ErrGitHubRunnerNotConfigured)
+		}
+		installationID, err := strconv.ParseInt(input.InstallationID, 10, 64)
+		if err != nil || installationID <= 0 {
+			return nil, badRequest(ctx, "invalid-github-installation-id", "installation_id must be a positive int64", err)
+		}
+		records, err := svc.GitHubRunner.SyncInstallationRepositories(ctx, orgID, installationID)
+		if err != nil {
+			switch {
+			case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
+				return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", err)
+			case errors.Is(err, jobs.ErrGitHubInstallationInvalid):
+				return nil, badRequest(ctx, "github-installation-invalid", "github installation or repository selection is invalid", err)
+			default:
+				return nil, internalFailure(ctx, "github-installation-repository-sync-failed", "sync github installation repositories failed", err)
+			}
+		}
+		return &SyncGitHubInstallationRepositoriesOutput{Body: githubInstallationRepositorySync(strconv.FormatInt(installationID, 10), records)}, nil
 	}
 }
 
