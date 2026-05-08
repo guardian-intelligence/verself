@@ -321,7 +321,7 @@ Wire contract locations:
 | Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
 | Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-api/` | `//src/websites/packages/sdk:openapi_clients` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
-| SpiceDB schema assertions | `src/services/iam-service/schema/assertions.yaml`, `src/services/iam-service/schema/expected-relations.yaml` | `//src/services/iam-service/schema:schema_tests` |
+| SpiceDB schema validation | `src/services/iam-service/schema/verself.zed`, pinned `zed` CLI from the server-tool catalog | `//src/services/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
 | Future shared protobuf messages | `src/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
 | Future IAM-owned gRPC-only contract | `src/services/iam-service/proto/v1/*.proto` | `//src/services/iam-service/proto/v1:iam_proto` |

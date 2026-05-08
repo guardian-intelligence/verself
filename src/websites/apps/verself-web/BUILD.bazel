@@ -3,9 +3,9 @@ load(
     "@npm//src/websites/apps/verself-web:@hey-api/openapi-ts/package_json.bzl",
     openapi_ts_bin = "bin",
 )
-load("//src/websites:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree")
 load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/websites:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree")
 
 package(default_visibility = ["//visibility:public"])
 

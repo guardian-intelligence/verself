@@ -282,8 +282,8 @@ func NormalizeWorkflowTrigger(input WorkflowTriggerRequest) (WorkflowTriggerRequ
 	if len(input.Recipients) == 0 {
 		return input, fmt.Errorf("%w: at least one recipient is required", ErrInvalidInput)
 	}
-	if len(input.Recipients) > 100 {
-		return input, fmt.Errorf("%w: at most 100 recipients are supported", ErrInvalidInput)
+	if len(input.Recipients) > WorkflowRecipientLimit {
+		return input, fmt.Errorf("%w: at most %d recipients are supported", ErrInvalidInput, WorkflowRecipientLimit)
 	}
 	for idx := range input.Recipients {
 		input.Recipients[idx].SubjectID = strings.TrimSpace(input.Recipients[idx].SubjectID)

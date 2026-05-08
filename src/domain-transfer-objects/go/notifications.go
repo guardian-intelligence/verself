@@ -99,6 +99,6 @@ type NotificationWorkflowTriggerResponse struct {
 	RecipientCount           uint16    `json:"recipient_count" minimum:"0" maximum:"100"`
 	WebNotificationsAccepted uint16    `json:"web_notifications_accepted" minimum:"0" maximum:"100"`
 	EmailDeliveriesQueued    uint16    `json:"email_deliveries_queued" minimum:"0" maximum:"100"`
-	SuppressedCount          uint16    `json:"suppressed_count" minimum:"0" maximum:"100"`
+	SuppressedCount          uint16    `json:"suppressed_count" minimum:"0" maximum:"200"`
 	Traceparent              string    `json:"traceparent,omitempty"`
 }

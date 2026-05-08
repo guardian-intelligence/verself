@@ -59,9 +59,9 @@ filegroup(
         ":site_sources",
         ":spire_identity_registry",
         ":substrate_sources",
-        "//src/infrastructure-components:role_sources",
         "//src/host/binaries:server_tools_archive",
         "//src/host/binaries:substrate_go_tools",
+        "//src/infrastructure-components:role_sources",
         "//src/substrate/vm-orchestrator:host_ansible_sources",
     ],
 )

@@ -519,12 +519,16 @@ func (s *Service) TriggerWorkflow(ctx context.Context, input WorkflowTriggerRequ
 	}
 	defer rollback(ctx, tx)
 	q := notificationstore.New(tx)
+	recipientCount, err := workflowCountFromInt(len(input.Recipients), "recipient_count")
+	if err != nil {
+		return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
 	result := WorkflowTriggerResult{
 		WorkflowRunID:  workflowRunID,
 		WorkflowKey:    input.WorkflowKey,
 		OrgID:          input.OrgID,
 		AcceptedAt:     now,
-		RecipientCount: uint16(len(input.Recipients)),
+		RecipientCount: recipientCount,
 		Traceparent:    input.Traceparent,
 	}
 	rowsAffected, err := q.InsertWorkflowRun(ctx, notificationstore.InsertWorkflowRunParams{
@@ -564,15 +568,31 @@ func (s *Service) TriggerWorkflow(ctx context.Context, input WorkflowTriggerRequ
 		if err != nil {
 			return WorkflowTriggerResult{}, err
 		}
+		recipientCount, err := workflowCountFromInt32(row.RecipientCount, "recipient_count")
+		if err != nil {
+			return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		webAccepted, err := workflowCountFromInt32(row.WebNotificationsAccepted, "web_notifications_accepted")
+		if err != nil {
+			return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		emailQueued, err := workflowCountFromInt32(row.EmailDeliveriesQueued, "email_deliveries_queued")
+		if err != nil {
+			return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		suppressedCount, err := workflowChannelCountFromInt32(row.SuppressedCount, "suppressed_count")
+		if err != nil {
+			return WorkflowTriggerResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
 		result = WorkflowTriggerResult{
 			WorkflowRunID:            row.WorkflowRunID,
 			WorkflowKey:              row.WorkflowKey,
 			OrgID:                    row.OrgID,
 			AcceptedAt:               createdAt,
-			RecipientCount:           uint16(row.RecipientCount),
-			WebNotificationsAccepted: uint16(row.WebNotificationsAccepted),
-			EmailDeliveriesQueued:    uint16(row.EmailDeliveriesQueued),
-			SuppressedCount:          uint16(row.SuppressedCount),
+			RecipientCount:           recipientCount,
+			WebNotificationsAccepted: webAccepted,
+			EmailDeliveriesQueued:    emailQueued,
+			SuppressedCount:          suppressedCount,
 			Traceparent:              row.Traceparent,
 		}
 		if err := tx.Commit(ctx); err != nil {

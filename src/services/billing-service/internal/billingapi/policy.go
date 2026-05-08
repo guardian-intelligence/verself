@@ -130,7 +130,7 @@ func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy operationP
 		return
 	}
 	if orgID != 0 {
-		span.SetAttributes(attribute.Int64("verself.org_id", int64(orgID)))
+		span.SetAttributes(attribute.String("verself.org_id", strconv.FormatUint(uint64(orgID), 10)))
 	}
 	span.SetAttributes(
 		attribute.String("billing.outcome", outcome),

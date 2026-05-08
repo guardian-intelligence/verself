@@ -17,4 +17,4 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 )
 
-replace github.com/verself/verself-go => ../../sdks/go/verself
+replace github.com/verself/verself-go => ../sdks/go/verself

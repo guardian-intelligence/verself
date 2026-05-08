@@ -331,7 +331,7 @@ func (c CLI) schedulesCreate(ctx context.Context, args []string) error {
 	projectID := fs.String("project-id", "", "project UUID")
 	sourceRepositoryID := fs.String("source-repository-id", "", "source repository UUID")
 	workflowPath := fs.String("workflow-path", "", "workflow path")
-	intervalSeconds := fs.Int("interval-seconds", 0, "interval in seconds")
+	intervalSeconds := fs.String("interval-seconds", "", "interval in seconds")
 	displayName := fs.String("display-name", "", "schedule display name")
 	ref := fs.String("ref", "", "source ref")
 	paused := fs.Bool("paused", false, "create paused")
@@ -344,6 +344,10 @@ func (c CLI) schedulesCreate(ctx context.Context, args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("usage: schedules create --project-id PROJECT_ID --source-repository-id REPO_ID --workflow-path PATH --interval-seconds SECONDS [--json]")
 	}
+	parsedIntervalSeconds, err := parseInt32Flag(*intervalSeconds, "interval-seconds")
+	if err != nil {
+		return err
+	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
@@ -352,7 +356,7 @@ func (c CLI) schedulesCreate(ctx context.Context, args []string) error {
 		ProjectID:          *projectID,
 		SourceRepositoryID: *sourceRepositoryID,
 		WorkflowPath:       *workflowPath,
-		IntervalSeconds:    int32(*intervalSeconds),
+		IntervalSeconds:    parsedIntervalSeconds,
 		DisplayName:        *displayName,
 		Ref:                *ref,
 		Paused:             *paused,

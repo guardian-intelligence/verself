@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "schema",
@@ -12,6 +12,29 @@ filegroup(
     name = "zed",
     srcs = ["verself.zed"],
     visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "zed_cli_binary",
+    srcs = ["@server_tool_zed//file"],
+    outs = ["zed.bin"],
+    cmd = """
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @server_tool_zed//file:file)" -C "$$tmp" zed
+install -m 0755 "$$tmp/zed" "$@"
+""",
+)
+
+go_test(
+    name = "schema_tests",
+    size = "small",
+    srcs = ["schema_test.go"],
+    data = [
+        "verself.zed",
+        ":zed_cli_binary",
+    ],
+    embed = [":schema"],
 )
 
 alias(

@@ -474,11 +474,6 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	})
 }
 
-func (c CLI) bearerToken(tokenFile string) (string, error) {
-	token, _, err := c.bearerTokenWithProfile(tokenFile)
-	return token, err
-}
-
 func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, error) {
 	if strings.TrimSpace(tokenFile) != "" {
 		token, err := readTokenFile(tokenFile)

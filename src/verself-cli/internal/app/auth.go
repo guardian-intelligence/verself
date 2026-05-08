@@ -254,7 +254,7 @@ func fetchOIDCDiscovery(ctx context.Context, issuer string) (oidcDiscovery, erro
 	if err != nil {
 		return oidcDiscovery{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return oidcDiscovery{}, fmt.Errorf("OIDC discovery failed with HTTP %d", resp.StatusCode)
 	}
@@ -280,7 +280,7 @@ func startDeviceAuthorization(ctx context.Context, endpoint, clientID, scope str
 	if err != nil {
 		return deviceAuthorizationResponse{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return deviceAuthorizationResponse{}, fmt.Errorf("device authorization failed with HTTP %d", resp.StatusCode)
 	}
@@ -346,7 +346,7 @@ func requestDeviceToken(ctx context.Context, tokenURL, clientID, deviceCode stri
 	if err != nil {
 		return tokenEndpointResponse{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var token tokenEndpointResponse
 	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
 		return tokenEndpointResponse{}, err

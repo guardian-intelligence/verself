@@ -41,10 +41,6 @@ func forbidden(ctx context.Context, code, detail string) error {
 	return problem(ctx, http.StatusForbidden, code, detail, nil)
 }
 
-func unprocessableEntity(ctx context.Context, code, detail string, cause error) error {
-	return problem(ctx, http.StatusUnprocessableEntity, code, detail, cause)
-}
-
 func notFound(ctx context.Context, code, detail string) error {
 	return problem(ctx, http.StatusNotFound, code, detail, nil)
 }
@@ -63,8 +59,4 @@ func serviceUnavailable(ctx context.Context, code, detail string, cause error) e
 
 func internalFailure(ctx context.Context, code, detail string, cause error) error {
 	return problem(ctx, http.StatusInternalServerError, code, detail, cause)
-}
-
-func upstreamFailure(ctx context.Context, code, detail string, cause error) error {
-	return problem(ctx, http.StatusBadGateway, code, detail, cause)
 }
