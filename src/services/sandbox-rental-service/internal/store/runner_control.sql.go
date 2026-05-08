@@ -58,7 +58,7 @@ func (q *Queries) DeleteRunnerBootstrapConfig(ctx context.Context, arg DeleteRun
 }
 
 const findAllocationForRunner = `-- name: FindAllocationForRunner :one
-SELECT allocation_id
+SELECT allocation_id, requested_for_provider_job_id
 FROM runner_allocations
 WHERE provider = $1
   AND (($2::bigint <> 0 AND provider_runner_id = $2)
@@ -73,11 +73,16 @@ type FindAllocationForRunnerParams struct {
 	RunnerName       string
 }
 
-func (q *Queries) FindAllocationForRunner(ctx context.Context, arg FindAllocationForRunnerParams) (uuid.UUID, error) {
+type FindAllocationForRunnerRow struct {
+	AllocationID              uuid.UUID
+	RequestedForProviderJobID int64
+}
+
+func (q *Queries) FindAllocationForRunner(ctx context.Context, arg FindAllocationForRunnerParams) (FindAllocationForRunnerRow, error) {
 	row := q.db.QueryRow(ctx, findAllocationForRunner, arg.Provider, arg.ProviderRunnerID, arg.RunnerName)
-	var allocation_id uuid.UUID
-	err := row.Scan(&allocation_id)
-	return allocation_id, err
+	var i FindAllocationForRunnerRow
+	err := row.Scan(&i.AllocationID, &i.RequestedForProviderJobID)
+	return i, err
 }
 
 const getActiveAllocationForRunnerJob = `-- name: GetActiveAllocationForRunnerJob :one
@@ -85,7 +90,7 @@ SELECT allocation_id
 FROM runner_allocations
 WHERE provider = $1
   AND requested_for_provider_job_id = $2
-  AND state NOT IN ('failed', 'cleaned')
+  AND state IN ('pending', 'jit_creating', 'jit_created', 'vm_submitted', 'runner_config_fetched')
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -166,7 +171,7 @@ func (q *Queries) GetRunnerJobForBinding(ctx context.Context, arg GetRunnerJobFo
 	return i, err
 }
 
-const insertRunnerJobBinding = `-- name: InsertRunnerJobBinding :exec
+const insertRunnerJobBinding = `-- name: InsertRunnerJobBinding :execrows
 INSERT INTO runner_job_bindings (
     binding_id, allocation_id, provider, provider_job_id, provider_runner_id, runner_name, bound_at, created_at
 ) VALUES (
@@ -186,8 +191,8 @@ type InsertRunnerJobBindingParams struct {
 	BoundAt          pgtype.Timestamptz
 }
 
-func (q *Queries) InsertRunnerJobBinding(ctx context.Context, arg InsertRunnerJobBindingParams) error {
-	_, err := q.db.Exec(ctx, insertRunnerJobBinding,
+func (q *Queries) InsertRunnerJobBinding(ctx context.Context, arg InsertRunnerJobBindingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRunnerJobBinding,
 		arg.BindingID,
 		arg.AllocationID,
 		arg.Provider,
@@ -196,7 +201,10 @@ func (q *Queries) InsertRunnerJobBinding(ctx context.Context, arg InsertRunnerJo
 		arg.RunnerName,
 		arg.BoundAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listActiveRunnerClasses = `-- name: ListActiveRunnerClasses :many

@@ -42,6 +42,16 @@ fi
 test -n "$$home"
 vp="$$home/.vite-plus/bin/vp"
 test -x "$$vp"
+if [ -n "$${VERSELF_NPM_REGISTRY_TOKEN:-}" ]; then
+  npm_userconfig="$$(mktemp)"
+  trap 'rm -f "$$npm_userconfig"' EXIT
+  chmod 0600 "$$npm_userconfig"
+  {
+    printf 'registry=https://npm.verself.sh/\\n'
+    printf '//npm.verself.sh/:_authToken=%s\\n' "$$VERSELF_NPM_REGISTRY_TOKEN"
+  } > "$$npm_userconfig"
+  export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
+fi
 cd "src/frontends/viteplus-monorepo"
 "$$vp" install --frozen-lockfile
 printf 'viteplus install %s\\n' "$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')" > "$$out"
@@ -72,7 +82,10 @@ def viteplus_source_package(npm_name, srcs, name = "pkg"):
 
     native.filegroup(
         name = "sources",
-        srcs = native.glob(srcs),
+        srcs = native.glob(
+            srcs,
+            exclude = ["**/__generated/**"],
+        ),
     )
 
     npm_package(

@@ -375,7 +375,7 @@ func (r *ForgejoRunner) ReconcileCapacity(ctx context.Context, providerJobID int
 		span.SetAttributes(attribute.String("runner.allocation_id", existing.String()), attribute.Bool("forgejo.capacity.existing_allocation", true))
 		return nil
 	}
-	if err := qtx.InsertRunnerJobBinding(ctx, store.InsertRunnerJobBindingParams{
+	if _, err := qtx.InsertRunnerJobBinding(ctx, store.InsertRunnerJobBindingParams{
 		BindingID:        uuid.New(),
 		AllocationID:     allocationID,
 		Provider:         RunnerProviderForgejo,

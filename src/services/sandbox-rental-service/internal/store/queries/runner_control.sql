@@ -68,7 +68,7 @@ WHERE allocation_id = sqlc.arg(allocation_id);
 DELETE FROM runner_bootstrap_configs
 WHERE allocation_id = sqlc.arg(allocation_id);
 
--- name: InsertRunnerJobBinding :exec
+-- name: InsertRunnerJobBinding :execrows
 INSERT INTO runner_job_bindings (
     binding_id, allocation_id, provider, provider_job_id, provider_runner_id, runner_name, bound_at, created_at
 ) VALUES (
@@ -107,7 +107,7 @@ SELECT allocation_id
 FROM runner_allocations
 WHERE provider = sqlc.arg(provider)
   AND requested_for_provider_job_id = sqlc.arg(provider_job_id)
-  AND state NOT IN ('failed', 'cleaned')
+  AND state IN ('pending', 'jit_creating', 'jit_created', 'vm_submitted', 'runner_config_fetched')
 ORDER BY created_at DESC
 LIMIT 1;
 
@@ -118,7 +118,7 @@ WHERE provider = sqlc.arg(provider)
   AND provider_job_id = sqlc.arg(provider_job_id);
 
 -- name: FindAllocationForRunner :one
-SELECT allocation_id
+SELECT allocation_id, requested_for_provider_job_id
 FROM runner_allocations
 WHERE provider = sqlc.arg(provider)
   AND ((sqlc.arg(provider_runner_id)::bigint <> 0 AND provider_runner_id = sqlc.arg(provider_runner_id))

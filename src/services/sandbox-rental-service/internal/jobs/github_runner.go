@@ -634,7 +634,7 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 		span.SetAttributes(attribute.Bool("github.job.no_runner_identity", true))
 		return nil
 	}
-	allocationID, err := r.findAllocationForRunner(ctx, job.runnerID, job.runnerName)
+	bindingAllocation, err := r.findAllocationForRunner(ctx, job.runnerID, job.runnerName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			span.SetAttributes(attribute.Bool("github.job.unmatched_runner", true))
@@ -642,6 +642,7 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 		}
 		return err
 	}
+	allocationID := bindingAllocation.allocationID
 	now := time.Now().UTC()
 	tx, err := r.service.PGX.Begin(ctx)
 	if err != nil {
@@ -649,7 +650,7 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := store.New(tx)
-	if err := qtx.InsertRunnerJobBinding(ctx, store.InsertRunnerJobBindingParams{
+	bindingRows, err := qtx.InsertRunnerJobBinding(ctx, store.InsertRunnerJobBindingParams{
 		BindingID:        uuid.New(),
 		AllocationID:     allocationID,
 		Provider:         RunnerProviderGitHub,
@@ -657,7 +658,8 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 		ProviderRunnerID: job.runnerID,
 		RunnerName:       job.runnerName,
 		BoundAt:          pgTime(now),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 	state := "assigned"
@@ -679,6 +681,19 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 		AllocationID:   allocationID,
 	}); err != nil {
 		return err
+	}
+	if bindingRows > 0 && bindingAllocation.requestedJobID != 0 && bindingAllocation.requestedJobID != githubJobID && r.service.Scheduler != nil {
+		// GitHub may assign a JIT runner to an older queued job with matching labels.
+		_, err = r.service.Scheduler.EnqueueRunnerCapacityReconcileTx(ctx, tx, scheduler.RunnerCapacityReconcileRequest{
+			Provider:      RunnerProviderGitHub,
+			ProviderJobID: bindingAllocation.requestedJobID,
+			CorrelationID: CorrelationIDFromContext(ctx),
+			TraceParent:   traceParent(ctx),
+		})
+		if err != nil {
+			return err
+		}
+		span.SetAttributes(attribute.Int64("github.displaced_job_id", bindingAllocation.requestedJobID))
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
@@ -855,12 +870,24 @@ func (r *GitHubRunner) loadJobForBinding(ctx context.Context, githubJobID int64)
 	return out, nil
 }
 
-func (r *GitHubRunner) findAllocationForRunner(ctx context.Context, runnerID int64, runnerName string) (uuid.UUID, error) {
-	return r.service.storeQueries().FindAllocationForRunner(ctx, store.FindAllocationForRunnerParams{
+type githubBindingAllocation struct {
+	allocationID   uuid.UUID
+	requestedJobID int64
+}
+
+func (r *GitHubRunner) findAllocationForRunner(ctx context.Context, runnerID int64, runnerName string) (githubBindingAllocation, error) {
+	row, err := r.service.storeQueries().FindAllocationForRunner(ctx, store.FindAllocationForRunnerParams{
 		Provider:         RunnerProviderGitHub,
 		ProviderRunnerID: runnerID,
 		RunnerName:       runnerName,
 	})
+	if err != nil {
+		return githubBindingAllocation{}, err
+	}
+	return githubBindingAllocation{
+		allocationID:   row.AllocationID,
+		requestedJobID: row.RequestedForProviderJobID,
+	}, nil
 }
 
 func (r *GitHubRunner) createAppJWT() (string, error) {
