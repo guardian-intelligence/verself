@@ -10,17 +10,12 @@ import (
 )
 
 type operationPolicy struct {
-	Permission         string
-	Resource           string
-	Action             string
-	OrgScope           string
-	RateLimitClass     string
-	AuditEvent         string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
+	Permission     string
+	Resource       string
+	Action         string
+	OrgScope       string
+	RateLimitClass string
+	AuditEvent     string
 }
 
 func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, *I) (*O, error)) {
@@ -32,18 +27,12 @@ func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAu
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":          policy.Permission,
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           policy.OrgScope,
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"source_product_area": "Mailbox",
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
+		"permission":       policy.Permission,
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        policy.OrgScope,
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
 	}
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		if err := enforceOperationPolicy(ctx, authorizer, policy); err != nil {
@@ -73,32 +62,22 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 
 func mailReadPolicy(operationID, resource, action string) operationPolicy {
 	return operationPolicy{
-		Permission:         "mailbox:mail:read",
-		Resource:           resource,
-		Action:             action,
-		OrgScope:           "token_subject",
-		RateLimitClass:     "read",
-		AuditEvent:         "mailbox." + operationID,
-		OperationDisplay:   operationID,
-		OperationType:      "read",
-		EventCategory:      "mailbox",
-		RiskLevel:          "medium",
-		DataClassification: "controller_personal_data",
+		Permission:     "mailbox:mail:read",
+		Resource:       resource,
+		Action:         action,
+		OrgScope:       "token_subject",
+		RateLimitClass: "read",
+		AuditEvent:     "mailbox." + operationID,
 	}
 }
 
 func mailWritePolicy(operationID, resource, action string) operationPolicy {
 	return operationPolicy{
-		Permission:         "mailbox:mail:write",
-		Resource:           resource,
-		Action:             action,
-		OrgScope:           "token_subject",
-		RateLimitClass:     "mailbox_mutation",
-		AuditEvent:         "mailbox." + operationID,
-		OperationDisplay:   operationID,
-		OperationType:      "write",
-		EventCategory:      "mailbox",
-		RiskLevel:          "medium",
-		DataClassification: "controller_personal_data",
+		Permission:     "mailbox:mail:write",
+		Resource:       resource,
+		Action:         action,
+		OrgScope:       "token_subject",
+		RateLimitClass: "mailbox_mutation",
+		AuditEvent:     "mailbox." + operationID,
 	}
 }

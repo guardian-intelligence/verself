@@ -1,7 +1,7 @@
 -- name: ClaimPendingDomainLedgerEvents :many
 SELECT event_id, occurred_at, event_type, org_id, actor_id, operation_id, command_id,
        idempotency_key_hash, aggregate_kind, aggregate_id, aggregate_version,
-       target_kind, target_id, result, reason, conflict_policy, expected_version,
+       target_type, target_id, result, reason, conflict_policy, expected_version,
        actual_version, expected_hash, actual_hash, requested_hash, changed_fields,
        payload::text AS payload_json, traceparent
 FROM iam_domain_event_outbox

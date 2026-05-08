@@ -37,21 +37,15 @@ const (
 var apiTracer = otel.Tracer("source-code-hosting-service/internal/api")
 
 type operationPolicy struct {
-	Permission         permission
-	Resource           string
-	Action             string
-	OrgScope           string
-	RateLimitClass     string
-	Idempotency        string
-	AuditEvent         string
-	SourceProductArea  string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
-	Internal           bool
+	Permission     permission
+	Resource       string
+	Action         string
+	OrgScope       string
+	RateLimitClass string
+	Idempotency    string
+	AuditEvent     string
+	BodyLimitBytes int64
+	Internal       bool
 }
 
 type operationRequestInfoKey struct{}
@@ -64,7 +58,6 @@ func registerSourceRoute[I, O any](api huma.API, authorizer runtimeiam.Operation
 	if op.OperationID == "" {
 		panic("missing operation ID for source API route")
 	}
-	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
@@ -118,28 +111,6 @@ func finishOperationSpan(span trace.Span, principal source.Principal, policy ope
 	}
 }
 
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	if policy.SourceProductArea == "" {
-		policy.SourceProductArea = "Source"
-	}
-	if policy.OperationDisplay == "" {
-		policy.OperationDisplay = operationID
-	}
-	if policy.OperationType == "" {
-		policy.OperationType = "write"
-	}
-	if policy.EventCategory == "" {
-		policy.EventCategory = "source"
-	}
-	if policy.RiskLevel == "" {
-		policy.RiskLevel = "medium"
-	}
-	if policy.DataClassification == "" {
-		policy.DataClassification = "customer_source_metadata"
-	}
-	return policy
-}
-
 func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
 	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
 		panic("incomplete source operation policy for " + op.OperationID)
@@ -157,19 +128,13 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	iam := map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           policy.OrgScope,
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"source_product_area": policy.SourceProductArea,
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
-		"internal":            policy.Internal,
+		"permission":       string(policy.Permission),
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        policy.OrgScope,
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
+		"internal":         policy.Internal,
 	}
 	if policy.Idempotency != "" {
 		iam["idempotency"] = policy.Idempotency

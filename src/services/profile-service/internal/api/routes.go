@@ -48,15 +48,12 @@ func RegisterRoutes(api huma.API, svc *profile.Service, authorizer runtimeiam.Op
 		Path:        "/api/v1/profile",
 		Summary:     "Get the current human profile snapshot",
 	}, operationPolicy{
-		Permission:       permissionProfileRead,
-		Resource:         "profile_subject",
-		Action:           "read",
-		OrgScope:         "token_org_id",
-		RateLimitClass:   "read",
-		AuditEvent:       "profile.subject.read",
-		OperationDisplay: "get profile",
-		OperationType:    "read",
-		RiskLevel:        "low",
+		Permission:     permissionProfileRead,
+		Resource:       "profile_subject",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "profile.subject.read",
 	}, getProfile(svc))
 
 	registerProfileRoute(api, authorizer, huma.Operation{
@@ -66,17 +63,14 @@ func RegisterRoutes(api huma.API, svc *profile.Service, authorizer runtimeiam.Op
 		Summary:       "Update the current human's identity profile fields",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
-		Permission:       permissionProfileIdentity,
-		Resource:         "profile_identity",
-		Action:           "write",
-		OrgScope:         "token_subject",
-		RateLimitClass:   "profile_mutation",
-		Idempotency:      idempotencyHeaderKey,
-		AuditEvent:       "profile.subject.identity.write",
-		OperationDisplay: "update profile identity",
-		OperationType:    "write",
-		RiskLevel:        "medium",
-		BodyLimitBytes:   bodyLimitSmallJSON,
+		Permission:     permissionProfileIdentity,
+		Resource:       "profile_identity",
+		Action:         "write",
+		OrgScope:       "token_subject",
+		RateLimitClass: "profile_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "profile.subject.identity.write",
+		BodyLimitBytes: bodyLimitSmallJSON,
 	}, updateIdentity(svc))
 
 	registerProfileRoute(api, authorizer, huma.Operation{
@@ -86,17 +80,14 @@ func RegisterRoutes(api huma.API, svc *profile.Service, authorizer runtimeiam.Op
 		Summary:       "Replace the current human's profile preferences",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
-		Permission:       permissionProfilePreferences,
-		Resource:         "profile_preferences",
-		Action:           "write",
-		OrgScope:         "token_subject",
-		RateLimitClass:   "profile_mutation",
-		Idempotency:      idempotencyHeaderKey,
-		AuditEvent:       "profile.preferences.write",
-		OperationDisplay: "update profile preferences",
-		OperationType:    "write",
-		RiskLevel:        "low",
-		BodyLimitBytes:   bodyLimitSmallJSON,
+		Permission:     permissionProfilePreferences,
+		Resource:       "profile_preferences",
+		Action:         "write",
+		OrgScope:       "token_subject",
+		RateLimitClass: "profile_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "profile.preferences.write",
+		BodyLimitBytes: bodyLimitSmallJSON,
 	}, putPreferences(svc))
 }
 

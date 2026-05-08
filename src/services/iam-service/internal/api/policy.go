@@ -55,20 +55,14 @@ const (
 )
 
 type operationPolicy struct {
-	Permission         permission
-	Resource           string
-	Action             string
-	OrgScope           string
-	RateLimitClass     string
-	Idempotency        string
-	AuditEvent         string
-	SourceProductArea  string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
+	Permission     permission
+	Resource       string
+	Action         string
+	OrgScope       string
+	RateLimitClass string
+	Idempotency    string
+	AuditEvent     string
+	BodyLimitBytes int64
 }
 
 type securedOperation struct {
@@ -89,7 +83,6 @@ func registerSecured[I, O any](api huma.API, svc *identity.Service, authzSvc *au
 	if !strings.HasPrefix(op.Path, "/api/") {
 		panic("secured public API route must live under /api/: " + op.OperationID)
 	}
-	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
@@ -127,9 +120,6 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.AuditEvent == "" {
 		panic("empty audit event for operation: " + op.OperationID)
 	}
-	if policy.SourceProductArea == "" || policy.OperationDisplay == "" || policy.OperationType == "" || policy.EventCategory == "" || policy.RiskLevel == "" || policy.DataClassification == "" {
-		panic("empty audit classification for operation: " + op.OperationID)
-	}
 	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
 		panic("empty request body limit for mutating operation: " + op.OperationID)
 	}
@@ -147,18 +137,12 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	iam := map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           policy.OrgScope,
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"source_product_area": policy.SourceProductArea,
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
+		"permission":       string(policy.Permission),
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        policy.OrgScope,
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
 	}
 	if policy.Idempotency != "" {
 		iam["idempotency"] = policy.Idempotency
@@ -398,8 +382,6 @@ func auditOperation(ctx context.Context, op huma.Operation, policy operationPoli
 		"operation_permission", policy.Permission,
 		"operation_resource", policy.Resource,
 		"operation_action", policy.Action,
-		"operation_type", policy.OperationType,
-		"risk_level", policy.RiskLevel,
 		"rate_limit_class", policy.RateLimitClass,
 		"outcome", outcome,
 	}
@@ -421,52 +403,24 @@ func auditOperation(ctx context.Context, op huma.Operation, policy operationPoli
 	}
 	targetID, targetDisplay := targetFromBoundary(input, output)
 	record := governanceAuditRecord{
-		OrgID:                 identity.OrgID,
-		SourceProductArea:     policy.SourceProductArea,
-		ServiceName:           "iam-service",
-		OperationID:           op.OperationID,
-		AuditEvent:            policy.AuditEvent,
-		OperationDisplay:      policy.OperationDisplay,
-		OperationType:         policy.OperationType,
-		EventCategory:         policy.EventCategory,
-		RiskLevel:             policy.RiskLevel,
-		DataClassification:    policy.DataClassification,
-		ActorType:             principalType,
-		ActorID:               firstNonEmpty(serviceAccountID, identity.Subject),
-		ActorDisplay:          identity.Email,
-		ActorOwnerID:          claimString(identity.Raw, "verself:credential_owner_id"),
-		ActorOwnerDisplay:     claimString(identity.Raw, "verself:credential_owner_display"),
-		CredentialID:          credentialID,
-		CredentialName:        claimString(identity.Raw, "verself:credential_name"),
-		CredentialFingerprint: claimString(identity.Raw, "verself:credential_fingerprint"),
-		AuthMethod:            claimString(identity.Raw, "verself:credential_auth_method"),
-		Permission:            string(policy.Permission),
-		TargetKind:            policy.Resource,
-		TargetID:              targetID,
-		TargetDisplay:         targetDisplay,
-		TargetScope:           policy.OrgScope,
-		Action:                policy.Action,
-		OrgScope:              policy.OrgScope,
-		RateLimitClass:        policy.RateLimitClass,
-		Decision:              outcomeDecision(outcome),
-		Result:                outcome,
-		DurationMS:            durationMillis(info.StartedAt),
-		ClientIP:              info.ClientIP,
-		IPChain:               info.ClientIP,
-		IPChainTrustedHops:    1,
-		UserAgentRaw:          info.UserAgent,
-		IdempotencyKeyHash:    hashTextForAudit(info.IdempotencyKey),
-		RouteTemplate:         op.Path,
-		HTTPMethod:            op.Method,
-		HTTPStatus:            uint16FromInt(statusForOutcome(outcome, err, op.DefaultStatus), "audit http status"),
+		OrgID:        identity.OrgID,
+		EventSource:  "iam-service",
+		EventName:    op.OperationID,
+		AuditEvent:   policy.AuditEvent,
+		ActorType:    principalType,
+		ActorID:      firstNonEmpty(serviceAccountID, identity.Subject),
+		CredentialID: credentialID,
+		Permission:   string(policy.Permission),
+		TargetType:   policy.Resource,
+		TargetID:     targetID,
+		Outcome:      outcome,
+		Detail: compactAuditDetail(map[string]any{
+			"idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
+			"target_display":       targetDisplay,
+		}),
 	}
 	if err != nil {
 		record.ErrorCode = problemCode(err)
-		record.ErrorClass = "application"
-		record.ErrorMessage = err.Error()
-		if outcome == "denied" {
-			record.DenialReason = record.ErrorCode
-		}
 	}
 	sendGovernanceAudit(ctx, record)
 }
@@ -476,6 +430,22 @@ func targetFromBoundary(input any, output any) (string, string) {
 		return targetID, targetDisplay
 	}
 	return targetFromValue(input)
+}
+
+func compactAuditDetail(values map[string]any) map[string]any {
+	detail := make(map[string]any, len(values))
+	for key, value := range values {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				detail[key] = typed
+			}
+		case nil:
+		default:
+			detail[key] = value
+		}
+	}
+	return detail
 }
 
 func targetFromValue(input any) (string, string) {
@@ -528,80 +498,6 @@ func claimString(claims map[string]any, key string) string {
 	}
 	value, _ := claims[key].(string)
 	return strings.TrimSpace(value)
-}
-
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	policy.SourceProductArea = firstNonEmpty(policy.SourceProductArea, "IAM")
-	policy.OperationDisplay = firstNonEmpty(policy.OperationDisplay, operationDisplay(operationID))
-	policy.OperationType = firstNonEmpty(policy.OperationType, operationType(policy))
-	policy.EventCategory = firstNonEmpty(policy.EventCategory, "iam")
-	policy.RiskLevel = firstNonEmpty(policy.RiskLevel, riskLevel(policy))
-	policy.DataClassification = firstNonEmpty(policy.DataClassification, "restricted")
-	return policy
-}
-
-func operationDisplay(operationID string) string {
-	return strings.ReplaceAll(strings.TrimSpace(operationID), "-", " ")
-}
-
-func operationType(policy operationPolicy) string {
-	switch policy.Action {
-	case "read", "list":
-		return "read"
-	case "delete", "revoke":
-		return "delete"
-	default:
-		return "write"
-	}
-}
-
-func riskLevel(policy operationPolicy) string {
-	event := policy.AuditEvent
-	switch {
-	case strings.Contains(event, "api_credential") || strings.Contains(event, "member_capabilities") || strings.Contains(event, "roles.write") || strings.Contains(event, "member.invite"):
-		return "high"
-	case policy.Action == "read" || policy.Action == "list":
-		return "medium"
-	default:
-		return "medium"
-	}
-}
-
-func outcomeDecision(outcome string) string {
-	switch outcome {
-	case "allowed":
-		return "allow"
-	case "denied":
-		return "deny"
-	case "error":
-		return "error"
-	default:
-		return ""
-	}
-}
-
-func durationMillis(startedAt time.Time) float64 {
-	if startedAt.IsZero() {
-		return 0
-	}
-	return float64(time.Since(startedAt)) / float64(time.Millisecond)
-}
-
-func statusForOutcome(outcome string, err error, defaultStatus int) int {
-	var statusErr huma.StatusError
-	if errors.As(err, &statusErr) && statusErr.GetStatus() > 0 {
-		return statusErr.GetStatus()
-	}
-	if outcome == "allowed" {
-		if defaultStatus > 0 {
-			return defaultStatus
-		}
-		return http.StatusOK
-	}
-	if outcome == "denied" {
-		return http.StatusForbidden
-	}
-	return http.StatusInternalServerError
 }
 
 func problemCode(err error) string {

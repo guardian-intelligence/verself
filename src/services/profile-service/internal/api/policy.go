@@ -37,21 +37,15 @@ const (
 var apiTracer = otel.Tracer("profile-service/internal/api")
 
 type operationPolicy struct {
-	Permission         permission
-	Resource           string
-	Action             string
-	OrgScope           string
-	RateLimitClass     string
-	Idempotency        string
-	AuditEvent         string
-	SourceProductArea  string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
-	Internal           bool
+	Permission     permission
+	Resource       string
+	Action         string
+	OrgScope       string
+	RateLimitClass string
+	Idempotency    string
+	AuditEvent     string
+	BodyLimitBytes int64
+	Internal       bool
 }
 
 type operationRequestInfoKey struct{}
@@ -66,7 +60,6 @@ func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.Operatio
 	if op.OperationID == "" {
 		panic("missing operation ID for profile API route")
 	}
-	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
@@ -130,28 +123,6 @@ func finishOperationSpan(span trace.Span, identity *auth.Identity, policy operat
 	}
 }
 
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	if policy.SourceProductArea == "" {
-		policy.SourceProductArea = "Profile"
-	}
-	if policy.OperationDisplay == "" {
-		policy.OperationDisplay = operationID
-	}
-	if policy.OperationType == "" {
-		policy.OperationType = "write"
-	}
-	if policy.EventCategory == "" {
-		policy.EventCategory = "profile"
-	}
-	if policy.RiskLevel == "" {
-		policy.RiskLevel = "medium"
-	}
-	if policy.DataClassification == "" {
-		policy.DataClassification = "controller_personal_data"
-	}
-	return policy
-}
-
 func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
 	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
 		panic("incomplete profile operation policy for " + op.OperationID)
@@ -169,18 +140,12 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	iam := map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           policy.OrgScope,
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"source_product_area": policy.SourceProductArea,
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
+		"permission":       string(policy.Permission),
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        policy.OrgScope,
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
 	}
 	if policy.Idempotency != "" {
 		iam["idempotency"] = policy.Idempotency
@@ -293,12 +258,10 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
 	orgID := ""
 	actorID := ""
-	actorDisplay := ""
 	actorType := "service"
 	if identity != nil {
 		orgID = identity.OrgID
 		actorID = identity.Subject
-		actorDisplay = identity.Email
 		actorType = "user"
 	}
 	if orgID == "" {
@@ -310,55 +273,28 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 	if actorID == "" {
 		actorID = "profile-service"
 	}
-	result := outcome
-	decision := "allow"
-	denialReason := ""
-	errorMessage := ""
-	if outcome == "denied" {
-		decision = "deny"
-		denialReason = stableErrorCode(err)
-	}
-	if err != nil && outcome != "denied" {
-		errorMessage = stableErrorCode(err)
-	}
 	info := operationRequestInfoFromContext(ctx)
 	details := auditDetailsFromOutput(output)
 	sendGovernanceAudit(ctx, governanceAuditRecord{
-		OrgID:              orgID,
-		SourceProductArea:  policy.SourceProductArea,
-		ServiceName:        "profile-service",
-		OperationID:        operationID,
-		AuditEvent:         policy.AuditEvent,
-		OperationDisplay:   policy.OperationDisplay,
-		OperationType:      policy.OperationType,
-		EventCategory:      policy.EventCategory,
-		RiskLevel:          policy.RiskLevel,
-		DataClassification: policy.DataClassification,
-		ActorType:          actorType,
-		ActorID:            actorID,
-		ActorDisplay:       actorDisplay,
-		AuthMethod:         "oidc",
-		Permission:         string(policy.Permission),
-		TargetKind:         policy.Resource,
-		TargetID:           targetIDFromInput(input, identity),
-		Action:             policy.Action,
-		OrgScope:           policy.OrgScope,
-		RateLimitClass:     policy.RateLimitClass,
-		Decision:           decision,
-		Result:             result,
-		DenialReason:       denialReason,
-		ErrorCode:          stableErrorCode(err),
-		ErrorMessage:       errorMessage,
-		ClientIP:           info.ClientIP,
-		UserAgentRaw:       info.UserAgent,
-		RouteTemplate:      routeTemplateFromOperationID(operationID),
-		HTTPMethod:         methodFromOperationID(operationID),
-		IdempotencyKeyHash: hashTextForAudit(info.IdempotencyKey),
-		ChangedFields:      strings.Join(details.changedFields, ","),
-		BeforeHash:         details.beforeHash,
-		AfterHash:          details.afterHash,
-		ArtifactSHA256:     details.artifactSHA256,
-		ArtifactBytes:      details.artifactBytes,
+		OrgID:       orgID,
+		EventSource: "profile-service",
+		EventName:   operationID,
+		AuditEvent:  policy.AuditEvent,
+		ActorType:   actorType,
+		ActorID:     actorID,
+		Permission:  string(policy.Permission),
+		TargetType:  policy.Resource,
+		TargetID:    targetIDFromInput(input, identity),
+		Outcome:     outcome,
+		ErrorCode:   stableErrorCode(err),
+		Detail: compactAuditDetail(map[string]any{
+			"idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
+			"changed_fields":       strings.Join(details.changedFields, ","),
+			"before_hash":          details.beforeHash,
+			"after_hash":           details.afterHash,
+			"artifact_sha256":      details.artifactSHA256,
+			"artifact_bytes":       details.artifactBytes,
+		}),
 	})
 }
 
@@ -388,6 +324,26 @@ func auditDetailsFromOutput(output any) auditDetails {
 		}
 	}
 	return auditDetails{}
+}
+
+func compactAuditDetail(values map[string]any) map[string]any {
+	detail := make(map[string]any, len(values))
+	for key, value := range values {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				detail[key] = typed
+			}
+		case uint64:
+			if typed != 0 {
+				detail[key] = typed
+			}
+		case nil:
+		default:
+			detail[key] = value
+		}
+	}
+	return detail
 }
 
 func stableErrorCode(err error) string {

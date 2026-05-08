@@ -50,7 +50,7 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 				if rawPolicy["request_body_max_bytes"] == nil {
 					t.Fatalf("%s %s missing request_body_max_bytes: %#v", op.Method, path, rawPolicy)
 				}
-				if rawPolicy["operation_type"] != "read" {
+				if rawPolicy["action"] != "read" && rawPolicy["action"] != "list" && rawPolicy["action"] != "test" {
 					if rawPolicy["idempotency"] != idempotencyHeaderKey {
 						t.Fatalf("%s %s mutating IAM operation must require header idempotency: %#v", op.Method, path, rawPolicy)
 					}

@@ -43,51 +43,20 @@ func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
 }
 
 type governanceAuditRecord struct {
-	OrgID                 string `json:"org_id"`
-	SourceProductArea     string `json:"source_product_area"`
-	ServiceName           string `json:"service_name"`
-	OperationID           string `json:"operation_id"`
-	AuditEvent            string `json:"audit_event"`
-	OperationDisplay      string `json:"operation_display"`
-	OperationType         string `json:"operation_type"`
-	EventCategory         string `json:"event_category"`
-	RiskLevel             string `json:"risk_level"`
-	DataClassification    string `json:"data_classification,omitempty"`
-	ActorType             string `json:"actor_type"`
-	ActorID               string `json:"actor_id"`
-	ActorDisplay          string `json:"actor_display,omitempty"`
-	ActorOwnerID          string `json:"actor_owner_id,omitempty"`
-	ActorOwnerDisplay     string `json:"actor_owner_display,omitempty"`
-	CredentialID          string `json:"credential_id,omitempty"`
-	CredentialName        string `json:"credential_name,omitempty"`
-	CredentialFingerprint string `json:"credential_fingerprint,omitempty"`
-	AuthMethod            string `json:"auth_method,omitempty"`
-	Permission            string `json:"permission"`
-	TargetKind            string `json:"target_kind"`
-	TargetID              string `json:"target_id,omitempty"`
-	TargetDisplay         string `json:"target_display,omitempty"`
-	TargetScope           string `json:"target_scope,omitempty"`
-	Action                string `json:"action"`
-	OrgScope              string `json:"org_scope"`
-	RateLimitClass        string `json:"rate_limit_class"`
-	Decision              string `json:"decision"`
-	Result                string `json:"result"`
-	DenialReason          string `json:"denial_reason,omitempty"`
-	ErrorCode             string `json:"error_code,omitempty"`
-	ErrorClass            string `json:"error_class,omitempty"`
-	ErrorMessage          string `json:"error_message,omitempty"`
-	ClientIP              string `json:"client_ip,omitempty"`
-	IPChain               string `json:"ip_chain,omitempty"`
-	IPChainTrustedHops    uint8  `json:"ip_chain_trusted_hops,omitempty"`
-	UserAgentRaw          string `json:"user_agent_raw,omitempty"`
-	RefererOrigin         string `json:"referer_origin,omitempty"`
-	Origin                string `json:"origin,omitempty"`
-	Host                  string `json:"host,omitempty"`
-	RequestID             string `json:"request_id,omitempty"`
-	RouteTemplate         string `json:"route_template,omitempty"`
-	HTTPMethod            string `json:"http_method,omitempty"`
-	HTTPStatus            uint16 `json:"http_status,omitempty"`
-	IdempotencyKeyHash    string `json:"idempotency_key_hash,omitempty"`
+	OrgID        string         `json:"org_id"`
+	EventSource  string         `json:"event_source"`
+	EventName    string         `json:"event_name"`
+	AuditEvent   string         `json:"audit_event"`
+	ActorType    string         `json:"actor_type"`
+	ActorID      string         `json:"actor_id"`
+	CredentialID string         `json:"credential_id,omitempty"`
+	Permission   string         `json:"permission"`
+	TargetType   string         `json:"target_type"`
+	TargetID     string         `json:"target_id,omitempty"`
+	Outcome      string         `json:"outcome"`
+	ErrorCode    string         `json:"error_code,omitempty"`
+	TraceID      string         `json:"trace_id,omitempty"`
+	Detail       map[string]any `json:"detail,omitempty"`
 }
 
 func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {

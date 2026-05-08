@@ -163,25 +163,20 @@ func (s *Service) CreateBucket(ctx context.Context, input CreateBucketInput) (Bu
 		UpdatedBy:     input.Actor,
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, input.Actor)
-	record.OperationID = "object_storage.bucket.create"
+	record.EventName = "object_storage.bucket.create"
 	record.AuditEvent = "object_storage.bucket.create"
-	record.OperationDisplay = "create object storage bucket"
-	record.OperationType = "write"
-	record.EventCategory = "configuration"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:bucket:write"
-	record.TargetKind = "bucket"
+	record.TargetType = "bucket"
 	record.TargetID = bucket.BucketID.String()
-	record.TargetDisplay = bucket.BucketName
-	record.TargetScope = bucket.OrgID
-	record.Action = "create"
 
 	garageBucket, err := s.Garage.CreateBucket(ctx, bucket.BucketName)
 	if err != nil {
 		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("create garage bucket: %w", err))
 	}
 	bucket.GarageBucketID = garageBucket.ID
-	record.ContentSHA256 = hashForAudit(bucket.BucketName + "\x00" + bucket.GarageBucketID)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(bucket.BucketName + "\x00" + bucket.GarageBucketID),
+	})
 
 	cleanup := func() error {
 		var cleanupErr error
@@ -235,19 +230,14 @@ func (s *Service) UpdateBucket(ctx context.Context, bucketID uuid.UUID, quotaByt
 	lifecycleJSON = normalizeLifecycleJSON(lifecycleJSON)
 
 	record := s.baseAuditRecord(ctx, bucket.OrgID, actor)
-	record.OperationID = "object_storage.bucket.update"
+	record.EventName = "object_storage.bucket.update"
 	record.AuditEvent = "object_storage.bucket.update"
-	record.OperationDisplay = "update object storage bucket"
-	record.OperationType = "write"
-	record.EventCategory = "configuration"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:bucket:write"
-	record.TargetKind = "bucket"
+	record.TargetType = "bucket"
 	record.TargetID = bucket.BucketID.String()
-	record.TargetDisplay = bucket.BucketName
-	record.TargetScope = bucket.OrgID
-	record.Action = "write"
-	record.ContentSHA256 = hashForAudit(bucket.BucketName + "\x00" + string(lifecycleJSON))
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(bucket.BucketName + "\x00" + string(lifecycleJSON)),
+	})
 
 	garageBucket, err := s.Garage.UpdateBucket(ctx, bucket.GarageBucketID, GarageQuotas{MaxSize: quotaBytes, MaxObjects: quotaObjects}, lifecycleJSON)
 	if err != nil {
@@ -281,19 +271,14 @@ func (s *Service) DeleteBucket(ctx context.Context, bucketID uuid.UUID, actor st
 		return err
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, actor)
-	record.OperationID = "object_storage.bucket.delete"
+	record.EventName = "object_storage.bucket.delete"
 	record.AuditEvent = "object_storage.bucket.delete"
-	record.OperationDisplay = "delete object storage bucket"
-	record.OperationType = "delete"
-	record.EventCategory = "configuration"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:bucket:write"
-	record.TargetKind = "bucket"
+	record.TargetType = "bucket"
 	record.TargetID = bucket.BucketID.String()
-	record.TargetDisplay = bucket.BucketName
-	record.TargetScope = bucket.OrgID
-	record.Action = "delete"
-	record.ContentSHA256 = hashForAudit(bucket.BucketName + "\x00" + bucket.GarageBucketID)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(bucket.BucketName + "\x00" + bucket.GarageBucketID),
+	})
 
 	if err := s.Garage.DeleteBucket(ctx, bucket.GarageBucketID); err != nil {
 		return s.finishAdminOp(ctx, record, fmt.Errorf("delete garage bucket: %w", err))
@@ -327,19 +312,14 @@ func (s *Service) CreateAlias(ctx context.Context, input CreateAliasInput) (Buck
 		CreatedBy:  input.Actor,
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, input.Actor)
-	record.OperationID = "object_storage.bucket_alias.create"
+	record.EventName = "object_storage.bucket_alias.create"
 	record.AuditEvent = "object_storage.bucket_alias.create"
-	record.OperationDisplay = "create object storage bucket alias"
-	record.OperationType = "write"
-	record.EventCategory = "configuration"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:bucket:write"
-	record.TargetKind = "bucket_alias"
+	record.TargetType = "bucket_alias"
 	record.TargetID = alias.Alias
-	record.TargetDisplay = alias.Alias
-	record.TargetScope = bucket.OrgID
-	record.Action = "create"
-	record.ContentSHA256 = hashForAudit(alias.Alias + "\x00" + alias.Prefix)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(alias.Alias + "\x00" + alias.Prefix),
+	})
 
 	if err := s.Store.CreateAlias(ctx, alias); err != nil {
 		return BucketAlias{}, s.finishAdminOp(ctx, record, err)
@@ -368,19 +348,14 @@ func (s *Service) DeleteAlias(ctx context.Context, bucketID uuid.UUID, aliasName
 		return ErrNotFound
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, actor)
-	record.OperationID = "object_storage.bucket_alias.delete"
+	record.EventName = "object_storage.bucket_alias.delete"
 	record.AuditEvent = "object_storage.bucket_alias.delete"
-	record.OperationDisplay = "delete object storage bucket alias"
-	record.OperationType = "delete"
-	record.EventCategory = "configuration"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:bucket:write"
-	record.TargetKind = "bucket_alias"
+	record.TargetType = "bucket_alias"
 	record.TargetID = alias.Alias
-	record.TargetDisplay = alias.Alias
-	record.TargetScope = bucket.OrgID
-	record.Action = "delete"
-	record.ContentSHA256 = hashForAudit(alias.Alias + "\x00" + alias.Prefix)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(alias.Alias + "\x00" + alias.Prefix),
+	})
 	if err := s.Store.DeleteAlias(ctx, alias.Alias); err != nil {
 		return s.finishAdminOp(ctx, record, err)
 	}
@@ -406,23 +381,16 @@ func (s *Service) CreateStaticCredential(ctx context.Context, input CreateStatic
 		return Credential{}, StaticCredentialSecret{}, err
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, input.Actor)
-	record.OperationID = "object_storage.access_key.create"
+	record.EventName = "object_storage.access_key.create"
 	record.AuditEvent = "object_storage.access_key.create"
-	record.OperationDisplay = "create object storage access key"
-	record.OperationType = "authn"
-	record.EventCategory = "iam"
-	record.RiskLevel = "critical"
-	record.DataClassification = "secret"
 	record.Permission = "object-storage:access-key:write"
-	record.TargetKind = "access_key"
+	record.TargetType = "access_key"
 	record.TargetID = material.credential.AccessKeyID
-	record.TargetDisplay = material.credential.DisplayName
-	record.TargetScope = bucket.OrgID
 	record.CredentialID = material.credential.AccessKeyID
-	record.CredentialName = material.credential.DisplayName
-	record.CredentialFingerprint = material.secret.Fingerprint
-	record.Action = "create"
-	record.ContentSHA256 = hashForAudit(material.credential.AccessKeyID + "\x00" + material.secret.Fingerprint)
+	record.Detail = compactAuditDetail(map[string]any{
+		"credential_fingerprint": material.secret.Fingerprint,
+		"content_sha256":         hashForAudit(material.credential.AccessKeyID + "\x00" + material.secret.Fingerprint),
+	})
 	if err := s.finishAdminOp(ctx, record, nil); err != nil {
 		_ = s.Store.DeleteCredential(ctx, material.credential.CredentialID)
 		return Credential{}, StaticCredentialSecret{}, err
@@ -456,21 +424,15 @@ func (s *Service) CreateSPIFFECredential(ctx context.Context, input CreateSPIFFE
 		CreatedBy:     input.Actor,
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, input.Actor)
-	record.OperationID = "object_storage.mtls_principal.create"
+	record.EventName = "object_storage.mtls_principal.create"
 	record.AuditEvent = "object_storage.mtls_principal.create"
-	record.OperationDisplay = "create object storage mTLS principal"
-	record.OperationType = "authz"
-	record.EventCategory = "iam"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:access-key:write"
-	record.TargetKind = "mtls_principal"
+	record.TargetType = "mtls_principal"
 	record.TargetID = input.SPIFFESubject
-	record.TargetDisplay = input.DisplayName
-	record.TargetScope = bucket.OrgID
 	record.CredentialID = credential.CredentialID.String()
-	record.CredentialName = input.DisplayName
-	record.Action = "create"
-	record.ContentSHA256 = hashForAudit(input.SPIFFESubject)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(input.SPIFFESubject),
+	})
 
 	if err := s.Store.CreateCredential(ctx, credential); err != nil {
 		return Credential{}, s.finishAdminOp(ctx, record, err)
@@ -510,23 +472,17 @@ func (s *Service) RollStaticCredential(ctx context.Context, accessKeyID, actor s
 		return Credential{}, StaticCredentialSecret{}, err
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, actor)
-	record.OperationID = "object_storage.access_key.roll"
+	record.EventName = "object_storage.access_key.roll"
 	record.AuditEvent = "object_storage.access_key.roll"
-	record.OperationDisplay = "roll object storage access key"
-	record.OperationType = "authn"
-	record.EventCategory = "iam"
-	record.RiskLevel = "critical"
-	record.DataClassification = "secret"
 	record.Permission = "object-storage:access-key:write"
-	record.TargetKind = "access_key"
+	record.TargetType = "access_key"
 	record.TargetID = material.credential.AccessKeyID
-	record.TargetDisplay = material.credential.DisplayName
-	record.TargetScope = bucket.OrgID
 	record.CredentialID = material.credential.AccessKeyID
-	record.CredentialName = material.credential.DisplayName
-	record.CredentialFingerprint = material.secret.Fingerprint
-	record.Action = "roll"
-	record.ContentSHA256 = hashForAudit(current.AccessKeyID + "\x00" + material.credential.AccessKeyID)
+	record.Detail = compactAuditDetail(map[string]any{
+		"previous_access_key_id": current.AccessKeyID,
+		"credential_fingerprint": material.secret.Fingerprint,
+		"content_sha256":         hashForAudit(current.AccessKeyID + "\x00" + material.credential.AccessKeyID),
+	})
 	if err := s.finishAdminOp(ctx, record, nil); err != nil {
 		return Credential{}, StaticCredentialSecret{}, err
 	}
@@ -550,21 +506,15 @@ func (s *Service) RevokeStaticCredential(ctx context.Context, accessKeyID, actor
 		return err
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, actor)
-	record.OperationID = "object_storage.access_key.revoke"
+	record.EventName = "object_storage.access_key.revoke"
 	record.AuditEvent = "object_storage.access_key.revoke"
-	record.OperationDisplay = "revoke object storage access key"
-	record.OperationType = "authn"
-	record.EventCategory = "iam"
-	record.RiskLevel = "critical"
 	record.Permission = "object-storage:access-key:write"
-	record.TargetKind = "access_key"
+	record.TargetType = "access_key"
 	record.TargetID = current.AccessKeyID
-	record.TargetDisplay = current.DisplayName
-	record.TargetScope = bucket.OrgID
 	record.CredentialID = current.AccessKeyID
-	record.CredentialName = current.DisplayName
-	record.Action = "revoke"
-	record.ContentSHA256 = hashForAudit(current.AccessKeyID)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(current.AccessKeyID),
+	})
 
 	if err := s.Store.RevokeCredentialByAccessKey(ctx, current.AccessKeyID, actor, time.Now().UTC()); err != nil {
 		return s.finishAdminOp(ctx, record, err)
@@ -595,21 +545,15 @@ func (s *Service) RevokeSPIFFECredential(ctx context.Context, credentialID uuid.
 		return err
 	}
 	record := s.baseAuditRecord(ctx, bucket.OrgID, actor)
-	record.OperationID = "object_storage.mtls_principal.revoke"
+	record.EventName = "object_storage.mtls_principal.revoke"
 	record.AuditEvent = "object_storage.mtls_principal.revoke"
-	record.OperationDisplay = "revoke object storage mTLS principal"
-	record.OperationType = "authz"
-	record.EventCategory = "iam"
-	record.RiskLevel = "high"
 	record.Permission = "object-storage:access-key:write"
-	record.TargetKind = "mtls_principal"
+	record.TargetType = "mtls_principal"
 	record.TargetID = current.SPIFFESubject
-	record.TargetDisplay = current.DisplayName
-	record.TargetScope = bucket.OrgID
 	record.CredentialID = current.CredentialID.String()
-	record.CredentialName = current.DisplayName
-	record.Action = "revoke"
-	record.ContentSHA256 = hashForAudit(current.SPIFFESubject)
+	record.Detail = compactAuditDetail(map[string]any{
+		"content_sha256": hashForAudit(current.SPIFFESubject),
+	})
 
 	if err := s.Store.RevokeCredentialByID(ctx, current.CredentialID, actor, time.Now().UTC()); err != nil {
 		return s.finishAdminOp(ctx, record, err)
@@ -751,36 +695,22 @@ func (s *Service) baseAuditRecord(ctx context.Context, orgID, actor string) Audi
 		serviceName = "object-storage-service"
 	}
 	record := AuditRecord{
-		OrgID:             strings.TrimSpace(orgID),
-		Environment:       s.Config.Environment,
-		SourceProductArea: "ObjectStorage",
-		ServiceName:       serviceName,
-		ServiceVersion:    s.Config.ServiceVersion,
-		WriterInstanceID:  s.Config.WriterInstanceID,
-		ActorType:         "service_workload",
-		ActorID:           strings.TrimSpace(actor),
-		ActorSPIFFEID:     strings.TrimSpace(actor),
-		Permission:        "",
-		OrgScope:          "request_org_id",
-		RateLimitClass:    "internal",
-		Decision:          "allow",
-		Result:            "allowed",
+		OrgID:       strings.TrimSpace(orgID),
+		EventSource: serviceName,
+		ActorType:   "service_workload",
+		ActorID:     strings.TrimSpace(actor),
+		Outcome:     "allowed",
 	}
 	if sc := oteltrace.SpanContextFromContext(ctx); sc.HasTraceID() {
 		record.TraceID = sc.TraceID().String()
-	}
-	if sc := oteltrace.SpanContextFromContext(ctx); sc.HasSpanID() {
-		record.SpanID = sc.SpanID().String()
 	}
 	return record
 }
 
 func (s *Service) finishAdminOp(ctx context.Context, record AuditRecord, opErr error) error {
 	if opErr != nil {
-		record.Result = "error"
-		record.Decision = "error"
-		record.ErrorClass = classifyError(opErr)
-		record.ErrorMessage = opErr.Error()
+		record.Outcome = "error"
+		record.ErrorCode = classifyError(opErr)
 	}
 	if auditErr := s.emitAudit(ctx, record); auditErr != nil {
 		if opErr != nil {
@@ -789,6 +719,22 @@ func (s *Service) finishAdminOp(ctx context.Context, record AuditRecord, opErr e
 		return auditErr
 	}
 	return opErr
+}
+
+func compactAuditDetail(values map[string]any) map[string]any {
+	detail := make(map[string]any, len(values))
+	for key, value := range values {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				detail[key] = typed
+			}
+		case nil:
+		default:
+			detail[key] = value
+		}
+	}
+	return detail
 }
 
 func (s *Service) emitAudit(ctx context.Context, record AuditRecord) error {

@@ -138,7 +138,7 @@ func assertSourcePolicy(t *testing.T, openAPI *huma.OpenAPI, op *huma.Operation,
 	if !ok {
 		t.Fatalf("%s %s missing x-verself-iam policy", op.Method, path)
 	}
-	for _, key := range []string{"permission", "resource", "action", "org_scope", "rate_limit_class", "audit_event", "source_product_area", "operation_display", "operation_type", "event_category", "risk_level", "data_classification"} {
+	for _, key := range []string{"permission", "resource", "action", "org_scope", "rate_limit_class", "audit_event"} {
 		if rawPolicy[key] == "" {
 			t.Fatalf("%s %s empty policy field %q: %#v", op.Method, path, key, rawPolicy)
 		}

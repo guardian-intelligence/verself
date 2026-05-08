@@ -183,7 +183,6 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       "token_org_id",
 		RateLimitClass: "read",
 		AuditEvent:     "iam.organization.policy.test_permissions",
-		OperationType:  "read",
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), testOrganizationIAMPermissions(authzSvc))
 

@@ -44,21 +44,16 @@ const (
 var apiTracer = otel.Tracer("projects-service/internal/api")
 
 type operationPolicy struct {
-	Permission         permission
-	Resource           string
-	Action             string
-	OrgScope           string
-	RateLimitClass     string
-	Idempotency        string
-	AuditEvent         string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
-	Service            bool
-	ServicePeers       []string
+	Permission     permission
+	Resource       string
+	Action         string
+	OrgScope       string
+	RateLimitClass string
+	Idempotency    string
+	AuditEvent     string
+	BodyLimitBytes int64
+	Service        bool
+	ServicePeers   []string
 }
 
 type operationRequestInfoKey struct{}
@@ -74,7 +69,6 @@ func registerProjectsRoute[I, O any](api huma.API, authorizer runtimeiam.Operati
 	if op.OperationID == "" {
 		panic("missing operation ID for projects API route")
 	}
-	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
@@ -128,25 +122,6 @@ func finishOperationSpan(span trace.Span, principal projects.Principal, policy o
 	}
 }
 
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	if policy.OperationDisplay == "" {
-		policy.OperationDisplay = operationID
-	}
-	if policy.OperationType == "" {
-		policy.OperationType = "write"
-	}
-	if policy.EventCategory == "" {
-		policy.EventCategory = "projects"
-	}
-	if policy.RiskLevel == "" {
-		policy.RiskLevel = "medium"
-	}
-	if policy.DataClassification == "" {
-		policy.DataClassification = "customer_project_metadata"
-	}
-	return policy
-}
-
 func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
 	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
 		panic("incomplete projects operation policy for " + op.OperationID)
@@ -170,17 +145,12 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           policy.OrgScope,
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
+		"permission":       string(policy.Permission),
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        policy.OrgScope,
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
 	}
 	if policy.Idempotency != "" {
 		op.Extensions["x-verself-iam"].(map[string]any)["idempotency"] = policy.Idempotency

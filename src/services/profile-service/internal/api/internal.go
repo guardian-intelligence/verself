@@ -39,17 +39,14 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Summary:       "Export organization-local profile data",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
-		Permission:       permissionProfileDataRights,
-		Resource:         "profile_data_rights",
-		Action:           "export",
-		OrgScope:         "request_org_id",
-		RateLimitClass:   "internal_data_rights",
-		AuditEvent:       "profile.data_rights.org_export",
-		OperationDisplay: "export organization profile data",
-		OperationType:    "export",
-		RiskLevel:        "high",
-		BodyLimitBytes:   bodyLimitDataRightsJSON,
-		Internal:         true,
+		Permission:     permissionProfileDataRights,
+		Resource:       "profile_data_rights",
+		Action:         "export",
+		OrgScope:       "request_org_id",
+		RateLimitClass: "internal_data_rights",
+		AuditEvent:     "profile.data_rights.org_export",
+		BodyLimitBytes: bodyLimitDataRightsJSON,
+		Internal:       true,
 	}, orgExport(svc))
 
 	registerProfileRoute(api, nil, huma.Operation{
@@ -59,17 +56,14 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Summary:       "Export subject-local profile data",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
-		Permission:       permissionProfileDataRights,
-		Resource:         "profile_data_rights",
-		Action:           "export",
-		OrgScope:         "request_subject_id",
-		RateLimitClass:   "internal_data_rights",
-		AuditEvent:       "profile.data_rights.subject_export",
-		OperationDisplay: "export subject profile data",
-		OperationType:    "export",
-		RiskLevel:        "high",
-		BodyLimitBytes:   bodyLimitDataRightsJSON,
-		Internal:         true,
+		Permission:     permissionProfileDataRights,
+		Resource:       "profile_data_rights",
+		Action:         "export",
+		OrgScope:       "request_subject_id",
+		RateLimitClass: "internal_data_rights",
+		AuditEvent:     "profile.data_rights.subject_export",
+		BodyLimitBytes: bodyLimitDataRightsJSON,
+		Internal:       true,
 	}, subjectExport(svc))
 
 	registerProfileRoute(api, nil, huma.Operation{
@@ -79,17 +73,14 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Summary:       "Erase subject-local profile data",
 		DefaultStatus: http.StatusOK,
 	}, operationPolicy{
-		Permission:       permissionProfileDataRights,
-		Resource:         "profile_data_rights",
-		Action:           "erase",
-		OrgScope:         "request_subject_id",
-		RateLimitClass:   "internal_data_rights",
-		AuditEvent:       "profile.data_rights.subject_erasure",
-		OperationDisplay: "erase subject profile data",
-		OperationType:    "delete",
-		RiskLevel:        "high",
-		BodyLimitBytes:   bodyLimitDataRightsJSON,
-		Internal:         true,
+		Permission:     permissionProfileDataRights,
+		Resource:       "profile_data_rights",
+		Action:         "erase",
+		OrgScope:       "request_subject_id",
+		RateLimitClass: "internal_data_rights",
+		AuditEvent:     "profile.data_rights.subject_erasure",
+		BodyLimitBytes: bodyLimitDataRightsJSON,
+		Internal:       true,
 	}, subjectErasure(svc))
 
 	registerProfileRoute(api, nil, huma.Operation{
@@ -98,16 +89,13 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Path:        "/internal/v1/data-rights/requests/{request_id}",
 		Summary:     "Get profile data-rights request status",
 	}, operationPolicy{
-		Permission:       permissionProfileDataRights,
-		Resource:         "profile_data_rights",
-		Action:           "read",
-		OrgScope:         "request_id",
-		RateLimitClass:   "internal_data_rights",
-		AuditEvent:       "profile.data_rights.status",
-		OperationDisplay: "get profile data-rights status",
-		OperationType:    "read",
-		RiskLevel:        "medium",
-		Internal:         true,
+		Permission:     permissionProfileDataRights,
+		Resource:       "profile_data_rights",
+		Action:         "read",
+		OrgScope:       "request_id",
+		RateLimitClass: "internal_data_rights",
+		AuditEvent:     "profile.data_rights.status",
+		Internal:       true,
 	}, dataRightsStatus(svc))
 }
 

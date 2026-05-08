@@ -134,7 +134,7 @@ func (q *Queries) InsertCommandResult(ctx context.Context, arg InsertCommandResu
 const insertDomainEventOutbox = `-- name: InsertDomainEventOutbox :exec
 INSERT INTO iam_domain_event_outbox (
     event_id, command_id, event_type, org_id, actor_id, operation_id, idempotency_key_hash,
-    aggregate_kind, aggregate_id, aggregate_version, target_kind, target_id,
+    aggregate_kind, aggregate_id, aggregate_version, target_type, target_id,
     result, reason, conflict_policy, expected_version, actual_version,
     expected_hash, actual_hash, requested_hash, changed_fields, payload,
     traceparent, occurred_at, next_attempt_at
@@ -160,7 +160,7 @@ type InsertDomainEventOutboxParams struct {
 	AggregateKind      string
 	AggregateID        string
 	AggregateVersion   int32
-	TargetKind         string
+	TargetType         string
 	TargetID           string
 	Result             string
 	Reason             string
@@ -188,7 +188,7 @@ func (q *Queries) InsertDomainEventOutbox(ctx context.Context, arg InsertDomainE
 		arg.AggregateKind,
 		arg.AggregateID,
 		arg.AggregateVersion,
-		arg.TargetKind,
+		arg.TargetType,
 		arg.TargetID,
 		arg.Result,
 		arg.Reason,

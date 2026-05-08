@@ -94,17 +94,12 @@ func registerMailRoutes(api huma.API, svc provider, authorizer runtimeiam.Operat
 		Path:        "/api/v1/mail/account",
 		Summary:     "Get the authenticated user's bound mailbox account",
 	}, operationPolicy{
-		Permission:         "mailbox:account:read",
-		Resource:           "mailbox_account",
-		Action:             "read",
-		OrgScope:           "token_subject",
-		RateLimitClass:     "read",
-		AuditEvent:         "mailbox.mail_account",
-		OperationDisplay:   "mail account",
-		OperationType:      "read",
-		EventCategory:      "mailbox",
-		RiskLevel:          "low",
-		DataClassification: "controller_personal_data",
+		Permission:     "mailbox:account:read",
+		Resource:       "mailbox_account",
+		Action:         "read",
+		OrgScope:       "token_subject",
+		RateLimitClass: "read",
+		AuditEvent:     "mailbox.mail_account",
 	}, accountInfo(svc))
 
 	registerMailRoute(api, authorizer, huma.Operation{
@@ -113,17 +108,12 @@ func registerMailRoutes(api huma.API, svc provider, authorizer runtimeiam.Operat
 		Path:        "/api/v1/mail/sync/status",
 		Summary:     "Mailbox sync status",
 	}, operationPolicy{
-		Permission:         "mailbox:sync_status:read",
-		Resource:           "mailbox_sync_status",
-		Action:             "read",
-		OrgScope:           "token_subject",
-		RateLimitClass:     "read",
-		AuditEvent:         "mailbox.mail_sync_status",
-		OperationDisplay:   "mail sync status",
-		OperationType:      "read",
-		EventCategory:      "mailbox",
-		RiskLevel:          "low",
-		DataClassification: "system_metadata",
+		Permission:     "mailbox:sync_status:read",
+		Resource:       "mailbox_sync_status",
+		Action:         "read",
+		OrgScope:       "token_subject",
+		RateLimitClass: "read",
+		AuditEvent:     "mailbox.mail_sync_status",
 	}, syncStatus(svc))
 }
 

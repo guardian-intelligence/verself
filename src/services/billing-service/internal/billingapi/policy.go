@@ -31,18 +31,13 @@ const (
 var apiTracer = otel.Tracer("billing-service/internal/billingapi")
 
 type operationPolicy struct {
-	Permission         permission
-	Resource           string
-	Action             string
-	RateLimitClass     string
-	Idempotency        string
-	AuditEvent         string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
+	Permission     permission
+	Resource       string
+	Action         string
+	RateLimitClass string
+	Idempotency    string
+	AuditEvent     string
+	BodyLimitBytes int64
 }
 
 type operationRequestInfoKey struct{}
@@ -53,30 +48,24 @@ type operationRequestInfo struct {
 
 func readPolicy(resource, action, auditEvent string) operationPolicy {
 	return operationPolicy{
-		Permission:       permissionBillingRead,
-		Resource:         resource,
-		Action:           action,
-		RateLimitClass:   "read",
-		AuditEvent:       auditEvent,
-		OperationType:    "read",
-		RiskLevel:        "low",
-		BodyLimitBytes:   0,
-		OperationDisplay: auditEvent,
+		Permission:     permissionBillingRead,
+		Resource:       resource,
+		Action:         action,
+		RateLimitClass: "read",
+		AuditEvent:     auditEvent,
+		BodyLimitBytes: 0,
 	}
 }
 
 func checkoutPolicy(resource, action, auditEvent string) operationPolicy {
 	return operationPolicy{
-		Permission:       permissionBillingCheckout,
-		Resource:         resource,
-		Action:           action,
-		RateLimitClass:   "billing_mutation",
-		Idempotency:      idempotencyHeaderKey,
-		AuditEvent:       auditEvent,
-		OperationType:    "write",
-		RiskLevel:        "medium",
-		BodyLimitBytes:   bodyLimitSmallJSON,
-		OperationDisplay: auditEvent,
+		Permission:     permissionBillingCheckout,
+		Resource:       resource,
+		Action:         action,
+		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     auditEvent,
+		BodyLimitBytes: bodyLimitSmallJSON,
 	}
 }
 
@@ -84,7 +73,6 @@ func registerPublicBillingRoute[I, O any](api huma.API, authorizer runtimeiam.Op
 	if op.OperationID == "" {
 		panic("missing operation ID for billing API route")
 	}
-	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
@@ -134,25 +122,6 @@ func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy operationP
 	}
 }
 
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	if policy.OperationDisplay == "" {
-		policy.OperationDisplay = operationID
-	}
-	if policy.OperationType == "" {
-		policy.OperationType = "write"
-	}
-	if policy.EventCategory == "" {
-		policy.EventCategory = "billing"
-	}
-	if policy.RiskLevel == "" {
-		policy.RiskLevel = "medium"
-	}
-	if policy.DataClassification == "" {
-		policy.DataClassification = "customer_billing"
-	}
-	return policy
-}
-
 func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
 	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
 		panic("incomplete billing operation policy for " + op.OperationID)
@@ -170,17 +139,12 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           "token_org_id",
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
+		"permission":       string(policy.Permission),
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        "token_org_id",
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
 	}
 	if policy.Idempotency != "" {
 		op.Extensions["x-verself-iam"].(map[string]any)["idempotency"] = policy.Idempotency

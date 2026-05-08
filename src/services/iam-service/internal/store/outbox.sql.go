@@ -15,7 +15,7 @@ import (
 const claimPendingDomainLedgerEvents = `-- name: ClaimPendingDomainLedgerEvents :many
 SELECT event_id, occurred_at, event_type, org_id, actor_id, operation_id, command_id,
        idempotency_key_hash, aggregate_kind, aggregate_id, aggregate_version,
-       target_kind, target_id, result, reason, conflict_policy, expected_version,
+       target_type, target_id, result, reason, conflict_policy, expected_version,
        actual_version, expected_hash, actual_hash, requested_hash, changed_fields,
        payload::text AS payload_json, traceparent
 FROM iam_domain_event_outbox
@@ -41,7 +41,7 @@ type ClaimPendingDomainLedgerEventsRow struct {
 	AggregateKind      string
 	AggregateID        string
 	AggregateVersion   int32
-	TargetKind         string
+	TargetType         string
 	TargetID           string
 	Result             string
 	Reason             string
@@ -77,7 +77,7 @@ func (q *Queries) ClaimPendingDomainLedgerEvents(ctx context.Context, arg ClaimP
 			&i.AggregateKind,
 			&i.AggregateID,
 			&i.AggregateVersion,
-			&i.TargetKind,
+			&i.TargetType,
 			&i.TargetID,
 			&i.Result,
 			&i.Reason,

@@ -145,18 +145,12 @@ func register[I, O any](api huma.API, op huma.Operation, authorizer runtimeiam.O
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":          permission,
-		"resource":            "notification_subject",
-		"action":              actionFromMethod(op.Method),
-		"org_scope":           "token_subject",
-		"rate_limit_class":    rateLimitClass(op.Method),
-		"audit_event":         "notification." + strings.ReplaceAll(op.OperationID, "-", "."),
-		"source_product_area": "Notifications",
-		"operation_display":   op.Summary,
-		"operation_type":      actionFromMethod(op.Method),
-		"event_category":      "notifications",
-		"risk_level":          riskLevel(op.Method),
-		"data_classification": "controller_personal_data",
+		"permission":       permission,
+		"resource":         "notification_subject",
+		"action":           actionFromMethod(op.Method),
+		"org_scope":        "token_subject",
+		"rate_limit_class": rateLimitClass(op.Method),
+		"audit_event":      "notification." + strings.ReplaceAll(op.OperationID, "-", "."),
 	}
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := apiTracer.Start(ctx, "notifications.api."+op.OperationID)
@@ -465,11 +459,4 @@ func rateLimitClass(method string) string {
 		return "read"
 	}
 	return "notification_mutation"
-}
-
-func riskLevel(method string) string {
-	if method == http.MethodGet {
-		return "low"
-	}
-	return "medium"
 }

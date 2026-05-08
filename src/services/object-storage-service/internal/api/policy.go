@@ -29,17 +29,12 @@ const (
 var apiTracer = otel.Tracer("object-storage-service/internal/api")
 
 type operationPolicy struct {
-	Permission         permission
-	Resource           string
-	Action             string
-	RateLimitClass     string
-	AuditEvent         string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
+	Permission     permission
+	Resource       string
+	Action         string
+	RateLimitClass string
+	AuditEvent     string
+	BodyLimitBytes int64
 }
 
 type operationPrincipal struct {
@@ -49,30 +44,22 @@ type operationPrincipal struct {
 
 func readPolicy(resource, action, auditEvent string, permission permission) operationPolicy {
 	return operationPolicy{
-		Permission:       permission,
-		Resource:         resource,
-		Action:           action,
-		RateLimitClass:   "read",
-		AuditEvent:       auditEvent,
-		OperationDisplay: auditEvent,
-		OperationType:    "read",
-		EventCategory:    "object_storage",
-		RiskLevel:        "low",
+		Permission:     permission,
+		Resource:       resource,
+		Action:         action,
+		RateLimitClass: "read",
+		AuditEvent:     auditEvent,
 	}
 }
 
-func writePolicy(resource, action, auditEvent string, permission permission, riskLevel string) operationPolicy {
+func writePolicy(resource, action, auditEvent string, permission permission) operationPolicy {
 	return operationPolicy{
-		Permission:       permission,
-		Resource:         resource,
-		Action:           action,
-		RateLimitClass:   "object_storage_mutation",
-		AuditEvent:       auditEvent,
-		OperationDisplay: auditEvent,
-		OperationType:    "write",
-		EventCategory:    "object_storage",
-		RiskLevel:        riskLevel,
-		BodyLimitBytes:   bodyLimitSmallJSON,
+		Permission:     permission,
+		Resource:       resource,
+		Action:         action,
+		RateLimitClass: "object_storage_mutation",
+		AuditEvent:     auditEvent,
+		BodyLimitBytes: bodyLimitSmallJSON,
 	}
 }
 
@@ -80,7 +67,6 @@ func registerAdminRoute[I, O any](api huma.API, authorizer runtimeiam.OperationA
 	if op.OperationID == "" {
 		panic("missing operation ID for object-storage route")
 	}
-	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := startOperationSpan(ctx, op.OperationID, policy)
@@ -129,25 +115,6 @@ func finishOperationSpan(span trace.Span, principal operationPrincipal, outcome 
 	}
 }
 
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	if policy.OperationDisplay == "" {
-		policy.OperationDisplay = operationID
-	}
-	if policy.OperationType == "" {
-		policy.OperationType = "write"
-	}
-	if policy.EventCategory == "" {
-		policy.EventCategory = "object_storage"
-	}
-	if policy.RiskLevel == "" {
-		policy.RiskLevel = "medium"
-	}
-	if policy.DataClassification == "" {
-		policy.DataClassification = "customer_object_storage"
-	}
-	return policy
-}
-
 func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
 	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
 		panic("incomplete object-storage operation policy for " + op.OperationID)
@@ -162,17 +129,12 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.Resource,
-		"action":              policy.Action,
-		"org_scope":           "token_org_id",
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
+		"permission":       string(policy.Permission),
+		"resource":         policy.Resource,
+		"action":           policy.Action,
+		"org_scope":        "token_org_id",
+		"rate_limit_class": policy.RateLimitClass,
+		"audit_event":      policy.AuditEvent,
 	}
 	if policy.BodyLimitBytes > 0 {
 		op.Extensions["x-verself-iam"].(map[string]any)["request_body_max_bytes"] = policy.BodyLimitBytes

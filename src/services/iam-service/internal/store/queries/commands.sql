@@ -44,13 +44,13 @@ INSERT INTO iam_command_results (
 -- name: InsertDomainEventOutbox :exec
 INSERT INTO iam_domain_event_outbox (
     event_id, command_id, event_type, org_id, actor_id, operation_id, idempotency_key_hash,
-    aggregate_kind, aggregate_id, aggregate_version, target_kind, target_id,
+    aggregate_kind, aggregate_id, aggregate_version, target_type, target_id,
     result, reason, conflict_policy, expected_version, actual_version,
     expected_hash, actual_hash, requested_hash, changed_fields, payload,
     traceparent, occurred_at, next_attempt_at
 ) VALUES (
     sqlc.arg(event_id), sqlc.arg(command_id), sqlc.arg(event_type), sqlc.arg(org_id), sqlc.arg(actor_id), sqlc.arg(operation_id), sqlc.arg(idempotency_key_hash),
-    sqlc.arg(aggregate_kind), sqlc.arg(aggregate_id), sqlc.arg(aggregate_version), sqlc.arg(target_kind), sqlc.arg(target_id),
+    sqlc.arg(aggregate_kind), sqlc.arg(aggregate_id), sqlc.arg(aggregate_version), sqlc.arg(target_type), sqlc.arg(target_id),
     sqlc.arg(result), sqlc.arg(reason), sqlc.arg(conflict_policy), sqlc.arg(expected_version), sqlc.arg(actual_version),
     sqlc.arg(expected_hash), sqlc.arg(actual_hash), sqlc.arg(requested_hash),
     COALESCE(sqlc.arg(changed_fields)::text[], ARRAY[]::text[]),

@@ -167,7 +167,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodPost,
 		Path:        "/api/v1/buckets",
 		Summary:     "Create object storage bucket",
-	}, writePolicy("bucket", "create", "object_storage.bucket.create", permissionBucketWrite, "high"), func(ctx context.Context, principal operationPrincipal, input *createBucketInput) (*bucketOutput, error) {
+	}, writePolicy("bucket", "create", "object_storage.bucket.create", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *createBucketInput) (*bucketOutput, error) {
 		quotaBytes, err := quotaFromWire(input.Body.QuotaBytes)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-quota-bytes", err.Error())
@@ -212,7 +212,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodPut,
 		Path:        "/api/v1/buckets/{bucket_id}",
 		Summary:     "Update object storage bucket",
-	}, writePolicy("bucket", "update", "object_storage.bucket.update", permissionBucketWrite, "high"), func(ctx context.Context, principal operationPrincipal, input *updateBucketInput) (*bucketOutput, error) {
+	}, writePolicy("bucket", "update", "object_storage.bucket.update", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *updateBucketInput) (*bucketOutput, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
@@ -240,7 +240,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodPost,
 		Path:        "/api/v1/buckets/{bucket_id}/aliases",
 		Summary:     "Create object storage bucket alias",
-	}, writePolicy("bucket_alias", "create", "object_storage.bucket_alias.create", permissionBucketWrite, "medium"), func(ctx context.Context, principal operationPrincipal, input *createAliasInput) (*aliasOutput, error) {
+	}, writePolicy("bucket_alias", "create", "object_storage.bucket_alias.create", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *createAliasInput) (*aliasOutput, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
@@ -290,7 +290,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/buckets/{bucket_id}/aliases/{alias}",
 		Summary:     "Delete object storage bucket alias",
-	}, writePolicy("bucket_alias", "delete", "object_storage.bucket_alias.delete", permissionBucketWrite, "medium"), func(ctx context.Context, principal operationPrincipal, input *aliasPath) (*struct{}, error) {
+	}, writePolicy("bucket_alias", "delete", "object_storage.bucket_alias.delete", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *aliasPath) (*struct{}, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
@@ -333,7 +333,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodPost,
 		Path:        "/api/v1/buckets/{bucket_id}/access-keys",
 		Summary:     "Create object storage access key",
-	}, writePolicy("object_storage_access_key", "create", "object_storage.access_key.create", permissionAccessKeyWrite, "critical"), func(ctx context.Context, principal operationPrincipal, input *createStaticCredentialInput) (*createStaticCredentialOutput, error) {
+	}, writePolicy("object_storage_access_key", "create", "object_storage.access_key.create", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *createStaticCredentialInput) (*createStaticCredentialOutput, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
@@ -371,7 +371,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodPost,
 		Path:        "/api/v1/buckets/{bucket_id}/mtls-principals",
 		Summary:     "Create object storage mTLS principal",
-	}, writePolicy("object_storage_mtls_principal", "create", "object_storage.mtls_principal.create", permissionAccessKeyWrite, "high"), func(ctx context.Context, principal operationPrincipal, input *createMTLSCredentialInput) (*bucketOutput, error) {
+	}, writePolicy("object_storage_mtls_principal", "create", "object_storage.mtls_principal.create", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *createMTLSCredentialInput) (*bucketOutput, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
@@ -399,7 +399,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}",
 		Summary:     "Delete object storage mTLS principal",
-	}, writePolicy("object_storage_mtls_principal", "delete", "object_storage.mtls_principal.delete", permissionAccessKeyWrite, "high"), func(ctx context.Context, principal operationPrincipal, input *mtlsCredentialPath) (*struct{}, error) {
+	}, writePolicy("object_storage_mtls_principal", "delete", "object_storage.mtls_principal.delete", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *mtlsCredentialPath) (*struct{}, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
@@ -429,7 +429,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodPost,
 		Path:        "/api/v1/access-keys/{access_key_id}/roll",
 		Summary:     "Roll object storage access key",
-	}, writePolicy("object_storage_access_key", "roll", "object_storage.access_key.roll", permissionAccessKeyWrite, "critical"), func(ctx context.Context, principal operationPrincipal, input *accessKeyPath) (*createStaticCredentialOutput, error) {
+	}, writePolicy("object_storage_access_key", "roll", "object_storage.access_key.roll", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *accessKeyPath) (*createStaticCredentialOutput, error) {
 		if err := requireAccessKeyInOrg(ctx, svc, input.AccessKeyID, principal.OrgID); err != nil {
 			return nil, err
 		}
@@ -450,7 +450,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/access-keys/{access_key_id}",
 		Summary:     "Delete object storage access key",
-	}, writePolicy("object_storage_access_key", "delete", "object_storage.access_key.delete", permissionAccessKeyWrite, "critical"), func(ctx context.Context, principal operationPrincipal, input *accessKeyPath) (*struct{}, error) {
+	}, writePolicy("object_storage_access_key", "delete", "object_storage.access_key.delete", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *accessKeyPath) (*struct{}, error) {
 		if err := requireAccessKeyInOrg(ctx, svc, input.AccessKeyID, principal.OrgID); err != nil {
 			return nil, err
 		}
@@ -465,7 +465,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/buckets/{bucket_id}",
 		Summary:     "Delete object storage bucket",
-	}, writePolicy("bucket", "delete", "object_storage.bucket.delete", permissionBucketWrite, "high"), func(ctx context.Context, principal operationPrincipal, input *bucketPath) (*struct{}, error) {
+	}, writePolicy("bucket", "delete", "object_storage.bucket.delete", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *bucketPath) (*struct{}, error) {
 		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")

@@ -67,22 +67,17 @@ const (
 var apiTracer = otel.Tracer("secrets-service/internal/api")
 
 type operationPolicy struct {
-	Permission         permission
-	TargetKind         string
-	Action             string
-	OrgScope           string
-	RateLimitClass     string
-	Idempotency        string
-	AuditEvent         string
-	OperationDisplay   string
-	OperationType      string
-	EventCategory      string
-	RiskLevel          string
-	DataClassification string
-	BodyLimitBytes     int64
-	SecretOperation    string
-	OpenBaoRole        string
-	BillingSKU         string
+	Permission      permission
+	Resource        string
+	Action          string
+	OrgScope        string
+	RateLimitClass  string
+	Idempotency     string
+	AuditEvent      string
+	BodyLimitBytes  int64
+	SecretOperation string
+	OpenBaoRole     string
+	BillingSKU      string
 }
 
 type securedOperation struct {
@@ -91,7 +86,7 @@ type securedOperation struct {
 }
 
 func secured(op huma.Operation, policy operationPolicy) securedOperation {
-	return securedOperation{Operation: op, Policy: normalizeOperationPolicy(op.OperationID, policy)}
+	return securedOperation{Operation: op, Policy: policy}
 }
 
 func registerSecured[I, O any](api huma.API, svc *secrets.Service, authorizer runtimeiam.OperationAuthorizer, securedOp securedOperation, handler func(context.Context, secrets.Principal, *I) (*O, error)) {
@@ -136,8 +131,7 @@ func registerSecured[I, O any](api huma.API, svc *secrets.Service, authorizer ru
 }
 
 func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.TargetKind == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" ||
-		policy.OperationDisplay == "" || policy.OperationType == "" || policy.EventCategory == "" || policy.RiskLevel == "" {
+	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
 		panic("incomplete IAM policy for operation: " + op.OperationID)
 	}
 	if policy.OpenBaoRole == "" {
@@ -161,21 +155,15 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":          string(policy.Permission),
-		"resource":            policy.TargetKind,
-		"action":              policy.Action,
-		"org_scope":           policy.OrgScope,
-		"rate_limit_class":    policy.RateLimitClass,
-		"audit_event":         policy.AuditEvent,
-		"source_product_area": "Secrets",
-		"operation_display":   policy.OperationDisplay,
-		"operation_type":      policy.OperationType,
-		"event_category":      policy.EventCategory,
-		"risk_level":          policy.RiskLevel,
-		"data_classification": policy.DataClassification,
-		"openbao_role":        policy.OpenBaoRole,
-		"billing_product_id":  billingProductSecrets,
-		"billing_sku_id":      policy.BillingSKU,
+		"permission":         string(policy.Permission),
+		"resource":           policy.Resource,
+		"action":             policy.Action,
+		"org_scope":          policy.OrgScope,
+		"rate_limit_class":   policy.RateLimitClass,
+		"audit_event":        policy.AuditEvent,
+		"openbao_role":       policy.OpenBaoRole,
+		"billing_product_id": billingProductSecrets,
+		"billing_sku_id":     policy.BillingSKU,
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
@@ -387,7 +375,7 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 		"permission":       string(policy.Permission),
 		"credential_id":    claimString(identity.Raw, "verself:credential_id"),
 		"actor_subject":    identity.Subject,
-		"target_kind":      policy.TargetKind,
+		"target_type":      policy.Resource,
 		"target_id":        targetID,
 		"target_scope":     targetScope,
 		"target_path_hash": targetPathHash,
@@ -577,58 +565,32 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		}
 	}
 	record := governanceAuditRecord{
-		OrgID:                 identity.OrgID,
-		SourceProductArea:     "Secrets",
-		ServiceName:           "secrets-service",
-		OperationID:           operationID,
-		AuditEvent:            policy.AuditEvent,
-		OperationDisplay:      policy.OperationDisplay,
-		OperationType:         policy.OperationType,
-		EventCategory:         policy.EventCategory,
-		RiskLevel:             policy.RiskLevel,
-		DataClassification:    policy.DataClassification,
-		ActorType:             principalFromIdentity(identity, policy).Type,
-		ActorID:               identity.Subject,
-		ActorDisplay:          identity.Email,
-		ActorOwnerID:          claimString(identity.Raw, "verself:credential_owner_id"),
-		ActorOwnerDisplay:     claimString(identity.Raw, "verself:credential_owner_display"),
-		CredentialID:          claimString(identity.Raw, "verself:credential_id"),
-		CredentialName:        claimString(identity.Raw, "verself:credential_name"),
-		CredentialFingerprint: claimString(identity.Raw, "verself:credential_fingerprint"),
-		AuthMethod:            claimString(identity.Raw, "verself:credential_auth_method"),
-		Permission:            string(policy.Permission),
-		TargetKind:            policy.TargetKind,
-		TargetID:              targetID,
-		TargetDisplay:         targetID,
-		TargetScope:           targetScope,
-		TargetPathHash:        targetPathHash,
-		Action:                policy.Action,
-		OrgScope:              policy.OrgScope,
-		RateLimitClass:        policy.RateLimitClass,
-		Decision:              outcomeDecision(outcome),
-		Result:                outcome,
-		ClientIP:              info.ClientIP,
-		IPChain:               info.ClientIP,
-		IPChainTrustedHops:    1,
-		UserAgentRaw:          info.UserAgent,
-		IdempotencyKeyHash:    hashTextForAudit(info.IdempotencyKey),
-		TrustClass:            "standard",
-		SecretMount:           secretMount,
-		SecretPathHash:        targetPathHash,
-		SecretVersion:         secretVersion,
-		SecretOperation:       policy.SecretOperation,
-		KeyID:                 keyID,
-		OpenBaoRequestID:      openBaoRequestID,
-		OpenBaoAccessorHash:   openBaoAccessorHash,
-		ContentSHA256:         contentHashFromBoundary(input),
+		OrgID:        identity.OrgID,
+		EventSource:  "secrets-service",
+		EventName:    operationID,
+		AuditEvent:   policy.AuditEvent,
+		ActorType:    principalFromIdentity(identity, policy).Type,
+		ActorID:      identity.Subject,
+		CredentialID: claimString(identity.Raw, "verself:credential_id"),
+		Permission:   string(policy.Permission),
+		TargetType:   policy.Resource,
+		TargetID:     targetID,
+		Outcome:      outcome,
+		Detail: compactAuditDetail(map[string]any{
+			"target_scope":          targetScope,
+			"target_path_hash":      targetPathHash,
+			"idempotency_key_hash":  hashTextForAudit(info.IdempotencyKey),
+			"secret_mount":          secretMount,
+			"secret_version":        secretVersion,
+			"secret_operation":      policy.SecretOperation,
+			"key_id":                keyID,
+			"openbao_request_id":    openBaoRequestID,
+			"openbao_accessor_hash": openBaoAccessorHash,
+			"content_sha256":        contentHashFromBoundary(input),
+		}),
 	}
 	if err != nil {
 		record.ErrorCode = problemCode(err)
-		record.ErrorClass = "application"
-		record.ErrorMessage = err.Error()
-		if outcome == "denied" {
-			record.DenialReason = record.ErrorCode
-		}
 	}
 	sendGovernanceAudit(ctx, record)
 }
@@ -848,39 +810,6 @@ func compactStrings(values []string) []string {
 		previous = value
 	}
 	return out
-}
-
-func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
-	policy.OperationDisplay = firstNonEmpty(policy.OperationDisplay, strings.ReplaceAll(strings.TrimSpace(operationID), "-", " "))
-	policy.OperationType = firstNonEmpty(policy.OperationType, operationType(policy))
-	policy.EventCategory = firstNonEmpty(policy.EventCategory, "secrets")
-	policy.RiskLevel = firstNonEmpty(policy.RiskLevel, "high")
-	policy.DataClassification = firstNonEmpty(policy.DataClassification, "secret")
-	return policy
-}
-
-func operationType(policy operationPolicy) string {
-	switch policy.Action {
-	case "read", "list":
-		return "read"
-	case "delete", "destroy":
-		return "delete"
-	default:
-		return "write"
-	}
-}
-
-func outcomeDecision(outcome string) string {
-	switch outcome {
-	case "allowed":
-		return "allow"
-	case "denied":
-		return "deny"
-	case "error":
-		return "error"
-	default:
-		return ""
-	}
 }
 
 func problemCode(err error) string {

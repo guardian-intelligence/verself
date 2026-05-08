@@ -299,8 +299,6 @@ func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdent
 		"operation_id", "update-human-profile",
 		"operation_resource", "human_profile",
 		"operation_action", "write",
-		"operation_type", "write",
-		"risk_level", "medium",
 		"outcome", outcome,
 	}
 	if authIdentity != nil {
@@ -313,44 +311,20 @@ func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdent
 	if authIdentity == nil {
 		return
 	}
-	info := operationRequestInfoFromContext(ctx)
 	record := governanceAuditRecord{
-		OrgID:              authIdentity.OrgID,
-		SourceProductArea:  "IAM",
-		ServiceName:        "iam-service",
-		OperationID:        "update-human-profile",
-		AuditEvent:         "iam.human_profile.write",
-		OperationDisplay:   "update human profile",
-		OperationType:      "write",
-		EventCategory:      "identity",
-		RiskLevel:          "medium",
-		DataClassification: "restricted",
-		ActorType:          "user",
-		ActorID:            authIdentity.Subject,
-		ActorDisplay:       authIdentity.Email,
-		AuthMethod:         "bearer_forwarded_over_spiffe_mtls",
-		Permission:         "iam:human_profile:write",
-		TargetKind:         "human_profile",
-		TargetID:           strings.TrimSpace(subjectID),
-		TargetDisplay:      strings.TrimSpace(subjectID),
-		TargetScope:        "token_subject",
-		Action:             "write",
-		OrgScope:           "token_org_id",
-		RateLimitClass:     "internal_profile_mutation",
-		Decision:           outcomeDecision(outcome),
-		Result:             outcome,
-		ClientIP:           info.ClientIP,
-		IPChain:            info.ClientIP,
-		IPChainTrustedHops: 1,
-		UserAgentRaw:       info.UserAgent,
+		OrgID:       authIdentity.OrgID,
+		EventSource: "iam-service",
+		EventName:   "update-human-profile",
+		AuditEvent:  "iam.human_profile.write",
+		ActorType:   "user",
+		ActorID:     authIdentity.Subject,
+		Permission:  "iam:human_profile:write",
+		TargetType:  "human_profile",
+		TargetID:    strings.TrimSpace(subjectID),
+		Outcome:     outcome,
 	}
 	if err != nil {
 		record.ErrorCode = problemCode(err)
-		record.ErrorClass = "application"
-		record.ErrorMessage = problemCode(err)
-		if outcome == "denied" {
-			record.DenialReason = record.ErrorCode
-		}
 	}
 	sendGovernanceAudit(ctx, record)
 }

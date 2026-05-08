@@ -21,6 +21,11 @@ require (
 )
 
 require (
+	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
+)
+
+require (
 	github.com/ClickHouse/ch-go v0.68.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect

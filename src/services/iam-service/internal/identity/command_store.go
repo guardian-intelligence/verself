@@ -64,7 +64,7 @@ type domainLedgerProjection struct {
 	AggregateKind      string    `ch:"aggregate_kind"`
 	AggregateID        string    `ch:"aggregate_id"`
 	AggregateVersion   uint32    `ch:"aggregate_version"`
-	TargetKind         string    `ch:"target_kind"`
+	TargetType         string    `ch:"target_type"`
 	TargetID           string    `ch:"target_id"`
 	Result             string    `ch:"result"`
 	Reason             string    `ch:"reason"`
@@ -351,7 +351,7 @@ func writeMemberRolesCommandOutcomeTx(ctx context.Context, q *identitystore.Quer
 		AggregateKind:      orgACLAggregateKind,
 		AggregateID:        input.Command.OrgID,
 		AggregateVersion:   input.AggregateVersion,
-		TargetKind:         "organization_member",
+		TargetType:         "organization_member",
 		TargetID:           input.Command.UserID,
 		Result:             input.Result,
 		Reason:             input.Reason,
@@ -580,7 +580,7 @@ func (s SQLStore) ProjectPendingDomainLedger(ctx context.Context, limit int) (pr
 			AggregateKind:      outbox.AggregateKind,
 			AggregateID:        outbox.AggregateID,
 			AggregateVersion:   uint32FromNonNegativeInt32(maxInt32(outbox.AggregateVersion, 0), "aggregate version"),
-			TargetKind:         outbox.TargetKind,
+			TargetType:         outbox.TargetType,
 			TargetID:           outbox.TargetID,
 			Result:             outbox.Result,
 			Reason:             outbox.Reason,
@@ -667,7 +667,7 @@ func (s SQLStore) insertDomainLedgerClickHouse(ctx context.Context, row domainLe
 INSERT INTO verself.domain_update_ledger (
     recorded_at, occurred_at, schema_version, event_id, event_type, service_name,
     org_id, actor_id, operation_id, command_id, idempotency_key_hash, aggregate_kind,
-    aggregate_id, aggregate_version, target_kind, target_id, result, reason,
+    aggregate_id, aggregate_version, target_type, target_id, result, reason,
     conflict_policy, expected_version, actual_version, expected_hash, actual_hash,
     requested_hash, changed_fields, payload_json, trace_id, span_id, traceparent
 )`)
