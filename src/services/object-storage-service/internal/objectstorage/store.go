@@ -130,6 +130,22 @@ func (s *Store) ListBuckets(ctx context.Context) ([]Bucket, error) {
 	return out, nil
 }
 
+func (s *Store) ListBucketsByOrg(ctx context.Context, orgID string) ([]Bucket, error) {
+	q, err := s.readyQueries()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.ListBucketsByOrg(ctx, storegen.ListBucketsByOrgParams{OrgID: orgID})
+	if err != nil {
+		return nil, fmt.Errorf("list buckets by org: %w", err)
+	}
+	out := make([]Bucket, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, bucketFromRow(row))
+	}
+	return out, nil
+}
+
 func (s *Store) CreateAlias(ctx context.Context, alias BucketAlias) error {
 	q, err := s.readyQueries()
 	if err != nil {

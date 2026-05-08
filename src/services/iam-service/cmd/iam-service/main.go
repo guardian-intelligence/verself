@@ -233,6 +233,7 @@ func run() error {
 		workloadauth.ServiceGovernance,
 		workloadauth.ServiceMailbox,
 		workloadauth.ServiceNotifications,
+		workloadauth.ServiceObjectStorageAdmin,
 		workloadauth.ServiceProfile,
 		workloadauth.ServiceProjects,
 		workloadauth.ServiceSandboxRental,

@@ -51,9 +51,9 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"email":                                 "alice@example.com",
 		"urn:zitadel:iam:user:resourceowner:id": "home-org",
-		"roles":                                 []string{"legacy-admin"},
+		"roles":                                 []string{"unscoped-admin"},
 		"urn:zitadel:iam:org:project:roles": map[string]any{
-			"legacy-viewer": map[string]any{"org-456": "billing"},
+			"unscoped-viewer": map[string]any{"org-456": "billing"},
 		},
 		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
 			"admin":  map[string]any{"org-456": "billing"},

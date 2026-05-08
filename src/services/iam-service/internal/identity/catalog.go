@@ -72,6 +72,10 @@ const (
 	PermissionMailboxMailRead               = "mailbox:mail:read"
 	PermissionMailboxMailWrite              = "mailbox:mail:write"
 	PermissionMailboxSyncStatusRead         = "mailbox:sync_status:read"
+	PermissionObjectStorageBucketRead       = "object-storage:bucket:read"
+	PermissionObjectStorageBucketWrite      = "object-storage:bucket:write"
+	PermissionObjectStorageAccessKeyRead    = "object-storage:access-key:read"
+	PermissionObjectStorageAccessKeyWrite   = "object-storage:access-key:write"
 )
 
 var openBaoRolesByPermission = map[string]string{
@@ -233,6 +237,25 @@ var defaultOperations = Operations{
 				{OperationID: "create-data-export", Permission: PermissionGovernanceExportCreate, Resource: "data_export", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "get-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "download-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "download", OrgScope: "token_org_id"},
+			},
+		},
+		{
+			Service: "object-storage-service",
+			Operations: []Operation{
+				{OperationID: "list-object-storage-buckets", Permission: PermissionObjectStorageBucketRead, Resource: "bucket", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "create-object-storage-bucket", Permission: PermissionObjectStorageBucketWrite, Resource: "bucket", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "get-object-storage-bucket", Permission: PermissionObjectStorageBucketRead, Resource: "bucket", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "update-object-storage-bucket", Permission: PermissionObjectStorageBucketWrite, Resource: "bucket", Action: "update", OrgScope: "token_org_id"},
+				{OperationID: "delete-object-storage-bucket", Permission: PermissionObjectStorageBucketWrite, Resource: "bucket", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "create-object-storage-bucket-alias", Permission: PermissionObjectStorageBucketWrite, Resource: "bucket_alias", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-object-storage-bucket-aliases", Permission: PermissionObjectStorageBucketRead, Resource: "bucket_alias", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "delete-object-storage-bucket-alias", Permission: PermissionObjectStorageBucketWrite, Resource: "bucket_alias", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "list-object-storage-credentials", Permission: PermissionObjectStorageAccessKeyRead, Resource: "object_storage_credential", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "create-object-storage-access-key", Permission: PermissionObjectStorageAccessKeyWrite, Resource: "object_storage_access_key", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "roll-object-storage-access-key", Permission: PermissionObjectStorageAccessKeyWrite, Resource: "object_storage_access_key", Action: "roll", OrgScope: "token_org_id"},
+				{OperationID: "delete-object-storage-access-key", Permission: PermissionObjectStorageAccessKeyWrite, Resource: "object_storage_access_key", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "create-object-storage-mtls-principal", Permission: PermissionObjectStorageAccessKeyWrite, Resource: "object_storage_mtls_principal", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "delete-object-storage-mtls-principal", Permission: PermissionObjectStorageAccessKeyWrite, Resource: "object_storage_mtls_principal", Action: "delete", OrgScope: "token_org_id"},
 			},
 		},
 		{

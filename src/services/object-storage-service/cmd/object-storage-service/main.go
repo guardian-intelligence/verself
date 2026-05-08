@@ -20,10 +20,12 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	iamclient "github.com/verself/iam-service/client"
 	objectstorageapi "github.com/verself/object-storage-service/internal/api"
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	"github.com/verself/object-storage-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
@@ -143,6 +145,9 @@ func runAdmin(
 	l := envconfig.New()
 	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
 	governanceAuditURL := l.RequireURL("OBJECT_STORAGE_GOVERNANCE_AUDIT_URL")
+	iamInternalURL := l.URL("OBJECT_STORAGE_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
+	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := l.RequireCredential("auth-audience")
 	garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
 	garageAdminToken := l.RequireCredential("garage-admin-token")
 	proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
@@ -153,6 +158,14 @@ func runAdmin(
 	adminClientIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceObjectStorageAdmin)
 	if err != nil {
 		return err
+	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("object-storage iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("object-storage iam client: %w", err)
 	}
 	garageAdminHTTPClient := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -193,11 +206,15 @@ func runAdmin(
 		}
 		_, _ = w.Write([]byte("ready\n"))
 	})
-	objectstorageapi.NewAPI(adminMux, objectstorageapi.Config{
+	privateMux := http.NewServeMux()
+	objectstorageapi.NewAPI(privateMux, objectstorageapi.Config{
 		Version:    serviceVersion,
 		ListenAddr: adminListenAddr,
 		Service:    svc,
+		Authorizer: iamclient.NewAuthorizer(iamClient),
 	})
+	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(privateMux)
+	adminMux.Handle("/", objectStorageAdminHandler(privateMux, protected))
 	adminAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(adminClientIDs, adminMux)
 	if err != nil {
 		return fmt.Errorf("object-storage admin allowlist: %w", err)
@@ -205,6 +222,23 @@ func runAdmin(
 	adminServer := httpserver.New(adminListenAddr, otelhttp.NewHandler(adminAllowlist, "object-storage-admin"))
 	adminServer.TLSConfig = adminTLSConfig
 	return httpserver.Run(ctx, logger, adminServer)
+}
+
+func objectStorageAdminHandler(public http.Handler, protected http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isUnauthenticatedObjectStorageAdminPath(r.URL.Path) {
+			public.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})
+}
+
+func isUnauthenticatedObjectStorageAdminPath(path string) bool {
+	if path == "/healthz" || path == "/readyz" {
+		return true
+	}
+	return strings.HasPrefix(path, "/openapi")
 }
 
 func runS3(

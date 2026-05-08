@@ -8,12 +8,14 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/object-storage-service/internal/objectstorage"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type Config struct {
 	Version    string
 	ListenAddr string
 	Service    *objectstorage.Service
+	Authorizer runtimeiam.OperationAuthorizer
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -26,7 +28,8 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
-	RegisterAdminRoutes(api, cfg.Service)
+	applyPublicSecurityScheme(api)
+	RegisterAdminRoutes(api, cfg.Service, cfg.Authorizer)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

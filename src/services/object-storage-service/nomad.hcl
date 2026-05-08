@@ -173,6 +173,8 @@ EOT
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "object-storage-admin"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
+        VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
+        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/object-storage-service/auth-audience"
         VERSELF_CRED_CREDENTIAL_KEK = "/etc/credstore/object-storage-service/credential-kek"
         VERSELF_CRED_GARAGE_ADMIN_TOKEN = "/etc/credstore/object-storage-service/garage-admin-token"
         VERSELF_CRED_GARAGE_PROXY_ACCESS_KEY_ID = "/etc/credstore/object-storage-service/garage-proxy-access-key-id"
@@ -212,6 +214,7 @@ EOT
         data = <<-EOT
 OBJECT_STORAGE_GARAGE_ADMIN_URLS={{ range $i, $service := nomadService "garage-admin" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
 OBJECT_STORAGE_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+OBJECT_STORAGE_IAM_INTERNAL_URL=https://{{- with nomadService "iam-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
       }

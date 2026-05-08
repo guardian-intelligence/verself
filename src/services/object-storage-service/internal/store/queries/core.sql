@@ -36,6 +36,13 @@ SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_obje
 FROM object_storage_buckets
 ORDER BY created_at DESC, bucket_id DESC;
 
+-- name: ListBucketsByOrg :many
+SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+       lifecycle_json, created_at, created_by, updated_at, updated_by
+FROM object_storage_buckets
+WHERE org_id = $1
+ORDER BY created_at DESC, bucket_id DESC;
+
 -- name: DeleteBucket :one
 DELETE FROM object_storage_buckets
 WHERE bucket_id = $1

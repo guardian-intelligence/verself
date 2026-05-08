@@ -181,6 +181,10 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionMailboxMailRead:               "read",
 	identity.PermissionMailboxMailWrite:              "read",
 	identity.PermissionMailboxSyncStatusRead:         "read",
+	identity.PermissionObjectStorageBucketRead:       "read",
+	identity.PermissionObjectStorageBucketWrite:      "manage_iam",
+	identity.PermissionObjectStorageAccessKeyRead:    "manage_iam",
+	identity.PermissionObjectStorageAccessKeyWrite:   "manage_iam",
 }
 
 func New(backend Backend) *Service {
@@ -206,12 +210,12 @@ func (s *Service) ReconcileOrganizationRoles(ctx context.Context, orgID string, 
 	if err := validateOrgID(orgID); err != nil {
 		return "", err
 	}
-	current, _, err := s.currentLegacyManagedRelationships(ctx, orgID)
+	current, _, err := s.currentManagedRoleRelationships(ctx, orgID)
 	if err != nil {
 		return "", err
 	}
-	desired := desiredLegacyRoleMemberships(orgID, members)
-	desired = append(desired, desiredLegacyOrgGrants(orgID, capabilities.EnabledKeys)...)
+	desired := desiredRoleMemberships(orgID, members)
+	desired = append(desired, desiredOrgRoleGrants(orgID, capabilities.EnabledKeys)...)
 	return s.replace(ctx, current, desired, metadata(operation, orgID))
 }
 
@@ -366,7 +370,7 @@ func (s *Service) replace(ctx context.Context, current []spicedb.Relationship, d
 	return token, nil
 }
 
-func (s *Service) currentLegacyManagedRelationships(ctx context.Context, orgID string) ([]spicedb.Relationship, string, error) {
+func (s *Service) currentManagedRoleRelationships(ctx context.Context, orgID string) ([]spicedb.Relationship, string, error) {
 	current, zedToken, err := s.currentRoleMemberships(ctx, orgID, roleKeys(zitadelRoleDefinitions), nil)
 	if err != nil {
 		return nil, "", err
@@ -515,7 +519,7 @@ func (s *Service) currentOrgRoleGrants(ctx context.Context, orgID string, defini
 	return out, zedToken, nil
 }
 
-func desiredLegacyRoleMemberships(orgID string, members []identity.Member) []spicedb.Relationship {
+func desiredRoleMemberships(orgID string, members []identity.Member) []spicedb.Relationship {
 	out := []spicedb.Relationship{}
 	for _, member := range members {
 		subject := subjectForMember(member)
@@ -542,7 +546,7 @@ func desiredMemberRoleRelationships(orgID string, subject Subject, roles []strin
 	return out
 }
 
-func desiredLegacyOrgGrants(orgID string, enabledCapabilities []string) []spicedb.Relationship {
+func desiredOrgRoleGrants(orgID string, enabledCapabilities []string) []spicedb.Relationship {
 	out := desiredZitadelOrgRoleGrants(orgID)
 	out = append(out, desiredCapabilityOrgGrants(orgID, enabledCapabilities)...)
 	return out

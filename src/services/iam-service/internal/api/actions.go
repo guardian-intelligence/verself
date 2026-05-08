@@ -18,10 +18,9 @@ import (
 )
 
 const (
-	zitadelActionSigningHeader       = "X-ZITADEL-Signature"
-	zitadelActionLegacySigningHeader = "ZITADEL-Signature"
-	zitadelActionMaxBodyBytes        = 64 << 10
-	zitadelActionTolerance           = 5 * time.Minute
+	zitadelActionSigningHeader = "X-ZITADEL-Signature"
+	zitadelActionMaxBodyBytes  = 64 << 10
+	zitadelActionTolerance     = 5 * time.Minute
 )
 
 type zitadelActionClaim struct {
@@ -54,7 +53,7 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		signatureHeader := firstNonEmptyHeader(r.Header, zitadelActionSigningHeader, zitadelActionLegacySigningHeader)
+		signatureHeader := firstNonEmptyHeader(r.Header, zitadelActionSigningHeader)
 		if err := validateZitadelActionSignature(payload, signatureHeader, signingKey, time.Now()); err != nil {
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return

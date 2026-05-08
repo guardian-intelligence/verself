@@ -14,6 +14,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
+	github.com/verself/iam-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -68,6 +69,7 @@ require (
 
 replace (
 	github.com/verself/governance-service => ../governance-service
+	github.com/verself/iam-service => ../iam-service
 	github.com/verself/secrets-service => ../secrets-service
 )
 

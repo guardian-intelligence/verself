@@ -480,6 +480,50 @@ func (q *Queries) ListBuckets(ctx context.Context) ([]ObjectStorageBucket, error
 	return items, nil
 }
 
+const listBucketsByOrg = `-- name: ListBucketsByOrg :many
+SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+       lifecycle_json, created_at, created_by, updated_at, updated_by
+FROM object_storage_buckets
+WHERE org_id = $1
+ORDER BY created_at DESC, bucket_id DESC
+`
+
+type ListBucketsByOrgParams struct {
+	OrgID string
+}
+
+func (q *Queries) ListBucketsByOrg(ctx context.Context, arg ListBucketsByOrgParams) ([]ObjectStorageBucket, error) {
+	rows, err := q.db.Query(ctx, listBucketsByOrg, arg.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ObjectStorageBucket{}
+	for rows.Next() {
+		var i ObjectStorageBucket
+		if err := rows.Scan(
+			&i.BucketID,
+			&i.OrgID,
+			&i.BucketName,
+			&i.GarageBucketID,
+			&i.QuotaBytes,
+			&i.QuotaObjects,
+			&i.LifecycleJson,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resolveBucketAlias = `-- name: ResolveBucketAlias :one
 SELECT b.bucket_id, b.org_id, b.bucket_name, b.garage_bucket_id, b.quota_bytes, b.quota_objects,
        b.lifecycle_json, b.created_at, b.created_by, b.updated_at, b.updated_by,

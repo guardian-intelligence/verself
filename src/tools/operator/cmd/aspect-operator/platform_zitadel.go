@@ -116,6 +116,7 @@ func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 		{ComponentName: "iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/iam-service/auth-audience", Group: "iam_service"},
 		{ComponentName: "governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
 		{ComponentName: "notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},
+		{ComponentName: "object-storage-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/object-storage-service/auth-audience", Group: "object_storage_service"},
 		{ComponentName: "profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/profile-service/auth-audience", Group: "profile_service"},
 		{ComponentName: "projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/projects-service/auth-audience", Group: "projects_service"},
 		{ComponentName: "source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/source-code-hosting-service/auth-audience", Group: "source_code_hosting_service"},
