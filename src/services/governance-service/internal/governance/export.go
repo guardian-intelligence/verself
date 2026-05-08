@@ -636,10 +636,12 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 }
 
 func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportArtifactFile, error) {
-	rows, err := s.CH.Query(ctx, auditEventSelectSQL()+`
-		FROM verself.audit_events
-		WHERE org_id = $1
-		ORDER BY recorded_at, sequence
+	rows, err := s.CH.Query(ctx, auditEventExportSelectSQL()+`
+		FROM verself.audit_events AS e
+		ANY LEFT JOIN verself.audit_event_details AS d
+			ON e.org_id = d.org_id AND e.event_date = d.event_date AND e.event_id = d.event_id
+		WHERE e.org_id = $1
+		ORDER BY e.recorded_at, e.sequence
 	`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: query audit export: %v", ErrStore, err)
@@ -649,10 +651,11 @@ func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportA
 	var count int64
 	for rows.Next() {
 		var event AuditEvent
-		if err := rows.ScanStruct(&event); err != nil {
+		detailJSON, err := scanAuditEventExportRow(rows, &event)
+		if err != nil {
 			return nil, fmt.Errorf("%w: scan audit export row: %v", ErrStore, err)
 		}
-		raw, err := json.Marshal(auditEventExportRow(event))
+		raw, err := json.Marshal(auditEventExportRow(event, detailJSON))
 		if err != nil {
 			return nil, fmt.Errorf("%w: marshal audit export row: %v", ErrStore, err)
 		}
@@ -664,6 +667,10 @@ func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportA
 		return nil, fmt.Errorf("%w: audit export rows: %v", ErrStore, err)
 	}
 	return []exportArtifactFile{newArtifactFile("audit/audit_events.jsonl", "application/x-ndjson", body.Bytes(), count)}, nil
+}
+
+type auditRowScanner interface {
+	Scan(dest ...any) error
 }
 
 func (s *Service) billingInvoicesCSV(ctx context.Context, orgID string) (exportArtifactFile, error) {
@@ -732,117 +739,81 @@ func exportPGTime(value pgtype.Timestamptz) string {
 	return value.Time.UTC().Format(time.RFC3339)
 }
 
-func auditEventExportRow(event AuditEvent) map[string]any {
-	payload := json.RawMessage(event.PayloadJSON)
+func auditEventExportSelectSQL() string {
+	return `
+		SELECT
+			e.recorded_at, e.event_date, e.schema_version, e.event_id, e.org_id, e.sequence,
+			e.event_source, e.event_name, e.audit_event,
+			e.actor_type, e.actor_id, e.credential_id,
+			e.target_type, e.target_id, e.permission,
+			e.outcome, e.error_code, e.trace_id, e.detail_sha256,
+			e.prev_hmac, e.row_hmac, e.hmac_key_id,
+			ifNull(d.detail_json, '') AS detail_json
+	`
+}
+
+func scanAuditEventExportRow(rows auditRowScanner, event *AuditEvent) (string, error) {
+	var detailJSON string
+	err := rows.Scan(
+		&event.RecordedAt,
+		&event.EventDate,
+		&event.SchemaVersion,
+		&event.EventID,
+		&event.OrgID,
+		&event.Sequence,
+		&event.EventSource,
+		&event.EventName,
+		&event.AuditEvent,
+		&event.ActorType,
+		&event.ActorID,
+		&event.CredentialID,
+		&event.TargetType,
+		&event.TargetID,
+		&event.Permission,
+		&event.Outcome,
+		&event.ErrorCode,
+		&event.TraceID,
+		&event.DetailSHA256,
+		&event.PrevHMAC,
+		&event.RowHMAC,
+		&event.HMACKeyID,
+		&detailJSON,
+	)
+	return detailJSON, err
+}
+
+func auditEventExportRow(event AuditEvent, detailJSON string) map[string]any {
 	row := map[string]any{
-		"schema_version":         event.SchemaVersion,
-		"event_id":               event.EventID.String(),
-		"recorded_at":            event.RecordedAt.UTC().Format(time.RFC3339Nano),
-		"event_date":             event.EventDate.UTC().Format("2006-01-02"),
-		"ingested_at":            event.IngestedAt.UTC().Format(time.RFC3339Nano),
-		"org_id":                 event.OrgID,
-		"environment":            event.Environment,
-		"source_product_area":    event.SourceProductArea,
-		"service_name":           event.ServiceName,
-		"service_version":        event.ServiceVersion,
-		"writer_instance_id":     event.WriterInstanceID,
-		"request_id":             event.RequestID,
-		"trace_id":               event.TraceID,
-		"span_id":                event.SpanID,
-		"parent_span_id":         event.ParentSpanID,
-		"route_template":         event.RouteTemplate,
-		"http_method":            event.HTTPMethod,
-		"http_status":            event.HTTPStatus,
-		"duration_ms":            event.DurationMS,
-		"idempotency_key_hash":   event.IdempotencyKeyHash,
-		"actor_type":             event.ActorType,
-		"actor_id":               event.ActorID,
-		"actor_display":          event.ActorDisplay,
-		"actor_org_id":           event.ActorOrgID,
-		"actor_owner_id":         event.ActorOwnerID,
-		"actor_owner_display":    event.ActorOwnerDisplay,
-		"credential_id":          event.CredentialID,
-		"credential_name":        event.CredentialName,
-		"credential_fingerprint": event.CredentialFingerprint,
-		"auth_method":            event.AuthMethod,
-		"auth_assurance_level":   event.AuthAssuranceLevel,
-		"mfa_present":            event.MFAPresent == 1,
-		"session_id_hash":        event.SessionIDHash,
-		"delegation_chain":       event.DelegationChain,
-		"actor_spiffe_id":        event.ActorSPIFFEID,
-		"operation_id":           event.OperationID,
-		"audit_event":            event.AuditEvent,
-		"operation_display":      event.OperationDisplay,
-		"operation_type":         event.OperationType,
-		"event_category":         event.EventCategory,
-		"risk_level":             event.RiskLevel,
-		"data_classification":    event.DataClassification,
-		"rate_limit_class":       event.RateLimitClass,
-		"target_kind":            event.TargetKind,
-		"target_id":              event.TargetID,
-		"target_display":         event.TargetDisplay,
-		"target_scope":           event.TargetScope,
-		"target_path_hash":       event.TargetPathHash,
-		"resource_owner_org_id":  event.ResourceOwnerOrgID,
-		"resource_region":        event.ResourceRegion,
-		"permission":             event.Permission,
-		"action":                 event.Action,
-		"org_scope":              event.OrgScope,
-		"policy_id":              event.PolicyID,
-		"policy_version":         event.PolicyVersion,
-		"policy_hash":            event.PolicyHash,
-		"matched_rule":           event.MatchedRule,
-		"decision":               event.Decision,
-		"result":                 event.Result,
-		"denial_reason":          event.DenialReason,
-		"trust_class":            event.TrustClass,
-		"client_ip":              event.ClientIP,
-		"client_ip_version":      event.ClientIPVersion,
-		"client_ip_hash":         event.ClientIPHash,
-		"ip_chain":               event.IPChain,
-		"ip_chain_trusted_hops":  event.IPChainTrustedHops,
-		"user_agent_raw":         event.UserAgentRaw,
-		"user_agent_hash":        event.UserAgentHash,
-		"referer_origin":         event.RefererOrigin,
-		"origin":                 event.Origin,
-		"host":                   event.Host,
-		"geo_country":            event.GeoCountry,
-		"geo_region":             event.GeoRegion,
-		"geo_city":               event.GeoCity,
-		"asn":                    event.ASN,
-		"asn_org":                event.ASNOrg,
-		"network_type":           event.NetworkType,
-		"geo_source":             event.GeoSource,
-		"geo_source_version":     event.GeoSourceVersion,
-		"changed_fields":         event.ChangedFields,
-		"before_hash":            event.BeforeHash,
-		"after_hash":             event.AfterHash,
-		"content_sha256":         event.ContentSHA256,
-		"artifact_sha256":        event.ArtifactSHA256,
-		"artifact_bytes":         strconv.FormatUint(event.ArtifactBytes, 10),
-		"error_code":             event.ErrorCode,
-		"error_class":            event.ErrorClass,
-		"error_message":          event.ErrorMessage,
-		"secret_mount":           event.SecretMount,
-		"secret_path_hash":       event.SecretPathHash,
-		"secret_version":         strconv.FormatUint(event.SecretVersion, 10),
-		"secret_operation":       event.SecretOperation,
-		"lease_id_hash":          event.LeaseIDHash,
-		"lease_ttl_seconds":      strconv.FormatUint(event.LeaseTTLSeconds, 10),
-		"key_id":                 event.KeyID,
-		"openbao_request_id":     event.OpenBaoRequestID,
-		"openbao_accessor_hash":  event.OpenBaoAccessorHash,
-		"sequence":               strconv.FormatUint(event.Sequence, 10),
-		"prev_hmac":              event.PrevHMAC,
-		"row_hmac":               event.RowHMAC,
-		"hmac_key_id":            event.HMACKeyID,
-		"retention_class":        event.RetentionClass,
-		"legal_hold":             event.LegalHold == 1,
+		"schema_version": event.SchemaVersion,
+		"event_id":       event.EventID.String(),
+		"recorded_at":    event.RecordedAt.UTC().Format(time.RFC3339Nano),
+		"event_date":     event.EventDate.UTC().Format("2006-01-02"),
+		"org_id":         event.OrgID,
+		"sequence":       strconv.FormatUint(event.Sequence, 10),
+		"event_source":   event.EventSource,
+		"event_name":     event.EventName,
+		"audit_event":    event.AuditEvent,
+		"actor_type":     event.ActorType,
+		"actor_id":       event.ActorID,
+		"credential_id":  event.CredentialID,
+		"target_type":    event.TargetType,
+		"target_id":      event.TargetID,
+		"permission":     event.Permission,
+		"outcome":        event.Outcome,
+		"error_code":     event.ErrorCode,
+		"trace_id":       event.TraceID,
+		"detail_sha256":  event.DetailSHA256,
+		"prev_hmac":      event.PrevHMAC,
+		"row_hmac":       event.RowHMAC,
+		"hmac_key_id":    event.HMACKeyID,
 	}
-	if json.Valid(payload) {
-		row["payload"] = payload
-	} else {
-		row["payload_json"] = event.PayloadJSON
+	if hasAuditDetail(detailJSON) {
+		detail := json.RawMessage(detailJSON)
+		if json.Valid(detail) {
+			row["detail"] = detail
+		} else {
+			row["detail_json"] = detailJSON
+		}
 	}
 	return row
 }

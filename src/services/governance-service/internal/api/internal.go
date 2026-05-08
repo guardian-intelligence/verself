@@ -44,15 +44,20 @@ func appendAuditEvent(svc *governance.Service) func(context.Context, *appendAudi
 			return nil, unauthorized(ctx, "missing-workload-identity", "missing SPIFFE peer identity")
 		}
 		record := input.Body
-		if strings.TrimSpace(record.ActorSPIFFEID) == "" {
-			record.ActorSPIFFEID = peerID.String()
+		if strings.TrimSpace(record.ActorType) == "" {
+			record.ActorType = "workload"
+		}
+		if strings.TrimSpace(record.ActorID) == "" {
+			record.ActorID = peerID.String()
 		}
 		if strings.TrimSpace(record.CredentialID) == "" {
 			record.CredentialID = peerID.String()
 		}
-		if strings.TrimSpace(record.AuthMethod) == "" {
-			record.AuthMethod = "spiffe"
+		if record.Detail == nil {
+			record.Detail = map[string]any{}
 		}
+		record.Detail["actor_spiffe_id"] = peerID.String()
+		record.Detail["auth_method"] = "spiffe"
 		event, err := svc.RecordAuditEvent(ctx, record)
 		if err != nil {
 			return nil, mapError(ctx, err)

@@ -26,18 +26,12 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Path:        "/api/v1/governance/audit/events",
 		Summary:     "List organization audit events",
 	}, operationPolicy{
-		Permission:         permissionAuditRead,
-		TargetKind:         "audit_event",
-		Action:             "list",
-		OrgScope:           "token_org_id",
-		RateLimitClass:     "read",
-		AuditEvent:         "governance.audit_event.list",
-		SourceProductArea:  "Governance",
-		OperationDisplay:   "List audit events",
-		OperationType:      "read",
-		EventCategory:      "governance",
-		RiskLevel:          "medium",
-		DataClassification: "restricted",
+		Permission:     permissionAuditRead,
+		Resource:       "audit_event",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "governance.audit_event.list",
 	}), listAuditEvents(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -46,18 +40,12 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Path:        "/api/v1/governance/exports",
 		Summary:     "List organization data exports",
 	}, operationPolicy{
-		Permission:         permissionExportRead,
-		TargetKind:         "data_export",
-		Action:             "list",
-		OrgScope:           "token_org_id",
-		RateLimitClass:     "read",
-		AuditEvent:         "governance.data_export.list",
-		SourceProductArea:  "Governance",
-		OperationDisplay:   "List data exports",
-		OperationType:      "read",
-		EventCategory:      "export",
-		RiskLevel:          "medium",
-		DataClassification: "restricted",
+		Permission:     permissionExportRead,
+		Resource:       "data_export",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "governance.data_export.list",
 	}), listExports(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -67,20 +55,14 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Summary:       "Create an organization data export",
 		DefaultStatus: 201,
 	}, operationPolicy{
-		Permission:         permissionExportCreate,
-		TargetKind:         "data_export",
-		Action:             "create",
-		OrgScope:           "token_org_id",
-		RateLimitClass:     "export_create",
-		Idempotency:        idempotencyHeaderKey,
-		AuditEvent:         "governance.data_export.create",
-		SourceProductArea:  "Governance",
-		OperationDisplay:   "Create data export",
-		OperationType:      "export",
-		EventCategory:      "export",
-		RiskLevel:          "high",
-		DataClassification: "restricted",
-		BodyLimitBytes:     bodyLimitSmallJSON,
+		Permission:     permissionExportCreate,
+		Resource:       "data_export",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "export_create",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "governance.data_export.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createExport(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -89,18 +71,12 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Path:        "/api/v1/governance/exports/{export_id}",
 		Summary:     "Get an organization data export",
 	}, operationPolicy{
-		Permission:         permissionExportRead,
-		TargetKind:         "data_export",
-		Action:             "read",
-		OrgScope:           "token_org_id",
-		RateLimitClass:     "read",
-		AuditEvent:         "governance.data_export.read",
-		SourceProductArea:  "Governance",
-		OperationDisplay:   "Read data export",
-		OperationType:      "read",
-		EventCategory:      "export",
-		RiskLevel:          "medium",
-		DataClassification: "restricted",
+		Permission:     permissionExportRead,
+		Resource:       "data_export",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "governance.data_export.read",
 	}), getExport(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -117,37 +93,27 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 			},
 		},
 	}, operationPolicy{
-		Permission:         permissionExportRead,
-		TargetKind:         "data_export",
-		Action:             "download",
-		OrgScope:           "token_org_id",
-		RateLimitClass:     "export_download",
-		AuditEvent:         "governance.data_export.download",
-		SourceProductArea:  "Governance",
-		OperationDisplay:   "Download data export",
-		OperationType:      "export",
-		EventCategory:      "export",
-		RiskLevel:          "high",
-		DataClassification: "restricted",
+		Permission:     permissionExportRead,
+		Resource:       "data_export",
+		Action:         "download",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "export_download",
+		AuditEvent:     "governance.data_export.download",
 	}), downloadExport(svc))
 }
 
 type listAuditEventsInput struct {
-	Limit             int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum events to return."`
-	Cursor            string `query:"cursor,omitempty" maxLength:"64" doc:"Opaque pagination cursor returned by the previous page."`
-	Order             string `query:"order,omitempty" enum:"asc,desc" doc:"Time ordering of results; defaults to 'desc' (newest first)."`
-	ActorID           string `query:"actor_id,omitempty" maxLength:"255"`
-	AuditEvent        string `query:"audit_event,omitempty" maxLength:"255"`
-	CredentialID      string `query:"credential_id,omitempty" maxLength:"255"`
-	HighRisk          bool   `query:"high_risk,omitempty" doc:"Return events that are high or critical risk, write/delete/export operations, denials, or errors."`
-	OperationID       string `query:"operation_id,omitempty" maxLength:"128"`
-	OperationType     string `query:"operation_type,omitempty" enum:"read,write,delete,authn,authz,billing,export,system,unknown"`
-	Result            string `query:"result,omitempty" enum:"allowed,denied,error"`
-	RiskLevel         string `query:"risk_level,omitempty" enum:"low,medium,high,critical"`
-	ServiceName       string `query:"service_name,omitempty" maxLength:"128"`
-	SourceProductArea string `query:"source_product_area,omitempty" maxLength:"128"`
-	TargetID          string `query:"target_id,omitempty" maxLength:"255"`
-	TargetKind        string `query:"target_kind,omitempty" maxLength:"128"`
+	Limit        int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum events to return."`
+	Cursor       string `query:"cursor,omitempty" maxLength:"64" doc:"Opaque pagination cursor returned by the previous page."`
+	Order        string `query:"order,omitempty" enum:"asc,desc" doc:"Time ordering of results; defaults to 'desc' (newest first)."`
+	ActorID      string `query:"actor_id,omitempty" maxLength:"255"`
+	AuditEvent   string `query:"audit_event,omitempty" maxLength:"255"`
+	CredentialID string `query:"credential_id,omitempty" maxLength:"255"`
+	EventName    string `query:"event_name,omitempty" maxLength:"128"`
+	EventSource  string `query:"event_source,omitempty" maxLength:"128"`
+	Outcome      string `query:"outcome,omitempty" enum:"allowed,denied,error"`
+	TargetID     string `query:"target_id,omitempty" maxLength:"255"`
+	TargetType   string `query:"target_type,omitempty" maxLength:"128"`
 }
 
 type auditEventsOutput struct {
@@ -157,21 +123,17 @@ type auditEventsOutput struct {
 func listAuditEvents(svc *governance.Service) func(context.Context, governance.Principal, *listAuditEventsInput) (*auditEventsOutput, error) {
 	return func(ctx context.Context, principal governance.Principal, input *listAuditEventsInput) (*auditEventsOutput, error) {
 		page, err := svc.ListAuditEvents(ctx, principal, governance.AuditListFilters{
-			Limit:             input.Limit,
-			Cursor:            input.Cursor,
-			Order:             input.Order,
-			ActorID:           input.ActorID,
-			AuditEvent:        input.AuditEvent,
-			CredentialID:      input.CredentialID,
-			HighRisk:          input.HighRisk,
-			OperationID:       input.OperationID,
-			OperationType:     input.OperationType,
-			Result:            input.Result,
-			RiskLevel:         input.RiskLevel,
-			ServiceName:       input.ServiceName,
-			SourceProductArea: input.SourceProductArea,
-			TargetID:          input.TargetID,
-			TargetKind:        input.TargetKind,
+			Limit:        input.Limit,
+			Cursor:       input.Cursor,
+			Order:        input.Order,
+			ActorID:      input.ActorID,
+			AuditEvent:   input.AuditEvent,
+			CredentialID: input.CredentialID,
+			EventName:    input.EventName,
+			EventSource:  input.EventSource,
+			Outcome:      input.Outcome,
+			TargetID:     input.TargetID,
+			TargetType:   input.TargetType,
 		})
 		if err != nil {
 			return nil, err
@@ -181,18 +143,14 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 			NextCursor: page.NextCursor,
 			Limit:      int32FromInt(page.Limit, "audit page limit"),
 			Filters: dto.GovernanceAuditFilters{
-				ActorID:           input.ActorID,
-				AuditEvent:        input.AuditEvent,
-				CredentialID:      input.CredentialID,
-				HighRisk:          input.HighRisk,
-				OperationID:       input.OperationID,
-				OperationType:     input.OperationType,
-				Result:            input.Result,
-				RiskLevel:         input.RiskLevel,
-				ServiceName:       input.ServiceName,
-				SourceProductArea: input.SourceProductArea,
-				TargetID:          input.TargetID,
-				TargetKind:        input.TargetKind,
+				ActorID:      input.ActorID,
+				AuditEvent:   input.AuditEvent,
+				CredentialID: input.CredentialID,
+				EventName:    input.EventName,
+				EventSource:  input.EventSource,
+				Outcome:      input.Outcome,
+				TargetID:     input.TargetID,
+				TargetType:   input.TargetType,
 			},
 		}
 		for _, event := range page.Events {
@@ -295,57 +253,26 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 
 func auditEventDTO(event governance.AuditEvent) dto.GovernanceAuditEvent {
 	return dto.GovernanceAuditEvent{
-		EventID:               event.EventID.String(),
-		RecordedAt:            event.RecordedAt.UTC().Format(time.RFC3339Nano),
-		OrgID:                 event.OrgID,
-		SourceProductArea:     event.SourceProductArea,
-		ServiceName:           event.ServiceName,
-		OperationID:           event.OperationID,
-		AuditEvent:            event.AuditEvent,
-		OperationDisplay:      event.OperationDisplay,
-		OperationType:         event.OperationType,
-		EventCategory:         event.EventCategory,
-		RiskLevel:             event.RiskLevel,
-		ActorType:             event.ActorType,
-		ActorID:               event.ActorID,
-		ActorDisplay:          event.ActorDisplay,
-		ActorOwnerID:          event.ActorOwnerID,
-		ActorOwnerDisplay:     event.ActorOwnerDisplay,
-		CredentialID:          event.CredentialID,
-		CredentialName:        event.CredentialName,
-		CredentialFingerprint: event.CredentialFingerprint,
-		AuthMethod:            event.AuthMethod,
-		MFAPresent:            event.MFAPresent == 1,
-		TargetKind:            event.TargetKind,
-		TargetID:              event.TargetID,
-		TargetDisplay:         event.TargetDisplay,
-		TargetScope:           event.TargetScope,
-		Permission:            event.Permission,
-		Action:                event.Action,
-		OrgScope:              event.OrgScope,
-		Decision:              event.Decision,
-		Result:                event.Result,
-		DenialReason:          event.DenialReason,
-		TrustClass:            event.TrustClass,
-		ErrorCode:             event.ErrorCode,
-		ErrorMessage:          event.ErrorMessage,
-		ClientIP:              event.ClientIP,
-		ClientIPVersion:       event.ClientIPVersion,
-		IPChain:               event.IPChain,
-		UserAgentHash:         event.UserAgentHash,
-		GeoCountry:            event.GeoCountry,
-		GeoRegion:             event.GeoRegion,
-		ASN:                   strconv.FormatUint(uint64(event.ASN), 10),
-		ASNOrg:                event.ASNOrg,
-		NetworkType:           event.NetworkType,
-		IdempotencyKeyHash:    event.IdempotencyKeyHash,
-		RequestID:             event.RequestID,
-		TraceID:               event.TraceID,
-		Sequence:              strconv.FormatUint(event.Sequence, 10),
-		PrevHMAC:              event.PrevHMAC,
-		RowHMAC:               event.RowHMAC,
-		ContentSHA256:         event.ContentSHA256,
-		HMACKeyID:             event.HMACKeyID,
+		EventID:      event.EventID.String(),
+		RecordedAt:   event.RecordedAt.UTC().Format(time.RFC3339Nano),
+		OrgID:        event.OrgID,
+		Sequence:     strconv.FormatUint(event.Sequence, 10),
+		EventSource:  event.EventSource,
+		EventName:    event.EventName,
+		AuditEvent:   event.AuditEvent,
+		ActorType:    event.ActorType,
+		ActorID:      event.ActorID,
+		CredentialID: event.CredentialID,
+		TargetType:   event.TargetType,
+		TargetID:     event.TargetID,
+		Permission:   event.Permission,
+		Outcome:      event.Outcome,
+		ErrorCode:    event.ErrorCode,
+		TraceID:      event.TraceID,
+		DetailSHA256: event.DetailSHA256,
+		PrevHMAC:     event.PrevHMAC,
+		RowHMAC:      event.RowHMAC,
+		HMACKeyID:    event.HMACKeyID,
 	}
 }
 

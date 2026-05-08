@@ -26,7 +26,7 @@ INSERT INTO governance_audit_events (
 );
 
 -- name: ClaimPendingAuditEventRows :many
-SELECT row_json
+SELECT row_json, payload_json
 FROM governance_audit_events
 WHERE projected_at IS NULL
 ORDER BY recorded_at ASC, sequence ASC, event_id ASC

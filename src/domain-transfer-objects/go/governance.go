@@ -1,57 +1,26 @@
 package dto
 
 type GovernanceAuditEvent struct {
-	EventID               string `json:"event_id" doc:"Audit event UUID."`
-	RecordedAt            string `json:"recorded_at" format:"date-time" doc:"UTC time when the event was recorded."`
-	OrgID                 string `json:"org_id" doc:"Organization ID derived from the caller's token."`
-	SourceProductArea     string `json:"source_product_area" doc:"Customer-facing product area, for example Governance or Sandbox."`
-	ServiceName           string `json:"service_name" doc:"Internal service that enforced the operation."`
-	OperationID           string `json:"operation_id" doc:"Stable OpenAPI operation ID."`
-	AuditEvent            string `json:"audit_event" doc:"Stable audit event name."`
-	OperationDisplay      string `json:"operation_display" doc:"Short customer-facing operation label."`
-	OperationType         string `json:"operation_type" doc:"read, write, delete, authn, authz, billing, export, system, or unknown."`
-	EventCategory         string `json:"event_category" doc:"Audit event family for filtering."`
-	RiskLevel             string `json:"risk_level" doc:"low, medium, high, or critical."`
-	ActorType             string `json:"actor_type" doc:"Actor class, for example user, api_credential, workload, service, or operator."`
-	ActorID               string `json:"actor_id" doc:"Exact authenticated actor ID."`
-	ActorDisplay          string `json:"actor_display,omitempty" doc:"Display label for the actor when available."`
-	ActorOwnerID          string `json:"actor_owner_id,omitempty" doc:"Owner of an API credential or workload actor when known."`
-	ActorOwnerDisplay     string `json:"actor_owner_display,omitempty" doc:"Display label for the actor owner when known."`
-	CredentialID          string `json:"credential_id,omitempty" doc:"Verself API credential ID when the actor is a credential."`
-	CredentialName        string `json:"credential_name,omitempty" doc:"API credential display name when known."`
-	CredentialFingerprint string `json:"credential_fingerprint,omitempty" doc:"Non-secret credential fingerprint when known."`
-	AuthMethod            string `json:"auth_method,omitempty" doc:"Authentication method used by the actor."`
-	MFAPresent            bool   `json:"mfa_present,omitempty" doc:"Whether MFA was present in the authenticated request context."`
-	TargetKind            string `json:"target_kind" doc:"Resource kind declared by the operation catalog."`
-	TargetID              string `json:"target_id,omitempty" doc:"Target identifier when known and safe to expose."`
-	TargetDisplay         string `json:"target_display,omitempty" doc:"Target display label when known."`
-	TargetScope           string `json:"target_scope,omitempty" doc:"Target scoping rule or resolved scope."`
-	Permission            string `json:"permission" doc:"Verself operation permission."`
-	Action                string `json:"action" doc:"Action declared by the operation catalog."`
-	OrgScope              string `json:"org_scope" doc:"Organization scoping rule used for the decision."`
-	Decision              string `json:"decision" doc:"Authorization decision."`
-	Result                string `json:"result" doc:"allowed, denied, or error."`
-	DenialReason          string `json:"denial_reason,omitempty" doc:"Stable denial reason when authorization denied the operation."`
-	TrustClass            string `json:"trust_class,omitempty" doc:"Trust class used by the policy decision."`
-	ErrorCode             string `json:"error_code,omitempty" doc:"Stable problem code when the operation failed."`
-	ErrorMessage          string `json:"error_message,omitempty" doc:"Redacted failure detail."`
-	ClientIP              string `json:"client_ip,omitempty" doc:"Client IP observed at the trusted service boundary."`
-	ClientIPVersion       string `json:"client_ip_version,omitempty" doc:"IPv4 or IPv6."`
-	IPChain               string `json:"ip_chain,omitempty" doc:"Comma-separated proxy chain retained as request evidence."`
-	UserAgentHash         string `json:"user_agent_hash,omitempty" doc:"SHA-256 hash of the sanitized User-Agent."`
-	GeoCountry            string `json:"geo_country,omitempty" doc:"Locally enriched country code when configured."`
-	GeoRegion             string `json:"geo_region,omitempty" doc:"Locally enriched region when configured."`
-	ASN                   string `json:"asn,omitempty" doc:"Locally enriched autonomous system number when configured."`
-	ASNOrg                string `json:"asn_org,omitempty" doc:"Locally enriched autonomous system organization when configured."`
-	NetworkType           string `json:"network_type,omitempty" doc:"Locally enriched network type when configured."`
-	IdempotencyKeyHash    string `json:"idempotency_key_hash,omitempty" doc:"SHA-256 hash of the caller-provided idempotency key."`
-	RequestID             string `json:"request_id,omitempty" doc:"Caller or service request ID when available."`
-	TraceID               string `json:"trace_id,omitempty" doc:"OpenTelemetry trace ID."`
-	Sequence              string `json:"sequence" doc:"Per-organization tamper-evident sequence number."`
-	PrevHMAC              string `json:"prev_hmac" doc:"Previous audit row HMAC in the organization chain."`
-	RowHMAC               string `json:"row_hmac" doc:"Current audit row HMAC."`
-	ContentSHA256         string `json:"content_sha256" doc:"Canonical payload SHA-256."`
-	HMACKeyID             string `json:"hmac_key_id,omitempty" doc:"Audit HMAC key identifier."`
+	EventID      string `json:"event_id" doc:"Audit event UUID."`
+	RecordedAt   string `json:"recorded_at" format:"date-time" doc:"UTC time when the event was recorded."`
+	OrgID        string `json:"org_id" doc:"Organization ID derived from the caller's token."`
+	Sequence     string `json:"sequence" doc:"Per-organization tamper-evident sequence number."`
+	EventSource  string `json:"event_source" doc:"Service or system that recorded the event."`
+	EventName    string `json:"event_name" doc:"Stable operation name."`
+	AuditEvent   string `json:"audit_event" doc:"Stable audit event name."`
+	ActorType    string `json:"actor_type" doc:"Actor class, for example user, service_account, workload, or service."`
+	ActorID      string `json:"actor_id" doc:"Exact authenticated actor ID."`
+	CredentialID string `json:"credential_id,omitempty" doc:"Credential ID used to authenticate the actor when present."`
+	TargetType   string `json:"target_type" doc:"Resource type being authorized."`
+	TargetID     string `json:"target_id,omitempty" doc:"Target identifier when known and safe to expose."`
+	Permission   string `json:"permission" doc:"Permission checked for the operation."`
+	Outcome      string `json:"outcome" doc:"allowed, denied, or error."`
+	ErrorCode    string `json:"error_code,omitempty" doc:"Stable problem code when the operation failed."`
+	TraceID      string `json:"trace_id,omitempty" doc:"OpenTelemetry trace ID."`
+	DetailSHA256 string `json:"detail_sha256" doc:"SHA-256 hash of the optional audit detail payload."`
+	PrevHMAC     string `json:"prev_hmac" doc:"Previous audit row HMAC in the organization chain."`
+	RowHMAC      string `json:"row_hmac" doc:"Current audit row HMAC."`
+	HMACKeyID    string `json:"hmac_key_id,omitempty" doc:"Audit HMAC key identifier."`
 }
 
 type GovernanceAuditEvents struct {
@@ -63,18 +32,14 @@ type GovernanceAuditEvents struct {
 }
 
 type GovernanceAuditFilters struct {
-	ActorID           string `json:"actor_id,omitempty"`
-	AuditEvent        string `json:"audit_event,omitempty"`
-	CredentialID      string `json:"credential_id,omitempty"`
-	HighRisk          bool   `json:"high_risk,omitempty"`
-	OperationID       string `json:"operation_id,omitempty"`
-	OperationType     string `json:"operation_type,omitempty"`
-	Result            string `json:"result,omitempty"`
-	RiskLevel         string `json:"risk_level,omitempty"`
-	ServiceName       string `json:"service_name,omitempty"`
-	SourceProductArea string `json:"source_product_area,omitempty"`
-	TargetID          string `json:"target_id,omitempty"`
-	TargetKind        string `json:"target_kind,omitempty"`
+	ActorID      string `json:"actor_id,omitempty"`
+	AuditEvent   string `json:"audit_event,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
+	EventName    string `json:"event_name,omitempty"`
+	EventSource  string `json:"event_source,omitempty"`
+	Outcome      string `json:"outcome,omitempty"`
+	TargetID     string `json:"target_id,omitempty"`
+	TargetType   string `json:"target_type,omitempty"`
 }
 
 type GovernanceCreateExportRequest struct {

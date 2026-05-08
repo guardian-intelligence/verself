@@ -31,7 +31,7 @@ func (q *Queries) AdvanceAuditChainState(ctx context.Context, arg AdvanceAuditCh
 }
 
 const claimPendingAuditEventRows = `-- name: ClaimPendingAuditEventRows :many
-SELECT row_json
+SELECT row_json, payload_json
 FROM governance_audit_events
 WHERE projected_at IS NULL
 ORDER BY recorded_at ASC, sequence ASC, event_id ASC
@@ -43,19 +43,24 @@ type ClaimPendingAuditEventRowsParams struct {
 	LimitCount int32
 }
 
-func (q *Queries) ClaimPendingAuditEventRows(ctx context.Context, arg ClaimPendingAuditEventRowsParams) ([]string, error) {
+type ClaimPendingAuditEventRowsRow struct {
+	RowJson     string
+	PayloadJson string
+}
+
+func (q *Queries) ClaimPendingAuditEventRows(ctx context.Context, arg ClaimPendingAuditEventRowsParams) ([]ClaimPendingAuditEventRowsRow, error) {
 	rows, err := q.db.Query(ctx, claimPendingAuditEventRows, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []ClaimPendingAuditEventRowsRow{}
 	for rows.Next() {
-		var row_json string
-		if err := rows.Scan(&row_json); err != nil {
+		var i ClaimPendingAuditEventRowsRow
+		if err := rows.Scan(&i.RowJson, &i.PayloadJson); err != nil {
 			return nil, err
 		}
-		items = append(items, row_json)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
