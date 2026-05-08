@@ -11,6 +11,7 @@ go_library(
         "//src/services/billing-service/internal/billing/ledger",
         "//src/services/billing-service/internal/billingapi",
         "//src/services/billing-service/migrations",
+        "//src/services/iam-service/client",
         "//src/services/secrets-service/client",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",

@@ -9,14 +9,19 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/governance"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func NewAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service) huma.API {
+func NewAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service, authorizers ...runtimeiam.OperationAuthorizer) huma.API {
 	config := huma.DefaultConfig("Verself Governance Service API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, svc)
+	var authorizer runtimeiam.OperationAuthorizer
+	if len(authorizers) > 0 {
+		authorizer = authorizers[0]
+	}
+	RegisterRoutes(api, svc, authorizer)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 func TestOpenAPIPublicBillingOperationsDeclareIAMPolicy(t *testing.T) {
@@ -54,53 +55,15 @@ func TestOpenAPIPublicBillingOperationsDeclareIAMPolicy(t *testing.T) {
 	}
 }
 
-func TestBillingIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
-	owner := billingServiceToken("42", roleOwner)
-	if !identityHasPermission(owner, permissionBillingCheckout) {
-		t.Fatal("owner should be allowed to create billing checkout")
-	}
+func TestBillingEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
+	ctx := auth.WithIdentity(context.Background(), &auth.Identity{Subject: "user-123", OrgID: "42"})
 
-	admin := billingServiceToken("42", roleAdmin)
-	if !identityHasPermission(admin, permissionBillingCheckout) {
-		t.Fatal("admin should be allowed to create billing checkout")
+	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionBillingCheckout): true}, operationPolicy{Permission: permissionBillingCheckout})
+	if err != nil {
+		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
-
-	member := billingServiceToken("42", roleMember)
-	if !identityHasPermission(member, permissionBillingRead) {
-		t.Fatal("member should be allowed to read billing")
-	}
-	if identityHasPermission(member, permissionBillingCheckout) {
-		t.Fatal("member should not be allowed to create billing checkout")
-	}
-
-	scopedClient := &auth.Identity{
-		OrgID:   "42",
-		Subject: "credential-1",
-		Raw: map[string]any{
-			"verself:credential_id": "credential-1",
-			"permissions":           []string{"billing:read"},
-		},
-	}
-	if !identityHasPermission(scopedClient, permissionBillingRead) {
-		t.Fatal("API credential permissions claim should grant matching billing permission")
-	}
-	if identityHasPermission(scopedClient, permissionBillingCheckout) {
-		t.Fatal("API credential permissions claim should not grant unrelated billing permission")
-	}
-}
-
-func billingServiceToken(orgID string, roles ...string) *auth.Identity {
-	assignments := make([]auth.RoleAssignment, 0, len(roles))
-	for _, role := range roles {
-		assignments = append(assignments, auth.RoleAssignment{
-			OrganizationID: orgID,
-			Role:           role,
-		})
-	}
-	return &auth.Identity{
-		Subject:         "user-1",
-		OrgID:           orgID,
-		RoleAssignments: assignments,
+	if orgID != 42 {
+		t.Fatalf("org id = %d, want 42", orgID)
 	}
 }
 
@@ -110,11 +73,11 @@ func TestBillingEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 		OrgID:   "42",
 		RoleAssignments: []auth.RoleAssignment{{
 			OrganizationID: "42",
-			Role:           roleMember,
+			Role:           "member",
 		}},
 	})
 
-	orgID, err := enforceOperationPolicy(ctx, operationPolicy{Permission: permissionBillingCheckout})
+	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, operationPolicy{Permission: permissionBillingCheckout})
 	if orgID == 0 {
 		t.Fatalf("expected denied operation to retain org id")
 	}
@@ -122,6 +85,12 @@ func TestBillingEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
 		t.Fatalf("expected forbidden missing-permission error, got %#v", err)
 	}
+}
+
+type fakeAuthorizer map[string]bool
+
+func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, permission string) (runtimeiam.AuthorizationDecision, error) {
+	return runtimeiam.AuthorizationDecision{Allowed: f[permission], Permissions: []string{permission}}, nil
 }
 
 func TestBillingReturnURLValidationRequiresAllowedOrigin(t *testing.T) {

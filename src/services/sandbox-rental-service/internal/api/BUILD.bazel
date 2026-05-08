@@ -21,6 +21,7 @@ go_library(
         "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/sandbox-rental-service/internal/recurring",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
@@ -39,6 +40,7 @@ go_test(
     embed = [":api"],
     deps = [
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

@@ -25,6 +25,7 @@ import (
 
 	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/domain-transfer-objects"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
@@ -91,6 +92,7 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "sandbox_rental")
 	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
+	iamInternalURL := cfg.URL("SANDBOX_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
@@ -227,6 +229,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("sandbox iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("create iam client: %w", err)
+	}
 	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
 		return fmt.Errorf("sandbox secrets mtls: %w", err)
@@ -351,6 +361,7 @@ func run() error {
 	privateMux := http.NewServeMux()
 	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, sandboxapi.PublicAPIConfig{
 		PublicBaseURL: publicBaseURL,
+		Authorizer:    iamclient.NewAuthorizer(iamClient),
 	})
 	sandboxapi.RegisterPublicRoutes(rootMux, jobService)
 

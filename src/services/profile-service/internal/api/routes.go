@@ -9,6 +9,7 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type emptyInput struct{}
@@ -40,8 +41,8 @@ func (o *mutationOutput) auditDetails() auditDetails {
 	}
 }
 
-func RegisterRoutes(api huma.API, svc *profile.Service) {
-	registerProfileRoute(api, huma.Operation{
+func RegisterRoutes(api huma.API, svc *profile.Service, authorizer runtimeiam.OperationAuthorizer) {
+	registerProfileRoute(api, authorizer, huma.Operation{
 		OperationID: "get-profile",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/profile",
@@ -58,7 +59,7 @@ func RegisterRoutes(api huma.API, svc *profile.Service) {
 		RiskLevel:        "low",
 	}, getProfile(svc))
 
-	registerProfileRoute(api, huma.Operation{
+	registerProfileRoute(api, authorizer, huma.Operation{
 		OperationID:   "patch-profile-identity",
 		Method:        http.MethodPatch,
 		Path:          "/api/v1/profile/identity",
@@ -78,7 +79,7 @@ func RegisterRoutes(api huma.API, svc *profile.Service) {
 		BodyLimitBytes:   bodyLimitSmallJSON,
 	}, updateIdentity(svc))
 
-	registerProfileRoute(api, huma.Operation{
+	registerProfileRoute(api, authorizer, huma.Operation{
 		OperationID:   "put-profile-preferences",
 		Method:        http.MethodPut,
 		Path:          "/api/v1/profile/preferences",

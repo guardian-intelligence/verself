@@ -10,6 +10,7 @@ go_library(
         "//src/services/governance-service/internal/api",
         "//src/services/governance-service/internal/governance",
         "//src/services/governance-service/migrations",
+        "//src/services/iam-service/client",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",

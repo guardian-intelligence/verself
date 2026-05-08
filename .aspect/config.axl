@@ -59,12 +59,7 @@ load(
 )
 load(
     ".aspect/tasks/mail.axl",
-    mail_accounts = "accounts",
-    mail_code = "code",
-    mail_list = "list_task",
-    mail_mailboxes = "mailboxes",
     mail_passwords = "passwords",
-    mail_read = "read",
     mail_send = "send",
 )
 load(".aspect/tasks/observe.axl", "observe")
@@ -145,10 +140,5 @@ def config(ctx):
     ctx.tasks.add(detect_intrusions)
 
     # aspect mail ...
-    ctx.tasks.add(mail_list)
-    ctx.tasks.add(mail_accounts)
-    ctx.tasks.add(mail_mailboxes)
-    ctx.tasks.add(mail_code)
-    ctx.tasks.add(mail_read)
     ctx.tasks.add(mail_send)
     ctx.tasks.add(mail_passwords)

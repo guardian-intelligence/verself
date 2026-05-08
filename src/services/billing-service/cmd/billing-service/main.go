@@ -23,6 +23,7 @@ import (
 	"github.com/verself/billing-service/internal/billing/ledger"
 	"github.com/verself/billing-service/internal/billingapi"
 	"github.com/verself/billing-service/migrations"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
@@ -65,6 +66,7 @@ func run() error {
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
 	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
 	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
+	iamInternalURL := cfg.URL("BILLING_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
@@ -108,6 +110,14 @@ func run() error {
 	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing secrets client: %w", err)
+	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("billing iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("billing iam client: %w", err)
 	}
 	stripeSecrets, err := readRuntimeSecrets(ctx, secretsClient,
 		secretsclient.BillingStripeSecretKeyName,
@@ -211,7 +221,7 @@ func run() error {
 	}
 
 	privateMux := http.NewServeMux()
-	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, StripeWebhookSecret: webhookSecret, BillingReturnOrigins: billingReturnOrigins})
+	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, Authorizer: iamclient.NewAuthorizer(iamClient), StripeWebhookSecret: webhookSecret, BillingReturnOrigins: billingReturnOrigins})
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })

@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	iamclient "github.com/verself/iam-service/client"
 	notificationsapi "github.com/verself/notifications-service/internal/api"
 	"github.com/verself/notifications-service/internal/notifications"
 	"github.com/verself/notifications-service/migrations"
@@ -75,6 +76,7 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4261")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	iamInternalURL := cfg.URL("NOTIFICATIONS_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	secretsURL := cfg.RequireURL("NOTIFICATIONS_SECRETS_URL")
 	natsURL := cfg.String("NOTIFICATIONS_NATS_URL", notifications.NATSDefaultURL)
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
@@ -148,6 +150,14 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("notifications readiness: %w", err)
 	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("notifications iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("notifications iam client: %w", err)
+	}
 	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
 		return fmt.Errorf("notifications secrets mtls: %w", err)
@@ -210,7 +220,7 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	notificationsapi.NewAPI(privateMux, notificationsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc})
+	notificationsapi.NewAPI(privateMux, notificationsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

@@ -127,6 +127,26 @@ func (s *Service) AccessibleOrganizationsBySubject(ctx context.Context, subject 
 	return organizations, nil
 }
 
+func (s *Service) ReconcileOrganizationAuthorization(ctx context.Context, orgID, actor, operation string) error {
+	orgID = strings.TrimSpace(orgID)
+	actor = strings.TrimSpace(actor)
+	if orgID == "" {
+		return fmt.Errorf("%w: org_id is required", ErrInvalidInput)
+	}
+	if actor == "" {
+		return fmt.Errorf("%w: actor is required", ErrInvalidInput)
+	}
+	capabilities, err := s.memberCapabilities(ctx, orgID, actor)
+	if err != nil {
+		return err
+	}
+	members, err := s.members(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	return s.reconcileOrganizationRoles(ctx, orgID, members, capabilities, operation)
+}
+
 func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (Organization, error) {
 	if err := principal.validate(); err != nil {
 		return Organization{}, err
@@ -1009,7 +1029,7 @@ func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, princ
 	if err != nil {
 		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
 	}
-	if err := validateCredentialPermissions(capabilities, principal, input.Permissions); err != nil {
+	if err := s.validateCredentialPermissions(ctx, principal, input.Permissions); err != nil {
 		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
 	}
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(s.now()) {
@@ -1018,32 +1038,39 @@ func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, princ
 	return input, capabilities, nil
 }
 
-func validateCredentialPermissions(capabilities MemberCapabilitiesDocument, principal Principal, requested []string) error {
+func (s *Service) validateCredentialPermissions(ctx context.Context, principal Principal, requested []string) error {
 	known := KnownPermissions()
-	granted := permissionSet(effectivePrincipalPermissions(capabilities, principal))
 	for _, permission := range requested {
 		if _, ok := known[permission]; !ok {
 			return fmt.Errorf("%w: unknown permission %q", ErrInvalidCapabilities, permission)
 		}
-		if _, ok := granted[permission]; !ok {
+	}
+	graph, err := s.authorizationGraph()
+	if err != nil {
+		return err
+	}
+	allowed, _, err := graph.TestOrganizationPermissions(ctx, principal.OrgID, principal.authorizationSubject(), requested, "")
+	if err != nil {
+		return err
+	}
+	allowedSet := map[string]struct{}{}
+	for _, permission := range allowed {
+		allowedSet[permission] = struct{}{}
+	}
+	for _, permission := range requested {
+		if _, ok := allowedSet[permission]; !ok {
 			return fmt.Errorf("%w: permission %q is not held by caller", ErrInvalidCapabilities, permission)
 		}
 	}
 	return nil
 }
 
-func effectivePrincipalPermissions(capabilities MemberCapabilitiesDocument, principal Principal) []string {
-	out := append([]string(nil), PermissionsForRoles(capabilities, principal.Roles)...)
-	out = append(out, principal.DirectPermissions...)
-	return normalizePermissions(out)
-}
-
-func permissionSet(values []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		out[value] = struct{}{}
+func (p Principal) authorizationSubject() AuthorizationSubject {
+	kind := p.SubjectKind
+	if kind == "" {
+		kind = AuthorizationSubjectKindUser
 	}
-	return out
+	return AuthorizationSubject{Kind: kind, ID: p.Subject}
 }
 
 func normalizeAuthMethod(value string) APICredentialAuthMethod {

@@ -11,7 +11,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
+	"github.com/verself/iam-service/internal/spicedb"
 	auth "github.com/verself/service-runtime/auth"
 )
 
@@ -64,52 +66,32 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 	}
 }
 
-func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing.T) {
+func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 	ctx := context.Background()
-	store := staticIdentityStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())}
-	svc := &identity.Service{
-		Store:     store,
-		ProjectID: "iam-project",
-	}
-	admin := identityServiceToken("42", identity.RoleAdmin)
-	if allowed, err := identityHasPermission(ctx, svc, admin, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || !allowed {
-		t.Fatal("org admin should be allowed to write member capabilities")
+	authzSvc := authz.New(staticAuthzBackend{
+		allowedOrgID:     "42",
+		allowedSubjectID: "user-1",
+		allowedOrgPerms:  map[string]struct{}{"read": {}, "manage_iam": {}},
+	})
+	user := identityServiceToken("42", identity.RoleAdmin)
+	if allowed, err := identityHasPermission(ctx, authzSvc, user, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || !allowed {
+		t.Fatalf("graph grant should authorize member capability write, allowed=%v err=%v", allowed, err)
 	}
 
 	wrongOrg := identityServiceToken("99", identity.RoleAdmin)
-	wrongOrg.OrgID = "42"
-	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || allowed {
-		t.Fatal("role assignment for another org must not grant current org")
+	if allowed, err := identityHasPermission(ctx, authzSvc, wrongOrg, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || allowed {
+		t.Fatalf("graph grant for org 42 must not authorize org 99, allowed=%v err=%v", allowed, err)
 	}
 
-	member := identityServiceToken("42", identity.RoleMember)
-	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberRead, orgScopeTokenOrgID); err != nil || !allowed {
-		t.Fatal("member should be allowed to read members")
-	}
-	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || allowed {
-		t.Fatal("member should not be allowed to write member capabilities")
-	}
-
-	owner := identityServiceToken("42", identity.RoleOwner)
-	if allowed, err := identityHasPermission(ctx, svc, owner, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || !allowed {
-		t.Fatal("owner should grant all iam-service permissions")
-	}
-
-	unmarkedScope := &auth.Identity{Subject: "user-1", OrgID: "42", Raw: map[string]any{"scope": string(permissionMemberInvite)}}
-	if allowed, err := identityHasPermission(ctx, svc, unmarkedScope, permissionMemberInvite, orgScopeTokenOrgID); err != nil || allowed {
-		t.Fatal("plain OAuth scope should not grant operation permissions without an API credential marker")
-	}
-
-	scoped := &auth.Identity{
+	credentialWithoutServiceAccount := &auth.Identity{
 		Subject: "credential-1",
 		OrgID:   "42",
 		Raw: map[string]any{
 			"verself:credential_id": "credential-1",
-			"permissions":           []string{string(permissionMemberInvite)},
 		},
 	}
-	if allowed, err := identityHasPermission(ctx, nil, scoped, permissionMemberInvite, orgScopeTokenOrgID); err != nil || !allowed {
-		t.Fatal("API credential scope should grant matching permission")
+	if allowed, err := identityHasPermission(ctx, authzSvc, credentialWithoutServiceAccount, permissionMemberInvite, orgScopeTokenOrgID); !errors.Is(err, authz.ErrInvalid) || allowed {
+		t.Fatalf("credential without service_account_id must be invalid, allowed=%v err=%v", allowed, err)
 	}
 }
 
@@ -130,6 +112,29 @@ func identityServiceToken(orgID string, roles ...string) *auth.Identity {
 
 type staticIdentityStore struct {
 	capabilities identity.MemberCapabilitiesDocument
+}
+
+type staticAuthzBackend struct {
+	allowedOrgID     string
+	allowedSubjectID string
+	allowedOrgPerms  map[string]struct{}
+}
+
+func (b staticAuthzBackend) Check(_ context.Context, resource spicedb.ResourceRef, permission string, subject spicedb.SubjectRef, _ string) (bool, string, error) {
+	if resource.Type == "org" && resource.ID == b.allowedOrgID {
+		if _, ok := b.allowedOrgPerms[permission]; ok && subject.ID != "" {
+			return true, "zed-test", nil
+		}
+	}
+	return false, "zed-test", nil
+}
+
+func (b staticAuthzBackend) ReadResourceRelationships(context.Context, spicedb.ResourceRef, map[string]struct{}) ([]spicedb.Relationship, string, error) {
+	return nil, "", nil
+}
+
+func (b staticAuthzBackend) ReplaceResourceRelationships(context.Context, []spicedb.Relationship, []spicedb.Relationship, map[string]any) (string, error) {
+	return "", nil
 }
 
 func (s staticIdentityStore) GetOrganizationProfile(context.Context, string, string) (identity.OrganizationProfile, error) {

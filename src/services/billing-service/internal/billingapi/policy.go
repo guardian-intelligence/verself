@@ -3,7 +3,6 @@ package billingapi
 import (
 	"context"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -15,6 +14,7 @@ import (
 
 	"github.com/verself/billing-service/internal/billing"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type permission string
@@ -23,22 +23,12 @@ const (
 	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
-	roleOwner  = "owner"
-	roleAdmin  = "admin"
-	roleMember = "member"
-
 	idempotencyHeaderKey    = "idempotency_key_header"
 	maxIdempotencyKeyLength = 128
 	bodyLimitSmallJSON      = 64 << 10
 )
 
 var apiTracer = otel.Tracer("billing-service/internal/billingapi")
-
-var rolePermissionBundles = map[string][]permission{
-	roleOwner:  {permissionBillingRead, permissionBillingCheckout},
-	roleAdmin:  {permissionBillingRead, permissionBillingCheckout},
-	roleMember: {permissionBillingRead},
-}
 
 type operationPolicy struct {
 	Permission         permission
@@ -90,7 +80,7 @@ func checkoutPolicy(resource, action, auditEvent string) operationPolicy {
 	}
 }
 
-func registerPublicBillingRoute[I, O any](api huma.API, op huma.Operation, policy operationPolicy, handler func(context.Context, billing.OrgID, *I) (*O, error)) {
+func registerPublicBillingRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, billing.OrgID, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for billing API route")
 	}
@@ -100,7 +90,7 @@ func registerPublicBillingRoute[I, O any](api huma.API, op huma.Operation, polic
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := startOperationSpan(ctx, op.OperationID, policy)
 		defer span.End()
-		orgID, err := enforceOperationPolicy(ctx, policy)
+		orgID, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
 			finishOperationSpan(span, orgID, policy, "denied", err)
 			return nil, err
@@ -229,7 +219,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (billing.OrgID, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (billing.OrgID, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
 		return 0, problem(ctx, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
@@ -238,7 +228,14 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (billin
 	if err != nil || orgID == 0 {
 		return 0, problem(ctx, http.StatusForbidden, "organization-required", "billing routes require an organization-scoped token", err)
 	}
-	if !identityHasPermission(identity, policy.Permission) {
+	if authorizer == nil {
+		return billing.OrgID(orgID), problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+	}
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	if err != nil {
+		return billing.OrgID(orgID), problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+	}
+	if !decision.Allowed {
 		return billing.OrgID(orgID), problem(ctx, http.StatusForbidden, "permission-denied", "missing required billing permission", nil)
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
@@ -269,88 +266,4 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
 	return info
-}
-
-func identityHasPermission(identity *auth.Identity, required permission) bool {
-	if identity == nil || required == "" {
-		return false
-	}
-	if identityHasDirectPermission(identity, required) {
-		return true
-	}
-	for _, role := range identityRolesForCurrentOrg(identity) {
-		for _, granted := range rolePermissionBundles[role] {
-			if granted == required {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	if identity == nil || strings.TrimSpace(identity.OrgID) == "" {
-		return false
-	}
-	credentialID, _ := identity.Raw["verself:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" {
-		return false
-	}
-	requiredText := string(required)
-	for _, claimKey := range []string{"permissions", "permission"} {
-		for _, value := range stringClaimList(identity.Raw[claimKey]) {
-			if value == requiredText {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func identityRolesForCurrentOrg(identity *auth.Identity) []string {
-	if identity == nil || identity.OrgID == "" || len(identity.RoleAssignments) == 0 {
-		return nil
-	}
-	roles := make([]string, 0, len(identity.RoleAssignments))
-	for _, assignment := range identity.RoleAssignments {
-		if assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
-			roles = append(roles, assignment.Role)
-		}
-	}
-	sort.Strings(roles)
-	return compactStrings(roles)
-}
-
-func stringClaimList(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return strings.Fields(typed)
-	case []string:
-		out := append([]string(nil), typed...)
-		sort.Strings(out)
-		return compactStrings(out)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, stringClaimList(item)...)
-		}
-		sort.Strings(out)
-		return compactStrings(out)
-	default:
-		return nil
-	}
-}
-
-func compactStrings(values []string) []string {
-	out := values[:0]
-	var previous string
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || value == previous {
-			continue
-		}
-		out = append(out, value)
-		previous = value
-	}
-	return out
 }

@@ -16,11 +16,10 @@ organization-management UX. This service is the API surface for those Forge
 Verself-owned concerns.
 
 Go product services remain authorization enforcement points. Each service owns
-and enforces its own operation catalog through Huma/OpenAPI metadata such as
-`x-verself-iam`. `iam-service` does not aggregate other services'
-catalogs at runtime and is not the runtime authorizer for other services — its
-catalog is consulted only for the member-capability resolution path inside its
-own boundary.
+its operation catalog through Huma/OpenAPI metadata such as `x-verself-iam` and
+delegates runtime authorization decisions to `iam-service` over SPIFFE mTLS.
+Public API packages depend on the narrow `service-runtime/iam` interface; service
+entrypoints wire generated `iam-service` internal clients.
 
 ## Product Surface
 

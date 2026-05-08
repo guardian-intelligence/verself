@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+# gazelle:prefix github.com/verself/service-runtime/iam
+
+go_library(
+    name = "iam",
+    srcs = ["iam.go"],
+    importpath = "github.com/verself/service-runtime/iam",
+    visibility = ["//visibility:public"],
+    deps = ["//src/services/service-runtime/go/auth"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":iam",
+    visibility = ["//visibility:public"],
+)

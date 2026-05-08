@@ -170,6 +170,17 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionGovernanceAuditRead:           "manage_iam",
 	identity.PermissionGovernanceExportRead:          "manage_iam",
 	identity.PermissionGovernanceExportCreate:        "manage_iam",
+	identity.PermissionProfileRead:                   "read",
+	identity.PermissionProfileIdentityWrite:          "read",
+	identity.PermissionProfilePreferencesWrite:       "read",
+	identity.PermissionNotificationsRead:             "read",
+	identity.PermissionNotificationsWrite:            "read",
+	identity.PermissionNotificationsPreferencesWrite: "read",
+	identity.PermissionNotificationsTest:             "read",
+	identity.PermissionMailboxAccountRead:            "read",
+	identity.PermissionMailboxMailRead:               "read",
+	identity.PermissionMailboxMailWrite:              "read",
+	identity.PermissionMailboxSyncStatusRead:         "read",
 }
 
 func New(backend Backend) *Service {

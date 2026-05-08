@@ -11,10 +11,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/verself/secrets-service/internal/secrets"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func RegisterRoutes(api huma.API, svc *secrets.Service) {
-	registerSecured(api, svc, secured(huma.Operation{
+func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.OperationAuthorizer) {
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "put-secret",
 		Method:        http.MethodPut,
 		Path:          "/api/v1/secrets/{name}",
@@ -34,7 +35,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsKV,
 	}), putSecret(svc, secrets.KindSecret))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "read-secret",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/secrets/{name}",
@@ -52,7 +53,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsKV,
 	}), readSecret(svc, secrets.KindSecret))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-secrets",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/secrets",
@@ -70,7 +71,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsKV,
 	}), listSecrets(svc, secrets.KindSecret))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "resolve-secrets",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/secrets:resolve",
@@ -89,7 +90,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsKV,
 	}), resolveSecrets(svc, secrets.KindSecret))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "delete-secret",
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/secrets/{name}",
@@ -108,7 +109,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsKV,
 	}), deleteSecret(svc, secrets.KindSecret))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "put-variable",
 		Method:        http.MethodPut,
 		Path:          "/api/v1/variables/{name}",
@@ -129,7 +130,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "internal_config",
 	}), putVariable(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "read-variable",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/variables/{name}",
@@ -148,7 +149,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "internal_config",
 	}), readVariable(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-variables",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/variables",
@@ -167,7 +168,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "internal_config",
 	}), listVariables(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "delete-variable",
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/variables/{name}",
@@ -187,7 +188,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "internal_config",
 	}), deleteVariable(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "create-opaque-credential",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/credentials",
@@ -210,7 +211,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "credential_secret",
 	}), createOpaqueCredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "get-opaque-credential",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/credentials/{credential_id}",
@@ -230,7 +231,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "credential_metadata",
 	}), getOpaqueCredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-opaque-credentials",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/credentials",
@@ -250,7 +251,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "credential_metadata",
 	}), listOpaqueCredentials(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "roll-opaque-credential",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/credentials/{credential_id}/roll",
@@ -272,7 +273,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "credential_secret",
 	}), rollOpaqueCredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "revoke-opaque-credential",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/credentials/{credential_id}/revoke",
@@ -294,7 +295,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		DataClassification: "credential_metadata",
 	}), revokeOpaqueCredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "create-transit-key",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/transit/keys",
@@ -314,7 +315,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsTransit,
 	}), createTransitKey(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "rotate-transit-key",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/transit/keys/{key_name}/rotate",
@@ -333,7 +334,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsTransit,
 	}), rotateTransitKey(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "encrypt-with-transit-key",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/transit/keys/{key_name}/encrypt",
@@ -351,7 +352,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsTransit,
 	}), encryptTransit(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "decrypt-with-transit-key",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/transit/keys/{key_name}/decrypt",
@@ -370,7 +371,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsTransit,
 	}), decryptTransit(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "sign-with-transit-key",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/transit/keys/{key_name}/sign",
@@ -388,7 +389,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		BillingSKU:      billingSKUSecretsTransit,
 	}), signTransit(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "verify-with-transit-key",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/transit/keys/{key_name}/verify",

@@ -14,6 +14,7 @@ go_library(
         "//src/domain-transfer-objects/go:dto",
         "//src/services/notifications-service/internal/notifications",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",

@@ -12,6 +12,7 @@ import (
 
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
@@ -160,48 +161,17 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 	}
 }
 
-func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
-	owner := sandboxServiceToken("42", roleOwner)
-	if !identityHasPermission(owner, permissionStickyDiskWrite) {
-		t.Fatal("owner should be allowed to reset sticky disks")
-	}
+func TestEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
+	ctx := auth.WithIdentity(context.Background(), sandboxServiceToken("42", "member"))
 
-	admin := sandboxServiceToken("42", roleAdmin)
-	if !identityHasPermission(admin, permissionGitHubWrite) {
-		t.Fatal("admin should be allowed to manage GitHub installation")
+	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionGitHubWrite): true}, operationPolicy{
+		Permission: permissionGitHubWrite,
+	}, &EmptyInput{})
+	if err != nil {
+		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
-
-	member := sandboxServiceToken("42", roleMember)
-	if !identityHasPermission(member, permissionScheduleWrite) {
-		t.Fatal("member should be allowed to manage execution schedules")
-	}
-	if identityHasPermission(member, permissionGitHubWrite) {
-		t.Fatal("member should not be allowed to manage GitHub installation")
-	}
-
-	unmarkedScope := &auth.Identity{
-		OrgID: "42",
-		Raw: map[string]any{
-			"scope": "openid sandbox:logs:read",
-		},
-	}
-	if identityHasPermission(unmarkedScope, permissionLogsRead) {
-		t.Fatal("plain OAuth scope should not grant operation permissions without an API credential marker")
-	}
-
-	scopedClient := &auth.Identity{
-		OrgID:   "42",
-		Subject: "credential-1",
-		Raw: map[string]any{
-			"verself:credential_id": "credential-1",
-			"permissions":           []string{"sandbox:logs:read"},
-		},
-	}
-	if !identityHasPermission(scopedClient, permissionLogsRead) {
-		t.Fatal("API credential permissions claim should grant matching operation permission")
-	}
-	if identityHasPermission(scopedClient, permissionScheduleWrite) {
-		t.Fatal("API credential permissions claim should not grant unrelated permissions")
+	if identity == nil || identity.Subject != "user-1" {
+		t.Fatalf("expected operation identity, got %#v", identity)
 	}
 }
 
@@ -226,11 +196,11 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 		OrgID:   "42",
 		RoleAssignments: []auth.RoleAssignment{{
 			OrganizationID: "42",
-			Role:           roleMember,
+			Role:           "member",
 		}},
 	})
 
-	identity, err := enforceOperationPolicy(ctx, operationPolicy{
+	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, operationPolicy{
 		Permission: permissionGitHubWrite,
 	}, &EmptyInput{})
 	if identity == nil || identity.Subject != "user-123" {
@@ -240,6 +210,12 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
 		t.Fatalf("expected forbidden missing-permission error, got %#v", err)
 	}
+}
+
+type fakeAuthorizer map[string]bool
+
+func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, permission string) (runtimeiam.AuthorizationDecision, error) {
+	return runtimeiam.AuthorizationDecision{Allowed: f[permission], Permissions: []string{permission}}, nil
 }
 
 func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {

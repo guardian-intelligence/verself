@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	billingclient "github.com/verself/billing-service/client"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
 	secretsapi "github.com/verself/secrets-service/internal/api"
@@ -54,6 +55,7 @@ func run() error {
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4251")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
 	governanceAuditURL := cfg.String("SECRETS_GOVERNANCE_AUDIT_URL", "")
+	iamInternalURL := cfg.URL("SECRETS_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
@@ -118,6 +120,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing client: %w", err)
 	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("secrets iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("iam client: %w", err)
+	}
 
 	svc := &secrets.Service{
 		Store:          store,
@@ -147,7 +157,7 @@ func run() error {
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	privateMux := http.NewServeMux()
-	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc)
+	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc, iamclient.NewAuthorizer(iamClient))
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

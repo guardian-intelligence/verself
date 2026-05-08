@@ -9,12 +9,14 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type Config struct {
 	Version    string
 	ListenAddr string
 	Service    *profile.Service
+	Authorizer runtimeiam.OperationAuthorizer
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -28,7 +30,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, cfg.Service)
+	RegisterRoutes(api, cfg.Service, cfg.Authorizer)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

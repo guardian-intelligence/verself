@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/verself/projects-service/internal/projects"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -24,7 +25,7 @@ var publicServicePeers = []string{
 type projectOperation interface {
 	id() string
 	projections() apiProjection
-	register(api huma.API, svc *projects.Service, projection apiProjection)
+	register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer)
 }
 
 type projectOperationDef[I, O any] struct {
@@ -43,21 +44,21 @@ func (o projectOperationDef[I, O]) projections() apiProjection {
 	return o.enabledProjections
 }
 
-func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection) {
+func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer) {
 	policy := o.policy
 	if projection == apiProjectionInternal && !policy.Service {
 		policy.Service = true
 		policy.ServicePeers = append([]string(nil), o.serviceMirrorPeers...)
 	}
-	registerProjectsRoute(api, o.op, policy, o.handler(svc))
+	registerProjectsRoute(api, authorizer, o.op, policy, o.handler(svc))
 }
 
-func registerProjectOperations(api huma.API, svc *projects.Service, projection apiProjection) {
+func registerProjectOperations(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer) {
 	for _, op := range projectOperations() {
 		if op.projections()&projection == 0 {
 			continue
 		}
-		op.register(api, svc, projection)
+		op.register(api, svc, projection, authorizer)
 	}
 }
 

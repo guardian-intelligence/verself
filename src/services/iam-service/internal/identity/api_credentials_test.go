@@ -257,5 +257,8 @@ func (apiCredentialTestAuthz) ReconcileServiceAccountPermissions(context.Context
 }
 
 func (apiCredentialTestAuthz) TestOrganizationPermissions(_ context.Context, _ string, _ AuthorizationSubject, permissions []string, _ string) ([]string, string, error) {
+	if len(permissions) == 1 && permissions[0] == PermissionAPICredentialsCreate {
+		return nil, "", nil
+	}
 	return append([]string(nil), permissions...), "", nil
 }

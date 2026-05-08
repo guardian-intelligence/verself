@@ -14,12 +14,13 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/governance"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 var apiTracer = otel.Tracer("governance-service/internal/api")
 
-func RegisterRoutes(api huma.API, svc *governance.Service) {
-	registerSecured(api, svc, secured(huma.Operation{
+func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam.OperationAuthorizer) {
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-audit-events",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/audit/events",
@@ -39,7 +40,7 @@ func RegisterRoutes(api huma.API, svc *governance.Service) {
 		DataClassification: "restricted",
 	}), listAuditEvents(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-data-exports",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/exports",
@@ -59,7 +60,7 @@ func RegisterRoutes(api huma.API, svc *governance.Service) {
 		DataClassification: "restricted",
 	}), listExports(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "create-data-export",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/governance/exports",
@@ -82,7 +83,7 @@ func RegisterRoutes(api huma.API, svc *governance.Service) {
 		BodyLimitBytes:     bodyLimitSmallJSON,
 	}), createExport(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "get-data-export",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/exports/{export_id}",
@@ -102,7 +103,7 @@ func RegisterRoutes(api huma.API, svc *governance.Service) {
 		DataClassification: "restricted",
 	}), getExport(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "download-data-export",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/exports/{export_id}/download",

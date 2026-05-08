@@ -1,4 +1,4 @@
-"""aspect mail list|accounts|mailboxes|code|read|send|passwords — Stalwart inbox tooling.
+"""aspect mail send|passwords — Stalwart operator tooling.
 
 Mail-recipient shortcuts (mail-send-ceo, mail-send-agents) are intentionally
 not preserved; use `aspect mail send --to=ceo` / `--to=agents`.
@@ -10,60 +10,13 @@ load(
     "checked_spawn",
     "inventory_check",
     "require_arg",
-    "site_inventory_source",
     "ws_path",
 )
 
-_MS = "src/services/mailbox-service"
 _SITE = "prod"
 
 def _aspect_operator_bin(ctx):
     return build_aspect_operator(ctx)
-
-def _mailbox_tool(ctx, *args):
-    if inventory_check(ctx, _SITE) != 0:
-        return 1
-    inv_abs = ws_path(ctx, site_inventory_source(_SITE))
-    cli_args = [
-        "run",
-        "./cmd/mailbox-tool",
-        "--inventory",
-        inv_abs,
-    ] + list(args)
-    return checked_spawn(
-        ctx,
-        "go",
-        cli_args,
-        cwd = ws_path(ctx, _MS),
-        label = "mailbox-tool " + " ".join(args),
-    )
-
-def _account_args(ctx):
-    """Return the --account flag when --mailbox is set, else an empty list."""
-    if ctx.args.mailbox:
-        return ["--account", ctx.args.mailbox]
-    return []
-
-def _list_impl(ctx):
-    cli_args = _account_args(ctx)
-    if ctx.args.limit:
-        cli_args = cli_args + ["--limit", ctx.args.limit]
-    return _mailbox_tool(ctx, "list", *cli_args)
-
-def _accounts_impl(ctx):
-    return _mailbox_tool(ctx, "accounts")
-
-def _mailboxes_impl(ctx):
-    return _mailbox_tool(ctx, "mailboxes", *_account_args(ctx))
-
-def _code_impl(ctx):
-    return _mailbox_tool(ctx, "code", *_account_args(ctx))
-
-def _read_impl(ctx):
-    if not require_arg(ctx, "id", ctx.args.id):
-        return 1
-    cli_args = _account_args(ctx) + ["--id", ctx.args.id]
-    return _mailbox_tool(ctx, "read", *cli_args)
 
 def _send_impl(ctx):
     if inventory_check(ctx, _SITE) != 0:
@@ -98,55 +51,6 @@ def _passwords_impl(ctx):
         cwd = ws_path(ctx),
         label = "aspect-operator mail passwords",
     )
-
-list_task = task(
-    implementation = _list_impl,
-    name = "list",
-    group = ["mail"],
-    summary = "List recent emails (defaults to agents inbox).",
-    args = {
-        "mailbox": args.string(default = "", description = "Inbox to query (default: agents)."),
-        "limit": args.string(default = "", description = "Max number of messages to return."),
-    },
-)
-
-accounts = task(
-    implementation = _accounts_impl,
-    name = "accounts",
-    group = ["mail"],
-    summary = "List synced mailbox accounts.",
-)
-
-mailboxes = task(
-    implementation = _mailboxes_impl,
-    name = "mailboxes",
-    group = ["mail"],
-    summary = "List mailboxes for an account (defaults to agents).",
-    args = {
-        "mailbox": args.string(default = "", description = "Inbox to query (default: agents)."),
-    },
-)
-
-code = task(
-    implementation = _code_impl,
-    name = "code",
-    group = ["mail"],
-    summary = "Extract latest 2FA/verification code (defaults to agents).",
-    args = {
-        "mailbox": args.string(default = "", description = "Inbox to query (default: agents)."),
-    },
-)
-
-read = task(
-    implementation = _read_impl,
-    name = "read",
-    group = ["mail"],
-    summary = "Read a specific email by ID (get IDs from `aspect mail list`).",
-    args = {
-        "mailbox": args.string(default = "", description = "Inbox to query (default: agents)."),
-        "id": args.string(default = "", description = "Email ID to read."),
-    },
-)
 
 send = task(
     implementation = _send_impl,

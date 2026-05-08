@@ -7,18 +7,23 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
 )
 
-func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity.Service) huma.API {
+func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity.Service, authzServices ...*authz.Service) huma.API {
 	if version == "" {
 		version = "1.0.0"
+	}
+	var authzSvc *authz.Service
+	if len(authzServices) > 0 {
+		authzSvc = authzServices[0]
 	}
 	config := huma.DefaultConfig("Verself IAM Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecuritySchemes(api)
-	RegisterInternalRoutes(api, svc)
+	RegisterInternalRoutes(api, svc, authzSvc)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

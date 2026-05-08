@@ -21,6 +21,7 @@ nomad_component(
     },
     component = "source_code_hosting_service",
     depends_on = [
+        "iam-service",
         "projects-service",
         "secrets-service",
     ],

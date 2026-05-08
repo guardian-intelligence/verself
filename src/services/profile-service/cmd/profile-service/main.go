@@ -134,7 +134,7 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	profileapi.NewAPI(privateMux, profileapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc})
+	profileapi.NewAPI(privateMux, profileapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

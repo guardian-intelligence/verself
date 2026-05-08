@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	runtimeiam "github.com/verself/service-runtime/iam"
 	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
@@ -22,6 +23,7 @@ type Config struct {
 	Service       *source.Service
 	PublicBaseURL string
 	WebhookSecret string
+	Authorizer    runtimeiam.OperationAuthorizer
 }
 
 type repositoryPath struct {
@@ -119,7 +121,7 @@ type archiveOutput struct {
 
 func RegisterRoutes(api huma.API, cfg Config) {
 	svc := cfg.Service
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID:   "create-source-repository",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos",
@@ -139,7 +141,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		BodyLimitBytes:   bodyLimitSmallJSON,
 	}, createRepository(svc, cfg))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID:   "create-source-git-credential",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/git-credentials",
@@ -159,7 +161,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		BodyLimitBytes:   bodyLimitSmallJSON,
 	}, createGitCredential(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "list-source-repositories",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos",
@@ -176,7 +178,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "low",
 	}, listRepositories(svc, cfg))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "get-source-repository",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}",
@@ -193,7 +195,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "low",
 	}, getRepository(svc, cfg))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "list-source-refs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/refs",
@@ -210,7 +212,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "low",
 	}, listRefs(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "get-source-tree",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/tree",
@@ -227,7 +229,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "low",
 	}, getTree(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "get-source-blob",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/blob",
@@ -244,7 +246,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "medium",
 	}, getBlob(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID:   "create-source-checkout-grant",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos/{repo_id}/checkout-grants",
@@ -264,7 +266,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		BodyLimitBytes:   bodyLimitSmallJSON,
 	}, createCheckoutGrant(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID:   "create-source-workflow-run",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos/{repo_id}/workflow-runs",
@@ -284,7 +286,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		BodyLimitBytes:   bodyLimitSmallJSON,
 	}, createWorkflowRun(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "list-source-workflow-runs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/workflow-runs",
@@ -301,7 +303,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "low",
 	}, listWorkflowRuns(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "get-source-workflow-run",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/workflow-runs/{workflow_run_id}",
@@ -321,7 +323,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
 	svc := cfg.Service
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID:   "internal-create-source-workflow-run",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/workflow-runs",
@@ -341,7 +343,7 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 		Internal:         true,
 	}, internalCreateWorkflowRun(svc))
 
-	registerSourceRoute(api, huma.Operation{
+	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "download-source-checkout-archive",
 		Method:      http.MethodGet,
 		Path:        "/internal/v1/checkouts/{grant_id}/archive",

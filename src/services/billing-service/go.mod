@@ -17,6 +17,7 @@ require (
 	github.com/stripe/stripe-go/v85 v85.0.0
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1
 	github.com/verself/domain-transfer-objects v0.0.0
+	github.com/verself/iam-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -87,6 +88,8 @@ require (
 )
 
 replace github.com/verself/secrets-service => ../secrets-service
+
+replace github.com/verself/iam-service => ../iam-service
 
 replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 

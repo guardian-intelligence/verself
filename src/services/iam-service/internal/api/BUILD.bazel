@@ -47,7 +47,9 @@ go_test(
     ],
     embed = [":api"],
     deps = [
+        "//src/services/iam-service/internal/authz",
         "//src/services/iam-service/internal/identity",
+        "//src/services/iam-service/internal/spicedb",
         "//src/services/service-runtime/go/auth",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],

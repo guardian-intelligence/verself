@@ -20,6 +20,10 @@ nomad_component(
         "//src/services/notifications-service/cmd/notifications-service:notifications-service_nomad_artifact": "notifications-service",
     },
     component = "notifications_service",
+    depends_on = [
+        "iam-service",
+        "secrets-service",
+    ],
     job_id = "notifications-service",
     job_spec = "nomad.hcl",
     requires = [

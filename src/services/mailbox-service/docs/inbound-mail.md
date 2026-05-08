@@ -103,24 +103,10 @@ The webmail app never asks the human for the Stalwart password. That mailbox pas
 
 Basic Auth is used for both JMAP and the Management API. Stalwart does not support `grant_type=password` on its OAuth endpoint.
 
-## Operator read API
-
-```bash
-# List synced mailbox accounts over the local operator API
-curl -s http://127.0.0.1:4246/internal/mailbox/v1/accounts
-
-# List recent synced emails for one account
-curl -s 'http://127.0.0.1:4246/internal/mailbox/v1/accounts/agents/emails?limit=10'
-
-# Read a specific email body for one account
-curl -s http://127.0.0.1:4246/internal/mailbox/v1/accounts/agents/emails/<EMAIL_ID>
-```
-
-These endpoints are loopback-only and are intended for operator tooling. They read from `mailbox-service`'s PostgreSQL projection and fetch/cache the body through the existing sync/JMAP path when needed.
-
 ## Querying mail via JMAP
 
-JMAP remains the Stalwart protocol boundary, but repo-owned tooling should prefer the operator API above instead of issuing ad hoc JMAP requests over SSH.
+JMAP remains the Stalwart protocol boundary for mailbox clients and direct
+mail-protocol operator inspection.
 
 ## Management API (admin only, loopback)
 
@@ -206,9 +192,8 @@ aspect mail list --mailbox=ceo                # Switch to ceo@
 - `src/infrastructure-components/stalwart/nftables/stalwart.nft` — Stalwart nftables contract copied to `/etc/nftables.d/` by owner-local substrate convergence
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
-- `cmd/mailbox-openapi/` + `client/` — generated operator/mutation API client surface
-- `cmd/mailbox-tool/` — typed operator CLI over the generated mailbox-service client
-- `aspect mail` task group — operator shortcuts over `cmd/mailbox-tool`
+- `cmd/mailbox-openapi/` + `client/` — generated authenticated mailbox API client surface
+- `aspect mail` task group — operator shortcuts for outbound mail and mailbox credentials
 
 ## Product evolution
 

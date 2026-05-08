@@ -15,7 +15,7 @@ import (
 )
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-organization",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization",
@@ -29,7 +29,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.organization.read",
 	}), getOrganization(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-my-organizations",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/me/organizations",
@@ -41,9 +41,9 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenRoleAssignmentOrgIDs,
 		RateLimitClass: "read",
 		AuditEvent:     "iam.organization.membership.list",
-	}), listMyOrganizations(svc))
+	}), listMyOrganizations(svc, authzSvc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "patch-organization",
 		Method:        http.MethodPatch,
 		Path:          "/api/v1/organization",
@@ -60,7 +60,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), updateOrganization(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-organization-members",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/members",
@@ -74,7 +74,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.organization.member.list",
 	}), listMembers(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "invite-organization-member",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/organization/members",
@@ -91,7 +91,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), inviteMember(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "update-organization-member-roles",
 		Method:        http.MethodPut,
 		Path:          "/api/v1/organization/members/{user_id}/roles",
@@ -108,7 +108,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), updateMemberRoles(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-organization-member-capabilities",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/member-capabilities",
@@ -122,7 +122,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.organization.member_capabilities.read",
 	}), getMemberCapabilities(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "put-organization-member-capabilities",
 		Method:        http.MethodPut,
 		Path:          "/api/v1/organization/member-capabilities",
@@ -139,7 +139,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), putMemberCapabilities(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-organization-iam-policy",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organizations/{org_id}/iamPolicy",
@@ -153,7 +153,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.organization.policy.read",
 	}), getOrganizationIAMPolicy(authzSvc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "set-organization-iam-policy",
 		Method:        http.MethodPut,
 		Path:          "/api/v1/organizations/{org_id}/iamPolicy",
@@ -170,7 +170,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), setOrganizationIAMPolicy(authzSvc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "test-organization-iam-permissions",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/organizations/{org_id}/iamPolicy:testPermissions",
@@ -187,7 +187,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), testOrganizationIAMPermissions(authzSvc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-service-accounts",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/service-accounts",
@@ -201,7 +201,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.service_account.list",
 	}), listServiceAccounts(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-service-account",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/service-accounts/{service_account_id}",
@@ -215,7 +215,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.service_account.read",
 	}), getServiceAccount(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "disable-service-account",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/organization/service-accounts/{service_account_id}/disable",
@@ -232,7 +232,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitNoBody,
 	}), disableServiceAccount(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-api-credentials",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/api-credentials",
@@ -246,7 +246,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.api_credential.list",
 	}), listAPICredentials(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-api-credential",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/api-credentials/{credential_id}",
@@ -260,7 +260,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		AuditEvent:     "iam.api_credential.read",
 	}), getAPICredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "create-api-credential",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/organization/api-credentials",
@@ -277,7 +277,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createAPICredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "roll-api-credential",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/organization/api-credentials/{credential_id}/roll",
@@ -294,7 +294,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), rollAPICredential(svc))
 
-	registerSecured(api, svc, secured(huma.Operation{
+	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "revoke-api-credential",
 		Method:        http.MethodDelete,
 		Path:          "/api/v1/organization/api-credentials/{credential_id}",
@@ -442,15 +442,17 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 		return identity.Principal{}, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
 	}
 	subject := authIdentity.Subject
+	subjectKind := identity.AuthorizationSubjectKindUser
 	if serviceAccountID, _ := authIdentity.Raw["verself:service_account_id"].(string); strings.TrimSpace(serviceAccountID) != "" {
 		subject = strings.TrimSpace(serviceAccountID)
+		subjectKind = identity.AuthorizationSubjectKindServiceAccount
 	}
 	return identity.Principal{
-		Subject:           subject,
-		OrgID:             authIdentity.OrgID,
-		Roles:             identityRolesForCurrentOrg(authIdentity),
-		DirectPermissions: directPermissionsFromAuthIdentity(authIdentity),
-		Email:             authIdentity.Email,
+		Subject:     subject,
+		SubjectKind: subjectKind,
+		OrgID:       authIdentity.OrgID,
+		Roles:       identityRolesForCurrentOrg(authIdentity),
+		Email:       authIdentity.Email,
 	}, nil
 }
 
@@ -468,13 +470,13 @@ func getOrganization(svc *identity.Service) func(context.Context, *emptyInput) (
 	}
 }
 
-func listMyOrganizations(svc *identity.Service) func(context.Context, *emptyInput) (*accessibleOrganizationsOutput, error) {
+func listMyOrganizations(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *emptyInput) (*accessibleOrganizationsOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*accessibleOrganizationsOutput, error) {
 		authIdentity, err := requireIdentity(ctx)
 		if err != nil {
 			return nil, err
 		}
-		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, svc, authIdentity, permissionOrganizationRead)
+		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, authzSvc, authIdentity, permissionOrganizationRead)
 		if err != nil {
 			return nil, err
 		}
@@ -949,11 +951,12 @@ func authzSubjectFromIdentity(authIdentity *auth.Identity) identity.Authorizatio
 	if authIdentity == nil {
 		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser}
 	}
-	if serviceAccountID, _ := authIdentity.Raw["verself:service_account_id"].(string); strings.TrimSpace(serviceAccountID) != "" {
-		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: serviceAccountID}
-	}
 	if credentialID, _ := authIdentity.Raw["verself:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
-		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: authIdentity.Subject}
+		serviceAccountID, _ := authIdentity.Raw["verself:service_account_id"].(string)
+		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: strings.TrimSpace(serviceAccountID)}
+	}
+	if serviceAccountID, _ := authIdentity.Raw["verself:service_account_id"].(string); strings.TrimSpace(serviceAccountID) != "" {
+		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: strings.TrimSpace(serviceAccountID)}
 	}
 	return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser, ID: authIdentity.Subject}
 }
@@ -998,22 +1001,6 @@ func policyBindingsFromDTO(bindings []dto.IAMPolicyBinding) []authz.PolicyBindin
 		})
 	}
 	return out
-}
-
-func directPermissionsFromAuthIdentity(authIdentity *auth.Identity) []string {
-	if authIdentity == nil {
-		return nil
-	}
-	credentialID, _ := authIdentity.Raw["verself:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" {
-		return nil
-	}
-	out := []string{}
-	for _, claimKey := range []string{"permissions", "permission"} {
-		out = append(out, stringClaimList(authIdentity.Raw[claimKey])...)
-	}
-	sort.Strings(out)
-	return compactStrings(out)
 }
 
 func orgID(value string) dto.OrgID {

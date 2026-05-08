@@ -10,6 +10,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/verself/domain-transfer-objects v0.0.0
+	github.com/verself/iam-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -59,3 +60,5 @@ replace github.com/verself/domain-transfer-objects => ../../domain-transfer-obje
 replace github.com/verself/service-runtime => ../service-runtime/go
 
 replace github.com/verself/observability => ../../tools/observability/go
+
+replace github.com/verself/iam-service => ../iam-service

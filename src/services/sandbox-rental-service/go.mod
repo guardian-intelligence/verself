@@ -17,6 +17,7 @@ require (
 	github.com/verself/billing-service v0.0.0
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
+	github.com/verself/iam-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	github.com/verself/source-code-hosting-service v0.0.0
 	github.com/verself/temporal-platform v0.0.0
@@ -116,6 +117,7 @@ require (
 replace (
 	github.com/verself/billing-service => ../billing-service
 	github.com/verself/governance-service => ../governance-service
+	github.com/verself/iam-service => ../iam-service
 	github.com/verself/secrets-service => ../secrets-service
 	github.com/verself/source-code-hosting-service => ../source-code-hosting-service
 	github.com/verself/temporal-platform => ../../infrastructure-components/temporal-platform

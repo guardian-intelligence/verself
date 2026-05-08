@@ -22,6 +22,7 @@ nomad_component(
     },
     component = "sandbox_rental",
     depends_on = [
+        "iam-service",
         "secrets-service",
         "source-code-hosting-service",
         "temporal",

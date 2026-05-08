@@ -2,12 +2,17 @@ load("//bazel:openapi_codegen.bzl", "verself_oapi_go_client")
 
 verself_oapi_go_client(
     name = "client",
+    extra_srcs = ["authorization.go"],
     importpath = "github.com/verself/iam-service/client",
     package = "iamclient",
     response_type_suffix = "HTTPResponse",
     spec = "//src/services/iam-service/openapi:internal-openapi-3.0.yaml",
     visibility = ["//src/services:__subpackages__"],
-    deps = ["@com_github_oapi_codegen_runtime//:runtime"],
+    deps = [
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
+        "@com_github_oapi_codegen_runtime//:runtime",
+    ],
 )
 
 alias(

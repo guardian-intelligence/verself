@@ -28,6 +28,17 @@ var baselineMemberPermissions = []string{
 	PermissionMemberRead,
 	PermissionMemberCapabilitiesRead,
 	PermissionIAMPolicyTest,
+	PermissionProfileRead,
+	PermissionProfileIdentityWrite,
+	PermissionProfilePreferencesWrite,
+	PermissionNotificationsRead,
+	PermissionNotificationsWrite,
+	PermissionNotificationsPreferencesWrite,
+	PermissionNotificationsTest,
+	PermissionMailboxAccountRead,
+	PermissionMailboxMailRead,
+	PermissionMailboxMailWrite,
+	PermissionMailboxSyncStatusRead,
 }
 
 var defaultCapabilities = []Capability{

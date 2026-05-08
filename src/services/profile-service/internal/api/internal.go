@@ -32,7 +32,7 @@ func (o *dataRightsOutput) auditDetails() auditDetails {
 }
 
 func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
-	registerProfileRoute(api, huma.Operation{
+	registerProfileRoute(api, nil, huma.Operation{
 		OperationID:   "profile-org-export",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/data-rights/org-export",
@@ -52,7 +52,7 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Internal:         true,
 	}, orgExport(svc))
 
-	registerProfileRoute(api, huma.Operation{
+	registerProfileRoute(api, nil, huma.Operation{
 		OperationID:   "profile-subject-export",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/data-rights/subject-export",
@@ -72,7 +72,7 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Internal:         true,
 	}, subjectExport(svc))
 
-	registerProfileRoute(api, huma.Operation{
+	registerProfileRoute(api, nil, huma.Operation{
 		OperationID:   "profile-subject-erasure",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/data-rights/subject-erasure",
@@ -92,7 +92,7 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Internal:         true,
 	}, subjectErasure(svc))
 
-	registerProfileRoute(api, huma.Operation{
+	registerProfileRoute(api, nil, huma.Operation{
 		OperationID: "profile-data-rights-status",
 		Method:      http.MethodGet,
 		Path:        "/internal/v1/data-rights/requests/{request_id}",

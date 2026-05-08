@@ -10,10 +10,12 @@ import (
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type PublicAPIConfig struct {
 	PublicBaseURL string
+	Authorizer    runtimeiam.OperationAuthorizer
 }
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, publicConfig PublicAPIConfig) huma.API {

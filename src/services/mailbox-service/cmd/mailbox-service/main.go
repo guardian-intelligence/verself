@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
@@ -52,6 +53,7 @@ type config struct {
 	SyncReconcileInterval time.Duration
 	AuthIssuerURL         string
 	AuthAudience          string
+	IAMInternalURL        string
 	SecretsURL            string
 	CEOPassword           string
 	AgentsPassword        string
@@ -115,6 +117,14 @@ func run() error {
 	secretsClient, err := secretsclient.NewClientWithResponses(cfg.SecretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets client: %w", err)
+	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("mailbox-service iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(cfg.IAMInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("mailbox-service iam client: %w", err)
 	}
 
 	transport := otelhttp.NewTransport(
@@ -198,7 +208,7 @@ func run() error {
 	service := app.New(cfg.StalwartBaseURL, cfg.PublicBaseURL, proxy, fwd, store, syncManager)
 
 	mux := http.NewServeMux()
-	_, protectedAPI := api.NewAPI(mux, version, cfg.ListenAddr, service)
+	_, protectedAPI := api.NewAPI(mux, version, cfg.ListenAddr, service, iamclient.NewAuthorizer(iamClient))
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: cfg.AuthIssuerURL,
 		Audience:  cfg.AuthAudience,
@@ -237,6 +247,7 @@ func loadConfig() (config, error) {
 		SyncReconcileInterval: l.Duration("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
 		AuthIssuerURL:         l.RequireURL("VERSELF_AUTH_ISSUER_URL"),
 		AuthAudience:          l.RequireCredential("auth-audience"),
+		IAMInternalURL:        l.URL("MAILBOX_SERVICE_IAM_INTERNAL_URL", "https://127.0.0.1:4241"),
 		SecretsURL:            l.RequireURL("MAILBOX_SERVICE_SECRETS_URL"),
 		CEOPassword:           l.RequireCredential("stalwart-ceo-password"),
 		AgentsPassword:        l.RequireCredential("stalwart-agents-password"),

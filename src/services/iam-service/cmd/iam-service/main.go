@@ -227,7 +227,18 @@ func run() error {
 	protected := auth.Middleware(authConfig)(privateMux)
 	rootMux.Handle("/", protected)
 
-	internalPeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceProfile, workloadauth.ServiceSourceCodeHosting)
+	internalPeerIDs, err := workloadauth.PeerIDsForSource(
+		spiffeSource,
+		workloadauth.ServiceBilling,
+		workloadauth.ServiceGovernance,
+		workloadauth.ServiceMailbox,
+		workloadauth.ServiceNotifications,
+		workloadauth.ServiceProfile,
+		workloadauth.ServiceProjects,
+		workloadauth.ServiceSandboxRental,
+		workloadauth.ServiceSecrets,
+		workloadauth.ServiceSourceCodeHosting,
+	)
 	if err != nil {
 		return err
 	}
@@ -236,7 +247,7 @@ func run() error {
 		return fmt.Errorf("iam spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	api.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, identityService)
+	api.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, identityService, authzService)
 	profileAuthenticated := auth.Middleware(authConfig)(internalMux)
 	internalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/internal/v1/subjects/") {

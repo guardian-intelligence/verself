@@ -15,6 +15,7 @@ import (
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/notifications-service/internal/notifications"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 const (
@@ -71,20 +72,20 @@ type acceptedOutput struct {
 	Body dto.NotificationAccepted
 }
 
-func RegisterRoutes(api huma.API, svc *notifications.Service) {
+func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtimeiam.OperationAuthorizer) {
 	register(api, huma.Operation{
 		OperationID: "list-notifications",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/notifications",
 		Summary:     "List current human notifications",
-	}, "notifications:self:read", listNotifications(svc))
+	}, authorizer, "notifications:self:read", listNotifications(svc))
 
 	register(api, huma.Operation{
 		OperationID: "get-notification-summary",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/notifications/summary",
 		Summary:     "Get current human notification summary",
-	}, "notifications:self:read", getSummary(svc))
+	}, authorizer, "notifications:self:read", getSummary(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "put-notification-preferences",
@@ -93,7 +94,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Summary:       "Replace current human notification preferences",
 		DefaultStatus: http.StatusOK,
 		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, "notifications:self:preferences:write", putPreferences(svc))
+	}, authorizer, "notifications:self:preferences:write", putPreferences(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "advance-notification-read-cursor",
@@ -102,7 +103,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Summary:       "Advance current human notification read cursor",
 		DefaultStatus: http.StatusOK,
 		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, "notifications:self:write", markRead(svc))
+	}, authorizer, "notifications:self:write", markRead(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "dismiss-notification",
@@ -110,7 +111,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Path:          "/api/v1/notifications/{notification_id}/dismiss",
 		Summary:       "Dismiss a current human notification",
 		DefaultStatus: http.StatusOK,
-	}, "notifications:self:write", dismissNotification(svc))
+	}, authorizer, "notifications:self:write", dismissNotification(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "mark-notification-read",
@@ -118,7 +119,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Path:          "/api/v1/notifications/{notification_id}/read",
 		Summary:       "Mark one current human notification read",
 		DefaultStatus: http.StatusOK,
-	}, "notifications:self:write", markNotificationRead(svc))
+	}, authorizer, "notifications:self:write", markNotificationRead(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "clear-notifications",
@@ -126,7 +127,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Path:          "/api/v1/notifications/clear",
 		Summary:       "Dismiss all current human notifications",
 		DefaultStatus: http.StatusOK,
-	}, "notifications:self:write", clearNotifications(svc))
+	}, authorizer, "notifications:self:write", clearNotifications(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "publish-test-notification",
@@ -135,10 +136,10 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Summary:       "Publish a synthetic notification to the current human",
 		DefaultStatus: http.StatusAccepted,
 		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, "notifications:self:test", publishTestNotification(svc))
+	}, authorizer, "notifications:self:test", publishTestNotification(svc))
 }
 
-func register[I, O any](api huma.API, op huma.Operation, permission string, handler func(context.Context, *I) (*O, error)) {
+func register[I, O any](api huma.API, op huma.Operation, authorizer runtimeiam.OperationAuthorizer, permission string, handler func(context.Context, *I) (*O, error)) {
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
@@ -160,7 +161,12 @@ func register[I, O any](api huma.API, op huma.Operation, permission string, hand
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := apiTracer.Start(ctx, "notifications.api."+op.OperationID)
 		defer span.End()
-		identity := auth.FromContext(ctx)
+		identity, err := enforceOperationPolicy(ctx, authorizer, permission)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
+		}
 		if identity != nil {
 			span.SetAttributes(
 				attribute.String("verself.org_id", identity.OrgID),
@@ -175,6 +181,28 @@ func register[I, O any](api huma.API, op huma.Operation, permission string, hand
 		}
 		return out, nil
 	})
+}
+
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, permission string) (*auth.Identity, error) {
+	identity := auth.FromContext(ctx)
+	if identity == nil {
+		return nil, unauthorized(ctx)
+	}
+	principal := notifications.Principal{Subject: identity.Subject, OrgID: identity.OrgID, Email: identity.Email, Raw: identity.Raw}
+	if err := notifications.ValidatePrincipal(principal); err != nil {
+		return identity, forbidden(ctx, "human-notification-inbox-required", "notification routes require a human subject token")
+	}
+	if authorizer == nil {
+		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+	}
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, permission)
+	if err != nil {
+		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+	}
+	if !decision.Allowed {
+		return identity, forbidden(ctx, "permission-denied", "missing required notification permission")
+	}
+	return identity, nil
 }
 
 func listNotifications(svc *notifications.Service) func(context.Context, *listInput) (*listOutput, error) {

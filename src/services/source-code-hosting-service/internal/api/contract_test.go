@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 func TestSourceOpenAPIContract(t *testing.T) {
@@ -82,55 +83,22 @@ func TestSourceCheckoutGrantPublicRequestDoesNotExposeUnimplementedPathPrefix(t 
 	}
 }
 
-func TestSourceIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
-	owner := sourceServiceToken("42", roleOwner)
-	if !identityHasPermission(owner, permissionWorkflowWrite) {
-		t.Fatal("owner should be allowed to dispatch source workflows")
-	}
+func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
+	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
 
-	admin := sourceServiceToken("42", roleAdmin)
-	if !identityHasPermission(admin, permissionGitCredentialWrite) {
-		t.Fatal("admin should be allowed to create source git credentials")
+	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionRepoWrite): true}, operationPolicy{Permission: permissionRepoWrite})
+	if err != nil {
+		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
-
-	member := sourceServiceToken("42", roleMember)
-	if !identityHasPermission(member, permissionRepoRead) {
-		t.Fatal("member should be allowed to read source repositories")
-	}
-	if identityHasPermission(member, permissionRepoWrite) {
-		t.Fatal("member should not be allowed to write source repositories")
-	}
-
-	unmarkedScope := &auth.Identity{
-		OrgID: "42",
-		Raw: map[string]any{
-			"scope": "openid source:repo:write",
-		},
-	}
-	if identityHasPermission(unmarkedScope, permissionRepoWrite) {
-		t.Fatal("plain OAuth scope should not grant operation permissions without an API credential marker")
-	}
-
-	scopedClient := &auth.Identity{
-		OrgID:   "42",
-		Subject: "credential-1",
-		Raw: map[string]any{
-			"verself:credential_id": "credential-1",
-			"permissions":           []string{"source:repo:write"},
-		},
-	}
-	if !identityHasPermission(scopedClient, permissionRepoWrite) {
-		t.Fatal("API credential permissions claim should grant matching source permission")
-	}
-	if identityHasPermission(scopedClient, permissionWorkflowWrite) {
-		t.Fatal("API credential permissions claim should not grant unrelated source permission")
+	if principal.OrgID != 42 {
+		t.Fatalf("org id = %d, want 42", principal.OrgID)
 	}
 }
 
 func TestSourceEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
-	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", roleMember))
+	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
 
-	principal, err := enforceOperationPolicy(ctx, operationPolicy{Permission: permissionRepoWrite})
+	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, operationPolicy{Permission: permissionRepoWrite})
 	if principal.OrgID != 42 {
 		t.Fatalf("expected denied operation to retain org id, got %d", principal.OrgID)
 	}
@@ -141,6 +109,12 @@ func TestSourceEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
 		t.Fatalf("expected forbidden error, got %v", err)
 	}
+}
+
+type fakeAuthorizer map[string]bool
+
+func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, permission string) (runtimeiam.AuthorizationDecision, error) {
+	return runtimeiam.AuthorizationDecision{Allowed: f[permission], Permissions: []string{permission}}, nil
 }
 
 func sourceServiceToken(orgID string, roles ...string) *auth.Identity {

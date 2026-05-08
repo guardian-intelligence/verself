@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/verself/source-code-hosting-service/cmd/source-code-hosting-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/iam-service/client",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",

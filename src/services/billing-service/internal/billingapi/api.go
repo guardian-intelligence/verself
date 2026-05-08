@@ -14,6 +14,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/domain-transfer-objects"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -26,6 +27,7 @@ type Config struct {
 	ListenAddr           string
 	Client               *billing.Client
 	Logger               *slog.Logger
+	Authorizer           runtimeiam.OperationAuthorizer
 	InternalPeers        []spiffeid.ID
 	StripeWebhookSecret  string
 	BillingReturnOrigins []string
@@ -138,17 +140,17 @@ func serverURL(addr string) string {
 
 func RegisterPublicRoutes(api huma.API, cfg Config) {
 	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins}
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "get-billing-entitlements", Method: http.MethodGet, Path: "/api/v1/entitlements", Summary: "Get org entitlements view"}, readPolicy("billing_entitlements", "read", "billing.entitlements.read"), h.getEntitlements)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-grants", Method: http.MethodGet, Path: "/api/v1/grants", Summary: "List org credit grants"}, readPolicy("billing_grant", "list", "billing.grant.list"), h.listGrants)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-documents", Method: http.MethodGet, Path: "/api/v1/billing-documents", Summary: "List issued billing documents"}, readPolicy("billing_document", "list", "billing.document.list"), h.listDocuments)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "get-billing-statement", Method: http.MethodGet, Path: "/api/v1/statement", Summary: "Preview current statement"}, readPolicy("billing_statement", "read", "billing.statement.read"), h.getStatement)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-contracts", Method: http.MethodGet, Path: "/api/v1/contracts", Summary: "List org contracts"}, readPolicy("billing_contract", "list", "billing.contract.list"), h.listContracts)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "list-billing-plans", Method: http.MethodGet, Path: "/api/v1/plans", Summary: "List active plans"}, readPolicy("billing_plan", "list", "billing.plan.list"), h.listPlans)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-checkout", Method: http.MethodPost, Path: "/api/v1/checkout", Summary: "Create credit checkout", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_checkout", "create", "billing.checkout.create"), h.createCheckout)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-contract", Method: http.MethodPost, Path: "/api/v1/contracts", Summary: "Create contract checkout", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract_checkout", "create", "billing.contract_checkout.create"), h.createContract)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-contract-change", Method: http.MethodPost, Path: "/api/v1/contracts/{contract_id}/changes", Summary: "Create contract change", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract_change", "create", "billing.contract_change.create"), h.createContractChange)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "cancel-billing-contract", Method: http.MethodPost, Path: "/api/v1/contracts/{contract_id}/cancel", Summary: "Cancel contract", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract", "cancel", "billing.contract.cancel"), h.cancelContract)
-	registerPublicBillingRoute(api, huma.Operation{OperationID: "create-billing-portal", Method: http.MethodPost, Path: "/api/v1/portal", Summary: "Create Stripe portal session", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_portal", "create", "billing.portal.create"), h.createPortal)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "get-billing-entitlements", Method: http.MethodGet, Path: "/api/v1/entitlements", Summary: "Get org entitlements view"}, readPolicy("billing_entitlements", "read", "billing.entitlements.read"), h.getEntitlements)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "list-billing-grants", Method: http.MethodGet, Path: "/api/v1/grants", Summary: "List org credit grants"}, readPolicy("billing_grant", "list", "billing.grant.list"), h.listGrants)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "list-billing-documents", Method: http.MethodGet, Path: "/api/v1/billing-documents", Summary: "List issued billing documents"}, readPolicy("billing_document", "list", "billing.document.list"), h.listDocuments)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "get-billing-statement", Method: http.MethodGet, Path: "/api/v1/statement", Summary: "Preview current statement"}, readPolicy("billing_statement", "read", "billing.statement.read"), h.getStatement)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "list-billing-contracts", Method: http.MethodGet, Path: "/api/v1/contracts", Summary: "List org contracts"}, readPolicy("billing_contract", "list", "billing.contract.list"), h.listContracts)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "list-billing-plans", Method: http.MethodGet, Path: "/api/v1/plans", Summary: "List active plans"}, readPolicy("billing_plan", "list", "billing.plan.list"), h.listPlans)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "create-billing-checkout", Method: http.MethodPost, Path: "/api/v1/checkout", Summary: "Create credit checkout", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_checkout", "create", "billing.checkout.create"), h.createCheckout)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "create-billing-contract", Method: http.MethodPost, Path: "/api/v1/contracts", Summary: "Create contract checkout", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract_checkout", "create", "billing.contract_checkout.create"), h.createContract)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "create-billing-contract-change", Method: http.MethodPost, Path: "/api/v1/contracts/{contract_id}/changes", Summary: "Create contract change", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract_change", "create", "billing.contract_change.create"), h.createContractChange)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "cancel-billing-contract", Method: http.MethodPost, Path: "/api/v1/contracts/{contract_id}/cancel", Summary: "Cancel contract", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_contract", "cancel", "billing.contract.cancel"), h.cancelContract)
+	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "create-billing-portal", Method: http.MethodPost, Path: "/api/v1/portal", Summary: "Create Stripe portal session", DefaultStatus: http.StatusOK}, checkoutPolicy("billing_portal", "create", "billing.portal.create"), h.createPortal)
 
 	// HAProxy exposes only this path publicly; Huma keeps it out of the generated customer SDK.
 	api.Adapter().Handle(&huma.Operation{OperationID: "stripe-webhook", Method: http.MethodPost, Path: "/webhooks/stripe", Hidden: true}, h.stripeWebhook)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
 	auth "github.com/verself/service-runtime/auth"
 )
@@ -79,7 +80,7 @@ func secured(op huma.Operation, policy operationPolicy) securedOperation {
 	return securedOperation{Operation: op, Policy: policy}
 }
 
-func registerSecured[I, O any](api huma.API, svc *identity.Service, securedOp securedOperation, handler func(context.Context, *I) (*O, error)) {
+func registerSecured[I, O any](api huma.API, svc *identity.Service, authzSvc *authz.Service, securedOp securedOperation, handler func(context.Context, *I) (*O, error)) {
 	op := securedOp.Operation
 	policy := securedOp.Policy
 	if op.OperationID == "" {
@@ -92,7 +93,7 @@ func registerSecured[I, O any](api huma.API, svc *identity.Service, securedOp se
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
-		identity, err := enforceOperationPolicy(ctx, svc, policy)
+		identity, err := enforceOperationPolicy(ctx, svc, authzSvc, policy)
 		if err != nil {
 			auditOperation(ctx, op, policy, identity, input, nil, "denied", err)
 			return nil, err
@@ -201,13 +202,22 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, svc *identity.Service, policy operationPolicy) (*auth.Identity, error) {
+func enforceOperationPolicy(ctx context.Context, svc *identity.Service, authzSvc *authz.Service, policy operationPolicy) (*auth.Identity, error) {
 	identity, err := requireIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	allowed, err := identityHasPermission(ctx, svc, identity, policy.Permission, policy.OrgScope)
+	if err := synchronizeAuthorizationGraph(ctx, svc, identity, policy); err != nil {
+		if errors.Is(err, authz.ErrInvalid) || errors.Is(err, authz.ErrUnavailable) {
+			return identity, authzError(ctx, err)
+		}
+		return identity, identityError(ctx, err)
+	}
+	allowed, err := identityHasPermission(ctx, authzSvc, identity, policy.Permission, policy.OrgScope)
 	if err != nil {
+		if errors.Is(err, authz.ErrInvalid) || errors.Is(err, authz.ErrUnavailable) {
+			return identity, authzError(ctx, err)
+		}
 		return identity, identityError(ctx, err)
 	}
 	if !allowed {
@@ -222,42 +232,64 @@ func enforceOperationPolicy(ctx context.Context, svc *identity.Service, policy o
 	return identity, nil
 }
 
-func identityHasPermission(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, required permission, orgScope string) (bool, error) {
+func synchronizeAuthorizationGraph(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, policy operationPolicy) error {
+	if svc == nil || authIdentity == nil {
+		return identity.ErrStoreUnavailable
+	}
+	actor := authorizationActor(authIdentity)
+	switch policy.OrgScope {
+	case orgScopeTokenOrgID:
+		return svc.ReconcileOrganizationAuthorization(ctx, authIdentity.OrgID, actor, "authorize-"+string(policy.Permission))
+	case orgScopeTokenRoleAssignmentOrgIDs:
+		orgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
+		if err != nil {
+			return err
+		}
+		for _, orgID := range orgIDs {
+			if err := svc.ReconcileOrganizationAuthorization(ctx, orgID, actor, "authorize-"+string(policy.Permission)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func authorizationActor(authIdentity *auth.Identity) string {
+	subject := authzSubjectFromIdentity(authIdentity)
+	if strings.TrimSpace(subject.ID) != "" {
+		return strings.TrimSpace(subject.ID)
+	}
+	if authIdentity == nil {
+		return ""
+	}
+	return strings.TrimSpace(authIdentity.Subject)
+}
+
+func identityHasPermission(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, required permission, orgScope string) (bool, error) {
 	if authIdentity == nil || required == "" {
 		return false, nil
 	}
+	if authzSvc == nil {
+		return false, authz.ErrUnavailable
+	}
 	if orgScope == orgScopeTokenRoleAssignmentOrgIDs {
-		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, svc, authIdentity, required)
+		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, authzSvc, authIdentity, required)
 		return len(orgIDs) > 0, err
 	}
-	if identityHasDirectPermission(authIdentity, required) {
-		return true, nil
+	orgID := strings.TrimSpace(authIdentity.OrgID)
+	if orgID == "" {
+		return false, fmt.Errorf("%w: org_id is required", identity.ErrInvalidInput)
 	}
-	if svc == nil {
-		return false, identity.ErrStoreUnavailable
-	}
-	principal, err := principalFromAuthIdentity(ctx, authIdentity)
+	allowed, _, err := authzSvc.TestOrganizationPermissions(ctx, orgID, authzSubjectFromIdentity(authIdentity), []string{string(required)}, "")
 	if err != nil {
 		return false, err
 	}
-	capabilities, err := svc.MemberCapabilities(ctx, principal)
-	if err != nil {
-		return false, err
-	}
-	for _, granted := range identity.PermissionsForRoles(capabilities, principal.Roles) {
-		if granted == string(required) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return stringSliceContains(allowed, string(required)), nil
 }
 
-func authorizedRoleAssignmentOrgIDs(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, required permission) ([]string, error) {
+func authorizedRoleAssignmentOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, required permission) ([]string, error) {
 	if required == "" {
 		return nil, nil
-	}
-	if svc == nil {
-		return nil, identity.ErrStoreUnavailable
 	}
 	orgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
 	if err != nil {
@@ -265,47 +297,24 @@ func authorizedRoleAssignmentOrgIDs(ctx context.Context, svc *identity.Service, 
 	}
 	authorized := make([]string, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		principal := identity.Principal{
-			Subject: authIdentity.Subject,
-			OrgID:   orgID,
-			Roles:   rolesForOrg(authIdentity, orgID),
-			Email:   authIdentity.Email,
-		}
-		if strings.TrimSpace(principal.Subject) == "" {
-			return nil, fmt.Errorf("%w: subject is required", identity.ErrInvalidInput)
-		}
-		capabilities, err := svc.MemberCapabilities(ctx, principal)
+		allowed, _, err := authzSvc.TestOrganizationPermissions(ctx, orgID, authzSubjectFromIdentity(authIdentity), []string{string(required)}, "")
 		if err != nil {
 			return nil, err
 		}
-		for _, granted := range identity.PermissionsForRoles(capabilities, principal.Roles) {
-			if granted == string(required) {
-				authorized = append(authorized, orgID)
-				break
-			}
+		if stringSliceContains(allowed, string(required)) {
+			authorized = append(authorized, orgID)
 		}
 	}
 	return authorized, nil
 }
 
-func rolesForOrg(authIdentity *auth.Identity, orgID string) []string {
-	if authIdentity == nil || orgID == "" {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	roles := make([]string, 0, len(authIdentity.RoleAssignments))
-	for _, assignment := range authIdentity.RoleAssignments {
-		if assignment.OrganizationID != orgID || assignment.Role == "" {
-			continue
+func stringSliceContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
 		}
-		if _, ok := seen[assignment.Role]; ok {
-			continue
-		}
-		seen[assignment.Role] = struct{}{}
-		roles = append(roles, assignment.Role)
 	}
-	sort.Strings(roles)
-	return roles
+	return false
 }
 
 type operationRequestInfoKey struct{}
@@ -714,42 +723,6 @@ func identityRolesForCurrentOrg(identity *auth.Identity) []string {
 	}
 	sort.Strings(roles)
 	return compactStrings(roles)
-}
-
-func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	credentialID, _ := identity.Raw["verself:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" || strings.TrimSpace(identity.OrgID) == "" {
-		return false
-	}
-	requiredText := string(required)
-	for _, claimKey := range []string{"permissions", "permission"} {
-		for _, value := range stringClaimList(identity.Raw[claimKey]) {
-			if value == requiredText {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func stringClaimList(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return strings.Fields(typed)
-	case []string:
-		out := append([]string(nil), typed...)
-		sort.Strings(out)
-		return compactStrings(out)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, stringClaimList(item)...)
-		}
-		sort.Strings(out)
-		return compactStrings(out)
-	default:
-		return nil
-	}
 }
 
 func compactStrings(values []string) []string {

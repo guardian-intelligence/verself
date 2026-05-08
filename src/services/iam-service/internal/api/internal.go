@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
 	auth "github.com/verself/service-runtime/auth"
 	workloadauth "github.com/verself/service-runtime/workload"
@@ -37,7 +39,15 @@ type resolveOrganizationOutput struct {
 	Body dto.IAMResolveOrganizationResponse
 }
 
-func RegisterInternalRoutes(api huma.API, svc *identity.Service) {
+type authorizeOperationInput struct {
+	Body dto.IAMAuthorizeRequest
+}
+
+type authorizeOperationOutput struct {
+	Body dto.IAMAuthorizeResponse
+}
+
+func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
 	op := huma.Operation{
 		OperationID:   "update-human-profile",
 		Method:        http.MethodPatch,
@@ -63,6 +73,19 @@ func RegisterInternalRoutes(api huma.API, svc *identity.Service) {
 	}
 	resolveOp.Middlewares = append(resolveOp.Middlewares, operationRequestMiddleware)
 	huma.Register(api, resolveOp, resolveOrganization(svc))
+
+	authorizeOp := huma.Operation{
+		OperationID:   "authorize-operation",
+		Method:        http.MethodPost,
+		Path:          "/internal/v1/authorization/authorize",
+		Summary:       "Authorize a product operation",
+		Description:   "SPIFFE-mTLS internal endpoint for product services to check an authenticated user, service account, or workload against IAM.",
+		Security:      []map[string][]string{{"mutualTLS": {}}},
+		DefaultStatus: http.StatusOK,
+		MaxBodyBytes:  bodyLimitSmallJSON,
+	}
+	authorizeOp.Middlewares = append(authorizeOp.Middlewares, operationRequestMiddleware)
+	huma.Register(api, authorizeOp, authorizeOperation(authzSvc))
 }
 
 func updateHumanProfile(svc *identity.Service) func(context.Context, *updateHumanProfileInput) (*updateHumanProfileOutput, error) {
@@ -135,6 +158,73 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOr
 		)
 		return &resolveOrganizationOutput{Body: dto.IAMResolveOrganizationResponse{Organization: organizationProfileDTO(profile)}}, nil
 	}
+}
+
+func authorizeOperation(authzSvc *authz.Service) func(context.Context, *authorizeOperationInput) (*authorizeOperationOutput, error) {
+	return func(ctx context.Context, input *authorizeOperationInput) (*authorizeOperationOutput, error) {
+		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.check")
+		defer span.End()
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
+		if !ok {
+			err := problem(ctx, http.StatusUnauthorized, "missing-workload-identity", "missing SPIFFE peer identity", nil)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "missing SPIFFE peer identity")
+			return nil, err
+		}
+		if authzSvc == nil {
+			err := internalFailure(ctx, "iam-authz-unavailable", "authorization graph unavailable", authz.ErrUnavailable)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, problemCode(err))
+			return nil, err
+		}
+		orgID := input.Body.OrgID.String()
+		subject, err := authorizationSubjectFromDTO(input.Body.Subject)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
+		}
+		span.SetAttributes(
+			attribute.String("spiffe.peer_id", peerID.String()),
+			attribute.String("verself.org_id", orgID),
+			attribute.String("iam.subject_type", string(subject.Kind)),
+			attribute.String("iam.subject_id", subject.ID),
+			attribute.StringSlice("iam.permissions.requested", compactStrings(input.Body.Permissions)),
+		)
+		allowed, zedToken, err := authzSvc.TestOrganizationPermissions(ctx, orgID, subject, input.Body.Permissions, strings.TrimSpace(input.Body.MinZedToken))
+		if err != nil {
+			mapped := authzError(ctx, err)
+			span.RecordError(mapped)
+			span.SetStatus(codes.Error, problemCode(mapped))
+			return nil, mapped
+		}
+		span.SetAttributes(
+			attribute.StringSlice("iam.permissions.allowed", allowed),
+			attribute.String("iam.zed_token", zedToken),
+		)
+		return &authorizeOperationOutput{Body: dto.IAMAuthorizeResponse{
+			OrgID:       input.Body.OrgID,
+			Subject:     input.Body.Subject,
+			Permissions: allowed,
+			ZedToken:    zedToken,
+		}}, nil
+	}
+}
+
+func authorizationSubjectFromDTO(subject dto.IAMAuthorizationSubject) (identity.AuthorizationSubject, error) {
+	out := identity.AuthorizationSubject{ID: strings.TrimSpace(subject.ID)}
+	switch strings.TrimSpace(subject.Type) {
+	case string(identity.AuthorizationSubjectKindUser):
+		out.Kind = identity.AuthorizationSubjectKindUser
+	case string(identity.AuthorizationSubjectKindServiceAccount):
+		out.Kind = identity.AuthorizationSubjectKindServiceAccount
+	case string(identity.AuthorizationSubjectKindWorkload):
+		out.Kind = identity.AuthorizationSubjectKindWorkload
+	default:
+		return identity.AuthorizationSubject{}, fmt.Errorf("unsupported subject type %q", subject.Type)
+	}
+	if out.ID == "" {
+		return identity.AuthorizationSubject{}, fmt.Errorf("subject id is required")
+	}
+	return out, nil
 }
 
 func setInternalProfileIAMAttributes(span trace.Span, identity *auth.Identity) {

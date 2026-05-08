@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/verself/governance-service/internal/governance"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type permission string
@@ -66,7 +66,7 @@ func secured(op huma.Operation, policy operationPolicy) securedOperation {
 	return securedOperation{Operation: op, Policy: policy}
 }
 
-func registerSecured[I, O any](api huma.API, svc *governance.Service, securedOp securedOperation, handler func(context.Context, governance.Principal, *I) (*O, error)) {
+func registerSecured[I, O any](api huma.API, svc *governance.Service, authorizer runtimeiam.OperationAuthorizer, securedOp securedOperation, handler func(context.Context, governance.Principal, *I) (*O, error)) {
 	op := securedOp.Operation
 	policy := securedOp.Policy
 	if op.OperationID == "" {
@@ -78,7 +78,7 @@ func registerSecured[I, O any](api huma.API, svc *governance.Service, securedOp 
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
-		principal, err := enforceOperationPolicy(ctx, policy)
+		principal, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
 			auditOperation(ctx, svc, op, policy, principal, input, nil, "denied", err)
 			return nil, err
@@ -173,13 +173,20 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (governance.Principal, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (governance.Principal, error) {
 	authIdentity, err := requireIdentity(ctx)
 	if err != nil {
 		return governance.Principal{}, err
 	}
 	principal := principalFromIdentity(authIdentity)
-	if !identityHasPermission(authIdentity, policy.Permission) {
+	if authorizer == nil {
+		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+	}
+	decision, err := authorizer.AuthorizeOperation(ctx, authIdentity, string(policy.Permission))
+	if err != nil {
+		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+	}
+	if !decision.Allowed {
 		return principal, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
@@ -221,22 +228,6 @@ func claimString(claims map[string]any, key string) string {
 	}
 	value, _ := claims[key].(string)
 	return strings.TrimSpace(value)
-}
-
-func identityHasPermission(identity *auth.Identity, required permission) bool {
-	if identity == nil || required == "" {
-		return false
-	}
-	if identityHasDirectPermission(identity, required) {
-		return true
-	}
-	for _, role := range identityRolesForCurrentOrg(identity) {
-		switch role {
-		case "owner", "admin":
-			return true
-		}
-	}
-	return false
 }
 
 type operationRequestInfoKey struct{}
@@ -589,70 +580,6 @@ func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
 	headers := http.Header{}
 	headers.Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
 	return huma.ErrorWithHeaders(err, headers)
-}
-
-func identityRolesForCurrentOrg(identity *auth.Identity) []string {
-	if identity == nil || len(identity.RoleAssignments) == 0 || identity.OrgID == "" {
-		return nil
-	}
-	roles := make([]string, 0, len(identity.RoleAssignments))
-	for _, assignment := range identity.RoleAssignments {
-		if assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
-			roles = append(roles, assignment.Role)
-		}
-	}
-	sort.Strings(roles)
-	return compactStrings(roles)
-}
-
-func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	credentialID, _ := identity.Raw["verself:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" || strings.TrimSpace(identity.OrgID) == "" {
-		return false
-	}
-	requiredText := string(required)
-	for _, claimKey := range []string{"permissions", "permission"} {
-		for _, value := range stringClaimList(identity.Raw[claimKey]) {
-			if value == requiredText {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func stringClaimList(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return strings.Fields(typed)
-	case []string:
-		out := append([]string(nil), typed...)
-		sort.Strings(out)
-		return compactStrings(out)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, stringClaimList(item)...)
-		}
-		sort.Strings(out)
-		return compactStrings(out)
-	default:
-		return nil
-	}
-}
-
-func compactStrings(values []string) []string {
-	out := values[:0]
-	var previous string
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || value == previous {
-			continue
-		}
-		out = append(out, value)
-		previous = value
-	}
-	return out
 }
 
 func applyPublicAPISecurityScheme(api huma.API) {

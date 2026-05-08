@@ -17,6 +17,7 @@ import (
 
 	"github.com/verself/profile-service/internal/profile"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type permission string
@@ -61,7 +62,7 @@ type operationRequestInfo struct {
 	IdempotencyKey string
 }
 
-func registerProfileRoute[I, O any](api huma.API, op huma.Operation, policy operationPolicy, handler func(context.Context, *I) (*O, error)) {
+func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for profile API route")
 	}
@@ -71,7 +72,7 @@ func registerProfileRoute[I, O any](api huma.API, op huma.Operation, policy oper
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := startOperationSpan(ctx, op.OperationID, policy)
 		defer span.End()
-		authIdentity, err := enforceOperationPolicy(ctx, policy)
+		authIdentity, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
 			finishOperationSpan(span, authIdentity, policy, "denied", err)
 			auditOperation(ctx, op.OperationID, policy, authIdentity, input, nil, "denied", err)
@@ -227,7 +228,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (*auth.Identity, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (*auth.Identity, error) {
 	if policy.Internal {
 		if err := requireOperationIdempotency(ctx, policy); err != nil {
 			return nil, err
@@ -241,6 +242,16 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (*auth.
 	principal := profile.Principal{Subject: identity.Subject, OrgID: identity.OrgID, Email: identity.Email, Raw: identity.Raw}
 	if err := profile.ValidatePrincipal(principal); err != nil {
 		return identity, forbidden(ctx, "human-profile-required", "human profile routes require a human subject token")
+	}
+	if authorizer == nil {
+		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+	}
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	if err != nil {
+		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+	}
+	if !decision.Allowed {
+		return identity, forbidden(ctx, "permission-denied", "missing required profile permission")
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return identity, err

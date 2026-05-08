@@ -61,6 +61,17 @@ const (
 	PermissionGovernanceAuditRead           = "governance:audit:read"
 	PermissionGovernanceExportRead          = "governance:export:read"
 	PermissionGovernanceExportCreate        = "governance:export:create"
+	PermissionProfileRead                   = "profile:self:read"
+	PermissionProfileIdentityWrite          = "profile:self:identity:write"
+	PermissionProfilePreferencesWrite       = "profile:self:preferences:write"
+	PermissionNotificationsRead             = "notifications:self:read"
+	PermissionNotificationsWrite            = "notifications:self:write"
+	PermissionNotificationsPreferencesWrite = "notifications:self:preferences:write"
+	PermissionNotificationsTest             = "notifications:self:test"
+	PermissionMailboxAccountRead            = "mailbox:account:read"
+	PermissionMailboxMailRead               = "mailbox:mail:read"
+	PermissionMailboxMailWrite              = "mailbox:mail:write"
+	PermissionMailboxSyncStatusRead         = "mailbox:sync_status:read"
 )
 
 var openBaoRolesByPermission = map[string]string{
@@ -222,6 +233,41 @@ var defaultOperations = Operations{
 				{OperationID: "create-data-export", Permission: PermissionGovernanceExportCreate, Resource: "data_export", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "get-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "download-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "download", OrgScope: "token_org_id"},
+			},
+		},
+		{
+			Service: "profile-service",
+			Operations: []Operation{
+				{OperationID: "get-profile", Permission: PermissionProfileRead, Resource: "profile_subject", Action: "read", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "patch-profile-identity", Permission: PermissionProfileIdentityWrite, Resource: "profile_identity", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "put-profile-preferences", Permission: PermissionProfilePreferencesWrite, Resource: "profile_preferences", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+			},
+		},
+		{
+			Service: "notifications-service",
+			Operations: []Operation{
+				{OperationID: "list-notifications", Permission: PermissionNotificationsRead, Resource: "notification_subject", Action: "list", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "get-notification-summary", Permission: PermissionNotificationsRead, Resource: "notification_subject", Action: "read", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "put-notification-preferences", Permission: PermissionNotificationsPreferencesWrite, Resource: "notification_preferences", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "advance-notification-read-cursor", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "dismiss-notification", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mark-notification-read", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "clear-notifications", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "publish-test-notification", Permission: PermissionNotificationsTest, Resource: "notification_subject", Action: "test", OrgScope: "token_subject", MemberEligible: true},
+			},
+		},
+		{
+			Service: "mailbox-service",
+			Operations: []Operation{
+				{OperationID: "mail-mark-read", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-mark-unread", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-flag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-unflag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-move", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-trash", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-body", Permission: PermissionMailboxMailRead, Resource: "mailbox_email", Action: "read", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-account", Permission: PermissionMailboxAccountRead, Resource: "mailbox_account", Action: "read", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-sync-status", Permission: PermissionMailboxSyncStatusRead, Resource: "mailbox_sync_status", Action: "read", OrgScope: "token_subject", MemberEligible: true},
 			},
 		},
 	},

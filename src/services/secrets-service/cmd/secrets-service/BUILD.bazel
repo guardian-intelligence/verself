@@ -8,6 +8,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/services/billing-service/client",
+        "//src/services/iam-service/client",
         "//src/services/secrets-service/client",
         "//src/services/secrets-service/internal/api",
         "//src/services/secrets-service/internal/secrets",

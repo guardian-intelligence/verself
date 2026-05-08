@@ -10,6 +10,7 @@ go_library(
         "//src/domain-transfer-objects/go:dto",
         "//src/infrastructure-components/temporal-platform/sdkclient",
         "//src/services/billing-service/client",
+        "//src/services/iam-service/client",
         "//src/services/sandbox-rental-service/internal/api",
         "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/sandbox-rental-service/internal/recurring",

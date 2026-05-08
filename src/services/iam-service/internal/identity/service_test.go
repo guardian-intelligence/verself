@@ -61,11 +61,11 @@ func TestMemberPermissionsAreCapabilityDerived(t *testing.T) {
 }
 
 func TestMemberCannotMintNonMemberEligiblePermission(t *testing.T) {
-	doc := MemberCapabilitiesDocument{OrgID: "42", EnabledKeys: DefaultCapabilityKeys()}
+	svc := &Service{AuthorizationGraph: apiCredentialTestAuthz{}}
 	principal := Principal{Subject: "u-1", OrgID: "42", Roles: []string{RoleMember}}
 
 	// api_credentials:create is admin-only (not member-eligible).
-	err := validateCredentialPermissions(doc, principal, []string{PermissionAPICredentialsCreate})
+	err := svc.validateCredentialPermissions(context.Background(), principal, []string{PermissionAPICredentialsCreate})
 	if !errors.Is(err, ErrInvalidCapabilities) {
 		t.Fatalf("expected ErrInvalidCapabilities for member minting api_credentials:create, got %v", err)
 	}

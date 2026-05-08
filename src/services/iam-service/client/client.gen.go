@@ -22,6 +22,27 @@ const (
 	MutualTLSScopes  = "mutualTLS.Scopes"
 )
 
+// Defines values for IAMAuthorizationSubjectType.
+const (
+	ServiceAccount IAMAuthorizationSubjectType = "service_account"
+	User           IAMAuthorizationSubjectType = "user"
+	Workload       IAMAuthorizationSubjectType = "workload"
+)
+
+// Valid indicates whether the value is a known member of the IAMAuthorizationSubjectType enum.
+func (e IAMAuthorizationSubjectType) Valid() bool {
+	switch e {
+	case ServiceAccount:
+		return true
+	case User:
+		return true
+	case Workload:
+		return true
+	default:
+		return false
+	}
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -56,6 +77,35 @@ type ErrorModel struct {
 
 	// Type A URI reference to human-readable documentation for the error.
 	Type *string `json:"type,omitempty"`
+}
+
+// IAMAuthorizationSubject defines model for IAMAuthorizationSubject.
+type IAMAuthorizationSubject struct {
+	Id   string                      `json:"id"`
+	Type IAMAuthorizationSubjectType `json:"type"`
+}
+
+// IAMAuthorizationSubjectType defines model for IAMAuthorizationSubject.Type.
+type IAMAuthorizationSubjectType string
+
+// IAMAuthorizeRequest defines model for IAMAuthorizeRequest.
+type IAMAuthorizeRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                 `json:"$schema,omitempty"`
+	MinZedToken *string                 `json:"min_zed_token,omitempty"`
+	OrgId       string                  `json:"org_id"`
+	Permissions *[]string               `json:"permissions"`
+	Subject     IAMAuthorizationSubject `json:"subject"`
+}
+
+// IAMAuthorizeResponse defines model for IAMAuthorizeResponse.
+type IAMAuthorizeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                 `json:"$schema,omitempty"`
+	OrgId       string                  `json:"org_id"`
+	Permissions *[]string               `json:"permissions"`
+	Subject     IAMAuthorizationSubject `json:"subject"`
+	ZedToken    *string                 `json:"zed_token,omitempty"`
 }
 
 // IAMOrganizationProfile defines model for IAMOrganizationProfile.
@@ -105,6 +155,9 @@ type IAMUpdateHumanProfileResponse struct {
 	SubjectId   string    `json:"subject_id"`
 	SyncedAt    time.Time `json:"synced_at"`
 }
+
+// AuthorizeOperationJSONRequestBody defines body for AuthorizeOperation for application/json ContentType.
+type AuthorizeOperationJSONRequestBody = IAMAuthorizeRequest
 
 // ResolveOrganizationJSONRequestBody defines body for ResolveOrganization for application/json ContentType.
 type ResolveOrganizationJSONRequestBody = IAMResolveOrganizationRequest
@@ -185,6 +238,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// AuthorizeOperationWithBody request with any body
+	AuthorizeOperationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AuthorizeOperation(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ResolveOrganizationWithBody request with any body
 	ResolveOrganizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -194,6 +252,30 @@ type ClientInterface interface {
 	UpdateHumanProfileWithBody(ctx context.Context, subjectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateHumanProfile(ctx context.Context, subjectId string, body UpdateHumanProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) AuthorizeOperationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizeOperationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthorizeOperation(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizeOperationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) ResolveOrganizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -242,6 +324,46 @@ func (c *Client) UpdateHumanProfile(ctx context.Context, subjectId string, body 
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewAuthorizeOperationRequest calls the generic AuthorizeOperation builder with application/json body
+func NewAuthorizeOperationRequest(server string, body AuthorizeOperationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAuthorizeOperationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAuthorizeOperationRequestWithBody generates requests for AuthorizeOperation with any type of body
+func NewAuthorizeOperationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/authorization/authorize")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
 }
 
 // NewResolveOrganizationRequest calls the generic ResolveOrganization builder with application/json body
@@ -374,6 +496,11 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// AuthorizeOperationWithBodyWithResponse request with any body
+	AuthorizeOperationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeOperationHTTPResponse, error)
+
+	AuthorizeOperationWithResponse(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeOperationHTTPResponse, error)
+
 	// ResolveOrganizationWithBodyWithResponse request with any body
 	ResolveOrganizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error)
 
@@ -383,6 +510,29 @@ type ClientWithResponsesInterface interface {
 	UpdateHumanProfileWithBodyWithResponse(ctx context.Context, subjectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHumanProfileHTTPResponse, error)
 
 	UpdateHumanProfileWithResponse(ctx context.Context, subjectId string, body UpdateHumanProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHumanProfileHTTPResponse, error)
+}
+
+type AuthorizeOperationHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IAMAuthorizeResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthorizeOperationHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthorizeOperationHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type ResolveOrganizationHTTPResponse struct {
@@ -431,6 +581,23 @@ func (r UpdateHumanProfileHTTPResponse) StatusCode() int {
 	return 0
 }
 
+// AuthorizeOperationWithBodyWithResponse request with arbitrary body returning *AuthorizeOperationHTTPResponse
+func (c *ClientWithResponses) AuthorizeOperationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeOperationHTTPResponse, error) {
+	rsp, err := c.AuthorizeOperationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizeOperationHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) AuthorizeOperationWithResponse(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeOperationHTTPResponse, error) {
+	rsp, err := c.AuthorizeOperation(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizeOperationHTTPResponse(rsp)
+}
+
 // ResolveOrganizationWithBodyWithResponse request with arbitrary body returning *ResolveOrganizationHTTPResponse
 func (c *ClientWithResponses) ResolveOrganizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error) {
 	rsp, err := c.ResolveOrganizationWithBody(ctx, contentType, body, reqEditors...)
@@ -463,6 +630,39 @@ func (c *ClientWithResponses) UpdateHumanProfileWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseUpdateHumanProfileHTTPResponse(rsp)
+}
+
+// ParseAuthorizeOperationHTTPResponse parses an HTTP response from a AuthorizeOperationWithResponse call
+func ParseAuthorizeOperationHTTPResponse(rsp *http.Response) (*AuthorizeOperationHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthorizeOperationHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IAMAuthorizeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseResolveOrganizationHTTPResponse parses an HTTP response from a ResolveOrganizationWithResponse call

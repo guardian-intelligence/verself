@@ -24,6 +24,7 @@ import (
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type permission string
@@ -93,7 +94,7 @@ func secured(op huma.Operation, policy operationPolicy) securedOperation {
 	return securedOperation{Operation: op, Policy: normalizeOperationPolicy(op.OperationID, policy)}
 }
 
-func registerSecured[I, O any](api huma.API, svc *secrets.Service, securedOp securedOperation, handler func(context.Context, secrets.Principal, *I) (*O, error)) {
+func registerSecured[I, O any](api huma.API, svc *secrets.Service, authorizer runtimeiam.OperationAuthorizer, securedOp securedOperation, handler func(context.Context, secrets.Principal, *I) (*O, error)) {
 	op := securedOp.Operation
 	policy := securedOp.Policy
 	if op.OperationID == "" {
@@ -106,7 +107,7 @@ func registerSecured[I, O any](api huma.API, svc *secrets.Service, securedOp sec
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
-		principal, identity, err := enforceOperationPolicy(ctx, policy)
+		principal, identity, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
 			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "denied", err)
 			return nil, err
@@ -211,13 +212,20 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (secrets.Principal, *auth.Identity, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (secrets.Principal, *auth.Identity, error) {
 	identity, err := requireIdentity(ctx)
 	if err != nil {
 		return secrets.Principal{}, nil, err
 	}
 	principal := principalFromIdentity(identity, policy)
-	if !identityHasPermission(identity, policy.Permission) {
+	if authorizer == nil {
+		return principal, identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+	}
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	if err != nil {
+		return principal, identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+	}
+	if !decision.Allowed {
 		return principal, identity, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
 	}
 	if principal.OpenBaoRole == "" {
@@ -272,7 +280,7 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) str
 		return ""
 	}
 	if claimString(identity.Raw, "verself:credential_id") != "" {
-		if policy.OpenBaoRole == "" || !identityHasDirectPermission(identity, policy.Permission) {
+		if policy.OpenBaoRole == "" {
 			return ""
 		}
 		for _, role := range stringClaimList(identity.Raw["verself:openbao_roles"]) {
@@ -296,51 +304,6 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) str
 		}
 	}
 	return ""
-}
-
-func identityHasPermission(identity *auth.Identity, required permission) bool {
-	if identity == nil {
-		return false
-	}
-	if identityHasDirectPermission(identity, required) {
-		return true
-	}
-	if identity.OrgID == "" || len(identity.RoleAssignments) == 0 {
-		return false
-	}
-	for _, assignment := range identity.RoleAssignments {
-		if assignment.OrganizationID != identity.OrgID {
-			continue
-		}
-		switch assignment.Role {
-		case "owner", "admin":
-			return true
-		case "member":
-			if required == permissionSecretRead || required == permissionSecretList ||
-				required == permissionVariableRead || required == permissionVariableList ||
-				required == permissionTransitEncrypt || required == permissionTransitDecrypt ||
-				required == permissionTransitSign || required == permissionTransitVerify {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	credentialID := claimString(identity.Raw, "verself:credential_id")
-	if credentialID == "" || strings.TrimSpace(identity.OrgID) == "" {
-		return false
-	}
-	requiredText := string(required)
-	for _, claimKey := range []string{"permissions", "permission"} {
-		for _, value := range stringClaimList(identity.Raw[claimKey]) {
-			if value == requiredText {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy operationPolicy, identity *auth.Identity, input any) (*dto.BillingWindowReservation, error) {

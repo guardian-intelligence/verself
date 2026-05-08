@@ -18,6 +18,7 @@ import (
 	governanceapi "github.com/verself/governance-service/internal/api"
 	"github.com/verself/governance-service/internal/governance"
 	"github.com/verself/governance-service/migrations"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
@@ -69,6 +70,7 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	iamInternalURL := cfg.URL("GOVERNANCE_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
@@ -94,6 +96,14 @@ func run() error {
 			logger.ErrorContext(context.Background(), "governance-service spiffe source close", "error", err)
 		}
 	}()
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("governance iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("governance iam client: %w", err)
+	}
 	pg, err := openPool(ctx, pgDSN, pgMaxConns)
 	if err != nil {
 		return fmt.Errorf("open governance postgres: %w", err)
@@ -186,7 +196,7 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	governanceapi.NewAPI(privateMux, "1.0.0", "http://"+listenAddr, svc)
+	governanceapi.NewAPI(privateMux, "1.0.0", "http://"+listenAddr, svc, iamclient.NewAuthorizer(iamClient))
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

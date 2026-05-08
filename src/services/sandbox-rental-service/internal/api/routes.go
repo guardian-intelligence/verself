@@ -19,7 +19,7 @@ import (
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Service, publicConfig PublicAPIConfig) {
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "begin-github-installation",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/github/installations/connect",
@@ -36,7 +36,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		BodyLimitBytes: bodyLimitNoBody,
 	}), beginGitHubInstallation(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "list-github-installations",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/github/installations",
@@ -50,7 +50,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.github_installation.list",
 	}), listGitHubInstallations(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-execution",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}",
@@ -64,7 +64,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.execution.read",
 	}), getExecution(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-execution-logs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}/logs",
@@ -78,7 +78,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.execution.logs.read",
 	}), getExecutionLogs(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "list-runs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/runs",
@@ -92,7 +92,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run.list",
 	}), listRuns(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-run",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/runs/{run_id}",
@@ -106,7 +106,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run.read",
 	}), getRun(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "search-run-logs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-logs/search",
@@ -120,7 +120,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run_logs.search",
 	}), searchRunLogs(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-jobs-analytics",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/jobs",
@@ -134,7 +134,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run_analytics.jobs.read",
 	}), getJobsAnalytics(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-costs-analytics",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/costs",
@@ -148,7 +148,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run_analytics.costs.read",
 	}), getCostsAnalytics(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-caches-analytics",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/caches",
@@ -162,7 +162,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run_analytics.caches.read",
 	}), getCachesAnalytics(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-runner-sizing-analytics",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/runner-sizing",
@@ -176,7 +176,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.run_analytics.runner_sizing.read",
 	}), getRunnerSizingAnalytics(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "list-sticky-disks",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/sticky-disks",
@@ -190,7 +190,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.sticky_disk.list",
 	}), listStickyDisks(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "reset-sticky-disk",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/sticky-disks/reset",
@@ -207,7 +207,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), resetStickyDisk(svc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "create-execution-schedule",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/execution-schedules",
@@ -224,7 +224,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createExecutionSchedule(recurringSvc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "list-execution-schedules",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/execution-schedules",
@@ -238,7 +238,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.execution_schedule.list",
 	}), listExecutionSchedules(recurringSvc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-execution-schedule",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/execution-schedules/{schedule_id}",
@@ -252,7 +252,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.execution_schedule.read",
 	}), getExecutionSchedule(recurringSvc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "pause-execution-schedule",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/execution-schedules/{schedule_id}/pause",
@@ -269,7 +269,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		BodyLimitBytes: bodyLimitNoBody,
 	}), pauseExecutionSchedule(recurringSvc))
 
-	registerSecured(api, secured(huma.Operation{
+	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "resume-execution-schedule",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/execution-schedules/{schedule_id}/resume",

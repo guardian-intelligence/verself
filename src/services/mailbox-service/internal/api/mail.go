@@ -10,6 +10,7 @@ import (
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/mailstore"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type mailEmailPathInput struct {
@@ -37,68 +38,92 @@ type mailSyncStatusOutput struct {
 	Body dto.MailboxServiceStatusResponse
 }
 
-func registerMailRoutes(api huma.API, svc provider) {
-	huma.Register(api, huma.Operation{
+func registerMailRoutes(api huma.API, svc provider, authorizer runtimeiam.OperationAuthorizer) {
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-mark-read",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/mail/emails/{email_id}/read",
 		Summary:     "Mark an email as read",
-	}, markRead(svc, true))
+	}, mailWritePolicy("mail_mark_read", "mailbox_email", "mark_read"), markRead(svc, true))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-mark-unread",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/mail/emails/{email_id}/unread",
 		Summary:     "Mark an email as unread",
-	}, markRead(svc, false))
+	}, mailWritePolicy("mail_mark_unread", "mailbox_email", "mark_unread"), markRead(svc, false))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-flag",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/mail/emails/{email_id}/flag",
 		Summary:     "Flag an email",
-	}, flagEmail(svc, true))
+	}, mailWritePolicy("mail_flag", "mailbox_email", "flag"), flagEmail(svc, true))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-unflag",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/mail/emails/{email_id}/unflag",
 		Summary:     "Unflag an email",
-	}, flagEmail(svc, false))
+	}, mailWritePolicy("mail_unflag", "mailbox_email", "unflag"), flagEmail(svc, false))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-move",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/mail/emails/{email_id}/move",
 		Summary:     "Move an email to another mailbox",
-	}, moveEmail(svc))
+	}, mailWritePolicy("mail_move", "mailbox_email", "move"), moveEmail(svc))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-trash",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/mail/emails/{email_id}/trash",
 		Summary:     "Move an email to trash",
-	}, trashEmail(svc))
+	}, mailWritePolicy("mail_trash", "mailbox_email", "trash"), trashEmail(svc))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-body",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/mail/emails/{email_id}/body",
 		Summary:     "Fetch and cache an email body",
-	}, fetchBody(svc))
+	}, mailReadPolicy("mail_body", "mailbox_email", "read"), fetchBody(svc))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-account",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/mail/account",
 		Summary:     "Get the authenticated user's bound mailbox account",
+	}, operationPolicy{
+		Permission:         "mailbox:account:read",
+		Resource:           "mailbox_account",
+		Action:             "read",
+		OrgScope:           "token_subject",
+		RateLimitClass:     "read",
+		AuditEvent:         "mailbox.mail_account",
+		OperationDisplay:   "mail account",
+		OperationType:      "read",
+		EventCategory:      "mailbox",
+		RiskLevel:          "low",
+		DataClassification: "controller_personal_data",
 	}, accountInfo(svc))
 
-	huma.Register(api, huma.Operation{
+	registerMailRoute(api, authorizer, huma.Operation{
 		OperationID: "mail-sync-status",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/mail/sync/status",
 		Summary:     "Mailbox sync status",
+	}, operationPolicy{
+		Permission:         "mailbox:sync_status:read",
+		Resource:           "mailbox_sync_status",
+		Action:             "read",
+		OrgScope:           "token_subject",
+		RateLimitClass:     "read",
+		AuditEvent:         "mailbox.mail_sync_status",
+		OperationDisplay:   "mail sync status",
+		OperationType:      "read",
+		EventCategory:      "mailbox",
+		RiskLevel:          "low",
+		DataClassification: "system_metadata",
 	}, syncStatus(svc))
 }
 

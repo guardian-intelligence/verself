@@ -15,10 +15,6 @@ type mailboxServiceHealthOutput struct {
 	Body dto.MailboxHealth
 }
 
-type mailboxServiceStatusOutput struct {
-	Body dto.MailboxServiceStatusResponse
-}
-
 func registerPublicRoutes(api huma.API, svc provider) {
 	huma.Register(api, huma.Operation{
 		OperationID: "mailbox-healthz",
@@ -33,13 +29,6 @@ func registerPublicRoutes(api huma.API, svc provider) {
 		Path:        "/readyz",
 		Summary:     "Mailbox service readiness probe",
 	}, readyz(svc))
-
-	huma.Register(api, huma.Operation{
-		OperationID: "mailbox-status",
-		Method:      http.MethodGet,
-		Path:        "/internal/mailbox/v1/status",
-		Summary:     "Mailbox service internal status",
-	}, status(svc))
 }
 
 func healthz() func(context.Context, *mailboxServiceEmptyInput) (*mailboxServiceHealthOutput, error) {
@@ -57,14 +46,6 @@ func readyz(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mai
 		}
 		out := &mailboxServiceHealthOutput{}
 		out.Body = dto.MailboxHealth{Status: "ok"}
-		return out, nil
-	}
-}
-
-func status(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mailboxServiceStatusOutput, error) {
-	return func(context.Context, *mailboxServiceEmptyInput) (*mailboxServiceStatusOutput, error) {
-		out := &mailboxServiceStatusOutput{}
-		out.Body.Status = serviceStatus(svc.Status())
 		return out, nil
 	}
 }

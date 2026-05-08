@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
@@ -179,6 +180,7 @@ func run() error {
 		Service:       svc,
 		PublicBaseURL: publicBaseURL,
 		WebhookSecret: webhookSecret,
+		Authorizer:    iamclient.NewAuthorizer(iamClient.Client),
 	})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,

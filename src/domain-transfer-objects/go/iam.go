@@ -132,6 +132,25 @@ type IAMTestPermissionsResponse struct {
 	ZedToken    string   `json:"zed_token,omitempty" maxLength:"1024"`
 }
 
+type IAMAuthorizationSubject struct {
+	Type string `json:"type" required:"true" enum:"user,service_account,workload"`
+	ID   string `json:"id" required:"true" minLength:"1" maxLength:"512"`
+}
+
+type IAMAuthorizeRequest struct {
+	OrgID       OrgID                   `json:"org_id" required:"true"`
+	Subject     IAMAuthorizationSubject `json:"subject" required:"true"`
+	Permissions []string                `json:"permissions" required:"true" minItems:"1" maxItems:"256"`
+	MinZedToken string                  `json:"min_zed_token,omitempty" maxLength:"1024"`
+}
+
+type IAMAuthorizeResponse struct {
+	OrgID       OrgID                   `json:"org_id"`
+	Subject     IAMAuthorizationSubject `json:"subject"`
+	Permissions []string                `json:"permissions"`
+	ZedToken    string                  `json:"zed_token,omitempty" maxLength:"1024"`
+}
+
 type IAMAPICredential struct {
 	CredentialID         string     `json:"credential_id"`
 	ServiceAccountID     string     `json:"service_account_id"`

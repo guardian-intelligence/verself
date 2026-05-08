@@ -24,11 +24,11 @@ const (
 )
 
 type Principal struct {
-	Subject           string
-	OrgID             string
-	Roles             []string
-	DirectPermissions []string
-	Email             string
+	Subject     string
+	SubjectKind AuthorizationSubjectKind
+	OrgID       string
+	Roles       []string
+	Email       string
 }
 
 type AuthorizationSubjectKind string

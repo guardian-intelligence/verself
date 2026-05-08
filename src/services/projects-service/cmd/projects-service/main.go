@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	projectsapi "github.com/verself/projects-service/internal/api"
 	"github.com/verself/projects-service/internal/projects"
@@ -70,6 +71,7 @@ func run() error {
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4264")
 	serviceListenAddr := cfg.String("VERSELF_SERVICE_LISTEN_ADDR", "127.0.0.1:4265")
+	iamInternalURL := cfg.URL("PROJECTS_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -89,6 +91,14 @@ func run() error {
 	}()
 	if _, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceProjects); err != nil {
 		return err
+	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("projects iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("projects iam client: %w", err)
 	}
 
 	pg, err := openPool(ctx, pgDSN, pgMaxConns)
@@ -119,7 +129,7 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	projectsapi.NewAPI(privateMux, projectsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc})
+	projectsapi.NewAPI(privateMux, projectsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

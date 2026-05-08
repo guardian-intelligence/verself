@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//src/domain-transfer-objects/go:dto",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "//src/services/source-code-hosting-service/internal/source",
         "@com_github_danielgtaylor_huma_v2//:huma",
@@ -41,6 +42,7 @@ go_test(
     embed = [":api"],
     deps = [
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

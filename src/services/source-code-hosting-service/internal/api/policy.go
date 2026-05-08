@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 	"github.com/verself/source-code-hosting-service/internal/source"
 )
@@ -28,10 +28,6 @@ const (
 	permissionWorkflowRead       permission = "source:workflow:read"
 	permissionWorkflowWrite      permission = "source:workflow:write"
 
-	roleOwner  = "owner"
-	roleAdmin  = "admin"
-	roleMember = "member"
-
 	idempotencyHeaderKey    = "idempotency_key_header"
 	maxIdempotencyKeyLength = 128
 	bodyLimitSmallJSON      = 64 << 10
@@ -39,21 +35,6 @@ const (
 )
 
 var apiTracer = otel.Tracer("source-code-hosting-service/internal/api")
-
-var fullRolePermissions = []permission{
-	permissionRepoRead,
-	permissionRepoWrite,
-	permissionCheckoutWrite,
-	permissionGitCredentialWrite,
-	permissionWorkflowRead,
-	permissionWorkflowWrite,
-}
-
-var rolePermissionBundles = map[string][]permission{
-	roleOwner:  fullRolePermissions,
-	roleAdmin:  fullRolePermissions,
-	roleMember: {permissionRepoRead},
-}
 
 type operationPolicy struct {
 	Permission         permission
@@ -79,7 +60,7 @@ type operationRequestInfo struct {
 	IdempotencyKey string
 }
 
-func registerSourceRoute[I, O any](api huma.API, op huma.Operation, policy operationPolicy, handler func(context.Context, source.Principal, *I) (*O, error)) {
+func registerSourceRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, source.Principal, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for source API route")
 	}
@@ -89,7 +70,7 @@ func registerSourceRoute[I, O any](api huma.API, op huma.Operation, policy opera
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := startOperationSpan(ctx, op.OperationID, policy)
 		defer span.End()
-		principal, err := enforceOperationPolicy(ctx, policy)
+		principal, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
 			finishOperationSpan(span, principal, policy, "denied", err)
 			return nil, err
@@ -232,7 +213,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (source.Principal, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (source.Principal, error) {
 	if policy.Internal {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
@@ -252,7 +233,14 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (source
 	if err := source.ValidatePrincipal(principal); err != nil {
 		return principal, forbidden(ctx, "human-source-principal-required", "source routes require a human subject token")
 	}
-	if !identityHasPermission(identity, policy.Permission) {
+	if authorizer == nil {
+		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+	}
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	if err != nil {
+		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+	}
+	if !decision.Allowed {
 		return principal, forbidden(ctx, "permission-denied", "missing required source permission")
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
@@ -283,88 +271,4 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
 	return info
-}
-
-func identityHasPermission(identity *auth.Identity, required permission) bool {
-	if identity == nil || required == "" {
-		return false
-	}
-	if identityHasDirectPermission(identity, required) {
-		return true
-	}
-	for _, role := range identityRolesForCurrentOrg(identity) {
-		for _, granted := range rolePermissionBundles[role] {
-			if granted == required {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	if identity == nil || strings.TrimSpace(identity.OrgID) == "" {
-		return false
-	}
-	credentialID, _ := identity.Raw["verself:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" {
-		return false
-	}
-	requiredText := string(required)
-	for _, claimKey := range []string{"permissions", "permission"} {
-		for _, value := range stringClaimList(identity.Raw[claimKey]) {
-			if value == requiredText {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func identityRolesForCurrentOrg(identity *auth.Identity) []string {
-	if identity == nil || identity.OrgID == "" || len(identity.RoleAssignments) == 0 {
-		return nil
-	}
-	roles := make([]string, 0, len(identity.RoleAssignments))
-	for _, assignment := range identity.RoleAssignments {
-		if assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
-			roles = append(roles, assignment.Role)
-		}
-	}
-	sort.Strings(roles)
-	return compactStrings(roles)
-}
-
-func stringClaimList(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return strings.Fields(typed)
-	case []string:
-		out := append([]string(nil), typed...)
-		sort.Strings(out)
-		return compactStrings(out)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, stringClaimList(item)...)
-		}
-		sort.Strings(out)
-		return compactStrings(out)
-	default:
-		return nil
-	}
-}
-
-func compactStrings(values []string) []string {
-	out := values[:0]
-	var previous string
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || value == previous {
-			continue
-		}
-		out = append(out, value)
-		previous = value
-	}
-	return out
 }
