@@ -20,6 +20,14 @@ argument_specs:
         default: images
         description: "ZFS dataset under firecracker_zfs_pool for composable image zvols."
 
+      firecracker_checkpoint_dataset:
+        type: str
+        default: checkpoints
+        description: >-
+          ZFS dataset under firecracker_zfs_pool that hosts persistent
+          per-volume Checkpoint datasets. Snapshots on these datasets
+          represent generations; the writable mounts live in workloads/.
+
       firecracker_workload_dataset:
         type: str
         default: workloads

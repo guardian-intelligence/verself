@@ -14,8 +14,12 @@
 -- in-place data rewrite. The retention sweeper destroys the legacy image
 -- datasets before this migration applies; the bootstrap path recreates
 -- vspool/checkpoints on the next vm-orchestrator startup via EnsureRoots.
-
-BEGIN;
+--
+-- No explicit BEGIN/COMMIT here: golang-migrate wraps each migration in a
+-- transaction by default. Adding a nested BEGIN/COMMIT releases the outer
+-- savepoint after TRUNCATE and lets ALTER TABLE failures escape the
+-- migration's atomicity boundary, which is how the first prod attempt
+-- ended up with a "dirty version 5" state.
 
 TRUNCATE TABLE checkpoint_lifecycle_events;
 TRUNCATE TABLE execution_volume_mounts;
@@ -31,7 +35,4 @@ ALTER TABLE volume_generations DROP CONSTRAINT IF EXISTS volume_generations_zfs_
 -- Snapshot ref is the full <dataset>@<gen_name> identity of one generation
 -- and is the unique handle the retention sweeper, restore path, and
 -- promotion CAS use to address a single point in the chain.
-ALTER TABLE volume_generations ALTER COLUMN zfs_snapshot_ref SET NOT NULL;
 ALTER TABLE volume_generations ADD CONSTRAINT volume_generations_zfs_snapshot_ref_key UNIQUE (zfs_snapshot_ref);
-
-COMMIT;
