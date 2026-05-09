@@ -37,7 +37,7 @@ runs:
   using: composite
   steps:
     - id: npm-cache
-      uses: ./.github/actions/checkpoint
+      uses: guardian-intelligence/verself-checkpoint
       with:
         key: verself-setup-node-${{ runner.os }}-${{ hashFiles(inputs.cache-dependency-path) }}
         path: ~/.npm

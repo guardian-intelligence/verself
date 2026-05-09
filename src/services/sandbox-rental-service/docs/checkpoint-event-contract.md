@@ -1,7 +1,7 @@
 # Checkpoint Event Contract
 
 Verself Checkpoints v0 are action-driven mounted filesystems. The GitHub
-runner evaluates workflow expressions, then `useverself/checkpoint@v0` sends a
+runner evaluates workflow expressions, then `guardian-intelligence/verself-checkpoint@v0` sends a
 concrete `key` and `path` to sandbox-rental from inside the runner attempt.
 sandbox-rental derives tenant, repository, provider, run, job, branch, pull
 request, and trust context from persisted runner allocation state. Guest
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: useverself/checkpoint@v0
+      - uses: guardian-intelligence/verself-checkpoint@v0
         with:
           key: npm-${{ github.repository }}-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           path: ~/.npm
@@ -164,7 +164,7 @@ returns the existing mount or save state and writes a ClickHouse row with
 1. GitHub sends a `workflow_job` webhook for the selected Express job.
 2. sandbox-rental records runner demand and allocates a Verself runner attempt.
 3. vm-orchestrator boots the runner with reserved Checkpoint drive slots.
-4. `useverself/checkpoint@v0` receives concrete `key` and `path` values from the
+4. `guardian-intelligence/verself-checkpoint@v0` receives concrete `key` and `path` values from the
    runner after GitHub expression evaluation.
 5. The action sends a mount request with the attempt-scoped token.
 6. sandbox-rental appends `checkpoint.mount.requested`.

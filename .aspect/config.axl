@@ -12,6 +12,10 @@ is enforced by absence: do not reintroduce shortcut tasks for things
 """
 
 load(
+    ".aspect/tasks/actions.axl",
+    actions_publish = "publish",
+)
+load(
     ".aspect/tasks/bazel.axl",
     bazel_gazelle = "gazelle",
     bazel_tidy = "tidy",
@@ -90,6 +94,9 @@ def config(ctx):
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
     ctx.tasks.add(tidy)
+
+    # aspect actions ...
+    ctx.tasks.add(actions_publish)
 
     # aspect bazel ...
     ctx.tasks.add(bazel_gazelle)

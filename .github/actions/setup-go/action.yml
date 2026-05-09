@@ -32,12 +32,12 @@ runs:
   using: composite
   steps:
     - id: mod-cache
-      uses: ./.github/actions/checkpoint
+      uses: guardian-intelligence/verself-checkpoint
       with:
         key: verself-setup-go-mod-${{ runner.os }}-${{ hashFiles(inputs.cache-dependency-path) }}
         path: ~/go/pkg/mod
     - id: build-cache
-      uses: ./.github/actions/checkpoint
+      uses: guardian-intelligence/verself-checkpoint
       with:
         key: verself-setup-go-build-${{ runner.os }}-${{ hashFiles(inputs.cache-dependency-path) }}
         path: ~/.cache/go-build

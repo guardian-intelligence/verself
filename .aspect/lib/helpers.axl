@@ -22,6 +22,7 @@ PROVISION_DIR = "src/tools/provisioning"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
     "src/services/billing-service",
+    "src/tools/actions",
     "src/tools/deployment",
     "src/tools/dev",
     "src/tools/operator",
@@ -48,6 +49,8 @@ VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deplo
 VERSELF_DEPLOY_BIN = "bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
 ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operator"
 ASPECT_OPERATOR_BIN = "bazel-bin/src/tools/operator/cmd/aspect-operator/aspect-operator_/aspect-operator"
+ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-publisher"
+ACTIONS_PUBLISHER_BIN = "bazel-bin/src/tools/actions/cmd/actions-publisher/actions-publisher_/actions-publisher"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -182,6 +185,21 @@ def build_aspect_operator(ctx):
     if rc != 0:
         return ""
     return ws_path(ctx, ASPECT_OPERATOR_BIN)
+
+def build_actions_publisher(ctx):
+    """Build the actions-publisher binary and return its absolute path, or
+    empty string on failure.
+    """
+    rc = checked_spawn(
+        ctx,
+        "bazelisk",
+        ["build", ACTIONS_PUBLISHER_TARGET],
+        cwd = ws_path(ctx),
+        label = "bazelisk build " + ACTIONS_PUBLISHER_TARGET,
+    )
+    if rc != 0:
+        return ""
+    return ws_path(ctx, ACTIONS_PUBLISHER_BIN)
 
 _BAZEL_FILE_BASENAMES = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"]
 

@@ -1,0 +1,40 @@
+"""aspect actions — publish repo-owned GitHub Actions."""
+
+load(".aspect/lib/helpers.axl", "build_actions_publisher", "checked_spawn", "ws_path")
+
+def _publish_impl(ctx):
+    bin = build_actions_publisher(ctx)
+    if bin == "":
+        return 1
+    cli_args = [
+        "--name",
+        ctx.args.name,
+        "--repo",
+        ctx.args.repo,
+        "--ref",
+        ctx.args.ref,
+        "--repo-root",
+        ws_path(ctx),
+    ]
+    if ctx.args.create_repo:
+        cli_args.append("--create-repo")
+    if ctx.args.allow_dirty:
+        cli_args.append("--allow-dirty")
+    if ctx.args.dry_run:
+        cli_args.append("--dry-run")
+    return checked_spawn(ctx, bin, cli_args, cwd = ws_path(ctx), label = "actions-publisher " + ctx.args.name + " -> " + ctx.args.repo + "@" + ctx.args.ref)
+
+publish = task(
+    implementation = _publish_impl,
+    name = "publish",
+    group = ["actions"],
+    summary = "Publish a repo-owned GitHub Action distribution to its public action repository.",
+    args = {
+        "name": args.string(default = "", description = "Action directory under src/actions."),
+        "repo": args.string(default = "", description = "GitHub repository owner/name."),
+        "ref": args.string(default = "v0", description = "Branch ref to publish."),
+        "create_repo": args.boolean(default = True, description = "Create the GitHub repository when it is missing."),
+        "allow_dirty": args.boolean(default = False, description = "Allow publishing from a dirty monorepo."),
+        "dry_run": args.boolean(default = False, description = "Build and stage without pushing."),
+    },
+)

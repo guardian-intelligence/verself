@@ -171,7 +171,7 @@ requested.
 ## Runtime Mount Lifecycle
 
 The customer action is runtime-driven: GitHub evaluates the workflow
-expressions, then `verself/checkpoint@v0` sends a concrete `key` and `path`
+expressions, then `guardian-intelligence/verself-checkpoint@v0` sends a concrete `key` and `path`
 from inside the runner attempt. vm-orchestrator therefore must support binding
 Checkpoint zvols after the guest has booted. v0 reserves a bounded set of drive
 slots during runner boot and later binds a prepared zvol to one reserved slot

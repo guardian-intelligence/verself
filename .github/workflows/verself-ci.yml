@@ -24,21 +24,21 @@ jobs:
           persist-credentials: false
 
       - name: Mount Bazel disk cache
-        uses: useverself/checkpoint@v0
+        uses: guardian-intelligence/verself-checkpoint@v0
         with:
           key: ${{ github.repository }}-bazel-disk-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}
           path: /home/runner/.cache/bazel-disk
           size-gb: '50'
 
       - name: Mount Bazel repository cache
-        uses: useverself/checkpoint@v0
+        uses: guardian-intelligence/verself-checkpoint@v0
         with:
           key: ${{ github.repository }}-bazel-repo-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
           path: /home/runner/.cache/bazel-repo
           size-gb: '10'
 
       - name: Mount pnpm store
-        uses: useverself/checkpoint@v0
+        uses: guardian-intelligence/verself-checkpoint@v0
         with:
           key: ${{ github.repository }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
           path: /home/runner/.local/share/pnpm/store

@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "actions-publisher_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/action-tools/cmd/actions-publisher",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "actions-publisher",
+    embed = [":actions-publisher_lib"],
+    visibility = ["//visibility:public"],
+)

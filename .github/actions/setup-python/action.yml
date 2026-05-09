@@ -29,7 +29,7 @@ runs:
   using: composite
   steps:
     - id: pip-cache
-      uses: ./.github/actions/checkpoint
+      uses: guardian-intelligence/verself-checkpoint
       with:
         key: verself-setup-python-${{ runner.os }}-${{ hashFiles(inputs.cache-dependency-path) }}
         path: ~/.cache/pip
