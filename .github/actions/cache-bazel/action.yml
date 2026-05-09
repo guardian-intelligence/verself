@@ -49,6 +49,6 @@ runs:
     - id: repo
       uses: guardian-intelligence/verself-checkpoint@v0
       with:
-        key: verself-bazel-repo-v2-${{ runner.os }}-${{ hashFiles(inputs.workspace-files) }}
+        key: verself-bazel-repo-v3-${{ runner.os }}-${{ hashFiles(inputs.workspace-files) }}
         path: ${{ inputs.repository-cache-path }}
-        size-gb: '50'
+        size-gb: '200'
