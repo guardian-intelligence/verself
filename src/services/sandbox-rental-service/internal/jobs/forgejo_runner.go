@@ -974,7 +974,8 @@ fi
 curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERVICE_HTTP_ORIGIN:?}${VERSELF_RUNNER_BOOTSTRAP_PATH:?}" -o "$bootstrap_file"
 unset VERSELF_TRACEPARENT
 unset VERSELF_RUNNER_BOOTSTRAP_TOKEN
-tool_cache="/workspace/.verself/hostedtoolcache"
+# Durable workspace mounts create root-owned parent dirs; tool cache gets its own future zvol.
+tool_cache="` + runnerToolCacheDir + `"
 mkdir -p "$tool_cache"
 export RUNNER_TOOL_CACHE="$tool_cache"
 export AGENT_TOOLSDIRECTORY="$tool_cache"

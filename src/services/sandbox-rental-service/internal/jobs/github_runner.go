@@ -42,6 +42,7 @@ const (
 	githubRunnerWorkFolder   = "_work"
 	githubJITConfigFetchPath = "/internal/sandbox/v1/github-runner-jit"
 	githubCheckoutPath       = "/internal/sandbox/v1/github-checkout"
+	runnerToolCacheDir       = "/tmp/verself-hostedtoolcache"
 )
 
 type GitHubRunnerConfig struct {
@@ -1368,7 +1369,8 @@ unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
 export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
 runtime_dir="/workspace/.verself/actions-runner"
-tool_cache="/workspace/.verself/hostedtoolcache"
+# Durable workspace mounts create root-owned parent dirs; tool cache gets its own future zvol.
+tool_cache="` + runnerToolCacheDir + `"
 mkdir -p "$runtime_dir" "$runtime_dir/_work" "$tool_cache"
 find "$runtime_dir" -mindepth 1 -maxdepth 1 ! -name _work -exec rm -rf {} +
 export RUNNER_TOOL_CACHE="$tool_cache"
