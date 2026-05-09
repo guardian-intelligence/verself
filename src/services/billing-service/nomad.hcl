@@ -113,6 +113,13 @@ EOT
         port = "internal_https"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "billing-service-tcp-internal_https"
+          type = "tcp"
+          port = "internal_https"
+          interval = "1s"
+          timeout = "3s"
+        }
       }
       service {
         name = "billing-public-http"

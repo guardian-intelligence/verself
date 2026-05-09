@@ -145,6 +145,35 @@ func TestResolverAllEvictedFailsLoud(t *testing.T) {
 	}
 }
 
+func TestResolverServesStaleOnFetchFailure(t *testing.T) {
+	calls := atomic.Int64{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			_ = json.NewEncoder(w).Encode([]nomadServiceEntry{{Address: "10.0.0.1", Port: 1000}})
+			return
+		}
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	now := time.Unix(1000, 0)
+	clock := &mockClock{now: now}
+	r, err := NewResolver(srv.URL, "", WithResolverClock(clock.Now))
+	if err != nil {
+		t.Fatalf("NewResolver: %v", err)
+	}
+	if _, err := r.Resolve(context.Background(), "x"); err != nil {
+		t.Fatalf("seed fetch: %v", err)
+	}
+	clock.now = now.Add(5 * time.Second)
+	endpoints, err := r.Resolve(context.Background(), "x")
+	if err != nil {
+		t.Fatalf("expected stale fallback to succeed, got %v", err)
+	}
+	if len(endpoints) != 1 || endpoints[0].Address != "10.0.0.1" {
+		t.Fatalf("stale fallback returned %+v", endpoints)
+	}
+}
+
 func TestResolverNomadErrorPropagates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)

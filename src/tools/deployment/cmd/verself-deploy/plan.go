@@ -71,7 +71,6 @@ type nomadComponentDescriptor struct {
 	SchemaVersion int                       `json:"schema_version"`
 	Label         string                    `json:"label"`
 	Component     string                    `json:"component"`
-	DependsOn     []string                  `json:"depends_on"`
 	DeployPhase   string                    `json:"deploy_phase"`
 	JobID         string                    `json:"job_id"`
 	JobSpec       string                    `json:"job_spec"`
@@ -202,15 +201,6 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		if len(component.Provides) == 0 {
 			component.Provides = []string{"nomad:job:" + component.JobID}
 		}
-		if len(component.Requires) == 0 && len(component.DependsOn) > 0 {
-			for _, dep := range component.DependsOn {
-				if strings.HasPrefix(dep, "nomad:job:") {
-					component.Requires = append(component.Requires, dep)
-				} else {
-					component.Requires = append(component.Requires, "nomad:job:"+dep)
-				}
-			}
-		}
 		if seenLabels[component.Label] {
 			return nil, fmt.Errorf("duplicate Nomad component descriptor label %s", component.Label)
 		}
@@ -272,12 +262,6 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 		}
 		temporary[jobID] = true
 		depJobs := map[string]bool{}
-		for _, dep := range component.DependsOn {
-			depJob := strings.TrimPrefix(dep, "nomad:job:")
-			if depJob != "" {
-				depJobs[depJob] = true
-			}
-		}
 		for _, required := range component.Requires {
 			if provider := providerByResource[required]; provider != "" {
 				depJobs[provider] = true

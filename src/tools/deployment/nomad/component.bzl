@@ -5,7 +5,6 @@ NomadComponentInfo = provider(
     fields = {
         "artifacts": "label_keyed_string_dict of artifact targets to release output names.",
         "component": "Topology component key.",
-        "depends_on": "List of Nomad job IDs that must be submitted before this component.",
         "descriptor": "Component descriptor JSON file.",
         "deploy_phase": "Deployment phase for graph wave submission.",
         "job_id": "Nomad Job.ID.",
@@ -69,12 +68,6 @@ def _nomad_component_impl(ctx):
         })
 
     requires = list(ctx.attr.requires)
-    for dep in ctx.attr.depends_on:
-        resource = dep
-        if not dep.startswith("nomad:job:"):
-            resource = "nomad:job:" + dep
-        if resource not in requires:
-            requires.append(resource)
     provides = list(ctx.attr.provides)
     if not provides:
         provides = ["nomad:job:" + ctx.attr.job_id]
@@ -84,7 +77,6 @@ def _nomad_component_impl(ctx):
         "schema_version": 3,
         "artifacts": artifacts,
         "component": ctx.attr.component,
-        "depends_on": ctx.attr.depends_on,
         "deploy_phase": ctx.attr.deploy_phase,
         "job_id": ctx.attr.job_id,
         "job_spec": job_spec.short_path,
@@ -102,7 +94,6 @@ def _nomad_component_impl(ctx):
         NomadComponentInfo(
             artifacts = ctx.attr.artifacts,
             component = ctx.attr.component,
-            depends_on = ctx.attr.depends_on,
             descriptor = descriptor,
             deploy_phase = ctx.attr.deploy_phase,
             job_id = ctx.attr.job_id,
@@ -122,9 +113,6 @@ nomad_component = rule(
         "component": attr.string(
             mandatory = True,
             doc = "Topology component key.",
-        ),
-        "depends_on": attr.string_list(
-            doc = "Nomad job IDs that must be submitted before this component.",
         ),
         "deploy_phase": attr.string(
             default = "product",

@@ -95,6 +95,13 @@ job "profile-service" {
         port = "internal_https"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "profile-service-tcp-internal_https"
+          type = "tcp"
+          port = "internal_https"
+          interval = "1s"
+          timeout = "3s"
+        }
       }
       service {
         name = "profile-service-public-http"

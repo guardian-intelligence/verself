@@ -21,12 +21,12 @@ nomad_component(
         "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service_nomad_artifact": "sandbox-rental-service",
     },
     component = "sandbox_rental",
-    depends_on = ["temporal"],
     job_id = "sandbox-rental",
     job_spec = "nomad.hcl",
     requires = [
         "clickhouse:migrations",
         "forgejo:http",
+        "nomad:job:temporal",
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

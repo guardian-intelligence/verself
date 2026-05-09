@@ -95,6 +95,13 @@ job "projects-service" {
         port = "service_https"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "projects-service-tcp-internal_https"
+          type = "tcp"
+          port = "service_https"
+          interval = "1s"
+          timeout = "3s"
+        }
       }
       service {
         name = "projects-service-public-http"

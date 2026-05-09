@@ -16,9 +16,9 @@ nomad_component(
         "//src/websites:nodejs_runtime_nomad_artifact": "nodejs-runtime",
     },
     component = "verself_web",
-    depends_on = ["electric"],
     job_id = "verself-web",
     job_spec = "nomad.hcl",
+    requires = ["nomad:job:electric"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

@@ -28,11 +28,14 @@ const InternalServiceCatalogSuffix = "-internal-https"
 // Tunables for the runtime catalog resolver. Cache TTL is short so a deploy's
 // catalog change propagates inside the same second a caller picks up its next
 // request; the eviction window keeps the resolver from re-selecting a known-
-// failed endpoint while Nomad is still updating.
+// failed endpoint while Nomad is still updating. The HTTP timeout is generous
+// enough to absorb a busy local Nomad agent during rolling deploys without
+// failing every cross-service call — the agent normally responds in <10ms,
+// but alloc churn can spike that into the hundreds.
 const (
 	resolverCacheTTL          = 1500 * time.Millisecond
 	resolverEvictionWindow    = 5 * time.Second
-	resolverHTTPTimeout       = 250 * time.Millisecond
+	resolverHTTPTimeout       = 1500 * time.Millisecond
 	defaultNomadAgentHTTPAddr = "http://127.0.0.1:4646"
 )
 
@@ -186,6 +189,23 @@ func (r *Resolver) Resolve(ctx context.Context, catalogName string) ([]Endpoint,
 
 	endpoints, err := r.fetch(ctx, catalogName)
 	if err != nil {
+		// Tolerate transient Nomad agent stalls by serving the previously-
+		// cached set if any. Stale dispatch is preferable to cascading
+		// every cross-service call when the local agent has a brief hiccup;
+		// the dialer's MarkUnhealthy still evicts truly-dead allocs as
+		// dial errors surface, and the cache will refresh on the next tick.
+		if stale, ok := r.takeAny(catalogName); ok {
+			filtered := r.filterEvicted(catalogName, stale, now)
+			span.SetAttributes(
+				attribute.Bool("cache.hit", false),
+				attribute.Bool("cache.stale_fallback", true),
+				attribute.Int("candidates.total", len(stale)),
+				attribute.Int("candidates.healthy", len(filtered)),
+			)
+			if len(filtered) > 0 {
+				return filtered, nil
+			}
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -204,6 +224,20 @@ func (r *Resolver) Resolve(ctx context.Context, catalogName string) ([]Endpoint,
 		return nil, err
 	}
 	return filtered, nil
+}
+
+// takeAny returns the most recently fetched endpoint set for the service,
+// regardless of TTL. Used as a stale-fallback when a fresh fetch fails.
+func (r *Resolver) takeAny(catalogName string) ([]Endpoint, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entry, ok := r.cache[catalogName]
+	if !ok {
+		return nil, false
+	}
+	clone := make([]Endpoint, len(entry.endpoints))
+	copy(clone, entry.endpoints)
+	return clone, true
 }
 
 // MarkUnhealthy evicts a host:port from the resolver's selectable set for the
