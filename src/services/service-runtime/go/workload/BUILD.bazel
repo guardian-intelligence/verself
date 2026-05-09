@@ -1,10 +1,12 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "workload",
     srcs = [
         "catalog.go",
+        "dialer.go",
         "openbao.go",
+        "resolver.go",
         "tls_external.go",
         "workload.go",
     ],
@@ -24,8 +26,11 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":workload",
-    visibility = ["//visibility:public"],
+go_test(
+    name = "workload_test",
+    srcs = [
+        "dialer_test.go",
+        "resolver_test.go",
+    ],
+    embed = [":workload"],
 )

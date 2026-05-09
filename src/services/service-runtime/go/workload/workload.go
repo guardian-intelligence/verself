@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -25,6 +26,11 @@ import (
 const (
 	EndpointSocketEnv = workloadapi.SocketEnv
 	sourceInitTimeout = 5 * time.Second
+
+	serviceClientDialTimeout           = 300 * time.Millisecond
+	serviceClientTLSHandshakeTimeout   = 500 * time.Millisecond
+	serviceClientResponseHeaderTimeout = 1500 * time.Millisecond
+	serviceClientTotalTimeout          = 2 * time.Second
 )
 
 var tracer = otel.Tracer("github.com/verself/service-runtime/workload")
@@ -174,8 +180,12 @@ func CurrentIDForService(source *workloadapi.X509Source, service string) (spiffe
 }
 
 // MTLSClientForService returns an HTTP client that presents the caller's SVID
-// and authorizes the peer by expected SPIFFE ID. Pass a nil base transport to
-// start from http.DefaultTransport.
+// and authorizes the peer by expected SPIFFE ID. The transport's DialContext
+// resolves catalog hostnames (e.g. iam-service-internal-https) through Nomad's
+// native service catalog at request time, so the client tracks rolling deploys
+// without restart. SPIFFE authorizes the server at the TLS layer; the URL host
+// header is cosmetic. Pass a nil base transport to start from
+// http.DefaultTransport.
 func MTLSClientForService(source *workloadapi.X509Source, service string, base http.RoundTripper) (*http.Client, error) {
 	id, err := PeerIDForSource(source, service)
 	if err != nil {
@@ -189,15 +199,26 @@ func MTLSClientForService(source *workloadapi.X509Source, service string, base h
 		return nil, err
 	}
 	transport.TLSClientConfig = tlsconfig.MTLSClientConfig(source, source, tlsconfig.AuthorizeID(id))
+	resolver, err := DefaultResolver()
+	if err != nil {
+		return nil, fmt.Errorf("init nomad resolver: %w", err)
+	}
+	transport.DialContext = newResolvingDialContext(resolver, &net.Dialer{
+		Timeout:   serviceClientDialTimeout,
+		KeepAlive: 30 * time.Second,
+	})
+	transport.TLSHandshakeTimeout = serviceClientTLSHandshakeTimeout
+	transport.ResponseHeaderTimeout = serviceClientResponseHeaderTimeout
 	return &http.Client{
 		// otelhttp injects trace context on the repo-wide SPIFFE mTLS path so
 		// downstream service spans and audit rows stay joinable in ClickHouse.
 		Transport: otelhttp.NewTransport(&clientSpanTransport{
 			next:             transport,
+			expectedService:  service,
 			expectedServerID: id.String(),
 			source:           source,
 		}),
-		Timeout: 5 * time.Second,
+		Timeout: serviceClientTotalTimeout,
 	}, nil
 }
 
@@ -318,6 +339,7 @@ func currentTrustDomain(source *workloadapi.X509Source) (spiffeid.TrustDomain, e
 
 type clientSpanTransport struct {
 	next             http.RoundTripper
+	expectedService  string
 	expectedServerID string
 	source           *workloadapi.X509Source
 }
@@ -325,7 +347,20 @@ type clientSpanTransport struct {
 func (t *clientSpanTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, span := tracer.Start(req.Context(), "auth.spiffe.mtls.client", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
-	span.SetAttributes(attribute.String("spiffe.expected_server_id", t.expectedServerID))
+	span.SetAttributes(
+		attribute.String("peer.service", t.expectedService),
+		attribute.String("spiffe.expected_server_id", t.expectedServerID),
+	)
+	if req != nil && req.URL != nil {
+		port := req.URL.Port()
+		span.SetAttributes(
+			attribute.String("http.request.method", req.Method),
+			attribute.String("url.scheme", req.URL.Scheme),
+			attribute.String("url.path", req.URL.EscapedPath()),
+			attribute.String("server.address", req.URL.Hostname()),
+			attribute.String("server.port", port),
+		)
+	}
 	if t.source != nil {
 		if svid, err := t.source.GetX509SVID(); err == nil && svid != nil {
 			span.SetAttributes(attribute.String("spiffe.local_id", svid.ID.String()))

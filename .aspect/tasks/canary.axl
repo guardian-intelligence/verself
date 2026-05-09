@@ -1,0 +1,46 @@
+"""aspect canary — operator deploy-time canaries.
+
+  aspect canary service-discovery [--duration=180s --rps=10 --persona=platform-admin]
+
+The implementation lives in src/tools/operator/cmd/aspect-operator.
+"""
+
+load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")
+
+def _service_discovery_impl(ctx):
+    bin = build_aspect_operator(ctx)
+    if bin == "":
+        return 1
+    persona = ctx.args.persona or "platform-admin"
+    persona_env = ws_path(ctx) + "/smoke-artifacts/personas/" + persona + ".env"
+    cli_args = [
+        "service-discovery-canary",
+        "--persona-env",
+        persona_env,
+        "--duration",
+        ctx.args.duration or "180s",
+        "--rps",
+        str(ctx.args.rps or 10),
+        "--concurrency",
+        str(ctx.args.concurrency or 4),
+        "--format",
+        ctx.args.format or "table",
+    ]
+    if ctx.args.endpoint_path:
+        cli_args = cli_args + ["--endpoint-path", ctx.args.endpoint_path]
+    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator service-discovery-canary")
+
+service_discovery = task(
+    implementation = _service_discovery_impl,
+    name = "service-discovery",
+    group = ["canary"],
+    summary = "Drive billing API traffic through the IAM authorize round-trip while iam-service rolls; report any non-2xx-or-4xx outcome.",
+    args = {
+        "persona": args.string(default = "platform-admin", description = "Persona env file basename under smoke-artifacts/personas/."),
+        "duration": args.string(default = "180s", description = "How long to drive traffic."),
+        "rps": args.int(default = 10, description = "Target requests per second."),
+        "concurrency": args.int(default = 4, description = "Number of parallel workers."),
+        "endpoint_path": args.string(default = "", description = "Override the billing API path. Default /api/v1/plans."),
+        "format": args.string(default = "table", description = "Output format: table | json."),
+    },
+)

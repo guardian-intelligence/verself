@@ -26,6 +26,10 @@ load(
     billing_seed = "seed",
     billing_state = "state",
 )
+load(
+    ".aspect/tasks/canary.axl",
+    canary_service_discovery = "service_discovery",
+)
 load(".aspect/tasks/check.axl", "check")
 load(
     ".aspect/tasks/db.axl",
@@ -142,3 +146,6 @@ def config(ctx):
     # aspect mail ...
     ctx.tasks.add(mail_send)
     ctx.tasks.add(mail_passwords)
+
+    # aspect canary ...
+    ctx.tasks.add(canary_service_discovery)

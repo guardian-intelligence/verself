@@ -14,6 +14,7 @@ go_library(
         "detect_intrusions.go",
         "dev.go",
         "device.go",
+        "discovery_canary.go",
         "files.go",
         "mail.go",
         "main.go",

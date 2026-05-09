@@ -66,7 +66,6 @@ func run() error {
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
 	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
 	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
-	iamInternalURL := cfg.URL("BILLING_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
@@ -115,7 +114,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing iam client: %w", err)
 	}

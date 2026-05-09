@@ -68,6 +68,7 @@ EOT
       user = "billing"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://billing-service"
         destination = "local"
