@@ -34,7 +34,7 @@ pomerium_oidc_project_name: operator-access
 pomerium_oidc_app_name: pomerium-operator-access
 pomerium_oidc_redirect_uri: "https://{{ pomerium_domain }}/oauth2/callback"
 pomerium_oidc_post_logout_redirect_uri: "https://{{ pomerium_domain }}"
-pomerium_oidc_scopes: "openid, profile, email, offline_access, urn:zitadel:iam:user:resourceowner"
+pomerium_oidc_scopes: "openid, profile, email, offline_access"
 
 pomerium_operator_allowed_domains: []
 pomerium_operator_allowed_emails:
@@ -42,12 +42,6 @@ pomerium_operator_allowed_emails:
 pomerium_operator_http_routes:
   - from: "https://{{ grafana_domain | default('dashboard.' ~ verself_domain) }}"
     to: "http://{{ grafana_http_address | default('127.0.0.1:4300') }}"
-
-pomerium_npm_registry_domain: "{{ npm_registry_domain | default('npm.' ~ verself_domain) }}"
-pomerium_npm_registry_upstream: "http://127.0.0.1:4873"
-pomerium_npm_registry_org_id: "{{ platform_org_id | default('') }}"
-pomerium_npm_registry_allowed_domains: []
-pomerium_npm_registry_allowed_emails: []
 
 pomerium_ssh_bind_address: "{{ bare_metal_public_ipv4 }}"
 pomerium_ssh_address: "{{ pomerium_ssh_bind_address }}:22"

@@ -61,6 +61,17 @@ frontend fe_https
   acl method_get method GET
   acl method_post method POST
   acl npm_registry_read_method method GET HEAD OPTIONS
+  # npm.verself.sh is an unauthenticated public-read route to Verdaccio.
+  # Threat model: Verdaccio mirrors registry.npmjs.org with publish locked
+  # to $nobody, so no private package material lives here — the bytes are
+  # already free to fetch from the upstream. Tarballs are sha512-pinned by
+  # caller lockfiles, and edge_npm_registry_rate_limited caps per-source-IP
+  # abuse. The 405 below blocks every non-read method before routing, and
+  # nomad-upstreams strips Authorization on the Verdaccio backend so
+  # callers can supply any (or no) bearer without affecting auth posture.
+  # Identity-fronted gating via Pomerium was removed because pnpm omits
+  # auth on tarball fetches by default and the protected resource has no
+  # confidentiality budget.
   acl zitadel_action_api_credentials path -i /internal/zitadel/actions/api-credential-claims
   acl jmap_session path -i /jmap/session
   acl stripe_webhook path -i /webhooks/stripe
@@ -105,7 +116,7 @@ frontend fe_https
   use_backend be_zitadel_action_api_credentials if host_zitadel method_post zitadel_action_api_credentials
   use_backend be_zitadel_action_api_credentials if host_zitadel_actions method_post zitadel_action_api_credentials
   use_backend be_mailbox_jmap_session if host_mail jmap_session
-  use_backend be_route_product_npm_registry_pomerium if host_npm
+  use_backend be_route_product_npm_registry_verdaccio if host_npm
 
   acl route_1_host var(txn.host) -m str verself.sh
   acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/logout
@@ -198,10 +209,3 @@ backend be_route_product_dashboard_grafana_operator_ui
   http-request set-header X-Forwarded-Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Proto https
   server pomerium 127.0.0.1:4180 guid be_route_product_dashboard_grafana_operator_ui_srv_pomerium
-
-backend be_route_product_npm_registry_pomerium
-  guid be_route_product_npm_registry_pomerium
-  http-request set-header Host %[req.hdr(host)]
-  http-request set-header X-Forwarded-Host %[req.hdr(host)]
-  http-request set-header X-Forwarded-Proto https
-  server pomerium 127.0.0.1:4180 guid be_route_product_npm_registry_pomerium_srv_pomerium
