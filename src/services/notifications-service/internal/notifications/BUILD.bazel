@@ -1,10 +1,11 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "notifications",
     srcs = [
         "email.go",
         "nats.go",
+        "platform_alerts.go",
         "runtime.go",
         "safeconv.go",
         "service.go",
@@ -40,4 +41,10 @@ alias(
     name = "go_default_library",
     actual = ":notifications",
     visibility = ["//src/services/notifications-service:__subpackages__"],
+)
+
+go_test(
+    name = "notifications_test",
+    srcs = ["platform_alerts_test.go"],
+    embed = [":notifications"],
 )

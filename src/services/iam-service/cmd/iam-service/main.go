@@ -83,7 +83,6 @@ func run() error {
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4248")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
-	governanceAuditURL := cfg.String("IAM_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
@@ -176,7 +175,7 @@ func run() error {
 		AuthorizationGraph: authzService,
 		ProjectID:          authAudience,
 	}
-	api.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+	api.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
 		PG:             pg,
 		Logger:         logger,

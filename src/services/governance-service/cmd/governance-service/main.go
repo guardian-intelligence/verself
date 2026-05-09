@@ -70,7 +70,6 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
-	iamInternalURL := cfg.URL("GOVERNANCE_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
@@ -100,7 +99,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("governance iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("governance iam client: %w", err)
 	}

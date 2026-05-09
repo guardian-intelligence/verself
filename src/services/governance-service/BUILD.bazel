@@ -20,7 +20,6 @@ nomad_component(
         "//src/services/governance-service/cmd/governance-service:governance-service_nomad_artifact": "governance-service",
     },
     component = "governance_service",
-    depends_on = ["iam-service"],
     job_id = "governance-service",
     job_spec = "nomad.hcl",
     requires = [

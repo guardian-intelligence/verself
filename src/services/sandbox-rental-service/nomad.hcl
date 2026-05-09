@@ -83,6 +83,7 @@ EOT
       user = "sandbox_rental"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://sandbox-rental-service"
         destination = "local"
@@ -138,7 +139,7 @@ EOT
         mode = "delay"
       }
       service {
-        name = "sandbox-rental-internal-https"
+        name = "sandbox-rental-service-internal-https"
         port = "internal_https"
         provider = "nomad"
         address_mode = "auto"
@@ -168,11 +169,6 @@ EOT
         destination = "secrets/upstreams.env"
         data = <<-EOT
 SANDBOX_FORGEJO_API_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SANDBOX_BILLING_URL=https://{{- with nomadService "billing-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SANDBOX_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SANDBOX_IAM_INTERNAL_URL=https://{{- with nomadService "iam-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SANDBOX_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService "source-code-hosting-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
@@ -196,6 +192,7 @@ EOT
       user = "sandbox_rental"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://sandbox-rental-recurring-worker"
         destination = "local"
@@ -232,7 +229,6 @@ EOT
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
-SANDBOX_SOURCE_INTERNAL_URL=https://{{- with nomadService "source-code-hosting-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true

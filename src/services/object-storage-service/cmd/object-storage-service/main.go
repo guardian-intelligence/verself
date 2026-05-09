@@ -144,8 +144,6 @@ func runAdmin(
 ) error {
 	l := envconfig.New()
 	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
-	governanceAuditURL := l.RequireURL("OBJECT_STORAGE_GOVERNANCE_AUDIT_URL")
-	iamInternalURL := l.URL("OBJECT_STORAGE_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := l.RequireCredential("auth-audience")
 	garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
@@ -163,7 +161,7 @@ func runAdmin(
 	if err != nil {
 		return fmt.Errorf("object-storage iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("object-storage iam client: %w", err)
 	}
@@ -177,7 +175,7 @@ func runAdmin(
 	}
 	cfg.ProxyAccessKeyID = proxyAccessKeyID
 
-	objectstorageapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+	objectstorageapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	svc := &objectstorage.Service{
 		Store:   objectstorage.NewStore(pg),
 		Garage:  garageClient,

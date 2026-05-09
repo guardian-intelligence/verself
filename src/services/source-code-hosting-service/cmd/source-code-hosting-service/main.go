@@ -76,10 +76,6 @@ func run() error {
 	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
 	forgejoToken := cfg.RequireCredential("forgejo-token")
-	sandboxInternalURL := cfg.URL("SOURCE_SANDBOX_INTERNAL_URL", "https://127.0.0.1:4263")
-	secretsInternalURL := cfg.URL("SOURCE_SECRETS_INTERNAL_URL", "https://127.0.0.1:4253")
-	projectsServiceURL := cfg.URL("SOURCE_PROJECTS_SERVICE_URL", "https://127.0.0.1:4265")
-	iamInternalURL := cfg.URL("SOURCE_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
 	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -104,7 +100,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("source sandbox-rental mtls: %w", err)
 	}
-	runnerClient, err := source.NewRunnerRepositoryClient(sandboxInternalURL, sandboxHTTPClient)
+	runnerClient, err := source.NewRunnerRepositoryClient(workloadauth.InternalURL(workloadauth.ServiceSandboxRental), sandboxHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create sandbox-rental internal client: %w", err)
 	}
@@ -112,7 +108,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("source secrets mtls: %w", err)
 	}
-	credentialClient, err := source.NewSecretsCredentialClient(secretsInternalURL, secretsHTTPClient)
+	credentialClient, err := source.NewSecretsCredentialClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create secrets internal client: %w", err)
 	}
@@ -120,7 +116,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("source projects mtls: %w", err)
 	}
-	projectsClient, err := source.NewProjectsClient(projectsServiceURL, projectsHTTPClient)
+	projectsClient, err := source.NewProjectsClient(workloadauth.InternalURL(workloadauth.ServiceProjects), projectsHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create projects service client: %w", err)
 	}
@@ -128,7 +124,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("source identity mtls: %w", err)
 	}
-	iamClient, err := source.NewIAMClient(iamInternalURL, iamHTTPClient)
+	iamClient, err := source.NewIAMClient(workloadauth.InternalURL(workloadauth.ServiceIAM), iamHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create identity internal client: %w", err)
 	}

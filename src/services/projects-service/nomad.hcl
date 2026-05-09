@@ -55,6 +55,7 @@ job "projects-service" {
       user = "projects_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://projects-service"
         destination = "local"
@@ -90,7 +91,7 @@ job "projects-service" {
         mode = "delay"
       }
       service {
-        name = "projects-service-service-https"
+        name = "projects-service-internal-https"
         port = "service_https"
         provider = "nomad"
         address_mode = "auto"

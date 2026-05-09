@@ -90,13 +90,6 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4263")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "sandbox_rental")
-	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
-	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
-	// IAM's internal listener is Nomad-dynamic in production; a default here
-	// dials stale localhost and turns authorization into a five-second timeout.
-	iamInternalURL := cfg.RequireURL("SANDBOX_IAM_INTERNAL_URL")
-	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
-	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
@@ -227,7 +220,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sandbox billing mtls: %w", err)
 	}
-	billingClient, err := billingclient.NewClientWithResponses(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
+	billingClient, err := billingclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceBilling), billingclient.WithHTTPClient(billingHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
@@ -235,7 +228,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sandbox iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create iam client: %w", err)
 	}
@@ -243,7 +236,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sandbox secrets mtls: %w", err)
 	}
-	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create secrets client: %w", err)
 	}
@@ -317,11 +310,11 @@ func run() error {
 		return fmt.Errorf("create forgejo runner adapter: %w", err)
 	}
 	jobService.ForgejoRunner = forgejoRunner
-	sourceDispatcher, err := sourceworkflow.NewDispatcher(sourceInternalURL, sourceHTTPClient)
+	sourceDispatcher, err := sourceworkflow.NewDispatcher(workloadauth.InternalURL(workloadauth.ServiceSourceCodeHosting), sourceHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create source workflow dispatcher: %w", err)
 	}
-	sandboxapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+	sandboxapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	recurringService, err := recurring.NewService(recurring.Config{
 		PGX:            pgxPool,
 		TemporalClient: temporalClient,

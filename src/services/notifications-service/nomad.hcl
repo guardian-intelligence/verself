@@ -68,6 +68,7 @@ EOT
       user = "notifications_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://notifications-service"
         destination = "local"
@@ -132,7 +133,6 @@ EOT
         destination = "secrets/upstreams.env"
         data = <<-EOT
 NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-NOTIFICATIONS_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
       }

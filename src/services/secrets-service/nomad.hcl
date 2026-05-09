@@ -18,6 +18,7 @@ job "secrets-service" {
       user = "secrets_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://secrets-service"
         destination = "local"
@@ -79,8 +80,6 @@ job "secrets-service" {
         destination = "secrets/upstreams.env"
         data = <<-EOT
 SECRETS_OPENBAO_ADDR=https://{{- with nomadService "openbao-api" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SECRETS_BILLING_URL=https://{{- with nomadService "billing-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-SECRETS_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
       }

@@ -7,7 +7,10 @@ verself_oapi_go_client(
     package = "iamclient",
     response_type_suffix = "HTTPResponse",
     spec = "//src/services/iam-service/openapi:internal-openapi-3.0.yaml",
-    visibility = ["//src/services:__subpackages__"],
+    visibility = [
+        "//src/services:__subpackages__",
+        "//src/tools/operator/cmd/discovery-canary:__pkg__",
+    ],
     deps = [
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
@@ -18,5 +21,8 @@ verself_oapi_go_client(
 alias(
     name = "go_default_library",
     actual = ":client",
-    visibility = ["//src/services:__subpackages__"],
+    visibility = [
+        "//src/services:__subpackages__",
+        "//src/tools/operator/cmd/discovery-canary:__pkg__",
+    ],
 )

@@ -50,7 +50,6 @@ func run() error {
 	temporalFrontendAddress := cfg.RequireString("SANDBOX_TEMPORAL_FRONTEND_ADDRESS")
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
-	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 4)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgConnMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -93,7 +92,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sandbox-rental recurring source-code-hosting mtls: %w", err)
 	}
-	sourceDispatcher, err := sourceworkflow.NewDispatcher(sourceInternalURL, sourceHTTPClient)
+	sourceDispatcher, err := sourceworkflow.NewDispatcher(workloadauth.InternalURL(workloadauth.ServiceSourceCodeHosting), sourceHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create source workflow dispatcher: %w", err)
 	}

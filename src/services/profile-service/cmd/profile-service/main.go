@@ -73,8 +73,6 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
-	iamInternalURL := cfg.RequireURL("PROFILE_IAM_INTERNAL_URL")
-	governanceAuditURL := cfg.String("PROFILE_GOVERNANCE_AUDIT_URL", "")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
@@ -104,7 +102,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("profile identity mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("identity internal client: %w", err)
 	}
@@ -115,7 +113,7 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("profile readiness: %w", err)
 	}
-	profileapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+	profileapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

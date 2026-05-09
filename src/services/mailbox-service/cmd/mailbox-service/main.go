@@ -53,8 +53,6 @@ type config struct {
 	SyncReconcileInterval time.Duration
 	AuthIssuerURL         string
 	AuthAudience          string
-	IAMInternalURL        string
-	SecretsURL            string
 	CEOPassword           string
 	AgentsPassword        string
 	ForwardTo             string
@@ -114,7 +112,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets mtls: %w", err)
 	}
-	secretsClient, err := secretsclient.NewClientWithResponses(cfg.SecretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets client: %w", err)
 	}
@@ -122,7 +120,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("mailbox-service iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(cfg.IAMInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("mailbox-service iam client: %w", err)
 	}
@@ -247,8 +245,6 @@ func loadConfig() (config, error) {
 		SyncReconcileInterval: l.Duration("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
 		AuthIssuerURL:         l.RequireURL("VERSELF_AUTH_ISSUER_URL"),
 		AuthAudience:          l.RequireCredential("auth-audience"),
-		IAMInternalURL:        l.URL("MAILBOX_SERVICE_IAM_INTERNAL_URL", "https://127.0.0.1:4241"),
-		SecretsURL:            l.RequireURL("MAILBOX_SERVICE_SECRETS_URL"),
 		CEOPassword:           l.RequireCredential("stalwart-ceo-password"),
 		AgentsPassword:        l.RequireCredential("stalwart-agents-password"),
 		ForwardTo:             l.CredentialOr("forward-to", ""),

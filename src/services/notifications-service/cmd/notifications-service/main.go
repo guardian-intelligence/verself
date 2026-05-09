@@ -29,9 +29,12 @@ import (
 )
 
 const (
-	serviceName      = notifications.ServiceName
-	serviceVersion   = "1.0.0"
-	requestBodyLimit = 1 << 20
+	serviceName               = notifications.ServiceName
+	serviceVersion            = "1.0.0"
+	requestBodyLimit          = 1 << 20
+	platformAlertPollInterval = 15 * time.Second
+	platformAlertPollTimeout  = 5 * time.Second
+	platformAlertLookback     = 2 * time.Minute
 )
 
 func main() {
@@ -76,8 +79,6 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4261")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
-	iamInternalURL := cfg.URL("NOTIFICATIONS_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
-	secretsURL := cfg.RequireURL("NOTIFICATIONS_SECRETS_URL")
 	natsURL := cfg.String("NOTIFICATIONS_NATS_URL", notifications.NATSDefaultURL)
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "notifications_service")
@@ -154,7 +155,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("notifications iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("notifications iam client: %w", err)
 	}
@@ -162,7 +163,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("notifications secrets mtls: %w", err)
 	}
-	secrets, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	secrets, err := secretsclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("notifications secrets client: %w", err)
 	}
@@ -196,6 +197,12 @@ func run() error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	defer bgCancel()
 	go runBackgroundLoop(bgCtx, logger, runtime)
+	go runCrossServiceFailureAlertLoop(bgCtx, logger, svc, notifications.CrossServiceFailureAlertConfig{
+		OrgID:    platformAlertOrgID,
+		Email:    platformAlertEmail,
+		Lookback: platformAlertLookback,
+		Limit:    100,
+	})
 	go func() {
 		if err := bus.RunConsumer(bgCtx, svc); err != nil && !errors.Is(err, context.Canceled) {
 			logger.ErrorContext(context.Background(), "notifications nats consumer stopped", "error", err)
@@ -325,6 +332,32 @@ func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *notifi
 			if err := runtime.EnqueueMaintenance(ctx, 5*time.Second); err != nil {
 				logger.WarnContext(ctx, "notifications maintenance enqueue", "error", err)
 			}
+		}
+	}
+}
+
+func runCrossServiceFailureAlertLoop(ctx context.Context, logger *slog.Logger, svc *notifications.Service, cfg notifications.CrossServiceFailureAlertConfig) {
+	poll := func() {
+		pollCtx, cancel := context.WithTimeout(ctx, platformAlertPollTimeout)
+		defer cancel()
+		count, err := svc.AlertCrossServiceFailures(pollCtx, cfg)
+		if err != nil {
+			logger.ErrorContext(ctx, "notifications cross-service failure alert poll", "error", err)
+			return
+		}
+		if count > 0 {
+			logger.WarnContext(ctx, "notifications cross-service failure alerts triggered", "count", count)
+		}
+	}
+	poll()
+	ticker := time.NewTicker(platformAlertPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			poll()
 		}
 	}
 }

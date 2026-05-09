@@ -109,7 +109,7 @@ EOT
         mode = "delay"
       }
       service {
-        name = "billing-internal-https"
+        name = "billing-service-internal-https"
         port = "internal_https"
         provider = "nomad"
         address_mode = "auto"
@@ -133,7 +133,6 @@ EOT
         destination = "secrets/upstreams.env"
         data = <<-EOT
 BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-BILLING_SECRETS_URL=https://{{- with nomadService "secrets-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
       }

@@ -55,6 +55,7 @@ job "profile-service" {
       user = "profile_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://profile-service"
         destination = "local"
@@ -108,15 +109,6 @@ job "profile-service" {
           interval = "1s"
           timeout = "3s"
         }
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/upstreams.env"
-        data = <<-EOT
-PROFILE_GOVERNANCE_AUDIT_URL=https://{{- with nomadService "governance-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-PROFILE_IAM_INTERNAL_URL=https://{{- with nomadService "iam-service-internal-https" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
       }
     }
     update {

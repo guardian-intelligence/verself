@@ -54,13 +54,10 @@ func run() error {
 	cfg := envconfig.New()
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4251")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
-	governanceAuditURL := cfg.String("SECRETS_GOVERNANCE_AUDIT_URL", "")
-	iamInternalURL := cfg.URL("SECRETS_IAM_INTERNAL_URL", "https://127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
-	billingURL := cfg.RequireURL("SECRETS_BILLING_URL")
 	platformOrgID := cfg.RequireString("SECRETS_PLATFORM_ORG_ID")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	environment := cfg.String("SECRETS_ENVIRONMENT", "single-node")
@@ -116,7 +113,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secrets billing mtls: %w", err)
 	}
-	billingClient, err := billingclient.NewClientWithResponses(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
+	billingClient, err := billingclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceBilling), billingclient.WithHTTPClient(billingHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing client: %w", err)
 	}
@@ -124,7 +121,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secrets iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(iamInternalURL, iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("iam client: %w", err)
 	}
@@ -139,7 +136,7 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("secrets readiness: %w", err)
 	}
-	secretsapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+	secretsapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

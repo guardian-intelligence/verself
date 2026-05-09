@@ -20,10 +20,6 @@ nomad_component(
         "//src/services/secrets-service/cmd/secrets-service:secrets-service_nomad_artifact": "secrets-service",
     },
     component = "secrets_service",
-    depends_on = [
-        "governance-service",
-        "iam-service",
-    ],
     job_id = "secrets-service",
     job_spec = "nomad.hcl",
     requires = ["openbao:api"],

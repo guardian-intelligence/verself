@@ -63,6 +63,7 @@ job "governance-service" {
       user = "governance_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://governance-service"
         destination = "local"

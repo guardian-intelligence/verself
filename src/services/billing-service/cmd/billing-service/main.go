@@ -65,7 +65,6 @@ func run() error {
 	tbAddress := cfg.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
 	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
-	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
@@ -106,7 +105,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing secrets mtls: %w", err)
 	}
-	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing secrets client: %w", err)
 	}

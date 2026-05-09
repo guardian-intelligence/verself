@@ -1,0 +1,21 @@
+# gazelle:prefix github.com/verself/operator-tools/cmd/discovery-canary
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "discovery-canary_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/operator-tools/cmd/discovery-canary",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/iam-service/client",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
+    ],
+)
+
+go_binary(
+    name = "discovery-canary",
+    embed = [":discovery-canary_lib"],
+    visibility = ["//visibility:public"],
+)
