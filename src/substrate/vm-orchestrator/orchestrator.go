@@ -359,7 +359,9 @@ func normalizeFilesystemMounts(mounts []FilesystemMount, sourceMode filesystemMo
 		if mount.SourceRef == "" && sourceMode == filesystemMountSourceRequired {
 			return nil, fmt.Errorf("filesystem_mounts[%d].source_ref is required", idx)
 		}
-		if mount.SourceRef != "" && !zfs.IsValidRef(mount.SourceRef) {
+		// Dynamic Checkpoint attach accepts full <dataset>@<snapshot> refs;
+		// AttachFilesystemMount validates those against configured ZFS roots.
+		if mount.SourceRef != "" && sourceMode == filesystemMountSourceRequired && !zfs.IsValidRef(mount.SourceRef) {
 			return nil, fmt.Errorf("filesystem_mounts[%d].source_ref is invalid", idx)
 		}
 		if mount.MountPath == "." || !strings.HasPrefix(mount.MountPath, "/") || mount.MountPath == "/" {

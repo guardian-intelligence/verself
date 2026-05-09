@@ -68,6 +68,21 @@ func TestNormalizeFilesystemMountsAllowsEmptySourceForDynamicAttach(t *testing.T
 	}
 }
 
+func TestNormalizeFilesystemMountsAllowsGenerationSourceForDynamicAttach(t *testing.T) {
+	sourceRef := "pool/checkpoints/21a47db4-8a9d-4fb4-9072-1c727eaa3d65@gen-01KR70P9CK4F3XT6A9C732HMZC"
+	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
+		Name:      "ckpt-generation",
+		SourceRef: sourceRef,
+		MountPath: "/mnt/data",
+	}}, filesystemMountSourceOptional)
+	if err != nil {
+		t.Fatalf("normalizeFilesystemMounts returned error: %v", err)
+	}
+	if got := mounts[0].SourceRef; got != sourceRef {
+		t.Fatalf("source ref = %q, want %q", got, sourceRef)
+	}
+}
+
 func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 	manifest := guestFilesystemMounts([]preparedFilesystemMount{{
 		Spec: FilesystemMount{
