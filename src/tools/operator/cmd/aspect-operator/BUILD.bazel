@@ -4,6 +4,7 @@ go_library(
     name = "aspect-operator_lib",
     srcs = [
         "bazel.go",
+        "bench_ci_runs.go",
         "benchmark_ingest.go",
         "billing.go",
         "checkpoint_canary.go",

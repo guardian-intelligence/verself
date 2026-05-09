@@ -86,6 +86,8 @@ func run(args []string) error {
 		return cmdCheckpointCanary(rest)
 	case "benchmark-ingest":
 		return cmdBenchmarkIngest(rest)
+	case "bench-ci-runs":
+		return cmdBenchCIRuns(rest)
 	case "service-discovery-canary":
 		return cmdDiscoveryCanary(rest)
 	case "-h", "--help", "help":
@@ -111,6 +113,7 @@ Subcommands:
   platform          Platform org/project/source convergence
   checkpoint-canary Push and dispatch checkpoint workloads
   benchmark-ingest  Insert canary report rows into verself.benchmark_runs
+  bench-ci-runs     Ingest verself-sh CI workflow run timings as benchmark_runs
   service-discovery-canary  Drive billing -> IAM traffic through the resolver
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.

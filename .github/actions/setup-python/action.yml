@@ -1,0 +1,41 @@
+name: Verself Setup Python
+description: |
+  Wraps actions/setup-python and mounts a Verself Checkpoint for the pip
+  download cache so workflows previously using useblacksmith/setup-python
+  keep the same drop-in shape. Restored bytes are tool-reconciled by pip
+  against the lockfile-equivalent input.
+
+inputs:
+  python-version:
+    description: Python version (passed to actions/setup-python).
+    required: false
+  python-version-file:
+    description: Path to a file containing the Python version.
+    required: false
+  cache-dependency-path:
+    description: Path to a requirements/lock file used in the Checkpoint cache key.
+    required: false
+    default: requirements.txt
+
+outputs:
+  python-version:
+    description: The installed Python version.
+    value: ${{ steps.setup.outputs.python-version }}
+  cache-hit:
+    description: true when the Checkpoint restored a generation.
+    value: ${{ steps.pip-cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - id: pip-cache
+      uses: ./.github/actions/checkpoint
+      with:
+        key: verself-setup-python-${{ runner.os }}-${{ hashFiles(inputs.cache-dependency-path) }}
+        path: ~/.cache/pip
+    - id: setup
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+        python-version-file: ${{ inputs.python-version-file }}
+        cache: ''

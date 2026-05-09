@@ -867,6 +867,18 @@ func checkpointWorkloads() []checkpointWorkload {
 			Generate:    generateDBSeedWorkload,
 			Workflow:    dbSeedCheckpointWorkflow,
 		},
+		{
+			Slug:        "rules-go-bazel",
+			DisplayName: "bazelbuild/rules_go",
+			Upstream:    "https://github.com/bazelbuild/rules_go.git",
+			Workflow:    rulesGoCheckpointWorkflow,
+		},
+		{
+			Slug:        "next-pnpm",
+			DisplayName: "vercel/next.js",
+			Upstream:    "https://github.com/vercel/next.js.git",
+			Workflow:    nextPnpmCheckpointWorkflow,
+		},
 	}
 }
 
@@ -947,6 +959,58 @@ func dbSeedCheckpointWorkflow(runnerLabel string) string {
       - run: npm ci
 
       - run: npm test
+`)
+}
+
+func rulesGoCheckpointWorkflow(runnerLabel string) string {
+	// Bazel-heavy reference workload. The disk_cache and repository_cache
+	// are the canonical Checkpoint mount targets per the v0 product
+	// contract; we deliberately avoid checkpointing output_base because it
+	// includes Bazel server state and execroot symlink forests that aren't
+	// safe to restore byte-for-byte.
+	return checkpointWorkflowYAML(runnerLabel, "rules_go bazel checkpoint", `
+      - uses: actions/checkout@v6
+
+      - uses: useverself/checkpoint@v0
+        with:
+          key: rules-go-bazel-disk-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'WORKSPACE') }}
+          path: ~/.cache/bazel-disk
+
+      - uses: useverself/checkpoint@v0
+        with:
+          key: rules-go-bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'WORKSPACE') }}
+          path: ~/.cache/bazel-repo
+
+      - run: |
+          bazelisk build \
+            --disk_cache=$HOME/.cache/bazel-disk \
+            --repository_cache=$HOME/.cache/bazel-repo \
+            //go/...
+`)
+}
+
+func nextPnpmCheckpointWorkflow(runnerLabel string) string {
+	// Large pnpm-managed JS workload. We checkpoint the pnpm content-
+	// addressed store (pnpm verifies content hashes on link, so restored
+	// bytes are tool-reconciled) and run install + lint as a stand-in for
+	// the full Next.js test suite which is too long for a canary budget.
+	return checkpointWorkflowYAML(runnerLabel, "next.js pnpm checkpoint", `
+      - uses: actions/checkout@v6
+
+      - uses: useverself/checkpoint@v0
+        with:
+          key: next-pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          path: ~/.local/share/pnpm/store
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint || true
 `)
 }
 
