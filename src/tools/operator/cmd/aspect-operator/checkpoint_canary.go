@@ -15,9 +15,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
+
+func cacheStateForRunIndex(runIndex int) string {
+	if runIndex == 0 {
+		return "cold"
+	}
+	return "warm"
+}
 
 const (
 	checkpointCanaryWorkflowName = "Verself Checkpoint Canary"
@@ -43,6 +51,12 @@ type checkpointCanaryConfig struct {
 	pollInterval   time.Duration
 	outputFormat   string
 	keepWorkspaces bool
+	// runsPerCase controls how many times each (workload, provider) case
+	// dispatches in sequence. Default 2 produces a cold dispatch (Checkpoint
+	// miss) followed by a warm dispatch (restore + save) so the warm-vs-cold
+	// delta is the "did Checkpoint help" signal. Each dispatch produces one
+	// row in the benchmark_runs ClickHouse table.
+	runsPerCase int
 }
 
 type checkpointCanaryRunner struct {
@@ -80,6 +94,15 @@ type checkpointCanaryCaseResult struct {
 	GitHubRunURL  string            `json:"github_run_url,omitempty"`
 	Status        string            `json:"status"`
 	Error         string            `json:"error,omitempty"`
+	// RunIndex is the 0-based dispatch index for the same (workload, provider)
+	// pair within this canary run. RunIndex == 0 is "cold" (Checkpoint miss
+	// expected); RunIndex > 0 is "warm" (Checkpoint restored from the
+	// generation the previous dispatch saved).
+	RunIndex      int       `json:"run_index"`
+	CacheState    string    `json:"cache_state"`
+	StartedAt     time.Time `json:"started_at"`
+	CompletedAt   time.Time `json:"completed_at"`
+	WallClockMs   int64     `json:"wall_clock_ms"`
 }
 
 type preparedWorkload struct {
@@ -207,6 +230,7 @@ func cmdCheckpointCanary(args []string) error {
 		timeout:      45 * time.Minute,
 		pollInterval: 10 * time.Second,
 		outputFormat: "json",
+		runsPerCase:  2,
 	}
 	fs := flagSet("checkpoint-canary")
 	fs.StringVar(&cfg.providersRaw, "providers", cfg.providersRaw, "Comma-separated providers: source,github")
@@ -226,6 +250,7 @@ func cmdCheckpointCanary(args []string) error {
 	fs.DurationVar(&cfg.pollInterval, "poll-interval", cfg.pollInterval, "Polling interval")
 	fs.StringVar(&cfg.outputFormat, "output", cfg.outputFormat, "Output format: json or table")
 	fs.BoolVar(&cfg.keepWorkspaces, "keep-workspaces", cfg.keepWorkspaces, "Keep temporary repositories after completion")
+	fs.IntVar(&cfg.runsPerCase, "runs", cfg.runsPerCase, "Number of dispatches per (workload, provider) case (cold then warm)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitError{code: 0}
@@ -279,29 +304,51 @@ func (r checkpointCanaryRunner) run(parent context.Context) (checkpointCanaryRep
 		Providers: providers,
 		Workloads: workloadSlugs,
 	}
+	runsPerCase := r.cfg.runsPerCase
+	if runsPerCase <= 0 {
+		runsPerCase = 1
+	}
 	var failures []string
 	for _, workload := range workloads {
 		prepared, prepareErr := r.prepareWorkload(ctx, tempRoot, workload)
 		for _, provider := range providers {
-			result := checkpointCanaryCaseResult{Provider: provider, Workload: workload.Slug, Status: "failed"}
-			if prepareErr != nil {
-				result.Error = prepareErr.Error()
-				report.Cases = append(report.Cases, result)
-				failures = append(failures, workload.Slug+"/"+provider+": "+prepareErr.Error())
-				continue
+			for runIndex := 0; runIndex < runsPerCase; runIndex++ {
+				result := checkpointCanaryCaseResult{
+					Provider:   provider,
+					Workload:   workload.Slug,
+					Status:     "failed",
+					RunIndex:   runIndex,
+					CacheState: cacheStateForRunIndex(runIndex),
+				}
+				if prepareErr != nil {
+					result.Error = prepareErr.Error()
+					result.StartedAt = time.Now().UTC()
+					result.CompletedAt = result.StartedAt
+					report.Cases = append(report.Cases, result)
+					failures = append(failures, workload.Slug+"/"+provider+"#"+strconv.Itoa(runIndex)+": "+prepareErr.Error())
+					continue
+				}
+				started := time.Now().UTC()
+				var cased checkpointCanaryCaseResult
+				switch provider {
+				case "source":
+					cased = r.runSourceCase(ctx, prepared)
+				case "github":
+					cased = r.runGitHubCase(ctx, prepared)
+				default:
+					cased = result
+					cased.Error = "unsupported provider"
+				}
+				cased.RunIndex = runIndex
+				cased.CacheState = cacheStateForRunIndex(runIndex)
+				cased.StartedAt = started
+				cased.CompletedAt = time.Now().UTC()
+				cased.WallClockMs = cased.CompletedAt.Sub(cased.StartedAt).Milliseconds()
+				if cased.Status != "succeeded" {
+					failures = append(failures, workload.Slug+"/"+provider+"#"+strconv.Itoa(runIndex)+": "+cased.Error)
+				}
+				report.Cases = append(report.Cases, cased)
 			}
-			switch provider {
-			case "source":
-				result = r.runSourceCase(ctx, prepared)
-			case "github":
-				result = r.runGitHubCase(ctx, prepared)
-			default:
-				result.Error = "unsupported provider"
-			}
-			if result.Status != "succeeded" {
-				failures = append(failures, workload.Slug+"/"+provider+": "+result.Error)
-			}
-			report.Cases = append(report.Cases, result)
 		}
 	}
 	report.CompletedAt = time.Now().UTC()
