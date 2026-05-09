@@ -33,7 +33,7 @@ jobs:
       - name: Mount Bazel repository cache
         uses: guardian-intelligence/verself-checkpoint@v0
         with:
-          key: ${{ github.repository }}-bazel-repo-v3-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: ${{ github.repository }}-bazel-repo-v4-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
           path: /home/runner/.cache/bazel-repo
           size-gb: '200'
 

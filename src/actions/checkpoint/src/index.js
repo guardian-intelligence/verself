@@ -125,7 +125,7 @@ function resolveMountPath(value) {
 }
 
 function input(name) {
-  return (process.env[`INPUT_${name.replaceAll("-", "_").toUpperCase()}`] || "").trim();
+  return (process.env[`INPUT_${name.replaceAll(" ", "_").toUpperCase()}`] || "").trim();
 }
 
 function state(name) {
