@@ -297,6 +297,81 @@ func (q *Queries) ListActiveRunnerClasses(ctx context.Context) ([]string, error)
 	return items, nil
 }
 
+const listExpiredRunnerAllocations = `-- name: ListExpiredRunnerAllocations :many
+SELECT
+    allocation_id,
+    provider,
+    state,
+    execution_id,
+    attempt_id,
+    runner_name
+FROM runner_allocations
+WHERE state IN (
+        'pending',
+        'jit_creating',
+        'jit_created',
+        'bootstrap_creating',
+        'bootstrap_created',
+        'vm_submitted',
+        'runner_config_fetched',
+        'assigned',
+        'vm_exited'
+      )
+  AND CASE state
+        WHEN 'pending'              THEN allocate_by
+        WHEN 'jit_creating'         THEN jit_by
+        WHEN 'jit_created'          THEN vm_submitted_by
+        WHEN 'bootstrap_creating'   THEN jit_by
+        WHEN 'bootstrap_created'    THEN vm_submitted_by
+        WHEN 'vm_submitted'         THEN runner_listening_by
+        WHEN 'runner_config_fetched' THEN assignment_by
+        WHEN 'assigned'             THEN vm_exit_by
+        WHEN 'vm_exited'            THEN cleanup_by
+      END < now()
+ORDER BY allocation_id
+LIMIT 50
+`
+
+type ListExpiredRunnerAllocationsRow struct {
+	AllocationID uuid.UUID
+	Provider     string
+	State        string
+	ExecutionID  *uuid.UUID
+	AttemptID    *uuid.UUID
+	RunnerName   string
+}
+
+// Allocations whose current-state deadline column is in the past.
+// Each non-terminal state has exactly one "must-have-progressed-by" deadline
+// column; the CASE selects it. Terminals (cleaned, failed, job_completed) are
+// excluded so the reaper does not re-fail rows it already failed.
+func (q *Queries) ListExpiredRunnerAllocations(ctx context.Context) ([]ListExpiredRunnerAllocationsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredRunnerAllocations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredRunnerAllocationsRow{}
+	for rows.Next() {
+		var i ListExpiredRunnerAllocationsRow
+		if err := rows.Scan(
+			&i.AllocationID,
+			&i.Provider,
+			&i.State,
+			&i.ExecutionID,
+			&i.AttemptID,
+			&i.RunnerName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockRunnerAllocationProvider = `-- name: LockRunnerAllocationProvider :one
 SELECT provider
 FROM runner_allocations

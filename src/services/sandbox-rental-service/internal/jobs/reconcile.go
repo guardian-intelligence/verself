@@ -25,6 +25,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileCleanedRunnerAttempts(ctx); err != nil {
 		return err
 	}
+	if err := s.reconcileExpiredRunnerAllocations(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -105,6 +108,66 @@ func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// reconcileExpiredRunnerAllocations fails allocations whose current-state
+// deadline has elapsed. The deadline columns are populated when the allocation
+// is created (github_runner.go:660-666); a row stuck past its deadline means
+// the worker that should have driven the next transition died, the catalog
+// resolver couldn't reach the upstream, or the guest VM never registered.
+// Failing the allocation also enqueues runner cleanup so the GitHub-side JIT
+// runner registration is removed and the lease is released.
+func (s *Service) reconcileExpiredRunnerAllocations(ctx context.Context) error {
+	rows, err := s.storeQueries().ListExpiredRunnerAllocations(ctx)
+	if err != nil {
+		return fmt.Errorf("query expired runner allocations: %w", err)
+	}
+	for _, row := range rows {
+		reason := failureReasonForExpiredAllocation(row.State)
+		if err := s.storeQueries().SetRunnerAllocationState(ctx, store.SetRunnerAllocationStateParams{
+			State:         "failed",
+			FailureReason: reason,
+			UpdatedAt:     pgTime(time.Now().UTC()),
+			Provider:      row.Provider,
+			AllocationID:  row.AllocationID,
+		}); err != nil {
+			return fmt.Errorf("fail expired runner allocation %s: %w", row.AllocationID, err)
+		}
+		if s.Scheduler != nil {
+			if _, err := s.Scheduler.EnqueueRunnerCleanup(ctx, schedulerCleanupRequest(ctx, row.AllocationID)); err != nil {
+				s.Logger.WarnContext(ctx, "enqueue runner cleanup after deadline expiry",
+					"allocation_id", row.AllocationID.String(), "error", err)
+			}
+		}
+		s.Logger.WarnContext(ctx, "runner allocation deadline expired",
+			"allocation_id", row.AllocationID.String(),
+			"provider", row.Provider,
+			"prior_state", row.State,
+			"failure_reason", reason,
+		)
+	}
+	return nil
+}
+
+func failureReasonForExpiredAllocation(state string) string {
+	switch state {
+	case "pending":
+		return "allocate_deadline_exceeded"
+	case "jit_creating", "bootstrap_creating":
+		return "jit_creation_deadline_exceeded"
+	case "jit_created", "bootstrap_created":
+		return "vm_submission_deadline_exceeded"
+	case "vm_submitted":
+		return "runner_listening_deadline_exceeded"
+	case "runner_config_fetched":
+		return "assignment_deadline_exceeded"
+	case "assigned":
+		return "vm_exit_deadline_exceeded"
+	case "vm_exited":
+		return "cleanup_deadline_exceeded"
+	default:
+		return "deadline_exceeded"
+	}
 }
 
 type reconcileWorkItem struct {

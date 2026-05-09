@@ -155,3 +155,41 @@ SELECT runner_class
 FROM runner_classes
 WHERE active
 ORDER BY runner_class;
+
+-- name: ListExpiredRunnerAllocations :many
+-- Allocations whose current-state deadline column is in the past.
+-- Each non-terminal state has exactly one "must-have-progressed-by" deadline
+-- column; the CASE selects it. Terminals (cleaned, failed, job_completed) are
+-- excluded so the reaper does not re-fail rows it already failed.
+SELECT
+    allocation_id,
+    provider,
+    state,
+    execution_id,
+    attempt_id,
+    runner_name
+FROM runner_allocations
+WHERE state IN (
+        'pending',
+        'jit_creating',
+        'jit_created',
+        'bootstrap_creating',
+        'bootstrap_created',
+        'vm_submitted',
+        'runner_config_fetched',
+        'assigned',
+        'vm_exited'
+      )
+  AND CASE state
+        WHEN 'pending'              THEN allocate_by
+        WHEN 'jit_creating'         THEN jit_by
+        WHEN 'jit_created'          THEN vm_submitted_by
+        WHEN 'bootstrap_creating'   THEN jit_by
+        WHEN 'bootstrap_created'    THEN vm_submitted_by
+        WHEN 'vm_submitted'         THEN runner_listening_by
+        WHEN 'runner_config_fetched' THEN assignment_by
+        WHEN 'assigned'             THEN vm_exit_by
+        WHEN 'vm_exited'            THEN cleanup_by
+      END < now()
+ORDER BY allocation_id
+LIMIT 50;
