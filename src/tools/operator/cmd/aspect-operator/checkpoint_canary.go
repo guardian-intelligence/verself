@@ -20,11 +20,19 @@ import (
 	"time"
 )
 
+// cacheStateForRunIndex names the per-run-index cache state stored in
+// benchmark_runs.cache_state. The default 3-run cadence is cold→warm→dirty;
+// extra runs beyond runs-per-case=3 land as warm so re-running the same
+// commit accumulates warm samples instead of polluting state names.
 func cacheStateForRunIndex(runIndex int) string {
-	if runIndex == 0 {
+	switch runIndex {
+	case 0:
 		return "cold"
+	case 2:
+		return "dirty"
+	default:
+		return "warm"
 	}
-	return "warm"
 }
 
 const (
@@ -52,10 +60,12 @@ type checkpointCanaryConfig struct {
 	outputFormat   string
 	keepWorkspaces bool
 	// runsPerCase controls how many times each (workload, provider) case
-	// dispatches in sequence. Default 2 produces a cold dispatch (Checkpoint
-	// miss) followed by a warm dispatch (restore + save) so the warm-vs-cold
-	// delta is the "did Checkpoint help" signal. Each dispatch produces one
-	// row in the benchmark_runs ClickHouse table.
+	// dispatches in sequence. Default 3 produces cold (miss) → warm (restore
+	// + save) → dirty (restore + mutated source + save). The warm-vs-cold
+	// delta is the "did Checkpoint help" signal; the dirty case checks that
+	// restore + small modification + reuse is the realistic PR shape, not
+	// the artificial identity-rerun shape. Extra runs beyond 3 land as
+	// additional warm samples.
 	runsPerCase int
 }
 
@@ -230,7 +240,7 @@ func cmdCheckpointCanary(args []string) error {
 		timeout:      45 * time.Minute,
 		pollInterval: 10 * time.Second,
 		outputFormat: "json",
-		runsPerCase:  2,
+		runsPerCase:  3,
 	}
 	fs := flagSet("checkpoint-canary")
 	fs.StringVar(&cfg.providersRaw, "providers", cfg.providersRaw, "Comma-separated providers: source,github")
@@ -308,33 +318,52 @@ func (r checkpointCanaryRunner) run(parent context.Context) (checkpointCanaryRep
 	if runsPerCase <= 0 {
 		runsPerCase = 1
 	}
+	type preparedRun struct {
+		spec    checkpointWorkload
+		prep    preparedWorkload
+		err     error
+	}
+	prepared := make([]preparedRun, len(workloads))
+	for i, workload := range workloads {
+		prep, err := r.prepareWorkload(ctx, tempRoot, workload)
+		prepared[i] = preparedRun{spec: workload, prep: prep, err: err}
+	}
 	var failures []string
-	for _, workload := range workloads {
-		prepared, prepareErr := r.prepareWorkload(ctx, tempRoot, workload)
-		for _, provider := range providers {
-			for runIndex := 0; runIndex < runsPerCase; runIndex++ {
+	// Outer loop is runIndex so the dirty mutation that runs before runIndex
+	// 2 applies once per workload and every provider sees the same mutated
+	// commit. With provider as outer the second provider would observe
+	// mutations from the first provider's dirty pass.
+	for runIndex := 0; runIndex < runsPerCase; runIndex++ {
+		for i := range prepared {
+			pr := &prepared[i]
+			if pr.err == nil && runIndex == 2 {
+				if err := r.mutateWorkloadForDirty(ctx, &pr.prep); err != nil {
+					pr.err = err
+				}
+			}
+			for _, provider := range providers {
 				result := checkpointCanaryCaseResult{
 					Provider:   provider,
-					Workload:   workload.Slug,
+					Workload:   pr.spec.Slug,
 					Status:     "failed",
 					RunIndex:   runIndex,
 					CacheState: cacheStateForRunIndex(runIndex),
 				}
-				if prepareErr != nil {
-					result.Error = prepareErr.Error()
+				if pr.err != nil {
+					result.Error = pr.err.Error()
 					result.StartedAt = time.Now().UTC()
 					result.CompletedAt = result.StartedAt
 					report.Cases = append(report.Cases, result)
-					failures = append(failures, workload.Slug+"/"+provider+"#"+strconv.Itoa(runIndex)+": "+prepareErr.Error())
+					failures = append(failures, pr.spec.Slug+"/"+provider+"#"+strconv.Itoa(runIndex)+": "+pr.err.Error())
 					continue
 				}
 				started := time.Now().UTC()
 				var cased checkpointCanaryCaseResult
 				switch provider {
 				case "source":
-					cased = r.runSourceCase(ctx, prepared)
+					cased = r.runSourceCase(ctx, pr.prep)
 				case "github":
-					cased = r.runGitHubCase(ctx, prepared)
+					cased = r.runGitHubCase(ctx, pr.prep)
 				default:
 					cased = result
 					cased.Error = "unsupported provider"
@@ -345,7 +374,7 @@ func (r checkpointCanaryRunner) run(parent context.Context) (checkpointCanaryRep
 				cased.CompletedAt = time.Now().UTC()
 				cased.WallClockMs = cased.CompletedAt.Sub(cased.StartedAt).Milliseconds()
 				if cased.Status != "succeeded" {
-					failures = append(failures, workload.Slug+"/"+provider+"#"+strconv.Itoa(runIndex)+": "+cased.Error)
+					failures = append(failures, pr.spec.Slug+"/"+provider+"#"+strconv.Itoa(runIndex)+": "+cased.Error)
 				}
 				report.Cases = append(report.Cases, cased)
 			}
@@ -357,6 +386,34 @@ func (r checkpointCanaryRunner) run(parent context.Context) (checkpointCanaryRep
 		return report, fmt.Errorf("checkpoint canary failed: %s", strings.Join(failures, "; "))
 	}
 	return report, nil
+}
+
+// mutateWorkloadForDirty rewrites a sentinel file inside the prepared
+// directory and creates a fresh commit so the dirty dispatch runs against a
+// new HEAD. The mutation does not change anything that feeds into the
+// Checkpoint cache key (lockfiles, package manifests), so the workflow's
+// hashFiles() input stays stable and the warm Checkpoint generation is
+// expected to hit. Each call advances prepared.CommitSHA to the new HEAD;
+// runSourceCase/runGitHubCase always force-push prepared.Directory so the
+// new commit ships to every provider remote.
+func (r checkpointCanaryRunner) mutateWorkloadForDirty(ctx context.Context, prepared *preparedWorkload) error {
+	marker := fmt.Sprintf("run_id=%s\nworkload=%s\nmutated_at=%s\n",
+		r.cfg.runID, prepared.Spec.Slug, time.Now().UTC().Format(time.RFC3339Nano))
+	if err := os.WriteFile(filepath.Join(prepared.Directory, "VERSELF_CHECKPOINT_CANARY_DIRTY.txt"), []byte(marker), 0o644); err != nil {
+		return fmt.Errorf("write dirty marker: %w", err)
+	}
+	if err := runCmd(ctx, prepared.Directory, "git", "add", "VERSELF_CHECKPOINT_CANARY_DIRTY.txt"); err != nil {
+		return err
+	}
+	if err := runCmd(ctx, prepared.Directory, "git", "commit", "-m", "Verself checkpoint canary dirty "+r.cfg.runID); err != nil {
+		return err
+	}
+	sha, err := commandOutput(ctx, prepared.Directory, "git", "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	prepared.CommitSHA = strings.TrimSpace(sha)
+	return nil
 }
 
 func (r checkpointCanaryRunner) prepareWorkload(ctx context.Context, tempRoot string, workload checkpointWorkload) (preparedWorkload, error) {

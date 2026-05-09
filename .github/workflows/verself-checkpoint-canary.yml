@@ -2,6 +2,12 @@ name: Verself Checkpoint Canary
 
 on:
   workflow_dispatch:
+  schedule:
+    # Cold/warm/dirty samples for express-npm + python-click + db-seed every
+    # 6 hours. Operators run aspect-operator benchmark-ingest --report=...
+    # against the uploaded artifact; the canary itself stays runnable from CI
+    # without ClickHouse access by design.
+    - cron: '17 */6 * * *'
 
 permissions:
   contents: read
@@ -40,4 +46,15 @@ jobs:
           } >> "${GITHUB_PATH}"
 
       - name: Run checkpoint canary
-        run: bazelisk run //src/tools/operator/cmd/aspect-operator -- checkpoint-canary --output=json
+        run: |
+          mkdir -p "${RUNNER_TEMP}/canary"
+          bazelisk run //src/tools/operator/cmd/aspect-operator -- checkpoint-canary --output=json \
+            > "${RUNNER_TEMP}/canary/report.json"
+
+      - name: Upload checkpoint canary report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verself-checkpoint-canary-report
+          path: ${{ runner.temp }}/canary/report.json
+          retention-days: 14

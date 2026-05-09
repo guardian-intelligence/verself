@@ -34,6 +34,7 @@ go_library(
         "//src/tools/operator-runtime/go/postgres",
         "//src/tools/operator-runtime/go/runtime",
         "//src/tools/operator-runtime/go/tigerbeetle",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_google_uuid//:uuid",
         "@com_github_jackc_pgx_v5//:pgx",
