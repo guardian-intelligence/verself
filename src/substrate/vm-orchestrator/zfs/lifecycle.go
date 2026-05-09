@@ -27,6 +27,7 @@ type PrivZFS interface {
 	ZFSDestroyRecursive(ctx context.Context, dataset string) error
 	ZFSEnsureFilesystem(ctx context.Context, dataset string) error
 	ZFSSendReceive(ctx context.Context, snapshot, target string) error
+	ZFSSendReceiveIncremental(ctx context.Context, parent, snapshot, target string) error
 	ZFSSetProperty(ctx context.Context, dataset, key, value string) error
 	ZFSGetProperty(ctx context.Context, target, key string) (string, error)
 	ZFSSnapshotExists(ctx context.Context, snapshot string) (bool, error)
@@ -125,6 +126,9 @@ func (vl *VolumeLifecycle) EnsureRoots(ctx context.Context) error {
 	if err := vl.ops.ZFSEnsureFilesystem(ctx, ImageDatasetRoot(vl.roots)); err != nil {
 		return fmt.Errorf("ensure image dataset root: %w", err)
 	}
+	if err := vl.ops.ZFSEnsureFilesystem(ctx, CheckpointDatasetRoot(vl.roots)); err != nil {
+		return fmt.Errorf("ensure checkpoint dataset root: %w", err)
+	}
 	workloadRoot := strings.TrimSuffix(WorkloadPrefix(vl.roots), "/")
 	if err := vl.ops.ZFSEnsureFilesystem(ctx, workloadRoot); err != nil {
 		return fmt.Errorf("ensure workload dataset root: %w", err)
@@ -133,18 +137,28 @@ func (vl *VolumeLifecycle) EnsureRoots(ctx context.Context) error {
 }
 
 // PrepareMount asserts the image's @ready snapshot exists and clones it
-// into the per-mount lease dataset. Returns the typed mount clone so the
-// caller can derive host/jail/guest device paths without re-stringifying
-// the dataset.
+// into the per-mount lease dataset. Used for substrate / boot images;
+// Checkpoint volumes use PrepareMountFromSnapshot with a typed Generation.
 func (vl *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image Image, index int, name string) (MountClone, error) {
-	source := image.Snapshot()
+	return vl.prepareMountFromSnapshot(ctx, lease, image.Snapshot(), index, name, image.SourceRef())
+}
+
+// PrepareMountFromSnapshot clones an arbitrary snapshot into a per-mount
+// lease dataset. The snapshot must already exist; the caller is responsible
+// for asserting authorization (e.g., the snapshot identifies a generation
+// the requesting attempt is allowed to restore from).
+func (vl *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Lease, snap Snapshot, index int, name string) (MountClone, error) {
+	return vl.prepareMountFromSnapshot(ctx, lease, snap, index, name, snap.String())
+}
+
+func (vl *VolumeLifecycle) prepareMountFromSnapshot(ctx context.Context, lease Lease, source Snapshot, index int, name, sourceRef string) (MountClone, error) {
 	clone := lease.Mount(index, name)
 	target := clone.Dataset()
 
 	checkCtx, endCheck := startSpan(ctx, "vmorchestrator.zfs.mount_snapshot_check",
 		attribute.String("lease.id", lease.ID()),
 		attribute.String("filesystem.name", name),
-		attribute.String("filesystem.source_ref", image.SourceRef()),
+		attribute.String("filesystem.source_ref", sourceRef),
 		attribute.String("zfs.snapshot", source.String()),
 	)
 	exists, err := vl.ops.ZFSSnapshotExists(checkCtx, source.String())
@@ -159,7 +173,7 @@ func (vl *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image 
 	cloneCtx, endClone := startSpan(ctx, "vmorchestrator.zfs.mount_clone",
 		attribute.String("lease.id", lease.ID()),
 		attribute.String("filesystem.name", name),
-		attribute.String("filesystem.source_ref", image.SourceRef()),
+		attribute.String("filesystem.source_ref", sourceRef),
 		attribute.String("zfs.snapshot", source.String()),
 		attribute.String("zfs.dataset", target),
 	)
@@ -233,6 +247,22 @@ func (vl *VolumeLifecycle) DestroyMount(ctx context.Context, mount MountClone) e
 // DestroyImage destroys a committed composable image dataset and its snapshots.
 func (vl *VolumeLifecycle) DestroyImage(ctx context.Context, image Image) error {
 	return vl.ops.ZFSDestroyRecursive(ctx, image.Dataset())
+}
+
+// DestroyGeneration removes a single snapshot from a volume's persistent
+// dataset. The volume's other snapshots and the dataset itself remain.
+// Receive into the dataset will fail if the most-recent snapshot is the
+// one being destroyed and a concurrent commit's parent expectation
+// matches it; that's the conflict path the retention sweeper coordinates.
+func (vl *VolumeLifecycle) DestroyGeneration(ctx context.Context, gen Generation) error {
+	return vl.ops.ZFSDestroy(ctx, gen.String())
+}
+
+// DestroyVolume removes a volume's persistent dataset and every snapshot
+// (generation) on it. Used for hard volume deletion; retention pruning of
+// a single generation goes through DestroyGeneration.
+func (vl *VolumeLifecycle) DestroyVolume(ctx context.Context, volume Volume) error {
+	return vl.ops.ZFSDestroyRecursive(ctx, volume.Dataset())
 }
 
 func zvolDevicePath(dataset string) string {

@@ -22,11 +22,13 @@ type LeaseRecord struct {
 }
 
 type FilesystemCommitRecord struct {
-	LeaseID         string
-	MountName       string
-	TargetSourceRef string
-	Snapshot        string
-	CommittedAt     time.Time
+	LeaseID       string
+	MountName     string
+	VolumeDataset string
+	Snapshot      string
+	UsedBytes     uint64
+	WrittenBytes  uint64
+	CommittedAt   time.Time
 }
 
 type FilesystemAttachRecord struct {

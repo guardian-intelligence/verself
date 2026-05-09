@@ -55,6 +55,7 @@ type firecrackerStep struct {
 type Config struct {
 	Pool                string
 	ImageDataset        string
+	CheckpointDataset   string
 	WorkloadDataset     string
 	DefaultSubstrateRef string
 	KernelPath          string
@@ -79,6 +80,7 @@ func DefaultConfig() Config {
 	return Config{
 		Pool:                "vspool",
 		ImageDataset:        "images",
+		CheckpointDataset:   "checkpoints",
 		WorkloadDataset:     "workloads",
 		DefaultSubstrateRef: "substrate",
 		KernelPath:          "/var/lib/verself/guest-images/vmlinux",
@@ -257,6 +259,12 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if base.ImageDataset == "" {
 		base.ImageDataset = "images"
 	}
+	if base.CheckpointDataset == "" {
+		base.CheckpointDataset = "checkpoints"
+	}
+	if base.WorkloadDataset == "" {
+		base.WorkloadDataset = "workloads"
+	}
 	if base.Bounds == (dto.VMResourceBounds{}) {
 		base.Bounds = dto.DefaultBounds
 	}
@@ -274,9 +282,10 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{
-		Pool:            base.Pool,
-		ImageDataset:    base.ImageDataset,
-		WorkloadDataset: base.WorkloadDataset,
+		Pool:              base.Pool,
+		ImageDataset:      base.ImageDataset,
+		CheckpointDataset: base.CheckpointDataset,
+		WorkloadDataset:   base.WorkloadDataset,
 	}
 	// opts may override ops; volumes binds to whichever ops the final
 	// orchestrator carries, so build it after the option loop.

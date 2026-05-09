@@ -29,7 +29,8 @@ RETURNING (xmax = 0)::boolean AS created, volume_id, org_id, provider, provider_
 SELECT
     vg.volume_generation_id,
     vg.generation,
-    vg.zfs_source_ref
+    vg.zfs_source_ref,
+    vg.zfs_snapshot_ref
 FROM volume_current_generation vcg
 JOIN volume_generations vg ON vg.volume_generation_id = vcg.volume_generation_id
 WHERE vcg.org_id = sqlc.arg(org_id)
@@ -184,7 +185,7 @@ INSERT INTO volume_generations (
 ) VALUES (
     sqlc.arg(volume_generation_id), sqlc.arg(volume_id), sqlc.arg(org_id),
     sqlc.arg(generation), sqlc.narg(parent_generation_id), sqlc.arg(trust_class),
-    sqlc.arg(zfs_source_ref), '', 0, 0, 'committing',
+    sqlc.arg(zfs_source_ref), sqlc.arg(zfs_snapshot_ref), 0, 0, 'committing',
     sqlc.arg(created_by_execution_id), sqlc.arg(created_by_attempt_id),
     sqlc.arg(now), sqlc.arg(now)
 )
@@ -277,7 +278,8 @@ SELECT
     vg.org_id,
     vg.generation,
     vg.trust_class,
-    vg.zfs_source_ref
+    vg.zfs_source_ref,
+    vg.zfs_snapshot_ref
 FROM execution_volume_mounts m
 JOIN volumes v ON v.volume_id = m.volume_id
 JOIN volume_generations vg ON vg.volume_id = m.volume_id

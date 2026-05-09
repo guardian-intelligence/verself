@@ -16,7 +16,8 @@ const getCurrentVolumeGeneration = `-- name: GetCurrentVolumeGeneration :one
 SELECT
     vg.volume_generation_id,
     vg.generation,
-    vg.zfs_source_ref
+    vg.zfs_source_ref,
+    vg.zfs_snapshot_ref
 FROM volume_current_generation vcg
 JOIN volume_generations vg ON vg.volume_generation_id = vcg.volume_generation_id
 WHERE vcg.org_id = $1
@@ -34,12 +35,18 @@ type GetCurrentVolumeGenerationRow struct {
 	VolumeGenerationID uuid.UUID
 	Generation         int32
 	ZfsSourceRef       string
+	ZfsSnapshotRef     string
 }
 
 func (q *Queries) GetCurrentVolumeGeneration(ctx context.Context, arg GetCurrentVolumeGenerationParams) (GetCurrentVolumeGenerationRow, error) {
 	row := q.db.QueryRow(ctx, getCurrentVolumeGeneration, arg.OrgID, arg.VolumeID, arg.TrustClass)
 	var i GetCurrentVolumeGenerationRow
-	err := row.Scan(&i.VolumeGenerationID, &i.Generation, &i.ZfsSourceRef)
+	err := row.Scan(
+		&i.VolumeGenerationID,
+		&i.Generation,
+		&i.ZfsSourceRef,
+		&i.ZfsSnapshotRef,
+	)
 	return i, err
 }
 
@@ -238,9 +245,9 @@ INSERT INTO volume_generations (
 ) VALUES (
     $1, $2, $3,
     $4, $5, $6,
-    $7, '', 0, 0, 'committing',
-    $8, $9,
-    $10, $10
+    $7, $8, 0, 0, 'committing',
+    $9, $10,
+    $11, $11
 )
 RETURNING volume_generation_id, volume_id, org_id, generation, parent_generation_id,
     trust_class, zfs_source_ref, zfs_snapshot_ref, used_bytes, written_bytes,
@@ -256,6 +263,7 @@ type InsertPendingVolumeGenerationParams struct {
 	ParentGenerationID   *uuid.UUID
 	TrustClass           string
 	ZfsSourceRef         string
+	ZfsSnapshotRef       string
 	CreatedByExecutionID *uuid.UUID
 	CreatedByAttemptID   *uuid.UUID
 	Now                  pgtype.Timestamptz
@@ -270,6 +278,7 @@ func (q *Queries) InsertPendingVolumeGeneration(ctx context.Context, arg InsertP
 		arg.ParentGenerationID,
 		arg.TrustClass,
 		arg.ZfsSourceRef,
+		arg.ZfsSnapshotRef,
 		arg.CreatedByExecutionID,
 		arg.CreatedByAttemptID,
 		arg.Now,
@@ -422,7 +431,8 @@ SELECT
     vg.org_id,
     vg.generation,
     vg.trust_class,
-    vg.zfs_source_ref
+    vg.zfs_source_ref,
+    vg.zfs_snapshot_ref
 FROM execution_volume_mounts m
 JOIN volumes v ON v.volume_id = m.volume_id
 JOIN volume_generations vg ON vg.volume_id = m.volume_id
@@ -460,6 +470,7 @@ type ListPrunableVolumeGenerationsForAttemptRow struct {
 	Generation             int32
 	TrustClass             string
 	ZfsSourceRef           string
+	ZfsSnapshotRef         string
 }
 
 func (q *Queries) ListPrunableVolumeGenerationsForAttempt(ctx context.Context, arg ListPrunableVolumeGenerationsForAttemptParams) ([]ListPrunableVolumeGenerationsForAttemptRow, error) {
@@ -491,6 +502,7 @@ func (q *Queries) ListPrunableVolumeGenerationsForAttempt(ctx context.Context, a
 			&i.Generation,
 			&i.TrustClass,
 			&i.ZfsSourceRef,
+			&i.ZfsSnapshotRef,
 		); err != nil {
 			return nil, err
 		}

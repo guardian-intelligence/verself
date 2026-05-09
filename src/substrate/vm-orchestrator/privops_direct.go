@@ -101,7 +101,22 @@ func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) er
 	return nil
 }
 
-func (DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string) error {
+func (p DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string) error {
+	return p.ZFSSendReceiveIncremental(ctx, "", snapshot, target)
+}
+
+// ZFSSendReceiveIncremental sends snapshot to target. When parent is set and
+// non-empty, the send uses `-i parent snapshot` so only the delta is
+// streamed and the receive applies onto the existing chain. When parent is
+// empty, the send is a full transfer and the receive creates the target
+// dataset (or rolls it back via -F if it already exists).
+//
+// The receive uses `-u` (don't auto-mount) but does NOT use `-F` for
+// incremental: a force rollback would mask the conflict case where another
+// concurrent commit has landed a newer generation on the target. Surfacing
+// the failure to the caller is the correct behavior for snapshot-chain
+// promotion CAS.
+func (DirectPrivOps) ZFSSendReceiveIncremental(ctx context.Context, parent, snapshot, target string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	if strings.TrimSpace(snapshot) == "" || !strings.Contains(snapshot, "@") {
@@ -110,8 +125,19 @@ func (DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string
 	if strings.TrimSpace(target) == "" || strings.Contains(target, "@") {
 		return fmt.Errorf("zfs receive target is invalid: %s", target)
 	}
-	send := exec.CommandContext(ctx, "zfs", "send", snapshot)
-	recv := exec.CommandContext(ctx, "zfs", "receive", "-u", "-F", target)
+	parent = strings.TrimSpace(parent)
+	if parent != "" && !strings.Contains(parent, "@") {
+		return fmt.Errorf("zfs send parent snapshot is invalid: %s", parent)
+	}
+	var send *exec.Cmd
+	var recv *exec.Cmd
+	if parent == "" {
+		send = exec.CommandContext(ctx, "zfs", "send", snapshot)
+		recv = exec.CommandContext(ctx, "zfs", "receive", "-u", "-F", target)
+	} else {
+		send = exec.CommandContext(ctx, "zfs", "send", "-i", parent, snapshot)
+		recv = exec.CommandContext(ctx, "zfs", "receive", "-u", target)
+	}
 	pipe, err := send.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("zfs send stdout pipe: %w", err)

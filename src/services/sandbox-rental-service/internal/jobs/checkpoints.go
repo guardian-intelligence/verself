@@ -129,11 +129,13 @@ type checkpointOperationRow struct {
 }
 
 type checkpointPreparedCommit struct {
-	GenerationID    uuid.UUID
-	Generation      int32
-	TargetSourceRef string
-	MountState      string
-	SaveState       string
+	GenerationID      uuid.UUID
+	Generation        int32
+	VolumeDataset     string
+	NewGenerationName string
+	NewSnapshotRef    string
+	MountState        string
+	SaveState         string
 }
 
 func (s *Service) MountCheckpoint(ctx context.Context, identity RunnerExecutionIdentity, req CheckpointMountRequest) (CheckpointMount, error) {
@@ -236,7 +238,11 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 		sourceGeneration.Valid = true
 		sourceGeneration.Int32 = current.Generation
 		sourceGenerationID = &current.VolumeGenerationID
-		sourceRef = current.ZfsSourceRef
+		// snapshot ref carries the full <volume_dataset>@<gen_name> identity
+		// the orchestrator clones from. zfs_source_ref now stores the volume
+		// dataset alone (shared across generations), so it is no longer
+		// usable as a mount source.
+		sourceRef = current.ZfsSnapshotRef
 	}
 	record, err := q.InsertExecutionVolumeMount(ctx, store.InsertExecutionVolumeMountParams{
 		MountID:            mountID,
@@ -427,7 +433,10 @@ func (s *Service) PruneCheckpointGenerations(ctx context.Context, item execution
 		return err
 	}
 	for _, row := range rows {
-		if row.ZfsSourceRef == "" {
+		// snapshot_ref is the per-generation identity used for retention.
+		// The vm-orchestrator parses the dataset prefix internally to
+		// dispatch destroy-snapshot vs destroy-volume.
+		if row.ZfsSnapshotRef == "" {
 			continue
 		}
 		event := checkpointEventForPrunedGeneration(item, row)
@@ -436,11 +445,11 @@ func (s *Service) PruneCheckpointGenerations(ctx context.Context, item execution
 			return err
 		}
 		key := item.AttemptID.String() + ":prune:" + row.VolumeGenerationID.String()
-		if _, err := s.Orchestrator.DeleteFilesystemSource(ctx, key, row.ZfsSourceRef); err != nil {
+		if _, err := s.Orchestrator.DeleteFilesystemSource(ctx, key, row.ZfsSnapshotRef); err != nil {
 			failEvent := event.withTransition("checkpoint.generation.prune_failed", row.MountState, row.MountState, row.SaveState, row.SaveState, "retention_prune", "failed", classifyCheckpointError(err))
 			failEvent.DurationMs = uint64(time.Since(started).Milliseconds())
 			_ = s.appendCheckpointEvent(context.Background(), failEvent)
-			return fmt.Errorf("prune checkpoint generation %s (%s): %w", row.VolumeGenerationID, row.ZfsSourceRef, err)
+			return fmt.Errorf("prune checkpoint generation %s (%s): %w", row.VolumeGenerationID, row.ZfsSnapshotRef, err)
 		}
 		if err := s.storeQueries().MarkVolumeGenerationPruned(ctx, store.MarkVolumeGenerationPrunedParams{
 			Now:                pgTime(time.Now().UTC()),
@@ -481,7 +490,7 @@ func (s *Service) finalizeCheckpointMount(ctx context.Context, item executionWor
 		return err
 	}
 	commitStarted := time.Now().UTC()
-	commit, err := s.Orchestrator.CommitFilesystemMount(ctx, leaseID, row.MountID.String()+":commit", row.MountName, prepared.TargetSourceRef)
+	commit, err := s.Orchestrator.CommitFilesystemMount(ctx, leaseID, row.MountID.String()+":commit", row.MountName, uuidStringFromZero(row.VolumeID), row.SourceRef, prepared.NewGenerationName)
 	if err != nil {
 		_ = q.MarkVolumeGenerationFailed(context.Background(), store.MarkVolumeGenerationFailedParams{
 			Now:                pgTime(time.Now().UTC()),
@@ -543,8 +552,10 @@ func (s *Service) prepareCheckpointCommit(ctx context.Context, row store.ListSav
 	if err != nil {
 		return checkpointPreparedCommit{}, err
 	}
-	targetSourceRef := checkpointTargetSourceRef(row.VolumeID, generation)
 	generationID := uuid.New()
+	volumeDataset := checkpointVolumeDataset(row.VolumeID)
+	newGenName := checkpointGenerationName(generationID)
+	newSnapshotRef := volumeDataset + "@" + newGenName
 	if _, err := qtx.InsertPendingVolumeGeneration(ctx, store.InsertPendingVolumeGenerationParams{
 		VolumeGenerationID:   generationID,
 		VolumeID:             row.VolumeID,
@@ -552,7 +563,8 @@ func (s *Service) prepareCheckpointCommit(ctx context.Context, row store.ListSav
 		Generation:           generation,
 		ParentGenerationID:   row.SourceGenerationID,
 		TrustClass:           checkpointTrustClass,
-		ZfsSourceRef:         targetSourceRef,
+		ZfsSourceRef:         volumeDataset,
+		ZfsSnapshotRef:       newSnapshotRef,
 		CreatedByExecutionID: &row.ExecutionID,
 		CreatedByAttemptID:   &row.AttemptID,
 		Now:                  pgTime(time.Now().UTC()),
@@ -560,7 +572,7 @@ func (s *Service) prepareCheckpointCommit(ctx context.Context, row store.ListSav
 		return checkpointPreparedCommit{}, err
 	}
 	committing, err := qtx.MarkExecutionVolumeMountCommitting(ctx, store.MarkExecutionVolumeMountCommittingParams{
-		TargetSourceRef: targetSourceRef,
+		TargetSourceRef: newSnapshotRef,
 		Now:             pgTime(time.Now().UTC()),
 		MountID:         row.MountID,
 	})
@@ -571,11 +583,13 @@ func (s *Service) prepareCheckpointCommit(ctx context.Context, row store.ListSav
 		return checkpointPreparedCommit{}, err
 	}
 	return checkpointPreparedCommit{
-		GenerationID:    generationID,
-		Generation:      generation,
-		TargetSourceRef: targetSourceRef,
-		MountState:      committing.MountState,
-		SaveState:       committing.SaveState,
+		GenerationID:      generationID,
+		Generation:        generation,
+		VolumeDataset:     volumeDataset,
+		NewGenerationName: newGenName,
+		NewSnapshotRef:    newSnapshotRef,
+		MountState:        committing.MountState,
+		SaveState:         committing.SaveState,
 	}, nil
 }
 
@@ -893,8 +907,23 @@ func checkpointMountName(id uuid.UUID) string {
 	return "ckpt-" + strings.ReplaceAll(id.String(), "-", "")[:24]
 }
 
-func checkpointTargetSourceRef(volumeID uuid.UUID, generation int32) string {
-	return "ckpt-" + strings.ReplaceAll(volumeID.String(), "-", "")[:24] + "-g" + strconv.Itoa(int(generation))
+// checkpointVolumeDataset is the persistent ZFS dataset for one Checkpoint
+// volume. The vm-orchestrator pool layout owns the prefix; this helper
+// keeps product state aligned without leaking ZFS naming details into the
+// store layer.
+func checkpointVolumeDataset(volumeID uuid.UUID) string {
+	return "vspool/checkpoints/" + strings.ReplaceAll(volumeID.String(), "-", "")
+}
+
+// checkpointGenerationName produces the ZFS snapshot short name for one
+// generation. Sortable lexically by attempt time and content-addressed by
+// generation_id; product state and ZFS state share the same identity.
+func checkpointGenerationName(generationID uuid.UUID) string {
+	return "gen-" + strings.ReplaceAll(generationID.String(), "-", "")
+}
+
+func checkpointGenerationSnapshotRef(volumeID, generationID uuid.UUID) string {
+	return checkpointVolumeDataset(volumeID) + "@" + checkpointGenerationName(generationID)
 }
 
 func hexSHA256(value string) string {

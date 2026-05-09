@@ -286,19 +286,34 @@ message SaveCheckpointResponse {
   uint64 saved_at_unix_ns = 4;
 }
 
+// CommitFilesystemMount snapshots the named writable mount and persists it
+// as a new generation on the volume's snapshot chain. parent_snapshot_ref
+// must match the generation the mount was originally restored from (or be
+// empty for a first save into a brand-new volume); the orchestrator uses
+// it as the source of `zfs send -i` so commit cost is O(delta_bytes).
+//
+// new_generation_name is the snapshot short name (without '@' or '/') the
+// orchestrator will create on the volume dataset. The caller (sandbox-
+// rental) supplies it so the volume_generations Postgres row can be
+// inserted with the canonical snapshot identity before the ZFS mutation
+// runs, keeping product state and ZFS state aligned for retention/audit.
 message CommitFilesystemMountRequest {
   string lease_id = 1;
   string mount_name = 2;
-  string target_source_ref = 3;
-  string idempotency_key = 4;
+  string volume_id = 3;
+  string parent_snapshot_ref = 4;
+  string new_generation_name = 5;
+  string idempotency_key = 6;
 }
 
 message CommitFilesystemMountResponse {
   string lease_id = 1;
   string mount_name = 2;
-  string target_source_ref = 3;
+  string volume_dataset = 3;
   string snapshot = 4;
-  uint64 committed_at_unix_ns = 5;
+  uint64 used_bytes = 5;
+  uint64 written_bytes = 6;
+  uint64 committed_at_unix_ns = 7;
 }
 
 message AttachFilesystemMountRequest {

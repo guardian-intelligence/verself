@@ -111,22 +111,26 @@ func (c *Client) CancelExec(ctx context.Context, leaseID, execID, key, reason st
 	return resp.GetAccepted(), nil
 }
 
-func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, targetSourceRef string) (FilesystemCommitRecord, error) {
+func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, volumeID, parentSnapshotRef, newGenerationName string) (FilesystemCommitRecord, error) {
 	resp, err := c.client.CommitFilesystemMount(ctx, &vmrpc.CommitFilesystemMountRequest{
-		LeaseId:         leaseID,
-		IdempotencyKey:  key,
-		MountName:       mountName,
-		TargetSourceRef: targetSourceRef,
+		LeaseId:           leaseID,
+		IdempotencyKey:    key,
+		MountName:         mountName,
+		VolumeId:          volumeID,
+		ParentSnapshotRef: parentSnapshotRef,
+		NewGenerationName: newGenerationName,
 	})
 	if err != nil {
 		return FilesystemCommitRecord{}, fmt.Errorf("commit filesystem mount %s/%s: %w", leaseID, mountName, err)
 	}
 	return FilesystemCommitRecord{
-		LeaseID:         resp.GetLeaseId(),
-		MountName:       resp.GetMountName(),
-		TargetSourceRef: resp.GetTargetSourceRef(),
-		Snapshot:        resp.GetSnapshot(),
-		CommittedAt:     timeFromUnixNs(resp.GetCommittedAtUnixNs()),
+		LeaseID:       resp.GetLeaseId(),
+		MountName:     resp.GetMountName(),
+		VolumeDataset: resp.GetVolumeDataset(),
+		Snapshot:      resp.GetSnapshot(),
+		UsedBytes:     resp.GetUsedBytes(),
+		WrittenBytes:  resp.GetWrittenBytes(),
+		CommittedAt:   timeFromUnixNs(resp.GetCommittedAtUnixNs()),
 	}, nil
 }
 

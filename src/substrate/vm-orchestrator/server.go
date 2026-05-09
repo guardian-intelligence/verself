@@ -87,10 +87,12 @@ type startExecReply struct {
 	err       error
 }
 type commitFilesystemMountCmd struct {
-	ctx             context.Context
-	mountName       string
-	targetSourceRef string
-	reply           chan commitFilesystemMountReply
+	ctx               context.Context
+	mountName         string
+	volumeID          string
+	parentSnapshotRef string
+	newGenerationName string
+	reply             chan commitFilesystemMountReply
 }
 type commitFilesystemMountReply struct {
 	result FilesystemCommitResult
@@ -131,6 +133,12 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if base.ImageDataset == "" {
 		base.ImageDataset = "images"
 	}
+	if base.CheckpointDataset == "" {
+		base.CheckpointDataset = "checkpoints"
+	}
+	if base.WorkloadDataset == "" {
+		base.WorkloadDataset = "workloads"
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -147,9 +155,10 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	server := &APIServer{
 		cfg: base,
 		roots: zfs.Roots{
-			Pool:            base.Pool,
-			ImageDataset:    base.ImageDataset,
-			WorkloadDataset: base.WorkloadDataset,
+			Pool:              base.Pool,
+			ImageDataset:      base.ImageDataset,
+			CheckpointDataset: base.CheckpointDataset,
+			WorkloadDataset:   base.WorkloadDataset,
 		},
 		logger: logger,
 		state:  state,
@@ -572,13 +581,15 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 	defer span.End()
 	leaseID := strings.TrimSpace(req.GetLeaseId())
 	mountName := strings.TrimSpace(req.GetMountName())
-	targetSourceRef := strings.TrimSpace(req.GetTargetSourceRef())
+	volumeID := strings.TrimSpace(req.GetVolumeId())
+	parentSnapshotRef := strings.TrimSpace(req.GetParentSnapshotRef())
+	newGenerationName := strings.TrimSpace(req.GetNewGenerationName())
 	key := strings.TrimSpace(req.GetIdempotencyKey())
-	if leaseID == "" || mountName == "" || targetSourceRef == "" || key == "" {
-		return nil, status.Error(codes.InvalidArgument, "lease_id, mount_name, target_source_ref, and idempotency_key are required")
+	if leaseID == "" || mountName == "" || volumeID == "" || key == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id, mount_name, volume_id, and idempotency_key are required")
 	}
-	if !zfs.IsValidRef(targetSourceRef) {
-		return nil, status.Error(codes.InvalidArgument, "target_source_ref is invalid")
+	if !zfs.IsValidRef(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "volume_id is invalid")
 	}
 	scope := "commit_filesystem_mount:" + leaseID
 	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
@@ -595,7 +606,7 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 		return nil, status.Error(codes.NotFound, "lease not live")
 	}
 	reply := make(chan commitFilesystemMountReply, 1)
-	actor.send(commitFilesystemMountCmd{ctx: ctx, mountName: mountName, targetSourceRef: targetSourceRef, reply: reply})
+	actor.send(commitFilesystemMountCmd{ctx: ctx, mountName: mountName, volumeID: volumeID, parentSnapshotRef: parentSnapshotRef, newGenerationName: newGenerationName, reply: reply})
 	out := <-reply
 	if out.err != nil {
 		span.RecordError(out.err)
@@ -605,13 +616,15 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 	resp := &vmrpc.CommitFilesystemMountResponse{
 		LeaseId:           out.result.LeaseID,
 		MountName:         out.result.MountName,
-		TargetSourceRef:   out.result.TargetSourceRef,
+		VolumeDataset:     out.result.VolumeDataset,
 		Snapshot:          out.result.Snapshot,
+		UsedBytes:         out.result.UsedBytes,
+		WrittenBytes:      out.result.WrittenBytes,
 		CommittedAtUnixNs: uint64(out.result.CommittedAt.UnixNano()),
 	}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
-	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("filesystem.name", mountName), attribute.String("filesystem.target_source_ref", targetSourceRef))
+	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("filesystem.name", mountName), attribute.String("filesystem.volume_id", volumeID), attribute.String("filesystem.parent_snapshot", parentSnapshotRef))
 	return resp, nil
 }
 
@@ -678,9 +691,6 @@ func (s *APIServer) DeleteFilesystemSource(ctx context.Context, req *vmrpc.Delet
 	if sourceRef == "" || key == "" {
 		return nil, status.Error(codes.InvalidArgument, "source_ref and idempotency_key are required")
 	}
-	if !strings.HasPrefix(sourceRef, "ckpt-") {
-		return nil, status.Error(codes.InvalidArgument, "source_ref is not a checkpoint source")
-	}
 	scope := "delete_filesystem_source:" + sourceRef
 	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -691,15 +701,31 @@ func (s *APIServer) DeleteFilesystemSource(ctx context.Context, req *vmrpc.Delet
 		}
 		return resp, nil
 	}
-	image, imgErr := zfs.NewImage(s.roots, sourceRef)
-	if imgErr != nil {
-		return nil, status.Error(codes.InvalidArgument, imgErr.Error())
-	}
 	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
-	if err := volumes.DestroyImage(ctx, image); err != nil {
-		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	// source_ref is now either a generation snapshot ref
+	// (<volume_dataset>@<gen_name>) for retention pruning of one
+	// generation, or a bare volume_id when the entire volume is being
+	// deleted. We dispatch on whether '@' is present.
+	if strings.Contains(sourceRef, "@") {
+		gen, parseErr := zfs.ParseGeneration(s.roots, sourceRef)
+		if parseErr != nil {
+			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
+		}
+		if err := volumes.DestroyGeneration(ctx, gen); err != nil {
+			span.RecordError(err)
+			span.SetStatus(otelcodes.Error, err.Error())
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+	} else {
+		volume, vErr := zfs.NewVolume(s.roots, sourceRef)
+		if vErr != nil {
+			return nil, status.Error(codes.InvalidArgument, vErr.Error())
+		}
+		if err := volumes.DestroyVolume(ctx, volume); err != nil {
+			span.RecordError(err)
+			span.SetStatus(otelcodes.Error, err.Error())
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
 	}
 	resp := &vmrpc.DeleteFilesystemSourceResponse{
 		SourceRef:       sourceRef,
@@ -885,7 +911,7 @@ func (a *vmActor) run() {
 			case startExecCmd:
 				msg.reply <- a.handleStartExec(msg.ctx, msg.execID, msg.spec)
 			case commitFilesystemMountCmd:
-				msg.reply <- a.handleCommitFilesystemMount(msg.ctx, msg.mountName, msg.targetSourceRef)
+				msg.reply <- a.handleCommitFilesystemMount(msg.ctx, msg.mountName, msg.volumeID, msg.parentSnapshotRef, msg.newGenerationName)
 			case attachFilesystemMountCmd:
 				msg.reply <- a.handleAttachFilesystemMount(msg.ctx, msg.mount, msg.emptySizeBytes)
 			case cancelExecCmd:
@@ -1037,7 +1063,7 @@ func (a *vmActor) handleStartExec(callerCtx context.Context, execID string, spec
 	return startExecReply{startedAt: startedAt}
 }
 
-func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountName, targetSourceRef string) commitFilesystemMountReply {
+func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountName, volumeID, parentSnapshotRef, newGenerationName string) commitFilesystemMountReply {
 	if a.state != LeaseStateReady || a.runtime == nil {
 		return commitFilesystemMountReply{err: fmt.Errorf("lease is not ready")}
 	}
@@ -1045,14 +1071,19 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		return commitFilesystemMountReply{err: fmt.Errorf("lease has an active exec")}
 	}
 	commitCtx := detachedTraceContext(callerCtx)
-	result, err := New(a.server.cfg, a.server.logger).CommitFilesystemMount(commitCtx, a.runtime, mountName, targetSourceRef)
+	result, err := New(a.server.cfg, a.server.logger).CommitFilesystemMount(commitCtx, a.runtime, FilesystemCommitInput{
+		MountName:         mountName,
+		VolumeID:          volumeID,
+		ParentSnapshotRef: parentSnapshotRef,
+		NewGenerationName: newGenerationName,
+	})
 	if err != nil {
 		return commitFilesystemMountReply{err: err}
 	}
 	_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventCheckpointSaved, "", map[string]string{
-		"filesystem_mount":  result.MountName,
-		"target_source_ref": result.TargetSourceRef,
-		"snapshot":          result.Snapshot,
+		"filesystem_mount": result.MountName,
+		"volume_dataset":   result.VolumeDataset,
+		"snapshot":         result.Snapshot,
 	})
 	return commitFilesystemMountReply{result: result}
 }

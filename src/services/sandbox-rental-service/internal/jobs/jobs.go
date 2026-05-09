@@ -87,7 +87,7 @@ type Runner interface {
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
 	AttachFilesystemMount(ctx context.Context, leaseID, key string, mount vmorchestrator.FilesystemMount, emptySizeBytes uint64) (vmorchestrator.FilesystemAttachRecord, error)
-	CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, targetSourceRef string) (vmorchestrator.FilesystemCommitRecord, error)
+	CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
 	DeleteFilesystemSource(ctx context.Context, key, sourceRef string) (vmorchestrator.FilesystemDeleteRecord, error)
 }
 

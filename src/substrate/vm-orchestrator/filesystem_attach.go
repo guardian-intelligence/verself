@@ -77,14 +77,29 @@ func (o *Orchestrator) AttachFilesystemMount(ctx context.Context, runtime *Lease
 	mountIndex := len(runtime.Mounts)
 	var clone zfs.MountClone
 	var prepErr error
-	if strings.TrimSpace(mount.SourceRef) == "" {
+	sourceRef := strings.TrimSpace(mount.SourceRef)
+	if sourceRef == "" {
 		clone, prepErr = o.volumes.PrepareEmptyMount(ctx, runtime.Lease, mountIndex, mount.Name, emptySizeBytes)
 	} else {
-		image, imgErr := zfs.NewImage(o.roots, mount.SourceRef)
-		if imgErr != nil {
-			return FilesystemAttachResult{}, fmt.Errorf("filesystem mount %s: %w", mount.Name, imgErr)
+		// Checkpoint generation refs come in as <volume_dataset>@<gen_name>;
+		// Substrate / boot images come in as a bare ref (no '@'). The two
+		// share the prepared mount path; only the snapshot resolution
+		// differs.
+		var snap zfs.Snapshot
+		if strings.Contains(sourceRef, "@") {
+			gen, parseErr := zfs.ParseGeneration(o.roots, sourceRef)
+			if parseErr != nil {
+				return FilesystemAttachResult{}, fmt.Errorf("filesystem mount %s source ref: %w", mount.Name, parseErr)
+			}
+			snap = gen.Snapshot()
+		} else {
+			image, imgErr := zfs.NewImage(o.roots, sourceRef)
+			if imgErr != nil {
+				return FilesystemAttachResult{}, fmt.Errorf("filesystem mount %s: %w", mount.Name, imgErr)
+			}
+			snap = image.Snapshot()
 		}
-		clone, prepErr = o.volumes.PrepareMount(ctx, runtime.Lease, image, mountIndex, mount.Name)
+		clone, prepErr = o.volumes.PrepareMountFromSnapshot(ctx, runtime.Lease, snap, mountIndex, mount.Name)
 	}
 	if prepErr != nil {
 		return FilesystemAttachResult{}, prepErr
