@@ -42,21 +42,11 @@ fi
 test -n "$$home"
 vp="$$home/.vite-plus/bin/vp"
 test -x "$$vp"
-if [ -n "$${VERSELF_NPM_REGISTRY_TOKEN:-}" ]; then
-  npm_token="$$VERSELF_NPM_REGISTRY_TOKEN"
-else
-  npm_token="$$("$(location //src/tools:npm-registry-credential-helper)" print-token https://npm.verself.sh/)"
-fi
-if [ -n "$$npm_token" ]; then
-  npm_userconfig="$$(mktemp)"
-  trap 'rm -f "$$npm_userconfig"' EXIT
-  chmod 0600 "$$npm_userconfig"
-  {
-    printf 'registry=https://npm.verself.sh/\\n'
-    printf '//npm.verself.sh/:_authToken=%s\\n' "$$npm_token"
-  } > "$$npm_userconfig"
-  export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
-fi
+npm_userconfig="$$(mktemp)"
+trap 'rm -f "$$npm_userconfig"' EXIT
+chmod 0600 "$$npm_userconfig"
+printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
+export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
 cd "src/websites"
 "$$vp" install --frozen-lockfile
 printf 'viteplus install %s\\n' "$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')" > "$$out"
@@ -66,9 +56,6 @@ printf 'viteplus install %s\\n' "$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1
             "local",
             "no-remote",
             "no-sandbox",
-        ],
-        tools = [
-            "//src/tools:npm-registry-credential-helper",
         ],
     )
 

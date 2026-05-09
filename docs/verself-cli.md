@@ -377,10 +377,8 @@ callback listener state live only under the runtime directory. Refresh tokens
 are stored in the credential store. Access tokens are held in process memory
 and refreshed as needed.
 
-The repo-local npm registry credential helper reads the active auth profile
-written by `auth login`. A fresh developer or agent VM can log in once and run
-Bazel/Vite+ builds against `npm.verself.sh` without provisioning a static npm
-API key.
+Bazel/Vite+ builds read packages from the public `npm.verself.sh` mirror without
+provisioning an npm API key.
 
 Headless auth:
 
