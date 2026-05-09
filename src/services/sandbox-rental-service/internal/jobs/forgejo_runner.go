@@ -679,12 +679,12 @@ func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []strin
 		if label == "" {
 			continue
 		}
-		resources, productID, ok, err := r.service.runnerClassResources(ctx, label)
+		classRec, ok, err := r.service.runnerClassResources(ctx, label)
 		if err != nil {
 			return "", dto.VMResources{}, "", err
 		}
 		if ok {
-			return label, resources, productID, nil
+			return label, classRec.Resources, classRec.ProductID, nil
 		}
 	}
 	return "", dto.VMResources{}, "", nil

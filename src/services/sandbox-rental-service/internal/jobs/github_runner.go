@@ -941,14 +941,14 @@ func (r *GitHubRunner) runnerClassForLabels(ctx context.Context, labels []string
 		if label == "" {
 			continue
 		}
-		resources, productID, ok, err := r.service.runnerClassResources(ctx, label)
+		classRec, ok, err := r.service.runnerClassResources(ctx, label)
 		if err != nil {
 			return "", dto.VMResources{}, "", err
 		}
 		if !ok {
 			continue
 		}
-		return label, resources, productID, nil
+		return label, classRec.Resources, classRec.ProductID, nil
 	}
 	return "", dto.VMResources{}, "", nil
 }

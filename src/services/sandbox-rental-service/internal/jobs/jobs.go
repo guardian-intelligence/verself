@@ -210,26 +210,27 @@ type Service struct {
 }
 
 type executionWorkItem struct {
-	ExecutionID      uuid.UUID
-	AttemptID        uuid.UUID
-	OrgID            uint64
-	ActorID          string
-	Kind             string
-	SourceKind       string
-	WorkloadKind     string
-	SourceRef        string
-	RunnerClass      string
-	ExternalProvider string
-	ExternalTaskID   string
-	Provider         string
-	ProductID        string
-	RunCommand       string
-	MaxWallSeconds   uint64
-	LeaseID          string
-	ExecID           string
-	CorrelationID    string
-	Resources        dto.VMResources
-	FilesystemMounts []vmorchestrator.FilesystemMount
+	ExecutionID         uuid.UUID
+	AttemptID           uuid.UUID
+	OrgID               uint64
+	ActorID             string
+	Kind                string
+	SourceKind          string
+	WorkloadKind        string
+	SourceRef           string
+	RunnerClass         string
+	ExternalProvider    string
+	ExternalTaskID      string
+	Provider            string
+	ProductID           string
+	RunCommand          string
+	MaxWallSeconds      uint64
+	LeaseID             string
+	ExecID              string
+	CorrelationID       string
+	Resources           dto.VMResources
+	FilesystemMounts    []vmorchestrator.FilesystemMount
+	CheckpointSlotCount uint32
 }
 
 type jobEventRow struct {
@@ -459,20 +460,30 @@ func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempote
 	return row.ExecutionID, row.AttemptID, nil
 }
 
-func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (dto.VMResources, string, bool, error) {
+type runnerClassRecord struct {
+	Resources           dto.VMResources
+	ProductID           string
+	CheckpointSlotCount uint32
+}
+
+func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (runnerClassRecord, bool, error) {
 	row, err := s.storeQueries().GetRunnerClassResources(ctx, store.GetRunnerClassResourcesParams{RunnerClass: runnerClass})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return dto.VMResources{}, "", false, nil
+		return runnerClassRecord{}, false, nil
 	}
 	if err != nil {
-		return dto.VMResources{}, "", false, fmt.Errorf("load runner class resources: %w", err)
+		return runnerClassRecord{}, false, fmt.Errorf("load runner class resources: %w", err)
 	}
-	return dto.VMResources{
-		VCPUs:       uint32FromInt32(row.Vcpus, "runner class vcpus"),
-		MemoryMiB:   uint32FromInt32(row.MemoryMib, "runner class memory mib"),
-		RootDiskGiB: uint32FromInt32(row.RootfsGib, "runner class root disk gib"),
-		KernelImage: dto.KernelImageDefault,
-	}, row.ProductID, true, nil
+	return runnerClassRecord{
+		Resources: dto.VMResources{
+			VCPUs:       uint32FromInt32(row.Vcpus, "runner class vcpus"),
+			MemoryMiB:   uint32FromInt32(row.MemoryMib, "runner class memory mib"),
+			RootDiskGiB: uint32FromInt32(row.RootfsGib, "runner class root disk gib"),
+			KernelImage: dto.KernelImageDefault,
+		},
+		ProductID:           row.ProductID,
+		CheckpointSlotCount: uint32FromInt32(row.CheckpointSlotCount, "runner class checkpoint_slot_count"),
+	}, true, nil
 }
 
 func (s *Service) runnerClassFilesystemMounts(ctx context.Context, tx pgx.Tx, runnerClass string) ([]vmorchestrator.FilesystemMount, error) {
@@ -547,7 +558,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		TrustClass:          "trusted",
 		NetworkMode:         "nat",
 		FilesystemMounts:    item.FilesystemMounts,
-		CheckpointSlotCount: checkpointSlotCount,
+		CheckpointSlotCount: item.CheckpointSlotCount,
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
@@ -706,6 +717,11 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		return executionWorkItem{}, err
 	}
 	item.FilesystemMounts = mounts
+	if classRec, ok, err := s.runnerClassResources(ctx, item.RunnerClass); err != nil {
+		return executionWorkItem{}, err
+	} else if ok {
+		item.CheckpointSlotCount = classRec.CheckpointSlotCount
+	}
 	return item, nil
 }
 
@@ -1237,20 +1253,20 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported workload_kind %q", req.WorkloadKind)
 	}
-	classResources, classProductID, ok, err := s.runnerClassResources(ctx, req.RunnerClass)
+	classRec, ok, err := s.runnerClassResources(ctx, req.RunnerClass)
 	if err != nil {
 		return SubmitRequest{}, err
 	}
 	if !ok {
 		return SubmitRequest{}, fmt.Errorf("%w: %s", ErrRunnerClassMissing, req.RunnerClass)
 	}
-	req.ProductID = firstNonEmpty(strings.TrimSpace(req.ProductID), classProductID, defaultProductID)
-	if req.ProductID != classProductID {
-		return SubmitRequest{}, fmt.Errorf("runner_class %s belongs to product %s, got product_id %s", req.RunnerClass, classProductID, req.ProductID)
+	req.ProductID = firstNonEmpty(strings.TrimSpace(req.ProductID), classRec.ProductID, defaultProductID)
+	if req.ProductID != classRec.ProductID {
+		return SubmitRequest{}, fmt.Errorf("runner_class %s belongs to product %s, got product_id %s", req.RunnerClass, classRec.ProductID, req.ProductID)
 	}
 	// Runner classes are product defaults. Fill omitted fields from the class
 	// before bounds validation so billing, traces, and VM admission agree.
-	req.Resources = vmResourcesWithDefaults(req.Resources, classResources)
+	req.Resources = vmResourcesWithDefaults(req.Resources, classRec.Resources)
 	bounds := s.Bounds
 	if bounds == (dto.VMResourceBounds{}) {
 		bounds = dto.DefaultBounds

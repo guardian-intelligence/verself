@@ -32,7 +32,11 @@ const (
 	firecrackerStepTimeout = 5 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 8
-	maxCheckpointSlots     = 5
+	// Hard ceiling on per-VM Checkpoint drive slots. Per-class allocation is
+	// configured on runner_classes.checkpoint_slot_count; this constant exists
+	// only to bound the total Firecracker drive count and host disk reservation
+	// against a misconfigured catalog row.
+	maxCheckpointSlots     = 16
 	defaultCheckpointBytes = 5 * 1024 * 1024 * 1024
 )
 

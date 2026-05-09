@@ -29,7 +29,7 @@ ORDER BY a.attempt_seq DESC
 LIMIT 1;
 
 -- name: GetRunnerClassResources :one
-SELECT product_id, vcpus, memory_mib, rootfs_gib
+SELECT product_id, vcpus, memory_mib, rootfs_gib, checkpoint_slot_count
 FROM runner_classes
 WHERE runner_class = sqlc.arg(runner_class) AND active;
 

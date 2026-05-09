@@ -24,7 +24,6 @@ import (
 )
 
 const (
-	checkpointSlotCount       = 5
 	checkpointDefaultBytes    = 5 * 1024 * 1024 * 1024
 	checkpointProductKind     = "ci_checkpoint"
 	checkpointComponentKind   = "checkpoint"

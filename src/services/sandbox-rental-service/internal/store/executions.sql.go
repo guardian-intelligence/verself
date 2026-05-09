@@ -253,7 +253,7 @@ func (q *Queries) GetLatestAttemptForExecution(ctx context.Context, arg GetLates
 }
 
 const getRunnerClassResources = `-- name: GetRunnerClassResources :one
-SELECT product_id, vcpus, memory_mib, rootfs_gib
+SELECT product_id, vcpus, memory_mib, rootfs_gib, checkpoint_slot_count
 FROM runner_classes
 WHERE runner_class = $1 AND active
 `
@@ -263,10 +263,11 @@ type GetRunnerClassResourcesParams struct {
 }
 
 type GetRunnerClassResourcesRow struct {
-	ProductID string
-	Vcpus     int32
-	MemoryMib int32
-	RootfsGib int32
+	ProductID           string
+	Vcpus               int32
+	MemoryMib           int32
+	RootfsGib           int32
+	CheckpointSlotCount int32
 }
 
 func (q *Queries) GetRunnerClassResources(ctx context.Context, arg GetRunnerClassResourcesParams) (GetRunnerClassResourcesRow, error) {
@@ -277,6 +278,7 @@ func (q *Queries) GetRunnerClassResources(ctx context.Context, arg GetRunnerClas
 		&i.Vcpus,
 		&i.MemoryMib,
 		&i.RootfsGib,
+		&i.CheckpointSlotCount,
 	)
 	return i, err
 }
