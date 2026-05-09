@@ -16,7 +16,7 @@ table inet verself_notifications_service {
 
         ct state established,related accept
         meta skuid != notifications_service accept
-        oifname "lo" tcp dport { 5432, 9440, 4222, 8085, 4317, 20000-32000 } accept
+        oifname "lo" tcp dport { 4646, 5432, 9440, 4222, 8085, 4317, 20000-32000 } accept
         tcp dport 443 accept
         tcp dport 53 accept
         udp dport 53 accept

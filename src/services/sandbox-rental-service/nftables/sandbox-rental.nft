@@ -16,7 +16,7 @@ table inet verself_sandbox_rental {
 
         ct state established,related accept
         meta skuid != sandbox_rental accept
-        oifname "lo" tcp dport { 5432, 9440, 8200, 8085, 3000, 7233, 4317, 20000-32000 } accept
+        oifname "lo" tcp dport { 4646, 5432, 9440, 8200, 8085, 3000, 7233, 4317, 20000-32000 } accept
         oifname "lo" tcp dport 443 accept
         oifname "lo" tcp dport 53 accept
         oifname "lo" udp dport 53 accept
