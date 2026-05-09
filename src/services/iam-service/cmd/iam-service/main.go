@@ -32,7 +32,7 @@ import (
 
 const (
 	serviceName      = "iam-service"
-	serviceVersion   = "1.0.0"
+	serviceVersion   = "1.0.1"
 	requestBodyLimit = 1 << 20
 )
 
