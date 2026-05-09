@@ -28,9 +28,6 @@
 //	    Operator-side platform organization convergence for the dogfooded
 //	    first-party org, project, Forgejo repository, and source backend.
 //
-//	aspect-operator checkpoint-canary
-//	    Push and dispatch checkpoint workloads on source-hosted and GitHub repos.
-//
 //	aspect-operator service-discovery-canary
 //	    Drive billing API traffic through the IAM authorize round-trip while
 //	    iam-service rolls; report any non-2xx-or-4xx outcome as a deploy gap.
@@ -82,12 +79,6 @@ func run(args []string) error {
 		return cmdDevice(rest)
 	case "platform":
 		return cmdPlatform(rest)
-	case "checkpoint-canary":
-		return cmdCheckpointCanary(rest)
-	case "benchmark-ingest":
-		return cmdBenchmarkIngest(rest)
-	case "bench-ci-runs":
-		return cmdBenchCIRuns(rest)
 	case "service-discovery-canary":
 		return cmdDiscoveryCanary(rest)
 	case "-h", "--help", "help":
@@ -111,9 +102,6 @@ Subcommands:
   dev               Local development helpers
   device            Configure this device for operator access
   platform          Platform org/project/source convergence
-  checkpoint-canary Push and dispatch checkpoint workloads
-  benchmark-ingest  Insert canary report rows into verself.benchmark_runs
-  bench-ci-runs     Ingest verself-sh CI workflow run timings as benchmark_runs
   service-discovery-canary  Drive billing -> IAM traffic through the resolver
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.

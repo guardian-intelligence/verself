@@ -110,7 +110,9 @@ Service topology, three safety rings, self-hosted mandate + allowed third-party 
 
 <operational_runbook>
 
-SSH access is tied to identity via Pomerium using Zitadel as its OIDC
+SSH access is tied to identity via Pomerium using Zitadel as its OIDC.
+
+If you are doing work that involves pulling logs or interacting with infrastructure you may be presented a URL to log in to Pomerium. If that happens, please pause and present the URL to me and remind me to open it in Firefox.
 
 ```shell
 ssh ubuntu@prod@access.verself.sh
