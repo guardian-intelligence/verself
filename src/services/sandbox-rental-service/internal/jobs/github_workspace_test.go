@@ -10,9 +10,18 @@ func TestGitHubWorkspacePathUsesActionsRunnerWorkLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("githubWorkspacePath returned error: %v", err)
 	}
-	want := "/workspace/.verself/actions-runner/_work/verself/verself"
+	want := "/workspace/.verself/actions-runner/_work"
 	if got != want {
 		t.Fatalf("githubWorkspacePath = %q, want %q", got, want)
+	}
+
+	got, err = githubRunnerWorkspacePath("guardian-intelligence/verself")
+	if err != nil {
+		t.Fatalf("githubRunnerWorkspacePath returned error: %v", err)
+	}
+	want = "/tmp/verself-actions-runner/_work/verself/verself"
+	if got != want {
+		t.Fatalf("githubRunnerWorkspacePath = %q, want %q", got, want)
 	}
 }
 
@@ -34,6 +43,22 @@ func TestRunnerCommandsKeepToolCacheOutsideDurableWorkspaceParent(t *testing.T) 
 		}
 		if !strings.Contains(command, `tool_cache="`+runnerToolCacheDir+`"`) {
 			t.Fatalf("%s command does not use runnerToolCacheDir", name)
+		}
+	}
+}
+
+func TestGitHubRunnerCommandKeepsRuntimeOutsideDurableWorkspace(t *testing.T) {
+	command := githubRunnerCommand()
+	if strings.Contains(command, `runtime_dir="/workspace`) {
+		t.Fatalf("github runner runtime is under durable workspace")
+	}
+	for _, want := range []string{
+		`runtime_dir="` + githubRunnerRuntimeDir + `"`,
+		`durable_work_dir="` + githubRunnerDurableWorkDir + `"`,
+		`ln -s "$durable_work_dir" "$runtime_dir/_work"`,
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("github runner command missing %q", want)
 		}
 	}
 }

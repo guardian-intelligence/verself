@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	githubRunnerRuntimeDir          = "/workspace/.verself/actions-runner"
+	githubRunnerRuntimeDir          = "/tmp/verself-actions-runner"
+	githubRunnerDurableWorkDir      = "/workspace/.verself/actions-runner/_work"
 	githubWorkspaceComponentKind    = "github_workspace"
 	githubWorkspaceKey              = "repo-workspace"
 	githubWorkspaceDefaultSizeBytes = 100 * 1024 * 1024 * 1024
@@ -51,9 +52,16 @@ func (s *Service) prepareGitHubWorkspace(ctx context.Context, item executionWork
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	runnerWorkspacePath, err := githubRunnerWorkspacePath(identity.RepositoryFullName)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	span.SetAttributes(
 		attribute.String("github.repository", identity.RepositoryFullName),
 		attribute.String("github.workspace.path", mountPath),
+		attribute.String("github.runner_workspace.path", runnerWorkspacePath),
 		attribute.String("github.workspace.scope_ref", checkpointScopeRef(identity)),
 	)
 	mount, err := s.mountCheckpointWithPlan(ctx, identity, checkpointMountPlan{
@@ -87,6 +95,13 @@ func (s *Service) prepareGitHubWorkspace(ctx context.Context, item executionWork
 }
 
 func githubWorkspacePath(repositoryFullName string) (string, error) {
+	if _, err := githubRunnerWorkspacePath(repositoryFullName); err != nil {
+		return "", err
+	}
+	return githubRunnerDurableWorkDir, nil
+}
+
+func githubRunnerWorkspacePath(repositoryFullName string) (string, error) {
 	owner, repo, ok := strings.Cut(strings.TrimSpace(repositoryFullName), "/")
 	if !ok || owner == "" || repo == "" {
 		return "", fmt.Errorf("%w: github repository must be owner/name", ErrCheckpointInvalid)

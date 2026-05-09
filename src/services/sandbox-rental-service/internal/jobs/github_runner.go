@@ -1368,11 +1368,14 @@ curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERV
 unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
 export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
-runtime_dir="/workspace/.verself/actions-runner"
-# Durable workspace mounts create root-owned parent dirs; tool cache gets its own future zvol.
+runtime_dir="` + githubRunnerRuntimeDir + `"
+durable_work_dir="` + githubRunnerDurableWorkDir + `"
+# GitHub only accepts work_folder relative to the runner install dir.
 tool_cache="` + runnerToolCacheDir + `"
-mkdir -p "$runtime_dir" "$runtime_dir/_work" "$tool_cache"
-find "$runtime_dir" -mindepth 1 -maxdepth 1 ! -name _work -exec rm -rf {} +
+rm -rf "$runtime_dir"
+mkdir -p "$runtime_dir" "$tool_cache"
+[ -d "$durable_work_dir" ] || { echo "durable GitHub work dir is not mounted: $durable_work_dir" >&2; exit 1; }
+ln -s "$durable_work_dir" "$runtime_dir/_work"
 export RUNNER_TOOL_CACHE="$tool_cache"
 export AGENT_TOOLSDIRECTORY="$tool_cache"
 for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runner/..?*; do
@@ -1383,7 +1386,7 @@ for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runne
   cp -a "$entry" "$runtime_dir"/
 done
 cd "$runtime_dir"
-mkdir -p _work _diag _temp
+mkdir -p _diag _temp
 exec ./run.sh --jitconfig "$(cat "$jit_file")"`
 }
 
