@@ -45,8 +45,10 @@ runs:
       with:
         key: verself-bazel-disk-${{ runner.os }}-${{ hashFiles(inputs.workspace-files) }}
         path: ${{ inputs.disk-cache-path }}
+        size-gb: '50'
     - id: repo
       uses: ./.github/actions/checkpoint
       with:
         key: verself-bazel-repo-${{ runner.os }}-${{ hashFiles(inputs.workspace-files) }}
         path: ${{ inputs.repository-cache-path }}
+        size-gb: '10'

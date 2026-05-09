@@ -34,13 +34,22 @@ function readSpec() {
   if (!requestedPath) {
     throw new Error("input path is required");
   }
-  return { key, mountPath: resolveMountPath(requestedPath) };
+  const sizeGB = parseInt(input("size-gb") || "5", 10);
+  if (!Number.isFinite(sizeGB) || sizeGB < 1 || sizeGB > 200) {
+    throw new Error(`input size-gb must be 1..200, got ${input("size-gb")}`);
+  }
+  return {
+    key,
+    mountPath: resolveMountPath(requestedPath),
+    sizeBytes: sizeGB * 1024 * 1024 * 1024,
+  };
 }
 
 async function mountCheckpoint(spec) {
   return checkpointPost("mount", {
     key: spec.key,
     path: spec.mountPath,
+    size_bytes: spec.sizeBytes,
   });
 }
 
