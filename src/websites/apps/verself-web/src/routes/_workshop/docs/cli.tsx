@@ -39,16 +39,19 @@ function CLIDocs() {
         <SectionHeading id="profiles">Profiles</SectionHeading>
         <Prose>
           <p>
-            A profile stores service endpoints and selected organization metadata. Bearer material
-            is stored by reference in the local credential store.
+            A profile stores the active organization and a reference to the bearer credential, not
+            the credential itself. Interactive logins use the Zitadel device flow; headless callers
+            point <code>--token-file</code> at an IAM API credential secret minted with{" "}
+            <code>verself orgs credentials create</code> so the value never appears in argv or shell
+            history.
           </p>
         </Prose>
-        <Command>{`verself auth login --token-file /run/secrets/verself-token \
-  --iam-url https://iam.api.example.com \
-  --projects-url https://projects.api.example.com \
-  --governance-url https://governance.api.example.com \
-  --sandbox-url https://sandbox.api.example.com \
-  --source-url https://source.api.example.com
+        <Command>{`# Interactive: opens the Zitadel device flow in your browser.
+verself auth login
+
+# Headless: token file holds an IAM API credential secret.
+verself auth login --token-file /run/secrets/verself-token
+
 verself auth whoami
 verself auth token`}</Command>
       </section>

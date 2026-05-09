@@ -1,9 +1,5 @@
 # Verself CLI
 
-Product pitch:
-
-"The solo-founder's superweapon" — "Your software company, an API call away" demonstrates a software company being constructed from just a Latitude API key. Hand Verself a few provider keys and walk away with a configured repo that builds and deploys an opinionated platform on the operator's own bare metal.
-
 `verself` is the public CLI and SDK facade for hosted Verself APIs. It sits
 above curated SDKs, which wrap generated OpenAPI clients for product services.
 Browser server functions, the CLI, and customer automation use the same service
@@ -52,18 +48,6 @@ company input
 Bootstrap writes files under `src/host/sites/<site>/`, emits a run record, and
 stops at artifact generation. Provisioning, deployment, and owner-grant seeding
 stay on checked-in repo tooling such as `aspect deploy` and operator tasks.
-
-Self-hosted installation rendering is an operator/internal surface for now. The
-public CLI and SDK docs should lead with hosted Verself APIs, bearer-token auth,
-and product resources.
-
-When self-hosted installation rendering is documented separately, the model must
-state that the rendered installation is fully independent: its own control
-plane, identity provider, billing backend, source host, secret manager,
-deployment orchestration, operational authority, telemetry, keys, provider
-accounts, domains, infrastructure, backups, and organization data. Hosted
-Verself may render local artifacts; the resulting installation administers
-itself.
 
 ## SDK Shape
 
@@ -143,7 +127,6 @@ The CLI boundary has these major pieces:
 | Company store | Durable local company intent, owner defaults, CLI name, site defaults, provider options, runtime integration options, and secret references. |
 | Bootstrap manifest | Resolved snapshot of company, owner, site, domain, CLI, provider, and runtime integration intent. |
 | Site artifact renderer | `src/host/sites/<site>/` files, provisioning templates, encrypted SOPS bags, README instructions, and generated CLI entrypoints. |
-| Self-hosted renderer | Deferred operator/internal artifact renderer for independent installations, outside the public SDK/CLI v0 surface. |
 | Source-code-hosting-service | Repository storage, Git HTTP, checkout grants, archive resources, and signed download URLs. |
 | Aspect task surface | Repo-local provisioning, host convergence, Nomad deployment, owner-claim preparation, Zitadel grant reconciliation, and post-deploy verification through checked-in tasks such as `aspect deploy`. |
 | IAM service | Organization materialization, verified owner claim completion, Zitadel grants, and authorization graph convergence when invoked by repo-local operator/seeding logic. |
@@ -151,8 +134,8 @@ The CLI boundary has these major pieces:
 | Observability/audit | Trace propagation, ClickHouse evidence, service audit rows, and domain-event ledgers tied to operation IDs. |
 
 Hosted service observability covers hosted API calls. Operator-local rendering
-records local run state; deployed self-hosted installations write their own
-telemetry and audit evidence.
+records local run state under XDG and emits the same trace context as the
+service calls it precedes.
 
 ## Resource Model
 
@@ -406,13 +389,16 @@ VERSELF_TOKEN=... verself projects list --profile ci --json
 verself auth login --token-file /run/secrets/verself-token
 ```
 
-Token files must be regular files with owner-only permissions. The CLI refuses
-world-readable token files.
+For headless callers the token file holds an IAM API credential secret minted
+through `verself orgs credentials create`. The service sees a normal
+`Authorization: Bearer` header; the file path exists only so the secret never
+appears in `argv`, shell history, or process listings. Token files must be
+regular files with owner-only permissions and the CLI refuses world-readable
+files.
 
 SDK-backed commands read the active auth profile by default. `VERSELF_TOKEN`,
 `VERSELF_TOKEN_FILE`, and `--token-file` override the profile for headless
-sessions; service URL flags and `VERSELF_*_API_URL` environment variables select
-non-production services.
+sessions.
 
 ## Public Command Surface
 
@@ -609,9 +595,9 @@ with `fields` instead of `secret`. Ambiguous values produce
 `company_option.unclassified` and require a semantic option name.
 
 Initial local rendering has no hard runtime integration requirement. Every
-third-party runtime integration required by a deployed self-hosted installation
-still belongs in the option catalog so operator artifacts can include the right
-SOPS templates, service config keys, and verification commands.
+third-party runtime integration the deployed installation needs still belongs
+in the option catalog so operator artifacts can include the right SOPS
+templates, service config keys, and verification commands.
 
 Initial option catalog:
 
@@ -704,9 +690,9 @@ first-run screen with names, destinations, and update commands. Non-interactive
 JSON output includes `value_ref`, `render_targets`, and `reveal_command`, but
 omits plaintext unless `--reveal-once` is passed and stdout is a terminal.
 
-The root SOPS key remains local by default. If an internal renderer is introduced
-later, it should prefer a caller-provided Age recipient or client-side key
-generation so hosted Verself never sees the private decryption key.
+The root SOPS key never leaves the operator checkout: bootstrap renders SOPS
+bags to its public Age recipient and stores the private identity through the
+local credential store.
 
 ## Derivation Rules
 
@@ -801,13 +787,10 @@ Generated by company secret generation:
 - metadata describing target SOPS bags, consuming components, reveal policy,
   and rotation commands.
 
-## Self-Hosted Rendering
+## Site Artifacts
 
-Self-hosted rendering is deferred from the public SDK and CLI v0 surface. The
-supported public product path is hosted Verself APIs with bearer-token auth.
-
-The operator-local implementation may still render site artifacts from a company
-record:
+`verself bootstrap` resolves a company record into the operator checkout. It
+writes the artifacts the operator's `aspect deploy` will consume:
 
 | Path | Purpose |
 | --- | --- |
@@ -817,9 +800,9 @@ record:
 | `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, company/org defaults, and platform org defaults. |
 | `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
 | `src/host/sites/<site>/secrets/*.sops.yml` | Encrypted SOPS bags for generated and supplied secrets. |
-| `README.md` | Customer-specific next commands using `<cli_name>`, owner email, organization name, and selected site. |
+| `README.md` | Operator next commands using `<cli_name>`, owner email, organization name, and selected site. |
 
-The intended operator-local flow is:
+The operator-local flow is:
 
 ```text
 ./scripts/bootstrap-linux-amd64
@@ -828,13 +811,6 @@ bazelisk build //src/<cli_name>-cli:<cli_name>
 ./bazel-bin/src/<cli_name>-cli/<cli_name> company inspect <company> --json
 ./bazel-bin/src/<cli_name>-cli/<cli_name> env run --org <org> --project <project> --environment bootstrap -- aspect deploy --site=prod --sha=HEAD
 ```
-
-If a hosted renderer is reintroduced, expose it as a separate self-hosted
-installation product surface. Its documentation must state the independence
-boundary directly: after render handoff, the resulting installation owns its
-control plane, identity provider, billing backend, source host, secret manager,
-deployment orchestration, telemetry backend, backup system, and operational
-authority.
 
 ## Operation Errors
 
