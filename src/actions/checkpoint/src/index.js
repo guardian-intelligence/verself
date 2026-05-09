@@ -80,6 +80,7 @@ async function vmBridgeMount(mounted) {
       throw new Error(`checkpoint mount response missing ${name}`);
     }
   }
+  ensureMountParent(mounted.mount_path);
   await execFile("vm-bridge", [
     "filesystem",
     "mount",
@@ -88,6 +89,12 @@ async function vmBridgeMount(mounted) {
     mounted.mount_path,
     mounted.fs_type || "ext4",
   ], { maxBuffer: 1024 * 1024 });
+}
+
+function ensureMountParent(mountPath) {
+  const parent = path.dirname(mountPath);
+  fs.mkdirSync(parent, { recursive: true });
+  fs.accessSync(parent, fs.constants.W_OK | fs.constants.X_OK);
 }
 
 function endpointURL(kind) {
