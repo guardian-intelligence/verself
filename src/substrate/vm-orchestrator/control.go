@@ -536,6 +536,48 @@ func (c *guestControl) sealFilesystem(ctx context.Context, leaseID, mountName, m
 	}
 }
 
+func (c *guestControl) mountFilesystem(ctx context.Context, mount vmproto.FilesystemMount) error {
+	if c == nil {
+		return fmt.Errorf("guest control is not available")
+	}
+	if err := c.send(vmproto.TypeFilesystemMountRequest, vmproto.FilesystemMountRequest{Filesystem: mount}); err != nil {
+		return fmt.Errorf("send filesystem mount request: %w", err)
+	}
+	for {
+		env, err := c.recv()
+		if err != nil {
+			return fmt.Errorf("read filesystem mount result: %w", err)
+		}
+		switch env.Type {
+		case vmproto.TypeFilesystemMountResult:
+			msg, err := vmproto.DecodePayload[vmproto.FilesystemMountResult](env)
+			if err != nil {
+				return err
+			}
+			if msg.Name != mount.Name || msg.MountPath != mount.MountPath {
+				return guestProtocolError("await_filesystem_mount_result", "result mismatch mount=%s path=%s", msg.Name, msg.MountPath)
+			}
+			if !msg.Mounted {
+				if strings.TrimSpace(msg.Error) == "" {
+					return fmt.Errorf("guest failed to mount filesystem %s at %s", mount.Name, mount.MountPath)
+				}
+				return fmt.Errorf("guest failed to mount filesystem %s at %s: %s", mount.Name, mount.MountPath, strings.TrimSpace(msg.Error))
+			}
+			return nil
+		case vmproto.TypeHeartbeat:
+			continue
+		case vmproto.TypeFatal:
+			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
+			if decodeErr != nil {
+				return decodeErr
+			}
+			return fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+		default:
+			return unexpectedGuestControlFrame("await_filesystem_mount_result", env.Type, vmproto.TypeFilesystemMountResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
+		}
+	}
+}
+
 func (c *guestControl) cancelExec(execID, reason string) error {
 	return c.send(vmproto.TypeCancel, vmproto.Cancel{ExecID: execID, Reason: reason})
 }

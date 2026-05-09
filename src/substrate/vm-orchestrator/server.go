@@ -1093,7 +1093,14 @@ func (a *vmActor) handleAttachFilesystemMount(callerCtx context.Context, mount F
 		return attachFilesystemMountReply{err: fmt.Errorf("lease is not ready")}
 	}
 	attachCtx := detachedTraceContext(callerCtx)
-	result, err := New(a.server.cfg, a.server.logger).AttachFilesystemMount(attachCtx, a.runtime, mount, emptySizeBytes)
+	orchestrator := New(a.server.cfg, a.server.logger)
+	var result FilesystemAttachResult
+	var err error
+	if a.active == nil {
+		result, err = orchestrator.AttachAndMountFilesystemMount(attachCtx, a.runtime, mount, emptySizeBytes)
+	} else {
+		result, err = orchestrator.AttachFilesystemMount(attachCtx, a.runtime, mount, emptySizeBytes)
+	}
 	if err != nil {
 		return attachFilesystemMountReply{err: err}
 	}

@@ -328,14 +328,31 @@ func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vm
 				return vmproto.ExecRequest{}, err
 			}
 			continue
+		case vmproto.TypeFilesystemMountRequest:
+			if err := s.handleFilesystemMountRequest(env); err != nil {
+				return vmproto.ExecRequest{}, err
+			}
+			continue
 		case vmproto.TypeShutdown:
 			return vmproto.ExecRequest{}, errGuestShutdownRequested
 		case vmproto.TypeCancel:
 			continue
 		default:
-			return vmproto.ExecRequest{}, unexpectedControlFrame(bridgeStateAwaitExecRequest, env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
+			return vmproto.ExecRequest{}, unexpectedControlFrame(bridgeStateAwaitExecRequest, env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeFilesystemMountRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
 		}
 	}
+}
+
+func (s *agentSession) handleFilesystemMountRequest(env vmproto.Envelope) error {
+	req, err := vmproto.DecodePayload[vmproto.FilesystemMountRequest](env)
+	if err != nil {
+		return protocolStateError(bridgeStateAwaitExecRequest, "decode filesystem_mount_request payload: %v", err)
+	}
+	result := s.mountFilesystem(req.Filesystem)
+	if err := s.sendControl(vmproto.TypeFilesystemMountResult, result); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *agentSession) handleFilesystemSealRequest(env vmproto.Envelope) error {

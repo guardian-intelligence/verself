@@ -11,6 +11,7 @@ go_library(
         "forgejo_runner.go",
         "github_execution_auth.go",
         "github_runner.go",
+        "github_workspace.go",
         "jobs.go",
         "logs_search.go",
         "reconcile.go",
@@ -41,6 +42,12 @@ go_library(
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
+)
+
+go_test(
+    name = "jobs_test",
+    srcs = ["github_workspace_test.go"],
+    embed = [":jobs"],
 )
 
 alias(

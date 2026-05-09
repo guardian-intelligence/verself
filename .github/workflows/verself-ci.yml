@@ -14,35 +14,28 @@ permissions:
 
 jobs:
   build:
-    name: Build + test (Verself runner, native Checkpoints)
+    name: Build + test (Verself runner, durable workspace)
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
         with:
           persist-credentials: false
 
-      - name: Mount Bazel disk cache
-        uses: guardian-intelligence/verself-checkpoint@v0
-        with:
-          key: ${{ github.repository }}-bazel-disk-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc') }}
-          path: /home/runner/.cache/bazel-disk
-          size-gb: '50'
-
-      - name: Mount Bazel repository cache
-        uses: guardian-intelligence/verself-checkpoint@v0
-        with:
-          key: ${{ github.repository }}-bazel-repo-v4-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
-          path: /home/runner/.cache/bazel-repo
-          size-gb: '200'
-
-      - name: Mount pnpm store
-        uses: guardian-intelligence/verself-checkpoint@v0
-        with:
-          key: ${{ github.repository }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
-          path: /home/runner/.local/share/pnpm/store
-          size-gb: '8'
+      - name: Verify durable workspace tracer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          if [ -f .verself-tracer/build-state ]; then
+            echo "verself durable workspace tracer: hit"
+            cat .verself-tracer/build-state
+          else
+            echo "verself durable workspace tracer: miss"
+          fi
+          mkdir -p .verself-tracer
+          printf '%s run=%s attempt=%s sha=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${GITHUB_SHA}" >> .verself-tracer/build-state
 
       - name: Bootstrap toolchain
         env:

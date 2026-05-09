@@ -574,6 +574,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	defer stopRenew()
 	go s.renewLeaseLoop(renewCtx, lease.LeaseID, item.AttemptID.String())
 
+	if err := s.prepareGitHubWorkspace(ctx, item); err != nil {
+		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
+		return s.failAttempt(ctx, item, "github_workspace_prepare_failed", err)
+	}
+
 	execSpec := vmorchestrator.ExecSpec{
 		Argv:           []string{"sh", "-c", item.RunCommand},
 		WorkingDir:     "/workspace",

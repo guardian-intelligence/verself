@@ -9,7 +9,10 @@ const execFile = promisify(execFileCallback);
 async function main() {
   const started = Date.now();
   const spec = readSpec();
-  prepareTarget(spec.targetPath, spec.clean);
+  const preexistingHead = await prepareTarget(spec.targetPath);
+  if (preexistingHead) {
+    setOutput("preexisting-head", preexistingHead);
+  }
 
   const bundlePath = path.join(os.tmpdir(), `verself-checkout-${process.pid}-${Date.now()}.bundle`);
   try {
@@ -29,7 +32,7 @@ async function main() {
     setOutput("commit", spec.sha);
     notice(
       `Verself checkout ready in ${Date.now() - started}ms ` +
-        `(download ${downloadMs}ms, git ${checkoutMs}ms, cache_hit=${bundleMeta.cacheHit}, bytes=${bundleMeta.sizeBytes})`,
+        `(download ${downloadMs}ms, git ${checkoutMs}ms, cache_hit=${bundleMeta.cacheHit}, bytes=${bundleMeta.sizeBytes}, preexisting_head=${preexistingHead || "none"})`,
     );
   } finally {
     fs.rmSync(bundlePath, { force: true });
@@ -44,7 +47,7 @@ function readSpec() {
     throw new Error(`GITHUB_SHA must be a 40-character commit SHA, got ${sha}`);
   }
   const targetPath = resolveCheckoutPath(input("path") || ".");
-  const clean = parseBoolean(input("clean") || "true");
+  const clean = parseBoolean(input("clean") || "false");
   const fetchDepth = input("fetch-depth") || "1";
   if (fetchDepth !== "1") {
     throw new Error("verself/checkout@v1 currently supports fetch-depth: 1 only");
@@ -56,53 +59,13 @@ function readSpec() {
   return { repository, ref, sha, targetPath, clean, token };
 }
 
-function prepareTarget(targetPath, clean) {
-  if (clean) {
-    cleanTargetPreservingMounts(targetPath);
-  }
+async function prepareTarget(targetPath) {
   fs.mkdirSync(targetPath, { recursive: true });
-}
-
-function cleanTargetPreservingMounts(targetPath) {
-  const protectedMounts = protectedMountsUnder(targetPath);
-  if (protectedMounts.length === 0) {
-    fs.rmSync(targetPath, { recursive: true, force: true });
-    return;
+  try {
+    return (await gitOutput(targetPath, ["rev-parse", "--verify", "HEAD"])).trim().toLowerCase();
+  } catch {
+    return "";
   }
-  fs.mkdirSync(targetPath, { recursive: true });
-  for (const entry of fs.readdirSync(targetPath)) {
-    const fullPath = path.join(targetPath, entry);
-    if (isProtectedMountPath(fullPath, protectedMounts)) {
-      continue;
-    }
-    fs.rmSync(fullPath, { recursive: true, force: true });
-  }
-}
-
-function gitCleanMountExclusions(targetPath) {
-  const workspace = path.resolve(targetPath);
-  return protectedMountsUnder(targetPath).map((mountPath) => {
-    const rel = path.relative(workspace, mountPath).split(path.sep).join("/");
-    return rel.endsWith("/") ? rel : `${rel}/`;
-  }).flatMap((rel) => ["-e", rel]);
-}
-
-function protectedMountsUnder(targetPath) {
-  const root = realPathForMaybeMissing(targetPath);
-  return composedZvolMounts().filter((mountPath) => mountPath === root || mountPath.startsWith(root + path.sep));
-}
-
-function composedZvolMounts() {
-  return (process.env.VERSELF_COMPOSED_ZVOL_MOUNTS || "")
-    .split(":")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => realPathForMaybeMissing(value));
-}
-
-function isProtectedMountPath(candidate, protectedMounts) {
-  const resolved = path.resolve(candidate);
-  return protectedMounts.some((mountPath) => mountPath === resolved || mountPath.startsWith(resolved + path.sep));
 }
 
 async function downloadBundle(spec, bundlePath) {
@@ -134,10 +97,12 @@ async function materializeCheckout(spec, bundlePath) {
     await git(spec.targetPath, ["remote", "set-url", "origin", `https://github.com/${spec.repository}.git`]);
   });
   await indexPack(spec.targetPath, bundlePath);
-  fs.writeFileSync(path.join(spec.targetPath, ".git", "shallow"), `${spec.sha}${os.EOL}`);
+  updateShallowFile(spec.targetPath, spec.sha);
   await git(spec.targetPath, ["update-ref", "refs/verself/checkout", spec.sha]);
+  if (spec.clean) {
+    await git(spec.targetPath, ["reset", "--hard", "HEAD"]).catch(() => {});
+  }
   await git(spec.targetPath, ["checkout", "--force", "--detach", spec.sha]);
-  await git(spec.targetPath, ["clean", "-ffdx", ...gitCleanMountExclusions(spec.targetPath)]);
 }
 
 function endpointURL(spec) {
@@ -209,6 +174,16 @@ async function indexPack(cwd, packPath) {
     });
     fs.createReadStream(packPath).on("error", reject).pipe(child.stdin);
   });
+}
+
+function updateShallowFile(targetPath, sha) {
+  const shallowPath = path.join(targetPath, ".git", "shallow");
+  const existing = fs.existsSync(shallowPath)
+    ? fs.readFileSync(shallowPath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    : [];
+  const values = new Set(existing);
+  values.add(sha);
+  fs.writeFileSync(shallowPath, `${Array.from(values).sort().join(os.EOL)}${os.EOL}`);
 }
 
 function input(name) {

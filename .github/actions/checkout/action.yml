@@ -1,5 +1,5 @@
 name: Verself Checkout
-description: Materialize the current GitHub workflow SHA from the Verself host mirror.
+description: Materialize the current GitHub workflow SHA from the Verself host mirror without deleting durable build state.
 inputs:
   repository:
     description: Repository to checkout, formatted as owner/name.
@@ -14,9 +14,9 @@ inputs:
     required: false
     default: "."
   clean:
-    description: Remove existing path contents before checkout.
+    description: Reset tracked files before checkout. Verself does not run git clean -ffdx by default because the workspace is durable.
     required: false
-    default: "true"
+    default: "false"
   fetch-depth:
     description: Accepted for actions/checkout familiarity. Verself checkout currently materializes one commit.
     required: false
@@ -29,6 +29,11 @@ inputs:
     description: GitHub token used only when the host cache has to fetch the requested commit.
     required: false
     default: ${{ github.token }}
+outputs:
+  preexisting-head:
+    description: Commit that was present in the workspace before checkout, when available.
+  commit:
+    description: Commit SHA that was checked out.
 runs:
   using: node24
   main: dist/index.js

@@ -10,6 +10,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/verself/vm-orchestrator/vmproto"
 	"github.com/verself/vm-orchestrator/zfs"
 )
 
@@ -25,6 +26,14 @@ type FilesystemAttachResult struct {
 }
 
 func (o *Orchestrator) AttachFilesystemMount(ctx context.Context, runtime *LeaseRuntime, mount FilesystemMount, emptySizeBytes uint64) (result FilesystemAttachResult, retErr error) {
+	return o.attachFilesystemMount(ctx, runtime, mount, emptySizeBytes, false)
+}
+
+func (o *Orchestrator) AttachAndMountFilesystemMount(ctx context.Context, runtime *LeaseRuntime, mount FilesystemMount, emptySizeBytes uint64) (result FilesystemAttachResult, retErr error) {
+	return o.attachFilesystemMount(ctx, runtime, mount, emptySizeBytes, true)
+}
+
+func (o *Orchestrator) attachFilesystemMount(ctx context.Context, runtime *LeaseRuntime, mount FilesystemMount, emptySizeBytes uint64, mountInGuest bool) (result FilesystemAttachResult, retErr error) {
 	if runtime == nil {
 		return FilesystemAttachResult{}, fmt.Errorf("lease runtime is not ready")
 	}
@@ -138,6 +147,22 @@ func (o *Orchestrator) AttachFilesystemMount(ctx context.Context, runtime *Lease
 	if patchErr != nil {
 		return FilesystemAttachResult{}, fmt.Errorf("patch checkpoint drive %s: %w", slot.DriveID, patchErr)
 	}
+	if mountInGuest {
+		if runtime.control == nil {
+			return FilesystemAttachResult{}, fmt.Errorf("guest control is not available")
+		}
+		mountCtx, endMount := startStepSpan(ctx, "vmorchestrator.guest.filesystem_mount",
+			attribute.String("lease.id", runtime.LeaseID),
+			attribute.String("filesystem.name", mount.Name),
+			attribute.String("filesystem.mount_path", mount.MountPath),
+			attribute.String("guest.device_path", slot.GuestDevicePath),
+		)
+		mountErr := runtime.control.mountFilesystem(mountCtx, vmprotoFilesystemMount(mount, slot.GuestDevicePath))
+		endMount(mountErr)
+		if mountErr != nil {
+			return FilesystemAttachResult{}, fmt.Errorf("mount filesystem %s in guest: %w", mount.Name, mountErr)
+		}
+	}
 	prepared := preparedFilesystemMount{
 		Spec:            mount,
 		DriveID:         slot.DriveID,
@@ -170,4 +195,14 @@ func (o *Orchestrator) AttachFilesystemMount(ctx context.Context, runtime *Lease
 		GuestDevicePath: slot.GuestDevicePath,
 		AttachedAt:      attachedAt,
 	}, nil
+}
+
+func vmprotoFilesystemMount(mount FilesystemMount, guestDevicePath string) vmproto.FilesystemMount {
+	return vmproto.FilesystemMount{
+		Name:       mount.Name,
+		DevicePath: guestDevicePath,
+		MountPath:  mount.MountPath,
+		FSType:     mount.FSType,
+		ReadOnly:   mount.ReadOnly,
+	}
 }

@@ -1369,13 +1369,15 @@ unset VERSELF_GITHUB_JIT_TOKEN
 export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
 runtime_dir="/workspace/.verself/actions-runner"
 tool_cache="/workspace/.verself/hostedtoolcache"
-rm -rf "$runtime_dir"
-mkdir -p "$runtime_dir" "$tool_cache"
+mkdir -p "$runtime_dir" "$runtime_dir/_work" "$tool_cache"
+find "$runtime_dir" -mindepth 1 -maxdepth 1 ! -name _work -exec rm -rf {} +
 export RUNNER_TOOL_CACHE="$tool_cache"
 export AGENT_TOOLSDIRECTORY="$tool_cache"
 for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runner/..?*; do
   [ -e "$entry" ] || continue
-  [ "$(basename "$entry")" = "lost+found" ] && continue
+  case "$(basename "$entry")" in
+    lost+found|_work|_diag|_temp) continue ;;
+  esac
   cp -a "$entry" "$runtime_dir"/
 done
 cd "$runtime_dir"

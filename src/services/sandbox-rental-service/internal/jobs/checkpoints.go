@@ -58,6 +58,18 @@ type CheckpointMount struct {
 	SourceRef        string
 }
 
+type checkpointMountPlan struct {
+	Key             string
+	MountPath       string
+	SizeBytes       uint64
+	ProductKind     string
+	ComponentKind   string
+	RetentionPolicy string
+	ScopeKind       string
+	ScopeRef        string
+	TrustClass      string
+}
+
 type checkpointEvent struct {
 	EventID                uuid.UUID
 	EventName              string
@@ -192,6 +204,31 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 	if err != nil {
 		return CheckpointMount{}, err
 	}
+	return s.mountCheckpointWithPlan(ctx, identity, checkpointMountPlan{
+		Key:             key,
+		MountPath:       mountPath,
+		SizeBytes:       req.SizeBytes,
+		ProductKind:     checkpointProductKind,
+		ComponentKind:   checkpointComponentKind,
+		RetentionPolicy: checkpointRetentionPolicy,
+		ScopeKind:       checkpointScopeKind,
+		ScopeRef:        checkpointScopeRef(identity),
+		TrustClass:      checkpointTrustClass,
+	})
+}
+
+func (s *Service) mountCheckpointWithPlan(ctx context.Context, identity RunnerExecutionIdentity, plan checkpointMountPlan) (CheckpointMount, error) {
+	plan = normalizeCheckpointMountPlan(identity, plan)
+	key, err := normalizeCheckpointKey(plan.Key)
+	if err != nil {
+		return CheckpointMount{}, err
+	}
+	mountPath, err := normalizeCheckpointMountPath(plan.MountPath)
+	if err != nil {
+		return CheckpointMount{}, err
+	}
+	plan.Key = key
+	plan.MountPath = mountPath
 	item, err := s.loadWorkItem(ctx, identity.ExecutionID, identity.AttemptID)
 	if err != nil {
 		return CheckpointMount{}, err
@@ -199,9 +236,8 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 	if item.LeaseID == "" {
 		return CheckpointMount{}, fmt.Errorf("%w: execution has no active lease", ErrCheckpointUnavailable)
 	}
-	scopeRef := checkpointScopeRef(identity)
-	keyHash := hexSHA256(key)
-	mountPathHash := hexSHA256(mountPath)
+	keyHash := hexSHA256(plan.Key)
+	mountPathHash := hexSHA256(plan.MountPath)
 	now := time.Now().UTC()
 	q := s.storeQueries()
 	volume, err := q.UpsertVolume(ctx, store.UpsertVolumeParams{
@@ -211,21 +247,21 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 		ProviderInstallationID: identity.ProviderInstallationID,
 		ProviderRepositoryID:   identity.ProviderRepositoryID,
 		RepositoryFullName:     identity.RepositoryFullName,
-		ScopeKind:              checkpointScopeKind,
-		ScopeRef:               scopeRef,
+		ScopeKind:              plan.ScopeKind,
+		ScopeRef:               plan.ScopeRef,
 		DefaultScopeRef:        "main",
-		ProductKind:            checkpointProductKind,
-		ComponentKind:          checkpointComponentKind,
+		ProductKind:            plan.ProductKind,
+		ComponentKind:          plan.ComponentKind,
 		KeyHash:                keyHash,
-		Key:                    key,
-		DisplayName:            key,
-		RetentionPolicy:        checkpointRetentionPolicy,
+		Key:                    plan.Key,
+		DisplayName:            plan.Key,
+		RetentionPolicy:        plan.RetentionPolicy,
 		Now:                    pgTime(now),
 	})
 	if err != nil {
 		return CheckpointMount{}, fmt.Errorf("upsert checkpoint volume: %w", err)
 	}
-	current, cacheHit, err := s.currentCheckpointGeneration(ctx, volume.VolumeID, identity.OrgID)
+	current, cacheHit, err := s.currentCheckpointGeneration(ctx, volume.VolumeID, identity.OrgID, plan.TrustClass)
 	if err != nil {
 		return CheckpointMount{}, err
 	}
@@ -251,7 +287,7 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 		AllocationID:       &identity.AllocationID,
 		VolumeID:           volume.VolumeID,
 		MountName:          mountName,
-		MountPath:          mountPath,
+		MountPath:          plan.MountPath,
 		MountPathHash:      mountPathHash,
 		KeyHash:            keyHash,
 		SourceGenerationID: sourceGenerationID,
@@ -268,7 +304,7 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 		}
 		return checkpointMountFromRecord(record, cacheHit), nil
 	}
-	baseEvent := checkpointEventForIdentity(identity, record, checkpointScopeKind, scopeRef)
+	baseEvent := checkpointEventForIdentity(identity, record, plan.ScopeKind, plan.ScopeRef, plan.TrustClass)
 	if err := s.appendCheckpointEvent(ctx, baseEvent.withTransition("checkpoint.mount.requested", "", "requested", "", "none", "mount_request", "accepted", "")); err != nil {
 		return CheckpointMount{}, err
 	}
@@ -309,10 +345,10 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 	attached, err := s.Orchestrator.AttachFilesystemMount(ctx, item.LeaseID, record.MountID.String()+":attach", vmorchestrator.FilesystemMount{
 		Name:      record.MountName,
 		SourceRef: sourceRef,
-		MountPath: mountPath,
+		MountPath: plan.MountPath,
 		FSType:    checkpointFilesystemType,
 		ReadOnly:  false,
-	}, firstNonZero(req.SizeBytes, checkpointDefaultBytes))
+	}, firstNonZero(plan.SizeBytes, checkpointDefaultBytes))
 	if err != nil {
 		_ = q.MarkExecutionVolumeMountFailed(context.Background(), store.MarkExecutionVolumeMountFailedParams{
 			FailureReason: err.Error(),
@@ -343,11 +379,11 @@ func (s *Service) mountCheckpoint(ctx context.Context, identity RunnerExecutionI
 	return checkpointMountFromRecord(record, cacheHit), nil
 }
 
-func (s *Service) currentCheckpointGeneration(ctx context.Context, volumeID uuid.UUID, orgID uint64) (store.GetCurrentVolumeGenerationRow, bool, error) {
+func (s *Service) currentCheckpointGeneration(ctx context.Context, volumeID uuid.UUID, orgID uint64, trustClass string) (store.GetCurrentVolumeGenerationRow, bool, error) {
 	current, err := s.storeQueries().GetCurrentVolumeGeneration(ctx, store.GetCurrentVolumeGenerationParams{
 		OrgID:      dbOrgID(orgID),
 		VolumeID:   volumeID,
-		TrustClass: checkpointTrustClass,
+		TrustClass: firstNonEmpty(trustClass, checkpointTrustClass),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.GetCurrentVolumeGenerationRow{}, false, nil
@@ -374,7 +410,7 @@ func (s *Service) markCheckpointMounted(ctx context.Context, identity RunnerExec
 	if err != nil {
 		return err
 	}
-	event := checkpointEventForIdentity(identity, record, checkpointScopeKind, checkpointScopeRef(identity))
+	event := checkpointEventForIdentity(identity, record, checkpointScopeKind, checkpointScopeRef(identity), checkpointTrustClass)
 	return s.appendCheckpointEvent(ctx, event.withTransition("checkpoint.mount.ready", "attaching", record.MountState, "none", record.SaveState, "guest_mount", "mounted", ""))
 }
 
@@ -394,7 +430,7 @@ func (s *Service) requestCheckpointSave(ctx context.Context, identity RunnerExec
 	if err != nil {
 		return err
 	}
-	event := checkpointEventForIdentity(identity, record, checkpointScopeKind, checkpointScopeRef(identity))
+	event := checkpointEventForIdentity(identity, record, checkpointScopeKind, checkpointScopeRef(identity), checkpointTrustClass)
 	return s.appendCheckpointEvent(ctx, event.withTransition("checkpoint.save.requested", record.MountState, record.MountState, "none", record.SaveState, "save_request", "accepted", ""))
 }
 
@@ -754,7 +790,7 @@ func (s *Service) appendCheckpointEvent(ctx context.Context, event checkpointEve
 	return batch.Send()
 }
 
-func checkpointEventForIdentity(identity RunnerExecutionIdentity, record store.ExecutionVolumeMount, scopeKind, scopeRef string) checkpointEvent {
+func checkpointEventForIdentity(identity RunnerExecutionIdentity, record store.ExecutionVolumeMount, scopeKind, scopeRef, trustClass string) checkpointEvent {
 	event := checkpointEvent{
 		ExecutionID:            identity.ExecutionID,
 		AttemptID:              identity.AttemptID,
@@ -770,7 +806,7 @@ func checkpointEventForIdentity(identity RunnerExecutionIdentity, record store.E
 		RunnerClass:            identity.RunnerClass,
 		ScopeKind:              scopeKind,
 		ScopeRef:               scopeRef,
-		TrustClass:             checkpointTrustClass,
+		TrustClass:             firstNonEmpty(trustClass, checkpointTrustClass),
 		KeyHash:                record.KeyHash,
 		MountPathHash:          record.MountPathHash,
 	}
@@ -862,6 +898,18 @@ func checkpointMountFromRecord(record store.ExecutionVolumeMount, cacheHit bool)
 		SourceGeneration: sourceGeneration,
 		SourceRef:        record.SourceRef,
 	}
+}
+
+func normalizeCheckpointMountPlan(identity RunnerExecutionIdentity, plan checkpointMountPlan) checkpointMountPlan {
+	plan.Key = strings.TrimSpace(plan.Key)
+	plan.MountPath = path.Clean(strings.TrimSpace(plan.MountPath))
+	plan.ProductKind = firstNonEmpty(plan.ProductKind, checkpointProductKind)
+	plan.ComponentKind = firstNonEmpty(plan.ComponentKind, checkpointComponentKind)
+	plan.RetentionPolicy = firstNonEmpty(plan.RetentionPolicy, checkpointRetentionPolicy)
+	plan.ScopeKind = firstNonEmpty(plan.ScopeKind, checkpointScopeKind)
+	plan.ScopeRef = firstNonEmpty(plan.ScopeRef, checkpointScopeRef(identity))
+	plan.TrustClass = firstNonEmpty(plan.TrustClass, checkpointTrustClass)
+	return plan
 }
 
 func normalizeCheckpointKey(value string) (string, error) {

@@ -40,26 +40,34 @@ func (s *Service) AuthenticateCheckpoint(ctx context.Context, executionID, attem
 	if err != nil {
 		return RunnerExecutionIdentity{}, fmt.Errorf("%w: invalid attempt id", ErrCheckpointUnauthorized)
 	}
-	row, err := s.storeQueries().GetRunnerExecutionIdentity(ctx, store.GetRunnerExecutionIdentityParams{
-		ExecutionID: &execUUID,
-		AttemptID:   &attemptUUID,
-	})
+	identity, err := s.runnerExecutionIdentity(ctx, execUUID, attemptUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RunnerExecutionIdentity{}, ErrCheckpointUnauthorized
 	}
 	if err != nil {
 		return RunnerExecutionIdentity{}, err
 	}
-	expected, err := s.deriveCheckpointToken(row.Provider, execUUID, attemptUUID)
+	expected, err := s.deriveCheckpointToken(identity.Provider, execUUID, attemptUUID)
 	if err != nil {
 		return RunnerExecutionIdentity{}, err
 	}
 	if bearer == "" || !hmac.Equal([]byte(bearer), []byte(expected)) {
 		return RunnerExecutionIdentity{}, ErrCheckpointUnauthorized
 	}
+	return identity, nil
+}
+
+func (s *Service) runnerExecutionIdentity(ctx context.Context, executionID, attemptID uuid.UUID) (RunnerExecutionIdentity, error) {
+	row, err := s.storeQueries().GetRunnerExecutionIdentity(ctx, store.GetRunnerExecutionIdentityParams{
+		ExecutionID: &executionID,
+		AttemptID:   &attemptID,
+	})
+	if err != nil {
+		return RunnerExecutionIdentity{}, err
+	}
 	return RunnerExecutionIdentity{
-		ExecutionID:            execUUID,
-		AttemptID:              attemptUUID,
+		ExecutionID:            executionID,
+		AttemptID:              attemptID,
 		AllocationID:           row.AllocationID,
 		OrgID:                  orgIDFromDB(row.OrgID),
 		Provider:               row.Provider,
