@@ -31,6 +31,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileTerminalWorkspaceOperations(ctx); err != nil {
 		return err
 	}
+	if err := s.reconcileTerminalRunnerAllocations(ctx); err != nil {
+		return err
+	}
 	if err := s.reconcileCleanedRunnerAttempts(ctx); err != nil {
 		return err
 	}
@@ -147,6 +150,17 @@ func (s *Service) reconcileTerminalWorkspaceOperations(ctx context.Context) erro
 			reason += ":" + row.AttemptFailureReason
 		}
 		s.failOpenGoldenWorkspaceForAttempt(ctx, item, reason, nil)
+	}
+	return nil
+}
+
+func (s *Service) reconcileTerminalRunnerAllocations(ctx context.Context) error {
+	rows, err := s.storeQueries().ListTerminalRunnerExecutionsWithLiveAllocations(ctx)
+	if err != nil {
+		return fmt.Errorf("query terminal runner executions with live allocations: %w", err)
+	}
+	for _, executionID := range rows {
+		s.MarkRunnerExecutionExited(ctx, executionID)
 	}
 	return nil
 }

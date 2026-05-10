@@ -381,6 +381,38 @@ func (q *Queries) ListExpiredRunnerAllocations(ctx context.Context) ([]ListExpir
 	return items, nil
 }
 
+const listTerminalRunnerExecutionsWithLiveAllocations = `-- name: ListTerminalRunnerExecutionsWithLiveAllocations :many
+SELECT DISTINCT e.execution_id
+FROM executions e
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+JOIN runner_allocations ra ON ra.execution_id = e.execution_id
+WHERE e.workload_kind = 'runner'
+  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost')
+  AND ra.state NOT IN ('cleaned', 'failed', 'job_completed', 'vm_exited')
+ORDER BY e.execution_id
+LIMIT 50
+`
+
+func (q *Queries) ListTerminalRunnerExecutionsWithLiveAllocations(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listTerminalRunnerExecutionsWithLiveAllocations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var execution_id uuid.UUID
+		if err := rows.Scan(&execution_id); err != nil {
+			return nil, err
+		}
+		items = append(items, execution_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockRunnerAllocationProvider = `-- name: LockRunnerAllocationProvider :one
 SELECT provider
 FROM runner_allocations

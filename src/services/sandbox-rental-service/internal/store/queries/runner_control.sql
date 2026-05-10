@@ -6,6 +6,17 @@ SET state = CASE WHEN state = 'cleaned' THEN state ELSE 'vm_exited' END,
 WHERE execution_id = sqlc.arg(execution_id)
 RETURNING allocation_id;
 
+-- name: ListTerminalRunnerExecutionsWithLiveAllocations :many
+SELECT DISTINCT e.execution_id
+FROM executions e
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+JOIN runner_allocations ra ON ra.execution_id = e.execution_id
+WHERE e.workload_kind = 'runner'
+  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost')
+  AND ra.state NOT IN ('cleaned', 'failed', 'job_completed', 'vm_exited')
+ORDER BY e.execution_id
+LIMIT 50;
+
 -- name: LockRunnerAllocationProvider :one
 SELECT provider
 FROM runner_allocations
