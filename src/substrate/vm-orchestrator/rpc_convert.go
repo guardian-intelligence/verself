@@ -101,8 +101,8 @@ func acquireLeaseResponseFromRecord(record LeaseRecord) *vmrpc.AcquireLeaseRespo
 	return &vmrpc.AcquireLeaseResponse{
 		LeaseId:          record.LeaseID,
 		State:            leaseStateToProto(record.State),
-		AcquiredAtUnixNs: uint64(record.AcquiredAt.UnixNano()),
-		ExpiresAtUnixNs:  uint64(record.ExpiresAt.UnixNano()),
+		AcquiredAtUnixNs: unixNs(record.AcquiredAt),
+		ExpiresAtUnixNs:  unixNs(record.ExpiresAt),
 		VmIp:             record.VMIP,
 		Resources:        vmResourcesToProto(record.Resources),
 	}
@@ -112,10 +112,10 @@ func leaseSnapshotToProto(snap leaseSnapshot) *vmrpc.LeaseRecord {
 	return &vmrpc.LeaseRecord{
 		LeaseId:          snap.LeaseID,
 		State:            leaseStateToProto(snap.State),
-		AcquiredAtUnixNs: uint64(snap.AcquiredAt.UnixNano()),
-		ReadyAtUnixNs:    uint64(snap.ReadyAt.UnixNano()),
-		ExpiresAtUnixNs:  uint64(snap.ExpiresAt.UnixNano()),
-		TerminalAtUnixNs: uint64(snap.TerminalAt.UnixNano()),
+		AcquiredAtUnixNs: unixNs(snap.AcquiredAt),
+		ReadyAtUnixNs:    unixNs(snap.ReadyAt),
+		ExpiresAtUnixNs:  unixNs(snap.ExpiresAt),
+		TerminalAtUnixNs: unixNs(snap.TerminalAt),
 		TerminalReason:   snap.TerminalReason,
 		VmIp:             snap.VMIP,
 		Resources:        vmResourcesToProto(snap.Spec.Resources),
@@ -159,7 +159,7 @@ func leaseEventToProto(leaseID string, event leaseEventRecord) *vmrpc.LeaseEvent
 		EventType:       leaseEventTypeToProto(event.Type),
 		ExecId:          event.ExecID,
 		Attrs:           cloneStringMap(event.Attrs),
-		CreatedAtUnixNs: uint64(event.CreatedAt.UnixNano()),
+		CreatedAtUnixNs: unixNs(event.CreatedAt),
 	}
 }
 
@@ -349,7 +349,11 @@ func unixNs(t time.Time) uint64 {
 	if t.IsZero() {
 		return 0
 	}
-	return uint64(t.UTC().UnixNano())
+	ns := t.UTC().UnixNano()
+	if ns < 0 {
+		return 0
+	}
+	return uint64(ns) // #nosec G115 -- negative values are handled above.
 }
 
 func timeFromUnixNs(value uint64) time.Time {
@@ -357,7 +361,9 @@ func timeFromUnixNs(value uint64) time.Time {
 		return time.Time{}
 	}
 	if value > maxInt64AsUint64 {
-		panic(fmt.Sprintf("unix nanoseconds exceed int64 range: %d", value))
+		// Older unsigned timestamp encoders wrapped zero time.UnixNano into a
+		// huge uint64; decode that wire value as absent rather than crashing.
+		return time.Time{}
 	}
 	return time.Unix(0, int64(value)).UTC() // #nosec G115 -- value is checked against MaxInt64 above.
 }

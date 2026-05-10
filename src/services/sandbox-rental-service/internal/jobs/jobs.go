@@ -65,6 +65,8 @@ const (
 	StateFailed     = "failed"
 	StateCanceled   = "canceled"
 	StateLost       = "lost"
+
+	leaseTTLGraceSeconds = 10 * 60
 )
 
 var (
@@ -557,7 +559,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
 		Resources:        item.Resources,
-		TTLSeconds:       300,
+		TTLSeconds:       leaseTTLSeconds(item, s.WorkloadTimeout),
 		TrustClass:       "trusted",
 		NetworkMode:      "nat",
 		FilesystemMounts: item.FilesystemMounts,
@@ -1347,6 +1349,10 @@ func maxWallSeconds(item executionWorkItem, configured time.Duration) uint64 {
 		return uint64(configured.Seconds())
 	}
 	return 2 * 60 * 60
+}
+
+func leaseTTLSeconds(item executionWorkItem, configured time.Duration) uint64 {
+	return maxWallSeconds(item, configured) + leaseTTLGraceSeconds
 }
 
 func clampUint32(value int64) uint32 {

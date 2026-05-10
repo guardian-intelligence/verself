@@ -331,7 +331,7 @@ func (s *APIServer) RenewLease(ctx context.Context, req *vmrpc.RenewLeaseRequest
 	if err := <-reply; err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	resp := &vmrpc.RenewLeaseResponse{LeaseId: leaseID, ExpiresAtUnixNs: uint64(expiresAt.UnixNano())}
+	resp := &vmrpc.RenewLeaseResponse{LeaseId: leaseID, ExpiresAtUnixNs: unixNs(expiresAt)}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
 	return resp, nil
@@ -350,7 +350,7 @@ func (s *APIServer) ReleaseLease(ctx context.Context, req *vmrpc.ReleaseLeaseReq
 		if err != nil {
 			return nil, status.Error(codes.NotFound, "lease not found")
 		}
-		return &vmrpc.ReleaseLeaseResponse{LeaseId: leaseID, State: leaseStateToProto(snap.State), ReleasedAtUnixNs: uint64(snap.TerminalAt.UnixNano())}, nil
+		return &vmrpc.ReleaseLeaseResponse{LeaseId: leaseID, State: leaseStateToProto(snap.State), ReleasedAtUnixNs: unixNs(snap.TerminalAt)}, nil
 	}
 	reply := make(chan error, 1)
 	actor.send(releaseCmd{reason: "released_by_client", state: LeaseStateReleased, event: LeaseEventLeaseReleased, reply: reply})
@@ -358,7 +358,7 @@ func (s *APIServer) ReleaseLease(ctx context.Context, req *vmrpc.ReleaseLeaseReq
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	s.forgetActor(leaseID)
-	return &vmrpc.ReleaseLeaseResponse{LeaseId: leaseID, State: vmrpc.LeaseState_LEASE_STATE_RELEASED, ReleasedAtUnixNs: uint64(time.Now().UTC().UnixNano())}, nil
+	return &vmrpc.ReleaseLeaseResponse{LeaseId: leaseID, State: vmrpc.LeaseState_LEASE_STATE_RELEASED, ReleasedAtUnixNs: unixNs(time.Now().UTC())}, nil
 }
 
 func (s *APIServer) GetLease(ctx context.Context, req *vmrpc.GetLeaseRequest) (*vmrpc.GetLeaseResponse, error) {
@@ -474,7 +474,7 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	if out.err != nil {
 		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
 	}
-	resp := &vmrpc.StartExecResponse{LeaseId: leaseID, ExecId: execID, State: vmrpc.ExecState_EXEC_STATE_RUNNING, StartedAtUnixNs: uint64(out.startedAt.UnixNano())}
+	resp := &vmrpc.StartExecResponse{LeaseId: leaseID, ExecId: execID, State: vmrpc.ExecState_EXEC_STATE_RUNNING, StartedAtUnixNs: unixNs(out.startedAt)}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
 	return resp, nil
@@ -606,7 +606,7 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 		Snapshot:          out.result.Snapshot,
 		UsedBytes:         out.result.UsedBytes,
 		WrittenBytes:      out.result.WrittenBytes,
-		CommittedAtUnixNs: uint64(out.result.CommittedAt.UnixNano()),
+		CommittedAtUnixNs: unixNs(out.result.CommittedAt),
 	}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
@@ -680,7 +680,7 @@ func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) 
 		SourceDigest:   result.SourceDigest,
 		SeededBytes:    result.SeededBytes,
 		DependentsTorn: dependentsTorn,
-		SeededAtUnixNs: uint64(result.SeededAt.UnixNano()),
+		SeededAtUnixNs: unixNs(result.SeededAt),
 	}, nil
 }
 
