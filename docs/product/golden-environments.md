@@ -210,6 +210,20 @@ There is no dynamic block-device attach path after guest boot. Mount
 availability is part of lease acquisition and guest initialization, before any
 customer process starts.
 
+Read-only runner toolchain images may still declare vm-bridge writable
+overlays for image-owned scratch paths. Those overlays are tmpfs and are not
+durable volume generations. They are only for paths that belong to the
+read-only toolchain image and must be writable for the runner process to
+function.
+
+The GitHub Actions runner toolchain currently declares writable overlays in
+`src/substrate/vm-orchestrator/guest-images/gh-actions-runner/writable-overlays`.
+The golden-workspace cutover removes `/opt/actions-runner/_work` from that
+file. The `_work` tree is a platform-owned durable workspace volume, so a
+toolchain tmpfs overlay must not mount over it or hide it. `_diag` and `_temp`
+remain valid tmpfs overlays because they are runner-local diagnostic and
+scratch paths, not reusable customer state.
+
 The host prepares each writable volume as a ZFS zvol:
 
 ```text

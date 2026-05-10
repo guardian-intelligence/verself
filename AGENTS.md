@@ -110,7 +110,7 @@ We only promote zvol if *all* jobs go green on the commit to the trunk branch. A
 
 all mounts are rebuildable promotion is best-effort previous golden remains authoritative ambiguous seal skips promotion. We will expose cache misses and warnings so customers can go in and debug their CI themselves when things fail.
 
-`getZvolForPR`, therefore, takes `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)`. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
+`getRepoZvolForPR`, therefore, takes `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)`. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
 
 Not every PR will have matrix-key. A workflow yaml edit is a non event -- if we have a zvol for that workflow job, then we have it. if not, then we don't, and if the edit gets merged in, we'll now have zvol for it for future PRs once CI passes.
 
