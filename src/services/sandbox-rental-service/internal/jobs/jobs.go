@@ -100,6 +100,7 @@ type SchedulerRuntime interface {
 	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerRepositorySync(ctx context.Context, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
+	EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenRunPromoteRequest) (scheduler.ProbeResult, error)
 }
 
 type SubmitRequest struct {

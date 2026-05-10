@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel/attribute"
@@ -41,6 +42,16 @@ type goldenWorkspacePlan struct {
 	MountPath             string
 	TrustClass            string
 	TaintPolicy           string
+}
+
+type goldenWorkflowRunRef struct {
+	OrgID                  uint64
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	RepositoryFullName     string
+	HeadSHA                string
 }
 
 func (p goldenWorkspacePlan) filesystemMount() vmorchestrator.FilesystemMount {
@@ -361,16 +372,7 @@ func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWor
 		return err
 	}
 	_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &plan.OperationID, ScopeID: &plan.GoldenScopeID, GenerationID: &gen.GoldenGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Name: "golden.generation.commit", Result: "succeeded"})
-	promotionReady, reason, err := s.githubWorkflowRunPromotionReady(ctx, plan.Identity)
-	if err != nil {
-		return err
-	}
-	if !promotionReady {
-		span.SetAttributes(attribute.Bool("golden.promoted", false), attribute.String("golden.promotion_deferred_reason", reason))
-		_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &plan.OperationID, ScopeID: &plan.GoldenScopeID, GenerationID: &gen.GoldenGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Name: "golden.generation.promote", Result: "deferred", Reason: reason})
-		return nil
-	}
-	promoted, err := s.promoteGoldenRun(ctx, plan.Identity)
+	promoted, err := s.promoteGoldenWorkflowRun(ctx, goldenRunRefFromRunnerIdentity(plan.Identity))
 	if err != nil {
 		return err
 	}
@@ -385,13 +387,17 @@ func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWor
 }
 
 func (s *Service) githubWorkflowRunPromotionReady(ctx context.Context, identity RunnerExecutionIdentity) (bool, string, error) {
-	if identity.Provider != RunnerProviderGitHub {
+	return s.githubWorkflowRunPromotionReadyForRef(ctx, goldenRunRefFromRunnerIdentity(identity))
+}
+
+func (s *Service) githubWorkflowRunPromotionReadyForRef(ctx context.Context, ref goldenWorkflowRunRef) (bool, string, error) {
+	if ref.Provider != RunnerProviderGitHub {
 		return true, "", nil
 	}
 	if s.GitHubRunner == nil {
 		return false, "github runner is not configured", nil
 	}
-	state, err := s.GitHubRunner.refreshWorkflowRunJobs(ctx, identity)
+	state, err := s.GitHubRunner.refreshWorkflowRunJobsForRun(ctx, ref)
 	if err != nil {
 		return false, "", err
 	}
@@ -399,29 +405,76 @@ func (s *Service) githubWorkflowRunPromotionReady(ctx context.Context, identity 
 	return ready, reason, nil
 }
 
-func (s *Service) promoteGoldenRun(ctx context.Context, identity RunnerExecutionIdentity) (bool, error) {
+func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunPromoteArgs) error {
+	if strings.TrimSpace(req.Provider) != RunnerProviderGitHub {
+		return fmt.Errorf("golden run promotion unsupported provider %q", req.Provider)
+	}
+	repository, err := s.storeQueries().GetGoldenRunRepository(ctx, store.GetGoldenRunRepositoryParams{
+		Provider:             strings.TrimSpace(req.Provider),
+		ProviderRepositoryID: req.ProviderRepositoryID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("load golden run repository: %w", err)
+	}
+	_, err = s.promoteGoldenWorkflowRun(ctx, goldenWorkflowRunRef{
+		OrgID:                  orgIDFromDB(repository.OrgID),
+		Provider:               strings.TrimSpace(req.Provider),
+		ProviderInstallationID: req.ProviderInstallationID,
+		ProviderRepositoryID:   req.ProviderRepositoryID,
+		ProviderRunID:          req.ProviderRunID,
+		RepositoryFullName:     firstNonEmpty(req.RepositoryFullName, repository.RepositoryFullName),
+		HeadSHA:                req.HeadSHA,
+	})
+	return err
+}
+
+func (s *Service) promoteGoldenWorkflowRun(ctx context.Context, ref goldenWorkflowRunRef) (bool, error) {
+	ctx, span := tracer.Start(ctx, "golden.workflow_run.promote", trace.WithAttributes(
+		attribute.String("runner.provider", ref.Provider),
+		attribute.Int64("runner.provider_installation_id", ref.ProviderInstallationID),
+		attribute.Int64("runner.provider_repository_id", ref.ProviderRepositoryID),
+		attribute.Int64("runner.provider_run_id", ref.ProviderRunID),
+		attribute.String("git.commit.sha", ref.HeadSHA),
+	))
+	defer span.End()
 	candidates, err := s.storeQueries().ListGoldenPromotionCandidatesForRun(ctx, store.ListGoldenPromotionCandidatesForRunParams{
-		ProviderRunID:        identity.ProviderRunID,
-		HeadSha:              identity.HeadSHA,
-		OrgID:                dbOrgID(identity.OrgID),
-		Provider:             identity.Provider,
-		ProviderRepositoryID: identity.ProviderRepositoryID,
+		ProviderRunID:        ref.ProviderRunID,
+		HeadSha:              ref.HeadSHA,
+		OrgID:                dbOrgID(ref.OrgID),
+		Provider:             ref.Provider,
+		ProviderRepositoryID: ref.ProviderRepositoryID,
 	})
 	if err != nil {
 		return false, err
 	}
+	span.SetAttributes(attribute.Int("golden.candidate_count", len(candidates)))
+	promotionReady, reason, err := s.githubWorkflowRunPromotionReadyForRef(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	if !promotionReady {
+		span.SetAttributes(attribute.Bool("golden.promoted", false), attribute.String("golden.promotion_deferred_reason", reason))
+		for _, candidate := range candidates {
+			_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.GoldenScopeID, GenerationID: &candidate.GoldenGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Name: "golden.generation.promote", Result: "deferred", Reason: reason})
+		}
+		return false, nil
+	}
 	anyPromoted := false
 	for _, candidate := range candidates {
-		promoted, err := s.promoteGoldenCandidate(ctx, identity, candidate.GoldenScopeID, candidate.OperationID, candidate.GoldenGenerationID, candidate.SourceGenerationID)
+		promoted, err := s.promoteGoldenCandidate(ctx, candidate.GoldenScopeID, candidate.OperationID, candidate.GoldenGenerationID, candidate.SourceGenerationID, candidate.ExecutionID, candidate.AttemptID)
 		if err != nil {
 			return anyPromoted, err
 		}
 		anyPromoted = anyPromoted || promoted
 	}
+	span.SetAttributes(attribute.Bool("golden.promoted", anyPromoted))
 	return anyPromoted, nil
 }
 
-func (s *Service) promoteGoldenCandidate(ctx context.Context, identity RunnerExecutionIdentity, scopeID, operationID, generationID uuid.UUID, sourceGenerationID *uuid.UUID) (bool, error) {
+func (s *Service) promoteGoldenCandidate(ctx context.Context, scopeID, operationID, generationID uuid.UUID, sourceGenerationID *uuid.UUID, executionID, attemptID uuid.UUID) (bool, error) {
 	ctx, span := tracer.Start(ctx, "golden.generation.promote", trace.WithAttributes(
 		attribute.String("golden.operation_id", operationID.String()),
 		attribute.String("golden.scope_id", scopeID.String()),
@@ -443,7 +496,7 @@ func (s *Service) promoteGoldenCandidate(ctx context.Context, identity RunnerExe
 			return false, err
 		}
 		if rows > 0 {
-			_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &operationID, ScopeID: &scopeID, GenerationID: &generationID, ExecutionID: &identity.ExecutionID, AttemptID: &identity.AttemptID, Name: "golden.generation.promote", Result: "succeeded"})
+			_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &operationID, ScopeID: &scopeID, GenerationID: &generationID, ExecutionID: &executionID, AttemptID: &attemptID, Name: "golden.generation.promote", Result: "succeeded"})
 			return true, nil
 		}
 	}
@@ -461,8 +514,20 @@ func (s *Service) promoteGoldenCandidate(ctx context.Context, identity RunnerExe
 	if rows > 0 {
 		result = "succeeded"
 	}
-	_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &operationID, ScopeID: &scopeID, GenerationID: &generationID, ExecutionID: &identity.ExecutionID, AttemptID: &identity.AttemptID, Name: "golden.generation.promote", Result: result})
+	_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &operationID, ScopeID: &scopeID, GenerationID: &generationID, ExecutionID: &executionID, AttemptID: &attemptID, Name: "golden.generation.promote", Result: result})
 	return rows > 0, nil
+}
+
+func goldenRunRefFromRunnerIdentity(identity RunnerExecutionIdentity) goldenWorkflowRunRef {
+	return goldenWorkflowRunRef{
+		OrgID:                  identity.OrgID,
+		Provider:               identity.Provider,
+		ProviderInstallationID: identity.ProviderInstallationID,
+		ProviderRepositoryID:   identity.ProviderRepositoryID,
+		ProviderRunID:          identity.ProviderRunID,
+		RepositoryFullName:     identity.RepositoryFullName,
+		HeadSHA:                identity.HeadSHA,
+	}
 }
 
 type goldenEvent struct {

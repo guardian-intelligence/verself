@@ -33,6 +33,7 @@ const (
 	RunnerJobBindKind           = "runner.job.bind"
 	RunnerCleanupKind           = "runner.cleanup"
 	RunnerRepositorySyncKind    = "runner.repository.sync"
+	GoldenRunPromoteKind        = "golden.run.promote"
 
 	DefaultExecutionMaxWorkers = 4
 )
@@ -104,6 +105,18 @@ type RunnerRepositorySyncRequest struct {
 	ProviderRepositoryID int64
 	CorrelationID        string
 	TraceParent          string
+}
+
+type GoldenRunPromoteRequest struct {
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderJobID          int64
+	RepositoryFullName     string
+	HeadSHA                string
+	CorrelationID          string
+	TraceParent            string
 }
 
 type ExecutionAdvanceArgs struct {
@@ -213,6 +226,29 @@ func (RunnerRepositorySyncArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
 		Tags:        []string{"runner", "repository", "sync"},
+	}
+}
+
+type GoldenRunPromoteArgs struct {
+	Provider               string `json:"provider"`
+	ProviderInstallationID int64  `json:"provider_installation_id"`
+	ProviderRepositoryID   int64  `json:"provider_repository_id"`
+	ProviderRunID          int64  `json:"provider_run_id"`
+	ProviderJobID          int64  `json:"provider_job_id,omitempty"`
+	RepositoryFullName     string `json:"repository_full_name,omitempty"`
+	HeadSHA                string `json:"head_sha"`
+	CorrelationID          string `json:"correlation_id,omitempty"`
+	TraceParent            string `json:"trace_parent,omitempty"`
+	SubmittedAt            string `json:"submitted_at"`
+}
+
+func (GoldenRunPromoteArgs) Kind() string { return GoldenRunPromoteKind }
+
+func (GoldenRunPromoteArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueRunner,
+		Tags:        []string{"golden", "run", "promote"},
 	}
 }
 
@@ -367,6 +403,27 @@ func (r *Runtime) EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, 
 	result, err := r.client.InsertTx(ctx, tx, args, nil)
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("enqueue runner repository sync: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req GoldenRunPromoteRequest) (ProbeResult, error) {
+	args := GoldenRunPromoteArgs{
+		Provider:               strings.TrimSpace(req.Provider),
+		ProviderInstallationID: req.ProviderInstallationID,
+		ProviderRepositoryID:   req.ProviderRepositoryID,
+		ProviderRunID:          req.ProviderRunID,
+		ProviderJobID:          req.ProviderJobID,
+		RepositoryFullName:     strings.TrimSpace(req.RepositoryFullName),
+		HeadSHA:                strings.TrimSpace(req.HeadSHA),
+		CorrelationID:          strings.TrimSpace(req.CorrelationID),
+		TraceParent:            strings.TrimSpace(req.TraceParent),
+		SubmittedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue golden run promote: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil

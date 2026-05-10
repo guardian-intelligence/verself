@@ -624,6 +624,22 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	if err != nil {
 		return err
 	}
+	if status == "completed" && r.service.Scheduler != nil {
+		_, err = r.service.Scheduler.EnqueueGoldenRunPromoteTx(ctx, tx, scheduler.GoldenRunPromoteRequest{
+			Provider:               RunnerProviderGitHub,
+			ProviderInstallationID: event.Installation.ID,
+			ProviderRepositoryID:   event.Repository.ID,
+			ProviderRunID:          event.WorkflowJob.RunID,
+			ProviderJobID:          event.WorkflowJob.ID,
+			RepositoryFullName:     event.Repository.FullName,
+			HeadSHA:                event.WorkflowJob.HeadSHA,
+			CorrelationID:          deliveryID,
+			TraceParent:            traceParent(ctx),
+		})
+		if err != nil {
+			return err
+		}
+	}
 	span.SetAttributes(
 		attribute.Int64("github.installation_id", event.Installation.ID),
 		attribute.Int64("github.repository_id", event.Repository.ID),
@@ -1193,15 +1209,19 @@ func (s githubWorkflowRunJobsState) promotionReady() (bool, string) {
 }
 
 func (r *GitHubRunner) refreshWorkflowRunJobs(ctx context.Context, identity RunnerExecutionIdentity) (githubWorkflowRunJobsState, error) {
-	repository := strings.TrimSpace(identity.RepositoryFullName)
+	return r.refreshWorkflowRunJobsForRun(ctx, goldenRunRefFromRunnerIdentity(identity))
+}
+
+func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowRunJobsState, error) {
+	repository := strings.TrimSpace(ref.RepositoryFullName)
 	owner, repo, ok := strings.Cut(repository, "/")
 	if !ok || owner == "" || repo == "" {
 		return githubWorkflowRunJobsState{}, fmt.Errorf("github repository must be owner/name")
 	}
-	if identity.ProviderRunID <= 0 {
+	if ref.ProviderRunID <= 0 {
 		return githubWorkflowRunJobsState{}, fmt.Errorf("github provider run id is required")
 	}
-	token, err := r.installationToken(ctx, identity.ProviderInstallationID)
+	token, err := r.installationToken(ctx, ref.ProviderInstallationID)
 	if err != nil {
 		return githubWorkflowRunJobsState{}, err
 	}
@@ -1210,7 +1230,7 @@ func (r *GitHubRunner) refreshWorkflowRunJobs(ctx context.Context, identity Runn
 	state := githubWorkflowRunJobsState{}
 	for page := 1; ; page++ {
 		var resp githubWorkflowRunJobsResponse
-		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), identity.ProviderRunID, perPage, page)
+		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), ref.ProviderRunID, perPage, page)
 		if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
 			return githubWorkflowRunJobsState{}, err
 		}
@@ -1230,15 +1250,15 @@ func (r *GitHubRunner) refreshWorkflowRunJobs(ctx context.Context, identity Runn
 				}
 			}
 			labelsJSON, _ := json.Marshal(job.Labels)
-			headSHA := firstNonEmpty(job.HeadSHA, identity.HeadSHA)
-			headBranch := firstNonEmpty(job.HeadBranch, identity.HeadBranch)
-			workflowName := firstNonEmpty(job.WorkflowName, identity.WorkflowName)
+			headSHA := firstNonEmpty(job.HeadSHA, ref.HeadSHA)
+			headBranch := job.HeadBranch
+			workflowName := job.WorkflowName
 			if err := r.service.storeQueries().UpsertGitHubRunnerJob(ctx, store.UpsertGitHubRunnerJobParams{
 				ProviderJobID:          job.ID,
-				ProviderInstallationID: identity.ProviderInstallationID,
-				ProviderRepositoryID:   identity.ProviderRepositoryID,
+				ProviderInstallationID: ref.ProviderInstallationID,
+				ProviderRepositoryID:   ref.ProviderRepositoryID,
 				RepositoryFullName:     repository,
-				ProviderRunID:          identity.ProviderRunID,
+				ProviderRunID:          ref.ProviderRunID,
 				JobName:                job.Name,
 				HeadSha:                headSHA,
 				HeadBranch:             headBranch,

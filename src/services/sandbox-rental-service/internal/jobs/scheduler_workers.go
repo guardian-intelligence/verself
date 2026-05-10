@@ -48,6 +48,11 @@ type RunnerRepositorySyncWorker struct {
 	service *Service
 }
 
+type GoldenRunPromoteWorker struct {
+	river.WorkerDefaults[scheduler.GoldenRunPromoteArgs]
+	service *Service
+}
+
 func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 	if service == nil {
 		return fmt.Errorf("register scheduler workers: nil jobs service")
@@ -58,6 +63,7 @@ func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 	river.AddWorker(workers, &RunnerJobBindWorker{service: service})
 	river.AddWorker(workers, &RunnerCleanupWorker{service: service})
 	river.AddWorker(workers, &RunnerRepositorySyncWorker{service: service})
+	river.AddWorker(workers, &GoldenRunPromoteWorker{service: service})
 	return nil
 }
 
@@ -173,6 +179,29 @@ func (w *RunnerCleanupWorker) Work(ctx context.Context, job *river.Job[scheduler
 		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.CleanupRunner(ctx, allocationID); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
+}
+
+func (w *GoldenRunPromoteWorker) Work(ctx context.Context, job *river.Job[scheduler.GoldenRunPromoteArgs]) error {
+	args := job.Args
+	ctx = WithCorrelationID(ctx, args.CorrelationID)
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("runner.provider", args.Provider),
+		attribute.Int64("runner.provider_installation_id", args.ProviderInstallationID),
+		attribute.Int64("runner.provider_repository_id", args.ProviderRepositoryID),
+		attribute.Int64("runner.provider_run_id", args.ProviderRunID),
+		attribute.Int64("runner.provider_job_id", args.ProviderJobID),
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", scheduler.GoldenRunPromoteKind),
+		attribute.String("river.queue", scheduler.QueueRunner),
+		attribute.String("verself.correlation_id", args.CorrelationID),
+	)
+	if err := w.service.PromoteGoldenRun(ctx, args); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err

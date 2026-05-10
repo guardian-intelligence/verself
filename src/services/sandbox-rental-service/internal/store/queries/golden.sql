@@ -147,9 +147,12 @@ SELECT
     g.golden_generation_id,
     g.golden_scope_id,
     g.operation_id,
-    g.source_generation_id
+    g.source_generation_id,
+    wo.execution_id,
+    wo.attempt_id
 FROM golden_generations g
 JOIN golden_scopes s ON s.golden_scope_id = g.golden_scope_id
+JOIN workspace_operations wo ON wo.operation_id = g.operation_id
 WHERE g.provider_run_id = sqlc.arg(provider_run_id)
   AND g.head_sha = sqlc.arg(head_sha)
   AND s.org_id = sqlc.arg(org_id)
@@ -159,6 +162,13 @@ WHERE g.provider_run_id = sqlc.arg(provider_run_id)
   AND g.state = 'committed'
   AND g.promotion_eligible
 ORDER BY g.committed_at, g.golden_generation_id;
+
+-- name: GetGoldenRunRepository :one
+SELECT org_id, repository_full_name
+FROM runner_provider_repositories
+WHERE provider = sqlc.arg(provider)
+  AND provider_repository_id = sqlc.arg(provider_repository_id)
+  AND active;
 
 -- name: InsertGoldenCurrentPointer :execrows
 INSERT INTO golden_current_pointer (

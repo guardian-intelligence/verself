@@ -38,6 +38,31 @@ func (q *Queries) GetCurrentGoldenGeneration(ctx context.Context, arg GetCurrent
 	return i, err
 }
 
+const getGoldenRunRepository = `-- name: GetGoldenRunRepository :one
+SELECT org_id, repository_full_name
+FROM runner_provider_repositories
+WHERE provider = $1
+  AND provider_repository_id = $2
+  AND active
+`
+
+type GetGoldenRunRepositoryParams struct {
+	Provider             string
+	ProviderRepositoryID int64
+}
+
+type GetGoldenRunRepositoryRow struct {
+	OrgID              int64
+	RepositoryFullName string
+}
+
+func (q *Queries) GetGoldenRunRepository(ctx context.Context, arg GetGoldenRunRepositoryParams) (GetGoldenRunRepositoryRow, error) {
+	row := q.db.QueryRow(ctx, getGoldenRunRepository, arg.Provider, arg.ProviderRepositoryID)
+	var i GetGoldenRunRepositoryRow
+	err := row.Scan(&i.OrgID, &i.RepositoryFullName)
+	return i, err
+}
+
 const insertDurableComponent = `-- name: InsertDurableComponent :exec
 INSERT INTO durable_components (
     durable_component_id, golden_generation_id, component_kind, component_key,
@@ -329,9 +354,12 @@ SELECT
     g.golden_generation_id,
     g.golden_scope_id,
     g.operation_id,
-    g.source_generation_id
+    g.source_generation_id,
+    wo.execution_id,
+    wo.attempt_id
 FROM golden_generations g
 JOIN golden_scopes s ON s.golden_scope_id = g.golden_scope_id
+JOIN workspace_operations wo ON wo.operation_id = g.operation_id
 WHERE g.provider_run_id = $1
   AND g.head_sha = $2
   AND s.org_id = $3
@@ -356,6 +384,8 @@ type ListGoldenPromotionCandidatesForRunRow struct {
 	GoldenScopeID      uuid.UUID
 	OperationID        uuid.UUID
 	SourceGenerationID *uuid.UUID
+	ExecutionID        uuid.UUID
+	AttemptID          uuid.UUID
 }
 
 func (q *Queries) ListGoldenPromotionCandidatesForRun(ctx context.Context, arg ListGoldenPromotionCandidatesForRunParams) ([]ListGoldenPromotionCandidatesForRunRow, error) {
@@ -378,6 +408,8 @@ func (q *Queries) ListGoldenPromotionCandidatesForRun(ctx context.Context, arg L
 			&i.GoldenScopeID,
 			&i.OperationID,
 			&i.SourceGenerationID,
+			&i.ExecutionID,
+			&i.AttemptID,
 		); err != nil {
 			return nil, err
 		}
