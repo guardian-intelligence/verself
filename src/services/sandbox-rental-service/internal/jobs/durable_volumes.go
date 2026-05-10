@@ -675,14 +675,23 @@ func (s *Service) promoteDurableCandidate(ctx context.Context, candidate store.L
 		return false, err
 	}
 	result := "conflicted"
+	promoted := rows > 0
 	if rows > 0 {
 		result = "succeeded"
-	} else if err := s.storeQueries().RetainDurableGeneration(ctx, store.RetainDurableGenerationParams{RetainedAt: pgTime(now), DurableGenerationID: candidate.DurableGenerationID, DurableScopeID: candidate.DurableScopeID}); err != nil {
-		return false, err
+	} else {
+		current, err := s.storeQueries().GetCurrentDurableGeneration(ctx, store.GetCurrentDurableGenerationParams{DurableScopeID: candidate.DurableScopeID})
+		if err == nil && current.DurableGenerationID == candidateID {
+			result = "already_current"
+			promoted = true
+		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return false, err
+		} else if err := s.storeQueries().RetainDurableGeneration(ctx, store.RetainDurableGenerationParams{RetainedAt: pgTime(now), DurableGenerationID: candidate.DurableGenerationID, DurableScopeID: candidate.DurableScopeID}); err != nil {
+			return false, err
+		}
 	}
 	identity := RunnerExecutionIdentity{OrgID: ref.OrgID, Provider: ref.Provider, ProviderRepositoryID: ref.ProviderRepositoryID, ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, ProviderJobID: candidate.ProviderJobID, RepositoryFullName: ref.RepositoryFullName}
 	_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, SourceGenerationID: candidate.SourceGenerationID, CurrentGenerationID: &candidateID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, ComponentKind: candidate.ComponentKind, ComponentName: candidate.ComponentName, Name: "durable.volume.promote", Result: result, ZFSSnapshotRef: candidate.ZfsSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")})
-	return rows > 0, nil
+	return promoted, nil
 }
 
 func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowRunJobsState, error) {
