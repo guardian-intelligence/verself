@@ -67,7 +67,7 @@ function PaperSubstrate() {
         backgroundImage: `url("${PAPER_NOISE_TILE}")`,
         backgroundSize: "320px 320px",
         mixBlendMode: "multiply",
-        opacity: 1,
+        opacity: 0.5,
       }}
     />
   );

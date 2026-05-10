@@ -172,8 +172,10 @@
      underline. Bordeaux is RESERVED for the blockquote left-rule and
      appears nowhere else — the single editorial accent is the pull-quote,
      not the whole page. Muted ramp is Stone (ink-on-light). Vellum is the
-     same-family inset used for colophons. */
-  --treatment-ground: var(--color-paper);
+     same-family inset used for colophons. Letters uses a paler ground
+     than Newsroom/Workshop so the multiplied graph-paper backdrop reads
+     against near-white rather than cream. */
+  --treatment-ground: #fbfaf6;
   --treatment-ink: var(--color-ink);
   --treatment-accent: var(--color-ink);
   --treatment-wordmark: var(--color-ink);
