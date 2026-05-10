@@ -21,11 +21,11 @@ import (
 
 type DirectPrivOps struct{}
 
-func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, leaseID string) error {
+func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, operationID string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "clone",
-		"-o", "vs:lease_id="+leaseID,
+		"-o", "vs:operation_id="+operationID,
 		"-o", "vs:created_at="+time.Now().UTC().Format(time.RFC3339),
 		snapshot, target)
 	out, err := cmd.CombinedOutput()
@@ -97,75 +97,6 @@ func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) er
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("zfs create -p %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
-	}
-	return nil
-}
-
-func (p DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string) error {
-	return p.ZFSSendReceiveIncremental(ctx, "", snapshot, target)
-}
-
-// ZFSSendReceiveIncremental sends snapshot to target. When parent is set and
-// non-empty, the send uses `-i parent snapshot` so only the delta is
-// streamed and the receive applies onto the existing chain. When parent is
-// empty, the send is a full transfer and the receive creates the target
-// dataset (or rolls it back via -F if it already exists).
-//
-// The receive uses `-u` (don't auto-mount) but does NOT use `-F` for
-// incremental: a force rollback would mask the conflict case where another
-// concurrent commit has landed a newer generation on the target. Surfacing
-// the failure to the caller is the correct behavior for snapshot-chain
-// promotion CAS.
-func (DirectPrivOps) ZFSSendReceiveIncremental(ctx context.Context, parent, snapshot, target string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
-	defer cancel()
-	if strings.TrimSpace(snapshot) == "" || !strings.Contains(snapshot, "@") {
-		return fmt.Errorf("zfs send snapshot is invalid: %s", snapshot)
-	}
-	if strings.TrimSpace(target) == "" || strings.Contains(target, "@") {
-		return fmt.Errorf("zfs receive target is invalid: %s", target)
-	}
-	parent = strings.TrimSpace(parent)
-	if parent != "" && !strings.Contains(parent, "@") {
-		return fmt.Errorf("zfs send parent snapshot is invalid: %s", parent)
-	}
-	var send *exec.Cmd
-	var recv *exec.Cmd
-	if parent == "" {
-		send = exec.CommandContext(ctx, "zfs", "send", snapshot)
-		recv = exec.CommandContext(ctx, "zfs", "receive", "-u", "-F", target)
-	} else {
-		send = exec.CommandContext(ctx, "zfs", "send", "-i", parent, snapshot)
-		recv = exec.CommandContext(ctx, "zfs", "receive", "-u", target)
-	}
-	pipe, err := send.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("zfs send stdout pipe: %w", err)
-	}
-	recv.Stdin = pipe
-	send.Stderr = new(strings.Builder)
-	recv.Stderr = new(strings.Builder)
-	if err := recv.Start(); err != nil {
-		return fmt.Errorf("start zfs receive %s: %w", target, err)
-	}
-	if err := send.Start(); err != nil {
-		_ = recv.Process.Kill()
-		return fmt.Errorf("start zfs send %s: %w", snapshot, err)
-	}
-	sendErr := send.Wait()
-	// exec.Cmd owns the StdoutPipe lifecycle and closes it during Wait; closing
-	// it here races the command's cleanup path and reports a false failure.
-	recvErr := recv.Wait()
-	if sendErr != nil || recvErr != nil {
-		sendStderr := ""
-		recvStderr := ""
-		if b, ok := send.Stderr.(*strings.Builder); ok {
-			sendStderr = b.String()
-		}
-		if b, ok := recv.Stderr.(*strings.Builder); ok {
-			recvStderr = b.String()
-		}
-		return fmt.Errorf("zfs send %s | receive %s failed: send=%v %s receive=%v %s", snapshot, target, sendErr, strings.TrimSpace(sendStderr), recvErr, strings.TrimSpace(recvStderr))
 	}
 	return nil
 }
@@ -248,6 +179,9 @@ func (DirectPrivOps) ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sou
 	if !strings.HasPrefix(devicePath, "/dev/zvol/") {
 		return 0, fmt.Errorf("device path must be under /dev/zvol/: %s", devicePath)
 	}
+	if err := waitForDevice(ctx, devicePath); err != nil {
+		return 0, err
+	}
 	src, err := os.Open(sourcePath)
 	if err != nil {
 		return 0, fmt.Errorf("open source %s: %w", sourcePath, err)
@@ -290,6 +224,9 @@ func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label stri
 	defer cancel()
 	if !strings.HasPrefix(devicePath, "/dev/zvol/") {
 		return fmt.Errorf("device path must be under /dev/zvol/: %s", devicePath)
+	}
+	if err := waitForDevice(ctx, devicePath); err != nil {
+		return err
 	}
 	switch fsType {
 	case "ext4":
@@ -361,6 +298,20 @@ func (DirectPrivOps) ZFSRename(ctx context.Context, from, to string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("zfs rename %s -> %s: %s: %w", from, to, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (DirectPrivOps) ZFSPromote(ctx context.Context, dataset string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs promote dataset is invalid: %s", dataset)
+	}
+	cmd := exec.CommandContext(ctx, "zfs", "promote", dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs promote %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }

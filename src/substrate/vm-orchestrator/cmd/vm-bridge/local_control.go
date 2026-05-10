@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/verself/vm-orchestrator/vmproto"
@@ -77,52 +76,26 @@ func (s *agentSession) handleLocalControlConn(parent context.Context, conn net.C
 		return
 	}
 	switch env.Type {
-	case vmproto.TypeCheckpointRequest:
 	case vmproto.TypeFilesystemMountRequest:
 	default:
-		writeLocalCheckpointResponse(codec, vmproto.CheckpointResponse{
-			Accepted: false,
-			Error:    fmt.Sprintf("unsupported local request type %s", env.Type),
+		writeLocalFilesystemMountResult(codec, vmproto.FilesystemMountResult{
+			Mounted: false,
+			Error:   fmt.Sprintf("unsupported local request type %s", env.Type),
 		})
 		return
 	}
 
-	if env.Type == vmproto.TypeFilesystemMountRequest {
-		req, err := vmproto.DecodePayload[vmproto.FilesystemMountRequest](env)
-		if err != nil {
-			writeLocalFilesystemMountResult(codec, vmproto.FilesystemMountResult{
-				Mounted: false,
-				Error:   err.Error(),
-			})
-			return
-		}
-		result := s.mountFilesystem(req.Filesystem)
-		writeLocalFilesystemMountResult(codec, result)
-		return
-	}
-
-	req, err := vmproto.DecodePayload[vmproto.CheckpointRequest](env)
+	req, err := vmproto.DecodePayload[vmproto.FilesystemMountRequest](env)
 	if err != nil {
-		writeLocalCheckpointResponse(codec, vmproto.CheckpointResponse{
-			Accepted: false,
-			Error:    err.Error(),
+		writeLocalFilesystemMountResult(codec, vmproto.FilesystemMountResult{
+			Mounted: false,
+			Error:   err.Error(),
 		})
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(parent, bridgeClientTimeout)
-	defer cancel()
-
-	resp := s.requestCheckpoint(ctx, req)
-	writeLocalCheckpointResponse(codec, resp)
-}
-
-func writeLocalCheckpointResponse(codec *vmproto.Codec, resp vmproto.CheckpointResponse) {
-	env, err := vmproto.NewEnvelope(vmproto.TypeCheckpointResponse, 1, time.Now().UnixNano(), resp)
-	if err != nil {
-		return
-	}
-	_ = codec.WriteEnvelope(env)
+	_ = parent
+	result := s.mountFilesystem(req.Filesystem)
+	writeLocalFilesystemMountResult(codec, result)
 }
 
 func writeLocalFilesystemMountResult(codec *vmproto.Codec, resp vmproto.FilesystemMountResult) {
@@ -131,83 +104,6 @@ func writeLocalFilesystemMountResult(codec *vmproto.Codec, resp vmproto.Filesyst
 		return
 	}
 	_ = codec.WriteEnvelope(env)
-}
-
-func (s *agentSession) requestCheckpoint(ctx context.Context, req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
-	if req.Operation == "" {
-		req.Operation = vmproto.CheckpointOperationSave
-	}
-	if req.RequestID == "" {
-		req.RequestID = newCheckpointRequestID()
-	}
-
-	resp := vmproto.CheckpointResponse{
-		RequestID: req.RequestID,
-		Operation: req.Operation,
-		Ref:       req.Ref,
-	}
-	if err := vmproto.ValidateCheckpointRequest(req); err != nil {
-		resp.Error = err.Error()
-		return resp
-	}
-
-	ch := make(chan vmproto.CheckpointResponse, 1)
-	if err := s.addCheckpointWaiter(req.RequestID, ch); err != nil {
-		resp.Error = err.Error()
-		return resp
-	}
-	defer s.removeCheckpointWaiter(req.RequestID)
-
-	syscall.Sync()
-	if err := s.sendControl(vmproto.TypeCheckpointRequest, req); err != nil {
-		resp.Error = err.Error()
-		return resp
-	}
-
-	select {
-	case out := <-ch:
-		return out
-	case <-ctx.Done():
-		resp.Error = ctx.Err().Error()
-		return resp
-	}
-}
-
-func (s *agentSession) addCheckpointWaiter(requestID string, ch chan vmproto.CheckpointResponse) error {
-	s.checkpointMu.Lock()
-	defer s.checkpointMu.Unlock()
-	if s.checkpointWaiters == nil {
-		s.checkpointWaiters = make(map[string]chan vmproto.CheckpointResponse)
-	}
-	if _, exists := s.checkpointWaiters[requestID]; exists {
-		return fmt.Errorf("duplicate checkpoint request_id %q", requestID)
-	}
-	s.checkpointWaiters[requestID] = ch
-	return nil
-}
-
-func (s *agentSession) removeCheckpointWaiter(requestID string) {
-	s.checkpointMu.Lock()
-	delete(s.checkpointWaiters, requestID)
-	s.checkpointMu.Unlock()
-}
-
-func (s *agentSession) deliverCheckpointResponse(resp vmproto.CheckpointResponse) bool {
-	s.checkpointMu.Lock()
-	ch, ok := s.checkpointWaiters[resp.RequestID]
-	if ok {
-		delete(s.checkpointWaiters, resp.RequestID)
-	}
-	s.checkpointMu.Unlock()
-	if !ok {
-		return false
-	}
-
-	select {
-	case ch <- resp:
-	default:
-	}
-	return true
 }
 
 func cleanupEmptySocketDir(path string) {

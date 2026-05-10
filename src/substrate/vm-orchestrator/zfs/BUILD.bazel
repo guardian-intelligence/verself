@@ -1,28 +1,23 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "zfs",
     srcs = [
-        "checkpoint.go",
-        "commit.go",
-        "facts.go",
         "lifecycle.go",
-        "names.go",
-        "props.go",
         "refs.go",
-        "safeconv.go",
-        "seed.go",
+        "stats.go",
     ],
     importpath = "github.com/verself/vm-orchestrator/zfs",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_google_uuid//:uuid",
         "@com_github_oklog_ulid_v2//:ulid",
-        "@io_opentelemetry_go_otel//:otel",
-        "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel//codes",
-        "@io_opentelemetry_go_otel_trace//:trace",
     ],
+)
+
+go_test(
+    name = "zfs_test",
+    srcs = ["refs_test.go"],
+    embed = [":zfs"],
 )
 
 alias(

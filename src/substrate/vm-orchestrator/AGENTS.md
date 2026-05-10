@@ -39,8 +39,9 @@ SeedImage RPC per image, idempotent via `vs:source_digest` on
   `runner_class_filesystem_mounts` (sandbox-rental Postgres). Each
   runner_class names the toolchain images it wants; sandbox-rental
 	  resolves them into `LeaseSpec.FilesystemMounts` at acquire time.
-	  Checkpoint mounts and other per-execution writable volumes arrive via
-	  `StartExecRequest`, not this table.
+	  Per-execution writable golden workspace mounts are declared before
+	  `AcquireLease`; vm-orchestrator does not attach new block devices
+	  after the guest starts.
 - **Customer-uploaded images** land later under
   `tier: customer_uploaded`. The seed path is uniform — whether the
   source artefact is a Bazel rule or a customer upload, the daemon's
@@ -68,9 +69,7 @@ PrivOps accepts host-level names because it is the privileged adapter. All calle
 
 ## Lease/Exec Model
 
-`LeaseSpec` reserves a single VM with an absolute host-enforced deadline. `ExecSpec` is a unit of work attached to an existing lease. Host state is authoritative for lease lifecycle, exec lifecycle, lease events, checkpoint refs, and cleanup. Guest/control-plane messages are untrusted inputs and must be validated before host mutation.
-
-Guest checkpoint requests may name only a service-authorized ref; they must never carry ZFS paths or host dataset/version IDs.
+`LeaseSpec` reserves a single VM with an absolute host-enforced deadline. `ExecSpec` is a unit of work attached to an existing lease. Host state is authoritative for lease lifecycle, exec lifecycle, lease events, filesystem generations, and cleanup. Guest/control-plane messages are untrusted inputs and must be validated before host mutation.
 
 ## Guest Networking
 

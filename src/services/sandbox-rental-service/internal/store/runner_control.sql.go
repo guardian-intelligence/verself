@@ -155,6 +155,9 @@ SELECT
     a.provider_repository_id,
     COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.workflow_name, '')::text AS workflow_name,
+    COALESCE(j.job_name, '')::text AS job_name,
+    COALESCE(j.head_sha, '')::text AS head_sha,
     COALESCE(j.head_branch, '')::text AS head_branch,
     COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
@@ -184,6 +187,9 @@ type GetRunnerExecutionIdentityRow struct {
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
 	ProviderRunID          int64
+	WorkflowName           string
+	JobName                string
+	HeadSha                string
 	HeadBranch             string
 	ProviderJobID          int64
 	RunnerClass            string
@@ -201,6 +207,9 @@ func (q *Queries) GetRunnerExecutionIdentity(ctx context.Context, arg GetRunnerE
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
 		&i.ProviderRunID,
+		&i.WorkflowName,
+		&i.JobName,
+		&i.HeadSha,
 		&i.HeadBranch,
 		&i.ProviderJobID,
 		&i.RunnerClass,

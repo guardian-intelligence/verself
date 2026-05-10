@@ -7,12 +7,10 @@ go_library(
     name = "vm-orchestrator",
     srcs = [
         "api.go",
-        "checkpoint.go",
         "client.go",
         "client_types.go",
         "control.go",
         "doc.go",
-        "filesystem_attach.go",
         "filesystem_commit.go",
         "metrics.go",
         "network.go",

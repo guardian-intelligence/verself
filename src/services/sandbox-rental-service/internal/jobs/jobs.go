@@ -86,9 +86,7 @@ type Runner interface {
 	StartExec(ctx context.Context, leaseID, key string, spec vmorchestrator.ExecSpec) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
-	AttachFilesystemMount(ctx context.Context, leaseID, key string, mount vmorchestrator.FilesystemMount, emptySizeBytes uint64) (vmorchestrator.FilesystemAttachRecord, error)
-	CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
-	DeleteFilesystemSource(ctx context.Context, key, sourceRef string) (vmorchestrator.FilesystemDeleteRecord, error)
+	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
 }
 
 type SchedulerRuntime interface {
@@ -210,27 +208,26 @@ type Service struct {
 }
 
 type executionWorkItem struct {
-	ExecutionID         uuid.UUID
-	AttemptID           uuid.UUID
-	OrgID               uint64
-	ActorID             string
-	Kind                string
-	SourceKind          string
-	WorkloadKind        string
-	SourceRef           string
-	RunnerClass         string
-	ExternalProvider    string
-	ExternalTaskID      string
-	Provider            string
-	ProductID           string
-	RunCommand          string
-	MaxWallSeconds      uint64
-	LeaseID             string
-	ExecID              string
-	CorrelationID       string
-	Resources           dto.VMResources
-	FilesystemMounts    []vmorchestrator.FilesystemMount
-	CheckpointSlotCount uint32
+	ExecutionID      uuid.UUID
+	AttemptID        uuid.UUID
+	OrgID            uint64
+	ActorID          string
+	Kind             string
+	SourceKind       string
+	WorkloadKind     string
+	SourceRef        string
+	RunnerClass      string
+	ExternalProvider string
+	ExternalTaskID   string
+	Provider         string
+	ProductID        string
+	RunCommand       string
+	MaxWallSeconds   uint64
+	LeaseID          string
+	ExecID           string
+	CorrelationID    string
+	Resources        dto.VMResources
+	FilesystemMounts []vmorchestrator.FilesystemMount
 }
 
 type jobEventRow struct {
@@ -461,9 +458,8 @@ func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempote
 }
 
 type runnerClassRecord struct {
-	Resources           dto.VMResources
-	ProductID           string
-	CheckpointSlotCount uint32
+	Resources dto.VMResources
+	ProductID string
 }
 
 func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (runnerClassRecord, bool, error) {
@@ -481,8 +477,7 @@ func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) 
 			RootDiskGiB: uint32FromInt32(row.RootfsGib, "runner class root disk gib"),
 			KernelImage: dto.KernelImageDefault,
 		},
-		ProductID:           row.ProductID,
-		CheckpointSlotCount: uint32FromInt32(row.CheckpointSlotCount, "runner class checkpoint_slot_count"),
+		ProductID: row.ProductID,
 	}, true, nil
 }
 
@@ -551,14 +546,20 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.transition(ctx, item, StateReserved, StateLaunching, "launching", nil); err != nil {
 		return err
 	}
+	goldenPlan, err := s.prepareGoldenWorkspace(ctx, item)
+	if err != nil {
+		return s.failAttempt(ctx, item, "golden_workspace_prepare_failed", err)
+	}
+	if goldenPlan.Enabled {
+		item.FilesystemMounts = append(item.FilesystemMounts, goldenPlan.filesystemMount())
+	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		Resources:           item.Resources,
-		TTLSeconds:          300,
-		TrustClass:          "trusted",
-		NetworkMode:         "nat",
-		FilesystemMounts:    item.FilesystemMounts,
-		CheckpointSlotCount: item.CheckpointSlotCount,
+		Resources:        item.Resources,
+		TTLSeconds:       300,
+		TrustClass:       "trusted",
+		NetworkMode:      "nat",
+		FilesystemMounts: item.FilesystemMounts,
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
@@ -569,15 +570,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	item.LeaseID = lease.LeaseID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
+	s.markGoldenWorkspaceMounted(ctx, goldenPlan)
 
 	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
 	defer stopRenew()
 	go s.renewLeaseLoop(renewCtx, lease.LeaseID, item.AttemptID.String())
-
-	if err := s.prepareGitHubWorkspace(ctx, item); err != nil {
-		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		return s.failAttempt(ctx, item, "github_workspace_prepare_failed", err)
-	}
 
 	execSpec := vmorchestrator.ExecSpec{
 		Argv:           []string{"sh", "-c", item.RunCommand},
@@ -620,20 +617,15 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	stopRenew()
-	checkpointErr := s.FinalizeCheckpoints(ctx, item, lease.LeaseID)
-	if checkpointErr != nil {
-		span.RecordError(checkpointErr)
-		span.SetStatus(codes.Error, checkpointErr.Error())
+	goldenErr := s.finalizeGoldenWorkspace(ctx, item, lease.LeaseID, goldenPlan, finalExec)
+	if goldenErr != nil {
+		span.RecordError(goldenErr)
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "golden workspace finalization failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", goldenErr)
+		}
 	}
 	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
 		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", lease.LeaseID, "error", err)
-	}
-	if checkpointErr == nil {
-		if pruneErr := s.PruneCheckpointGenerations(ctx, item); pruneErr != nil {
-			span.RecordError(pruneErr)
-			span.SetStatus(codes.Error, pruneErr.Error())
-			checkpointErr = pruneErr
-		}
 	}
 
 	completedAt := finalExec.ExitedAt
@@ -657,10 +649,6 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		if finalExec.TerminalReason != "" {
 			reason = "exec_failed: " + finalExec.TerminalReason
 		}
-	}
-	if checkpointErr != nil {
-		state = StateFailed
-		reason = "checkpoint_finalize_failed: " + checkpointErr.Error()
 	}
 	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
 		return err
@@ -722,10 +710,8 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		return executionWorkItem{}, err
 	}
 	item.FilesystemMounts = mounts
-	if classRec, ok, err := s.runnerClassResources(ctx, item.RunnerClass); err != nil {
+	if _, _, err := s.runnerClassResources(ctx, item.RunnerClass); err != nil {
 		return executionWorkItem{}, err
-	} else if ok {
-		item.CheckpointSlotCount = classRec.CheckpointSlotCount
 	}
 	return item, nil
 }

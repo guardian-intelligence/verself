@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
-	"strings"
 	"time"
 )
 
@@ -29,31 +27,22 @@ var ErrFrameTooLarge = errors.New("frame too large")
 type MessageType string
 
 const (
-	TypeHello                 MessageType = "hello"
-	TypeLeaseInit             MessageType = "lease_init"
-	TypeExecRequest           MessageType = "exec_request"
-	TypeExecStarted           MessageType = "exec_started"
-	TypeLogChunk              MessageType = "log_chunk"
-	TypeHeartbeat             MessageType = "heartbeat"
-	TypeExecResult            MessageType = "exec_result"
-	TypeCheckpointRequest     MessageType = "checkpoint_request"
-	TypeCheckpointResponse    MessageType = "checkpoint_response"
+	TypeHello                  MessageType = "hello"
+	TypeLeaseInit              MessageType = "lease_init"
+	TypeExecRequest            MessageType = "exec_request"
+	TypeExecStarted            MessageType = "exec_started"
+	TypeLogChunk               MessageType = "log_chunk"
+	TypeHeartbeat              MessageType = "heartbeat"
+	TypeExecResult             MessageType = "exec_result"
 	TypeFilesystemMountRequest MessageType = "filesystem_mount_request"
 	TypeFilesystemMountResult  MessageType = "filesystem_mount_result"
-	TypeFilesystemSealRequest MessageType = "filesystem_seal_request"
-	TypeFilesystemSealResult  MessageType = "filesystem_seal_result"
-	TypeFatal                 MessageType = "fatal"
-	TypeCancel                MessageType = "cancel"
-	TypeAck                   MessageType = "ack"
-	TypeShutdown              MessageType = "shutdown"
+	TypeFilesystemSealRequest  MessageType = "filesystem_seal_request"
+	TypeFilesystemSealResult   MessageType = "filesystem_seal_result"
+	TypeFatal                  MessageType = "fatal"
+	TypeCancel                 MessageType = "cancel"
+	TypeAck                    MessageType = "ack"
+	TypeShutdown               MessageType = "shutdown"
 )
-
-const (
-	CheckpointOperationSave = "save"
-	MaxCheckpointRefLen     = 128
-)
-
-var checkpointRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type Envelope struct {
 	Version int             `json:"v"`
@@ -156,21 +145,6 @@ type ExecResult struct {
 	DroppedLogBytes uint64 `json:"dropped_log_bytes"`
 }
 
-type CheckpointRequest struct {
-	RequestID string `json:"request_id"`
-	Operation string `json:"operation"`
-	Ref       string `json:"ref"`
-}
-
-type CheckpointResponse struct {
-	RequestID string `json:"request_id"`
-	Operation string `json:"operation"`
-	Ref       string `json:"ref"`
-	Accepted  bool   `json:"accepted"`
-	VersionID string `json:"version_id,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
-
 type FilesystemMountRequest struct {
 	Filesystem FilesystemMount `json:"filesystem"`
 }
@@ -210,29 +184,6 @@ type Ack struct {
 }
 
 type Shutdown struct{}
-
-func ValidateCheckpointRef(ref string) error {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return errors.New("checkpoint ref is required")
-	}
-	if len(ref) > MaxCheckpointRefLen {
-		return fmt.Errorf("checkpoint ref exceeds %d bytes", MaxCheckpointRefLen)
-	}
-	if !checkpointRefPattern.MatchString(ref) {
-		return errors.New("checkpoint ref must start with an ASCII letter or digit and contain only letters, digits, '.', '_', ':', or '-'")
-	}
-	return nil
-}
-
-func ValidateCheckpointRequest(req CheckpointRequest) error {
-	switch strings.TrimSpace(req.Operation) {
-	case CheckpointOperationSave:
-	default:
-		return fmt.Errorf("unsupported checkpoint operation %q", req.Operation)
-	}
-	return ValidateCheckpointRef(req.Ref)
-}
 
 type Codec struct {
 	reader io.Reader

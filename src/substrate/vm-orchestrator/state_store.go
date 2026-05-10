@@ -37,7 +37,6 @@ type leaseSnapshot struct {
 	Spec           LeaseSpec
 	TrustClass     string
 	VMIP           string
-	Allowlist      []string
 	AcquiredAt     time.Time
 	ReadyAt        time.Time
 	ExpiresAt      time.Time
@@ -148,7 +147,6 @@ func (s *hostStateStore) ensureSchema(ctx context.Context) error {
 			spec_json TEXT NOT NULL,
 			trust_class TEXT NOT NULL,
 			vm_ip TEXT NOT NULL DEFAULT '',
-			checkpoint_save_allowlist_json TEXT NOT NULL DEFAULT '[]',
 			acquired_at_unix_nano INTEGER NOT NULL,
 			ready_at_unix_nano INTEGER NOT NULL DEFAULT 0,
 			expires_at_unix_nano INTEGER NOT NULL,
@@ -227,7 +225,8 @@ func (s *hostStateStore) ensureSchema(ctx context.Context) error {
 }
 
 // ensureLeasesShape drops the leases table if its on-disk shape predates
-// the VMResources cutover. The old schema carried a runtime_profile column;
+// the current LeaseSpec shape. Lease state is ephemeral; active leases are
+// crashed on daemon restart rather than migrated in place.
 // there is no forward migration because lease state is ephemeral (any
 // in-flight lease on a restart is already marked crashed by
 // markUnownedActiveLeasesCrashed). Cheaper to drop and rebuild than carry
@@ -264,7 +263,7 @@ func (s *hostStateStore) ensureLeasesShape(ctx context.Context) error {
 			`DROP TABLE IF EXISTS leases`,
 		} {
 			if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("drop pre-vmresources table via %q: %w", stmt, err)
+				return fmt.Errorf("drop incompatible leases table via %q: %w", stmt, err)
 			}
 		}
 	}
@@ -309,10 +308,6 @@ func (s *hostStateStore) createLease(ctx context.Context, snapshot leaseSnapshot
 	if err != nil {
 		return fmt.Errorf("marshal lease spec: %w", err)
 	}
-	allowJSON, err := json.Marshal(snapshot.Allowlist)
-	if err != nil {
-		return fmt.Errorf("marshal checkpoint allowlist: %w", err)
-	}
 	hostStateWriteMu.Lock()
 	defer hostStateWriteMu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -324,14 +319,13 @@ func (s *hostStateStore) createLease(ctx context.Context, snapshot leaseSnapshot
 	now := time.Now().UTC()
 	_, err = tx.ExecContext(ctx, `INSERT INTO leases (
 		lease_id, state, spec_json, trust_class, vm_ip,
-		checkpoint_save_allowlist_json, acquired_at_unix_nano, expires_at_unix_nano, updated_at_unix_nano
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		acquired_at_unix_nano, expires_at_unix_nano, updated_at_unix_nano
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		snapshot.LeaseID,
 		leaseStateName(snapshot.State),
 		string(specJSON),
 		snapshot.TrustClass,
 		snapshot.VMIP,
-		string(allowJSON),
 		snapshot.AcquiredAt.UnixNano(),
 		snapshot.ExpiresAt.UnixNano(),
 		now.UnixNano(),
@@ -386,11 +380,7 @@ func (s *hostStateStore) setLeaseReady(ctx context.Context, leaseID, vmIP string
 	return nil
 }
 
-func (s *hostStateStore) renewLease(ctx context.Context, leaseID string, expiresAt time.Time, allowlist []string) error {
-	allowJSON, err := json.Marshal(allowlist)
-	if err != nil {
-		return fmt.Errorf("marshal checkpoint allowlist: %w", err)
-	}
+func (s *hostStateStore) renewLease(ctx context.Context, leaseID string, expiresAt time.Time) error {
 	hostStateWriteMu.Lock()
 	defer hostStateWriteMu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -399,8 +389,8 @@ func (s *hostStateStore) renewLease(ctx context.Context, leaseID string, expires
 	}
 	defer rollbackTx(tx)
 	now := time.Now().UTC()
-	res, err := tx.ExecContext(ctx, `UPDATE leases SET expires_at_unix_nano = ?, checkpoint_save_allowlist_json = ?, updated_at_unix_nano = ? WHERE lease_id = ? AND state IN (?, ?)`,
-		expiresAt.UnixNano(), string(allowJSON), now.UnixNano(), leaseID, leaseStateName(LeaseStateAcquiring), leaseStateName(LeaseStateReady))
+	res, err := tx.ExecContext(ctx, `UPDATE leases SET expires_at_unix_nano = ?, updated_at_unix_nano = ? WHERE lease_id = ? AND state IN (?, ?)`,
+		expiresAt.UnixNano(), now.UnixNano(), leaseID, leaseStateName(LeaseStateAcquiring), leaseStateName(LeaseStateReady))
 	if err != nil {
 		return fmt.Errorf("renew lease %s: %w", leaseID, err)
 	}
@@ -446,7 +436,7 @@ func (s *hostStateStore) finishLease(ctx context.Context, leaseID string, state 
 }
 
 func (s *hostStateStore) getLease(ctx context.Context, leaseID string) (leaseSnapshot, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT state, spec_json, trust_class, vm_ip, checkpoint_save_allowlist_json, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases WHERE lease_id = ?`, leaseID)
+	row := s.db.QueryRowContext(ctx, `SELECT state, spec_json, trust_class, vm_ip, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases WHERE lease_id = ?`, leaseID)
 	return scanLeaseSnapshot(row, leaseID)
 }
 
@@ -454,7 +444,7 @@ func (s *hostStateStore) listLeases(ctx context.Context, includeTerminal bool, l
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	query := `SELECT lease_id, state, spec_json, trust_class, vm_ip, checkpoint_save_allowlist_json, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases`
+	query := `SELECT lease_id, state, spec_json, trust_class, vm_ip, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases`
 	if !includeTerminal {
 		query += ` WHERE state NOT IN ('released', 'expired', 'crashed')`
 	}
@@ -467,13 +457,13 @@ func (s *hostStateStore) listLeases(ctx context.Context, includeTerminal bool, l
 	out := make([]leaseSnapshot, 0, limit)
 	for rows.Next() {
 		var (
-			leaseID, stateName, specJSON, trustClass, vmIP, allowJSON, terminalReason string
-			acquiredNS, readyNS, expiresNS, terminalNS                                int64
+			leaseID, stateName, specJSON, trustClass, vmIP, terminalReason string
+			acquiredNS, readyNS, expiresNS, terminalNS                     int64
 		)
-		if err := rows.Scan(&leaseID, &stateName, &specJSON, &trustClass, &vmIP, &allowJSON, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
+		if err := rows.Scan(&leaseID, &stateName, &specJSON, &trustClass, &vmIP, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
 			return nil, fmt.Errorf("scan lease row: %w", err)
 		}
-		snap, err := decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, allowJSON, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
+		snap, err := decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
 		if err != nil {
 			return nil, err
 		}
@@ -491,19 +481,19 @@ type rowScanner interface {
 
 func scanLeaseSnapshot(row rowScanner, leaseID string) (leaseSnapshot, error) {
 	var (
-		stateName, specJSON, trustClass, vmIP, allowJSON, terminalReason string
-		acquiredNS, readyNS, expiresNS, terminalNS                       int64
+		stateName, specJSON, trustClass, vmIP, terminalReason string
+		acquiredNS, readyNS, expiresNS, terminalNS            int64
 	)
-	if err := row.Scan(&stateName, &specJSON, &trustClass, &vmIP, &allowJSON, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
+	if err := row.Scan(&stateName, &specJSON, &trustClass, &vmIP, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return leaseSnapshot{}, errLeaseNotFound
 		}
 		return leaseSnapshot{}, fmt.Errorf("scan lease %s: %w", leaseID, err)
 	}
-	return decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, allowJSON, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
+	return decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
 }
 
-func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, allowJSON string, acquiredNS, readyNS, expiresNS, terminalNS int64, terminalReason string) (leaseSnapshot, error) {
+func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP string, acquiredNS, readyNS, expiresNS, terminalNS int64, terminalReason string) (leaseSnapshot, error) {
 	state, err := parseLeaseState(stateName)
 	if err != nil {
 		return leaseSnapshot{}, err
@@ -512,19 +502,12 @@ func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, allowJS
 	if err := json.Unmarshal([]byte(specJSON), &spec); err != nil {
 		return leaseSnapshot{}, fmt.Errorf("decode lease spec %s: %w", leaseID, err)
 	}
-	allowlist := []string{}
-	if strings.TrimSpace(allowJSON) != "" {
-		if err := json.Unmarshal([]byte(allowJSON), &allowlist); err != nil {
-			return leaseSnapshot{}, fmt.Errorf("decode checkpoint allowlist %s: %w", leaseID, err)
-		}
-	}
 	return leaseSnapshot{
 		LeaseID:        leaseID,
 		State:          state,
 		Spec:           spec,
 		TrustClass:     trustClass,
 		VMIP:           vmIP,
-		Allowlist:      allowlist,
 		AcquiredAt:     unixNanoTime(acquiredNS),
 		ReadyAt:        unixNanoTime(readyNS),
 		ExpiresAt:      unixNanoTime(expiresNS),

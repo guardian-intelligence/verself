@@ -4,7 +4,7 @@
 # the role no longer carries per-image vars or hash-record paths.
 firecracker_zfs_pool: vspool
 firecracker_image_dataset: images
-firecracker_checkpoint_dataset: checkpoints
+firecracker_golden_dataset: goldens
 firecracker_workload_dataset: workloads
 firecracker_default_substrate_ref: substrate
 firecracker_jailer_root: /srv/jailer

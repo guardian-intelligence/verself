@@ -774,7 +774,6 @@ SELECT
         Body = 'guest telemetry hello received', 'telemetry_hello',
         Body = 'guest telemetry stream diagnostic', 'telemetry_diagnostic',
         Body = 'lease runtime cleaned up', 'lease_cleanup',
-        Body = 'checkpoint snapshot saved', 'checkpoint_saved',
         'other'
     ) AS evidence_type,
     if(Body = 'guest telemetry stream diagnostic', LogAttributes['kind'], '') AS diagnostic_kind,
@@ -784,7 +783,6 @@ SELECT
         Body = 'lease ready', 'lease_ready',
         Body = 'guest exec started', 'exec_started',
         Body = 'lease runtime cleaned up', 'lease_cleanup',
-        Body = 'checkpoint snapshot saved', 'checkpoint_saved',
         'other'
     ) AS reason_code,
     LogAttributes['reason'] AS reason,
@@ -802,8 +800,7 @@ WHERE ServiceName = 'vm-orchestrator'
     'guest exec started',
     'guest telemetry hello received',
     'guest telemetry stream diagnostic',
-    'lease runtime cleaned up',
-    'checkpoint snapshot saved'
+    'lease runtime cleaned up'
   )
   AND LogAttributes['lease_id'] != '';
 

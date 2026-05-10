@@ -178,6 +178,25 @@ type githubRunnerListResponse struct {
 	} `json:"runners"`
 }
 
+type githubWorkflowRunJobsResponse struct {
+	TotalCount int `json:"total_count"`
+	Jobs       []struct {
+		ID           int64     `json:"id"`
+		RunID        int64     `json:"run_id"`
+		Name         string    `json:"name"`
+		Status       string    `json:"status"`
+		Conclusion   string    `json:"conclusion"`
+		Labels       []string  `json:"labels"`
+		RunnerID     int64     `json:"runner_id"`
+		RunnerName   string    `json:"runner_name"`
+		HeadSHA      string    `json:"head_sha"`
+		HeadBranch   string    `json:"head_branch"`
+		WorkflowName string    `json:"workflow_name"`
+		StartedAt    time.Time `json:"started_at"`
+		CompletedAt  time.Time `json:"completed_at"`
+	} `json:"jobs"`
+}
+
 type githubInstallationRepositoriesResponse struct {
 	TotalCount   int                            `json:"total_count"`
 	Repositories []githubInstallationRepository `json:"repositories"`
@@ -898,8 +917,6 @@ func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.
 		"VERSELF_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
 		"VERSELF_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
 		"VERSELF_CHECKOUT_PATH":    githubCheckoutPath,
-		"VERSELF_CHECKPOINT_TOKEN": r.deriveCheckpointToken(executionID, attemptID),
-		"VERSELF_CHECKPOINT_PATH":  checkpointPath,
 	}
 }
 
@@ -1155,6 +1172,97 @@ func (r *GitHubRunner) listInstallationRepositories(ctx context.Context, install
 	return out, nil
 }
 
+type githubWorkflowRunJobsState struct {
+	Total     int
+	Completed int
+	Succeeded int
+	Failed    int
+}
+
+func (s githubWorkflowRunJobsState) promotionReady() (bool, string) {
+	if s.Total == 0 {
+		return false, "github workflow run has no observed jobs"
+	}
+	if s.Completed != s.Total {
+		return false, "github workflow run is not complete"
+	}
+	if s.Failed > 0 {
+		return false, "github workflow run has non-success jobs"
+	}
+	return true, ""
+}
+
+func (r *GitHubRunner) refreshWorkflowRunJobs(ctx context.Context, identity RunnerExecutionIdentity) (githubWorkflowRunJobsState, error) {
+	repository := strings.TrimSpace(identity.RepositoryFullName)
+	owner, repo, ok := strings.Cut(repository, "/")
+	if !ok || owner == "" || repo == "" {
+		return githubWorkflowRunJobsState{}, fmt.Errorf("github repository must be owner/name")
+	}
+	if identity.ProviderRunID <= 0 {
+		return githubWorkflowRunJobsState{}, fmt.Errorf("github provider run id is required")
+	}
+	token, err := r.installationToken(ctx, identity.ProviderInstallationID)
+	if err != nil {
+		return githubWorkflowRunJobsState{}, err
+	}
+	const perPage = 100
+	now := time.Now().UTC()
+	state := githubWorkflowRunJobsState{}
+	for page := 1; ; page++ {
+		var resp githubWorkflowRunJobsResponse
+		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), identity.ProviderRunID, perPage, page)
+		if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+			return githubWorkflowRunJobsState{}, err
+		}
+		if resp.TotalCount > state.Total {
+			state.Total = resp.TotalCount
+		}
+		for _, job := range resp.Jobs {
+			status := strings.TrimSpace(job.Status)
+			conclusion := strings.TrimSpace(job.Conclusion)
+			if status == "completed" {
+				state.Completed++
+				switch conclusion {
+				case "success", "skipped":
+					state.Succeeded++
+				default:
+					state.Failed++
+				}
+			}
+			labelsJSON, _ := json.Marshal(job.Labels)
+			headSHA := firstNonEmpty(job.HeadSHA, identity.HeadSHA)
+			headBranch := firstNonEmpty(job.HeadBranch, identity.HeadBranch)
+			workflowName := firstNonEmpty(job.WorkflowName, identity.WorkflowName)
+			if err := r.service.storeQueries().UpsertGitHubRunnerJob(ctx, store.UpsertGitHubRunnerJobParams{
+				ProviderJobID:          job.ID,
+				ProviderInstallationID: identity.ProviderInstallationID,
+				ProviderRepositoryID:   identity.ProviderRepositoryID,
+				RepositoryFullName:     repository,
+				ProviderRunID:          identity.ProviderRunID,
+				JobName:                job.Name,
+				HeadSha:                headSHA,
+				HeadBranch:             headBranch,
+				WorkflowName:           workflowName,
+				Status:                 status,
+				Conclusion:             conclusion,
+				LabelsJson:             labelsJSON,
+				RunnerID:               job.RunnerID,
+				RunnerName:             job.RunnerName,
+				StartedAt:              pgTime(job.StartedAt),
+				CompletedAt:            pgTime(job.CompletedAt),
+				LastWebhookDelivery:    "github-api:workflow-run-jobs",
+				UpdatedAt:              pgTime(now),
+			}); err != nil {
+				return githubWorkflowRunJobsState{}, err
+			}
+		}
+		if len(resp.Jobs) < perPage || page*perPage >= resp.TotalCount {
+			break
+		}
+	}
+	return state, nil
+}
+
 func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64, org string, repositoryID int64, runnerName, runnerClass string) (githubJITConfigResponse, error) {
 	token, err := r.installationToken(ctx, installationID)
 	if err != nil {
@@ -1305,14 +1413,6 @@ func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) st
 
 func (r *GitHubRunner) deriveCheckoutToken(executionID, attemptID uuid.UUID) string {
 	mac := hmac.New(sha256.New, []byte("verself-checkout:"+r.cfg.WebhookSecret))
-	mac.Write([]byte(executionID.String()))
-	mac.Write([]byte(":"))
-	mac.Write([]byte(attemptID.String()))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func (r *GitHubRunner) deriveCheckpointToken(executionID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("verself-checkpoint:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))

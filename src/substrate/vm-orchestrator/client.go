@@ -58,8 +58,8 @@ func (c *Client) AcquireLease(ctx context.Context, key string, spec LeaseSpec) (
 	}, nil
 }
 
-func (c *Client) RenewLease(ctx context.Context, leaseID, key string, extendSeconds uint64, allowlist []string) (time.Time, error) {
-	resp, err := c.client.RenewLease(ctx, &vmrpc.RenewLeaseRequest{LeaseId: leaseID, IdempotencyKey: key, ExtendSeconds: extendSeconds, CheckpointSaveAllowlist: allowlist})
+func (c *Client) RenewLease(ctx context.Context, leaseID, key string, extendSeconds uint64, _ []string) (time.Time, error) {
+	resp, err := c.client.RenewLease(ctx, &vmrpc.RenewLeaseRequest{LeaseId: leaseID, IdempotencyKey: key, ExtendSeconds: extendSeconds})
 	if err != nil {
 		return time.Time{}, fmt.Errorf("renew lease %s: %w", leaseID, err)
 	}
@@ -111,10 +111,11 @@ func (c *Client) CancelExec(ctx context.Context, leaseID, execID, key, reason st
 	return resp.GetAccepted(), nil
 }
 
-func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, volumeID, parentSnapshotRef, newGenerationName string) (FilesystemCommitRecord, error) {
+func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, volumeID, parentSnapshotRef, newGenerationName string) (FilesystemCommitRecord, error) {
 	resp, err := c.client.CommitFilesystemMount(ctx, &vmrpc.CommitFilesystemMountRequest{
 		LeaseId:           leaseID,
 		IdempotencyKey:    key,
+		OperationId:       operationID,
 		MountName:         mountName,
 		VolumeId:          volumeID,
 		ParentSnapshotRef: parentSnapshotRef,
@@ -131,46 +132,6 @@ func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, mountN
 		UsedBytes:     resp.GetUsedBytes(),
 		WrittenBytes:  resp.GetWrittenBytes(),
 		CommittedAt:   timeFromUnixNs(resp.GetCommittedAtUnixNs()),
-	}, nil
-}
-
-func (c *Client) AttachFilesystemMount(ctx context.Context, leaseID, key string, mount FilesystemMount, emptySizeBytes uint64) (FilesystemAttachRecord, error) {
-	resp, err := c.client.AttachFilesystemMount(ctx, &vmrpc.AttachFilesystemMountRequest{
-		LeaseId:        leaseID,
-		IdempotencyKey: key,
-		MountName:      mount.Name,
-		SourceRef:      mount.SourceRef,
-		MountPath:      mount.MountPath,
-		FsType:         mount.FSType,
-		ReadOnly:       mount.ReadOnly,
-		EmptySizeBytes: emptySizeBytes,
-	})
-	if err != nil {
-		return FilesystemAttachRecord{}, fmt.Errorf("attach filesystem mount %s/%s: %w", leaseID, mount.Name, err)
-	}
-	return FilesystemAttachRecord{
-		LeaseID:         resp.GetLeaseId(),
-		MountName:       resp.GetMountName(),
-		SourceRef:       resp.GetSourceRef(),
-		MountPath:       resp.GetMountPath(),
-		FSType:          resp.GetFsType(),
-		ReadOnly:        resp.GetReadOnly(),
-		GuestDevicePath: resp.GetGuestDevicePath(),
-		AttachedAt:      timeFromUnixNs(resp.GetAttachedAtUnixNs()),
-	}, nil
-}
-
-func (c *Client) DeleteFilesystemSource(ctx context.Context, key, sourceRef string) (FilesystemDeleteRecord, error) {
-	resp, err := c.client.DeleteFilesystemSource(ctx, &vmrpc.DeleteFilesystemSourceRequest{
-		SourceRef:      sourceRef,
-		IdempotencyKey: key,
-	})
-	if err != nil {
-		return FilesystemDeleteRecord{}, fmt.Errorf("delete filesystem source %s: %w", sourceRef, err)
-	}
-	return FilesystemDeleteRecord{
-		SourceRef: resp.GetSourceRef(),
-		DeletedAt: timeFromUnixNs(resp.GetDeletedAtUnixNs()),
 	}, nil
 }
 
@@ -219,14 +180,11 @@ func leaseSpecToProto(spec LeaseSpec) *vmrpc.LeaseSpec {
 		mode = vmrpc.NetworkAttachMode_NETWORK_ATTACH_MODE_NONE
 	}
 	return &vmrpc.LeaseSpec{
-		Resources:               vmResourcesToProto(spec.Resources),
-		FromCheckpointRef:       spec.FromCheckpointRef,
-		TtlSeconds:              spec.TTLSeconds,
-		TrustClass:              spec.TrustClass,
-		CheckpointSaveAllowlist: append([]string(nil), spec.CheckpointSaveAllowlist...),
-		Network:                 &vmrpc.NetworkAttach{Mode: mode},
-		FilesystemMounts:        filesystemMountsToProto(spec.FilesystemMounts),
-		CheckpointSlotCount:     spec.CheckpointSlotCount,
+		Resources:        vmResourcesToProto(spec.Resources),
+		TtlSeconds:       spec.TTLSeconds,
+		TrustClass:       spec.TrustClass,
+		Network:          &vmrpc.NetworkAttach{Mode: mode},
+		FilesystemMounts: filesystemMountsToProto(spec.FilesystemMounts),
 	}
 }
 

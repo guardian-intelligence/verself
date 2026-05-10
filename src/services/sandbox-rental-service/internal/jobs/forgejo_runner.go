@@ -830,14 +830,6 @@ func (r *ForgejoRunner) deriveBootstrapFetchToken(allocationID, attemptID uuid.U
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func (r *ForgejoRunner) deriveCheckpointToken(executionID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("verself-forgejo-checkpoint:"+r.cfg.BootstrapSecret))
-	mac.Write([]byte(executionID.String()))
-	mac.Write([]byte(":"))
-	mac.Write([]byte(attemptID.String()))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
 func verifyForgejoSignature(secret string, payload []byte, signature string) error {
 	secret = strings.TrimSpace(secret)
 	signature = strings.TrimSpace(signature)

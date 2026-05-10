@@ -9,14 +9,12 @@ vm-bridge control, and guest telemetry.
 Code pointers:
 
 - `internal/jobs/` - River workers, execution attempts, runner provider demand
-  records, runner allocations, checkout cache state, and reconciliation.
+  records, runner allocations, golden workspace planning, and reconciliation.
 - `internal/api/` - secured Huma routes for GitHub installations, execution
   history/logs, recurring schedules, and billing views.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
   logs, provider-neutral runner demand/allocation state, and schedule dispatch
   lineage.
-- `checkpoint-event-contract.md` - Checkpoint lifecycle event names, state
-  vocabulary, and future FSM transition contract.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
 - `../../dto/sandbox.go` - shared wire DTOs.
@@ -36,9 +34,9 @@ State model:
   job sync.
 - `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
-- Checkpoint control-plane state belongs beside executions: stable volume rows,
-  immutable generation rows, trust/scope current pointers, and per-attempt
-  mount/saveback rows.
+- Golden workspace state belongs beside executions: stable job shape rows,
+  scoped immutable generation rows, current pointers, workspace operations,
+  and durable component metadata.
 - `execution_schedules` and `execution_schedule_dispatches` are Temporal-backed
   recurring canary state.
 
@@ -53,36 +51,33 @@ Runner flow:
 3. The execution worker reserves billing, acquires a vm-orchestrator lease,
    starts the workload payload, streams logs, and settles billing.
 
-Checkpoint flow:
+Golden workspace flow:
 
-1. The runner boots with a bounded set of reserved Checkpoint drive slots.
-   `guardian-intelligence/verself-checkpoint@v0` runs as a normal action step after the GitHub runner
-   has evaluated workflow expressions, then sends concrete `key` and `path`
-   values to sandbox-rental through the guest-visible internal API.
-2. sandbox-rental authenticates the attempt-scoped token and derives
-   organization, repository, provider installation, run, job, branch, PR, and
-   trust context from persisted runner state. The guest never supplies tenant
-   or repository identity.
-3. sandbox-rental records lifecycle events using the contract in
-   `checkpoint-event-contract.md`; the same transition vocabulary is the input
-   to the future finite state machine.
-4. sandbox-rental resolves a scoped volume for `(org, repository, scope,
-   component_kind, key_hash)`, chooses the readable current generation, and
-   persists an attempt-scoped mount row. First use creates an empty mount plan
-   and records a miss.
-5. sandbox-rental asks vm-orchestrator to create or clone the writable ext4
-   zvol, bind it to a reserved runner drive slot, trigger guest discovery, and
-   mount it at the requested path through vm-bridge. vm-orchestrator returns
-   service results only; host paths, dataset names, and device paths stay
-   behind the privileged boundary.
-6. The action post step marks requested mounts for saveback with
-   attempt-scoped credentials. During finalization, sandbox-rental asks
-   vm-orchestrator to snapshot requested writable mounts, records immutable
-   generations, and promotes current pointers only by observed-state
-   compare-and-swap.
-7. Protected/default branch runs may promote protected current pointers.
-   Same-repository branch/PR runs may promote branch pointers. Fork PR runs
-   write only to PR-scoped short-retention namespaces.
+1. Provider demand persists the GitHub job identity before any host mutation:
+   organization, provider, repository, workflow, job name, runner labels,
+   matrix key, run ID, run attempt, head SHA, and branch.
+2. sandbox-rental derives a stable job shape and golden scope from persisted
+   provider state. The guest never supplies tenant, repository, branch, or
+   trust identity.
+3. sandbox-rental resolves the current readable generation for the scope and
+   inserts a `workspace_operations` row with the observed source generation.
+   No database row claims a new generation exists before ZFS has sealed it.
+4. The lease request includes a static workspace filesystem mount plan. A hit
+   clones the current generation; a miss creates an empty ext4 zvol. The mount
+   is available before the GitHub runner process starts.
+5. The runner work directory is the normal GitHub Actions `_work` tree under
+   `GITHUB_WORKSPACE` semantics, so customer YAML continues to use ordinary
+   checkout and build steps.
+6. After the runner exits, sandbox-rental asks vm-orchestrator to seal the
+   workspace mount. vm-orchestrator unmounts, flushes, snapshots, promotes the
+   clone-backed immutable generation, and returns only service-level results.
+7. sandbox-rental records the immutable generation and durable component
+   metadata, then promotes the current pointer by compare-and-swap against the
+   source generation observed before the host mutation. A lost CAS leaves the
+   generation retained and prunable, not failed.
+8. A GitHub workflow run promotes branch goldens only after the run's job set is
+   observed complete and every job is successful or skipped. Failed or canceled
+   runs leave the current pointer at the last green generation.
 
 Recurring schedule flow:
 

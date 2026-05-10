@@ -32,9 +32,8 @@ func (r *LeaseRuntime) mountByName(name string) (preparedFilesystemMount, bool) 
 	return preparedFilesystemMount{}, false
 }
 
-// FilesystemCommitInput parameterizes the snapshot-chain commit. VolumeID
-// is the volume_id the caller (sandbox-rental) keys this Checkpoint by;
-// the orchestrator translates it to vspool/checkpoints/<volume_id>.
+// FilesystemCommitInput parameterizes the golden environment commit. VolumeID
+// is the golden scope ID the caller (sandbox-rental) owns in Postgres.
 // ParentSnapshotRef is the previous generation's full <dataset>@<snap>
 // when the mount was restored from an existing generation; empty for first
 // save. The orchestrator picks the new generation snapshot name and
@@ -42,6 +41,7 @@ func (r *LeaseRuntime) mountByName(name string) (preparedFilesystemMount, bool) 
 type FilesystemCommitInput struct {
 	MountName         string
 	VolumeID          string
+	OperationID       string
 	ParentSnapshotRef string
 	// NewGenerationName is the snapshot short name for the new generation.
 	// Caller-supplied so product state and ZFS state share the same identity
@@ -61,6 +61,13 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 	volumeID := strings.TrimSpace(input.VolumeID)
 	if volumeID == "" {
 		return FilesystemCommitResult{}, fmt.Errorf("volume id is required")
+	}
+	operationID := strings.TrimSpace(input.OperationID)
+	if operationID == "" {
+		return FilesystemCommitResult{}, fmt.Errorf("operation id is required")
+	}
+	if !zfs.IsValidRef(operationID) {
+		return FilesystemCommitResult{}, fmt.Errorf("operation id is invalid")
 	}
 	volume, vErr := zfs.NewVolume(o.roots, volumeID)
 	if vErr != nil {
@@ -83,6 +90,7 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 		attribute.String("lease.id", runtime.LeaseID),
 		attribute.String("filesystem.name", mountName),
 		attribute.String("filesystem.volume_id", volumeID),
+		attribute.String("filesystem.operation_id", operationID),
 		attribute.String("filesystem.volume_dataset", volume.Dataset()),
 		attribute.String("filesystem.parent_snapshot", input.ParentSnapshotRef),
 	))
@@ -127,7 +135,7 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 		return FilesystemCommitResult{}, fmt.Errorf("flush filesystem mount device %s: %w", mountName, flushErr)
 	}
 
-	commit, commitErr := o.volumes.Commit(ctx, mount.clone, volume, parent, input.NewGenerationName)
+	commit, commitErr := o.volumes.Commit(ctx, mount.clone, volume, parent, input.NewGenerationName, operationID)
 	if commitErr != nil {
 		return FilesystemCommitResult{}, commitErr
 	}

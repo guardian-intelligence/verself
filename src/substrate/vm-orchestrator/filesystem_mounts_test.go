@@ -11,7 +11,7 @@ import (
 func TestNormalizeFilesystemMounts(t *testing.T) {
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "data",
-		SourceRef: "checkpoint-empty",
+		SourceRef: "workspace-base",
 		MountPath: "/mnt/data/",
 		ReadOnly:  false,
 	}}, filesystemMountSourceRequired)
@@ -20,7 +20,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 	}
 	want := []FilesystemMount{{
 		Name:      "data",
-		SourceRef: "checkpoint-empty",
+		SourceRef: "workspace-base",
 		MountPath: "/mnt/data",
 		FSType:    "ext4",
 		ReadOnly:  false,
@@ -33,7 +33,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 	_, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "bad",
-		SourceRef: "checkpoint-empty",
+		SourceRef: "workspace-base",
 		MountPath: "/proc/verself",
 	}}, filesystemMountSourceRequired)
 	if err == nil {
@@ -43,10 +43,10 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 
 func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 	cases := []FilesystemMount{
-		{Name: "bad/name", SourceRef: "checkpoint-empty", MountPath: "/mnt/data"},
-		{Name: "bad@snap", SourceRef: "checkpoint-empty", MountPath: "/mnt/data"},
-		{Name: "data", SourceRef: "images/checkpoint-empty", MountPath: "/mnt/data"},
-		{Name: "data", SourceRef: "checkpoint-empty@ready", MountPath: "/mnt/data"},
+		{Name: "bad/name", SourceRef: "workspace-base", MountPath: "/mnt/data"},
+		{Name: "bad@snap", SourceRef: "workspace-base", MountPath: "/mnt/data"},
+		{Name: "data", SourceRef: "images/workspace-base", MountPath: "/mnt/data"},
+		{Name: "data", SourceRef: "workspace-base@ready", MountPath: "/mnt/data"},
 	}
 	for _, tc := range cases {
 		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}, filesystemMountSourceRequired); err == nil {
@@ -55,9 +55,9 @@ func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 	}
 }
 
-func TestNormalizeFilesystemMountsAllowsEmptySourceForDynamicAttach(t *testing.T) {
+func TestNormalizeFilesystemMountsAllowsEmptyGoldenSource(t *testing.T) {
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
-		Name:      "ckpt-empty",
+		Name:      "workspace-empty",
 		MountPath: "/mnt/data",
 	}}, filesystemMountSourceOptional)
 	if err != nil {
@@ -68,10 +68,10 @@ func TestNormalizeFilesystemMountsAllowsEmptySourceForDynamicAttach(t *testing.T
 	}
 }
 
-func TestNormalizeFilesystemMountsAllowsGenerationSourceForDynamicAttach(t *testing.T) {
-	sourceRef := "pool/checkpoints/21a47db4-8a9d-4fb4-9072-1c727eaa3d65@gen-01KR70P9CK4F3XT6A9C732HMZC"
+func TestNormalizeFilesystemMountsAllowsGoldenGenerationSource(t *testing.T) {
+	sourceRef := "pool/goldens/21a47db4-8a9d-4fb4-9072-1c727eaa3d65/generations/01KR70P9CK4F3XT6A9C732HMZC@sealed"
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
-		Name:      "ckpt-generation",
+		Name:      "workspace-generation",
 		SourceRef: sourceRef,
 		MountPath: "/mnt/data",
 	}}, filesystemMountSourceOptional)
@@ -87,7 +87,7 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 	manifest := guestFilesystemMounts([]preparedFilesystemMount{{
 		Spec: FilesystemMount{
 			Name:      "data",
-			SourceRef: "checkpoint-empty",
+			SourceRef: "workspace-base",
 			MountPath: "/mnt/data",
 			FSType:    "ext4",
 			ReadOnly:  false,
@@ -110,11 +110,11 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 
 func TestImageSnapshotUsesConfiguredImageDataset(t *testing.T) {
 	roots := zfs.Roots{Pool: "pool", ImageDataset: "images", WorkloadDataset: "workloads"}
-	img, err := zfs.NewImage(roots, "checkpoint-empty")
+	img, err := zfs.NewImage(roots, "workspace-base")
 	if err != nil {
 		t.Fatalf("NewImage: %v", err)
 	}
-	if got, want := img.Snapshot().String(), "pool/images/checkpoint-empty@ready"; got != want {
+	if got, want := img.Snapshot().String(), "pool/images/workspace-base@ready"; got != want {
 		t.Fatalf("image snapshot = %q, want %q", got, want)
 	}
 }

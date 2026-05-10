@@ -1,6 +1,6 @@
 # Agent Workspace VMs
 
-This is a future runtime provider, not a separate checkpoint architecture.
+This is a future runtime provider, not a separate golden environment architecture.
 
 The shared model lives in:
 
@@ -12,10 +12,10 @@ The shared model lives in:
 
 Firecracker is the current provider for snapshot-backed VM segments. Full Ubuntu
 agent workspaces can add a future provider when desktop devices, long-running
-sessions, or machine-state checkpoints are needed. They should reuse the same
-org-scoped `checkpoint_refs`, immutable `checkpoint_versions`,
-`execution_segments`, billing windows, and telemetry concepts.
+sessions, or durable machine-state versions are needed. They should reuse the
+same org-scoped golden refs, immutable generation records, execution segments,
+billing windows, and telemetry concepts.
 
 Do not fork this into a QEMU-specific product state machine. Provider-specific
-code may implement machine checkpoints later, but disk checkpoints remain
-host-owned ZFS zvol versions behind customer-facing checkpoint refs.
+code may implement machine-state versions later, but disk generations remain
+host-owned ZFS zvol versions behind customer-facing golden refs.

@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -72,9 +71,6 @@ type agentSession struct {
 	filesystems     []vmproto.FilesystemMount
 
 	jobCancel context.CancelFunc
-
-	checkpointMu      sync.Mutex
-	checkpointWaiters map[string]chan vmproto.CheckpointResponse
 
 	// etcOverlayApplied records which /etc/<rel> paths have already
 	// been written by an etc-overlay/ from some toolchain image. A
@@ -190,12 +186,6 @@ func (s *agentSession) readLoop(ctx context.Context, controlCh chan<- vmproto.En
 			default:
 			}
 			return
-		}
-		if env.Type == vmproto.TypeCheckpointResponse {
-			resp, err := vmproto.DecodePayload[vmproto.CheckpointResponse](env)
-			if err == nil && s.deliverCheckpointResponse(resp) {
-				continue
-			}
 		}
 		select {
 		case controlCh <- env:

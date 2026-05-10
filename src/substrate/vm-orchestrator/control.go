@@ -34,8 +34,6 @@ type guestControl struct {
 	activeExecID string
 }
 
-type checkpointHandler func(vmproto.CheckpointRequest) vmproto.CheckpointResponse
-
 func connectGuestControl(ctx context.Context, udsPath string, port int, leaseID string) (*guestControl, error) {
 	conn, reader, err := connectGuestBridge(ctx, udsPath, port, leaseID)
 	if err != nil {
@@ -341,7 +339,7 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 	return nil
 }
 
-func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, handleCheckpoint checkpointHandler, logger *slog.Logger) (ExecResult, error) {
+func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, logger *slog.Logger) (ExecResult, error) {
 	execID := strings.TrimSpace(spec.Env["VERSELF_EXEC_ID"])
 	if execID == "" {
 		return ExecResult{}, fmt.Errorf("VERSELF_EXEC_ID is required")
@@ -400,24 +398,6 @@ func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, 
 			}
 			appendLogChunk(&logBuf, msg.Data)
 		case vmproto.TypeHeartbeat:
-		case vmproto.TypeCheckpointRequest:
-			req, err := vmproto.DecodePayload[vmproto.CheckpointRequest](env)
-			if err != nil {
-				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, err
-			}
-			resp := vmproto.CheckpointResponse{
-				RequestID: req.RequestID,
-				Operation: req.Operation,
-				Ref:       req.Ref,
-				Accepted:  false,
-				Error:     "checkpoint requests are not enabled",
-			}
-			if handleCheckpoint != nil {
-				resp = handleCheckpoint(req)
-			}
-			if err := c.send(vmproto.TypeCheckpointResponse, resp); err != nil {
-				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, fmt.Errorf("send checkpoint response: %w", err)
-			}
 		case vmproto.TypeFatal:
 			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
 			if decodeErr != nil {
@@ -482,7 +462,6 @@ func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, 
 				vmproto.TypeExecStarted,
 				vmproto.TypeLogChunk,
 				vmproto.TypeHeartbeat,
-				vmproto.TypeCheckpointRequest,
 				vmproto.TypeFatal,
 				vmproto.TypeExecResult,
 			)

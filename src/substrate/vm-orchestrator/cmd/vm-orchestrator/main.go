@@ -43,7 +43,7 @@ func run() error {
 	flag.StringVar(&socketGroup, "socket-group", "vm-clients", "Group that should own the Unix API socket")
 	flag.StringVar(&cfg.Pool, "pool", cfg.Pool, "ZFS pool used for VM datasets")
 	flag.StringVar(&cfg.ImageDataset, "image-dataset", cfg.ImageDataset, "ZFS dataset under the pool containing composable image zvol snapshots")
-	flag.StringVar(&cfg.CheckpointDataset, "checkpoint-dataset", cfg.CheckpointDataset, "ZFS dataset under the pool containing persistent Checkpoint volume datasets (one per customer Checkpoint, with snapshots per generation)")
+	flag.StringVar(&cfg.GoldenDataset, "golden-dataset", cfg.GoldenDataset, "ZFS dataset under the pool containing immutable golden environment generations")
 	flag.StringVar(&cfg.WorkloadDataset, "workload-dataset", cfg.WorkloadDataset, "ZFS dataset for ephemeral VM leases")
 	flag.StringVar(&cfg.DefaultSubstrateRef, "default-substrate-ref", cfg.DefaultSubstrateRef, "Composable image ref cloned as the substrate root disk for new leases (toolchain images compose on top via FilesystemMounts)")
 	flag.StringVar(&cfg.KernelPath, "kernel-path", cfg.KernelPath, "Path to vmlinux on the host")

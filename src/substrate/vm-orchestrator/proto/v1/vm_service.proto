@@ -18,9 +18,6 @@ service VMService {
   rpc WaitExec(WaitExecRequest) returns (WaitExecResponse);
 
   rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
-  rpc AttachFilesystemMount(AttachFilesystemMountRequest) returns (AttachFilesystemMountResponse);
-  rpc DeleteFilesystemSource(DeleteFilesystemSourceRequest) returns (DeleteFilesystemSourceResponse);
-  rpc SaveCheckpoint(SaveCheckpointRequest) returns (SaveCheckpointResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
 
   // SeedImage is the privileged image-seeding entry point used by deploy-time
@@ -73,12 +70,14 @@ enum LeaseEventType {
   LEASE_EVENT_TYPE_EXEC_STARTED = 5;
   LEASE_EVENT_TYPE_EXEC_FINISHED = 6;
   LEASE_EVENT_TYPE_EXEC_CANCELED = 7;
-  LEASE_EVENT_TYPE_CHECKPOINT_SAVED = 8;
-  LEASE_EVENT_TYPE_VM_SHUTDOWN = 9;
-  LEASE_EVENT_TYPE_LEASE_EXPIRED = 10;
-  LEASE_EVENT_TYPE_LEASE_RELEASED = 11;
-  LEASE_EVENT_TYPE_LEASE_CRASHED = 12;
-  LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC = 13;
+  LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED = 8;
+  LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED = 9;
+  LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED = 10;
+  LEASE_EVENT_TYPE_VM_SHUTDOWN = 11;
+  LEASE_EVENT_TYPE_LEASE_EXPIRED = 12;
+  LEASE_EVENT_TYPE_LEASE_RELEASED = 13;
+  LEASE_EVENT_TYPE_LEASE_CRASHED = 14;
+  LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC = 15;
 }
 
 message NetworkAttach {
@@ -96,13 +95,11 @@ message VMResources {
 
 message LeaseSpec {
   VMResources resources = 1;
-  string from_checkpoint_ref = 4;
+  reserved 4, 7, 10;
   uint64 ttl_seconds = 5;
   string trust_class = 6;
-  repeated string checkpoint_save_allowlist = 7;
   NetworkAttach network = 8;
   repeated FilesystemMount filesystem_mounts = 9;
-  uint32 checkpoint_slot_count = 10;
 }
 
 message FilesystemMount {
@@ -111,6 +108,7 @@ message FilesystemMount {
   string mount_path = 3;
   string fs_type = 4;
   bool read_only = 5;
+  string operation_id = 6;
 }
 
 message AcquireLeaseRequest {
@@ -131,7 +129,7 @@ message RenewLeaseRequest {
   string lease_id = 1;
   string idempotency_key = 2;
   uint64 extend_seconds = 3;
-  repeated string checkpoint_save_allowlist = 4;
+  reserved 4;
 }
 
 message RenewLeaseResponse {
@@ -142,7 +140,7 @@ message RenewLeaseResponse {
 message ReleaseLeaseRequest {
   string lease_id = 1;
   string idempotency_key = 2;
-  string final_checkpoint_ref = 3;
+  reserved 3;
 }
 
 message ReleaseLeaseResponse {
@@ -273,30 +271,13 @@ message WaitExecResponse {
   ExecRecord exec = 1;
 }
 
-message SaveCheckpointRequest {
-  string lease_id = 1;
-  string idempotency_key = 2;
-  string ref = 3;
-}
-
-message SaveCheckpointResponse {
-  string lease_id = 1;
-  string ref = 2;
-  string version_id = 3;
-  uint64 saved_at_unix_ns = 4;
-}
-
 // CommitFilesystemMount snapshots the named writable mount and persists it
-// as a new generation on the volume's snapshot chain. parent_snapshot_ref
-// must match the generation the mount was originally restored from (or be
-// empty for a first save into a brand-new volume); the orchestrator uses
-// it as the source of `zfs send -i` so commit cost is O(delta_bytes).
+// as a new immutable generation under the configured golden dataset.
 //
 // new_generation_name is the snapshot short name (without '@' or '/') the
 // orchestrator will create on the volume dataset. The caller (sandbox-
-// rental) supplies it so the volume_generations Postgres row can be
-// inserted with the canonical snapshot identity before the ZFS mutation
-// runs, keeping product state and ZFS state aligned for retention/audit.
+// rental) supplies it so product state and host state share one canonical
+// generation identity.
 message CommitFilesystemMountRequest {
   string lease_id = 1;
   string mount_name = 2;
@@ -304,6 +285,7 @@ message CommitFilesystemMountRequest {
   string parent_snapshot_ref = 4;
   string new_generation_name = 5;
   string idempotency_key = 6;
+  string operation_id = 7;
 }
 
 message CommitFilesystemMountResponse {
@@ -314,38 +296,6 @@ message CommitFilesystemMountResponse {
   uint64 used_bytes = 5;
   uint64 written_bytes = 6;
   uint64 committed_at_unix_ns = 7;
-}
-
-message AttachFilesystemMountRequest {
-  string lease_id = 1;
-  string idempotency_key = 2;
-  string mount_name = 3;
-  string source_ref = 4;
-  string mount_path = 5;
-  string fs_type = 6;
-  bool read_only = 7;
-  uint64 empty_size_bytes = 8;
-}
-
-message AttachFilesystemMountResponse {
-  string lease_id = 1;
-  string mount_name = 2;
-  string source_ref = 3;
-  string mount_path = 4;
-  string fs_type = 5;
-  bool read_only = 6;
-  string guest_device_path = 7;
-  uint64 attached_at_unix_ns = 8;
-}
-
-message DeleteFilesystemSourceRequest {
-  string source_ref = 1;
-  string idempotency_key = 2;
-}
-
-message DeleteFilesystemSourceResponse {
-  string source_ref = 1;
-  uint64 deleted_at_unix_ns = 2;
 }
 
 message VMMetrics {

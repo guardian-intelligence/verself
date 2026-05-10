@@ -31,22 +31,6 @@ type FilesystemCommitRecord struct {
 	CommittedAt   time.Time
 }
 
-type FilesystemAttachRecord struct {
-	LeaseID         string
-	MountName       string
-	SourceRef       string
-	MountPath       string
-	FSType          string
-	ReadOnly        bool
-	GuestDevicePath string
-	AttachedAt      time.Time
-}
-
-type FilesystemDeleteRecord struct {
-	SourceRef string
-	DeletedAt time.Time
-}
-
 type ExecRecord struct {
 	LeaseID                string
 	ExecID                 string
@@ -84,15 +68,6 @@ type Capacity struct {
 	MaxMemoryMiBPerLease   uint32
 	MaxRootDiskGiBPerLease uint32
 	RootfsProvisionedBytes uint64
-}
-
-type CheckpointEvent struct {
-	RequestID string
-	Operation string
-	Ref       string
-	Accepted  bool
-	VersionID string
-	Error     string
 }
 
 type TelemetryEvent struct {

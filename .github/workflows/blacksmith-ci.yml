@@ -15,42 +15,9 @@ permissions:
 jobs:
   build:
     name: Build + test
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: ${{ false }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Mount Bazel disk cache
-        uses: useblacksmith/stickydisk@v1
-        with:
-          key: ${{ github.repository }}-bazel-disk
-          path: /home/runner/.cache/bazel-disk
-
-      - name: Mount Bazel repo cache
-        uses: useblacksmith/stickydisk@v1
-        with:
-          key: ${{ github.repository }}-bazel-repo
-          path: /home/runner/.cache/bazel-repo
-
-      - name: Bootstrap toolchain
-        env:
-          BOOTSTRAP_INSTALL_DIR: ${{ runner.temp }}/bootstrap-bin
-        run: |
-          mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
-          scripts/bootstrap-linux-amd64
-          {
-            echo "${BOOTSTRAP_INSTALL_DIR}"
-            echo "${HOME}/.vite-plus/bin"
-          } >> "${GITHUB_PATH}"
-
-      - name: Restart Bazel server
-        run: bazelisk shutdown
-
-      - name: bazelisk build //...
-        run: bazelisk build //...
-
-      - name: bazelisk test //...
-        run: bazelisk test //...
+      - name: Disabled
+        run: echo "Blacksmith CI is disabled while Verself CI owns runner validation."

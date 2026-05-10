@@ -33,10 +33,6 @@ func (DirectPrivOps) ZFSEnsureFilesystem(context.Context, string) error {
 	return unsupportedHostMutation("zfs ensure filesystem")
 }
 
-func (DirectPrivOps) ZFSSendReceive(context.Context, string, string) error {
-	return unsupportedHostMutation("zfs send receive")
-}
-
 func (DirectPrivOps) ZFSSnapshotExists(context.Context, string) (bool, error) {
 	return false, unsupportedHostMutation("zfs snapshot exists")
 }
@@ -71,6 +67,10 @@ func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(context.Context, string, uint64) er
 
 func (DirectPrivOps) ZFSRename(context.Context, string, string) error {
 	return unsupportedHostMutation("zfs rename")
+}
+
+func (DirectPrivOps) ZFSPromote(context.Context, string) error {
+	return unsupportedHostMutation("zfs promote")
 }
 
 func (DirectPrivOps) ZFSListChildren(context.Context, string) ([]string, error) {

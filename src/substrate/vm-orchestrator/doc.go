@@ -16,7 +16,7 @@
 //  4. Start Firecracker and initialize vm-bridge over a deterministic vsock
 //     control stream.
 //  5. Start one or more execs subject to the lease runtime concurrency cap.
-//  6. Stream guest logs, checkpoint requests, and telemetry as host facts.
+//  6. Stream guest logs, filesystem lifecycle events, and telemetry as host facts.
 //  7. Release or expire the lease, killing in-flight execs and cleaning host
 //     resources exactly once.
 //

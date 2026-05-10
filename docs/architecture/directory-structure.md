@@ -35,7 +35,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Product Services (`src/services/`)
 
 - `sandbox-rental-service/` — compute product control plane (executions,
-  checkpoint refs, billing windows).
+  golden workspace generations, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `iam-service/`, `mailbox-service/`, and other `*-service/` packages —
   service-owned databases, migrations, Huma APIs, and service-local workers.

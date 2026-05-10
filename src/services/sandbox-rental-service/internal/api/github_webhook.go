@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 )
 
@@ -21,9 +20,6 @@ const (
 	runnerBootstrapConfigPath      = "/internal/sandbox/v1/runner-bootstrap"
 	runnerBootstrapTokenHeader     = "X-Verself-Runner-Bootstrap"
 	githubCheckoutBundlePath       = "/internal/sandbox/v1/github-checkout/bundle"
-	checkpointMountPath            = "/internal/sandbox/v1/checkpoints/mount"
-	checkpointMountedPath          = "/internal/sandbox/v1/checkpoints/mounted"
-	checkpointSavePath             = "/internal/sandbox/v1/checkpoints/save"
 	publicWebhookBodyLimit         = 1 << 20
 )
 
@@ -40,27 +36,6 @@ type githubCheckoutBundleRequest struct {
 	GitHubToken string `json:"github_token"`
 }
 
-type checkpointMountRequest struct {
-	Key       string `json:"key"`
-	Path      string `json:"path"`
-	SizeBytes uint64 `json:"size_bytes,omitempty"`
-}
-
-type checkpointMountResponse struct {
-	MountID          string `json:"mount_id"`
-	MountName        string `json:"mount_name"`
-	DevicePath       string `json:"device_path"`
-	MountPath        string `json:"mount_path"`
-	FSType           string `json:"fs_type"`
-	CacheHit         bool   `json:"cache_hit"`
-	SourceGeneration int32  `json:"source_generation"`
-	SourceRef        string `json:"source_ref"`
-}
-
-type checkpointMountIDRequest struct {
-	MountID string `json:"mount_id"`
-}
-
 func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	if mux == nil || svc == nil {
 		return
@@ -71,9 +46,6 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
 	mux.HandleFunc(runnerBootstrapConfigPath, runnerBootstrapConfigHandler(svc))
 	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
-	mux.HandleFunc(checkpointMountPath, checkpointMountHandler(svc))
-	mux.HandleFunc(checkpointMountedPath, checkpointMountedHandler(svc))
-	mux.HandleFunc(checkpointSavePath, checkpointSaveHandler(svc))
 }
 
 func forgejoActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
@@ -293,137 +265,6 @@ func writeCheckoutError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, jobs.ErrCheckoutUnauthorized) {
 		status = http.StatusUnauthorized
-	}
-	writePublicWebhookError(w, status, err)
-}
-
-func checkpointMountHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		identity, ok := authenticateCheckpointRequest(w, r, svc)
-		if !ok {
-			return
-		}
-		var req checkpointMountRequest
-		body := http.MaxBytesReader(w, r.Body, 16<<10)
-		if err := json.NewDecoder(body).Decode(&req); err != nil {
-			writeCheckpointError(w, jobs.ErrCheckpointInvalid)
-			return
-		}
-		mount, err := svc.MountCheckpoint(r.Context(), identity, jobs.CheckpointMountRequest{
-			Key:       req.Key,
-			Path:      req.Path,
-			SizeBytes: req.SizeBytes,
-		})
-		if err != nil {
-			writeCheckpointError(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(checkpointMountResponse{
-			MountID:          mount.MountID.String(),
-			MountName:        mount.MountName,
-			DevicePath:       mount.DevicePath,
-			MountPath:        mount.MountPath,
-			FSType:           mount.FSType,
-			CacheHit:         mount.CacheHit,
-			SourceGeneration: mount.SourceGeneration,
-			SourceRef:        mount.SourceRef,
-		})
-	}
-}
-
-func checkpointMountedHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		identity, ok := authenticateCheckpointRequest(w, r, svc)
-		if !ok {
-			return
-		}
-		mountID, ok := readCheckpointMountID(w, r)
-		if !ok {
-			return
-		}
-		if err := svc.MarkCheckpointMounted(r.Context(), identity, mountID); err != nil {
-			writeCheckpointError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
-	}
-}
-
-func checkpointSaveHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		identity, ok := authenticateCheckpointRequest(w, r, svc)
-		if !ok {
-			return
-		}
-		mountID, ok := readCheckpointMountID(w, r)
-		if !ok {
-			return
-		}
-		if err := svc.RequestCheckpointSave(r.Context(), identity, mountID); err != nil {
-			writeCheckpointError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusAccepted)
-	}
-}
-
-func authenticateCheckpointRequest(w http.ResponseWriter, r *http.Request, svc *jobs.Service) (jobs.RunnerExecutionIdentity, bool) {
-	if svc == nil {
-		http.Error(w, "checkpoint service is not configured", http.StatusServiceUnavailable)
-		return jobs.RunnerExecutionIdentity{}, false
-	}
-	identity, err := svc.AuthenticateCheckpoint(
-		r.Context(),
-		r.Header.Get("X-Verself-Execution-Id"),
-		r.Header.Get("X-Verself-Attempt-Id"),
-		r.Header.Get("Authorization"),
-	)
-	if err != nil {
-		writeCheckpointError(w, err)
-		return jobs.RunnerExecutionIdentity{}, false
-	}
-	return identity, true
-}
-
-func readCheckpointMountID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	var req checkpointMountIDRequest
-	body := http.MaxBytesReader(w, r.Body, 4<<10)
-	if err := json.NewDecoder(body).Decode(&req); err != nil {
-		writeCheckpointError(w, jobs.ErrCheckpointInvalid)
-		return uuid.Nil, false
-	}
-	mountID, err := uuid.Parse(strings.TrimSpace(req.MountID))
-	if err != nil {
-		writeCheckpointError(w, jobs.ErrCheckpointInvalid)
-		return uuid.Nil, false
-	}
-	return mountID, true
-}
-
-func writeCheckpointError(w http.ResponseWriter, err error) {
-	status := http.StatusInternalServerError
-	if errors.Is(err, jobs.ErrCheckpointInvalid) {
-		status = http.StatusBadRequest
-	}
-	if errors.Is(err, jobs.ErrCheckpointUnauthorized) {
-		status = http.StatusUnauthorized
-	}
-	if errors.Is(err, jobs.ErrCheckpointUnavailable) {
-		status = http.StatusServiceUnavailable
 	}
 	writePublicWebhookError(w, status, err)
 }

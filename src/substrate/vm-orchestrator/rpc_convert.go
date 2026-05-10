@@ -17,14 +17,11 @@ func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {
 		networkMode = "none"
 	}
 	return normalizeLeaseSpec(LeaseSpec{
-		Resources:               vmResourcesFromProto(spec.GetResources()),
-		FromCheckpointRef:       spec.GetFromCheckpointRef(),
-		TTLSeconds:              spec.GetTtlSeconds(),
-		TrustClass:              spec.GetTrustClass(),
-		CheckpointSaveAllowlist: append([]string(nil), spec.GetCheckpointSaveAllowlist()...),
-		NetworkMode:             networkMode,
-		FilesystemMounts:        filesystemMountsFromProto(spec.GetFilesystemMounts()),
-		CheckpointSlotCount:     spec.GetCheckpointSlotCount(),
+		Resources:        vmResourcesFromProto(spec.GetResources()),
+		TTLSeconds:       spec.GetTtlSeconds(),
+		TrustClass:       spec.GetTrustClass(),
+		NetworkMode:      networkMode,
+		FilesystemMounts: filesystemMountsFromProto(spec.GetFilesystemMounts()),
 	}, cfg)
 }
 
@@ -38,11 +35,12 @@ func filesystemMountsFromProto(mounts []*vmrpc.FilesystemMount) []FilesystemMoun
 			continue
 		}
 		out = append(out, FilesystemMount{
-			Name:      mount.GetName(),
-			SourceRef: mount.GetSourceRef(),
-			MountPath: mount.GetMountPath(),
-			FSType:    mount.GetFsType(),
-			ReadOnly:  mount.GetReadOnly(),
+			Name:        mount.GetName(),
+			OperationID: mount.GetOperationId(),
+			SourceRef:   mount.GetSourceRef(),
+			MountPath:   mount.GetMountPath(),
+			FSType:      mount.GetFsType(),
+			ReadOnly:    mount.GetReadOnly(),
 		})
 	}
 	return out
@@ -55,11 +53,12 @@ func filesystemMountsToProto(mounts []FilesystemMount) []*vmrpc.FilesystemMount 
 	out := make([]*vmrpc.FilesystemMount, 0, len(mounts))
 	for _, mount := range mounts {
 		out = append(out, &vmrpc.FilesystemMount{
-			Name:      mount.Name,
-			SourceRef: mount.SourceRef,
-			MountPath: mount.MountPath,
-			FsType:    mount.FSType,
-			ReadOnly:  mount.ReadOnly,
+			Name:        mount.Name,
+			OperationId: mount.OperationID,
+			SourceRef:   mount.SourceRef,
+			MountPath:   mount.MountPath,
+			FsType:      mount.FSType,
+			ReadOnly:    mount.ReadOnly,
 		})
 	}
 	return out
@@ -256,8 +255,12 @@ func leaseEventTypeToProto(eventType LeaseEventType) vmrpc.LeaseEventType {
 		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_FINISHED
 	case LeaseEventExecCanceled:
 		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_CANCELED
-	case LeaseEventCheckpointSaved:
-		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_CHECKPOINT_SAVED
+	case LeaseEventFilesystemCommitStarted:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED
+	case LeaseEventFilesystemCommitted:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED
+	case LeaseEventFilesystemCommitFailed:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED
 	case LeaseEventVMShutdown:
 		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN
 	case LeaseEventLeaseExpired:
@@ -289,8 +292,12 @@ func leaseEventTypeFromProto(eventType vmrpc.LeaseEventType) LeaseEventType {
 		return LeaseEventExecFinished
 	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_CANCELED:
 		return LeaseEventExecCanceled
-	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_CHECKPOINT_SAVED:
-		return LeaseEventCheckpointSaved
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED:
+		return LeaseEventFilesystemCommitStarted
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED:
+		return LeaseEventFilesystemCommitted
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED:
+		return LeaseEventFilesystemCommitFailed
 	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN:
 		return LeaseEventVMShutdown
 	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_EXPIRED:

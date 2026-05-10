@@ -19,22 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_AcquireLease_FullMethodName           = "/verself.vm_orchestrator.v1.VMService/AcquireLease"
-	VMService_RenewLease_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/RenewLease"
-	VMService_ReleaseLease_FullMethodName           = "/verself.vm_orchestrator.v1.VMService/ReleaseLease"
-	VMService_GetLease_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetLease"
-	VMService_ListLeases_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/ListLeases"
-	VMService_StreamLeaseEvents_FullMethodName      = "/verself.vm_orchestrator.v1.VMService/StreamLeaseEvents"
-	VMService_StartExec_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/StartExec"
-	VMService_CancelExec_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/CancelExec"
-	VMService_GetExec_FullMethodName                = "/verself.vm_orchestrator.v1.VMService/GetExec"
-	VMService_WaitExec_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/WaitExec"
-	VMService_CommitFilesystemMount_FullMethodName  = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
-	VMService_AttachFilesystemMount_FullMethodName  = "/verself.vm_orchestrator.v1.VMService/AttachFilesystemMount"
-	VMService_DeleteFilesystemSource_FullMethodName = "/verself.vm_orchestrator.v1.VMService/DeleteFilesystemSource"
-	VMService_SaveCheckpoint_FullMethodName         = "/verself.vm_orchestrator.v1.VMService/SaveCheckpoint"
-	VMService_GetCapacity_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
-	VMService_SeedImage_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/SeedImage"
+	VMService_AcquireLease_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/AcquireLease"
+	VMService_RenewLease_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/RenewLease"
+	VMService_ReleaseLease_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/ReleaseLease"
+	VMService_GetLease_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/GetLease"
+	VMService_ListLeases_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/ListLeases"
+	VMService_StreamLeaseEvents_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/StreamLeaseEvents"
+	VMService_StartExec_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/StartExec"
+	VMService_CancelExec_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/CancelExec"
+	VMService_GetExec_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetExec"
+	VMService_WaitExec_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/WaitExec"
+	VMService_CommitFilesystemMount_FullMethodName = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
+	VMService_GetCapacity_FullMethodName           = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_SeedImage_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/SeedImage"
 )
 
 // VMServiceClient is the client API for VMService service.
@@ -52,9 +49,6 @@ type VMServiceClient interface {
 	GetExec(ctx context.Context, in *GetExecRequest, opts ...grpc.CallOption) (*GetExecResponse, error)
 	WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error)
 	CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error)
-	AttachFilesystemMount(ctx context.Context, in *AttachFilesystemMountRequest, opts ...grpc.CallOption) (*AttachFilesystemMountResponse, error)
-	DeleteFilesystemSource(ctx context.Context, in *DeleteFilesystemSourceRequest, opts ...grpc.CallOption) (*DeleteFilesystemSourceResponse, error)
-	SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
 	// SeedImage is the privileged image-seeding entry point used by deploy-time
 	// tooling (vm-orchestrator-cli seed-image). It materializes a composable
@@ -191,36 +185,6 @@ func (c *vMServiceClient) CommitFilesystemMount(ctx context.Context, in *CommitF
 	return out, nil
 }
 
-func (c *vMServiceClient) AttachFilesystemMount(ctx context.Context, in *AttachFilesystemMountRequest, opts ...grpc.CallOption) (*AttachFilesystemMountResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AttachFilesystemMountResponse)
-	err := c.cc.Invoke(ctx, VMService_AttachFilesystemMount_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *vMServiceClient) DeleteFilesystemSource(ctx context.Context, in *DeleteFilesystemSourceRequest, opts ...grpc.CallOption) (*DeleteFilesystemSourceResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteFilesystemSourceResponse)
-	err := c.cc.Invoke(ctx, VMService_DeleteFilesystemSource_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *vMServiceClient) SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SaveCheckpointResponse)
-	err := c.cc.Invoke(ctx, VMService_SaveCheckpoint_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *vMServiceClient) GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCapacityResponse)
@@ -256,9 +220,6 @@ type VMServiceServer interface {
 	GetExec(context.Context, *GetExecRequest) (*GetExecResponse, error)
 	WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error)
 	CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error)
-	AttachFilesystemMount(context.Context, *AttachFilesystemMountRequest) (*AttachFilesystemMountResponse, error)
-	DeleteFilesystemSource(context.Context, *DeleteFilesystemSourceRequest) (*DeleteFilesystemSourceResponse, error)
-	SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
 	// SeedImage is the privileged image-seeding entry point used by deploy-time
 	// tooling (vm-orchestrator-cli seed-image). It materializes a composable
@@ -308,15 +269,6 @@ func (UnimplementedVMServiceServer) WaitExec(context.Context, *WaitExecRequest) 
 }
 func (UnimplementedVMServiceServer) CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CommitFilesystemMount not implemented")
-}
-func (UnimplementedVMServiceServer) AttachFilesystemMount(context.Context, *AttachFilesystemMountRequest) (*AttachFilesystemMountResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method AttachFilesystemMount not implemented")
-}
-func (UnimplementedVMServiceServer) DeleteFilesystemSource(context.Context, *DeleteFilesystemSourceRequest) (*DeleteFilesystemSourceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeleteFilesystemSource not implemented")
-}
-func (UnimplementedVMServiceServer) SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SaveCheckpoint not implemented")
 }
 func (UnimplementedVMServiceServer) GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCapacity not implemented")
@@ -536,60 +488,6 @@ func _VMService_CommitFilesystemMount_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VMService_AttachFilesystemMount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AttachFilesystemMountRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(VMServiceServer).AttachFilesystemMount(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: VMService_AttachFilesystemMount_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).AttachFilesystemMount(ctx, req.(*AttachFilesystemMountRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _VMService_DeleteFilesystemSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteFilesystemSourceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(VMServiceServer).DeleteFilesystemSource(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: VMService_DeleteFilesystemSource_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).DeleteFilesystemSource(ctx, req.(*DeleteFilesystemSourceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _VMService_SaveCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SaveCheckpointRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(VMServiceServer).SaveCheckpoint(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: VMService_SaveCheckpoint_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).SaveCheckpoint(ctx, req.(*SaveCheckpointRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _VMService_GetCapacity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetCapacityRequest)
 	if err := dec(in); err != nil {
@@ -672,18 +570,6 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CommitFilesystemMount",
 			Handler:    _VMService_CommitFilesystemMount_Handler,
-		},
-		{
-			MethodName: "AttachFilesystemMount",
-			Handler:    _VMService_AttachFilesystemMount_Handler,
-		},
-		{
-			MethodName: "DeleteFilesystemSource",
-			Handler:    _VMService_DeleteFilesystemSource_Handler,
-		},
-		{
-			MethodName: "SaveCheckpoint",
-			Handler:    _VMService_SaveCheckpoint_Handler,
 		},
 		{
 			MethodName: "GetCapacity",
