@@ -76,7 +76,65 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 </repo_overview>
 
 <product_context>
-- The customer-facing product is sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement: customers point CI at Verself and workflows run on Verself Firecracker VMs for a 2–10x speedup. We dogfood it on every merge to main, comparing against Blacksmith.sh and GitHub Actions to verify we are faster.
+Conceptually, the product is simple:
+
+1. You onboard, switch to our runner and our custom checkout action.
+2. You open a PR. You CI as normal.
+3. Your CI goes green, you merge, target branch updates. CI runs on target branch and goes green. We generate a golden zvol of the target branch. We take your CI VM's repo artifacts and set that as the golden zvol for the next checkout. If it went red, the golden zvol stays on the last green CI run.
+4. You open a new PR, it CIs but checkout is instant because we mount the entire repo instantly and all your migrations DB seeds, and so on, are already done. No more manual actions/cache per directory.
+5. You CI but you only execute tests, no scaffolding to get your repo setup.
+6. Your CI goes red, golden zvol stays where it is. You push some commits to your PR, we start from the golden zvol of the target branch.
+7. Every time CI on a branch goes green we snapshot the result as that branch's new golden zvol. Merging is not a separate promotion step — it triggers CI on the target branch like any other push, and the green snapshot becomes that branch's golden. 
+
+The above is simplified, for repos with workflow yamls like 
+
+```
+   jobs:                                                                                                                                                  
+      test-node-20:                                                                                                                                       
+      test-node-22:                                                                                                                                       
+      lint:                                                                                                                                               
+      integration:                                                                                                                                        
+      build-docker:
+```
+
+- test-node-20: Node 20 + node_modules built against Node 20's ABI + jest/vitest cache. Some packages (sharp, better-sqlite3, anything with prebuilds)
+have different binaries per Node major, so this image genuinely differs from the Node 22 one.
+- test-node-22: same shape but on Node 22.
+- lint: Node + node_modules + .eslintcache + tsconfig.tsbuildinfo. No DB, no services. Smallest image in the set — and the one where the speedup vs. a
+cold run looks least dramatic, because lint scaffolding is already light.
+- integration: everything from test plus a running postgres with migrations and seed data, redis, anything else the suite touches. Heaviest image,
+biggest speedup multiplier.
+- build-docker: docker daemon, buildx layer cache, base image layers. None of the Node toolchain. Totally different disk shape.
+
+We only promote zvol if *all* jobs go green on the commit to the trunk branch.
+
+`getZvolForPR`, therefore, takes `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)`. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
+
+Not every PR will have matrix-key. A workflow yaml edit is a non event -- if we have a zvol for that workflow job, then we have it. if not, then we don't, and if the edit gets merged in, we'll now have zvol for it for future PRs once CI passes.
+
+Tree-hash is metadata on the snapshot, used for two specific things:
+    a. At boot, we compute the diff between the snapshot's tree and the current tree, apply it as the "checkout" step.
+    b. At merge, if the post-merge tree on the target branch exactly matches a snapshot we have, we retag without re-running the workflow (the step 7 fast
+   path).
+
+On `services: ` -- when a customer writes `services: postgres:16`, GitHub starts a fresh container per job. We honor that as written. The snapshotted-postgres speedup applies to the customer's own setup scripts (the postgres they start and seed themselves) — not to GitHub's managed service containers. Both paths coexist; we don't need to merge them yet.
+
+Note: DB seeds, Docker layers, local services are not in GITHUB_WORKSPACE. We will expose APIs to mount and read from things *outside* the GITHUB_WORKSPACE for caching DB seeding and images and so on.
+
+The customer's mental model becomes: "my CI YAML stays exactly the same, the runner type changes, and the steps that used to take minutes now take  seconds because the work was already done." They don't learn a new caching API. They don't declare inputs. They don't tag things. The only Verself-specific surface is the checkout action
+
+We can offer (in the future):
+
+1. An SDK to list golden zvols and get metadata and to create/delete them
+2. An SDK to spin up a VM with the ID of a zvol
+2a. SSH access to VMs running on our metal, gated by Pomerium.=
+3. An SDK to download a golden zvol
+
+All of the above can help with debugging.
+
+We can also provide a simple API to prevent certain files or directories from being part of the golden zvol. We can design that later as it requires care and, like most everything else we offer, it will have an SDK/CLI/HTTP API to our services.
+
+- Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement: customers point CI at Verself and workflows run on Verself Firecracker VMs for a 2–10x speedup. We dogfood it on every merge to main, comparing against Blacksmith.sh and GitHub Actions to verify we are faster.
 - Verself does not host customer applications. Customer code runs only inside short-lived sandboxes the customer rents (CI workflow runs today; Lambda-style invocations and persistent dev VMs later) on the same isolation, billing, and telemetry substrate.
 - The bootstrap CLI is a separate offering. It renders site artifacts onto operator-supplied Latitude.sh bare metal so an operator can stand up an independent Verself installation. Once deployed, that installation runs at its own domain under its own name and has no runtime coupling to verself.sh: there is no tenant relationship, no upstream control plane, no shared identity, no shared data. See `docs/verself-cli.md`.
 </product_context>
