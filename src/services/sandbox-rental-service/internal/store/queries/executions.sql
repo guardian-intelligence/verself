@@ -252,3 +252,20 @@ WHERE e.workload_kind = sqlc.arg(workload_kind)
   AND a.state = sqlc.arg(state)
   AND ra.state = 'cleaned'
   AND ra.updated_at < (now() - (sqlc.arg(stale_seconds) * interval '1 second'));
+
+-- name: ListLeasedAttemptsForReconcile :many
+SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')::text AS billing_window_id
+FROM executions e
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+LEFT JOIN LATERAL (
+    SELECT billing_window_id
+    FROM execution_billing_windows
+    WHERE attempt_id = a.attempt_id
+    ORDER BY window_seq DESC
+    LIMIT 1
+) w ON true
+WHERE a.state IN ('launching', 'running')
+  AND COALESCE(a.lease_id, '') <> ''
+  AND a.updated_at < (now() - (sqlc.arg(stale_seconds) * interval '1 second'))
+ORDER BY a.updated_at
+LIMIT 50;

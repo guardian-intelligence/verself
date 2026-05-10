@@ -211,10 +211,7 @@ func (s *Service) failGoldenWorkspace(ctx context.Context, plan goldenWorkspaceP
 	if !plan.Enabled {
 		return
 	}
-	failureReason := strings.TrimSpace(reason)
-	if cause != nil {
-		failureReason = failureReason + ": " + cause.Error()
-	}
+	failureReason := goldenFailureReason(reason, cause)
 	now := time.Now().UTC()
 	if err := s.storeQueries().MarkWorkspaceOperationFailed(ctx, store.MarkWorkspaceOperationFailedParams{
 		FailureReason: failureReason,
@@ -232,6 +229,49 @@ func (s *Service) failGoldenWorkspace(ctx context.Context, plan goldenWorkspaceP
 		Result:      "failed",
 		Reason:      failureReason,
 	})
+}
+
+func (s *Service) failOpenGoldenWorkspaceForAttempt(ctx context.Context, item executionWorkItem, reason string, cause error) {
+	failureReason := goldenFailureReason(reason, cause)
+	rows, err := s.storeQueries().MarkOpenWorkspaceOperationsFailedByAttempt(ctx, store.MarkOpenWorkspaceOperationsFailedByAttemptParams{
+		FailureReason: failureReason,
+		Now:           pgTime(time.Now().UTC()),
+		AttemptID:     item.AttemptID,
+	})
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "mark open golden workspace failed", "attempt_id", item.AttemptID, "error", err)
+		}
+		return
+	}
+	for _, row := range rows {
+		_ = s.appendGoldenEvent(ctx, goldenEvent{
+			OperationID: &row.OperationID,
+			ScopeID:     &row.GoldenScopeID,
+			ExecutionID: &row.ExecutionID,
+			AttemptID:   &row.AttemptID,
+			Name:        "github.workspace.reconcile",
+			Result:      "failed",
+			Reason:      failureReason,
+		})
+	}
+}
+
+func goldenFailureReason(reason string, cause error) string {
+	failureReason := strings.TrimSpace(reason)
+	if cause != nil {
+		causeText := strings.TrimSpace(cause.Error())
+		if causeText != "" {
+			if failureReason == "" {
+				return causeText
+			}
+			return failureReason + ": " + causeText
+		}
+	}
+	if failureReason == "" {
+		return "unknown"
+	}
+	return failureReason
 }
 
 func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWorkItem, leaseID string, plan goldenWorkspacePlan, finalExec vmorchestrator.ExecRecord) error {

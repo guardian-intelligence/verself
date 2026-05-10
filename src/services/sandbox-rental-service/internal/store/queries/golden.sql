@@ -77,6 +77,28 @@ SET final_state = 'failed',
     result_recorded_at = sqlc.arg(now)
 WHERE operation_id = sqlc.arg(operation_id);
 
+-- name: MarkOpenWorkspaceOperationsFailedByAttempt :many
+UPDATE workspace_operations
+SET final_state = 'failed',
+    failure_reason = sqlc.arg(failure_reason),
+    result_recorded_at = sqlc.arg(now)
+WHERE attempt_id = sqlc.arg(attempt_id)
+  AND final_state IN ('requested', 'mounted')
+RETURNING operation_id, golden_scope_id, execution_id, attempt_id;
+
+-- name: ListTerminalAttemptsWithOpenWorkspaceOperations :many
+SELECT DISTINCT
+    wo.execution_id,
+    wo.attempt_id,
+    a.state AS attempt_state,
+    a.failure_reason AS attempt_failure_reason
+FROM workspace_operations wo
+JOIN execution_attempts a ON a.attempt_id = wo.attempt_id
+WHERE wo.final_state IN ('requested', 'mounted')
+  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost')
+ORDER BY wo.attempt_id
+LIMIT 50;
+
 -- name: InsertGoldenGeneration :one
 INSERT INTO golden_generations (
     golden_generation_id, golden_scope_id, operation_id, source_generation_id,

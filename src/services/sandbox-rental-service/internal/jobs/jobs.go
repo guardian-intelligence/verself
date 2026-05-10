@@ -82,6 +82,7 @@ type Runner interface {
 	GetCapacity(ctx context.Context) (vmorchestrator.Capacity, error)
 	AcquireLease(ctx context.Context, key string, spec vmorchestrator.LeaseSpec) (vmorchestrator.LeaseRecord, error)
 	RenewLease(ctx context.Context, leaseID, key string, extendSeconds uint64, allowlist []string) (time.Time, error)
+	GetLease(ctx context.Context, leaseID string) (vmorchestrator.LeaseRecord, error)
 	ReleaseLease(ctx context.Context, leaseID, key string) error
 	StartExec(ctx context.Context, leaseID, key string, spec vmorchestrator.ExecSpec) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
@@ -995,6 +996,12 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 	err = tx.Commit(ctx)
 	if cause != nil {
 		slog.Default().WarnContext(ctx, "execution failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "reason", reason, "error", cause)
+	}
+	if err == nil {
+		s.failOpenGoldenWorkspaceForAttempt(detachedContext(ctx), item, reason, cause)
+		if item.WorkloadKind == WorkloadKindRunner {
+			s.MarkRunnerExecutionExited(detachedContext(ctx), item.ExecutionID)
+		}
 	}
 	return err
 }

@@ -8,6 +8,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/store"
+	vmorchestrator "github.com/verself/vm-orchestrator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const reconcileStaleAfter = 10 * time.Second
@@ -20,6 +23,12 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		return err
 	}
 	if err := s.reconcileLaunchingAttempts(ctx); err != nil {
+		return err
+	}
+	if err := s.reconcileLeasedAttempts(ctx); err != nil {
+		return err
+	}
+	if err := s.reconcileTerminalWorkspaceOperations(ctx); err != nil {
 		return err
 	}
 	if err := s.reconcileCleanedRunnerAttempts(ctx); err != nil {
@@ -78,6 +87,66 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_launch_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale launching attempt %s: %w", item.AttemptID, err)
 		}
+	}
+	return nil
+}
+
+func (s *Service) reconcileLeasedAttempts(ctx context.Context) error {
+	if s.Orchestrator == nil {
+		return nil
+	}
+	rows, err := s.storeQueries().ListLeasedAttemptsForReconcile(ctx, store.ListLeasedAttemptsForReconcileParams{
+		StaleSeconds: int32((30 * time.Second).Seconds()),
+	})
+	if err != nil {
+		return fmt.Errorf("query leased attempts for reconcile: %w", err)
+	}
+	for _, row := range rows {
+		item, err := s.loadReconcileWorkItem(ctx, row.ExecutionID, row.AttemptID, row.BillingWindowID)
+		if err != nil {
+			return err
+		}
+		lease, err := s.Orchestrator.GetLease(ctx, item.LeaseID)
+		if err != nil {
+			if !orchestratorLeaseMissing(err) {
+				return fmt.Errorf("get lease %s for attempt %s: %w", item.LeaseID, item.AttemptID, err)
+			}
+			if item.windowID != "" {
+				_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+			}
+			if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_missing_lease", err); err != nil {
+				return fmt.Errorf("fail missing-lease attempt %s: %w", item.AttemptID, err)
+			}
+			continue
+		}
+		if !lease.State.Terminal() {
+			continue
+		}
+		if item.windowID != "" {
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+		}
+		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_terminal_lease_"+leaseStateName(lease.State), nil); err != nil {
+			return fmt.Errorf("fail terminal-lease attempt %s: %w", item.AttemptID, err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) reconcileTerminalWorkspaceOperations(ctx context.Context) error {
+	rows, err := s.storeQueries().ListTerminalAttemptsWithOpenWorkspaceOperations(ctx)
+	if err != nil {
+		return fmt.Errorf("query terminal attempts with open workspace operations: %w", err)
+	}
+	for _, row := range rows {
+		item, err := s.loadWorkItem(ctx, row.ExecutionID, row.AttemptID)
+		if err != nil {
+			return err
+		}
+		reason := "reconciled_terminal_attempt_without_workspace_result:" + row.AttemptState
+		if row.AttemptFailureReason != "" {
+			reason += ":" + row.AttemptFailureReason
+		}
+		s.failOpenGoldenWorkspaceForAttempt(ctx, item, reason, nil)
 	}
 	return nil
 }
@@ -167,6 +236,32 @@ func failureReasonForExpiredAllocation(state string) string {
 		return "cleanup_deadline_exceeded"
 	default:
 		return "deadline_exceeded"
+	}
+}
+
+func orchestratorLeaseMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	return status.Code(err) == codes.NotFound
+}
+
+func leaseStateName(state vmorchestrator.LeaseState) string {
+	switch state {
+	case vmorchestrator.LeaseStateAcquiring:
+		return "acquiring"
+	case vmorchestrator.LeaseStateReady:
+		return "ready"
+	case vmorchestrator.LeaseStateDraining:
+		return "draining"
+	case vmorchestrator.LeaseStateReleased:
+		return "released"
+	case vmorchestrator.LeaseStateExpired:
+		return "expired"
+	case vmorchestrator.LeaseStateCrashed:
+		return "crashed"
+	default:
+		return "unspecified"
 	}
 }
 

@@ -718,6 +718,54 @@ func (q *Queries) ListExecutionLogChunks(ctx context.Context, arg ListExecutionL
 	return items, nil
 }
 
+const listLeasedAttemptsForReconcile = `-- name: ListLeasedAttemptsForReconcile :many
+SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')::text AS billing_window_id
+FROM executions e
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+LEFT JOIN LATERAL (
+    SELECT billing_window_id
+    FROM execution_billing_windows
+    WHERE attempt_id = a.attempt_id
+    ORDER BY window_seq DESC
+    LIMIT 1
+) w ON true
+WHERE a.state IN ('launching', 'running')
+  AND COALESCE(a.lease_id, '') <> ''
+  AND a.updated_at < (now() - ($1 * interval '1 second'))
+ORDER BY a.updated_at
+LIMIT 50
+`
+
+type ListLeasedAttemptsForReconcileParams struct {
+	StaleSeconds interface{}
+}
+
+type ListLeasedAttemptsForReconcileRow struct {
+	ExecutionID     uuid.UUID
+	AttemptID       uuid.UUID
+	BillingWindowID string
+}
+
+func (q *Queries) ListLeasedAttemptsForReconcile(ctx context.Context, arg ListLeasedAttemptsForReconcileParams) ([]ListLeasedAttemptsForReconcileRow, error) {
+	rows, err := q.db.Query(ctx, listLeasedAttemptsForReconcile, arg.StaleSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLeasedAttemptsForReconcileRow{}
+	for rows.Next() {
+		var i ListLeasedAttemptsForReconcileRow
+		if err := rows.Scan(&i.ExecutionID, &i.AttemptID, &i.BillingWindowID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunnerClassFilesystemMounts = `-- name: ListRunnerClassFilesystemMounts :many
 SELECT mount_name, source_ref, mount_path, fs_type, read_only
 FROM runner_class_filesystem_mounts

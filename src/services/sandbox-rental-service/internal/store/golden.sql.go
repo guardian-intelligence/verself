@@ -389,6 +389,100 @@ func (q *Queries) ListGoldenPromotionCandidatesForRun(ctx context.Context, arg L
 	return items, nil
 }
 
+const listTerminalAttemptsWithOpenWorkspaceOperations = `-- name: ListTerminalAttemptsWithOpenWorkspaceOperations :many
+SELECT DISTINCT
+    wo.execution_id,
+    wo.attempt_id,
+    a.state AS attempt_state,
+    a.failure_reason AS attempt_failure_reason
+FROM workspace_operations wo
+JOIN execution_attempts a ON a.attempt_id = wo.attempt_id
+WHERE wo.final_state IN ('requested', 'mounted')
+  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost')
+ORDER BY wo.attempt_id
+LIMIT 50
+`
+
+type ListTerminalAttemptsWithOpenWorkspaceOperationsRow struct {
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+	AttemptState         string
+	AttemptFailureReason string
+}
+
+func (q *Queries) ListTerminalAttemptsWithOpenWorkspaceOperations(ctx context.Context) ([]ListTerminalAttemptsWithOpenWorkspaceOperationsRow, error) {
+	rows, err := q.db.Query(ctx, listTerminalAttemptsWithOpenWorkspaceOperations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTerminalAttemptsWithOpenWorkspaceOperationsRow{}
+	for rows.Next() {
+		var i ListTerminalAttemptsWithOpenWorkspaceOperationsRow
+		if err := rows.Scan(
+			&i.ExecutionID,
+			&i.AttemptID,
+			&i.AttemptState,
+			&i.AttemptFailureReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markOpenWorkspaceOperationsFailedByAttempt = `-- name: MarkOpenWorkspaceOperationsFailedByAttempt :many
+UPDATE workspace_operations
+SET final_state = 'failed',
+    failure_reason = $1,
+    result_recorded_at = $2
+WHERE attempt_id = $3
+  AND final_state IN ('requested', 'mounted')
+RETURNING operation_id, golden_scope_id, execution_id, attempt_id
+`
+
+type MarkOpenWorkspaceOperationsFailedByAttemptParams struct {
+	FailureReason string
+	Now           pgtype.Timestamptz
+	AttemptID     uuid.UUID
+}
+
+type MarkOpenWorkspaceOperationsFailedByAttemptRow struct {
+	OperationID   uuid.UUID
+	GoldenScopeID uuid.UUID
+	ExecutionID   uuid.UUID
+	AttemptID     uuid.UUID
+}
+
+func (q *Queries) MarkOpenWorkspaceOperationsFailedByAttempt(ctx context.Context, arg MarkOpenWorkspaceOperationsFailedByAttemptParams) ([]MarkOpenWorkspaceOperationsFailedByAttemptRow, error) {
+	rows, err := q.db.Query(ctx, markOpenWorkspaceOperationsFailedByAttempt, arg.FailureReason, arg.Now, arg.AttemptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MarkOpenWorkspaceOperationsFailedByAttemptRow{}
+	for rows.Next() {
+		var i MarkOpenWorkspaceOperationsFailedByAttemptRow
+		if err := rows.Scan(
+			&i.OperationID,
+			&i.GoldenScopeID,
+			&i.ExecutionID,
+			&i.AttemptID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markWorkspaceOperationFailed = `-- name: MarkWorkspaceOperationFailed :exec
 UPDATE workspace_operations
 SET final_state = 'failed',

@@ -66,6 +66,14 @@ func (c *Client) RenewLease(ctx context.Context, leaseID, key string, extendSeco
 	return timeFromUnixNs(resp.GetExpiresAtUnixNs()), nil
 }
 
+func (c *Client) GetLease(ctx context.Context, leaseID string) (LeaseRecord, error) {
+	resp, err := c.client.GetLease(ctx, &vmrpc.GetLeaseRequest{LeaseId: leaseID})
+	if err != nil {
+		return LeaseRecord{}, fmt.Errorf("get lease %s: %w", leaseID, err)
+	}
+	return leaseRecordFromProto(resp.GetLease()), nil
+}
+
 func (c *Client) ReleaseLease(ctx context.Context, leaseID, key string) error {
 	_, err := c.client.ReleaseLease(ctx, &vmrpc.ReleaseLeaseRequest{LeaseId: leaseID, IdempotencyKey: key})
 	if err != nil {
@@ -221,6 +229,24 @@ func execRecordFromProto(record *vmrpc.ExecRecord) ExecRecord {
 		Metrics:                vmMetricsFromProto(record.GetMetrics()),
 		ZFSWritten:             record.GetZfsWritten(),
 		RootfsProvisionedBytes: record.GetRootfsProvisionedBytes(),
+	}
+}
+
+func leaseRecordFromProto(record *vmrpc.LeaseRecord) LeaseRecord {
+	if record == nil {
+		return LeaseRecord{}
+	}
+	return LeaseRecord{
+		LeaseID:        record.GetLeaseId(),
+		State:          leaseStateFromProto(record.GetState()),
+		AcquiredAt:     timeFromUnixNs(record.GetAcquiredAtUnixNs()),
+		ReadyAt:        timeFromUnixNs(record.GetReadyAtUnixNs()),
+		ExpiresAt:      timeFromUnixNs(record.GetExpiresAtUnixNs()),
+		TerminalAt:     timeFromUnixNs(record.GetTerminalAtUnixNs()),
+		TerminalReason: record.GetTerminalReason(),
+		VMIP:           record.GetVmIp(),
+		Resources:      vmResourcesFromProto(record.GetResources()),
+		TrustClass:     record.GetTrustClass(),
 	}
 }
 
