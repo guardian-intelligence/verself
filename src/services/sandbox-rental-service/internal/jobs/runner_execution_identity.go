@@ -29,6 +29,7 @@ type RunnerExecutionIdentity struct {
 	RunHeadRepository      string
 	RunBaseSHA             string
 	RunBaseBranch          string
+	WorkflowPath           string
 	PullRequestNumber      int64
 	RunnerClass            string
 	RunnerName             string
@@ -64,6 +65,7 @@ func (s *Service) runnerExecutionIdentity(ctx context.Context, executionID, atte
 		RunHeadRepository:      row.RunHeadRepositoryFullName,
 		RunBaseSHA:             row.RunBaseSha,
 		RunBaseBranch:          row.RunBaseBranch,
+		WorkflowPath:           row.WorkflowPath,
 		PullRequestNumber:      row.PullRequestNumber,
 		RunnerClass:            row.RunnerClass,
 		RunnerName:             row.RunnerName,

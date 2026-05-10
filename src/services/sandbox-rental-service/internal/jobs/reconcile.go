@@ -28,7 +28,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileLeasedAttempts(ctx); err != nil {
 		return err
 	}
-	if err := s.reconcileTerminalWorkspaceOperations(ctx); err != nil {
+	if err := s.reconcileTerminalDurableOperations(ctx); err != nil {
 		return err
 	}
 	if err := s.reconcileTerminalRunnerAllocations(ctx); err != nil {
@@ -135,21 +135,21 @@ func (s *Service) reconcileLeasedAttempts(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) reconcileTerminalWorkspaceOperations(ctx context.Context) error {
-	rows, err := s.storeQueries().ListTerminalAttemptsWithOpenWorkspaceOperations(ctx)
+func (s *Service) reconcileTerminalDurableOperations(ctx context.Context) error {
+	rows, err := s.storeQueries().ListTerminalAttemptsWithOpenDurableOperations(ctx)
 	if err != nil {
-		return fmt.Errorf("query terminal attempts with open workspace operations: %w", err)
+		return fmt.Errorf("query terminal attempts with open durable operations: %w", err)
 	}
 	for _, row := range rows {
 		item, err := s.loadWorkItem(ctx, row.ExecutionID, row.AttemptID)
 		if err != nil {
 			return err
 		}
-		reason := "reconciled_terminal_attempt_without_workspace_result:" + row.AttemptState
+		reason := "reconciled_terminal_attempt_without_durable_result:" + row.AttemptState
 		if row.AttemptFailureReason != "" {
 			reason += ":" + row.AttemptFailureReason
 		}
-		s.failOpenGoldenWorkspaceForAttempt(ctx, item, reason, nil)
+		s.failOpenDurableOperationsForAttempt(ctx, item, reason, nil)
 	}
 	return nil
 }

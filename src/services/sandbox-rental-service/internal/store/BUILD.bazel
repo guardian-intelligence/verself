@@ -4,9 +4,9 @@ go_library(
     name = "store",
     srcs = [
         "db.go",
+        "durable.sql.go",
         "executions.sql.go",
         "forgejo_runner.sql.go",
-        "golden.sql.go",
         "github_runner.sql.go",
         "models.go",
         "recurring.sql.go",

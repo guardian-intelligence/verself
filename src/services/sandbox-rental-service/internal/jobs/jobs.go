@@ -550,12 +550,16 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.transition(ctx, item, StateReserved, StateLaunching, "launching", nil); err != nil {
 		return err
 	}
-	goldenPlan, err := s.prepareGoldenWorkspace(ctx, item)
+	durablePlan, err := s.prepareDurableVolumes(ctx, item)
 	if err != nil {
-		return s.failAttempt(ctx, item, "golden_workspace_prepare_failed", err)
+		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
+		defer cancel()
+		_ = s.voidBillingWindow(cleanupCtx, reservation)
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
+		return s.failAttempt(ctx, item, "durable_volume_prepare_failed", err)
 	}
-	if goldenPlan.Enabled {
-		item.FilesystemMounts = append(item.FilesystemMounts, goldenPlan.filesystemMount())
+	if durablePlan.Enabled {
+		item.FilesystemMounts = append(item.FilesystemMounts, durablePlan.filesystemMounts()...)
 	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
@@ -570,12 +574,12 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
-		s.failGoldenWorkspace(ctx, goldenPlan, "lease_acquire_failed", err)
+		s.failDurableVolumes(ctx, durablePlan, "lease_acquire_failed", err)
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
 	item.LeaseID = lease.LeaseID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
-	s.markGoldenWorkspaceMounted(ctx, goldenPlan)
+	s.markDurableVolumesMounted(ctx, durablePlan)
 
 	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
 	defer stopRenew()
@@ -590,7 +594,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	execRecord, err := s.Orchestrator.StartExec(ctx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		s.failGoldenWorkspace(ctx, goldenPlan, "exec_start_failed", err)
+		s.failDurableVolumes(ctx, durablePlan, "exec_start_failed", err)
 		return s.failAttempt(ctx, item, "exec_start_failed", err)
 	}
 	item.ExecID = execRecord.ExecID
@@ -599,7 +603,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err != nil {
 		_, _ = s.Orchestrator.CancelExec(detachedContext(ctx), lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":cancel", "billing_activate_failed")
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		s.failGoldenWorkspace(ctx, goldenPlan, "billing_activate_failed", err)
+		s.failDurableVolumes(ctx, durablePlan, "billing_activate_failed", err)
 		return s.failAttempt(ctx, item, "billing_activate_failed", err)
 	}
 	reservation = activated
@@ -621,15 +625,15 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
-		s.failGoldenWorkspace(terminalCtx, goldenPlan, "exec_wait_failed", waitErr)
+		s.failDurableVolumes(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	stopRenew()
-	goldenErr := s.finalizeGoldenWorkspace(ctx, item, lease.LeaseID, goldenPlan, finalExec)
-	if goldenErr != nil {
-		span.RecordError(goldenErr)
+	durableErr := s.finalizeDurableVolumes(ctx, item, lease.LeaseID, durablePlan, finalExec)
+	if durableErr != nil {
+		span.RecordError(durableErr)
 		if s.Logger != nil {
-			s.Logger.WarnContext(ctx, "golden workspace finalization failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", goldenErr)
+			s.Logger.WarnContext(ctx, "durable volume finalization failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", durableErr)
 		}
 	}
 	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
@@ -1001,7 +1005,7 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 		slog.Default().WarnContext(ctx, "execution failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "reason", reason, "error", cause)
 	}
 	if err == nil {
-		s.failOpenGoldenWorkspaceForAttempt(detachedContext(ctx), item, reason, cause)
+		s.failOpenDurableOperationsForAttempt(detachedContext(ctx), item, reason, cause)
 		if item.WorkloadKind == WorkloadKindRunner {
 			s.MarkRunnerExecutionExited(detachedContext(ctx), item.ExecutionID)
 		}

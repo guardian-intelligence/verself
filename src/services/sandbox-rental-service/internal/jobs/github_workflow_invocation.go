@@ -23,6 +23,7 @@ type githubWorkflowInvocation struct {
 	HeadRepositoryFullName string
 	BaseSHA                string
 	BaseBranch             string
+	WorkflowPath           string
 	PullRequestNumber      int64
 }
 
@@ -32,6 +33,7 @@ type githubWorkflowRunResponse struct {
 	Event      string `json:"event"`
 	HeadSHA    string `json:"head_sha"`
 	HeadBranch string `json:"head_branch"`
+	Path       string `json:"path"`
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
@@ -95,6 +97,7 @@ func githubWorkflowInvocationFromRun(ref goldenWorkflowRunRef, run githubWorkflo
 		HeadSHA:                strings.TrimSpace(firstNonEmpty(run.HeadSHA, ref.HeadSHA)),
 		HeadBranch:             strings.TrimSpace(run.HeadBranch),
 		HeadRepositoryFullName: strings.TrimSpace(run.HeadRepository.FullName),
+		WorkflowPath:           strings.TrimSpace(run.Path),
 	}
 	if invocation.HeadRepositoryFullName == "" {
 		invocation.HeadRepositoryFullName = invocation.RepositoryFullName
@@ -130,6 +133,7 @@ func (i githubWorkflowInvocation) upsertParams(now time.Time) store.UpsertGitHub
 		HeadRepositoryFullName: i.HeadRepositoryFullName,
 		BaseSha:                i.BaseSHA,
 		BaseBranch:             i.BaseBranch,
+		WorkflowPath:           i.WorkflowPath,
 		PullRequestNumber:      i.PullRequestNumber,
 		UpdatedAt:              pgTime(now),
 	}
@@ -139,7 +143,7 @@ func (i githubWorkflowInvocation) dogfoodMainPromotion(ref goldenWorkflowRunRef)
 	if i.EventName != "push" {
 		return false, "github workflow run is not a push event"
 	}
-	if i.HeadBranch != goldenWorkspaceDogfoodBranch {
+	if i.HeadBranch != durableDogfoodBranch {
 		return false, "github workflow run is not on dogfood main"
 	}
 	if i.PullRequestNumber != 0 {

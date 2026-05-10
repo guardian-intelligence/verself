@@ -628,6 +628,9 @@ type FilesystemMount struct {
 	FsType        string                 `protobuf:"bytes,4,opt,name=fs_type,json=fsType,proto3" json:"fs_type,omitempty"`
 	ReadOnly      bool                   `protobuf:"varint,5,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	OperationId   string                 `protobuf:"bytes,6,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	BindPaths     []string               `protobuf:"bytes,7,rep,name=bind_paths,json=bindPaths,proto3" json:"bind_paths,omitempty"`
+	Required      bool                   `protobuf:"varint,8,opt,name=required,proto3" json:"required,omitempty"`
+	SizeBytes     uint64                 `protobuf:"varint,9,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -702,6 +705,27 @@ func (x *FilesystemMount) GetOperationId() string {
 		return x.OperationId
 	}
 	return ""
+}
+
+func (x *FilesystemMount) GetBindPaths() []string {
+	if x != nil {
+		return x.BindPaths
+	}
+	return nil
+}
+
+func (x *FilesystemMount) GetRequired() bool {
+	if x != nil {
+		return x.Required
+	}
+	return false
+}
+
+func (x *FilesystemMount) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
 }
 
 type AcquireLeaseRequest struct {
@@ -2945,7 +2969,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"trustClass\x12C\n" +
 	"\anetwork\x18\b \x01(\v2).verself.vm_orchestrator.v1.NetworkAttachR\anetwork\x12X\n" +
 	"\x11filesystem_mounts\x18\t \x03(\v2+.verself.vm_orchestrator.v1.FilesystemMountR\x10filesystemMountsJ\x04\b\x04\x10\x05J\x04\b\a\x10\bJ\x04\b\n" +
-	"\x10\v\"\xbc\x01\n" +
+	"\x10\v\"\x96\x02\n" +
 	"\x0fFilesystemMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -2954,7 +2978,12 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"mount_path\x18\x03 \x01(\tR\tmountPath\x12\x17\n" +
 	"\afs_type\x18\x04 \x01(\tR\x06fsType\x12\x1b\n" +
 	"\tread_only\x18\x05 \x01(\bR\breadOnly\x12!\n" +
-	"\foperation_id\x18\x06 \x01(\tR\voperationId\"y\n" +
+	"\foperation_id\x18\x06 \x01(\tR\voperationId\x12\x1d\n" +
+	"\n" +
+	"bind_paths\x18\a \x03(\tR\tbindPaths\x12\x1a\n" +
+	"\brequired\x18\b \x01(\bR\brequired\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\t \x01(\x04R\tsizeBytes\"y\n" +
 	"\x13AcquireLeaseRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x129\n" +
 	"\x04spec\x18\x02 \x01(\v2%.verself.vm_orchestrator.v1.LeaseSpecR\x04spec\"\xa7\x02\n" +

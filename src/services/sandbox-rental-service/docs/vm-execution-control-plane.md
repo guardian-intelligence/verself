@@ -9,7 +9,7 @@ vm-bridge control, and guest telemetry.
 Code pointers:
 
 - `internal/jobs/` - River workers, execution attempts, runner provider demand
-  records, runner allocations, golden workspace planning, and reconciliation.
+  records, runner allocations, durable volume planning, and reconciliation.
 - `internal/api/` - secured Huma routes for GitHub installations, execution
   history/logs, recurring schedules, and billing views.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
@@ -34,9 +34,9 @@ State model:
   job sync.
 - `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
-- Golden workspace state belongs beside executions: stable job shape rows,
-  scoped immutable generation rows, current pointers, workspace operations,
-  and durable component metadata.
+- Durable volume state belongs beside executions: cache declarations, stable
+  job shape rows, scoped immutable generation rows, current pointers, and
+  durable operations.
 - `execution_schedules` and `execution_schedule_dispatches` are Temporal-backed
   recurring canary state.
 
@@ -51,30 +51,32 @@ Runner flow:
 3. The execution worker reserves billing, acquires a vm-orchestrator lease,
    starts the workload payload, streams logs, and settles billing.
 
-Golden workspace flow:
+Durable volume flow:
 
 1. Provider demand persists the GitHub job identity before any host mutation:
    organization, provider, repository, workflow, job name, runner labels,
    matrix key, run ID, run attempt, head SHA, and branch.
-2. sandbox-rental derives a stable job shape and golden scope from persisted
+2. sandbox-rental derives a stable job shape and durable scope from persisted
    provider state. The guest never supplies tenant, repository, branch, or
    trust identity.
 3. sandbox-rental resolves the current readable generation for the scope and
-   inserts a `workspace_operations` row with the observed source generation.
+   inserts a `durable_operation` row with the observed source generation.
    No database row claims a new generation exists before ZFS has sealed it.
-4. The lease request includes a static workspace filesystem mount plan. A hit
-   clones the current generation; a miss creates an empty ext4 zvol. The mount
-   is available before the GitHub runner process starts.
+4. The lease request includes a static filesystem mount plan. The workspace
+   mount is required; cache mounts are optional. A hit clones the current
+   generation; a miss creates an empty ext4 zvol. Mounts are available before
+   the GitHub runner process starts.
 5. The runner work directory is the normal GitHub Actions `_work` tree under
    `GITHUB_WORKSPACE` semantics, so customer YAML continues to use ordinary
    checkout and build steps.
-6. After the runner exits, sandbox-rental asks vm-orchestrator to seal the
-   workspace mount. vm-orchestrator unmounts, flushes, snapshots, promotes the
-   clone-backed immutable generation, and returns only service-level results.
-7. sandbox-rental records the immutable generation and durable component
-   metadata, then promotes the current pointer by compare-and-swap against the
-   source generation observed before the host mutation. A lost CAS leaves the
-   generation retained and prunable, not failed.
+6. After the runner exits, sandbox-rental asks vm-orchestrator to seal each
+   mounted writable volume. vm-orchestrator unmounts guest bind mounts, flushes,
+   snapshots, clones the sealed generation, and returns only service-level
+   results.
+7. sandbox-rental records the immutable generation, then promotes the current
+   pointer by compare-and-swap against the source generation observed before the
+   host mutation. A lost CAS leaves the generation retained and prunable, not
+   failed.
 8. A GitHub workflow run promotes branch goldens only after the run's job set is
    observed complete and every job is successful or skipped. Failed or canceled
    runs leave the current pointer at the last green generation.

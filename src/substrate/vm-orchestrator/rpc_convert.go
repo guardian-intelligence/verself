@@ -39,8 +39,11 @@ func filesystemMountsFromProto(mounts []*vmrpc.FilesystemMount) []FilesystemMoun
 			OperationID: mount.GetOperationId(),
 			SourceRef:   mount.GetSourceRef(),
 			MountPath:   mount.GetMountPath(),
+			BindPaths:   append([]string(nil), mount.GetBindPaths()...),
 			FSType:      mount.GetFsType(),
 			ReadOnly:    mount.GetReadOnly(),
+			Required:    mount.GetRequired(),
+			SizeBytes:   mount.GetSizeBytes(),
 		})
 	}
 	return out
@@ -57,8 +60,11 @@ func filesystemMountsToProto(mounts []FilesystemMount) []*vmrpc.FilesystemMount 
 			OperationId: mount.OperationID,
 			SourceRef:   mount.SourceRef,
 			MountPath:   mount.MountPath,
+			BindPaths:   append([]string(nil), mount.BindPaths...),
 			FsType:      mount.FSType,
 			ReadOnly:    mount.ReadOnly,
+			Required:    mount.Required,
+			SizeBytes:   mount.SizeBytes,
 		})
 	}
 	return out

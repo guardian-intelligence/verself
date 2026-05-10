@@ -21,8 +21,8 @@ genrule(
 #                                            AGENT_TOOLSDIRECTORY)
 #
 # The .verself-writable-overlays manifest tells vm-bridge to tmpfs-mount
-# _work/_diag/_temp on top of the read-only base so the runner can write
-# its scratch dirs without poisoning the shared image.
+# _diag/_temp on top of the read-only base so the runner can write scratch
+# dirs without poisoning the shared image. _work is a durable workspace mount.
 #
 # Sized at 1024 MiB; upstream runner tarball is ~150 MiB extracted, the
 # overlay is a few KiB, so this leaves comfortable headroom for runner

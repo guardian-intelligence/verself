@@ -1,0 +1,228 @@
+-- name: UpsertCacheDeclaration :one
+INSERT INTO cache_declaration (
+    cache_declaration_id, repository_id, source_kind, source_ref, source_sha,
+    source_path, workflow_identity, job_identity, step_identity,
+    declaration_sha256, declaration_hash, normalized_json, parsed_at
+) VALUES (
+    sqlc.arg(cache_declaration_id), sqlc.arg(repository_id), sqlc.arg(source_kind),
+    sqlc.arg(source_ref), sqlc.arg(source_sha), sqlc.arg(source_path),
+    sqlc.arg(workflow_identity), sqlc.arg(job_identity), sqlc.arg(step_identity),
+    sqlc.arg(declaration_sha256), sqlc.arg(declaration_hash), sqlc.arg(normalized_json)::jsonb,
+    sqlc.arg(parsed_at)
+)
+ON CONFLICT (repository_id, declaration_hash, source_kind, source_ref, workflow_identity, job_identity, step_identity)
+DO UPDATE SET parsed_at = EXCLUDED.parsed_at
+RETURNING cache_declaration_id;
+
+-- name: InsertCacheVolumeSpec :exec
+INSERT INTO cache_volume_spec (
+    cache_volume_spec_id, cache_declaration_id, name, size_bytes,
+    path_set_hash, mount_policy_hash, normalized_paths_json, created_at
+) VALUES (
+    sqlc.arg(cache_volume_spec_id), sqlc.arg(cache_declaration_id), sqlc.arg(name),
+    sqlc.arg(size_bytes), sqlc.arg(path_set_hash), sqlc.arg(mount_policy_hash),
+    sqlc.arg(normalized_paths_json)::jsonb, sqlc.arg(created_at)
+)
+ON CONFLICT (cache_declaration_id, name) DO UPDATE SET
+    size_bytes = EXCLUDED.size_bytes,
+    path_set_hash = EXCLUDED.path_set_hash,
+    mount_policy_hash = EXCLUDED.mount_policy_hash,
+    normalized_paths_json = EXCLUDED.normalized_paths_json;
+
+-- name: UpsertJobShape :one
+INSERT INTO job_shape (
+    job_shape_id, repository_id, provider, workflow_identity, called_workflow_identity,
+    job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
+    kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
+    cache_declaration_hash, created_at
+) VALUES (
+    sqlc.arg(job_shape_id), sqlc.arg(repository_id), sqlc.arg(provider),
+    sqlc.arg(workflow_identity), sqlc.arg(called_workflow_identity),
+    sqlc.arg(job_identity), sqlc.arg(matrix_key), sqlc.arg(runner_class),
+    sqlc.arg(guest_arch), sqlc.arg(platform_image_id), sqlc.arg(kernel_image_id),
+    sqlc.arg(runner_toolchain_image_id), sqlc.arg(workspace_policy_hash),
+    sqlc.arg(cache_declaration_hash), sqlc.arg(created_at)
+)
+ON CONFLICT (
+    repository_id, provider, workflow_identity, called_workflow_identity,
+    job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
+    kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
+    cache_declaration_hash
+) DO UPDATE SET created_at = job_shape.created_at
+RETURNING job_shape_id;
+
+-- name: UpsertDurableScope :one
+INSERT INTO durable_scope (
+    durable_scope_id, repository_id, provider, provider_repository_id, scope_kind,
+    scope_ref, job_shape_id, component_name, component_kind, trust_class, created_at
+) VALUES (
+    sqlc.arg(durable_scope_id), sqlc.arg(repository_id), sqlc.arg(provider),
+    sqlc.arg(provider_repository_id), sqlc.arg(scope_kind), sqlc.arg(scope_ref),
+    sqlc.arg(job_shape_id), sqlc.arg(component_name), sqlc.arg(component_kind),
+    sqlc.arg(trust_class), sqlc.arg(created_at)
+)
+ON CONFLICT (repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+DO UPDATE SET created_at = durable_scope.created_at
+RETURNING durable_scope_id;
+
+-- name: EnsureDurableCurrentPointer :exec
+INSERT INTO durable_current_pointer (durable_scope_id, current_generation_id, promoted_at)
+VALUES (sqlc.arg(durable_scope_id), NULL, sqlc.arg(promoted_at))
+ON CONFLICT (durable_scope_id) DO NOTHING;
+
+-- name: GetCurrentDurableGeneration :one
+SELECT
+    g.durable_generation_id,
+    g.zfs_snapshot_ref,
+    g.head_sha,
+    g.tree_hash
+FROM durable_current_pointer p
+JOIN durable_generation g ON g.durable_generation_id = p.current_generation_id
+WHERE p.durable_scope_id = sqlc.arg(durable_scope_id);
+
+-- name: InsertDurableOperation :one
+INSERT INTO durable_operation (
+    operation_id, execution_id, attempt_id, allocation_id, durable_scope_id,
+    source_generation_id, source_snapshot_ref, candidate_generation_id,
+    mount_name, internal_mount_path, bind_paths_json, size_bytes, trust_class,
+    requested_at, final_state
+) VALUES (
+    sqlc.arg(operation_id), sqlc.arg(execution_id), sqlc.arg(attempt_id), sqlc.narg(allocation_id),
+    sqlc.arg(durable_scope_id), sqlc.narg(source_generation_id), sqlc.arg(source_snapshot_ref),
+    sqlc.arg(candidate_generation_id), sqlc.arg(mount_name), sqlc.arg(internal_mount_path),
+    sqlc.arg(bind_paths_json)::jsonb, sqlc.arg(size_bytes), sqlc.arg(trust_class),
+    sqlc.arg(requested_at), 'requested'
+)
+ON CONFLICT (operation_id) DO UPDATE SET requested_at = durable_operation.requested_at
+RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref,
+          candidate_generation_id, mount_name, internal_mount_path, bind_paths_json,
+          size_bytes, trust_class;
+
+-- name: MarkDurableOperationMounted :exec
+UPDATE durable_operation
+SET host_accepted_at = COALESCE(host_accepted_at, sqlc.arg(mounted_at)),
+    mounted_at = COALESCE(mounted_at, sqlc.arg(mounted_at)),
+    final_state = 'mounted'
+WHERE operation_id = sqlc.arg(operation_id)
+  AND final_state = 'requested';
+
+-- name: MarkDurableOperationSealStarted :exec
+UPDATE durable_operation
+SET seal_started_at = COALESCE(seal_started_at, sqlc.arg(seal_started_at))
+WHERE operation_id = sqlc.arg(operation_id)
+  AND final_state IN ('requested', 'mounted');
+
+-- name: MarkDurableOperationFailed :exec
+UPDATE durable_operation
+SET final_state = 'failed',
+    failure_reason = sqlc.arg(failure_reason),
+    result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at))
+WHERE operation_id = sqlc.arg(operation_id)
+  AND final_state IN ('requested', 'mounted');
+
+-- name: MarkOpenDurableOperationsFailedByAttempt :many
+UPDATE durable_operation
+SET final_state = 'failed',
+    failure_reason = sqlc.arg(failure_reason),
+    result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at))
+WHERE attempt_id = sqlc.arg(attempt_id)
+  AND final_state IN ('requested', 'mounted')
+RETURNING operation_id, durable_scope_id, execution_id, attempt_id;
+
+-- name: InsertDurableGeneration :one
+INSERT INTO durable_generation (
+    durable_generation_id, durable_scope_id, operation_id, source_generation_id,
+    head_sha, tree_hash, provider_run_id, provider_run_attempt, provider_job_id,
+    result, promotion_eligible, state, zfs_snapshot_ref, used_bytes, written_bytes,
+    sealed_at, committed_at, last_used_at, expires_at
+) VALUES (
+    sqlc.arg(durable_generation_id), sqlc.arg(durable_scope_id), sqlc.arg(operation_id),
+    sqlc.narg(source_generation_id), sqlc.arg(head_sha), sqlc.arg(tree_hash),
+    sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt), sqlc.arg(provider_job_id),
+    sqlc.arg(result), sqlc.arg(promotion_eligible), sqlc.arg(state), sqlc.arg(zfs_snapshot_ref),
+    sqlc.arg(used_bytes), sqlc.arg(written_bytes), sqlc.arg(sealed_at), sqlc.arg(committed_at),
+    sqlc.arg(last_used_at), sqlc.narg(expires_at)
+)
+ON CONFLICT (operation_id) DO UPDATE SET last_used_at = EXCLUDED.last_used_at
+RETURNING durable_generation_id;
+
+-- name: MarkDurableOperationResultRecorded :exec
+UPDATE durable_operation
+SET final_state = sqlc.arg(final_state),
+    sealed_at = COALESCE(sealed_at, sqlc.arg(sealed_at)),
+    result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at)),
+    failure_reason = sqlc.arg(failure_reason)
+WHERE operation_id = sqlc.arg(operation_id)
+  AND final_state IN ('requested', 'mounted');
+
+-- name: PromoteDurableGenerationCAS :execrows
+UPDATE durable_current_pointer
+SET current_generation_id = sqlc.arg(candidate_generation_id),
+    promoted_by_operation_id = sqlc.arg(operation_id),
+    promoted_at = sqlc.arg(promoted_at)
+WHERE durable_scope_id = sqlc.arg(durable_scope_id)
+  AND (current_generation_id IS NOT DISTINCT FROM sqlc.narg(source_generation_id));
+
+-- name: RetainDurableGeneration :exec
+UPDATE durable_generation
+SET state = 'retained',
+    last_used_at = sqlc.arg(retained_at)
+WHERE durable_generation_id = sqlc.arg(durable_generation_id)
+  AND durable_generation.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND state = 'committed'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer
+      WHERE durable_current_pointer.durable_scope_id = sqlc.arg(durable_scope_id)
+        AND durable_current_pointer.current_generation_id = durable_generation.durable_generation_id
+  );
+
+-- name: ListDurablePromotionCandidatesForRun :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id,
+    g.provider_job_id
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+WHERE g.provider_run_id = sqlc.arg(provider_run_id)
+  AND (sqlc.arg(provider_run_attempt)::bigint = 0 OR g.provider_run_attempt = sqlc.arg(provider_run_attempt))
+  AND g.head_sha = sqlc.arg(head_sha)
+  AND g.promotion_eligible
+  AND g.state = 'committed'
+ORDER BY g.committed_at, g.durable_generation_id;
+
+-- name: ListTerminalAttemptsWithOpenDurableOperations :many
+SELECT DISTINCT
+    a.execution_id,
+    a.attempt_id,
+    a.state AS attempt_state,
+    a.failure_reason AS attempt_failure_reason
+FROM durable_operation op
+JOIN execution_attempts a ON a.attempt_id = op.attempt_id
+WHERE op.final_state IN ('requested', 'mounted')
+  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost');
+
+-- name: GetDurableRunRepository :one
+SELECT
+    p.org_id,
+    provider_installation_id,
+    gi.provider_repository_id,
+    gi.repository_full_name
+FROM github_workflow_invocations gi
+JOIN runner_provider_repositories p ON p.provider = 'github'
+    AND p.provider_repository_id = gi.provider_repository_id
+    AND p.active
+WHERE gi.provider_repository_id = sqlc.arg(provider_repository_id)
+  AND gi.provider_run_id = sqlc.arg(provider_run_id)
+ORDER BY gi.provider_run_attempt DESC
+LIMIT 1;

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestWorkspaceJournalPersistsCommitPhases(t *testing.T) {
+func TestDurableJournalPersistsCommitPhases(t *testing.T) {
 	ctx := context.Background()
 	store, err := openHostStateStore(":memory:", nil)
 	if err != nil {
@@ -13,7 +13,7 @@ func TestWorkspaceJournalPersistsCommitPhases(t *testing.T) {
 	}
 	defer func() { _ = store.close() }()
 
-	entries := []workspaceJournalEntry{
+	entries := []durableJournalEntry{
 		{
 			OperationID: "op-a",
 			LeaseID:     "lease-a",
@@ -37,12 +37,12 @@ func TestWorkspaceJournalPersistsCommitPhases(t *testing.T) {
 		},
 	}
 	for _, entry := range entries {
-		if err := store.appendWorkspaceJournal(ctx, entry); err != nil {
+		if err := store.appendDurableJournal(ctx, entry); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	rows, err := store.db.QueryContext(ctx, `SELECT phase FROM host_workspace_journal WHERE operation_id = ? ORDER BY journal_seq`, "op-a")
+	rows, err := store.db.QueryContext(ctx, `SELECT phase FROM host_durable_journal WHERE operation_id = ? ORDER BY journal_seq`, "op-a")
 	if err != nil {
 		t.Fatal(err)
 	}

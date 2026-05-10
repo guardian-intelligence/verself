@@ -818,7 +818,7 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	}
 	_ = a.server.state.appendLeaseEvent(ctx, a.leaseID, LeaseEventVMBooting, "", nil)
 	observer := &leaseObserver{actor: a}
-	runtime, err := New(a.server.cfg, a.server.logger, withWorkspaceJournal(a.workspaceJournalSink())).BootLease(ctx, a.leaseID, spec, observer)
+	runtime, err := New(a.server.cfg, a.server.logger, withDurableJournal(a.durableJournalSink())).BootLease(ctx, a.leaseID, spec, observer)
 	if err != nil {
 		_ = a.server.state.finishLease(ctx, a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
 		return acquireReply{err: err}
@@ -920,9 +920,9 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		"parent_snapshot_ref": parentSnapshotRef,
 		"new_generation_name": newGenerationName,
 	}
-	appendJournalEntry := a.workspaceJournalSink()
+	appendJournalEntry := a.durableJournalSink()
 	appendJournal := func(phase, sourceDatasetRef, workingDatasetRef, sealedDatasetRef, errorMessage string) {
-		appendJournalEntry(workspaceJournalEntry{
+		appendJournalEntry(durableJournalEntry{
 			OperationID:       operationID,
 			LeaseID:           a.leaseID,
 			MountName:         mountName,
@@ -964,12 +964,12 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 	return commitFilesystemMountReply{result: result}
 }
 
-func (a *vmActor) workspaceJournalSink() func(workspaceJournalEntry) {
-	return func(entry workspaceJournalEntry) {
+func (a *vmActor) durableJournalSink() func(durableJournalEntry) {
+	return func(entry durableJournalEntry) {
 		if entry.LeaseID == "" {
 			entry.LeaseID = a.leaseID
 		}
-		_ = a.server.state.appendWorkspaceJournal(context.Background(), entry)
+		_ = a.server.state.appendDurableJournal(context.Background(), entry)
 	}
 }
 

@@ -53,6 +53,7 @@ SELECT
     COALESCE(inv.head_repository_full_name, '')::text AS run_head_repository_full_name,
     COALESCE(inv.base_sha, '')::text AS run_base_sha,
     COALESCE(inv.base_branch, '')::text AS run_base_branch,
+    COALESCE(inv.workflow_path, '')::text AS workflow_path,
     COALESCE(inv.pull_request_number, 0)::bigint AS pull_request_number,
     COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
@@ -67,7 +68,7 @@ LEFT JOIN runner_jobs j ON j.provider = a.provider
     AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
 LEFT JOIN LATERAL (
     SELECT gi.event_name, gi.head_sha, gi.head_branch, gi.head_repository_full_name,
-           gi.base_sha, gi.base_branch, gi.pull_request_number
+           gi.base_sha, gi.base_branch, gi.workflow_path, gi.pull_request_number
     FROM github_workflow_invocations gi
     WHERE a.provider = 'github'
       AND gi.provider_installation_id = a.provider_installation_id

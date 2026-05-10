@@ -860,13 +860,13 @@ INSERT INTO github_workflow_invocations (
     provider_installation_id, provider_repository_id, provider_run_id,
     provider_run_attempt, repository_full_name, event_name, head_sha,
     head_branch, head_repository_full_name, base_sha, base_branch,
-    pull_request_number, updated_at
+    pull_request_number, workflow_path, updated_at
 ) VALUES (
     $1, $2,
     $3, $4,
     $5, $6, $7,
     $8, $9, $10,
-    $11, $12, $13
+    $11, $12, $13, $14
 )
 ON CONFLICT (
     provider_installation_id, provider_repository_id, provider_run_id,
@@ -880,6 +880,7 @@ ON CONFLICT (
     base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), github_workflow_invocations.base_sha),
     base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
     pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
+    workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), github_workflow_invocations.workflow_path),
     updated_at = EXCLUDED.updated_at
 `
 
@@ -896,6 +897,7 @@ type UpsertGitHubWorkflowInvocationParams struct {
 	BaseSha                string
 	BaseBranch             string
 	PullRequestNumber      int64
+	WorkflowPath           string
 	UpdatedAt              pgtype.Timestamptz
 }
 
@@ -913,6 +915,7 @@ func (q *Queries) UpsertGitHubWorkflowInvocation(ctx context.Context, arg Upsert
 		arg.BaseSha,
 		arg.BaseBranch,
 		arg.PullRequestNumber,
+		arg.WorkflowPath,
 		arg.UpdatedAt,
 	)
 	return err

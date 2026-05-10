@@ -28,8 +28,8 @@ SeedImage RPC per image, idempotent via `vs:source_digest` on
   (mounted at `/opt/actions-runner`) and `forgejo-runner` (`/opt/forgejo-runner`).
   Each carries `etc-overlay/` (vm-bridge copies into `/etc/` at lease
   boot — adds `runner@1000`, NOPASSWD sudo, profile.d hooks) and
-  `.verself-writable-overlays` (vm-bridge tmpfs-mounts each listed path
-  on top of the read-only base — e.g. `/opt/actions-runner/_work`).
+  `.verself-writable-overlays` (vm-bridge tmpfs-mounts each listed scratch path
+  on top of the read-only base).
 - **Bazel macro** `toolchain_ext4_image` in
   `//src/substrate/vm-orchestrator/guest-images:guest_image.bzl` runs `mkfs.ext4 -d`
   hermetically with deterministic UUID + hash_seed +
@@ -39,7 +39,7 @@ SeedImage RPC per image, idempotent via `vs:source_digest` on
   `runner_class_filesystem_mounts` (sandbox-rental Postgres). Each
   runner_class names the toolchain images it wants; sandbox-rental
 	  resolves them into `LeaseSpec.FilesystemMounts` at acquire time.
-	  Per-execution writable golden workspace mounts are declared before
+	  Per-execution writable durable volume mounts are declared before
 	  `AcquireLease`; vm-orchestrator does not attach new block devices
 	  after the guest starts.
 - **Customer-uploaded images** land later under

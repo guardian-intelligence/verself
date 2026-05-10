@@ -6,11 +6,11 @@ go_library(
         "analytics.go",
         "checkout.go",
         "correlation.go",
+        "durable_volumes.go",
         "forgejo_runner.go",
         "github_execution_auth.go",
         "github_runner.go",
         "github_workflow_invocation.go",
-        "golden_workspace.go",
         "jobs.go",
         "logs_search.go",
         "reconcile.go",
@@ -44,16 +44,8 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@in_gopkg_yaml_v3//:yaml_v3",
     ],
-)
-
-go_test(
-    name = "jobs_test",
-    srcs = [
-        "github_workspace_test.go",
-        "golden_workspace_test.go",
-    ],
-    embed = [":jobs"],
 )
 
 alias(
