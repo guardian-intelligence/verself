@@ -566,6 +566,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
+		s.failGoldenWorkspace(ctx, goldenPlan, "lease_acquire_failed", err)
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
 	item.LeaseID = lease.LeaseID
@@ -585,6 +586,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	execRecord, err := s.Orchestrator.StartExec(ctx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
+		s.failGoldenWorkspace(ctx, goldenPlan, "exec_start_failed", err)
 		return s.failAttempt(ctx, item, "exec_start_failed", err)
 	}
 	item.ExecID = execRecord.ExecID
@@ -593,6 +595,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err != nil {
 		_, _ = s.Orchestrator.CancelExec(detachedContext(ctx), lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":cancel", "billing_activate_failed")
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
+		s.failGoldenWorkspace(ctx, goldenPlan, "billing_activate_failed", err)
 		return s.failAttempt(ctx, item, "billing_activate_failed", err)
 	}
 	reservation = activated
@@ -614,6 +617,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
+		s.failGoldenWorkspace(terminalCtx, goldenPlan, "exec_wait_failed", waitErr)
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	stopRenew()

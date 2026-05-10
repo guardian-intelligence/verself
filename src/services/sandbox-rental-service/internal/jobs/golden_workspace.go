@@ -207,6 +207,33 @@ func (s *Service) markGoldenWorkspaceMounted(ctx context.Context, plan goldenWor
 	})
 }
 
+func (s *Service) failGoldenWorkspace(ctx context.Context, plan goldenWorkspacePlan, reason string, cause error) {
+	if !plan.Enabled {
+		return
+	}
+	failureReason := strings.TrimSpace(reason)
+	if cause != nil {
+		failureReason = failureReason + ": " + cause.Error()
+	}
+	now := time.Now().UTC()
+	if err := s.storeQueries().MarkWorkspaceOperationFailed(ctx, store.MarkWorkspaceOperationFailedParams{
+		FailureReason: failureReason,
+		Now:           pgTime(now),
+		OperationID:   plan.OperationID,
+	}); err != nil && s.Logger != nil {
+		s.Logger.WarnContext(ctx, "mark golden workspace failed", "operation_id", plan.OperationID, "error", err)
+	}
+	_ = s.appendGoldenEvent(ctx, goldenEvent{
+		OperationID: &plan.OperationID,
+		ScopeID:     &plan.GoldenScopeID,
+		ExecutionID: &plan.Identity.ExecutionID,
+		AttemptID:   &plan.Identity.AttemptID,
+		Name:        "github.workspace.prepare",
+		Result:      "failed",
+		Reason:      failureReason,
+	})
+}
+
 func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWorkItem, leaseID string, plan goldenWorkspacePlan, finalExec vmorchestrator.ExecRecord) error {
 	if !plan.Enabled {
 		return nil
