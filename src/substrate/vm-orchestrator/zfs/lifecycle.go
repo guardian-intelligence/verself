@@ -62,6 +62,9 @@ func (l *VolumeLifecycle) PrepareSubstrateClone(ctx context.Context, lease Lease
 	if err := validateSameRoots(l.roots, lease.roots, image.roots); err != nil {
 		return err
 	}
+	if err := l.ops.ZFSEnsureFilesystem(ctx, lease.Dataset()); err != nil {
+		return err
+	}
 	return l.ops.ZFSClone(ctx, image.Snapshot().String(), lease.RootDataset(), lease.ID())
 }
 
@@ -86,6 +89,9 @@ func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Le
 	if snapshot.String() == "" {
 		return MountClone{}, fmt.Errorf("source snapshot is required")
 	}
+	if err := l.ops.ZFSEnsureFilesystem(ctx, filepath.ToSlash(filepath.Dir(target))); err != nil {
+		return MountClone{}, err
+	}
 	if err := l.ops.ZFSClone(ctx, snapshot.String(), target, firstNonEmpty(operationID, lease.ID())); err != nil {
 		return MountClone{}, err
 	}
@@ -99,6 +105,9 @@ func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, in
 	}
 	if sizeBytes == 0 {
 		return MountClone{}, fmt.Errorf("empty mount size is required")
+	}
+	if err := l.ops.ZFSEnsureFilesystem(ctx, filepath.ToSlash(filepath.Dir(target))); err != nil {
+		return MountClone{}, err
 	}
 	if err := l.ops.ZFSCreateVolume(ctx, target, sizeBytes, "16K"); err != nil {
 		return MountClone{}, err
