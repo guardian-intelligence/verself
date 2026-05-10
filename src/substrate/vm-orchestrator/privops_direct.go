@@ -95,10 +95,20 @@ func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) er
 	}
 	cmd := exec.CommandContext(ctx, "zfs", "create", "-p", dataset)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("zfs create -p %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	return finishZFSEnsureFilesystemCreate(ctx, dataset, out, err, zfs.DatasetExists)
+}
+
+type datasetExistsFunc func(context.Context, string) (bool, error)
+
+func finishZFSEnsureFilesystemCreate(ctx context.Context, dataset string, output []byte, createErr error, exists datasetExistsFunc) error {
+	if createErr == nil {
+		return nil
 	}
-	return nil
+	// zfs create -p is not idempotent if a concurrent creator wins the race.
+	if ok, err := exists(ctx, dataset); err == nil && ok {
+		return nil
+	}
+	return fmt.Errorf("zfs create -p %s: %s: %w", dataset, strings.TrimSpace(string(output)), createErr)
 }
 
 func (DirectPrivOps) ZFSSnapshotExists(ctx context.Context, snapshot string) (bool, error) {
