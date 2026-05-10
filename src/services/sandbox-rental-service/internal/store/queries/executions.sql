@@ -264,7 +264,7 @@ LEFT JOIN LATERAL (
     ORDER BY window_seq DESC
     LIMIT 1
 ) w ON true
-WHERE a.state IN ('launching', 'running')
+WHERE a.state IN ('launching', 'running', 'finalizing')
   AND COALESCE(a.lease_id, '') <> ''
   AND a.updated_at < (now() - (sqlc.arg(stale_seconds) * interval '1 second'))
 ORDER BY a.updated_at

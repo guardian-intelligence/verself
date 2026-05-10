@@ -623,21 +623,24 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		span.SetStatus(codes.Error, waitErr.Error())
 		terminalCtx := detachedContext(ctx)
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
+		s.failDurableVolumes(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
+		failErr := s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
-		s.failDurableVolumes(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
-		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
+		if failErr != nil {
+			return failErr
+		}
+		return nil
 	}
-	stopRenew()
+	if err := s.transition(ctx, item, StateRunning, StateFinalizing, "exec_finished", nil); err != nil {
+		return err
+	}
 	durableErr := s.finalizeDurableVolumes(ctx, item, lease.LeaseID, durablePlan, finalExec)
 	if durableErr != nil {
 		span.RecordError(durableErr)
 		if s.Logger != nil {
 			s.Logger.WarnContext(ctx, "durable volume finalization failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", durableErr)
 		}
-	}
-	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
-		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", lease.LeaseID, "error", err)
 	}
 
 	completedAt := finalExec.ExitedAt
@@ -650,7 +653,15 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	settleResult, err := s.settleBillingWindow(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec))
 	if err != nil {
-		return s.failAttempt(ctx, item, "billing_settle_failed", err)
+		failErr := s.failAttempt(ctx, item, "billing_settle_failed", err)
+		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release-after-settle-failed"); releaseErr != nil {
+			s.Logger.WarnContext(ctx, "release lease after billing settle failure failed", "lease_id", lease.LeaseID, "error", releaseErr)
+		}
+		stopRenew()
+		if failErr != nil {
+			return failErr
+		}
+		return nil
 	}
 	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs), settleResult)
 	state := StateSucceeded
@@ -663,8 +674,16 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		}
 	}
 	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
+		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release-after-complete-failed"); releaseErr != nil {
+			s.Logger.WarnContext(ctx, "release lease after completion failure failed", "lease_id", lease.LeaseID, "error", releaseErr)
+		}
+		stopRenew()
 		return err
 	}
+	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
+		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", lease.LeaseID, "error", err)
+	}
+	stopRenew()
 	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false)
 	if err == nil {
 		runRecord.Status = state
@@ -938,23 +957,13 @@ func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, s
 		CompletedAt:            pgTime(completedAt),
 		UpdatedAt:              pgTime(now),
 		AttemptID:              item.AttemptID,
-		FromState:              StateRunning,
+		FromState:              StateFinalizing,
 	})
 	if err != nil {
 		return err
 	}
 	if rows != 1 {
-		return fmt.Errorf("execution attempt %s is not in expected state %s", item.AttemptID, StateRunning)
-	}
-	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
-		ExecutionID: item.ExecutionID,
-		AttemptID:   item.AttemptID,
-		FromState:   StateRunning,
-		ToState:     StateFinalizing,
-		Reason:      "exec_finished",
-		CreatedAt:   pgTime(now),
-	}); err != nil {
-		return err
+		return fmt.Errorf("execution attempt %s is not in expected state %s", item.AttemptID, StateFinalizing)
 	}
 	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
 		ExecutionID: item.ExecutionID,

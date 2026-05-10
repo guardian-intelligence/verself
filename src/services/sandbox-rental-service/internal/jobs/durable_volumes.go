@@ -198,6 +198,12 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 	if identity.Provider != RunnerProviderGitHub {
 		return durableVolumePlan{}, nil
 	}
+	identity, err = s.hydrateGitHubRunIdentity(ctx, identity)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return durableVolumePlan{}, err
+	}
 
 	decl, err := s.resolveCacheDeclaration(ctx, identity)
 	if err != nil {
@@ -580,6 +586,34 @@ func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunP
 	}
 	_, err = s.promoteDurableWorkflowRun(ctx, goldenWorkflowRunRef{OrgID: orgID, Provider: RunnerProviderGitHub, ProviderInstallationID: installationID, ProviderRepositoryID: req.ProviderRepositoryID, ProviderRunID: req.ProviderRunID, ProviderRunAttempt: req.ProviderRunAttempt, RepositoryFullName: repositoryFullName, HeadSHA: req.HeadSHA})
 	return err
+}
+
+func (s *Service) hydrateGitHubRunIdentity(ctx context.Context, identity RunnerExecutionIdentity) (RunnerExecutionIdentity, error) {
+	if identity.Provider != RunnerProviderGitHub || s.GitHubRunner == nil || identity.ProviderRunID <= 0 {
+		return identity, nil
+	}
+	invocation, err := s.GitHubRunner.refreshWorkflowRunInvocationForRun(ctx, goldenRunRefFromRunnerIdentity(identity))
+	if err != nil {
+		return RunnerExecutionIdentity{}, fmt.Errorf("refresh github workflow run invocation: %w", err)
+	}
+	identity.RepositoryFullName = firstNonEmpty(identity.RepositoryFullName, invocation.RepositoryFullName)
+	identity.RunEventName = firstNonEmpty(invocation.EventName, identity.RunEventName)
+	identity.RunHeadSHA = firstNonEmpty(invocation.HeadSHA, identity.RunHeadSHA)
+	identity.RunHeadBranch = firstNonEmpty(invocation.HeadBranch, identity.RunHeadBranch)
+	identity.RunHeadRepository = firstNonEmpty(invocation.HeadRepositoryFullName, identity.RunHeadRepository)
+	identity.RunBaseSHA = firstNonEmpty(invocation.BaseSHA, identity.RunBaseSHA)
+	identity.RunBaseBranch = firstNonEmpty(invocation.BaseBranch, identity.RunBaseBranch)
+	identity.WorkflowPath = firstNonEmpty(invocation.WorkflowPath, identity.WorkflowPath)
+	if invocation.PullRequestNumber != 0 {
+		identity.PullRequestNumber = invocation.PullRequestNumber
+	}
+	if identity.HeadSHA == "" {
+		identity.HeadSHA = identity.RunHeadSHA
+	}
+	if identity.HeadBranch == "" {
+		identity.HeadBranch = identity.RunHeadBranch
+	}
+	return identity, nil
 }
 
 func (s *Service) promoteDurableWorkflowRun(ctx context.Context, ref goldenWorkflowRunRef) (bool, error) {
