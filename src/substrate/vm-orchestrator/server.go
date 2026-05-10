@@ -614,6 +614,68 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 	return resp, nil
 }
 
+func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.PruneFilesystemGenerationRequest) (*vmrpc.PruneFilesystemGenerationResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.PruneFilesystemGeneration")
+	defer span.End()
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	operationID := strings.TrimSpace(req.GetOperationId())
+	durableGenerationID := strings.TrimSpace(req.GetDurableGenerationId())
+	volumeID := strings.TrimSpace(req.GetVolumeId())
+	snapshotRef := strings.TrimSpace(req.GetSnapshotRef())
+	if key == "" || operationID == "" || durableGenerationID == "" || volumeID == "" || snapshotRef == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, durable_generation_id, volume_id, and snapshot_ref are required")
+	}
+	if !zfs.IsValidRef(operationID) {
+		return nil, status.Error(codes.InvalidArgument, "operation_id is invalid")
+	}
+	if !zfs.IsValidRef(durableGenerationID) {
+		return nil, status.Error(codes.InvalidArgument, "durable_generation_id is invalid")
+	}
+	if !zfs.IsValidRef(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "volume_id is invalid")
+	}
+	scope := "prune_filesystem_generation"
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.PruneFilesystemGenerationResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	generation, err := zfs.ParseGeneration(s.roots, snapshotRef)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if generation.Volume().ID() != volumeID {
+		return nil, status.Error(codes.InvalidArgument, "snapshot_ref does not belong to volume_id")
+	}
+	span.SetAttributes(
+		attribute.String("filesystem.operation_id", operationID),
+		attribute.String("filesystem.generation_id", durableGenerationID),
+		attribute.String("filesystem.volume_id", volumeID),
+		attribute.String("filesystem.snapshot_ref", snapshotRef),
+	)
+	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
+	if err := volumes.DestroyGeneration(ctx, generation); err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	prunedAt := time.Now().UTC()
+	resp := &vmrpc.PruneFilesystemGenerationResponse{
+		OperationId:         operationID,
+		DurableGenerationId: durableGenerationID,
+		VolumeId:            volumeID,
+		SnapshotRef:         snapshotRef,
+		PrunedAtUnixNs:      unixNs(prunedAt),
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	return resp, nil
+}
+
 func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) (*vmrpc.SeedImageResponse, error) {
 	ctx, span := tracer.Start(ctx, "rpc.SeedImage")
 	defer span.End()
@@ -831,14 +893,15 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	}
 	a.server.logger.InfoContext(ctx, "lease ready", "lease_id", a.leaseID, "vm_ip", runtime.Network.GuestIP)
 	return acquireReply{record: LeaseRecord{
-		LeaseID:    a.leaseID,
-		State:      LeaseStateReady,
-		AcquiredAt: acquiredAt,
-		ReadyAt:    readyAt,
-		ExpiresAt:  a.expires,
-		VMIP:       runtime.Network.GuestIP,
-		Resources:  spec.Resources,
-		TrustClass: spec.TrustClass,
+		LeaseID:          a.leaseID,
+		State:            LeaseStateReady,
+		AcquiredAt:       acquiredAt,
+		ReadyAt:          readyAt,
+		ExpiresAt:        a.expires,
+		VMIP:             runtime.Network.GuestIP,
+		Resources:        spec.Resources,
+		TrustClass:       spec.TrustClass,
+		FilesystemMounts: append([]FilesystemMountResult(nil), runtime.MountResults...),
 	}}
 }
 

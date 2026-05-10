@@ -320,23 +320,105 @@ func (c *guestControl) awaitHello(ctx context.Context) (vmproto.Hello, error) {
 	return hello, nil
 }
 
-func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount) error {
+func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, error) {
 	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.lease_init",
 		attribute.String("lease.id", leaseID),
 		attribute.Int("filesystem.mount_count", len(filesystems)),
 	)
-	err := c.send(vmproto.TypeLeaseInit, vmproto.LeaseInit{
+	var retErr error
+	defer func() { endSpan(retErr) }()
+	if err := c.send(vmproto.TypeLeaseInit, vmproto.LeaseInit{
 		LeaseID:             leaseID,
 		Network:             network,
 		Filesystems:         filesystems,
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
-	})
-	endSpan(err)
+	}); err != nil {
+		retErr = fmt.Errorf("send lease init: %w", err)
+		return nil, retErr
+	}
+	results, err := c.awaitLeaseInitResult(leaseID, filesystems)
 	if err != nil {
-		return fmt.Errorf("send lease init: %w", err)
+		retErr = err
+		return results, err
+	}
+	return results, nil
+}
+
+func (c *guestControl) awaitLeaseInitResult(leaseID string, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, error) {
+	for {
+		env, err := c.recv()
+		if err != nil {
+			return nil, fmt.Errorf("read lease init result: %w", err)
+		}
+		switch env.Type {
+		case vmproto.TypeLeaseInitResult:
+			msg, err := vmproto.DecodePayload[vmproto.LeaseInitResult](env)
+			if err != nil {
+				return nil, err
+			}
+			if msg.ProtocolVersion != vmproto.ProtocolVersion {
+				return msg.Filesystems, guestProtocolError("await_lease_init_result", "protocol_version mismatch: got %d want %d", msg.ProtocolVersion, vmproto.ProtocolVersion)
+			}
+			if msg.LeaseID != leaseID {
+				return msg.Filesystems, guestProtocolError("await_lease_init_result", "lease mismatch: got %s want %s", msg.LeaseID, leaseID)
+			}
+			if err := validateLeaseInitMountResults(filesystems, msg.Filesystems); err != nil {
+				return msg.Filesystems, err
+			}
+			return msg.Filesystems, nil
+		case vmproto.TypeHeartbeat:
+			continue
+		case vmproto.TypeFatal:
+			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			return nil, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+		default:
+			return nil, unexpectedGuestControlFrame("await_lease_init_result", env.Type, vmproto.TypeLeaseInitResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
+		}
+	}
+}
+
+func validateLeaseInitMountResults(requested []vmproto.FilesystemMount, results []vmproto.FilesystemMountResult) error {
+	expected := make(map[string]vmproto.FilesystemMount, len(requested))
+	for _, mount := range requested {
+		key := filesystemMountResultKey(mount.Name, mount.MountPath)
+		if _, exists := expected[key]; exists {
+			return guestProtocolError("await_lease_init_result", "duplicate filesystem mount result key %s", key)
+		}
+		expected[key] = mount
+	}
+	seen := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		key := filesystemMountResultKey(result.Name, result.MountPath)
+		mount, ok := expected[key]
+		if !ok {
+			return guestProtocolError("await_lease_init_result", "unexpected filesystem mount result name=%s path=%s", result.Name, result.MountPath)
+		}
+		if _, exists := seen[key]; exists {
+			return guestProtocolError("await_lease_init_result", "duplicate filesystem mount result name=%s path=%s", result.Name, result.MountPath)
+		}
+		seen[key] = struct{}{}
+		if result.Required != mount.Required {
+			return guestProtocolError("await_lease_init_result", "filesystem mount %s required mismatch", result.Name)
+		}
+		if mount.Required && !result.Mounted {
+			if strings.TrimSpace(result.Error) == "" {
+				return fmt.Errorf("guest failed required filesystem mount %s at %s", result.Name, result.MountPath)
+			}
+			return fmt.Errorf("guest failed required filesystem mount %s at %s: %s", result.Name, result.MountPath, strings.TrimSpace(result.Error))
+		}
+	}
+	if len(seen) != len(expected) {
+		return guestProtocolError("await_lease_init_result", "filesystem mount result count mismatch: got %d want %d", len(seen), len(expected))
 	}
 	return nil
+}
+
+func filesystemMountResultKey(name, mountPath string) string {
+	return strings.TrimSpace(name) + "\x00" + strings.TrimSpace(mountPath)
 }
 
 func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, logger *slog.Logger) (ExecResult, error) {

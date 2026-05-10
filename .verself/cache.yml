@@ -1,0 +1,8 @@
+version: 1
+
+cache:
+  - name: bazel
+    size: 100GiB
+    paths:
+      - ~/.cache/bazel-disk
+      - ~/.cache/bazel-repo

@@ -526,7 +526,7 @@ CREATE INDEX idx_execution_schedule_dispatches_workflow_run
 CREATE TABLE cache_declaration (
     cache_declaration_id UUID        PRIMARY KEY,
     repository_id        BIGINT      NOT NULL CHECK (repository_id > 0),
-    source_kind          TEXT        NOT NULL CHECK (source_kind IN ('manifest', 'workflow_action', 'none')),
+    source_kind          TEXT        NOT NULL CHECK (source_kind IN ('manifest', 'none')),
     source_ref           TEXT        NOT NULL DEFAULT '',
     source_sha           TEXT        NOT NULL DEFAULT '',
     source_path          TEXT        NOT NULL DEFAULT '',
@@ -657,6 +657,8 @@ CREATE INDEX idx_durable_generation_scope_committed
     ON durable_generation (durable_scope_id, committed_at DESC);
 CREATE INDEX idx_durable_generation_run
     ON durable_generation (provider_run_id, provider_run_attempt, provider_job_id, head_sha);
+CREATE INDEX idx_durable_generation_retention
+    ON durable_generation (state, expires_at, committed_at);
 
 CREATE TABLE durable_current_pointer (
     durable_scope_id          UUID        PRIMARY KEY REFERENCES durable_scope(durable_scope_id) ON DELETE CASCADE,
@@ -665,23 +667,6 @@ CREATE TABLE durable_current_pointer (
     promoted_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE host_durable_journal (
-    journal_seq         BIGSERIAL   PRIMARY KEY,
-    operation_id        UUID        NOT NULL,
-    host_id             TEXT        NOT NULL DEFAULT '',
-    lease_id            TEXT        NOT NULL DEFAULT '',
-    mount_name          TEXT        NOT NULL DEFAULT '',
-    phase               TEXT        NOT NULL,
-    source_dataset_ref  TEXT        NOT NULL DEFAULT '',
-    working_dataset_ref TEXT        NOT NULL DEFAULT '',
-    sealed_dataset_ref  TEXT        NOT NULL DEFAULT '',
-    error_code          TEXT        NOT NULL DEFAULT '',
-    error_message       TEXT        NOT NULL DEFAULT '',
-    recorded_at         TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_host_durable_journal_operation
-    ON host_durable_journal (operation_id, journal_seq);
 CREATE TABLE river_migration (
     line       TEXT        NOT NULL,
     version    BIGINT      NOT NULL,

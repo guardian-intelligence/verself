@@ -128,7 +128,15 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	if err := session.applyNetwork(initReq.Network); err != nil {
 		return session.fail(err)
 	}
-	if err := session.mountFilesystems(initReq.Filesystems); err != nil {
+	mountResults, err := session.mountFilesystems(initReq.Filesystems)
+	if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
+		LeaseID:         initReq.LeaseID,
+		Filesystems:     mountResults,
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); resultErr != nil {
+		return resultErr
+	}
+	if err != nil {
 		return session.fail(err)
 	}
 	if err := setWallClock(initReq.HostWallclockUnixNS); err != nil {
@@ -431,7 +439,7 @@ func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmpr
 		s.jobCancel = nil
 	}()
 
-	env, err := buildRuntimeEnv(req.Env, network, s.filesystemMountPaths())
+	env, err := buildRuntimeEnv(req.Env, network, s.filesystems)
 	if err != nil {
 		return err
 	}
@@ -660,24 +668,26 @@ func (s *agentSession) applyNetwork(cfg vmproto.NetworkConfig) error {
 	return nil
 }
 
-func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) error {
+func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, error) {
 	if len(filesystems) == 0 {
-		return nil
+		return nil, nil
 	}
+	results := make([]vmproto.FilesystemMountResult, 0, len(filesystems))
 	for _, fs := range filesystems {
 		result := s.mountFilesystem(fs)
+		results = append(results, result)
 		if !result.Mounted {
 			if fs.Required {
-				return fmt.Errorf("mount composed filesystem %s at %s: %s", result.Name, result.MountPath, result.Error)
+				return results, fmt.Errorf("mount composed filesystem %s at %s: %s", result.Name, result.MountPath, result.Error)
 			}
 			_, _ = fmt.Fprintf(os.Stdout, "%s skipped optional filesystem name=%s path=%s error=%s\n", logPrefix, result.Name, result.MountPath, result.Error)
 		}
 	}
-	return nil
+	return results, nil
 }
 
 func (s *agentSession) mountFilesystem(fs vmproto.FilesystemMount) vmproto.FilesystemMountResult {
-	result := vmproto.FilesystemMountResult{Name: fs.Name, MountPath: fs.MountPath}
+	result := vmproto.FilesystemMountResult{Name: fs.Name, MountPath: fs.MountPath, Required: fs.Required}
 	if err := validateFilesystemMount(fs); err != nil {
 		result.Error = err.Error()
 		return result
@@ -898,18 +908,6 @@ func waitForBlockDevice(path string, timeout time.Duration) error {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-}
-
-func (s *agentSession) filesystemMountPaths() []string {
-	if len(s.filesystems) == 0 {
-		return nil
-	}
-	paths := make([]string, 0, len(s.filesystems))
-	for _, fs := range s.filesystems {
-		paths = append(paths, fs.MountPath)
-		paths = append(paths, fs.BindPaths...)
-	}
-	return paths
 }
 
 func setWallClock(unixNS int64) error {

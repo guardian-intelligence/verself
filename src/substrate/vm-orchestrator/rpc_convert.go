@@ -70,6 +70,45 @@ func filesystemMountsToProto(mounts []FilesystemMount) []*vmrpc.FilesystemMount 
 	return out
 }
 
+func filesystemMountResultsFromProto(results []*vmrpc.FilesystemMountResult) []FilesystemMountResult {
+	if len(results) == 0 {
+		return nil
+	}
+	out := make([]FilesystemMountResult, 0, len(results))
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		out = append(out, FilesystemMountResult{
+			Name:        result.GetName(),
+			MountPath:   result.GetMountPath(),
+			OperationID: result.GetOperationId(),
+			Mounted:     result.GetMounted(),
+			Required:    result.GetRequired(),
+			Error:       result.GetError(),
+		})
+	}
+	return out
+}
+
+func filesystemMountResultsToProto(results []FilesystemMountResult) []*vmrpc.FilesystemMountResult {
+	if len(results) == 0 {
+		return nil
+	}
+	out := make([]*vmrpc.FilesystemMountResult, 0, len(results))
+	for _, result := range results {
+		out = append(out, &vmrpc.FilesystemMountResult{
+			Name:        result.Name,
+			MountPath:   result.MountPath,
+			OperationId: result.OperationID,
+			Mounted:     result.Mounted,
+			Required:    result.Required,
+			Error:       result.Error,
+		})
+	}
+	return out
+}
+
 func vmResourcesFromProto(r *vmrpc.VMResources) dto.VMResources {
 	if r == nil {
 		return dto.VMResources{}
@@ -111,6 +150,7 @@ func acquireLeaseResponseFromRecord(record LeaseRecord) *vmrpc.AcquireLeaseRespo
 		ExpiresAtUnixNs:  unixNs(record.ExpiresAt),
 		VmIp:             record.VMIP,
 		Resources:        vmResourcesToProto(record.Resources),
+		FilesystemMounts: filesystemMountResultsToProto(record.FilesystemMounts),
 	}
 }
 

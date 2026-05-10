@@ -18,6 +18,7 @@ service VMService {
   rpc WaitExec(WaitExecRequest) returns (WaitExecResponse);
 
   rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
+  rpc PruneFilesystemGeneration(PruneFilesystemGenerationRequest) returns (PruneFilesystemGenerationResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
 
   // SeedImage is the privileged image-seeding entry point used by deploy-time
@@ -114,6 +115,15 @@ message FilesystemMount {
   uint64 size_bytes = 9;
 }
 
+message FilesystemMountResult {
+  string name = 1;
+  string mount_path = 2;
+  bool mounted = 3;
+  string error = 4;
+  string operation_id = 5;
+  bool required = 6;
+}
+
 message AcquireLeaseRequest {
   string idempotency_key = 1;
   LeaseSpec spec = 2;
@@ -126,6 +136,7 @@ message AcquireLeaseResponse {
   uint64 expires_at_unix_ns = 4;
   string vm_ip = 5;
   VMResources resources = 6;
+  repeated FilesystemMountResult filesystem_mounts = 7;
 }
 
 message RenewLeaseRequest {
@@ -167,6 +178,7 @@ message LeaseRecord {
   string vm_ip = 8;
   VMResources resources = 9;
   string trust_class = 10;
+  repeated FilesystemMountResult filesystem_mounts = 11;
 }
 
 message GetLeaseResponse {
@@ -299,6 +311,22 @@ message CommitFilesystemMountResponse {
   uint64 used_bytes = 5;
   uint64 written_bytes = 6;
   uint64 committed_at_unix_ns = 7;
+}
+
+message PruneFilesystemGenerationRequest {
+  string idempotency_key = 1;
+  string operation_id = 2;
+  string durable_generation_id = 3;
+  string volume_id = 4;
+  string snapshot_ref = 5;
+}
+
+message PruneFilesystemGenerationResponse {
+  string operation_id = 1;
+  string durable_generation_id = 2;
+  string volume_id = 3;
+  string snapshot_ref = 4;
+  uint64 pruned_at_unix_ns = 5;
 }
 
 message VMMetrics {

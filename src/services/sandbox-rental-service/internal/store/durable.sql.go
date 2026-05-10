@@ -111,11 +111,7 @@ INSERT INTO cache_volume_spec (
     $4, $5, $6,
     $7::jsonb, $8
 )
-ON CONFLICT (cache_declaration_id, name) DO UPDATE SET
-    size_bytes = EXCLUDED.size_bytes,
-    path_set_hash = EXCLUDED.path_set_hash,
-    mount_policy_hash = EXCLUDED.mount_policy_hash,
-    normalized_paths_json = EXCLUDED.normalized_paths_json
+ON CONFLICT (cache_declaration_id, name) DO NOTHING
 `
 
 type InsertCacheVolumeSpecParams struct {
@@ -371,6 +367,109 @@ func (q *Queries) ListDurablePromotionCandidatesForRun(ctx context.Context, arg 
 	return items, nil
 }
 
+const listPrunableDurableGenerations = `-- name: ListPrunableDurableGenerations :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    s.provider,
+    s.provider_repository_id,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+WHERE g.expires_at <= $1
+  AND g.state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer p
+      WHERE p.durable_scope_id = g.durable_scope_id
+        AND p.current_generation_id = g.durable_generation_id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = g.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = g.durable_generation_id
+        AND child.state <> 'pruned'
+  )
+ORDER BY g.expires_at, g.committed_at, g.durable_generation_id
+LIMIT $2
+`
+
+type ListPrunableDurableGenerationsParams struct {
+	NowAt      pgtype.Timestamptz
+	LimitCount int32
+}
+
+type ListPrunableDurableGenerationsRow struct {
+	DurableGenerationID  uuid.UUID
+	DurableScopeID       uuid.UUID
+	OperationID          uuid.UUID
+	ZfsSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+	ProviderJobID        int64
+	Provider             string
+	ProviderRepositoryID int64
+	ComponentKind        string
+	ComponentName        string
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+}
+
+func (q *Queries) ListPrunableDurableGenerations(ctx context.Context, arg ListPrunableDurableGenerationsParams) ([]ListPrunableDurableGenerationsRow, error) {
+	rows, err := q.db.Query(ctx, listPrunableDurableGenerations, arg.NowAt, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPrunableDurableGenerationsRow{}
+	for rows.Next() {
+		var i ListPrunableDurableGenerationsRow
+		if err := rows.Scan(
+			&i.DurableGenerationID,
+			&i.DurableScopeID,
+			&i.OperationID,
+			&i.ZfsSnapshotRef,
+			&i.UsedBytes,
+			&i.WrittenBytes,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.Provider,
+			&i.ProviderRepositoryID,
+			&i.ComponentKind,
+			&i.ComponentName,
+			&i.ExecutionID,
+			&i.AttemptID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTerminalAttemptsWithOpenDurableOperations = `-- name: ListTerminalAttemptsWithOpenDurableOperations :many
 SELECT DISTINCT
     a.execution_id,
@@ -413,6 +512,55 @@ func (q *Queries) ListTerminalAttemptsWithOpenDurableOperations(ctx context.Cont
 		return nil, err
 	}
 	return items, nil
+}
+
+const markDurableGenerationPruned = `-- name: MarkDurableGenerationPruned :exec
+UPDATE durable_generation
+SET state = 'pruned',
+    last_used_at = $1
+WHERE durable_generation_id = $2
+  AND durable_generation.durable_scope_id = $3
+  AND state = 'prunable'
+`
+
+type MarkDurableGenerationPrunedParams struct {
+	PrunedAt            pgtype.Timestamptz
+	DurableGenerationID uuid.UUID
+	DurableScopeID      uuid.UUID
+}
+
+func (q *Queries) MarkDurableGenerationPruned(ctx context.Context, arg MarkDurableGenerationPrunedParams) error {
+	_, err := q.db.Exec(ctx, markDurableGenerationPruned, arg.PrunedAt, arg.DurableGenerationID, arg.DurableScopeID)
+	return err
+}
+
+const markDurableGenerationPruning = `-- name: MarkDurableGenerationPruning :execrows
+UPDATE durable_generation
+SET state = 'prunable',
+    last_used_at = $1
+WHERE durable_generation_id = $2
+  AND durable_generation.durable_scope_id = $3
+  AND state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer p
+      WHERE p.durable_scope_id = durable_generation.durable_scope_id
+        AND p.current_generation_id = durable_generation.durable_generation_id
+  )
+`
+
+type MarkDurableGenerationPruningParams struct {
+	PruningAt           pgtype.Timestamptz
+	DurableGenerationID uuid.UUID
+	DurableScopeID      uuid.UUID
+}
+
+func (q *Queries) MarkDurableGenerationPruning(ctx context.Context, arg MarkDurableGenerationPruningParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markDurableGenerationPruning, arg.PruningAt, arg.DurableGenerationID, arg.DurableScopeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markDurableOperationFailed = `-- name: MarkDurableOperationFailed :exec
@@ -500,6 +648,27 @@ func (q *Queries) MarkDurableOperationSealStarted(ctx context.Context, arg MarkD
 	return err
 }
 
+const markDurableOperationSkipped = `-- name: MarkDurableOperationSkipped :exec
+UPDATE durable_operation
+SET host_accepted_at = COALESCE(host_accepted_at, $1),
+    final_state = 'skipped',
+    failure_reason = $2,
+    result_recorded_at = COALESCE(result_recorded_at, $1)
+WHERE operation_id = $3
+  AND final_state IN ('requested', 'mounted')
+`
+
+type MarkDurableOperationSkippedParams struct {
+	RecordedAt    pgtype.Timestamptz
+	FailureReason string
+	OperationID   uuid.UUID
+}
+
+func (q *Queries) MarkDurableOperationSkipped(ctx context.Context, arg MarkDurableOperationSkippedParams) error {
+	_, err := q.db.Exec(ctx, markDurableOperationSkipped, arg.RecordedAt, arg.FailureReason, arg.OperationID)
+	return err
+}
+
 const markOpenDurableOperationsFailedByAttempt = `-- name: MarkOpenDurableOperationsFailedByAttempt :many
 UPDATE durable_operation
 SET final_state = 'failed',
@@ -582,26 +751,33 @@ func (q *Queries) PromoteDurableGenerationCAS(ctx context.Context, arg PromoteDu
 const retainDurableGeneration = `-- name: RetainDurableGeneration :exec
 UPDATE durable_generation
 SET state = 'retained',
-    last_used_at = $1
-WHERE durable_generation_id = $2
-  AND durable_generation.durable_scope_id = $3
+    last_used_at = $1,
+    expires_at = $2
+WHERE durable_generation_id = $3
+  AND durable_generation.durable_scope_id = $4
   AND state = 'committed'
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer
-      WHERE durable_current_pointer.durable_scope_id = $3
+      WHERE durable_current_pointer.durable_scope_id = $4
         AND durable_current_pointer.current_generation_id = durable_generation.durable_generation_id
   )
 `
 
 type RetainDurableGenerationParams struct {
 	RetainedAt          pgtype.Timestamptz
+	ExpiresAt           pgtype.Timestamptz
 	DurableGenerationID uuid.UUID
 	DurableScopeID      uuid.UUID
 }
 
 func (q *Queries) RetainDurableGeneration(ctx context.Context, arg RetainDurableGenerationParams) error {
-	_, err := q.db.Exec(ctx, retainDurableGeneration, arg.RetainedAt, arg.DurableGenerationID, arg.DurableScopeID)
+	_, err := q.db.Exec(ctx, retainDurableGeneration,
+		arg.RetainedAt,
+		arg.ExpiresAt,
+		arg.DurableGenerationID,
+		arg.DurableScopeID,
+	)
 	return err
 }
 

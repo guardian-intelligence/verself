@@ -197,11 +197,12 @@ type ExecResult struct {
 }
 
 type LeaseRuntime struct {
-	LeaseID string
-	Lease   zfs.Lease
-	Dataset string
-	Network NetworkLease
-	Mounts  []preparedFilesystemMount
+	LeaseID      string
+	Lease        zfs.Lease
+	Dataset      string
+	Network      NetworkLease
+	Mounts       []preparedFilesystemMount
+	MountResults []FilesystemMountResult
 
 	apiSocketPath   string
 	jailRoot        string
@@ -912,12 +913,37 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	}
 	endHelloSpan(nil)
 	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
-	if err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort), guestFilesystemMounts(mounts)); err != nil {
+	mountResults, err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort), guestFilesystemMounts(mounts))
+	runtime.MountResults = filesystemMountResults(mounts, mountResults)
+	if err != nil {
 		return nil, err
 	}
 
 	cleanupOnErr = false
 	return runtime, nil
+}
+
+func filesystemMountResults(mounts []preparedFilesystemMount, results []vmproto.FilesystemMountResult) []FilesystemMountResult {
+	if len(results) == 0 {
+		return nil
+	}
+	byKey := make(map[string]preparedFilesystemMount, len(mounts))
+	for _, mount := range mounts {
+		byKey[filesystemMountResultKey(mount.Spec.Name, mount.Spec.MountPath)] = mount
+	}
+	out := make([]FilesystemMountResult, 0, len(results))
+	for _, result := range results {
+		mount := byKey[filesystemMountResultKey(result.Name, result.MountPath)]
+		out = append(out, FilesystemMountResult{
+			Name:        result.Name,
+			MountPath:   result.MountPath,
+			OperationID: mount.Spec.OperationID,
+			Mounted:     result.Mounted,
+			Required:    result.Required,
+			Error:       strings.TrimSpace(result.Error),
+		})
+	}
+	return out
 }
 
 func (r *LeaseRuntime) Exec(ctx context.Context, spec ExecSpec) (ExecResult, error) {

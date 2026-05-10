@@ -170,7 +170,7 @@ func configureLoopback() error {
 	return nil
 }
 
-func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig, filesystemMountPaths []string) ([]string, error) {
+func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount) ([]string, error) {
 	// Workload-specific env (RUNNER_TOOL_CACHE, AGENT_TOOLSDIRECTORY,
 	// runner PATH additions, etc.) lives in the toolchain image's
 	// /etc-overlay/profile.d/, not here. The bridge ships only the
@@ -182,9 +182,7 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig,
 		"TERM":                     "xterm",
 		"VERSELF_VM_BRIDGE_SOCKET": bridgeSocketPath,
 	}
-	if len(filesystemMountPaths) > 0 {
-		envMap["VERSELF_COMPOSED_ZVOL_MOUNTS"] = strings.Join(filesystemMountPaths, ":")
-	}
+	addFilesystemMountEnv(envMap, filesystems)
 	for key, value := range overrides {
 		envMap[key] = value
 	}
@@ -220,6 +218,58 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig,
 		env = append(env, key+"="+value)
 	}
 	return env, nil
+}
+
+func addFilesystemMountEnv(envMap map[string]string, filesystems []vmproto.FilesystemMount) {
+	if len(filesystems) == 0 {
+		return
+	}
+	allMounts := make([]string, 0, len(filesystems))
+	cacheMounts := make([]string, 0, len(filesystems))
+	for _, fs := range filesystems {
+		if strings.TrimSpace(fs.MountPath) == "" {
+			continue
+		}
+		allMounts = append(allMounts, fs.MountPath)
+		allMounts = append(allMounts, fs.BindPaths...)
+		cacheName, ok := strings.CutPrefix(fs.Name, "cache-")
+		if !ok {
+			continue
+		}
+		cacheMounts = append(cacheMounts, fs.MountPath)
+		envKey := cacheEnvKey(cacheName)
+		if envKey != "" {
+			envMap[envKey] = fs.MountPath
+		}
+	}
+	if len(allMounts) > 0 {
+		envMap["VERSELF_COMPOSED_ZVOL_MOUNTS"] = strings.Join(allMounts, ":")
+	}
+	if len(cacheMounts) > 0 {
+		envMap["VERSELF_CACHE_MOUNTS"] = strings.Join(cacheMounts, ":")
+	}
+}
+
+func cacheEnvKey(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("VERSELF_CACHE_")
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - 'a' + 'A')
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func resolveRegistryURL(env map[string]string, network vmproto.NetworkConfig) (string, error) {

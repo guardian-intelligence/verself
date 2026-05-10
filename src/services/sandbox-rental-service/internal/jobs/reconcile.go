@@ -31,6 +31,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileTerminalDurableOperations(ctx); err != nil {
 		return err
 	}
+	if err := s.pruneDurableGenerations(ctx); err != nil {
+		return err
+	}
 	if err := s.reconcileTerminalRunnerAllocations(ctx); err != nil {
 		return err
 	}

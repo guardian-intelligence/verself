@@ -9,16 +9,26 @@ import (
 const DefaultSocketPath = "/run/vm-orchestrator/api.sock"
 
 type LeaseRecord struct {
-	LeaseID        string
-	State          LeaseState
-	AcquiredAt     time.Time
-	ReadyAt        time.Time
-	ExpiresAt      time.Time
-	TerminalAt     time.Time
-	TerminalReason string
-	VMIP           string
-	Resources      dto.VMResources
-	TrustClass     string
+	LeaseID          string
+	State            LeaseState
+	AcquiredAt       time.Time
+	ReadyAt          time.Time
+	ExpiresAt        time.Time
+	TerminalAt       time.Time
+	TerminalReason   string
+	VMIP             string
+	Resources        dto.VMResources
+	TrustClass       string
+	FilesystemMounts []FilesystemMountResult
+}
+
+type FilesystemMountResult struct {
+	Name        string
+	MountPath   string
+	OperationID string
+	Mounted     bool
+	Required    bool
+	Error       string
 }
 
 type FilesystemCommitRecord struct {
@@ -29,6 +39,14 @@ type FilesystemCommitRecord struct {
 	UsedBytes     uint64
 	WrittenBytes  uint64
 	CommittedAt   time.Time
+}
+
+type FilesystemPruneRecord struct {
+	OperationID         string
+	DurableGenerationID string
+	VolumeID            string
+	SnapshotRef         string
+	PrunedAt            time.Time
 }
 
 type ExecRecord struct {

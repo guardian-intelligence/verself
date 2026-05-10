@@ -90,6 +90,7 @@ type Runner interface {
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
 	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
+	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef string) (vmorchestrator.FilesystemPruneRecord, error)
 }
 
 type SchedulerRuntime interface {
@@ -579,7 +580,12 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	item.LeaseID = lease.LeaseID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
-	s.markDurableVolumesMounted(ctx, durablePlan)
+	durablePlan, err = s.recordDurableLeaseMountResults(ctx, durablePlan, lease.FilesystemMounts)
+	if err != nil {
+		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
+		s.failDurableVolumes(ctx, durablePlan, "required_durable_mount_failed", err)
+		return s.failAttempt(ctx, item, "required_durable_mount_failed", err)
+	}
 
 	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
 	defer stopRenew()

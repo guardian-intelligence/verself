@@ -23,11 +23,7 @@ INSERT INTO cache_volume_spec (
     sqlc.arg(size_bytes), sqlc.arg(path_set_hash), sqlc.arg(mount_policy_hash),
     sqlc.arg(normalized_paths_json)::jsonb, sqlc.arg(created_at)
 )
-ON CONFLICT (cache_declaration_id, name) DO UPDATE SET
-    size_bytes = EXCLUDED.size_bytes,
-    path_set_hash = EXCLUDED.path_set_hash,
-    mount_policy_hash = EXCLUDED.mount_policy_hash,
-    normalized_paths_json = EXCLUDED.normalized_paths_json;
+ON CONFLICT (cache_declaration_id, name) DO NOTHING;
 
 -- name: UpsertJobShape :one
 INSERT INTO job_shape (
@@ -106,6 +102,15 @@ SET host_accepted_at = COALESCE(host_accepted_at, sqlc.arg(mounted_at)),
 WHERE operation_id = sqlc.arg(operation_id)
   AND final_state = 'requested';
 
+-- name: MarkDurableOperationSkipped :exec
+UPDATE durable_operation
+SET host_accepted_at = COALESCE(host_accepted_at, sqlc.arg(recorded_at)),
+    final_state = 'skipped',
+    failure_reason = sqlc.arg(failure_reason),
+    result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at))
+WHERE operation_id = sqlc.arg(operation_id)
+  AND final_state IN ('requested', 'mounted');
+
 -- name: MarkDurableOperationSealStarted :exec
 UPDATE durable_operation
 SET seal_started_at = COALESCE(seal_started_at, sqlc.arg(seal_started_at))
@@ -166,7 +171,8 @@ WHERE durable_scope_id = sqlc.arg(durable_scope_id)
 -- name: RetainDurableGeneration :exec
 UPDATE durable_generation
 SET state = 'retained',
-    last_used_at = sqlc.arg(retained_at)
+    last_used_at = sqlc.arg(retained_at),
+    expires_at = sqlc.arg(expires_at)
 WHERE durable_generation_id = sqlc.arg(durable_generation_id)
   AND durable_generation.durable_scope_id = sqlc.arg(durable_scope_id)
   AND state = 'committed'
@@ -176,6 +182,71 @@ WHERE durable_generation_id = sqlc.arg(durable_generation_id)
       WHERE durable_current_pointer.durable_scope_id = sqlc.arg(durable_scope_id)
         AND durable_current_pointer.current_generation_id = durable_generation.durable_generation_id
   );
+
+-- name: ListPrunableDurableGenerations :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    s.provider,
+    s.provider_repository_id,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+WHERE g.expires_at <= sqlc.arg(now_at)
+  AND g.state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer p
+      WHERE p.durable_scope_id = g.durable_scope_id
+        AND p.current_generation_id = g.durable_generation_id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = g.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = g.durable_generation_id
+        AND child.state <> 'pruned'
+  )
+ORDER BY g.expires_at, g.committed_at, g.durable_generation_id
+LIMIT sqlc.arg(limit_count);
+
+-- name: MarkDurableGenerationPruning :execrows
+UPDATE durable_generation
+SET state = 'prunable',
+    last_used_at = sqlc.arg(pruning_at)
+WHERE durable_generation_id = sqlc.arg(durable_generation_id)
+  AND durable_generation.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer p
+      WHERE p.durable_scope_id = durable_generation.durable_scope_id
+        AND p.current_generation_id = durable_generation.durable_generation_id
+  );
+
+-- name: MarkDurableGenerationPruned :exec
+UPDATE durable_generation
+SET state = 'pruned',
+    last_used_at = sqlc.arg(pruned_at)
+WHERE durable_generation_id = sqlc.arg(durable_generation_id)
+  AND durable_generation.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND state = 'prunable';
 
 -- name: ListDurablePromotionCandidatesForRun :many
 SELECT

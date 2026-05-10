@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ProtocolVersion = 6
+	ProtocolVersion = 7
 	GuestPort       = 10789
 
 	ControlQueueCapacity = 32
@@ -29,6 +29,7 @@ type MessageType string
 const (
 	TypeHello                  MessageType = "hello"
 	TypeLeaseInit              MessageType = "lease_init"
+	TypeLeaseInitResult        MessageType = "lease_init_result"
 	TypeExecRequest            MessageType = "exec_request"
 	TypeExecStarted            MessageType = "exec_started"
 	TypeLogChunk               MessageType = "log_chunk"
@@ -101,6 +102,12 @@ type LeaseInit struct {
 	ProtocolVersion     int               `json:"protocol_version"`
 }
 
+type LeaseInitResult struct {
+	LeaseID         string                  `json:"lease_id"`
+	Filesystems     []FilesystemMountResult `json:"filesystems,omitempty"`
+	ProtocolVersion int                     `json:"protocol_version"`
+}
+
 type FilesystemMount struct {
 	Name       string   `json:"name"`
 	DriveID    string   `json:"drive_id"`
@@ -155,6 +162,7 @@ type FilesystemMountResult struct {
 	Name      string `json:"name"`
 	MountPath string `json:"mount_path"`
 	Mounted   bool   `json:"mounted"`
+	Required  bool   `json:"required,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
 

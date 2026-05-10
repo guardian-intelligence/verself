@@ -38,33 +38,6 @@ cache:
       - /verself/cache/postgres
 ```
 
-The same declaration can be written as static inputs to the Verself cache
-action:
-
-```yaml
-steps:
-  - uses: guardian-intelligence/verself-cache@v0
-    with:
-      name: build-cache
-      size: 100GiB
-      paths: |
-        ~/.cache/bazel-disk
-        ~/.cache/bazel-repo
-
-  - uses: guardian-intelligence/verself-cache@v0
-    with:
-      name: postgres-seed
-      size: 40GiB
-      paths: |
-        /verself/cache/postgres
-```
-
-Both forms compile into the same normalized cache declaration. The GitHub
-Action is a DX declaration whose runtime code is side-effect-free. It does not
-create, mount, format, resize, or seal filesystems. Firecracker devices are
-composed before the runner starts, so every mount-affecting field must be known
-before lease acquisition.
-
 Declarations define named volumes and the guest-visible paths that should be
 backed by those volumes. Verself does not interpret the contents. Customers
 configure their tools to write to those paths.
@@ -109,7 +82,8 @@ not tool-specific cache APIs.
 11. A protected target-branch workflow run promotes per-job, per-volume
     generations only after the provider run's required jobs are green.
 12. Failed jobs, cancelled jobs, non-promotable trust contexts, and ambiguous
-    seals leave the current pointer unchanged.
+    seals leave the current pointer unchanged. Successful non-promotable jobs
+    may retain a generation for debugging and later pruning.
 
 A job can succeed while cache persistence is skipped. Cache persistence is an
 acceleration artifact, not a correctness requirement for CI.
@@ -135,11 +109,9 @@ Verself differences:
 
 ## Declaration Rules
 
-Manifest `version` is required and must be `1`. Action declarations inherit
-the declaration schema version from the action ref; `v0` emits declaration
-schema `1`.
+Manifest `version` is required and must be `1`.
 
-Each manifest `cache` entry or action invocation declares one volume:
+Each manifest `cache` entry declares one volume:
 
 ```text
 name      stable volume name, unique within the declaration
@@ -153,20 +125,9 @@ public API.
 Declaration source rules:
 
 - `.verself/cache.yml` is repository-scoped.
-- `guardian-intelligence/verself-cache@v0` is job-scoped and may appear more
-  than once in the same job.
-- Action `with` values must be static literal strings. GitHub expressions,
-  environment interpolation, generated files, conditionally executed
-  declarations, and runtime-discovered paths are rejected.
-- The action step may be placed near checkout for readability, but the control
-  plane parses it before VM boot. Runtime action code only reports the
-  declaration and selected mount metadata already chosen by the control plane.
-- If the manifest and action declarations are both present and normalize to the
-  same declaration, Verself accepts the declaration once.
-- If the manifest and action declarations are both present and differ, the
-  cache declaration is invalid. Verself fails the job before customer steps
-  start and reports the conflicting sources.
-- If neither source is present, the job has no customer cache volumes.
+- Pull request jobs read the manifest from the trusted base ref.
+- Push jobs read the manifest from the pushed head ref.
+- If no manifest is present, the job has no customer cache volumes.
 
 Path rules:
 
@@ -237,6 +198,9 @@ else:
 vm-orchestrator waits for every `/dev/zvol/...` device, bind-mounts the block
 devices into the jailer chroot, configures Firecracker drives, starts the VM,
 and sends the mount manifest to vm-bridge over the guest control protocol.
+vm-bridge returns a per-filesystem mount result before the runner starts.
+Required mount failures fail lease acquisition. Optional cache mount failures
+are recorded as degraded cache state and the job continues without that cache.
 
 ## Guest Mounting
 
@@ -251,8 +215,10 @@ Each requested customer path is backed by a subdirectory in that root and a
 Linux bind mount:
 
 ```text
-/verself/.mounts/build-cache/p0 -> /home/runner/.cache/bazel-disk
-/verself/.mounts/build-cache/p1 -> /home/runner/.cache/bazel-repo
+/verself/.mounts/build-cache/paths/home/runner/.cache/bazel-disk
+  -> /home/runner/.cache/bazel-disk
+/verself/.mounts/build-cache/paths/home/runner/.cache/bazel-repo
+  -> /home/runner/.cache/bazel-repo
 ```
 
 Bind mounts are the default implementation. Symlinks are not the default
@@ -381,13 +347,11 @@ cache_declaration
 
 ```text
 manifest
-workflow_action
+none
 ```
 
 `declaration_hash` is the canonical hash of the normalized declaration. It
-changes when volume names, sizes, paths, or mount policy change. Manifest and
-action sources that normalize to the same declaration receive the same
-declaration hash.
+changes when volume names, sizes, paths, or mount policy change.
 
 ### Cache Volume Spec
 
@@ -580,9 +544,10 @@ host_durable_journal
 ```
 
 Every host mutation has an operation ID before the mutation starts and a
-journal row after it finishes. The service database records host results after
-observing terminal host phases. PostgreSQL locks are not held across ZFS
-operations.
+journal row after it finishes. This table belongs to vm-orchestrator's local
+host state database. The service database records observed durable operations
+and generations after terminal host phases. PostgreSQL locks are not held
+across ZFS operations.
 
 ## Scope Identity
 
@@ -669,9 +634,9 @@ as their source when policy allows. PR candidate writes are isolated to PR or
 retained candidate generations and cannot promote the target branch pointer.
 
 For untrusted PRs, the cache declaration is read from the trusted base branch,
-not from PR head. Manifest edits and workflow action declaration inputs from
-PR head are ignored for host mount planning. A PR cannot introduce new host
-mount paths for code that has not been merged into the trusted branch.
+not from PR head. Manifest edits from PR head are ignored for host mount
+planning. A PR cannot introduce new host mount paths for code that has not
+been merged into the trusted branch.
 
 ### Declaration Changes
 
@@ -858,9 +823,5 @@ diagnose.
   `src/substrate/vm-orchestrator/AGENTS.md`,
   `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`, and
   `src/substrate/vm-orchestrator/proto/v1/vm_service.proto`.
-- GitHub Action metadata and `with` inputs:
-  <https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions>
-- GitHub workflow step `uses` syntax:
-  <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax>
 - GitHub Actions variables and `GITHUB_WORKSPACE`:
   <https://docs.github.com/en/actions/reference/workflows-and-actions/variables>

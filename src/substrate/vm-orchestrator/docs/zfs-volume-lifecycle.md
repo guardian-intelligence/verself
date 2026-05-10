@@ -27,6 +27,9 @@ and service unit; it does not issue runtime ZFS mutations for workloads.
 4. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
    devices, starts Firecracker, and sends the filesystem manifest to vm-bridge.
 5. vm-bridge mounts the declared filesystems before the runner process starts.
+6. vm-bridge returns per-filesystem mount results. Required mount failures
+   fail lease acquisition; optional cache mount failures are reported to the
+   product service as degraded cache state.
 
 There is no dynamic block-device attach path after the guest boots. This keeps
 Firecracker device topology static and makes mount availability part of lease
@@ -55,5 +58,6 @@ pointers with compare-and-swap.
 Committed generations are immutable. A generation that loses promotion CAS is
 retained as an unreferenced candidate until a retention worker destroys its
 `goldens/<scope>/generations/<generation>` dataset. Destroy operations remain
-host-owned RPCs or daemon-local maintenance tasks; product services never shell
-out to `zfs`.
+host-owned RPCs or daemon-local maintenance tasks; product services request
+destruction by generation ref over the vm-orchestrator Unix socket and never
+shell out to `zfs`.

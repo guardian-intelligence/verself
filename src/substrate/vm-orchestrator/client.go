@@ -49,12 +49,13 @@ func (c *Client) AcquireLease(ctx context.Context, key string, spec LeaseSpec) (
 		return LeaseRecord{}, fmt.Errorf("acquire lease: %w", err)
 	}
 	return LeaseRecord{
-		LeaseID:    resp.GetLeaseId(),
-		State:      leaseStateFromProto(resp.GetState()),
-		AcquiredAt: timeFromUnixNs(resp.GetAcquiredAtUnixNs()),
-		ExpiresAt:  timeFromUnixNs(resp.GetExpiresAtUnixNs()),
-		VMIP:       resp.GetVmIp(),
-		Resources:  vmResourcesFromProto(resp.GetResources()),
+		LeaseID:          resp.GetLeaseId(),
+		State:            leaseStateFromProto(resp.GetState()),
+		AcquiredAt:       timeFromUnixNs(resp.GetAcquiredAtUnixNs()),
+		ExpiresAt:        timeFromUnixNs(resp.GetExpiresAtUnixNs()),
+		VMIP:             resp.GetVmIp(),
+		Resources:        vmResourcesFromProto(resp.GetResources()),
+		FilesystemMounts: filesystemMountResultsFromProto(resp.GetFilesystemMounts()),
 	}, nil
 }
 
@@ -140,6 +141,26 @@ func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, operat
 		UsedBytes:     resp.GetUsedBytes(),
 		WrittenBytes:  resp.GetWrittenBytes(),
 		CommittedAt:   timeFromUnixNs(resp.GetCommittedAtUnixNs()),
+	}, nil
+}
+
+func (c *Client) PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef string) (FilesystemPruneRecord, error) {
+	resp, err := c.client.PruneFilesystemGeneration(ctx, &vmrpc.PruneFilesystemGenerationRequest{
+		IdempotencyKey:      key,
+		OperationId:         operationID,
+		DurableGenerationId: durableGenerationID,
+		VolumeId:            volumeID,
+		SnapshotRef:         snapshotRef,
+	})
+	if err != nil {
+		return FilesystemPruneRecord{}, fmt.Errorf("prune filesystem generation %s: %w", durableGenerationID, err)
+	}
+	return FilesystemPruneRecord{
+		OperationID:         resp.GetOperationId(),
+		DurableGenerationID: resp.GetDurableGenerationId(),
+		VolumeID:            resp.GetVolumeId(),
+		SnapshotRef:         resp.GetSnapshotRef(),
+		PrunedAt:            timeFromUnixNs(resp.GetPrunedAtUnixNs()),
 	}, nil
 }
 
@@ -237,16 +258,17 @@ func leaseRecordFromProto(record *vmrpc.LeaseRecord) LeaseRecord {
 		return LeaseRecord{}
 	}
 	return LeaseRecord{
-		LeaseID:        record.GetLeaseId(),
-		State:          leaseStateFromProto(record.GetState()),
-		AcquiredAt:     timeFromUnixNs(record.GetAcquiredAtUnixNs()),
-		ReadyAt:        timeFromUnixNs(record.GetReadyAtUnixNs()),
-		ExpiresAt:      timeFromUnixNs(record.GetExpiresAtUnixNs()),
-		TerminalAt:     timeFromUnixNs(record.GetTerminalAtUnixNs()),
-		TerminalReason: record.GetTerminalReason(),
-		VMIP:           record.GetVmIp(),
-		Resources:      vmResourcesFromProto(record.GetResources()),
-		TrustClass:     record.GetTrustClass(),
+		LeaseID:          record.GetLeaseId(),
+		State:            leaseStateFromProto(record.GetState()),
+		AcquiredAt:       timeFromUnixNs(record.GetAcquiredAtUnixNs()),
+		ReadyAt:          timeFromUnixNs(record.GetReadyAtUnixNs()),
+		ExpiresAt:        timeFromUnixNs(record.GetExpiresAtUnixNs()),
+		TerminalAt:       timeFromUnixNs(record.GetTerminalAtUnixNs()),
+		TerminalReason:   record.GetTerminalReason(),
+		VMIP:             record.GetVmIp(),
+		Resources:        vmResourcesFromProto(record.GetResources()),
+		TrustClass:       record.GetTrustClass(),
+		FilesystemMounts: filesystemMountResultsFromProto(record.GetFilesystemMounts()),
 	}
 }
 
