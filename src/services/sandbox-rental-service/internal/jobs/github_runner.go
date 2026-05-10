@@ -1189,10 +1189,11 @@ func (r *GitHubRunner) listInstallationRepositories(ctx context.Context, install
 }
 
 type githubWorkflowRunJobsState struct {
-	Total     int
-	Completed int
-	Succeeded int
-	Failed    int
+	Total            int
+	Completed        int
+	Succeeded        int
+	Failed           int
+	SuccessfulJobIDs []int64
 }
 
 func (s githubWorkflowRunJobsState) promotionReady() (bool, string) {
@@ -1245,6 +1246,7 @@ func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref gol
 				switch conclusion {
 				case "success", "skipped":
 					state.Succeeded++
+					state.SuccessfulJobIDs = append(state.SuccessfulJobIDs, job.ID)
 				default:
 					state.Failed++
 				}

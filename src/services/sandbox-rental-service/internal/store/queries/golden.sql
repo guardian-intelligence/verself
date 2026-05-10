@@ -155,6 +155,7 @@ JOIN golden_scopes s ON s.golden_scope_id = g.golden_scope_id
 JOIN workspace_operations wo ON wo.operation_id = g.operation_id
 WHERE g.provider_run_id = sqlc.arg(provider_run_id)
   AND g.head_sha = sqlc.arg(head_sha)
+  AND g.provider_job_id = ANY(sqlc.arg(provider_job_ids)::bigint[])
   AND s.org_id = sqlc.arg(org_id)
   AND s.provider = sqlc.arg(provider)
   AND s.provider_repository_id = sqlc.arg(provider_repository_id)

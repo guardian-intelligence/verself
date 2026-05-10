@@ -391,18 +391,22 @@ func (s *Service) githubWorkflowRunPromotionReady(ctx context.Context, identity 
 }
 
 func (s *Service) githubWorkflowRunPromotionReadyForRef(ctx context.Context, ref goldenWorkflowRunRef) (bool, string, error) {
-	if ref.Provider != RunnerProviderGitHub {
-		return true, "", nil
-	}
-	if s.GitHubRunner == nil {
-		return false, "github runner is not configured", nil
-	}
-	state, err := s.GitHubRunner.refreshWorkflowRunJobsForRun(ctx, ref)
+	state, err := s.githubWorkflowRunPromotionStateForRef(ctx, ref)
 	if err != nil {
 		return false, "", err
 	}
 	ready, reason := state.promotionReady()
 	return ready, reason, nil
+}
+
+func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowRunJobsState, error) {
+	if ref.Provider != RunnerProviderGitHub {
+		return githubWorkflowRunJobsState{Total: 1, Completed: 1, Succeeded: 1}, nil
+	}
+	if s.GitHubRunner == nil {
+		return githubWorkflowRunJobsState{}, nil
+	}
+	return s.GitHubRunner.refreshWorkflowRunJobsForRun(ctx, ref)
 }
 
 func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunPromoteArgs) error {
@@ -440,9 +444,19 @@ func (s *Service) promoteGoldenWorkflowRun(ctx context.Context, ref goldenWorkfl
 		attribute.String("git.commit.sha", ref.HeadSHA),
 	))
 	defer span.End()
+	state, err := s.githubWorkflowRunPromotionStateForRef(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	promotionReady, reason := state.promotionReady()
+	if !promotionReady {
+		span.SetAttributes(attribute.Bool("golden.promoted", false), attribute.String("golden.promotion_deferred_reason", reason))
+		return false, nil
+	}
 	candidates, err := s.storeQueries().ListGoldenPromotionCandidatesForRun(ctx, store.ListGoldenPromotionCandidatesForRunParams{
 		ProviderRunID:        ref.ProviderRunID,
 		HeadSha:              ref.HeadSHA,
+		ProviderJobIds:       state.SuccessfulJobIDs,
 		OrgID:                dbOrgID(ref.OrgID),
 		Provider:             ref.Provider,
 		ProviderRepositoryID: ref.ProviderRepositoryID,
@@ -451,17 +465,6 @@ func (s *Service) promoteGoldenWorkflowRun(ctx context.Context, ref goldenWorkfl
 		return false, err
 	}
 	span.SetAttributes(attribute.Int("golden.candidate_count", len(candidates)))
-	promotionReady, reason, err := s.githubWorkflowRunPromotionReadyForRef(ctx, ref)
-	if err != nil {
-		return false, err
-	}
-	if !promotionReady {
-		span.SetAttributes(attribute.Bool("golden.promoted", false), attribute.String("golden.promotion_deferred_reason", reason))
-		for _, candidate := range candidates {
-			_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.GoldenScopeID, GenerationID: &candidate.GoldenGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Name: "golden.generation.promote", Result: "deferred", Reason: reason})
-		}
-		return false, nil
-	}
 	anyPromoted := false
 	for _, candidate := range candidates {
 		promoted, err := s.promoteGoldenCandidate(ctx, candidate.GoldenScopeID, candidate.OperationID, candidate.GoldenGenerationID, candidate.SourceGenerationID, candidate.ExecutionID, candidate.AttemptID)

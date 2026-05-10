@@ -362,9 +362,10 @@ JOIN golden_scopes s ON s.golden_scope_id = g.golden_scope_id
 JOIN workspace_operations wo ON wo.operation_id = g.operation_id
 WHERE g.provider_run_id = $1
   AND g.head_sha = $2
-  AND s.org_id = $3
-  AND s.provider = $4
-  AND s.provider_repository_id = $5
+  AND g.provider_job_id = ANY($3::bigint[])
+  AND s.org_id = $4
+  AND s.provider = $5
+  AND s.provider_repository_id = $6
   AND g.result = 'success'
   AND g.state = 'committed'
   AND g.promotion_eligible
@@ -374,6 +375,7 @@ ORDER BY g.committed_at, g.golden_generation_id
 type ListGoldenPromotionCandidatesForRunParams struct {
 	ProviderRunID        int64
 	HeadSha              string
+	ProviderJobIds       []int64
 	OrgID                int64
 	Provider             string
 	ProviderRepositoryID int64
@@ -392,6 +394,7 @@ func (q *Queries) ListGoldenPromotionCandidatesForRun(ctx context.Context, arg L
 	rows, err := q.db.Query(ctx, listGoldenPromotionCandidatesForRun,
 		arg.ProviderRunID,
 		arg.HeadSha,
+		arg.ProviderJobIds,
 		arg.OrgID,
 		arg.Provider,
 		arg.ProviderRepositoryID,
