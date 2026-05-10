@@ -16,12 +16,20 @@ type RunnerExecutionIdentity struct {
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
+	ProviderRunAttempt     int64
 	ProviderJobID          int64
 	WorkflowName           string
 	JobName                string
 	HeadSHA                string
 	RepositoryFullName     string
 	HeadBranch             string
+	RunEventName           string
+	RunHeadSHA             string
+	RunHeadBranch          string
+	RunHeadRepository      string
+	RunBaseSHA             string
+	RunBaseBranch          string
+	PullRequestNumber      int64
 	RunnerClass            string
 	RunnerName             string
 }
@@ -43,12 +51,20 @@ func (s *Service) runnerExecutionIdentity(ctx context.Context, executionID, atte
 		ProviderInstallationID: row.ProviderInstallationID,
 		ProviderRepositoryID:   row.ProviderRepositoryID,
 		ProviderRunID:          row.ProviderRunID,
+		ProviderRunAttempt:     row.ProviderRunAttempt,
 		ProviderJobID:          row.ProviderJobID,
 		WorkflowName:           row.WorkflowName,
 		JobName:                row.JobName,
 		HeadSHA:                row.HeadSha,
 		RepositoryFullName:     row.RepositoryFullName,
 		HeadBranch:             row.HeadBranch,
+		RunEventName:           row.RunEventName,
+		RunHeadSHA:             row.RunHeadSha,
+		RunHeadBranch:          row.RunHeadBranch,
+		RunHeadRepository:      row.RunHeadRepositoryFullName,
+		RunBaseSHA:             row.RunBaseSha,
+		RunBaseBranch:          row.RunBaseBranch,
+		PullRequestNumber:      row.PullRequestNumber,
 		RunnerClass:            row.RunnerClass,
 		RunnerName:             row.RunnerName,
 	}, nil

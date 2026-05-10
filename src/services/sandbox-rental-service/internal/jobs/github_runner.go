@@ -111,6 +111,7 @@ type GitHubWorkflowJobWebhook struct {
 	WorkflowJob struct {
 		ID           int64     `json:"id"`
 		RunID        int64     `json:"run_id"`
+		RunAttempt   int64     `json:"run_attempt"`
 		Name         string    `json:"name"`
 		Status       string    `json:"status"`
 		Conclusion   string    `json:"conclusion"`
@@ -183,6 +184,7 @@ type githubWorkflowRunJobsResponse struct {
 	Jobs       []struct {
 		ID           int64     `json:"id"`
 		RunID        int64     `json:"run_id"`
+		RunAttempt   int64     `json:"run_attempt"`
 		Name         string    `json:"name"`
 		Status       string    `json:"status"`
 		Conclusion   string    `json:"conclusion"`
@@ -225,6 +227,7 @@ type githubQueuedJob struct {
 	RepositoryID       int64
 	RepositoryFullName string
 	RunID              int64
+	RunAttempt         int64
 	JobName            string
 	HeadSHA            string
 	HeadBranch         string
@@ -242,6 +245,7 @@ type githubAllocation struct {
 	GitHubRunnerID     int64
 	RequestedJobID     int64
 	RunID              int64
+	RunAttempt         int64
 	JobName            string
 	HeadSHA            string
 	HeadBranch         string
@@ -582,6 +586,7 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 		ProviderRepositoryID:   event.Repository.ID,
 		RepositoryFullName:     event.Repository.FullName,
 		ProviderRunID:          event.WorkflowJob.RunID,
+		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
 		JobName:                event.WorkflowJob.Name,
 		HeadSha:                event.WorkflowJob.HeadSHA,
 		HeadBranch:             event.WorkflowJob.HeadBranch,
@@ -598,6 +603,21 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	})
 	if err != nil {
 		return err
+	}
+	if event.WorkflowJob.RunID != 0 {
+		if err := store.New(tx).UpsertGitHubWorkflowInvocation(ctx, store.UpsertGitHubWorkflowInvocationParams{
+			ProviderInstallationID: event.Installation.ID,
+			ProviderRepositoryID:   event.Repository.ID,
+			ProviderRunID:          event.WorkflowJob.RunID,
+			ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+			RepositoryFullName:     event.Repository.FullName,
+			HeadSha:                event.WorkflowJob.HeadSHA,
+			HeadBranch:             event.WorkflowJob.HeadBranch,
+			HeadRepositoryFullName: event.Repository.FullName,
+			UpdatedAt:              pgTime(now),
+		}); err != nil {
+			return err
+		}
 	}
 	switch event.Action {
 	case "queued":
@@ -630,6 +650,7 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 			ProviderInstallationID: event.Installation.ID,
 			ProviderRepositoryID:   event.Repository.ID,
 			ProviderRunID:          event.WorkflowJob.RunID,
+			ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
 			ProviderJobID:          event.WorkflowJob.ID,
 			RepositoryFullName:     event.Repository.FullName,
 			HeadSHA:                event.WorkflowJob.HeadSHA,
@@ -959,6 +980,7 @@ func (r *GitHubRunner) loadQueuedJob(ctx context.Context, githubJobID int64) (gi
 		RepositoryID:       row.ProviderRepositoryID,
 		RepositoryFullName: row.RepositoryFullName,
 		RunID:              row.ProviderRunID,
+		RunAttempt:         row.ProviderRunAttempt,
 		JobName:            row.JobName,
 		HeadSHA:            row.HeadSha,
 		HeadBranch:         row.HeadBranch,
@@ -1261,6 +1283,7 @@ func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref gol
 				ProviderRepositoryID:   ref.ProviderRepositoryID,
 				RepositoryFullName:     repository,
 				ProviderRunID:          ref.ProviderRunID,
+				ProviderRunAttempt:     job.RunAttempt,
 				JobName:                job.Name,
 				HeadSha:                headSHA,
 				HeadBranch:             headBranch,
@@ -1526,6 +1549,7 @@ func githubAllocationFromGetRow(row store.GetGitHubAllocationRow) githubAllocati
 		GitHubRunnerID:     row.ProviderRunnerID,
 		RequestedJobID:     row.RequestedForProviderJobID,
 		RunID:              row.ProviderRunID,
+		RunAttempt:         row.ProviderRunAttempt,
 		JobName:            row.JobName,
 		HeadSHA:            row.HeadSha,
 		HeadBranch:         row.HeadBranch,
@@ -1555,6 +1579,7 @@ func githubAllocationFromCleanupRow(row store.GetGitHubAllocationForCleanupRow) 
 		GitHubRunnerID:     row.ProviderRunnerID,
 		RequestedJobID:     row.RequestedForProviderJobID,
 		RunID:              row.ProviderRunID,
+		RunAttempt:         row.ProviderRunAttempt,
 		JobName:            row.JobName,
 		HeadSHA:            row.HeadSha,
 		HeadBranch:         row.HeadBranch,

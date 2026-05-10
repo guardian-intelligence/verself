@@ -112,6 +112,7 @@ type GoldenRunPromoteRequest struct {
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
+	ProviderRunAttempt     int64
 	ProviderJobID          int64
 	RepositoryFullName     string
 	HeadSHA                string
@@ -234,6 +235,7 @@ type GoldenRunPromoteArgs struct {
 	ProviderInstallationID int64  `json:"provider_installation_id"`
 	ProviderRepositoryID   int64  `json:"provider_repository_id"`
 	ProviderRunID          int64  `json:"provider_run_id"`
+	ProviderRunAttempt     int64  `json:"provider_run_attempt,omitempty"`
 	ProviderJobID          int64  `json:"provider_job_id,omitempty"`
 	RepositoryFullName     string `json:"repository_full_name,omitempty"`
 	HeadSHA                string `json:"head_sha"`
@@ -414,6 +416,7 @@ func (r *Runtime) EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req 
 		ProviderInstallationID: req.ProviderInstallationID,
 		ProviderRepositoryID:   req.ProviderRepositoryID,
 		ProviderRunID:          req.ProviderRunID,
+		ProviderRunAttempt:     req.ProviderRunAttempt,
 		ProviderJobID:          req.ProviderJobID,
 		RepositoryFullName:     strings.TrimSpace(req.RepositoryFullName),
 		HeadSHA:                strings.TrimSpace(req.HeadSHA),

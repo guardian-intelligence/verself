@@ -71,15 +71,18 @@ async function prepareTarget(targetPath) {
 
 async function downloadBundle(spec, bundlePath) {
   const url = endpointURL(spec);
+  const body = {
+    repository: spec.repository,
+    ref: spec.ref,
+    sha: spec.sha,
+  };
+  if (spec.token) {
+    body.github_token = spec.token;
+  }
   const response = await fetch(url, {
     method: "POST",
     headers: requestHeaders(),
-    body: JSON.stringify({
-      repository: spec.repository,
-      ref: spec.ref,
-      sha: spec.sha,
-      github_token: spec.token,
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     throw new Error(`checkout bundle failed: HTTP ${response.status}: ${await response.text()}`);

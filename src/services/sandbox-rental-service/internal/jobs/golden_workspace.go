@@ -27,6 +27,7 @@ const (
 	goldenWorkspaceTrustSecretless = "secretless"
 	goldenWorkspaceTaintPolicy     = "secretless_only"
 	goldenWorkspacePlatformImage   = "ubuntu-2404-actions-runner"
+	goldenWorkspaceDogfoodBranch   = "main"
 )
 
 type goldenWorkspacePlan struct {
@@ -42,6 +43,7 @@ type goldenWorkspacePlan struct {
 	MountPath             string
 	TrustClass            string
 	TaintPolicy           string
+	PromotionEligible     bool
 }
 
 type goldenWorkflowRunRef struct {
@@ -50,6 +52,7 @@ type goldenWorkflowRunRef struct {
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
+	ProviderRunAttempt     int64
 	RepositoryFullName     string
 	HeadSHA                string
 }
@@ -87,22 +90,20 @@ func (s *Service) prepareGoldenWorkspace(ctx context.Context, item executionWork
 	if identity.Provider != RunnerProviderGitHub {
 		return goldenWorkspacePlan{}, nil
 	}
-	branch := strings.TrimSpace(identity.HeadBranch)
-	if branch == "" {
-		branch = "unknown"
-	}
-	scopeRef := "refs/heads/" + branch
-	trustClass := goldenTrustClass(identity)
+	scopeRef := "refs/heads/" + goldenWorkspaceDogfoodBranch
+	trustClass := "protected_branch"
 	workflowIdentity := firstNonEmpty(identity.WorkflowName, "github-actions")
 	jobIdentity := firstNonEmpty(identity.JobName, identity.RunnerClass, "github-job")
+	matrixKey := githubMatrixKey(identity)
 	durableHash := stableHex("durable", goldenWorkspaceComponentKind, githubRunnerDurableWorkDir)
 	checkoutHash := stableHex("checkout", "v0", "preserve-untracked")
 	now := time.Now().UTC()
 
-	jobShapeID := stableUUID("job-shape", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), workflowIdentity, jobIdentity, identity.RunnerClass, goldenWorkspacePlatformImage, durableHash, checkoutHash)
+	jobShapeID := stableUUID("job-shape", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), workflowIdentity, jobIdentity, matrixKey, identity.RunnerClass, goldenWorkspacePlatformImage, durableHash, checkoutHash)
 	scopeID := stableUUID("golden-scope", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), scopeRef, jobShapeID.String(), trustClass)
 	operationID := uuid.New()
 	candidateGenerationID := uuid.New()
+	promotionEligible := goldenWorkspacePromotionCandidate(identity)
 
 	shape, err := s.storeQueries().UpsertJobShape(ctx, store.UpsertJobShapeParams{
 		JobShapeID:             jobShapeID,
@@ -112,7 +113,7 @@ func (s *Service) prepareGoldenWorkspace(ctx context.Context, item executionWork
 		WorkflowIdentity:       workflowIdentity,
 		CalledWorkflowIdentity: "",
 		JobIdentity:            jobIdentity,
-		MatrixKey:              "",
+		MatrixKey:              matrixKey,
 		RunnerClass:            identity.RunnerClass,
 		PlatformImageID:        goldenWorkspacePlatformImage,
 		DurableManifestHash:    durableHash,
@@ -172,6 +173,8 @@ func (s *Service) prepareGoldenWorkspace(ctx context.Context, item executionWork
 		attribute.Bool("github.workspace.cache_hit", sourceSnapshotRef != ""),
 		attribute.String("github.repository", identity.RepositoryFullName),
 		attribute.String("github.workspace.scope_ref", scopeRef),
+		attribute.String("github.workflow.job_matrix_key", matrixKey),
+		attribute.Bool("golden.promotion_candidate", promotionEligible),
 	)
 	_ = s.appendGoldenEvent(ctx, goldenEvent{
 		OperationID: &op.OperationID,
@@ -194,6 +197,7 @@ func (s *Service) prepareGoldenWorkspace(ctx context.Context, item executionWork
 		MountPath:             op.MountPath,
 		TrustClass:            op.TrustClass,
 		TaintPolicy:           op.TaintPolicy,
+		PromotionEligible:     promotionEligible,
 	}, nil
 }
 
@@ -337,7 +341,7 @@ func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWor
 		ProviderJobID:      plan.Identity.ProviderJobID,
 		Result:             "success",
 		TaintClass:         goldenWorkspaceTrustSecretless,
-		PromotionEligible:  true,
+		PromotionEligible:  plan.PromotionEligible,
 		ZfsSnapshotRef:     commit.Snapshot,
 		UsedBytes:          usedBytes,
 		WrittenBytes:       writtenBytes,
@@ -386,19 +390,6 @@ func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWor
 	return nil
 }
 
-func (s *Service) githubWorkflowRunPromotionReady(ctx context.Context, identity RunnerExecutionIdentity) (bool, string, error) {
-	return s.githubWorkflowRunPromotionReadyForRef(ctx, goldenRunRefFromRunnerIdentity(identity))
-}
-
-func (s *Service) githubWorkflowRunPromotionReadyForRef(ctx context.Context, ref goldenWorkflowRunRef) (bool, string, error) {
-	state, err := s.githubWorkflowRunPromotionStateForRef(ctx, ref)
-	if err != nil {
-		return false, "", err
-	}
-	ready, reason := state.promotionReady()
-	return ready, reason, nil
-}
-
 func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowRunJobsState, error) {
 	if ref.Provider != RunnerProviderGitHub {
 		return githubWorkflowRunJobsState{Total: 1, Completed: 1, Succeeded: 1}, nil
@@ -407,6 +398,21 @@ func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref
 		return githubWorkflowRunJobsState{}, nil
 	}
 	return s.GitHubRunner.refreshWorkflowRunJobsForRun(ctx, ref)
+}
+
+func (s *Service) githubWorkflowRunPromotionGate(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowInvocation, bool, string, error) {
+	if ref.Provider != RunnerProviderGitHub {
+		return githubWorkflowInvocation{HeadSHA: ref.HeadSHA}, true, "", nil
+	}
+	if s.GitHubRunner == nil {
+		return githubWorkflowInvocation{}, false, "github runner is not configured", nil
+	}
+	invocation, err := s.GitHubRunner.refreshWorkflowRunInvocationForRun(ctx, ref)
+	if err != nil {
+		return githubWorkflowInvocation{}, false, "", err
+	}
+	ok, reason := invocation.dogfoodMainPromotion(ref)
+	return invocation, ok, reason, nil
 }
 
 func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunPromoteArgs) error {
@@ -429,6 +435,7 @@ func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunP
 		ProviderInstallationID: req.ProviderInstallationID,
 		ProviderRepositoryID:   req.ProviderRepositoryID,
 		ProviderRunID:          req.ProviderRunID,
+		ProviderRunAttempt:     req.ProviderRunAttempt,
 		RepositoryFullName:     firstNonEmpty(req.RepositoryFullName, repository.RepositoryFullName),
 		HeadSHA:                req.HeadSHA,
 	})
@@ -444,6 +451,14 @@ func (s *Service) promoteGoldenWorkflowRun(ctx context.Context, ref goldenWorkfl
 		attribute.String("git.commit.sha", ref.HeadSHA),
 	))
 	defer span.End()
+	invocation, promotable, reason, err := s.githubWorkflowRunPromotionGate(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	if !promotable {
+		span.SetAttributes(attribute.Bool("golden.promoted", false), attribute.String("golden.promotion_deferred_reason", reason))
+		return false, nil
+	}
 	state, err := s.githubWorkflowRunPromotionStateForRef(ctx, ref)
 	if err != nil {
 		return false, err
@@ -455,11 +470,12 @@ func (s *Service) promoteGoldenWorkflowRun(ctx context.Context, ref goldenWorkfl
 	}
 	candidates, err := s.storeQueries().ListGoldenPromotionCandidatesForRun(ctx, store.ListGoldenPromotionCandidatesForRunParams{
 		ProviderRunID:        ref.ProviderRunID,
-		HeadSha:              ref.HeadSHA,
+		HeadSha:              firstNonEmpty(invocation.HeadSHA, ref.HeadSHA),
 		ProviderJobIds:       state.SuccessfulJobIDs,
 		OrgID:                dbOrgID(ref.OrgID),
 		Provider:             ref.Provider,
 		ProviderRepositoryID: ref.ProviderRepositoryID,
+		ScopeRef:             "refs/heads/" + goldenWorkspaceDogfoodBranch,
 	})
 	if err != nil {
 		return false, err
@@ -528,6 +544,7 @@ func goldenRunRefFromRunnerIdentity(identity RunnerExecutionIdentity) goldenWork
 		ProviderInstallationID: identity.ProviderInstallationID,
 		ProviderRepositoryID:   identity.ProviderRepositoryID,
 		ProviderRunID:          identity.ProviderRunID,
+		ProviderRunAttempt:     identity.ProviderRunAttempt,
 		RepositoryFullName:     identity.RepositoryFullName,
 		HeadSHA:                identity.HeadSHA,
 	}
@@ -559,19 +576,16 @@ func (s *Service) appendGoldenEvent(ctx context.Context, event goldenEvent) erro
 	})
 }
 
-func goldenTrustClass(identity RunnerExecutionIdentity) string {
-	switch strings.TrimSpace(identity.HeadBranch) {
-	case "main", "master", "beta", "gamma":
-		return "protected_branch"
-	case "":
-		return "unknown_branch"
-	default:
-		return "same_repo_branch"
-	}
-}
-
 func stableUUID(parts ...string) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join(parts, "\x00")))
+}
+
+func githubMatrixKey(identity RunnerExecutionIdentity) string {
+	return firstNonEmpty(strings.TrimSpace(identity.JobName), "default")
+}
+
+func goldenWorkspacePromotionCandidate(identity RunnerExecutionIdentity) bool {
+	return strings.TrimSpace(firstNonEmpty(identity.RunHeadBranch, identity.HeadBranch)) == goldenWorkspaceDogfoodBranch
 }
 
 func stableHex(parts ...string) string {

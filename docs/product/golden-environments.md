@@ -37,6 +37,9 @@ Branch behavior:
 
 - Target branch jobs promote that branch after all required jobs for the commit
   are green.
+- The dogfood implementation only promotes `refs/heads/main`. Non-main jobs may
+  read the main golden and commit retained candidates, but they do not advance
+  the reusable pointer.
 - Pull request jobs read from the target branch golden selected by ancestry and
   may produce same-branch or same-PR generations when the trust policy allows.
 - A push to a branch promotes that branch's own golden when the job succeeds
@@ -467,9 +470,9 @@ DX rule:
 
 ## Host Storage Model
 
-The storage model uses generation-per-dataset adoption. The mutable working
-dataset created for one job becomes the sealed generation if the job succeeds
-and the policy allows promotion.
+The storage model uses generation-per-dataset sealing. A mutable working clone
+is snapshotted, cloned into the golden generation namespace, promoted so it no
+longer depends on the ephemeral lease dataset, and sealed with `@sealed`.
 
 Example layout:
 
@@ -497,8 +500,9 @@ Host lifecycle:
 4. The vm-orchestrator mounts components into the guest before the runner
    starts.
 5. The job runs.
-6. The vm-orchestrator stops consumers, flushes, unmounts, snapshots, and
-   adopts the working datasets as a new generation.
+6. The vm-orchestrator stops consumers, flushes, snapshots the working datasets,
+   clones them into the generation namespace, promotes the clones, and seals the
+   generation snapshots.
 7. The vm-orchestrator journals the terminal result.
 8. The service records the committed generation and attempts CAS promotion.
 
@@ -538,6 +542,11 @@ The security boundary combines trust classes, taint classification, and
 redaction. Customer redaction reduces accidental persistence. Verself trust
 policy prevents secret-bearing executions from producing goldens that later run
 in lower-trust contexts.
+
+The dogfood implementation relies on the repository-wide secretless CI invariant
+and does not inspect workflow secret usage. Taint classification becomes an
+enforced data model when trusted deployment lanes and customer secret surfaces
+are admitted into golden generation.
 
 ### Trust Classes
 

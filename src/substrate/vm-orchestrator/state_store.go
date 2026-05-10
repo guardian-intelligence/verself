@@ -72,6 +72,17 @@ type leaseEventRecord struct {
 	CreatedAt time.Time
 }
 
+type workspaceJournalEntry struct {
+	OperationID       string
+	LeaseID           string
+	MountName         string
+	Phase             string
+	SourceDatasetRef  string
+	WorkingDatasetRef string
+	SealedDatasetRef  string
+	ErrorMessage      string
+}
+
 func openHostStateStore(path string, _ *slog.Logger) (*hostStateStore, error) {
 	db, err := openStateDB(normalizeStateDBPath(path))
 	if err != nil {
@@ -198,7 +209,7 @@ func (s *hostStateStore) ensureSchema(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_idempotency_created ON idempotency_keys(created_at_unix_nano)`,
 		`CREATE TABLE IF NOT EXISTS network_slots (
-			slot_index INTEGER PRIMARY KEY,
+				slot_index INTEGER PRIMARY KEY,
 			generation INTEGER NOT NULL DEFAULT 0,
 			state TEXT NOT NULL DEFAULT 'free',
 			lease_id TEXT NOT NULL DEFAULT '',
@@ -212,9 +223,22 @@ func (s *hostStateStore) ensureSchema(ctx context.Context) error {
 			firecracker_start_ticks INTEGER NOT NULL DEFAULT 0,
 			created_at_unix_nano INTEGER NOT NULL DEFAULT 0,
 			updated_at_unix_nano INTEGER NOT NULL DEFAULT 0
-		)`,
+			)`,
 		`CREATE INDEX IF NOT EXISTS idx_network_slots_state ON network_slots(state)`,
 		`CREATE INDEX IF NOT EXISTS idx_network_slots_lease_id ON network_slots(lease_id)`,
+		`CREATE TABLE IF NOT EXISTS host_workspace_journal (
+				journal_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				operation_id TEXT NOT NULL,
+				lease_id TEXT NOT NULL DEFAULT '',
+				mount_name TEXT NOT NULL DEFAULT '',
+				phase TEXT NOT NULL,
+				source_dataset_ref TEXT NOT NULL DEFAULT '',
+				working_dataset_ref TEXT NOT NULL DEFAULT '',
+				sealed_dataset_ref TEXT NOT NULL DEFAULT '',
+				error_message TEXT NOT NULL DEFAULT '',
+				recorded_at_unix_nano INTEGER NOT NULL
+			)`,
+		`CREATE INDEX IF NOT EXISTS idx_host_workspace_journal_operation ON host_workspace_journal(operation_id, journal_seq)`,
 	}
 	for _, stmt := range ddl {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -706,6 +730,35 @@ func (s *hostStateStore) listLeaseEvents(ctx context.Context, leaseID string, fr
 		return nil, fmt.Errorf("iterate lease events %s: %w", leaseID, err)
 	}
 	return out, nil
+}
+
+func (s *hostStateStore) appendWorkspaceJournal(ctx context.Context, entry workspaceJournalEntry) error {
+	if strings.TrimSpace(entry.OperationID) == "" {
+		return fmt.Errorf("workspace journal operation id is required")
+	}
+	if strings.TrimSpace(entry.Phase) == "" {
+		return fmt.Errorf("workspace journal phase is required")
+	}
+	hostStateWriteMu.Lock()
+	defer hostStateWriteMu.Unlock()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO host_workspace_journal (
+		operation_id, lease_id, mount_name, phase, source_dataset_ref,
+		working_dataset_ref, sealed_dataset_ref, error_message, recorded_at_unix_nano
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.OperationID,
+		entry.LeaseID,
+		entry.MountName,
+		entry.Phase,
+		entry.SourceDatasetRef,
+		entry.WorkingDatasetRef,
+		entry.SealedDatasetRef,
+		entry.ErrorMessage,
+		time.Now().UTC().UnixNano(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert workspace journal %s phase=%s: %w", entry.OperationID, entry.Phase, err)
+	}
+	return nil
 }
 
 func insertLeaseEventTx(ctx context.Context, tx *sql.Tx, leaseID string, eventType LeaseEventType, execID string, attrs map[string]string, createdNS int64) error {

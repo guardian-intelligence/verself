@@ -2,6 +2,7 @@ package zfs
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -11,6 +12,7 @@ type lifecycleOps struct {
 	creates []string
 	sets    []string
 	mkfs    []string
+	usedErr error
 }
 
 func (o *lifecycleOps) ZFSClone(_ context.Context, snapshot, target, _ string) error {
@@ -74,6 +76,14 @@ func (o *lifecycleOps) ZFSListChildren(context.Context, string) ([]string, error
 	return nil, nil
 }
 
+func (o *lifecycleOps) ZFSUsed(context.Context, string) (uint64, error) {
+	return 0, o.usedErr
+}
+
+func (o *lifecycleOps) ZFSWritten(context.Context, string) (uint64, error) {
+	return 0, nil
+}
+
 func (o *lifecycleOps) UnmountStaleZvolMounts(context.Context, string) (int, error) {
 	return 0, nil
 }
@@ -124,5 +134,28 @@ func TestPrepareFilesystemMountsEnsureMountParent(t *testing.T) {
 	}
 	if got, want := ops.ensures[1], "pool/workloads/lease-a/mounts"; got != want {
 		t.Fatalf("ensured empty mount parent = %q, want %q", got, want)
+	}
+}
+
+func TestCommitReturnsStatsErrors(t *testing.T) {
+	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
+	ops := &lifecycleOps{usedErr: errors.New("zfs used failed")}
+	lifecycle := NewVolumeLifecycle(roots, ops, nil)
+	lease, err := NewLease(roots, "lease-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloneDataset, err := lease.MountDataset(0, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := MountClone{lease: lease, dataset: cloneDataset, name: "workspace"}
+	volume, err := NewVolume(roots, "scope-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = lifecycle.Commit(context.Background(), clone, volume, nil, "generation-a", "op-a")
+	if err == nil {
+		t.Fatal("Commit returned nil error for zfs stats failure")
 	}
 }

@@ -128,6 +128,7 @@ go_test(
     srcs = [
         "filesystem_mounts_test.go",
         "privops_direct_test.go",
+        "state_store_test.go",
         "telemetry_stream_test.go",
     ],
     embed = [":vm-orchestrator"],

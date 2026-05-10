@@ -9,6 +9,7 @@ go_library(
         "forgejo_runner.go",
         "github_execution_auth.go",
         "github_runner.go",
+        "github_workflow_invocation.go",
         "golden_workspace.go",
         "jobs.go",
         "logs_search.go",
@@ -48,7 +49,10 @@ go_library(
 
 go_test(
     name = "jobs_test",
-    srcs = ["github_workspace_test.go"],
+    srcs = [
+        "github_workspace_test.go",
+        "golden_workspace_test.go",
+    ],
     embed = [":jobs"],
 )
 

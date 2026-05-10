@@ -24,3 +24,7 @@ the requested commit while preserving untracked build state.
 The `bundle-cache-hit` output is scoped to the host-side Git pack bundle used
 to update the working tree. Golden workspace selection is recorded by
 sandbox-rental and vm-orchestrator traces, not by this action.
+
+The action does not request `github.token` by default. If the host-side mirror
+has to fetch from GitHub, sandbox-rental uses the repository's GitHub App
+installation token.

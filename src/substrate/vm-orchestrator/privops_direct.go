@@ -342,6 +342,14 @@ func (DirectPrivOps) ZFSListChildren(ctx context.Context, dataset string) ([]str
 	return children, nil
 }
 
+func (DirectPrivOps) ZFSUsed(ctx context.Context, dataset string) (uint64, error) {
+	return zfs.Used(ctx, dataset)
+}
+
+func (DirectPrivOps) ZFSWritten(ctx context.Context, dataset string) (uint64, error) {
+	return zfs.Written(ctx, dataset)
+}
+
 // UnmountStaleZvolMounts force-unmounts every VFS mount whose source is a
 // device under /dev/zvol/<pool>/. Callers run this before destroying clones,
 // because `zfs destroy -f` only force-unmounts ZFS-native mounts; ext4 over

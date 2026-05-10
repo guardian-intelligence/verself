@@ -75,7 +75,8 @@ UPDATE workspace_operations
 SET final_state = 'failed',
     failure_reason = sqlc.arg(failure_reason),
     result_recorded_at = sqlc.arg(now)
-WHERE operation_id = sqlc.arg(operation_id);
+WHERE operation_id = sqlc.arg(operation_id)
+  AND final_state IN ('requested', 'mounted');
 
 -- name: MarkOpenWorkspaceOperationsFailedByAttempt :many
 UPDATE workspace_operations
@@ -159,6 +160,8 @@ WHERE g.provider_run_id = sqlc.arg(provider_run_id)
   AND s.org_id = sqlc.arg(org_id)
   AND s.provider = sqlc.arg(provider)
   AND s.provider_repository_id = sqlc.arg(provider_repository_id)
+  AND s.scope_kind = 'branch'
+  AND s.scope_ref = sqlc.arg(scope_ref)
   AND g.result = 'success'
   AND g.state = 'committed'
   AND g.promotion_eligible

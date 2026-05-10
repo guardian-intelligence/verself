@@ -139,16 +139,17 @@ WHERE state = sqlc.arg(state);
 -- name: UpsertGitHubRunnerJob :exec
 INSERT INTO runner_jobs (
     provider, provider_job_id, provider_installation_id, provider_repository_id, repository_full_name,
-    provider_run_id, job_name, head_sha, head_branch, workflow_name,
+    provider_run_id, provider_run_attempt, job_name, head_sha, head_branch, workflow_name,
     status, conclusion, labels_json, runner_id, runner_name, started_at, completed_at,
     last_webhook_delivery, updated_at
 ) VALUES (
     'github', sqlc.arg(provider_job_id), sqlc.arg(provider_installation_id), sqlc.arg(provider_repository_id), sqlc.arg(repository_full_name),
-    sqlc.arg(provider_run_id), sqlc.arg(job_name), sqlc.arg(head_sha), sqlc.arg(head_branch), sqlc.arg(workflow_name),
+    sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt), sqlc.arg(job_name), sqlc.arg(head_sha), sqlc.arg(head_branch), sqlc.arg(workflow_name),
     sqlc.arg(status), sqlc.arg(conclusion), sqlc.arg(labels_json)::jsonb, sqlc.arg(runner_id), sqlc.arg(runner_name),
     sqlc.narg(started_at), sqlc.narg(completed_at), sqlc.arg(last_webhook_delivery), sqlc.arg(updated_at)
 )
 ON CONFLICT (provider, provider_job_id) DO UPDATE SET
+    provider_run_attempt = CASE WHEN EXCLUDED.provider_run_attempt <> 0 THEN EXCLUDED.provider_run_attempt ELSE runner_jobs.provider_run_attempt END,
     job_name = EXCLUDED.job_name,
     head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), runner_jobs.head_sha),
     head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), runner_jobs.head_branch),
@@ -163,6 +164,33 @@ ON CONFLICT (provider, provider_job_id) DO UPDATE SET
     last_webhook_delivery = EXCLUDED.last_webhook_delivery,
     updated_at = EXCLUDED.updated_at;
 
+-- name: UpsertGitHubWorkflowInvocation :exec
+INSERT INTO github_workflow_invocations (
+    provider_installation_id, provider_repository_id, provider_run_id,
+    provider_run_attempt, repository_full_name, event_name, head_sha,
+    head_branch, head_repository_full_name, base_sha, base_branch,
+    pull_request_number, updated_at
+) VALUES (
+    sqlc.arg(provider_installation_id), sqlc.arg(provider_repository_id),
+    sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt),
+    sqlc.arg(repository_full_name), sqlc.arg(event_name), sqlc.arg(head_sha),
+    sqlc.arg(head_branch), sqlc.arg(head_repository_full_name), sqlc.arg(base_sha),
+    sqlc.arg(base_branch), sqlc.arg(pull_request_number), sqlc.arg(updated_at)
+)
+ON CONFLICT (
+    provider_installation_id, provider_repository_id, provider_run_id,
+    provider_run_attempt
+) DO UPDATE SET
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_workflow_invocations.repository_full_name),
+    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), github_workflow_invocations.event_name),
+    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_invocations.head_sha),
+    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_invocations.head_branch),
+    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), github_workflow_invocations.head_repository_full_name),
+    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), github_workflow_invocations.base_sha),
+    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
+    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
+    updated_at = EXCLUDED.updated_at;
+
 -- name: GetGitHubQueuedJob :one
 SELECT
     j.provider_job_id,
@@ -170,6 +198,7 @@ SELECT
     j.provider_repository_id,
     j.repository_full_name,
     j.provider_run_id,
+    j.provider_run_attempt,
     j.job_name,
     j.head_sha,
     j.head_branch,
@@ -231,6 +260,7 @@ SELECT
     a.provider_runner_id,
     a.requested_for_provider_job_id,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.provider_run_attempt, 0)::bigint AS provider_run_attempt,
     COALESCE(j.job_name, '')::text AS job_name,
     COALESCE(j.head_sha, '')::text AS head_sha,
     COALESCE(j.head_branch, '')::text AS head_branch,
@@ -264,6 +294,7 @@ SELECT
     a.provider_runner_id,
     a.requested_for_provider_job_id,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.provider_run_attempt, 0)::bigint AS provider_run_attempt,
     COALESCE(j.job_name, '')::text AS job_name,
     COALESCE(j.head_sha, '')::text AS head_sha,
     COALESCE(j.head_branch, '')::text AS head_branch,

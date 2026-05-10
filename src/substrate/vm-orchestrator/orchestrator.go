@@ -223,6 +223,7 @@ type Orchestrator struct {
 	logger  *slog.Logger
 	ops     PrivOps
 	volumes *zfs.VolumeLifecycle
+	journal func(workspaceJournalEntry)
 }
 
 type Option func(*Orchestrator)
@@ -230,6 +231,12 @@ type Option func(*Orchestrator)
 func WithPrivOps(ops PrivOps) Option {
 	return func(o *Orchestrator) {
 		o.ops = ops
+	}
+}
+
+func withWorkspaceJournal(journal func(workspaceJournalEntry)) Option {
+	return func(o *Orchestrator) {
+		o.journal = journal
 	}
 }
 
@@ -470,9 +477,35 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	for _, mount := range mounts {
 		mount := mount
 		runtime.cleanups = append(runtime.cleanups, func() {
+			o.appendWorkspaceJournal(workspaceJournalEntry{
+				OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
+				LeaseID:           lease.ID(),
+				MountName:         mount.Spec.Name,
+				Phase:             "destroy_started",
+				SourceDatasetRef:  mount.Spec.SourceRef,
+				WorkingDatasetRef: mount.Dataset,
+			})
 			if destroyErr := o.volumes.DestroyMount(context.Background(), mount.clone); destroyErr != nil {
+				o.appendWorkspaceJournal(workspaceJournalEntry{
+					OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
+					LeaseID:           lease.ID(),
+					MountName:         mount.Spec.Name,
+					Phase:             "failed",
+					SourceDatasetRef:  mount.Spec.SourceRef,
+					WorkingDatasetRef: mount.Dataset,
+					ErrorMessage:      destroyErr.Error(),
+				})
 				runtime.logger.WarnContext(context.Background(), "filesystem mount zvol destroy failed", "error", destroyErr, "dataset", mount.Dataset)
+				return
 			}
+			o.appendWorkspaceJournal(workspaceJournalEntry{
+				OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
+				LeaseID:           lease.ID(),
+				MountName:         mount.Spec.Name,
+				Phase:             "destroyed",
+				SourceDatasetRef:  mount.Spec.SourceRef,
+				WorkingDatasetRef: mount.Dataset,
+			})
 		})
 	}
 	runtime.cleanups = append(runtime.cleanups, func() {
@@ -494,6 +527,13 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			prepErr error
 		)
 		operationID := firstNonEmpty(mount.OperationID, lease.ID())
+		o.appendWorkspaceJournal(workspaceJournalEntry{
+			OperationID:      operationID,
+			LeaseID:          lease.ID(),
+			MountName:        mount.Name,
+			Phase:            "mount_prepare_started",
+			SourceDatasetRef: mount.SourceRef,
+		})
 		if mount.SourceRef == "" {
 			clone, prepErr = o.volumes.PrepareEmptyMount(ctx, lease, idx, mount.Name, defaultGoldenWorkspaceBytes, operationID)
 		} else if strings.Contains(mount.SourceRef, "@") {
@@ -510,9 +550,25 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			clone, prepErr = o.volumes.PrepareMount(ctx, lease, image, idx, mount.Name, operationID)
 		}
 		if prepErr != nil {
+			o.appendWorkspaceJournal(workspaceJournalEntry{
+				OperationID:      operationID,
+				LeaseID:          lease.ID(),
+				MountName:        mount.Name,
+				Phase:            "failed",
+				SourceDatasetRef: mount.SourceRef,
+				ErrorMessage:     prepErr.Error(),
+			})
 			return prepared, prepErr
 		}
 		target := clone.Dataset()
+		o.appendWorkspaceJournal(workspaceJournalEntry{
+			OperationID:       operationID,
+			LeaseID:           lease.ID(),
+			MountName:         mount.Name,
+			Phase:             "mounted",
+			SourceDatasetRef:  mount.SourceRef,
+			WorkingDatasetRef: target,
+		})
 		driveID := fmt.Sprintf("fs%d", idx)
 		prepared = append(prepared, preparedFilesystemMount{
 			Spec:            mount,
@@ -525,6 +581,12 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 		})
 	}
 	return prepared, nil
+}
+
+func (o *Orchestrator) appendWorkspaceJournal(entry workspaceJournalEntry) {
+	if o.journal != nil && strings.TrimSpace(entry.OperationID) != "" {
+		o.journal(entry)
+	}
 }
 
 func guestVirtioDevicePath(index int) string {

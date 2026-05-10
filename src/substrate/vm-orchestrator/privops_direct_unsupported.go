@@ -77,6 +77,14 @@ func (DirectPrivOps) ZFSListChildren(context.Context, string) ([]string, error) 
 	return nil, unsupportedHostMutation("zfs list children")
 }
 
+func (DirectPrivOps) ZFSUsed(context.Context, string) (uint64, error) {
+	return 0, unsupportedHostMutation("zfs used")
+}
+
+func (DirectPrivOps) ZFSWritten(context.Context, string) (uint64, error) {
+	return 0, unsupportedHostMutation("zfs written")
+}
+
 func (DirectPrivOps) UnmountStaleZvolMounts(context.Context, string) (int, error) {
 	return 0, unsupportedHostMutation("unmount stale zvol mounts")
 }

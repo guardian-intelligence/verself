@@ -366,6 +366,8 @@ WHERE g.provider_run_id = $1
   AND s.org_id = $4
   AND s.provider = $5
   AND s.provider_repository_id = $6
+  AND s.scope_kind = 'branch'
+  AND s.scope_ref = $7
   AND g.result = 'success'
   AND g.state = 'committed'
   AND g.promotion_eligible
@@ -379,6 +381,7 @@ type ListGoldenPromotionCandidatesForRunParams struct {
 	OrgID                int64
 	Provider             string
 	ProviderRepositoryID int64
+	ScopeRef             string
 }
 
 type ListGoldenPromotionCandidatesForRunRow struct {
@@ -398,6 +401,7 @@ func (q *Queries) ListGoldenPromotionCandidatesForRun(ctx context.Context, arg L
 		arg.OrgID,
 		arg.Provider,
 		arg.ProviderRepositoryID,
+		arg.ScopeRef,
 	)
 	if err != nil {
 		return nil, err
@@ -524,6 +528,7 @@ SET final_state = 'failed',
     failure_reason = $1,
     result_recorded_at = $2
 WHERE operation_id = $3
+  AND final_state IN ('requested', 'mounted')
 `
 
 type MarkWorkspaceOperationFailedParams struct {

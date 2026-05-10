@@ -33,6 +33,8 @@ type PrivZFS interface {
 	ZFSRename(ctx context.Context, from, to string) error
 	ZFSPromote(ctx context.Context, dataset string) error
 	ZFSListChildren(ctx context.Context, dataset string) ([]string, error)
+	ZFSUsed(ctx context.Context, dataset string) (uint64, error)
+	ZFSWritten(ctx context.Context, dataset string) (uint64, error)
 	UnmountStaleZvolMounts(ctx context.Context, pool string) (int, error)
 }
 
@@ -180,8 +182,14 @@ func (l *VolumeLifecycle) Commit(ctx context.Context, clone MountClone, volume V
 	}
 	now := time.Now().UTC()
 	snap := Snapshot{dataset: genDataset, name: sealedSnapshot}
-	used, _ := Used(ctx, genDataset)
-	written, _ := Written(ctx, genDataset)
+	used, err := l.ops.ZFSUsed(ctx, genDataset)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	written, err := l.ops.ZFSWritten(ctx, genDataset)
+	if err != nil {
+		return CommitResult{}, err
+	}
 	return CommitResult{
 		NewGeneration: Generation{volume: volume, snap: snap},
 		UsedBytes:     used,

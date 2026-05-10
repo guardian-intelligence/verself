@@ -64,6 +64,7 @@ SELECT
     a.provider_runner_id,
     a.requested_for_provider_job_id,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.provider_run_attempt, 0)::bigint AS provider_run_attempt,
     COALESCE(j.job_name, '')::text AS job_name,
     COALESCE(j.head_sha, '')::text AS head_sha,
     COALESCE(j.head_branch, '')::text AS head_branch,
@@ -101,6 +102,7 @@ type GetGitHubAllocationRow struct {
 	ProviderRunnerID          int64
 	RequestedForProviderJobID int64
 	ProviderRunID             int64
+	ProviderRunAttempt        int64
 	JobName                   string
 	HeadSha                   string
 	HeadBranch                string
@@ -128,6 +130,7 @@ func (q *Queries) GetGitHubAllocation(ctx context.Context, arg GetGitHubAllocati
 		&i.ProviderRunnerID,
 		&i.RequestedForProviderJobID,
 		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
 		&i.JobName,
 		&i.HeadSha,
 		&i.HeadBranch,
@@ -155,6 +158,7 @@ SELECT
     a.provider_runner_id,
     a.requested_for_provider_job_id,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.provider_run_attempt, 0)::bigint AS provider_run_attempt,
     COALESCE(j.job_name, '')::text AS job_name,
     COALESCE(j.head_sha, '')::text AS head_sha,
     COALESCE(j.head_branch, '')::text AS head_branch,
@@ -191,6 +195,7 @@ type GetGitHubAllocationForCleanupRow struct {
 	ProviderRunnerID          int64
 	RequestedForProviderJobID int64
 	ProviderRunID             int64
+	ProviderRunAttempt        int64
 	JobName                   string
 	HeadSha                   string
 	HeadBranch                string
@@ -218,6 +223,7 @@ func (q *Queries) GetGitHubAllocationForCleanup(ctx context.Context, arg GetGitH
 		&i.ProviderRunnerID,
 		&i.RequestedForProviderJobID,
 		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
 		&i.JobName,
 		&i.HeadSha,
 		&i.HeadBranch,
@@ -366,6 +372,7 @@ SELECT
     j.provider_repository_id,
     j.repository_full_name,
     j.provider_run_id,
+    j.provider_run_attempt,
     j.job_name,
     j.head_sha,
     j.head_branch,
@@ -392,6 +399,7 @@ type GetGitHubQueuedJobRow struct {
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
 	ProviderRunID          int64
+	ProviderRunAttempt     int64
 	JobName                string
 	HeadSha                string
 	HeadBranch             string
@@ -409,6 +417,7 @@ func (q *Queries) GetGitHubQueuedJob(ctx context.Context, arg GetGitHubQueuedJob
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
 		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
 		&i.JobName,
 		&i.HeadSha,
 		&i.HeadBranch,
@@ -728,16 +737,17 @@ func (q *Queries) UpsertGitHubInstallationConnection(ctx context.Context, arg Up
 const upsertGitHubRunnerJob = `-- name: UpsertGitHubRunnerJob :exec
 INSERT INTO runner_jobs (
     provider, provider_job_id, provider_installation_id, provider_repository_id, repository_full_name,
-    provider_run_id, job_name, head_sha, head_branch, workflow_name,
+    provider_run_id, provider_run_attempt, job_name, head_sha, head_branch, workflow_name,
     status, conclusion, labels_json, runner_id, runner_name, started_at, completed_at,
     last_webhook_delivery, updated_at
 ) VALUES (
     'github', $1, $2, $3, $4,
-    $5, $6, $7, $8, $9,
-    $10, $11, $12::jsonb, $13, $14,
-    $15, $16, $17, $18
+    $5, $6, $7, $8, $9, $10,
+    $11, $12, $13::jsonb, $14, $15,
+    $16, $17, $18, $19
 )
 ON CONFLICT (provider, provider_job_id) DO UPDATE SET
+    provider_run_attempt = CASE WHEN EXCLUDED.provider_run_attempt <> 0 THEN EXCLUDED.provider_run_attempt ELSE runner_jobs.provider_run_attempt END,
     job_name = EXCLUDED.job_name,
     head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), runner_jobs.head_sha),
     head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), runner_jobs.head_branch),
@@ -759,6 +769,7 @@ type UpsertGitHubRunnerJobParams struct {
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
 	ProviderRunID          int64
+	ProviderRunAttempt     int64
 	JobName                string
 	HeadSha                string
 	HeadBranch             string
@@ -781,6 +792,7 @@ func (q *Queries) UpsertGitHubRunnerJob(ctx context.Context, arg UpsertGitHubRun
 		arg.ProviderRepositoryID,
 		arg.RepositoryFullName,
 		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
 		arg.JobName,
 		arg.HeadSha,
 		arg.HeadBranch,
@@ -841,4 +853,67 @@ func (q *Queries) UpsertGitHubRunnerRepository(ctx context.Context, arg UpsertGi
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertGitHubWorkflowInvocation = `-- name: UpsertGitHubWorkflowInvocation :exec
+INSERT INTO github_workflow_invocations (
+    provider_installation_id, provider_repository_id, provider_run_id,
+    provider_run_attempt, repository_full_name, event_name, head_sha,
+    head_branch, head_repository_full_name, base_sha, base_branch,
+    pull_request_number, updated_at
+) VALUES (
+    $1, $2,
+    $3, $4,
+    $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13
+)
+ON CONFLICT (
+    provider_installation_id, provider_repository_id, provider_run_id,
+    provider_run_attempt
+) DO UPDATE SET
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_workflow_invocations.repository_full_name),
+    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), github_workflow_invocations.event_name),
+    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_invocations.head_sha),
+    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_invocations.head_branch),
+    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), github_workflow_invocations.head_repository_full_name),
+    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), github_workflow_invocations.base_sha),
+    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
+    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertGitHubWorkflowInvocationParams struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	RepositoryFullName     string
+	EventName              string
+	HeadSha                string
+	HeadBranch             string
+	HeadRepositoryFullName string
+	BaseSha                string
+	BaseBranch             string
+	PullRequestNumber      int64
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertGitHubWorkflowInvocation(ctx context.Context, arg UpsertGitHubWorkflowInvocationParams) error {
+	_, err := q.db.Exec(ctx, upsertGitHubWorkflowInvocation,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+		arg.RepositoryFullName,
+		arg.EventName,
+		arg.HeadSha,
+		arg.HeadBranch,
+		arg.HeadRepositoryFullName,
+		arg.BaseSha,
+		arg.BaseBranch,
+		arg.PullRequestNumber,
+		arg.UpdatedAt,
+	)
+	return err
 }

@@ -818,7 +818,7 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	}
 	_ = a.server.state.appendLeaseEvent(ctx, a.leaseID, LeaseEventVMBooting, "", nil)
 	observer := &leaseObserver{actor: a}
-	runtime, err := New(a.server.cfg, a.server.logger).BootLease(ctx, a.leaseID, spec, observer)
+	runtime, err := New(a.server.cfg, a.server.logger, withWorkspaceJournal(a.workspaceJournalSink())).BootLease(ctx, a.leaseID, spec, observer)
 	if err != nil {
 		_ = a.server.state.finishLease(ctx, a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
 		return acquireReply{err: err}
@@ -920,6 +920,20 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		"parent_snapshot_ref": parentSnapshotRef,
 		"new_generation_name": newGenerationName,
 	}
+	appendJournalEntry := a.workspaceJournalSink()
+	appendJournal := func(phase, sourceDatasetRef, workingDatasetRef, sealedDatasetRef, errorMessage string) {
+		appendJournalEntry(workspaceJournalEntry{
+			OperationID:       operationID,
+			LeaseID:           a.leaseID,
+			MountName:         mountName,
+			Phase:             phase,
+			SourceDatasetRef:  sourceDatasetRef,
+			WorkingDatasetRef: workingDatasetRef,
+			SealedDatasetRef:  sealedDatasetRef,
+			ErrorMessage:      errorMessage,
+		})
+	}
+	appendJournal("accepted", parentSnapshotRef, "", "", "")
 	if err := a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventFilesystemCommitStarted, "", attrs); err != nil {
 		return commitFilesystemMountReply{err: err}
 	}
@@ -930,9 +944,11 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		OperationID:       operationID,
 		ParentSnapshotRef: parentSnapshotRef,
 		NewGenerationName: newGenerationName,
+		Journal:           appendJournal,
 	})
 	if err != nil {
 		attrs["error"] = err.Error()
+		appendJournal("failed", parentSnapshotRef, "", "", err.Error())
 		_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventFilesystemCommitFailed, "", attrs)
 		return commitFilesystemMountReply{err: err}
 	}
@@ -946,6 +962,15 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		"snapshot":            result.Snapshot,
 	})
 	return commitFilesystemMountReply{result: result}
+}
+
+func (a *vmActor) workspaceJournalSink() func(workspaceJournalEntry) {
+	return func(entry workspaceJournalEntry) {
+		if entry.LeaseID == "" {
+			entry.LeaseID = a.leaseID
+		}
+		_ = a.server.state.appendWorkspaceJournal(context.Background(), entry)
+	}
 }
 
 func (a *vmActor) handleCancelExec(execID, reason string) bool {

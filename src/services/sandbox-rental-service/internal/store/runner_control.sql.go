@@ -155,10 +155,18 @@ SELECT
     a.provider_repository_id,
     COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.provider_run_attempt, 0)::bigint AS provider_run_attempt,
     COALESCE(j.workflow_name, '')::text AS workflow_name,
     COALESCE(j.job_name, '')::text AS job_name,
     COALESCE(j.head_sha, '')::text AS head_sha,
     COALESCE(j.head_branch, '')::text AS head_branch,
+    COALESCE(inv.event_name, '')::text AS run_event_name,
+    COALESCE(inv.head_sha, '')::text AS run_head_sha,
+    COALESCE(inv.head_branch, '')::text AS run_head_branch,
+    COALESCE(inv.head_repository_full_name, '')::text AS run_head_repository_full_name,
+    COALESCE(inv.base_sha, '')::text AS run_base_sha,
+    COALESCE(inv.base_branch, '')::text AS run_base_branch,
+    COALESCE(inv.pull_request_number, 0)::bigint AS pull_request_number,
     COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
     a.runner_name
@@ -170,6 +178,20 @@ JOIN runner_provider_repositories p ON p.provider = a.provider
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
     AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+LEFT JOIN LATERAL (
+    SELECT gi.event_name, gi.head_sha, gi.head_branch, gi.head_repository_full_name,
+           gi.base_sha, gi.base_branch, gi.pull_request_number
+    FROM github_workflow_invocations gi
+    WHERE a.provider = 'github'
+      AND gi.provider_installation_id = a.provider_installation_id
+      AND gi.provider_repository_id = a.provider_repository_id
+      AND gi.provider_run_id = COALESCE(j.provider_run_id, 0)
+    ORDER BY
+      CASE WHEN COALESCE(j.provider_run_attempt, 0) <> 0 AND gi.provider_run_attempt = j.provider_run_attempt THEN 0 ELSE 1 END,
+      CASE WHEN gi.event_name <> '' THEN 0 ELSE 1 END,
+      gi.provider_run_attempt DESC
+    LIMIT 1
+) inv ON true
 WHERE a.execution_id = $1
   AND a.attempt_id = $2
 `
@@ -180,20 +202,28 @@ type GetRunnerExecutionIdentityParams struct {
 }
 
 type GetRunnerExecutionIdentityRow struct {
-	AllocationID           uuid.UUID
-	Provider               string
-	OrgID                  int64
-	ProviderInstallationID int64
-	ProviderRepositoryID   int64
-	RepositoryFullName     string
-	ProviderRunID          int64
-	WorkflowName           string
-	JobName                string
-	HeadSha                string
-	HeadBranch             string
-	ProviderJobID          int64
-	RunnerClass            string
-	RunnerName             string
+	AllocationID              uuid.UUID
+	Provider                  string
+	OrgID                     int64
+	ProviderInstallationID    int64
+	ProviderRepositoryID      int64
+	RepositoryFullName        string
+	ProviderRunID             int64
+	ProviderRunAttempt        int64
+	WorkflowName              string
+	JobName                   string
+	HeadSha                   string
+	HeadBranch                string
+	RunEventName              string
+	RunHeadSha                string
+	RunHeadBranch             string
+	RunHeadRepositoryFullName string
+	RunBaseSha                string
+	RunBaseBranch             string
+	PullRequestNumber         int64
+	ProviderJobID             int64
+	RunnerClass               string
+	RunnerName                string
 }
 
 func (q *Queries) GetRunnerExecutionIdentity(ctx context.Context, arg GetRunnerExecutionIdentityParams) (GetRunnerExecutionIdentityRow, error) {
@@ -207,10 +237,18 @@ func (q *Queries) GetRunnerExecutionIdentity(ctx context.Context, arg GetRunnerE
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
 		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
 		&i.WorkflowName,
 		&i.JobName,
 		&i.HeadSha,
 		&i.HeadBranch,
+		&i.RunEventName,
+		&i.RunHeadSha,
+		&i.RunHeadBranch,
+		&i.RunHeadRepositoryFullName,
+		&i.RunBaseSha,
+		&i.RunBaseBranch,
+		&i.PullRequestNumber,
 		&i.ProviderJobID,
 		&i.RunnerClass,
 		&i.RunnerName,
