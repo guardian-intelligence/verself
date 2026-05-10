@@ -30,7 +30,6 @@ type SandboxAttempt struct {
 	BlockWriteBytes        *int64     `json:"block_write_bytes,omitempty"`
 	RootfsProvisionedBytes *int64     `json:"rootfs_provisioned_bytes,omitempty"`
 	VcpuExitCount          *int64     `json:"vcpu_exit_count,omitempty"`
-	ZfsWritten             *int64     `json:"zfs_written,omitempty"`
 	StartedAt              *time.Time `json:"started_at,omitempty"`
 	CompletedAt            *time.Time `json:"completed_at,omitempty"`
 	CreatedAt              time.Time  `json:"created_at"`
@@ -174,15 +173,6 @@ type SandboxCostsAnalytics struct {
 	BySource            []SandboxAnalyticsBucket `json:"by_source,omitempty"`
 	ByRunnerClass       []SandboxAnalyticsBucket `json:"by_runner_class,omitempty"`
 	ByRepository        []SandboxAnalyticsBucket `json:"by_repository,omitempty"`
-}
-
-type SandboxCachesAnalytics struct {
-	WindowStart      time.Time                `json:"window_start"`
-	WindowEnd        time.Time                `json:"window_end"`
-	CheckoutRequests string                   `json:"checkout_requests"`
-	CheckoutHits     string                   `json:"checkout_hits"`
-	CheckoutMisses   string                   `json:"checkout_misses"`
-	ByRepository     []SandboxAnalyticsBucket `json:"by_repository,omitempty"`
 }
 
 type SandboxRunnerSizingSample struct {
@@ -511,20 +501,6 @@ func (c *SandboxClient) GetCostsAnalytics(ctx context.Context, options SandboxAn
 	return sandboxFromGenerated[SandboxCostsAnalytics](*response.JSON200)
 }
 
-func (c *SandboxClient) GetCachesAnalytics(ctx context.Context, options SandboxAnalyticsOptions) (SandboxCachesAnalytics, error) {
-	if c == nil || c.client == nil {
-		return SandboxCachesAnalytics{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
-	}
-	response, err := c.client.GetCachesAnalyticsWithResponse(ctx, cachesAnalyticsParams(options))
-	if err != nil {
-		return SandboxCachesAnalytics{}, err
-	}
-	if response.JSON200 == nil {
-		return SandboxCachesAnalytics{}, sandboxAPIError("get caches analytics", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
-	}
-	return sandboxFromGenerated[SandboxCachesAnalytics](*response.JSON200)
-}
-
 func (c *SandboxClient) GetRunnerSizingAnalytics(ctx context.Context, options SandboxAnalyticsOptions) (SandboxRunnerSizingAnalytics, error) {
 	if c == nil || c.client == nil {
 		return SandboxRunnerSizingAnalytics{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
@@ -750,11 +726,6 @@ func jobsAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetJobsAn
 func costsAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetCostsAnalyticsParams {
 	start, end := analyticsWindow(options)
 	return &sandboxcore.GetCostsAnalyticsParams{Start: start, End: end}
-}
-
-func cachesAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetCachesAnalyticsParams {
-	start, end := analyticsWindow(options)
-	return &sandboxcore.GetCachesAnalyticsParams{Start: start, End: end}
 }
 
 func runnerSizingAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetRunnerSizingAnalyticsParams {

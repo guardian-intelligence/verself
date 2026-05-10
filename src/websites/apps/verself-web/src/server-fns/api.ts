@@ -73,7 +73,6 @@ import {
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
   type CreateRepositoryRequest as CreateSourceRepositoryRequest,
-  type CachesAnalytics,
   type CostsAnalytics,
   type DismissNotificationRequest,
   type Execution,
@@ -234,7 +233,6 @@ export type {
   ContractRequest,
   ContractChangeRequest,
   ContractsResponse,
-  CachesAnalytics,
   CostsAnalytics,
   RunListQuery,
   RunListQueryInput,
@@ -732,13 +730,6 @@ export const getCostsAnalytics = createServerFn({ method: "GET" })
   .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
   .handler(async ({ context, data }) => {
     return (await sandboxRentalSDK(context)).sandbox.getCostsAnalytics(data);
-  });
-
-export const getCachesAnalytics = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
-  .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.getCachesAnalytics(data);
   });
 
 export const getRunnerSizingAnalytics = createServerFn({ method: "GET" })

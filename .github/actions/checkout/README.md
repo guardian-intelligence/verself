@@ -20,3 +20,7 @@ The intentional difference is cleanup. Upstream `actions/checkout` defaults
 recreate the directory. Verself workspaces are durable ZFS volumes, so this
 action does not run `git clean -ffdx` by default. It reconciles tracked files to
 the requested commit while preserving untracked build state.
+
+The `bundle-cache-hit` output is scoped to the host-side Git pack bundle used
+to update the working tree. Golden workspace selection is recorded by
+sandbox-rental and vm-orchestrator traces, not by this action.

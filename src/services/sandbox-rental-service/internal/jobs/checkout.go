@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	defaultCheckoutCacheDir = "/var/lib/verself/sandbox-rental/github-checkout"
-	checkoutBundleFilename  = "checkout.pack"
-	checkoutRequestedRef    = "refs/verself/requested"
-	checkoutFetchedSHARef   = "refs/verself/sha"
+	defaultCheckoutBundleStoreDir = "/var/lib/verself/sandbox-rental/github-checkout-bundles"
+	checkoutBundleFilename        = "checkout.pack"
+	checkoutRequestedRef          = "refs/verself/requested"
+	checkoutFetchedSHARef         = "refs/verself/sha"
 )
 
 var (
@@ -41,14 +41,14 @@ type CheckoutBundleRequest struct {
 }
 
 type CheckoutBundle struct {
-	Identity   GitHubExecutionIdentity
-	Repository string
-	Ref        string
-	SHA        string
-	BundlePath string
-	SizeBytes  int64
-	CacheHit   bool
-	PreparedAt time.Time
+	Identity       GitHubExecutionIdentity
+	Repository     string
+	Ref            string
+	SHA            string
+	BundlePath     string
+	SizeBytes      int64
+	BundleCacheHit bool
+	PreparedAt     time.Time
 }
 
 func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHubExecutionIdentity, req CheckoutBundleRequest) (CheckoutBundle, error) {
@@ -87,18 +87,18 @@ func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHu
 	bundlePath := r.checkoutBundlePath(identity, sha)
 	if stat, err := os.Stat(bundlePath); err == nil && stat.Size() > 0 {
 		span.SetAttributes(
-			attribute.Bool("github.checkout.cache_hit", true),
+			attribute.Bool("github.checkout.bundle_cache_hit", true),
 			attribute.Int64("github.checkout.bundle_size_bytes", stat.Size()),
 		)
 		return CheckoutBundle{
-			Identity:   identity,
-			Repository: repository,
-			Ref:        ref,
-			SHA:        sha,
-			BundlePath: bundlePath,
-			SizeBytes:  stat.Size(),
-			CacheHit:   true,
-			PreparedAt: time.Now().UTC(),
+			Identity:       identity,
+			Repository:     repository,
+			Ref:            ref,
+			SHA:            sha,
+			BundlePath:     bundlePath,
+			SizeBytes:      stat.Size(),
+			BundleCacheHit: true,
+			PreparedAt:     time.Now().UTC(),
 		}, nil
 	}
 
@@ -131,38 +131,38 @@ func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHu
 		return CheckoutBundle{}, err
 	}
 	span.SetAttributes(
-		attribute.Bool("github.checkout.cache_hit", false),
+		attribute.Bool("github.checkout.bundle_cache_hit", false),
 		attribute.Int64("github.checkout.bundle_size_bytes", stat.Size()),
 	)
 	return CheckoutBundle{
-		Identity:   identity,
-		Repository: repository,
-		Ref:        ref,
-		SHA:        sha,
-		BundlePath: bundlePath,
-		SizeBytes:  stat.Size(),
-		CacheHit:   false,
-		PreparedAt: time.Now().UTC(),
+		Identity:       identity,
+		Repository:     repository,
+		Ref:            ref,
+		SHA:            sha,
+		BundlePath:     bundlePath,
+		SizeBytes:      stat.Size(),
+		BundleCacheHit: false,
+		PreparedAt:     time.Now().UTC(),
 	}, nil
 }
 
-func (r *GitHubRunner) checkoutRoot() string {
-	root := strings.TrimSpace(r.service.CheckoutCacheDir)
+func (r *GitHubRunner) checkoutBundleStoreRoot() string {
+	root := strings.TrimSpace(r.service.CheckoutBundleStoreDir)
 	if root == "" {
-		return defaultCheckoutCacheDir
+		return defaultCheckoutBundleStoreDir
 	}
 	return root
 }
 
 func (r *GitHubRunner) checkoutMirrorDir(identity GitHubExecutionIdentity) string {
-	return filepath.Join(r.checkoutRoot(), "mirrors", checkoutCacheKey(identity))
+	return filepath.Join(r.checkoutBundleStoreRoot(), "mirrors", checkoutRepositoryStoreKey(identity))
 }
 
 func (r *GitHubRunner) checkoutBundlePath(identity GitHubExecutionIdentity, sha string) string {
-	return filepath.Join(r.checkoutRoot(), "bundles", checkoutCacheKey(identity), sha, checkoutBundleFilename)
+	return filepath.Join(r.checkoutBundleStoreRoot(), "bundles", checkoutRepositoryStoreKey(identity), sha, checkoutBundleFilename)
 }
 
-func checkoutCacheKey(identity GitHubExecutionIdentity) string {
+func checkoutRepositoryStoreKey(identity GitHubExecutionIdentity) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d", identity.Installation, identity.RepositoryID)))
 	return hex.EncodeToString(sum[:])
 }

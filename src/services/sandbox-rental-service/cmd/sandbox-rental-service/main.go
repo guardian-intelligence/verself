@@ -103,7 +103,7 @@ func run() error {
 	githubAPIBaseURL := cfg.URL("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
 	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := cfg.Int64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
-	checkoutCacheDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/verself/sandbox-rental/github-checkout")
+	checkoutBundleStoreDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_BUNDLE_STORE_DIR", "/var/lib/verself/sandbox-rental/github-checkout-bundles")
 	forgejoAPIBaseURL := cfg.URL("SANDBOX_FORGEJO_API_BASE_URL", "")
 	forgejoRunnerBaseURL := cfg.String("SANDBOX_FORGEJO_RUNNER_BASE_URL", "")
 	forgejoWebhookBaseURL := cfg.String("SANDBOX_FORGEJO_WEBHOOK_BASE_URL", publicBaseURL)
@@ -267,15 +267,15 @@ func run() error {
 	// --- job service ---
 
 	jobService := &jobs.Service{
-		PGX:              pgxPool,
-		CH:               chConn,
-		CHDatabase:       "verself",
-		Orchestrator:     orchestrator,
-		Billing:          billingClient,
-		Bounds:           hostBounds,
-		Logger:           logger,
-		WorkloadTimeout:  time.Duration(workloadTimeout) * time.Second,
-		CheckoutCacheDir: checkoutCacheDir,
+		PGX:                    pgxPool,
+		CH:                     chConn,
+		CHDatabase:             "verself",
+		Orchestrator:           orchestrator,
+		Billing:                billingClient,
+		Bounds:                 hostBounds,
+		Logger:                 logger,
+		WorkloadTimeout:        time.Duration(workloadTimeout) * time.Second,
+		CheckoutBundleStoreDir: checkoutBundleStoreDir,
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,

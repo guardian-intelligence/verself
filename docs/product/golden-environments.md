@@ -671,7 +671,7 @@ Later surfaces:
 - Configure promotion rules.
 
 API responses must expose taint, trust, and compatibility metadata. Hidden
-policy decisions make cache behavior impossible to debug.
+policy decisions make golden selection behavior impossible to debug.
 
 ## Observability
 

@@ -418,7 +418,7 @@ function ExecutionTimingSummary({
       duration_ms?: number | null | undefined;
       exit_code?: number | null | undefined;
       started_at?: string | null | undefined;
-      zfs_written?: number | null | undefined;
+      block_write_bytes?: number | null | undefined;
     };
   };
   isRunning: boolean;
@@ -445,7 +445,7 @@ function ExecutionTimingSummary({
       <ExecutionMetric label="Exit code" value={exitCode} />
       <ExecutionMetric
         label="Disk written"
-        value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
+        value={attempt.block_write_bytes ? formatBytes(attempt.block_write_bytes) : "--"}
       />
     </dl>
   );

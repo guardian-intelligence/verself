@@ -57,6 +57,26 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// GitHubInstallationRepository defines model for GitHubInstallationRepository.
+type GitHubInstallationRepository struct {
+	Active               bool      `json:"active"`
+	Private              bool      `json:"private"`
+	ProviderOwner        string    `json:"provider_owner"`
+	ProviderRepo         string    `json:"provider_repo"`
+	ProviderRepositoryId string    `json:"provider_repository_id"`
+	RepositoryFullName   string    `json:"repository_full_name"`
+	SyncedAt             time.Time `json:"synced_at"`
+}
+
+// GitHubInstallationRepositorySync defines model for GitHubInstallationRepositorySync.
+type GitHubInstallationRepositorySync struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string                         `json:"$schema,omitempty"`
+	InstallationId string                          `json:"installation_id"`
+	Repositories   *[]GitHubInstallationRepository `json:"repositories"`
+	SyncedAt       time.Time                       `json:"synced_at"`
+}
+
 // SandboxAnalyticsBucket defines model for SandboxAnalyticsBucket.
 type SandboxAnalyticsBucket struct {
 	BilledChargeUnits   *string `json:"billed_charge_units,omitempty"`
@@ -91,7 +111,6 @@ type SandboxAttemptRecord struct {
 	TraceId                *string    `json:"trace_id,omitempty"`
 	UpdatedAt              time.Time  `json:"updated_at"`
 	VcpuExitCount          *int64     `json:"vcpu_exit_count,omitempty"`
-	ZfsWritten             *int64     `json:"zfs_written,omitempty"`
 }
 
 // SandboxBillingWindow defines model for SandboxBillingWindow.
@@ -111,18 +130,6 @@ type SandboxBillingWindow struct {
 	WindowSeq           int64      `json:"window_seq"`
 	WindowStart         time.Time  `json:"window_start"`
 	WriteoffChargeUnits string     `json:"writeoff_charge_units"`
-}
-
-// SandboxCachesAnalytics defines model for SandboxCachesAnalytics.
-type SandboxCachesAnalytics struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                   `json:"$schema,omitempty"`
-	ByRepository     *[]SandboxAnalyticsBucket `json:"by_repository"`
-	CheckoutHits     string                    `json:"checkout_hits"`
-	CheckoutMisses   string                    `json:"checkout_misses"`
-	CheckoutRequests string                    `json:"checkout_requests"`
-	WindowEnd        time.Time                 `json:"window_end"`
-	WindowStart      time.Time                 `json:"window_start"`
 }
 
 // SandboxCostsAnalytics defines model for SandboxCostsAnalytics.
@@ -418,13 +425,10 @@ type BeginGithubInstallationParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
-// GetCachesAnalyticsParams defines parameters for GetCachesAnalytics.
-type GetCachesAnalyticsParams struct {
-	// Start Inclusive RFC3339 window start.
-	Start *time.Time `form:"start,omitempty" json:"start,omitempty"`
-
-	// End Inclusive RFC3339 window end.
-	End *time.Time `form:"end,omitempty" json:"end,omitempty"`
+// SyncGithubInstallationRepositoriesParams defines parameters for SyncGithubInstallationRepositories.
+type SyncGithubInstallationRepositoriesParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
 // GetCostsAnalyticsParams defines parameters for GetCostsAnalytics.
@@ -597,8 +601,8 @@ type ClientInterface interface {
 	// BeginGithubInstallation request
 	BeginGithubInstallation(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetCachesAnalytics request
-	GetCachesAnalytics(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SyncGithubInstallationRepositories request
+	SyncGithubInstallationRepositories(ctx context.Context, installationId string, params *SyncGithubInstallationRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetCostsAnalytics request
 	GetCostsAnalytics(ctx context.Context, params *GetCostsAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -739,8 +743,8 @@ func (c *Client) BeginGithubInstallation(ctx context.Context, params *BeginGithu
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetCachesAnalytics(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetCachesAnalyticsRequest(c.Server, params)
+func (c *Client) SyncGithubInstallationRepositories(ctx context.Context, installationId string, params *SyncGithubInstallationRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncGithubInstallationRepositoriesRequest(c.Server, installationId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1153,16 +1157,23 @@ func NewBeginGithubInstallationRequest(server string, params *BeginGithubInstall
 	return req, nil
 }
 
-// NewGetCachesAnalyticsRequest generates requests for GetCachesAnalytics
-func NewGetCachesAnalyticsRequest(server string, params *GetCachesAnalyticsParams) (*http.Request, error) {
+// NewSyncGithubInstallationRepositoriesRequest generates requests for SyncGithubInstallationRepositories
+func NewSyncGithubInstallationRepositoriesRequest(server string, installationId string, params *SyncGithubInstallationRepositoriesParams) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "installation_id", installationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/run-analytics/caches")
+	operationPath := fmt.Sprintf("/api/v1/github/installations/%s/repositories/sync", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1172,47 +1183,22 @@ func NewGetCachesAnalyticsRequest(server string, params *GetCachesAnalyticsParam
 		return nil, err
 	}
 
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Start != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "start", *params.Start, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.End != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "end", *params.End, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
 	}
 
 	return req, nil
@@ -1873,8 +1859,8 @@ type ClientWithResponsesInterface interface {
 	// BeginGithubInstallationWithResponse request
 	BeginGithubInstallationWithResponse(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*BeginGithubInstallationResponse, error)
 
-	// GetCachesAnalyticsWithResponse request
-	GetCachesAnalyticsWithResponse(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCachesAnalyticsResponse, error)
+	// SyncGithubInstallationRepositoriesWithResponse request
+	SyncGithubInstallationRepositoriesWithResponse(ctx context.Context, installationId string, params *SyncGithubInstallationRepositoriesParams, reqEditors ...RequestEditorFn) (*SyncGithubInstallationRepositoriesResponse, error)
 
 	// GetCostsAnalyticsWithResponse request
 	GetCostsAnalyticsWithResponse(ctx context.Context, params *GetCostsAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCostsAnalyticsResponse, error)
@@ -2102,15 +2088,15 @@ func (r BeginGithubInstallationResponse) StatusCode() int {
 	return 0
 }
 
-type GetCachesAnalyticsResponse struct {
+type SyncGithubInstallationRepositoriesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *SandboxCachesAnalytics
+	JSON200                       *GitHubInstallationRepositorySync
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r GetCachesAnalyticsResponse) Status() string {
+func (r SyncGithubInstallationRepositoriesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -2118,7 +2104,7 @@ func (r GetCachesAnalyticsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetCachesAnalyticsResponse) StatusCode() int {
+func (r SyncGithubInstallationRepositoriesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2352,13 +2338,13 @@ func (c *ClientWithResponses) BeginGithubInstallationWithResponse(ctx context.Co
 	return ParseBeginGithubInstallationResponse(rsp)
 }
 
-// GetCachesAnalyticsWithResponse request returning *GetCachesAnalyticsResponse
-func (c *ClientWithResponses) GetCachesAnalyticsWithResponse(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCachesAnalyticsResponse, error) {
-	rsp, err := c.GetCachesAnalytics(ctx, params, reqEditors...)
+// SyncGithubInstallationRepositoriesWithResponse request returning *SyncGithubInstallationRepositoriesResponse
+func (c *ClientWithResponses) SyncGithubInstallationRepositoriesWithResponse(ctx context.Context, installationId string, params *SyncGithubInstallationRepositoriesParams, reqEditors ...RequestEditorFn) (*SyncGithubInstallationRepositoriesResponse, error) {
+	rsp, err := c.SyncGithubInstallationRepositories(ctx, installationId, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetCachesAnalyticsResponse(rsp)
+	return ParseSyncGithubInstallationRepositoriesResponse(rsp)
 }
 
 // GetCostsAnalyticsWithResponse request returning *GetCostsAnalyticsResponse
@@ -2712,22 +2698,22 @@ func ParseBeginGithubInstallationResponse(rsp *http.Response) (*BeginGithubInsta
 	return response, nil
 }
 
-// ParseGetCachesAnalyticsResponse parses an HTTP response from a GetCachesAnalyticsWithResponse call
-func ParseGetCachesAnalyticsResponse(rsp *http.Response) (*GetCachesAnalyticsResponse, error) {
+// ParseSyncGithubInstallationRepositoriesResponse parses an HTTP response from a SyncGithubInstallationRepositoriesWithResponse call
+func ParseSyncGithubInstallationRepositoriesResponse(rsp *http.Response) (*SyncGithubInstallationRepositoriesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetCachesAnalyticsResponse{
+	response := &SyncGithubInstallationRepositoriesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SandboxCachesAnalytics
+		var dest GitHubInstallationRepositorySync
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

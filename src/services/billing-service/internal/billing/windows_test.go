@@ -117,7 +117,7 @@ func TestReserveSourceFingerprintUsesResolvedQuantityAndAllocation(t *testing.T)
 		SourceRef:        "tick-1",
 		WindowSeq:        1,
 		ReservationShape: ReservationShapeTime,
-		Allocation:       map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
+		Allocation:       map[string]float64{"storage_live_gib_ms": 0.000001},
 		BillingJobID:     100,
 	}
 
@@ -137,7 +137,7 @@ func TestReserveSourceFingerprintUsesResolvedQuantityAndAllocation(t *testing.T)
 	}
 
 	changed := base
-	changed.Allocation = map[string]float64{"durable_volume_live_storage_gib_ms": 0.000002}
+	changed.Allocation = map[string]float64{"storage_live_gib_ms": 0.000002}
 	if got := reserveSourceFingerprint(changed, changed.ReservationShape, quantity); got == implicitDefault {
 		t.Fatalf("fingerprint did not change after allocation changed: %s", got)
 	}
@@ -153,18 +153,18 @@ func TestComputeWindowChargesRoundsAfterQuantity(t *testing.T) {
 	t.Parallel()
 
 	componentCharges, bucketCharges, _, err := computeWindowCharges(
-		map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
-		map[string]uint64{"durable_volume_live_storage_gib_ms": 1},
-		map[string]string{"durable_volume_live_storage_gib_ms": "durable_storage"},
+		map[string]float64{"storage_live_gib_ms": 0.000001},
+		map[string]uint64{"storage_live_gib_ms": 1},
+		map[string]string{"storage_live_gib_ms": "storage"},
 		60_000,
 	)
 	if err != nil {
 		t.Fatalf("computeWindowCharges() error = %v", err)
 	}
-	if got := componentCharges["durable_volume_live_storage_gib_ms"]; got != 1 {
+	if got := componentCharges["storage_live_gib_ms"]; got != 1 {
 		t.Fatalf("component charge = %d, want 1", got)
 	}
-	if got := bucketCharges["durable_storage"]; got != 1 {
+	if got := bucketCharges["storage"]; got != 1 {
 		t.Fatalf("bucket charge = %d, want 1", got)
 	}
 }
@@ -221,12 +221,12 @@ func TestMeteringRowForWindowUsesSettledQuantity(t *testing.T) {
 		ActualQuantity:    60_000,
 		BillableQuantity:  60_000,
 		PricingPhase:      pricingPhaseIncluded,
-		Allocation:        map[string]float64{"sandbox_durable_volume_live_storage_gib_ms": 2.5},
-		RateContext:       pricingContext{SKURates: map[string]uint64{"sandbox_durable_volume_live_storage_gib_ms": 10}, SKUBuckets: map[string]string{"sandbox_durable_volume_live_storage_gib_ms": "durable_volume_storage"}, CostPerUnit: 25},
+		Allocation:        map[string]float64{"sandbox_execution_root_storage_premium_nvme_gib_ms": 2.5},
+		RateContext:       pricingContext{SKURates: map[string]uint64{"sandbox_execution_root_storage_premium_nvme_gib_ms": 10}, SKUBuckets: map[string]string{"sandbox_execution_root_storage_premium_nvme_gib_ms": "execution_root_storage"}, CostPerUnit: 25},
 		WindowStart:       startedAt,
 		BilledChargeUnits: 1_500_000,
 		UsageSummary:      map[string]any{"samples": []any{map[string]any{"observed_ms": float64(60_000)}}},
-		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1_500_000, ComponentSKUID: "sandbox_durable_volume_live_storage_gib_ms"}},
+		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1_500_000, ComponentSKUID: "sandbox_execution_root_storage_premium_nvme_gib_ms"}},
 	}, recordedAt)
 	if err != nil {
 		t.Fatalf("meteringRowForWindow() error = %v", err)
@@ -241,7 +241,7 @@ func TestMeteringRowForWindowUsesSettledQuantity(t *testing.T) {
 	if got := row.EndedAt.Sub(row.StartedAt); got != time.Minute {
 		t.Fatalf("row duration = %s, want 1m", got)
 	}
-	if got := row.ComponentQuantities["sandbox_durable_volume_live_storage_gib_ms"]; got != 150_000 {
+	if got := row.ComponentQuantities["sandbox_execution_root_storage_premium_nvme_gib_ms"]; got != 150_000 {
 		t.Fatalf("component quantity = %f, want 150000", got)
 	}
 }
@@ -264,24 +264,24 @@ func TestMeteringRowForWindowRoundsComponentChargesAfterQuantity(t *testing.T) {
 		ActualQuantity:   60_000,
 		BillableQuantity: 60_000,
 		PricingPhase:     pricingPhaseIncluded,
-		Allocation:       map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
+		Allocation:       map[string]float64{"storage_live_gib_ms": 0.000001},
 		RateContext: pricingContext{
-			SKURates:    map[string]uint64{"durable_volume_live_storage_gib_ms": 1},
-			SKUBuckets:  map[string]string{"durable_volume_live_storage_gib_ms": "durable_storage"},
+			SKURates:    map[string]uint64{"storage_live_gib_ms": 1},
+			SKUBuckets:  map[string]string{"storage_live_gib_ms": "storage"},
 			CostPerUnit: 1,
 		},
 		WindowStart:       startedAt,
 		BilledChargeUnits: 1,
-		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1, ComponentSKUID: "durable_volume_live_storage_gib_ms"}},
+		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1, ComponentSKUID: "storage_live_gib_ms"}},
 	}, startedAt.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("meteringRowForWindow() error = %v", err)
 	}
 
-	if got := row.ComponentChargeUnits["durable_volume_live_storage_gib_ms"]; got != 1 {
+	if got := row.ComponentChargeUnits["storage_live_gib_ms"]; got != 1 {
 		t.Fatalf("component charge = %d, want 1", got)
 	}
-	if got := row.BucketChargeUnits["durable_storage"]; got != 1 {
+	if got := row.BucketChargeUnits["storage"]; got != 1 {
 		t.Fatalf("bucket charge = %d, want 1", got)
 	}
 }

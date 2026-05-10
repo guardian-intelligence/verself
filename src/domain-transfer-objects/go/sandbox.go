@@ -177,15 +177,6 @@ type SandboxCostsAnalytics struct {
 	ByRepository        []SandboxAnalyticsBucket `json:"by_repository"`
 }
 
-type SandboxCachesAnalytics struct {
-	WindowStart      time.Time                `json:"window_start"`
-	WindowEnd        time.Time                `json:"window_end"`
-	CheckoutRequests DecimalUint64            `json:"checkout_requests"`
-	CheckoutHits     DecimalUint64            `json:"checkout_hits"`
-	CheckoutMisses   DecimalUint64            `json:"checkout_misses"`
-	ByRepository     []SandboxAnalyticsBucket `json:"by_repository"`
-}
-
 type SandboxRunnerSizingSample struct {
 	RunnerClass               string        `json:"runner_class"`
 	RunCount                  DecimalUint64 `json:"run_count"`
@@ -260,7 +251,6 @@ type SandboxAttemptRecord struct {
 	FailureReason          string     `json:"failure_reason,omitempty"`
 	ExitCode               *int       `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
 	DurationMs             int64      `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
-	ZFSWritten             int64      `json:"zfs_written,omitempty" minimum:"0" maximum:"9007199254740991"`
 	StdoutBytes            int64      `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
 	StderrBytes            int64      `json:"stderr_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
 	RootfsProvisionedBytes int64      `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`

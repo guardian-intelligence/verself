@@ -58,15 +58,6 @@ type CostsAnalytics struct {
 	ByRepository        []AnalyticsBucket
 }
 
-type CachesAnalytics struct {
-	WindowStart      time.Time
-	WindowEnd        time.Time
-	CheckoutRequests uint64
-	CheckoutHits     uint64
-	CheckoutMisses   uint64
-	ByRepository     []AnalyticsBucket
-}
-
 type RunnerSizingSample struct {
 	RunnerClass               string
 	RunCount                  uint64
@@ -222,59 +213,6 @@ func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window An
 		ORDER BY billed_charge_units DESC, key ASC
 	`, orgID, window); err != nil {
 		return CostsAnalytics{}, err
-	}
-	span.SetAttributes(traceOrgID(orgID), attribute.Int("sandbox.analytics_bucket_count", len(analytics.ByRepository)))
-	return analytics, nil
-}
-
-func (s *Service) GetCachesAnalytics(ctx context.Context, orgID uint64, window AnalyticsWindow) (CachesAnalytics, error) {
-	ctx, span := tracer.Start(ctx, "sandbox-rental.analytics.caches")
-	defer span.End()
-	if s.CH == nil {
-		return CachesAnalytics{}, fmt.Errorf("clickhouse is not configured")
-	}
-	window = normalizeAnalyticsWindow(window)
-	analytics := CachesAnalytics{WindowStart: window.Start, WindowEnd: window.End}
-	if err := s.CH.QueryRow(ctx, `
-		SELECT
-			countIf(event_name = 'github.checkout.bundle'),
-			countIf(event_name = 'github.checkout.bundle' AND checkout_cache_hit = 1),
-			countIf(event_name = 'github.checkout.bundle' AND checkout_cache_hit = 0)
-		FROM verself.job_cache_events
-		WHERE org_id = $1
-		  AND event_time BETWEEN $2 AND $3
-	`, orgID, window.Start, window.End).Scan(
-		&analytics.CheckoutRequests,
-		&analytics.CheckoutHits,
-		&analytics.CheckoutMisses,
-	); err != nil {
-		return CachesAnalytics{}, fmt.Errorf("query caches analytics summary: %w", err)
-	}
-
-	rows, err := s.CH.Query(ctx, `
-		SELECT
-			repository_full_name AS key,
-			count() AS count
-		FROM verself.job_cache_events
-		WHERE org_id = $1
-		  AND event_time BETWEEN $2 AND $3
-		  AND repository_full_name != ''
-		GROUP BY key
-		ORDER BY count DESC, key ASC
-	`, orgID, window.Start, window.End)
-	if err != nil {
-		return CachesAnalytics{}, fmt.Errorf("query caches analytics by repository: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var bucket AnalyticsBucket
-		if err := rows.Scan(&bucket.Key, &bucket.Count); err != nil {
-			return CachesAnalytics{}, fmt.Errorf("scan caches analytics by repository: %w", err)
-		}
-		analytics.ByRepository = append(analytics.ByRepository, bucket)
-	}
-	if err := rows.Err(); err != nil {
-		return CachesAnalytics{}, fmt.Errorf("iterate caches analytics by repository: %w", err)
 	}
 	span.SetAttributes(traceOrgID(orgID), attribute.Int("sandbox.analytics_bucket_count", len(analytics.ByRepository)))
 	return analytics, nil

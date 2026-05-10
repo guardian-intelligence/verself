@@ -167,20 +167,6 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 	}), getCostsAnalytics(svc))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
-		OperationID: "get-caches-analytics",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/run-analytics/caches",
-		Summary:     "Get checkout cache analytics",
-	}, operationPolicy{
-		Permission:     permissionAnalyticsRead,
-		Resource:       "run_analytics_caches",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.run_analytics.caches.read",
-	}), getCachesAnalytics(svc))
-
-	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-runner-sizing-analytics",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/runner-sizing",
@@ -370,10 +356,6 @@ type JobsAnalyticsOutput struct {
 
 type CostsAnalyticsOutput struct {
 	Body dto.SandboxCostsAnalytics
-}
-
-type CachesAnalyticsOutput struct {
-	Body dto.SandboxCachesAnalytics
 }
 
 type RunnerSizingAnalyticsOutput struct {
@@ -664,24 +646,6 @@ func getCostsAnalytics(svc *jobs.Service) func(context.Context, *AnalyticsWindow
 			return nil, internalFailure(ctx, "get-costs-analytics-failed", "get costs analytics failed", err)
 		}
 		return &CostsAnalyticsOutput{Body: costsAnalytics(analytics)}, nil
-	}
-}
-
-func getCachesAnalytics(svc *jobs.Service) func(context.Context, *AnalyticsWindowInput) (*CachesAnalyticsOutput, error) {
-	return func(ctx context.Context, input *AnalyticsWindowInput) (*CachesAnalyticsOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		window, err := analyticsWindowInput(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-		analytics, err := svc.GetCachesAnalytics(ctx, orgID, window)
-		if err != nil {
-			return nil, internalFailure(ctx, "get-caches-analytics-failed", "get caches analytics failed", err)
-		}
-		return &CachesAnalyticsOutput{Body: cachesAnalytics(analytics)}, nil
 	}
 }
 

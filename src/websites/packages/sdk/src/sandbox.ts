@@ -1,7 +1,6 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/sandbox-rental-api/client/index.js";
 import {
-  type GetCachesAnalyticsData,
   type GetCostsAnalyticsData,
   type GetJobsAnalyticsData,
   type GetRunnerSizingAnalyticsData,
@@ -9,7 +8,6 @@ import {
   type SearchRunLogsData,
   beginGithubInstallation as beginGeneratedGithubInstallation,
   createExecutionSchedule as createGeneratedExecutionSchedule,
-  getCachesAnalytics as getGeneratedCachesAnalytics,
   getCostsAnalytics as getGeneratedCostsAnalytics,
   getExecution as getGeneratedExecution,
   getExecutionLogs as getGeneratedExecutionLogs,
@@ -29,8 +27,6 @@ import {
   vCreateExecutionScheduleResponse,
   vBeginGithubInstallationHeaders,
   vBeginGithubInstallationResponse,
-  vGetCachesAnalyticsQuery,
-  vGetCachesAnalyticsResponse,
   vGetCostsAnalyticsQuery,
   vGetCostsAnalyticsResponse,
   vGetExecutionPath,
@@ -108,10 +104,6 @@ export class SandboxRental {
 
   getCostsAnalytics(query?: SandboxAnalyticsQueryInput): Promise<CostsAnalytics> {
     return getCostsAnalytics({ ...this.#options, ...(query === undefined ? {} : { query }) });
-  }
-
-  getCachesAnalytics(query?: SandboxAnalyticsQueryInput): Promise<CachesAnalytics> {
-    return getCachesAnalytics({ ...this.#options, ...(query === undefined ? {} : { query }) });
   }
 
   getRunnerSizingAnalytics(query?: SandboxAnalyticsQueryInput): Promise<RunnerSizingAnalytics> {
@@ -216,7 +208,7 @@ function normalizeAttempt(input: v.InferOutput<typeof vSandboxAttemptRecord>) {
     exit_code: toOptionalSafeNumber(input.exit_code, "exit_code"),
     stderr_bytes: toOptionalSafeNumber(input.stderr_bytes, "stderr_bytes"),
     stdout_bytes: toOptionalSafeNumber(input.stdout_bytes, "stdout_bytes"),
-    zfs_written: toOptionalSafeNumber(input.zfs_written, "zfs_written"),
+    block_write_bytes: toOptionalSafeNumber(input.block_write_bytes, "block_write_bytes"),
   };
 }
 
@@ -304,16 +296,6 @@ function parseCostsAnalytics(input: unknown) {
 }
 
 export type CostsAnalytics = ReturnType<typeof parseCostsAnalytics>;
-
-function parseCachesAnalytics(input: unknown) {
-  const parsed = v.parse(vGetCachesAnalyticsResponse, input);
-  return {
-    ...parsed,
-    by_repository: parsed.by_repository ?? [],
-  };
-}
-
-export type CachesAnalytics = ReturnType<typeof parseCachesAnalytics>;
 
 function parseRunnerSizingAnalytics(input: unknown) {
   const parsed = v.parse(vGetRunnerSizingAnalyticsResponse, input);
@@ -494,14 +476,6 @@ function toGeneratedCostsAnalyticsQuery(query: SandboxAnalyticsQueryInput | unde
     vGetCostsAnalyticsQuery,
     v.parse(sandboxAnalyticsQuerySchema, query),
   ) as NonNullable<GetCostsAnalyticsData["query"]>;
-}
-
-function toGeneratedCachesAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
-  if (query === undefined) return undefined;
-  return v.parse(
-    vGetCachesAnalyticsQuery,
-    v.parse(sandboxAnalyticsQuerySchema, query),
-  ) as NonNullable<GetCachesAnalyticsData["query"]>;
 }
 
 function toGeneratedRunnerSizingAnalyticsQuery(query: SandboxAnalyticsQueryInput | undefined) {
@@ -763,26 +737,6 @@ export async function getCostsAnalytics(
   }
 
   return parseCostsAnalytics(result.data);
-}
-
-export async function getCachesAnalytics(
-  options: SandboxRentalClientOptions & { query?: SandboxAnalyticsQueryInput },
-): Promise<CachesAnalytics> {
-  const client = createSandboxRentalClient(options);
-  const query = toGeneratedCachesAnalyticsQuery(options.query);
-  const path = "/api/v1/run-analytics/caches";
-  const result = await getGeneratedCachesAnalytics({
-    client,
-    ...(query === undefined ? {} : { query }),
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseCachesAnalytics(result.data);
 }
 
 export async function getRunnerSizingAnalytics(

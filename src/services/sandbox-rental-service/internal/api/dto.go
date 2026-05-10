@@ -111,7 +111,6 @@ func attemptRecord(record jobs.AttemptRecord) dto.SandboxAttemptRecord {
 		FailureReason:          record.FailureReason,
 		ExitCode:               exitCode,
 		DurationMs:             record.DurationMs,
-		ZFSWritten:             record.ZFSWritten,
 		StdoutBytes:            record.StdoutBytes,
 		StderrBytes:            record.StderrBytes,
 		RootfsProvisionedBytes: record.RootfsProvisionedBytes,
@@ -337,17 +336,6 @@ func costsAnalytics(analytics jobs.CostsAnalytics) dto.SandboxCostsAnalytics {
 		BySource:            analyticsBuckets(analytics.BySource),
 		ByRunnerClass:       analyticsBuckets(analytics.ByRunnerClass),
 		ByRepository:        analyticsBuckets(analytics.ByRepository),
-	}
-}
-
-func cachesAnalytics(analytics jobs.CachesAnalytics) dto.SandboxCachesAnalytics {
-	return dto.SandboxCachesAnalytics{
-		WindowStart:      analytics.WindowStart,
-		WindowEnd:        analytics.WindowEnd,
-		CheckoutRequests: dto.Uint64(analytics.CheckoutRequests),
-		CheckoutHits:     dto.Uint64(analytics.CheckoutHits),
-		CheckoutMisses:   dto.Uint64(analytics.CheckoutMisses),
-		ByRepository:     analyticsBuckets(analytics.ByRepository),
 	}
 }
 

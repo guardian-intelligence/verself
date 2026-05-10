@@ -251,7 +251,7 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 		defer func() { _ = file.Close() }()
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Verself-Checkout-Cache-Hit", strconv.FormatBool(bundle.CacheHit))
+		w.Header().Set("X-Verself-Checkout-Bundle-Cache-Hit", strconv.FormatBool(bundle.BundleCacheHit))
 		w.Header().Set("X-Verself-Checkout-Size-Bytes", strconv.FormatInt(bundle.SizeBytes, 10))
 		w.Header().Set("X-Verself-Checkout-Sha", bundle.SHA)
 		_, _ = io.Copy(w, file)

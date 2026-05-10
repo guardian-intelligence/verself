@@ -21,7 +21,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	analyticsWindow := `{"window_start":"2026-05-06T00:00:00Z","window_end":"2026-05-07T00:00:00Z"`
 	jobsAnalyticsJSON := analyticsWindow + `,"total_runs":"1","succeeded_runs":"1","failed_runs":"0","p50_duration_ms":"1000","p95_duration_ms":"1000","p99_duration_ms":"1000","by_source":[{"key":"github","count":"1"}],"by_runner_class":[{"key":"linux-2vcpu","count":"1"}],"slowest_runs":[{"execution_id":"` + executionID + `","status":"succeeded","duration_ms":1000,"completed_at":"2026-05-06T00:01:00Z"}]}`
 	costsAnalyticsJSON := analyticsWindow + `,"reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1","by_source":[{"key":"github","count":"1","reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1"}],"by_runner_class":[],"by_repository":[]}`
-	cachesAnalyticsJSON := analyticsWindow + `,"checkout_requests":"1","checkout_hits":"1","checkout_misses":"0","by_repository":[{"key":"guardian/verself","count":"1"}]}`
 	runnerSizingAnalyticsJSON := analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`
 	logSearchJSON := `{"filters":{"query":"build","run_id":"` + runID + `"},"limit":1,"next_cursor":"logs_cursor","results":[{"execution_id":"` + executionID + `","attempt_id":"attempt_1","seq":1,"stream":"stdout","chunk":"build log\n","created_at":"2026-05-06T00:00:30Z","source_kind":"github"}]}`
 	githubInstallationJSON := `{"installation_id":"123","org_id":"370200542594579812","account_login":"guardian","account_type":"Organization","active":true,"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
@@ -58,8 +57,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 			_, _ = w.Write([]byte(jobsAnalyticsJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/costs":
 			_, _ = w.Write([]byte(costsAnalyticsJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/caches":
-			_, _ = w.Write([]byte(cachesAnalyticsJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
 			_, _ = w.Write([]byte(runnerSizingAnalyticsJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
@@ -142,13 +139,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	}
 	if costsAnalytics.BilledChargeUnits != "9" {
 		t.Fatalf("unexpected costs analytics: %#v", costsAnalytics)
-	}
-	cachesAnalytics, err := client.Sandbox.GetCachesAnalytics(context.Background(), SandboxAnalyticsOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cachesAnalytics.CheckoutHits != "1" || cachesAnalytics.CheckoutMisses != "0" {
-		t.Fatalf("unexpected caches analytics: %#v", cachesAnalytics)
 	}
 	runnerSizingAnalytics, err := client.Sandbox.GetRunnerSizingAnalytics(context.Background(), SandboxAnalyticsOptions{})
 	if err != nil {

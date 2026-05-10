@@ -30,9 +30,10 @@ async function main() {
     }
     await git(spec.targetPath, ["config", "--global", "--add", "safe.directory", spec.targetPath]);
     setOutput("commit", spec.sha);
+    setOutput("bundle-cache-hit", bundleMeta.bundleCacheHit);
     notice(
       `Verself checkout ready in ${Date.now() - started}ms ` +
-        `(download ${downloadMs}ms, git ${checkoutMs}ms, cache_hit=${bundleMeta.cacheHit}, bytes=${bundleMeta.sizeBytes}, preexisting_head=${preexistingHead || "none"})`,
+        `(download ${downloadMs}ms, git ${checkoutMs}ms, bundle_cache_hit=${bundleMeta.bundleCacheHit}, bytes=${bundleMeta.sizeBytes}, preexisting_head=${preexistingHead || "none"})`,
     );
   } finally {
     fs.rmSync(bundlePath, { force: true });
@@ -86,7 +87,7 @@ async function downloadBundle(spec, bundlePath) {
   const bundle = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(bundlePath, bundle, { mode: 0o600 });
   return {
-    cacheHit: response.headers.get("x-verself-checkout-cache-hit") || "unknown",
+    bundleCacheHit: response.headers.get("x-verself-checkout-bundle-cache-hit") || "unknown",
     sizeBytes: response.headers.get("x-verself-checkout-size-bytes") || String(bundle.length),
   };
 }

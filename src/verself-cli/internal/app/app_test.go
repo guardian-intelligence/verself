@@ -802,8 +802,6 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 			_, _ = w.Write([]byte(analyticsWindow + `,"total_runs":"1","succeeded_runs":"1","failed_runs":"0","p50_duration_ms":"1000","p95_duration_ms":"1000","p99_duration_ms":"1000","by_source":[{"key":"github","count":"1"}],"by_runner_class":[],"slowest_runs":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/costs":
 			_, _ = w.Write([]byte(analyticsWindow + `,"reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1","by_source":[],"by_runner_class":[],"by_repository":[]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/caches":
-			_, _ = w.Write([]byte(analyticsWindow + `,"checkout_requests":"1","checkout_hits":"1","checkout_misses":"0","by_repository":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
 			_, _ = w.Write([]byte(analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
@@ -886,11 +884,6 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	runCLI(t, &costsAnalyticsOut, "runs", "analytics", "costs")
 	if !strings.Contains(costsAnalyticsOut.String(), "billed_charge_units\t9") {
 		t.Fatalf("runs analytics costs output:\n%s", costsAnalyticsOut.String())
-	}
-	var cachesAnalyticsOut bytes.Buffer
-	runCLI(t, &cachesAnalyticsOut, "runs", "analytics", "caches")
-	if !strings.Contains(cachesAnalyticsOut.String(), "checkout_hits\t1") {
-		t.Fatalf("runs analytics caches output:\n%s", cachesAnalyticsOut.String())
 	}
 	var sizingAnalyticsOut bytes.Buffer
 	runCLI(t, &sizingAnalyticsOut, "runs", "analytics", "runner-sizing")

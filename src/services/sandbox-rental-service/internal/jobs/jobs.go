@@ -197,18 +197,18 @@ type BillingWindow struct {
 }
 
 type Service struct {
-	PGX              *pgxpool.Pool
-	CH               driver.Conn
-	CHDatabase       string
-	Orchestrator     Runner
-	Billing          *billingclient.ClientWithResponses
-	Bounds           dto.VMResourceBounds
-	GitHubRunner     *GitHubRunner
-	ForgejoRunner    *ForgejoRunner
-	Scheduler        SchedulerRuntime
-	Logger           *slog.Logger
-	WorkloadTimeout  time.Duration
-	CheckoutCacheDir string
+	PGX                    *pgxpool.Pool
+	CH                     driver.Conn
+	CHDatabase             string
+	Orchestrator           Runner
+	Billing                *billingclient.ClientWithResponses
+	Bounds                 dto.VMResourceBounds
+	GitHubRunner           *GitHubRunner
+	ForgejoRunner          *ForgejoRunner
+	Scheduler              SchedulerRuntime
+	Logger                 *slog.Logger
+	WorkloadTimeout        time.Duration
+	CheckoutBundleStoreDir string
 }
 
 type executionWorkItem struct {

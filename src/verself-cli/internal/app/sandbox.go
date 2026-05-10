@@ -220,7 +220,7 @@ func (c CLI) runsAnalytics(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: runs analytics jobs|costs|caches|runner-sizing [--json]")
+		return errors.New("usage: runs analytics jobs|costs|runner-sizing [--json]")
 	}
 	options, err := sandboxAnalyticsOptions(*start, *end)
 	if err != nil {
@@ -249,15 +249,6 @@ func (c CLI) runsAnalytics(ctx context.Context, args []string) error {
 			return writeJSON(c.out, analytics)
 		}
 		return writef(c.out, "reserved_charge_units\t%s\nbilled_charge_units\t%s\nwriteoff_charge_units\t%s\n", analytics.ReservedChargeUnits, analytics.BilledChargeUnits, analytics.WriteoffChargeUnits)
-	case "caches":
-		analytics, err := client.Sandbox.GetCachesAnalytics(ctx, options)
-		if err != nil {
-			return err
-		}
-		if *jsonOut {
-			return writeJSON(c.out, analytics)
-		}
-		return writef(c.out, "checkout_requests\t%s\ncheckout_hits\t%s\ncheckout_misses\t%s\n", analytics.CheckoutRequests, analytics.CheckoutHits, analytics.CheckoutMisses)
 	case "runner-sizing":
 		analytics, err := client.Sandbox.GetRunnerSizingAnalytics(ctx, options)
 		if err != nil {

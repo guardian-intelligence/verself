@@ -19,16 +19,14 @@ import (
 )
 
 const (
-	sandboxProductID                = "sandbox"
-	sandboxComputeSKU               = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
-	sandboxMemorySKU                = "sandbox_memory_standard_gib_ms"
-	sandboxExecutionRootStorageSKU  = "sandbox_execution_root_storage_premium_nvme_gib_ms"
-	sandboxDurableVolumeLiveSKU     = "sandbox_durable_volume_live_storage_gib_ms"
-	sandboxDurableVolumeRetainedSKU = "sandbox_durable_volume_retained_snapshot_gib_ms"
-	secretsProductID                = "secrets"
-	secretsKVOperationSKU           = "secrets_kv_operation"
-	secretsCredentialOperationSKU   = "secrets_credential_operation"
-	secretsTransitOperationSKU      = "secrets_transit_operation"
+	sandboxProductID               = "sandbox"
+	sandboxComputeSKU              = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	sandboxMemorySKU               = "sandbox_memory_standard_gib_ms"
+	sandboxExecutionRootStorageSKU = "sandbox_execution_root_storage_premium_nvme_gib_ms"
+	secretsProductID               = "secrets"
+	secretsKVOperationSKU          = "secrets_kv_operation"
+	secretsCredentialOperationSKU  = "secrets_credential_operation"
+	secretsTransitOperationSKU     = "secrets_transit_operation"
 )
 
 type config struct {
@@ -400,14 +398,11 @@ func productSeedFor(productID string) (productSeed, error) {
 				{"compute", "Compute", 10},
 				{"memory", "Memory", 20},
 				{"execution_root_storage", "Execution Root Storage", 30},
-				{"durable_volume_storage", "Durable Volume Storage", 40},
 			},
 			SKUs: []skuSeed{
 				{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-ms", 325},
 				{sandboxMemorySKU, "memory", "DDR5-5200", "GiB-ms", 40},
 				{sandboxExecutionRootStorageSKU, "execution_root_storage", "Premium NVMe root disk", "GiB-ms", 10},
-				{sandboxDurableVolumeLiveSKU, "durable_volume_storage", "Durable volume live bytes", "GiB-ms", 10},
-				{sandboxDurableVolumeRetainedSKU, "durable_volume_storage", "Durable volume retained snapshots", "GiB-ms", 5},
 			},
 		}, nil
 	case secretsProductID:

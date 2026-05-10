@@ -370,8 +370,8 @@ windows and not a global cron sweep as the primary source of usage truth.
 A renewable metering lease is a product-owned cursor that repeatedly opens short
 billing windows for one resource. Examples:
 
-- A running VM leases vCPU, memory, root disk, and durable disk capacity for the
-  next `N` seconds.
+- A running VM leases vCPU, memory, and root disk capacity for the next `N`
+  seconds.
 - A repository leases git object storage bytes for the next `N` seconds.
 - A long inference stream leases the next bounded token, duration, or compute
   segment.
@@ -2239,7 +2239,7 @@ Ledger projections include `grant_ledger_posted`, `ledger_command_posted`, `ledg
 
 ClickHouse billing rows use contract projection names (`contract_units`, `pricing_contract_id`, `pricing_phase_id`, `pricing_plan_id`) rather than provider-specific subscription field names.
 
-For sandbox jobs, trusted block storage evidence comes from the orchestrator's provisioned zvol size and is written as `rootfs_provisioned_bytes` in usage evidence. That gives the document preview a real storage signal instead of an inferred one.
+For sandbox jobs, trusted block storage evidence comes from the orchestrator's provisioned root zvol size and is written as `rootfs_provisioned_bytes` in usage evidence. Golden workspace zvols are runner acceleration infrastructure and are not a customer-billable SKU unless a future customer-declared durable component API explicitly admits that storage through billing.
 
 ClickHouse docs to keep near this design:
 
@@ -2715,7 +2715,7 @@ LIMIT 5
 
 11. **Storage evidence present**
 
-Confirm `usage_evidence['rootfs_provisioned_bytes']` is non-zero for a sandbox execution that used a real zvol.
+Confirm `usage_evidence['rootfs_provisioned_bytes']` is non-zero for a sandbox execution that used a real root zvol.
 
 ```sql
 SELECT

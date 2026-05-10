@@ -34,6 +34,8 @@ outputs:
     description: Commit that was present in the workspace before checkout, when available.
   commit:
     description: Commit SHA that was checked out.
+  bundle-cache-hit:
+    description: Whether the host-side checkout bundle was already materialized before this checkout request.
 runs:
   using: node24
   main: dist/index.js

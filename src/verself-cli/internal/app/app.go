@@ -132,7 +132,7 @@ func (c CLI) usage() error {
   %[1]s runs get-run <run-id> [--json]
   %[1]s runs logs <execution-id> [--json]
   %[1]s runs search-logs [--query TEXT] [--run-id RUN_ID] [--json]
-  %[1]s runs analytics jobs|costs|caches|runner-sizing [--json]
+  %[1]s runs analytics jobs|costs|runner-sizing [--json]
   %[1]s github installations list [--json]
   %[1]s github installations connect [--json]
   %[1]s schedules list [--json]
