@@ -106,7 +106,9 @@ cold run looks least dramatic, because lint scaffolding is already light.
 biggest speedup multiplier.
 - build-docker: docker daemon, buildx layer cache, base image layers. None of the Node toolchain. Totally different disk shape.
 
-We only promote zvol if *all* jobs go green on the commit to the trunk branch.
+We only promote zvol if *all* jobs go green on the commit to the trunk branch. A Bazel/npm/cache directory is allowed to be partially stale or corrupt. If it is bad, the tool should miss/rebuild. The cache is not semantic truth.
+
+all mounts are rebuildable promotion is best-effort previous golden remains authoritative ambiguous seal skips promotion. We will expose cache misses and warnings so customers can go in and debug their CI themselves when things fail.
 
 `getZvolForPR`, therefore, takes `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)`. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
 
@@ -117,11 +119,11 @@ Tree-hash is metadata on the snapshot, used for two specific things:
     b. At merge, if the post-merge tree on the target branch exactly matches a snapshot we have, we retag without re-running the workflow (the step 7 fast
    path).
 
-On `services: ` -- when a customer writes `services: postgres:16`, GitHub starts a fresh container per job. We honor that as written. The snapshotted-postgres speedup applies to the customer's own setup scripts (the postgres they start and seed themselves) — not to GitHub's managed service containers. Both paths coexist; we don't need to merge them yet.
+On `services: ` -- when a customer writes `services: postgres:16`, GitHub starts a fresh container per job. We honor that as written. The snapshotted-postgres speedup applies to the customer's own setup scripts (the postgres they start and seed themselves) — not to GitHub's managed service containers. 
 
-Note: DB seeds, Docker layers, local services are not in GITHUB_WORKSPACE. We will expose APIs to mount and read from things *outside* the GITHUB_WORKSPACE for caching DB seeding and images and so on.
+Note: DB seeds, Docker layers, local services are not in GITHUB_WORKSPACE.
 
-The customer's mental model becomes: "my CI YAML stays exactly the same, the runner type changes, and the steps that used to take minutes now take  seconds because the work was already done." They don't learn a new caching API. They don't declare inputs. They don't tag things. The only Verself-specific surface is the checkout action
+The customer's mental model becomes: "my CI YAML stays exactly the same, the runner type changes, and the steps that used to take minutes now take  seconds because the work was already done." They don't learn a new caching API. They don't declare inputs. They don't tag things. The only Verself-specific surface is the checkout action.
 
 We can offer (in the future):
 
@@ -131,6 +133,13 @@ We can offer (in the future):
 3. An SDK to download a golden zvol
 
 All of the above can help with debugging.
+
+In addition to copying the entire repo, we also provide a durable mount API. The customer-facing promise:
+
+> Any directory your CI job writes outside GITHUB_WORKSPACE can be declared as durable. Verself
+> mounts the latest trusted version before the job starts, lets the job mutate it normally, then
+> snapshots it after success. Pull requests start from the target branch’s last green durable
+> state, but their writes cannot poison the target branch
 
 We can also provide a simple API to prevent certain files or directories from being part of the golden zvol. We can design that later as it requires care and, like most everything else we offer, it will have an SDK/CLI/HTTP API to our services.
 

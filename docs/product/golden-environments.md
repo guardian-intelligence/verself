@@ -1,362 +1,561 @@
-# Golden Environments
+# Golden Environments And Cache Volumes
 
-Verself hosted runners accelerate CI by starting each job from a sealed
-golden environment generation selected from prior successful jobs. The public
-surface is the Verself runner label plus the Verself checkout action. The
-customer workflow remains ordinary GitHub Actions YAML.
+Verself hosted runners accelerate CI by booting each job with ordinary Linux
+filesystems that already contain rebuildable state from prior successful jobs.
+The public surface is the Verself runner label, the Verself checkout action,
+and optional cache-volume declarations. Customer workflows remain ordinary
+GitHub Actions YAML.
 
-The golden environment is a bundle of durable volumes mounted into a fresh VM
-before the runner job starts. The first required component is the GitHub
-workspace under the runner `_work` tree. Later components cover Docker layers,
-language caches, database data directories, toolchain output roots, and other
-customer-declared paths.
+A golden environment is a set of durable volume generations selected for one
+job shape. The GitHub workspace is a platform-owned durable volume mounted at
+the normal runner `_work` tree. Customer cache volumes are path-based durable
+volumes mounted outside `GITHUB_WORKSPACE` and bound into the paths that tools
+already use for local state: compiler caches, package-manager caches, database
+data directories, Docker or BuildKit storage, generated SDK output, and other
+rebuildable directories.
 
-## Product Contract
+All cache volumes are rebuildable. Promotion is best-effort. The previous
+golden remains authoritative until a new generation is sealed and promoted.
+Ambiguous seal results skip promotion.
 
-1. A customer installs the GitHub app, switches jobs to Verself runners, and
-   replaces `actions/checkout` with the Verself checkout action.
-2. A job starts from the newest eligible golden generation for the caller repo,
-   target branch, workflow job shape, trust class, runner class, and platform
-   image.
-3. The Verself checkout action updates the pre-mounted working copy to the
-   GitHub event SHA while preserving warmed build state according to the
-   checkout policy.
-4. The workflow steps execute normally.
-5. If the job succeeds and the execution is promotable, Verself seals the
-   durable volumes and records a committed generation.
-6. Branch and workflow promotion gates decide when committed job generations
-   become current for their scopes.
-7. Promotion updates the current pointer only with a compare-and-swap against
-   the observed source generation.
-8. Failed jobs, cancelled jobs, secret-tainted jobs, and non-promotable trust
-   contexts do not advance reusable goldens.
-9. Losing a promotion race produces a retained committed generation. It is not
-   a job failure.
+## Customer Contract
 
-Branch behavior:
+A repository opts into cache volumes with a checked-in manifest:
 
-- Target branch jobs promote that branch after all required jobs for the commit
-  are green.
-- The dogfood implementation only promotes `refs/heads/main`. Non-main jobs may
-  read the main golden and commit retained candidates, but they do not advance
-  the reusable pointer.
-- Pull request jobs read from the target branch golden selected by ancestry and
-  may produce same-branch or same-PR generations when the trust policy allows.
-- A push to a branch promotes that branch's own golden when the job succeeds
-  and the branch trust policy allows.
-- A merge has no special promotion API. The post-merge target branch workflow
-  run promotes the target branch if it succeeds.
+```yaml
+version: 1
 
-## Compatibility Scope
+cache:
+  - name: build-cache
+    size: 100GiB
+    paths:
+      - ~/.cache/bazel-disk
+      - ~/.cache/bazel-repo
 
-The system preserves GitHub Actions job boundaries. Each job receives a fresh
-VM, fresh runner runtime, and its own durable mounts. Durable data crosses jobs
-only through a sealed generation selected for the next job.
+  - name: postgres-seed
+    size: 40GiB
+    paths:
+      - /verself/cache/postgres
+```
 
-GitHub-managed service containers remain per-job resources. If a customer uses
-`services: postgres`, GitHub starts that service for the job as usual. Verself
-can accelerate customer-owned database setup when the database data directory
-is mounted as a durable component controlled by the customer workflow or a
-future Verself service component.
+The same declaration can be written as static inputs to the Verself cache
+action:
+
+```yaml
+steps:
+  - uses: guardian-intelligence/verself-cache@v0
+    with:
+      name: build-cache
+      size: 100GiB
+      paths: |
+        ~/.cache/bazel-disk
+        ~/.cache/bazel-repo
+
+  - uses: guardian-intelligence/verself-cache@v0
+    with:
+      name: postgres-seed
+      size: 40GiB
+      paths: |
+        /verself/cache/postgres
+```
+
+Both forms compile into the same normalized cache declaration. The GitHub
+Action is a DX declaration whose runtime code is side-effect-free. It does not
+create, mount, format, resize, or seal filesystems. Firecracker devices are
+composed before the runner starts, so every mount-affecting field must be known
+before lease acquisition.
+
+Declarations define named volumes and the guest-visible paths that should be
+backed by those volumes. Verself does not interpret the contents. Customers
+configure their tools to write to those paths.
+
+Examples:
+
+```text
+bazel --disk_cache=$HOME/.cache/bazel-disk \
+      --repository_cache=$HOME/.cache/bazel-repo \
+      build //...
+```
+
+```text
+docker run --rm \
+  -v /verself/cache/postgres:/var/lib/postgresql/data \
+  postgres:16
+```
+
+The cache contract is the same for Bazel, PostgreSQL, SQLite, Gradle, Cargo,
+pnpm, Docker BuildKit, and unknown tools. Verself provides mounted directories,
+not tool-specific cache APIs.
+
+## Product Semantics
+
+1. A GitHub job is scheduled for a Verself runner.
+2. The control plane derives repository, ref, run, job, matrix, runner class,
+   platform image, trust class, and cache declaration identity from persisted
+   GitHub state.
+3. The control plane selects the current compatible durable generation for each
+   volume scope.
+4. vm-orchestrator prepares a fresh VM with static block devices for the root
+   disk, platform toolchains, GitHub workspace, and customer cache volumes.
+5. vm-bridge mounts those devices before the runner starts.
+6. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
+7. Customer steps execute normally and read or write cache paths as ordinary
+   directories.
+8. After job exit, vm-bridge attempts to seal each writable durable volume by
+   syncing and unmounting guest mounts.
+9. vm-orchestrator flushes, snapshots, clones, promotes, and seals each volume
+   that the guest sealed cleanly.
+10. The service records committed generations observed from the host result.
+11. A protected target-branch workflow run promotes per-job, per-volume
+    generations only after the provider run's required jobs are green.
+12. Failed jobs, cancelled jobs, non-promotable trust contexts, and ambiguous
+    seals leave the current pointer unchanged.
+
+A job can succeed while cache persistence is skipped. Cache persistence is an
+acceleration artifact, not a correctness requirement for CI.
+
+## Buildkite-Inspired Behavior
+
+Buildkite hosted cache volumes are attached on a best-effort basis, behave like
+regular Linux filesystems, require workflows to tolerate misses, commit a new
+version after successful jobs, and abandon volumes after failed jobs. Verself
+adopts that user model and changes the trust model for GitHub branch and PR
+execution.
+
+Verself differences:
+
+- Volume promotion is scoped by repository, target ref, workflow job shape,
+  runner class, platform image, architecture, and declaration hash.
+- Pull requests may read a protected branch's secretless cache generation, but
+  PR writes never promote that protected branch pointer.
+- Protected branch promotion is gated by the provider workflow result, not by a
+  single job's local exit code.
+- Cache volumes are ZFS-backed block devices attached to Firecracker guests,
+  not archive uploads or downloads.
+
+## Declaration Rules
+
+Manifest `version` is required and must be `1`. Action declarations inherit
+the declaration schema version from the action ref; `v0` emits declaration
+schema `1`.
+
+Each manifest `cache` entry or action invocation declares one volume:
+
+```text
+name      stable volume name, unique within the declaration
+size      required capacity, parsed as bytes or IEC units
+paths     one or more directories backed by the volume
+```
+
+The declaration has no tool profiles. `name`, `size`, and `paths` are the
+public API.
+
+Declaration source rules:
+
+- `.verself/cache.yml` is repository-scoped.
+- `guardian-intelligence/verself-cache@v0` is job-scoped and may appear more
+  than once in the same job.
+- Action `with` values must be static literal strings. GitHub expressions,
+  environment interpolation, generated files, conditionally executed
+  declarations, and runtime-discovered paths are rejected.
+- The action step may be placed near checkout for readability, but the control
+  plane parses it before VM boot. Runtime action code only reports the
+  declaration and selected mount metadata already chosen by the control plane.
+- If the manifest and action declarations are both present and normalize to the
+  same declaration, Verself accepts the declaration once.
+- If the manifest and action declarations are both present and differ, the
+  cache declaration is invalid. Verself fails the job before customer steps
+  start and reports the conflicting sources.
+- If neither source is present, the job has no customer cache volumes.
+
+Path rules:
+
+- Paths are directories.
+- Paths may be absolute or `~/...`.
+- Relative paths are rejected.
+- Paths under `GITHUB_WORKSPACE` are rejected; the workspace has its own
+  golden lifecycle.
+- `/`, `/bin`, `/boot`, `/dev`, `/etc`, `/lib`, `/lib64`, `/proc`, `/run`,
+  `/sbin`, `/sys`, and `/usr` are rejected.
+- Paths containing `..` after normalization are rejected.
+- Duplicate target paths are rejected.
+- Nested target paths are rejected.
+- A target path that exists as a non-directory is a mount miss.
+- A target path that exists as a non-empty directory is a mount miss.
+
+Invalid declarations are configuration errors. Verself fails the job before
+customer steps start and reports the rejected source, volume, path, and rule.
+Runtime mount misses are recorded as degraded cache state and the job continues
+without the affected cache volume. Cache volumes are always best-effort after a
+valid declaration has been accepted.
+
+Mounts are volume-atomic. If one path for a volume cannot be bound, vm-bridge
+unmounts any prior bind targets for that volume and marks the whole volume as a
+miss. Partial multi-path cache volumes are not exposed to customer code.
+
+## Static VM Composition
+
+Cache volumes are composed before Firecracker starts. The VM receives a static
+virtio-block topology for the full job lifetime:
+
+```text
+root disk                 /dev/vda
+GitHub workspace volume   /dev/vdb
+cache volume 0            /dev/vdc
+cache volume 1            /dev/vdd
+...
+```
+
+There is no dynamic block-device attach path after guest boot. Mount
+availability is part of lease acquisition and guest initialization, before any
+customer process starts.
+
+The host prepares each writable volume as a ZFS zvol:
+
+```text
+if current generation exists:
+  zfs clone <current_snapshot> workloads/<lease>/mounts/<idx>-<name>
+else:
+  zfs create -V <size> workloads/<lease>/mounts/<idx>-<name>
+  mkfs.ext4 /dev/zvol/<dataset>
+```
+
+vm-orchestrator waits for every `/dev/zvol/...` device, bind-mounts the block
+devices into the jailer chroot, configures Firecracker drives, starts the VM,
+and sends the mount manifest to vm-bridge over the guest control protocol.
+
+## Guest Mounting
+
+One declared cache volume becomes one guest filesystem mounted at an internal
+root:
+
+```text
+/verself/.mounts/<cache-name>
+```
+
+Each requested customer path is backed by a subdirectory in that root and a
+Linux bind mount:
+
+```text
+/verself/.mounts/build-cache/p0 -> /home/runner/.cache/bazel-disk
+/verself/.mounts/build-cache/p1 -> /home/runner/.cache/bazel-repo
+```
+
+Bind mounts are the default implementation. Symlinks are not the default
+because they change path identity, can be removed by customer code, and are
+handled inconsistently by filesystem walkers, database tools, and archive
+utilities. Symlinks are outside the cache-volume contract. The product contract
+is directory mount semantics.
+
+Guest mount flags:
+
+```text
+MS_NOATIME
+MS_NODEV
+MS_NOSUID
+```
+
+`noexec` is not the default because build caches and tool output directories
+commonly contain executable files. Customers that need stricter policy should
+choose paths whose tools do not execute cache contents.
+
+vm-bridge is responsible for:
+
+- Expanding `~/...` against the runner user's home directory.
+- Creating parent directories for target paths.
+- Ensuring target paths are absent or empty directories before binding.
+- Creating source subdirectories under the mounted cache root.
+- Chowning writable cache roots and bind source subdirectories to the runner
+  UID and GID.
+- Recording every mounted root and bind target for later seal.
+
+The runner receives environment metadata for observability and debugging:
+
+```text
+VERSELF_CACHE_MOUNTS=/verself/.mounts/build-cache:/verself/.mounts/postgres-seed
+VERSELF_CACHE_BUILD_CACHE=/verself/.mounts/build-cache
+VERSELF_COMPOSED_ZVOL_MOUNTS=<all platform-composed zvol mount roots>
+```
+
+## Seal Semantics
+
+A seal is filesystem-level quiescence, not application-level quiescence.
+Verself does not call `pg_ctl`, SQLite checkpoint APIs, Docker APIs, Bazel APIs,
+or package-manager cleanup commands. The job owns any graceful application
+shutdown it requires.
+
+vm-bridge seal procedure for each writable volume:
+
+1. Stop accepting new exec work for the lease.
+2. Run normal runner/job cleanup already implied by the provider execution.
+3. Issue `sync` in the guest.
+4. Unmount bind targets for the volume in reverse mount order.
+5. Unmount the internal cache root.
+6. Return a sealed result only if every unmount succeeds.
+
+vm-orchestrator commit procedure after guest seal succeeds:
+
+1. Flush the host block device.
+2. Snapshot the working zvol.
+3. Clone the working snapshot into the golden generation namespace.
+4. Promote the clone so the generation no longer depends on the ephemeral
+   lease dataset.
+5. Create `@sealed` on the promoted generation.
+6. Return snapshot reference, used bytes, written bytes, and commit time.
+
+Ambiguous seal states skip promotion:
+
+- Guest control socket disappears before a seal result.
+- `sync` or unmount times out.
+- A bind target or root mount returns busy.
+- The host block flush fails.
+- ZFS snapshot, clone, promote, or final seal fails.
+- Host journal recovery cannot prove a terminal committed phase.
+- The GitHub job is cancelled or does not conclude `success`.
+
+The job result does not change because of ambiguous cache seal. The previous
+current generation remains authoritative.
+
+## Database Directories
+
+Database files are ordinary cache volume contents.
+
+Customers should persist database directories, not individual files. SQLite WAL
+mode writes sidecar files next to the main database. PostgreSQL, MySQL, Redis,
+Elasticsearch, and similar services expect directory-level ownership,
+permissions, locks, and temporary files. Directory mounts avoid partial-file
+selection and keep tool behavior inside the customer's own runtime contract.
+
+DB-specific behavior:
+
+- Verself does not disable, enable, or inspect fsync behavior.
+- Verself does not checkpoint WALs.
+- Verself does not repair databases.
+- Verself does not infer health from database contents.
+- Crashy or non-fsync data directories are cache misses in practice.
+- Repeated seal skips or corrupt cache reads are customer-debuggable through
+  logs, traces, and cache-volume metadata.
+
+A database cache that cannot be reused consistently remains a performance
+issue, not a platform correctness issue.
 
 ## Logical Data Model
 
-The records below describe the product model. Physical table names can differ,
-but each identity and invariant should remain explicit in the implementation.
+The schema is a full cutover. The committed schema should contain only the
+current model. Prior development tables and migration compatibility shims are
+removed before merge; git history is the only record of obsolete shapes.
 
-### Organization
-
-```text
-organization
-  id
-  github_enterprise_id
-  github_organization_id
-  slug
-  policy_version
-  created_at
-```
-
-Owns GitHub installations, repositories, runner policies, billing, retention,
-and authorization for debugging or export operations.
-
-### Repository
+### Cache Declaration
 
 ```text
-repository
-  id
-  organization_id
-  github_installation_id
-  github_repository_id
-  full_name
-  default_branch
-  visibility
-  created_at
-```
-
-`github_repository_id` is the stable identity. `full_name` is mutable display
-metadata.
-
-### Workflow Invocation
-
-```text
-workflow_invocation
-  id
+cache_declaration
+  cache_declaration_id
   repository_id
-  github_run_id
-  github_run_attempt
-  github_event_name
-  github_actor_id
-  github_triggering_actor_id
-  head_sha
-  head_ref
-  base_sha
-  base_ref
-  pull_request_number
-  trust_class
-  secret_policy
-  received_at
+  source_kind
+  source_ref
+  source_sha
+  source_path
+  workflow_identity
+  job_identity
+  step_identity
+  declaration_sha256
+  declaration_hash
+  parsed_at
 ```
 
-Represents the GitHub event and run attempt. This record is derived from the
-persisted webhook payload and GitHub API reads performed by the control plane.
-Runner-side environment variables are telemetry. They are not authorization
-inputs.
+`source_kind` values:
+
+```text
+manifest
+workflow_action
+```
+
+`declaration_hash` is the canonical hash of the normalized declaration. It
+changes when volume names, sizes, paths, or mount policy change. Manifest and
+action sources that normalize to the same declaration receive the same
+declaration hash.
+
+### Cache Volume Spec
+
+```text
+cache_volume_spec
+  cache_volume_spec_id
+  cache_declaration_id
+  name
+  size_bytes
+  path_set_hash
+  mount_policy_hash
+  normalized_paths_json
+  created_at
+```
+
+The spec is immutable. Changing any compatibility-affecting field creates a
+new spec hash and therefore a new cache lineage.
 
 ### Job Shape
 
 ```text
 job_shape
-  id
+  job_shape_id
   repository_id
+  provider
   workflow_identity
   called_workflow_identity
-  job_id
-  job_name
+  job_identity
   matrix_key
   runner_class
+  guest_arch
   platform_image_id
-  durable_manifest_hash
-  checkout_policy_hash
+  kernel_image_id
+  runner_toolchain_image_id
+  workspace_policy_hash
+  cache_declaration_hash
   created_at
 ```
 
-The job shape identifies disk compatibility. Distinct jobs usually need
-distinct goldens because their setup differs materially.
+`job_shape` is the compatibility boundary for generated state. `guest_arch` is
+explicit so x86_64 and aarch64 never share cache generations.
 
-Fields:
-
-- `workflow_identity`: the caller workflow file and ref identity.
-- `called_workflow_identity`: empty for normal jobs; populated for
-  `workflow_call` jobs.
-- `job_id`: the stable YAML job key where available.
-- `matrix_key`: canonical JSON or a stable hash of matrix values.
-- `runner_class`: CPU, memory, architecture, virtualization class, and runner
-  label class.
-- `platform_image_id`: guest OS image, kernel, runner base image, tool catalog,
-  and Verself guest agent version.
-- `durable_manifest_hash`: set of durable components and mount policies.
-- `checkout_policy_hash`: checkout behavior that affects retained workspace
-  state.
-
-### Golden Scope
+### Durable Scope
 
 ```text
-golden_scope
-  id
+durable_scope
+  durable_scope_id
   repository_id
+  provider
+  provider_repository_id
   scope_kind
   scope_ref
   job_shape_id
+  component_name
+  component_kind
   trust_class
   created_at
 ```
 
-`golden_scope` is the namespace for the current pointer. Common scopes:
-
-- `branch`: `refs/heads/main`, `refs/heads/feature-x`
-- `pull_request`: repository-local PR scope when same-PR reuse is allowed
-- `debug`: explicit customer debugging scope
-
-Branch goldens should be selected by ancestry. A PR targeting `main` should use
-the exact base SHA generation when available, then the nearest green ancestor,
-then a cold start.
-
-### Golden Environment Generation
+`component_kind` values:
 
 ```text
-golden_generation
-  id
-  golden_scope_id
+github_workspace
+cache_volume
+platform_toolchain
+```
+
+Customer cache volumes use `component_kind=cache_volume` and
+`component_name=<declaration cache name>`. The GitHub workspace is represented
+by the same durable scope machinery but is platform-owned and mounted at the
+runner `_work` tree.
+
+### Durable Operation
+
+```text
+durable_operation
+  operation_id
+  execution_id
+  attempt_id
+  allocation_id
+  durable_scope_id
+  source_generation_id
+  source_snapshot_ref
+  candidate_generation_id
+  mount_name
+  internal_mount_path
+  bind_paths_json
+  trust_class
+  requested_at
+  host_accepted_at
+  mounted_at
+  seal_started_at
+  sealed_at
+  result_recorded_at
+  final_state
+  failure_reason
+```
+
+`final_state` values:
+
+```text
+requested
+mounted
+committed
+skipped
+failed
+```
+
+`skipped` means no reusable generation was produced and the previous current
+pointer remains authoritative.
+
+### Durable Generation
+
+```text
+durable_generation
+  durable_generation_id
+  durable_scope_id
   operation_id
   source_generation_id
   head_sha
   tree_hash
-  workflow_invocation_id
-  github_run_id
-  github_run_attempt
-  github_job_id
+  provider_run_id
+  provider_run_attempt
+  provider_job_id
   result
-  taint_class
   promotion_eligible
   state
+  zfs_snapshot_ref
+  used_bytes
+  written_bytes
   sealed_at
   committed_at
   last_used_at
   expires_at
 ```
 
-Represents an immutable sealed result of one job execution.
-
-States:
-
-- `creating`: operation authorized, host mutation not yet sealed.
-- `committed`: durable volumes exist and metadata is recorded.
-- `superseded`: committed generation no longer current.
-- `retained`: committed generation kept for debugging, ancestry, or rollback.
-- `prunable`: generation is outside retention and has no protected reference.
-- `pruned`: durable data has been destroyed.
-- `failed`: operation did not produce a sealed generation.
-
-Currentness lives in `golden_current_pointer`; generation rows are immutable
-after commit except for retention metadata.
-
-`state='committed'` requires durable storage to exist. The database must never
-claim a generation is committed before the host has sealed it.
-
-### Golden Current Pointer
+`state` values:
 
 ```text
-golden_current_pointer
-  golden_scope_id
+committed
+retained
+invalidated
+prunable
+pruned
+```
+
+A committed generation requires sealed host storage. No database row may claim
+`state=committed` before vm-orchestrator returns a successful seal result.
+
+### Durable Current Pointer
+
+```text
+durable_current_pointer
+  durable_scope_id
   current_generation_id
-  expected_source_generation_id
   promoted_by_operation_id
   promoted_at
 ```
 
-Promotion is a compare-and-swap:
+Promotion is compare-and-swap against the source generation observed before the
+VM started:
 
 ```sql
-update golden_current_pointer
-set current_generation_id = :new_generation_id,
+update durable_current_pointer
+set current_generation_id = :candidate_generation_id,
     promoted_by_operation_id = :operation_id,
     promoted_at = now()
-where golden_scope_id = :scope_id
-  and current_generation_id is not distinct from :observed_source_generation_id;
+where durable_scope_id = :durable_scope_id
+  and current_generation_id is not distinct from :source_generation_id;
 ```
 
-If the update affects zero rows, another operation won the race. The new
-generation remains committed and retention decides its lifetime.
+If zero rows are affected, another operation won the race. The candidate is
+retained or pruned by retention policy.
 
-### Promotion Batch
-
-```text
-promotion_batch
-  id
-  repository_id
-  scope_kind
-  scope_ref
-  head_sha
-  workflow_invocation_id
-  required_job_set_hash
-  trust_class
-  taint_policy
-  state
-  created_at
-  closed_at
-```
+### Host Durable Journal
 
 ```text
-promotion_batch_member
-  promotion_batch_id
-  job_shape_id
-  golden_scope_id
-  operation_id
-  generation_id
-  job_result
-  promotion_result
-  recorded_at
-```
-
-The batch prevents a green job from advancing its branch golden when another
-required job for the same commit is red. For a target branch, every required
-promotable job for the commit must have a successful committed generation
-before any job scope in the batch advances. Each member still promotes with its
-own CAS against its observed source generation.
-
-States:
-
-- `collecting`: waiting for required jobs.
-- `green`: all required promotable jobs succeeded.
-- `red`: at least one required job failed, cancelled, or became non-promotable.
-- `promoting`: CAS promotion is running for member generations.
-- `promoted`: all eligible member promotions completed or lost benign races.
-- `failed`: the batch encountered a platform error while recording promotion
-  results.
-
-### Durable Component
-
-```text
-durable_component
-  id
-  golden_generation_id
-  component_kind
-  component_key
-  guest_mount_path
-  host_dataset_ref
-  sealed_snapshot_ref
-  filesystem_kind
-  size_bytes_logical
-  size_bytes_referenced
-  scrub_policy_hash
-  created_at
-```
-
-Component kinds:
-
-- `github_workspace`: runner `_work` tree containing `GITHUB_WORKSPACE`.
-- `docker_graph`: Docker or containerd storage root.
-- `service_data`: database, queue, search, or other local service data.
-- `tool_cache`: language package caches and compiler output roots.
-- `custom_path`: customer-declared durable path.
-
-Components are mounted before the runner starts. Component compatibility is
-part of `job_shape` through `durable_manifest_hash`.
-
-### Workspace Operation
-
-```text
-workspace_operation
-  id
-  workflow_invocation_id
-  job_shape_id
-  golden_scope_id
-  source_generation_id
-  observed_current_generation_id
-  attempt_id
-  trust_class
-  taint_policy
-  requested_at
-  authorized_at
-  host_accepted_at
-  mounted_at
-  runner_started_at
-  runner_completed_at
-  sealed_at
-  result_recorded_at
-  promotion_result
-  final_state
-```
-
-This record authorizes the operation and joins GitHub job execution to host
-storage mutation. It does not hold a PostgreSQL lock while ZFS operations run.
-
-### Host Journal Entry
-
-```text
-host_workspace_journal
+host_durable_journal
   operation_id
   host_id
+  lease_id
+  mount_name
   phase
   source_dataset_ref
   working_dataset_ref
@@ -366,414 +565,288 @@ host_workspace_journal
   recorded_at
 ```
 
-The vm-orchestrator owns this journal on the host. Every ZFS mutation must be
-associated with an operation ID before the mutation starts and after it
-finishes. The service database observes the result after the host journal has a
-terminal phase.
+Every host mutation has an operation ID before the mutation starts and a
+journal row after it finishes. The service database records host results after
+observing terminal host phases. PostgreSQL locks are not held across ZFS
+operations.
 
-### Taint Observation
+## Scope Identity
 
-```text
-taint_observation
-  id
-  operation_id
-  source
-  taint_class
-  evidence_kind
-  observed_at
-```
-
-Records why a job became non-promotable or restricted. Taint is monotonic
-within an operation. Once observed, later scrubbers cannot convert the operation
-back to untainted.
-
-## Golden Selection
-
-Inputs:
-
-```text
-repository_id
-github_event_name
-head_sha
-head_ref
-base_sha
-base_ref
-pull_request_number
-workflow_identity
-called_workflow_identity
-job_id
-matrix_key
-runner_class
-platform_image_id
-trust_class
-durable_manifest_hash
-checkout_policy_hash
-```
-
-Selection procedure:
-
-1. Derive the caller repository, ref, commit, and trust class from persisted
-   webhook state.
-2. Derive the job shape from the actual job GitHub scheduled.
-3. Resolve the target golden scope.
-4. For pull requests, prefer a branch generation whose `head_sha` equals the
-   PR base SHA.
-5. If the exact base generation is unavailable, select the nearest green
-   ancestor compatible with the job shape and trust class.
-6. If no compatible generation exists, create an empty durable environment.
-7. Record the selected source generation in the operation before lease/exec
-   starts.
+A cache generation is reusable only when every compatibility dimension matches
+or policy explicitly permits a broader read.
 
 Compatibility dimensions:
 
-- Repository stable ID.
-- Scope kind and ref.
-- Workflow and called workflow identity.
-- Job ID and matrix key.
-- Runner class and architecture.
-- Platform image ID.
-- Durable manifest hash.
-- Checkout policy hash.
-- Trust class and taint policy.
-
-## `workflow_call`
-
-Reusable workflows are modeled as jobs in the caller's run. The golden belongs
-to the caller repository, caller commit, caller event, and caller trust class.
-The called workflow contributes to the job shape.
-
-Keying:
-
 ```text
-repository_id = caller repository
-head_sha = caller SHA
-base_sha = caller base SHA, for PR events
-trust_class = caller event trust class
-workflow_identity = caller workflow
-called_workflow_identity = called workflow repo/path/ref/SHA
-job_id = job key inside the called workflow
-matrix_key = caller and callee matrix values after expansion
+organization_id
+repository_id
+provider_repository_id
+scope_kind
+scope_ref
+workflow_identity
+called_workflow_identity
+job_identity
+matrix_key
+runner_class
+guest_arch
+platform_image_id
+kernel_image_id
+runner_toolchain_image_id
+cache_declaration_hash
+component_name
+component_kind
+trust_class
 ```
 
-Security:
+Matrix values are canonicalized after GitHub expands the job. Jobs with
+different Node versions, Python versions, CPU architecture, service topology,
+or runner class naturally receive different scopes because their job identity,
+matrix key, runner class, platform image, or declaration hash differs.
 
-- Secrets explicitly passed to a reusable workflow taint the called jobs.
-- `secrets: inherit` taints the called jobs.
-- Permissions on `GITHUB_TOKEN` are part of the job authority and can taint the
-  operation when they provide write authority or downstream secret exchange.
-- A called workflow cannot make an untrusted caller promotable.
+## CPU Architecture
 
-DX rule:
+The supported hosted runner architecture for this design is Linux `x86_64` on
+Firecracker. Linux `aarch64` is design-compatible because the durable volume
+contract is a Linux block-device and ext4 contract, but it is a separate
+compatibility lineage. Cache generations never cross architectures.
 
-- Any job that checks out the repository should use the Verself checkout action,
-  including jobs defined inside reusable workflows.
+Architecture is part of the compatibility key for three reasons:
 
-## Host Storage Model
+- Build outputs frequently contain architecture-specific object files,
+  binaries, native package prebuilds, JIT caches, and Docker layers.
+- Tooling may encode CPU feature assumptions beyond the ISA name.
+- The guest kernel, platform image, runner toolchain image, and package manager
+  lockfiles can resolve different artifacts on different architectures.
 
-The storage model uses generation-per-dataset sealing. A mutable working clone
-is snapshotted, cloned into the golden generation namespace, promoted so it no
-longer depends on the ephemeral lease dataset, and sealed with `@sealed`.
+`runner_class` records the minimum CPU feature contract exposed to the guest.
+If the fleet mixes x86_64 hosts with materially different exposed feature sets,
+those feature sets use separate runner classes or platform image identities. A
+cache produced on `x86_64-v3` is not reused by a runner class that only
+guarantees `x86_64-v2`. A cache produced on `aarch64` is not reused by
+`x86_64`. Endianness is not used to broaden compatibility; architecture is a
+hard boundary.
 
-Example layout:
+The product does not support Windows or macOS cache volumes in this design.
+Those operating systems need separate mount, filesystem, and runner lifecycle
+contracts.
+
+## Concurrency And Races
+
+### Concurrent Jobs For The Same Scope
+
+Two jobs may start from the same current generation. Each records the observed
+source generation before lease acquisition. Both may seal candidate generations.
+Only one CAS promotion can advance the current pointer. The loser remains a
+retained generation or becomes prunable.
+
+### Workflow-Level Promotion
+
+A protected branch pointer advances only after the provider run's required job
+set is observed green. The promotion batch is derived from GitHub workflow run
+and job state. Each job's cache volumes still promote independently by durable
+scope CAS. If a job has three cache volumes and only two seal cleanly, the two
+sealed volumes may promote and the ambiguous volume remains on its previous
+current generation.
+
+### Pull Requests
+
+Pull request jobs use the target branch's current secretless cache generation
+as their source when policy allows. PR candidate writes are isolated to PR or
+retained candidate generations and cannot promote the target branch pointer.
+
+For untrusted PRs, the cache declaration is read from the trusted base branch,
+not from PR head. Manifest edits and workflow action declaration inputs from
+PR head are ignored for host mount planning. A PR cannot introduce new host
+mount paths for code that has not been merged into the trusted branch.
+
+### Declaration Changes
+
+A declaration change changes `cache_declaration_hash`. New hashes create new
+durable scopes. Existing current pointers remain available for older scopes
+until retention prunes them. A declaration edit is therefore a cache miss for
+the new scope, not a migration.
+
+### Lease Cancellation
+
+A provider cancellation, timeout, or control-plane cancellation can terminate
+customer execution after cache volumes were mounted. The operation records the
+provider terminal state. Seal is skipped when the provider job does not conclude
+`success`, even if the guest process exits with code `0` during cancellation
+cleanup.
+
+### Host Crash
+
+Host-local journal phases drive recovery. A recovery pass classifies operations
+from the host journal and ZFS state:
 
 ```text
-vspool/tenants/<org_id>/goldens/<golden_scope_id>/
-  generations/<generation_id>/
-    github_workspace
-    docker_graph
-    tool_cache/<component_key>
-    service_data/<component_key>
+no accepted phase                    -> service operation remains requested/failed
+accepted without working dataset      -> failed
+working dataset without sealed result -> skipped and destroy working dataset
+sealed dataset without service row     -> record committed or retain orphan by policy
+current pointer to missing snapshot    -> platform invariant violation
 ```
 
-Each component has a sealed snapshot:
+Destroying orphan working datasets is allowed only after journal reconciliation
+proves they are not referenced by a live lease or a committed generation.
 
-```text
-vspool/tenants/<org_id>/goldens/<scope>/generations/<generation>/github_workspace@sealed
-```
+### Retention Race
 
-Host lifecycle:
+Retention never destroys a generation referenced by `durable_current_pointer`,
+a running `durable_operation.source_generation_id`, a retained debug pin, or a
+sealed generation whose promotion decision is still pending. Retention reads
+references and destroys through vm-orchestrator-owned host mutation, not by
+service-side shell commands.
 
-1. The service records and authorizes `workspace_operation`.
-2. The vm-orchestrator journals `accepted`.
-3. The vm-orchestrator clones source component snapshots or creates empty
-   component datasets.
-4. The vm-orchestrator mounts components into the guest before the runner
-   starts.
-5. The job runs.
-6. The vm-orchestrator stops consumers, flushes, snapshots the working datasets,
-   clones them into the generation namespace, promotes the clones, and seals the
-   generation snapshots.
-7. The vm-orchestrator journals the terminal result.
-8. The service records the committed generation and attempts CAS promotion.
+### Volume Size Changes
 
-Storage invariants:
+`size_bytes` is part of the cache volume spec. Increasing size can be treated
+as a new lineage or as a compatible working-clone resize when the source
+filesystem supports safe online or offline growth. Shrinking is not compatible
+with an existing generation and creates a new lineage.
 
-- No committed generation row exists before host storage is sealed.
-- No ZFS mutation occurs without an operation ID in the host journal.
-- No PostgreSQL row lock is held across ZFS mutation.
-- No stable destination dataset receives concurrent generations.
-- ZFS rollback flags such as receive-force are not used to resolve promotion
-  conflicts.
-- Promotion loss is recorded as metadata rather than storage failure.
-- Retention destroys only generations that are not current and have no protected
-  reference.
+A full cache volume produces normal filesystem errors in the job, usually
+`ENOSPC`. That is a customer-visible job behavior, not a storage promotion
+race.
 
-## Checkout Semantics
+### Path Conflicts
 
-The Verself checkout action updates `GITHUB_WORKSPACE` from a pre-mounted
-workspace generation to the event commit.
+Binding a cache over non-empty image content would hide files from the job.
+Verself treats this as a mount miss for the affected cache volume. The job
+continues cold and the mount miss is recorded. Customers choose clean cache
+paths for reliable hit rates.
 
-The default policy should:
+### Clock And Idempotency
 
-- Avoid persisting Git credentials.
-- Avoid cleaning warmed build artifacts unless the checkout policy explicitly
-  requests it.
-- Make the working tree match the requested commit for tracked files.
-- Remove or quarantine files that conflict with checkout safety.
-- Record preexisting HEAD, target SHA, tree hash, bytes fetched, and duration.
-
-The checkout action is the customer-visible boundary because GitHub Actions
-does not provide a pre-job repository checkout hook with the semantics Verself
-needs.
-
-Dogfood note: the current implementation persists the GitHub `_work` tree. The
-Verself repository's Bazel output root and disk cache currently live under the
-runner user's home directory via `.bazelrc`, outside that durable component.
-The golden workspace path therefore proves instant workspace selection and
-checkout, but it does not by itself make `bazelisk build //...` warm. Bazel
-speedup requires either a durable `tool_cache` component for the Bazel output
-root and disk cache or a CI policy that places those paths under a durable
-mount.
+Operation IDs and generation IDs are service-generated before host mutation.
+Host mutation APIs are idempotent by operation ID. Wall clock is metadata; it
+is not used to order promotions. Promotion ordering is by observed source
+identity and CAS.
 
 ## Security Model
 
-The security boundary combines trust classes, taint classification, and
-redaction. Customer redaction reduces accidental persistence. Verself trust
-policy prevents secret-bearing executions from producing goldens that later run
-in lower-trust contexts.
+Generic CI jobs are secretless. Cache volumes are readable by later jobs in
+compatible scopes, including PR jobs when policy allows reading the target
+branch's secretless current generation. Customers must not store secrets in
+cache volumes.
 
-The dogfood implementation relies on the repository-wide secretless CI invariant
-and does not inspect workflow secret usage. Taint classification becomes an
-enforced data model when trusted deployment lanes and customer secret surfaces
-are admitted into golden generation.
+The cache-volume design does not implement content-based secret tainting for
+customer cache volumes.
+The security model relies on lane separation:
 
-### Trust Classes
+- Generic build/test CI does not receive repository, organization, or
+  environment secrets.
+- Jobs with staging or production authority run in a trusted lane and are not
+  reusable by lower-trust cache scopes.
+- OIDC or JWT credential exchange for trusted lanes produces separate trust
+  scopes.
+- Fork PR jobs cannot promote target branch cache generations.
 
-Suggested classes:
+Mount hardening:
 
-- `fork_pull_request`: code from a fork or untrusted actor.
-- `same_repo_pull_request`: PR branch in the same repository.
-- `unprotected_branch`: branch push without protected-branch guarantees.
-- `protected_branch`: protected branch push after repository policy checks.
-- `environment_protected`: job gated by GitHub Environment protection.
-- `debug_session`: customer-requested debugging VM or export operation.
+- Cache filesystems are guest block devices, not host bind mounts.
+- Guest mounts use `nodev` and `nosuid`.
+- Cache paths under system roots are rejected.
+- Product services never receive host ZFS authority.
+- vm-orchestrator is the only runtime process that mutates ZFS, jailer state,
+  Firecracker devices, TAP networking, or `/dev/zvol` devices.
 
-Trust ordering is monotonic. A generation can be reused only by a job whose
-trust class is allowed to read from the source generation's class.
+## ZFS Layout
 
-Default read policy:
-
-- Untrusted PRs may read from trusted base branch secretless goldens.
-- Trusted branch jobs may read from their own branch goldens.
-- Secret-tainted goldens are restricted to debugging or same-authority reuse
-  when an explicit policy enables it.
-
-Default write policy:
-
-- Secretless protected branch jobs can promote branch goldens.
-- Secretless same-repo branch jobs can promote branch-scoped goldens when
-  repository policy allows.
-- Untrusted PR jobs cannot promote target branch goldens.
-- Secret-tainted jobs cannot promote reusable goldens.
-
-### Taint Sources
-
-An operation becomes tainted when the job receives or can mint sensitive
-authority.
-
-Sources:
-
-- GitHub Actions secrets.
-- `workflow_call` explicit secrets.
-- `workflow_call` `secrets: inherit`.
-- GitHub Environments with secrets.
-- OIDC tokens or cloud credential exchanges.
-- Deploy keys, SSH agents, or private Git credentials.
-- Package registry tokens.
-- Writable or elevated `GITHUB_TOKEN` permissions.
-- Customer-provided secret mounts.
-- Verself debug credentials or SSH session material.
-- Detected credential files in durable paths.
-
-Taint applies to the operation and all durable components produced by it. A
-component scrubber can remove files before seal, but it cannot remove the taint
-classification from the operation.
-
-### Promotion Policy
-
-Default policy:
+The host stores durable volume generations under the golden root:
 
 ```text
-if job_result != success:
-  reject promotion
-if taint_class != secretless:
-  reject reusable promotion
-if trust_class cannot write target scope:
-  reject promotion
-if platform image or durable manifest changed:
-  create a new compatibility lineage
-otherwise:
-  commit generation and CAS-promote current pointer
+vspool/goldens/<durable_scope_id>/generations/<durable_generation_id>
+vspool/goldens/<durable_scope_id>/generations/<durable_generation_id>@sealed
 ```
 
-Explicit opt-in policy for tainted generations should be narrow:
+Lease working datasets live under the workload root:
 
-- Same repository.
-- Same ref or explicit debug scope.
-- Same secret authority.
-- Short retention.
-- No default download/export.
-- Visible taint marker in API and UI.
-- No reuse by fork PRs or lower-trust jobs.
-
-### Redaction And Scrubbing
-
-Customer durable manifests may include exclusions:
-
-```yaml
-persist:
-  include:
-    - "$GITHUB_WORKSPACE"
-    - "/var/lib/docker"
-    - "/home/runner/.cache/bazel"
-  exclude:
-    - "**/.env"
-    - "**/.npmrc"
-    - "**/.ssh/**"
-    - "**/.aws/**"
-    - "**/.docker/config.json"
+```text
+vspool/workloads/<lease_id>/mounts/<index>-<mount_name>
 ```
 
-Platform scrubbers should run regardless of customer policy:
+The same ZFS lifecycle applies to the GitHub workspace and customer cache
+volumes:
 
-- Exclude runner runtime directories.
-- Exclude action temp directories.
-- Exclude OIDC token files.
-- Exclude runner credentials and registration material.
-- Exclude SSH agent sockets.
-- Exclude known Git credential helpers and credential URLs.
-- Exclude package-manager auth files when recognized.
-- Mark the operation tainted when credential-like material is detected in a
-  durable component.
+```text
+clone source snapshot or create empty zvol
+attach as Firecracker block device
+mount in guest
+seal in guest
+flush host block device
+snapshot working dataset
+clone into generation namespace
+promote clone
+snapshot @sealed
+record service generation
+CAS promote current pointer
+```
 
-Redaction failures are security events when they involve platform-owned
-credential material.
-
-## Customer APIs
-
-Initial public surface:
-
-- Runner labels.
-- Verself checkout action.
-- Web UI status for golden hit/miss, source generation, and promotion result.
-
-Later surfaces:
-
-- List golden scopes and generations.
-- Show generation metadata, size, commit, workflow, job, matrix, runner image,
-  taint class, and retention status.
-- Delete or pin generations.
-- Open a debug VM from a generation.
-- Download an export when policy allows.
-- Declare durable components and scrub policies.
-- Configure promotion rules.
-
-API responses must expose taint, trust, and compatibility metadata. Hidden
-policy decisions make golden selection behavior impossible to debug.
+No `zfs receive -F` or rollback-style overwrite is used to resolve conflicts.
+Conflicts are represented by pointer CAS results and retention metadata.
 
 ## Observability
 
-Every job should produce ClickHouse evidence for:
+Every cache volume operation emits ClickHouse and trace evidence keyed by
+`operation_id`, `attempt_id`, `provider_run_id`, and `provider_job_id`.
 
-- Golden selection input.
-- Selected source generation.
-- Cache hit or miss.
-- Durable component mount plan.
-- Checkout duration and result.
-- Host journal phases.
-- Seal result.
-- Generation commit result.
-- CAS promotion result.
-- Taint observations.
-- Retention decisions.
-
-Recommended span names:
+Recommended spans:
 
 ```text
-github.workspace.select
-github.workspace.prepare
-github.checkout.update
-golden.operation.accept
-golden.component.mount
-golden.component.seal
-golden.generation.commit
-golden.generation.promote
-golden.generation.retain
-golden.generation.prune
+durable.declaration.resolve
+durable.volume.select
+durable.volume.prepare
+durable.volume.mount
+durable.volume.bind
+durable.volume.seal
+durable.volume.commit
+durable.volume.promote
+durable.volume.retain
+durable.volume.prune
 ```
 
-Completion evidence for implementation changes should include GitHub run IDs,
-operation IDs, generation IDs, selected source generation IDs, and promotion
-results.
+Required attributes:
 
-## Failure Semantics
+```text
+cache.name
+cache.paths_hash
+cache.path_count
+cache.hit
+cache.miss_reason
+durable.scope_id
+durable.source_generation_id
+durable.candidate_generation_id
+durable.current_generation_id
+seal.result
+seal.skipped_reason
+zfs.dataset
+zfs.snapshot_ref
+zfs.used_bytes
+zfs.written_bytes
+guest.arch
+runner.class
+platform.image_id
+```
 
-Job failure:
-
-- The GitHub job result remains the customer-visible CI result.
-- The source golden remains current.
-- A failed generation is not committed.
-
-Persistence failure after job success:
-
-- The CI result can remain success for compatibility.
-- Verself records a platform degradation event.
-- No current pointer advances.
-- The UI and API show that no new golden was produced.
-
-Promotion race:
-
-- The job can remain success.
-- The generation remains committed and retained or pruned by policy.
-- The current pointer remains on the winner.
-
-Host crash during mutation:
-
-- The host journal drives recovery.
-- Operations without sealed durable storage become failed.
-- Orphan working datasets are destroyed only after journal reconciliation.
-
-## Open Design Decisions
-
-- Whether default CI success should fail when golden persistence fails in a
-  customer opt-in "golden required" mode.
-- Exact ancestry algorithm for nearest green ancestor selection.
-- Durable component manifest syntax and defaults.
-- Service quiescing protocol for customer-managed databases.
-- Policy for branch-scoped goldens on unprotected branches.
-- Export format and encryption model for downloadable generations.
+Customer debugging surfaces show cache hit or miss, selected source generation,
+mount misses, seal result, promotion result, and retention state. Cache misses
+are expected operational states and should not require support access to
+diagnose.
 
 ## References
 
-- GitHub reusable workflows:
-  <https://docs.github.com/en/actions/how-tos/sharing-automations/reusing-workflows>
+- Buildkite hosted cache volumes:
+  <https://buildkite.com/docs/agent/buildkite-hosted/cache-volumes>
+- Linux bind mounts and mount flags:
+  <https://man7.org/linux/man-pages/man2/mount.2.html>
+- Firecracker drive composition is implemented in repo-owned vm-orchestrator:
+  `src/substrate/vm-orchestrator/AGENTS.md`,
+  `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`, and
+  `src/substrate/vm-orchestrator/proto/v1/vm_service.proto`.
+- GitHub Action metadata and `with` inputs:
+  <https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions>
+- GitHub workflow step `uses` syntax:
+  <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax>
 - GitHub Actions variables and `GITHUB_WORKSPACE`:
   <https://docs.github.com/en/actions/reference/workflows-and-actions/variables>
-- GitHub self-hosted runner security hardening:
-  <https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions>
-- GitHub runner job hooks:
-  <https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/running-scripts-before-or-after-a-job>
-- OpenZFS receive semantics:
-  <https://openzfs.github.io/openzfs-docs/man/master/8/zfs-receive.8.html>
-- OpenZFS promote semantics:
-  <https://openzfs.github.io/openzfs-docs/man/master/8/zfs-promote.8.html>
