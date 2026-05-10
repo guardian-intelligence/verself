@@ -1216,6 +1216,8 @@ type githubWorkflowRunJobsState struct {
 	Succeeded        int
 	Failed           int
 	SuccessfulJobIDs []int64
+	JobStatuses      map[int64]string
+	JobConclusions   map[int64]string
 }
 
 func (s githubWorkflowRunJobsState) promotionReady() (bool, string) {
@@ -1229,6 +1231,14 @@ func (s githubWorkflowRunJobsState) promotionReady() (bool, string) {
 		return false, "github workflow run has non-success jobs"
 	}
 	return true, ""
+}
+
+func (s githubWorkflowRunJobsState) jobResult(jobID int64) (status, conclusion string, ok bool) {
+	status, ok = s.JobStatuses[jobID]
+	if !ok {
+		return "", "", false
+	}
+	return status, s.JobConclusions[jobID], true
 }
 
 func (r *GitHubRunner) refreshWorkflowRunJobs(ctx context.Context, identity RunnerExecutionIdentity) (githubWorkflowRunJobsState, error) {
@@ -1250,7 +1260,10 @@ func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref gol
 	}
 	const perPage = 100
 	now := time.Now().UTC()
-	state := githubWorkflowRunJobsState{}
+	state := githubWorkflowRunJobsState{
+		JobStatuses:    make(map[int64]string),
+		JobConclusions: make(map[int64]string),
+	}
 	for page := 1; ; page++ {
 		var resp githubWorkflowRunJobsResponse
 		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), ref.ProviderRunID, perPage, page)
@@ -1263,6 +1276,8 @@ func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref gol
 		for _, job := range resp.Jobs {
 			status := strings.TrimSpace(job.Status)
 			conclusion := strings.TrimSpace(job.Conclusion)
+			state.JobStatuses[job.ID] = status
+			state.JobConclusions[job.ID] = conclusion
 			if status == "completed" {
 				state.Completed++
 				switch conclusion {

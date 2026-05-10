@@ -300,13 +300,22 @@ func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWor
 		attribute.String("filesystem.name", plan.MountName),
 	))
 	defer span.End()
-	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
+	allowed, skipReason, err := s.goldenWorkspaceSealAllowed(ctx, plan, finalExec)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if !allowed {
+		now := time.Now().UTC()
 		_ = s.storeQueries().MarkWorkspaceOperationResultRecorded(ctx, store.MarkWorkspaceOperationResultRecordedParams{
 			FinalState:  "skipped",
-			SealedAt:    pgTime(time.Now().UTC()),
-			RecordedAt:  pgTime(time.Now().UTC()),
+			SealedAt:    pgTime(now),
+			RecordedAt:  pgTime(now),
 			OperationID: plan.OperationID,
 		})
+		_ = s.appendGoldenEvent(ctx, goldenEvent{OperationID: &plan.OperationID, ScopeID: &plan.GoldenScopeID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Name: "golden.component.seal", Result: "skipped", Reason: skipReason})
+		span.SetAttributes(attribute.String("golden.seal_skipped_reason", skipReason))
 		return nil
 	}
 	commit, err := s.Orchestrator.CommitFilesystemMount(ctx, leaseID, plan.OperationID.String()+":commit", plan.OperationID.String(), plan.MountName, plan.GoldenScopeID.String(), plan.SourceSnapshotRef, plan.CandidateGenerationID.String())
@@ -388,6 +397,53 @@ func (s *Service) finalizeGoldenWorkspace(ctx context.Context, item executionWor
 		attribute.Int64("zfs.written_bytes", writtenBytes),
 	)
 	return nil
+}
+
+func (s *Service) goldenWorkspaceSealAllowed(ctx context.Context, plan goldenWorkspacePlan, finalExec vmorchestrator.ExecRecord) (bool, string, error) {
+	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
+		reason := "exec_failed"
+		if strings.TrimSpace(finalExec.TerminalReason) != "" {
+			reason += ": " + strings.TrimSpace(finalExec.TerminalReason)
+		}
+		return false, reason, nil
+	}
+	if plan.Identity.Provider != RunnerProviderGitHub || plan.Identity.ProviderJobID == 0 {
+		return true, "", nil
+	}
+	if s.GitHubRunner == nil {
+		return false, "", fmt.Errorf("github runner is not configured")
+	}
+	ref := goldenRunRefFromRunnerIdentity(plan.Identity)
+	var lastReason string
+	for attempt := 0; attempt < 4; attempt++ {
+		state, err := s.GitHubRunner.refreshWorkflowRunJobsForRun(ctx, ref)
+		if err != nil {
+			return false, "", err
+		}
+		allowed, reason, settled := githubJobAllowsGoldenSeal(state, plan.Identity.ProviderJobID)
+		if settled {
+			return allowed, reason, nil
+		}
+		lastReason = reason
+		if attempt < 3 {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	return false, lastReason, nil
+}
+
+func githubJobAllowsGoldenSeal(state githubWorkflowRunJobsState, providerJobID int64) (allowed bool, reason string, settled bool) {
+	status, conclusion, ok := state.jobResult(providerJobID)
+	if !ok {
+		return false, "github job was not observed", true
+	}
+	if status != "completed" {
+		return false, "github job is not complete", false
+	}
+	if conclusion != "success" {
+		return false, "github job concluded " + firstNonEmpty(conclusion, "without success"), true
+	}
+	return true, "", true
 }
 
 func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowRunJobsState, error) {
