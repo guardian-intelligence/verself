@@ -1094,7 +1094,8 @@ func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) er
 	if s.CH == nil {
 		return nil
 	}
-	spanContext := trace.SpanFromContext(ctx).SpanContext()
+	span := trace.SpanFromContext(ctx)
+	spanContext := span.SpanContext()
 	row := durableEventRow{
 		ObservedAt:            time.Now().UTC(),
 		OrgID:                 event.Identity.OrgID,
@@ -1126,12 +1127,38 @@ func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) er
 	}
 	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO "+s.CHDatabase+".durable_events")
 	if err != nil {
+		s.recordDurableEventInsertFailure(ctx, event, err)
+		span.RecordError(err)
 		return err
 	}
 	if err := batch.AppendStruct(&row); err != nil {
+		s.recordDurableEventInsertFailure(ctx, event, err)
+		span.RecordError(err)
 		return err
 	}
-	return batch.Send()
+	if err := batch.Send(); err != nil {
+		s.recordDurableEventInsertFailure(ctx, event, err)
+		span.RecordError(err)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) recordDurableEventInsertFailure(ctx context.Context, event durableEvent, err error) {
+	if s.Logger == nil || err == nil {
+		return
+	}
+	s.Logger.WarnContext(ctx, "durable event insert failed",
+		"event_name", event.Name,
+		"result", event.Result,
+		"component_kind", event.ComponentKind,
+		"component_name", event.ComponentName,
+		"mount_name", event.MountName,
+		"operation_id", uuidValue(event.OperationID),
+		"execution_id", uuidValue(event.ExecutionID),
+		"attempt_id", uuidValue(event.AttemptID),
+		"error", err,
+	)
 }
 
 func stableUUID(parts ...string) uuid.UUID {
