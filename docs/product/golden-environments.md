@@ -536,6 +536,15 @@ The checkout action is the customer-visible boundary because GitHub Actions
 does not provide a pre-job repository checkout hook with the semantics Verself
 needs.
 
+Dogfood note: the current implementation persists the GitHub `_work` tree. The
+Verself repository's Bazel output root and disk cache currently live under the
+runner user's home directory via `.bazelrc`, outside that durable component.
+The golden workspace path therefore proves instant workspace selection and
+checkout, but it does not by itself make `bazelisk build //...` warm. Bazel
+speedup requires either a durable `tool_cache` component for the Bazel output
+root and disk cache or a CI policy that places those paths under a durable
+mount.
+
 ## Security Model
 
 The security boundary combines trust classes, taint classification, and
