@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "analytics-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/analytics-service/cmd/analytics-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/analytics-service/internal/analytics",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "analytics-service",
+    embed = [":analytics-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "analytics-service_nomad_artifact",
+    binary = ":analytics-service",
+    output = "analytics-service",
+)

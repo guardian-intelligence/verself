@@ -9,7 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mjs ./.output/server/index.mjs",
-    "typecheck": "vp exec tsc -p tsconfig.json"
+    "typecheck": "node ../../scripts/build-telemetry.mjs tsc --project tsconfig.json"
   },
   "dependencies": {
     "@opentelemetry/api": "catalog:",

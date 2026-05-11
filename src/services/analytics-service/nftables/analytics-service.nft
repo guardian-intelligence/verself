@@ -1,0 +1,27 @@
+# Service-owned substrate file.
+# Source: component substrate descriptor
+# nftables ruleset analytics_service.
+table inet verself_analytics_service
+delete table inet verself_analytics_service
+
+table inet verself_analytics_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport 20000-32000 iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != analytics_service accept
+        oifname "lo" tcp dport { 4646, 9440, 4317, 20000-32000 } accept
+        tcp dport 443 accept
+        tcp dport 53 accept
+        udp dport 53 accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

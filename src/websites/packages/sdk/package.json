@@ -49,7 +49,7 @@
   },
   "scripts": {
     "generate": "bazelisk run //src/websites/packages/sdk:dev_update",
-    "typecheck": "vp exec tsc -p tsconfig.json"
+    "typecheck": "node ../../scripts/build-telemetry.mjs tsc --project tsconfig.json"
   },
   "dependencies": {
     "valibot": "catalog:"

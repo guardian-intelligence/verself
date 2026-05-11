@@ -95,6 +95,23 @@ backend be_route_product_apex_verself_web_frontend
   http-response set-header X-Frame-Options DENY
   http-request return status 503 content-type text/plain string "service unavailable"
 
+backend be_route_product_analytics_api_analytics_service_otlp_http
+  guid be_route_product_analytics_api_analytics_service_otlp_http
+  balance random
+  http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+  http-response set-header Cross-Origin-Resource-Policy same-origin
+  http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+  http-response set-header Referrer-Policy no-referrer
+  http-response set-header X-Content-Type-Options nosniff
+  http-response set-header X-Frame-Options DENY
+  http-request return status 404 unless { path /v1/logs }
+  acl has_content_length req.hdr(content-length) -m found
+  acl has_transfer_encoding req.hdr(transfer-encoding) -m found
+  http-request wait-for-body time 1s at-least 1048577 if has_content_length
+  http-request wait-for-body time 1s at-least 1048577 if has_transfer_encoding
+  http-request deny deny_status 413 if { req.body_size gt 1048576 }
+  http-request return status 503 content-type text/plain string "service unavailable"
+
 backend be_route_product_billing_api_billing_public_api
   guid be_route_product_billing_api_billing_public_api
   balance random

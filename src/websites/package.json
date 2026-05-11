@@ -9,7 +9,7 @@
     "check": "vp check",
     "node:temporal": "node --harmony-temporal",
     "typecheck": "vp run -r typecheck && vp run -w typecheck:scripts",
-    "typecheck:scripts": "tsc -p tsconfig.json",
+    "typecheck:scripts": "node scripts/build-telemetry.mjs tsc --project tsconfig.json",
     "test": "vp test run",
     "build": "vp run -r build",
     "ready": "vp check && vp test run && vp run -r typecheck && vp run -w typecheck:scripts && vp run -r build"

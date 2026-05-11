@@ -4,6 +4,7 @@ package workload
 // audit-ledger credential name. Every Verself workload registers with SPIRE
 // under this convention, so peer identities are deterministic from the name.
 const (
+	ServiceAnalytics          = "analytics-service"
 	ServiceBilling            = "billing-service"
 	ServiceClickHouseOperator = "clickhouse-operator"
 	ServiceGrafana            = "grafana"

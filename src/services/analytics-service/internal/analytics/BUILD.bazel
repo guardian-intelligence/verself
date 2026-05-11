@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "analytics",
+    srcs = [
+        "github_oidc.go",
+        "otlp.go",
+        "service.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/analytics-service/internal/analytics",
+    visibility = ["//src/services/analytics-service:__subpackages__"],
+    deps = [
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_coreos_go_oidc_v3//oidc",
+        "@io_opentelemetry_go_proto_otlp//collector/logs/v1:logs",
+        "@io_opentelemetry_go_proto_otlp//common/v1:common",
+        "@io_opentelemetry_go_proto_otlp//resource/v1:resource",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "analytics_test",
+    srcs = ["otlp_test.go"],
+    embed = [":analytics"],
+    deps = [
+        "@io_opentelemetry_go_proto_otlp//collector/logs/v1:logs",
+        "@io_opentelemetry_go_proto_otlp//common/v1:common",
+        "@io_opentelemetry_go_proto_otlp//logs/v1:logs",
+        "@io_opentelemetry_go_proto_otlp//resource/v1:resource",
+    ],
+)

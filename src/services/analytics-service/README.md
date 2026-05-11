@@ -12,9 +12,10 @@ Every observation is a labeled event.
 analytics.recordEvent("build.typecheck", {
   "build.tool": "typescript",
   "build.package": "//src/websites/packages/brand",
-  "typescript.tsbuildinfo.hit": true,
+  "typescript.tsconfig_path": "src/websites/packages/brand/tsconfig.json",
+  "typescript.tsbuildinfo.result": "hit",
   "duration_ms": 184,
-  "status": "ok",
+  "status": "succeeded",
 })
 ```
 
@@ -32,17 +33,15 @@ An event is an immutable fact with a name, timestamp, resource context, trace co
 
 ## OpenTelemetry compatibility
 
-The wire protocol is OTLP/HTTP:
+The wire protocol is OTLP/HTTP. The first private implementation accepts OTLP Logs for `build.*` events:
 
 ```text
 POST /v1/logs
-POST /v1/traces
-POST /v1/metrics
 ```
 
 The primary event path uses OTLP Logs. OpenTelemetry models events as log records with event names, attributes, resource context, and optional trace/span correlation. `recordEvent` is SDK ergonomics over that standard payload shape.
 
-Duration-bearing events may also be represented as spans when causal trace views are useful. Numeric event attributes can be aggregated into metrics by ClickHouse read models. Native OTLP Metrics are accepted only when the dataset policy allows their cardinality and temporality.
+Duration-bearing events may also be represented as spans when causal trace views are useful. Numeric event attributes can be aggregated into metrics by ClickHouse read models. Native OTLP Traces and Metrics should be added only when the dataset policy allows their cardinality and temporality.
 
 References:
 
@@ -124,7 +123,7 @@ Recommended naming:
 build.tool
 build.package
 typescript.version
-typescript.tsbuildinfo.hit
+typescript.tsbuildinfo.result
 duration_ms
 page.path
 user.id_hash
@@ -207,13 +206,14 @@ TypeScript typecheck instrumentation should emit:
 ```text
 event_name = build.typecheck
 build.tool = typescript
-build.package = //src/websites/packages/brand
+build.package = @verself/brand
+typescript.tsconfig_path = packages/brand/tsconfig.json
 typescript.version = 5.9.3
-typescript.tsbuildinfo.hit = true
+typescript.tsbuildinfo.result = hit
 typescript.check_ms = 0
 typescript.total_ms = 180
 duration_ms = 184
-status = ok
+status = succeeded
 ```
 
 Vite/Rolldown, Go, Zig, and Bazel should use their native timing and cache surfaces. The runner service should not encode language-specific behavior. It only provides the execution environment and credentials needed for a job to emit telemetry.

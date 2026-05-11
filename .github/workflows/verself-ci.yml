@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: verself-ci-${{ github.workflow }}-${{ github.ref }}
@@ -88,6 +89,30 @@ jobs:
             echo "${BOOTSTRAP_INSTALL_DIR}"
             echo "${HOME}/.vite-plus/bin"
           } >> "${GITHUB_PATH}"
+
+      - name: Install website dependencies
+        working-directory: src/websites
+        run: vp install --frozen-lockfile
+
+      - name: Website lint telemetry
+        working-directory: src/websites
+        env:
+          VERSELF_ANALYTICS_UPLOAD: required
+        run: node scripts/build-telemetry.mjs vp-run -- -w lint
+
+      - name: Website TypeScript telemetry
+        working-directory: src/websites
+        env:
+          VERSELF_ANALYTICS_UPLOAD: required
+        run: |
+          node scripts/build-telemetry.mjs vp-run -- -r typecheck
+          node scripts/build-telemetry.mjs vp-run -- -w typecheck:scripts
+
+      - name: Website bundle telemetry
+        working-directory: src/websites
+        env:
+          VERSELF_ANALYTICS_UPLOAD: required
+        run: node scripts/build-telemetry.mjs vp-run -- -r build
 
       - name: Build Bazel telemetry wrapper
         run: bazelisk --batch build //src/tools/observability/go/cmd/verself-bazel:verself-bazel
