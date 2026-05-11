@@ -119,7 +119,7 @@ func TestExecutionOutcomeFromGitHubJobResult(t *testing.T) {
 		wantReason string
 	}{
 		{name: "success", status: "completed", conclusion: "success", observed: true, wantState: StateSucceeded, wantCommit: true},
-		{name: "skipped", status: "completed", conclusion: "skipped", observed: true, wantState: StateSucceeded, wantCommit: true},
+		{name: "skipped", status: "completed", conclusion: "skipped", observed: true, wantState: StateFailed, wantReason: "github_job_skipped"},
 		{name: "failure", status: "completed", conclusion: "failure", observed: true, wantState: StateFailed, wantReason: "github_job_failure"},
 		{name: "missing conclusion", status: "completed", observed: true, wantState: StateFailed, wantReason: "github_job_conclusion_missing"},
 		{name: "still running", status: "in_progress", observed: true, wantState: StateFailed, wantReason: "github_job_not_completed: in_progress"},
@@ -139,6 +139,26 @@ func TestExecutionOutcomeFromGitHubJobResult(t *testing.T) {
 			}
 			if !tt.wantCommit && got.SealDecision.SkipReason != tt.wantReason {
 				t.Fatalf("skip reason = %q, want %q", got.SealDecision.SkipReason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestGitHubWorkflowJobResultTerminal(t *testing.T) {
+	tests := []struct {
+		name string
+		in   githubWorkflowJobResult
+		want bool
+	}{
+		{name: "completed observed", in: githubWorkflowJobResult{Status: "completed", Conclusion: "success", Observed: true}, want: true},
+		{name: "completed with whitespace", in: githubWorkflowJobResult{Status: " completed ", Conclusion: "success", Observed: true}, want: true},
+		{name: "in progress", in: githubWorkflowJobResult{Status: "in_progress", Observed: true}},
+		{name: "not observed", in: githubWorkflowJobResult{Status: "completed", Conclusion: "success"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.terminal(); got != tt.want {
+				t.Fatalf("terminal = %t, want %t", got, tt.want)
 			}
 		})
 	}

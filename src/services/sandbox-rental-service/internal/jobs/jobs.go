@@ -67,6 +67,9 @@ const (
 	StateLost       = "lost"
 
 	leaseTTLGraceSeconds = 10 * 60
+
+	githubWorkflowJobTerminalWait = 2 * time.Minute
+	githubWorkflowJobTerminalPoll = 2 * time.Second
 )
 
 var (
@@ -721,18 +724,20 @@ type executionTerminalOutcome struct {
 	SealDecision durableSealDecision
 }
 
-func executionOutcomeFromExec(finalExec vmorchestrator.ExecRecord) executionTerminalOutcome {
-	sealDecision := durableSealDecisionForExec(finalExec)
-	if sealDecision.Commit {
-		return executionTerminalOutcome{State: StateSucceeded, SealDecision: sealDecision}
-	}
-	return executionTerminalOutcome{State: StateFailed, Reason: sealDecision.SkipReason, SealDecision: sealDecision}
+type githubWorkflowJobResult struct {
+	Status     string
+	Conclusion string
+	Observed   bool
 }
 
-func executionOutcomeFromGitHubJobResult(status, conclusion string, observed bool) executionTerminalOutcome {
-	status = strings.TrimSpace(status)
-	conclusion = strings.TrimSpace(conclusion)
-	if !observed {
+func (r githubWorkflowJobResult) terminal() bool {
+	return r.Observed && strings.TrimSpace(r.Status) == "completed"
+}
+
+func (r githubWorkflowJobResult) outcome() executionTerminalOutcome {
+	status := strings.TrimSpace(r.Status)
+	conclusion := strings.TrimSpace(r.Conclusion)
+	if !r.Observed {
 		reason := "github_job_result_missing"
 		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}
 	}
@@ -744,7 +749,7 @@ func executionOutcomeFromGitHubJobResult(status, conclusion string, observed boo
 		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}
 	}
 	switch conclusion {
-	case "success", "skipped":
+	case "success":
 		return executionTerminalOutcome{State: StateSucceeded, SealDecision: durableSealDecision{Commit: true}}
 	case "":
 		reason := "github_job_conclusion_missing"
@@ -755,9 +760,31 @@ func executionOutcomeFromGitHubJobResult(status, conclusion string, observed boo
 	}
 }
 
+func executionOutcomeFromExec(finalExec vmorchestrator.ExecRecord) executionTerminalOutcome {
+	sealDecision := durableSealDecisionForExec(finalExec)
+	if sealDecision.Commit {
+		return executionTerminalOutcome{State: StateSucceeded, SealDecision: sealDecision}
+	}
+	state := StateFailed
+	switch finalExec.State {
+	case vmorchestrator.ExecStateCanceled:
+		state = StateCanceled
+	case vmorchestrator.ExecStateKilledByLeaseExpiry:
+		state = StateLost
+	}
+	return executionTerminalOutcome{State: state, Reason: sealDecision.SkipReason, SealDecision: sealDecision}
+}
+
+func executionOutcomeFromGitHubJobResult(status, conclusion string, observed bool) executionTerminalOutcome {
+	return githubWorkflowJobResult{Status: status, Conclusion: conclusion, Observed: observed}.outcome()
+}
+
 func (s *Service) executionTerminalOutcome(ctx context.Context, item executionWorkItem, finalExec vmorchestrator.ExecRecord) (executionTerminalOutcome, error) {
 	outcome := executionOutcomeFromExec(finalExec)
 	if item.WorkloadKind != WorkloadKindRunner || item.Provider != RunnerProviderGitHub {
+		return outcome, nil
+	}
+	if !outcome.SealDecision.Commit {
 		return outcome, nil
 	}
 	if s.GitHubRunner == nil {
@@ -769,19 +796,55 @@ func (s *Service) executionTerminalOutcome(ctx context.Context, item executionWo
 		reason := durableFailureReason("github_job_identity_failed", err)
 		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, err
 	}
-	jobs, err := s.GitHubRunner.refreshWorkflowRunJobs(ctx, identity)
+	result, pollCount, wait, err := s.waitForGitHubWorkflowJobResult(ctx, identity)
 	if err != nil {
-		reason := durableFailureReason("github_job_result_refresh_failed", err)
+		reason := durableFailureReason("github_job_result_wait_failed", err)
 		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, err
 	}
-	status, conclusion, observed := jobs.jobResult(identity.ProviderJobID)
 	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.Int64("github.job_id", identity.ProviderJobID),
-		attribute.String("github.workflow_job.status", status),
-		attribute.String("github.workflow_job.conclusion", conclusion),
-		attribute.Bool("github.workflow_job.observed", observed),
+		attribute.Int64("github.workflow_run.attempt", identity.ProviderRunAttempt),
+		attribute.String("github.workflow_job.status", result.Status),
+		attribute.String("github.workflow_job.conclusion", result.Conclusion),
+		attribute.Bool("github.workflow_job.observed", result.Observed),
+		attribute.Int("github.workflow_job.poll_count", pollCount),
+		attribute.Int64("github.workflow_job.wait_ms", wait.Milliseconds()),
 	)
-	return executionOutcomeFromGitHubJobResult(status, conclusion, observed), nil
+	return result.outcome(), nil
+}
+
+func (s *Service) waitForGitHubWorkflowJobResult(ctx context.Context, identity RunnerExecutionIdentity) (githubWorkflowJobResult, int, time.Duration, error) {
+	start := time.Now()
+	deadline := start.Add(githubWorkflowJobTerminalWait)
+	var last githubWorkflowJobResult
+	pollCount := 0
+	for {
+		jobs, err := s.GitHubRunner.refreshWorkflowRunJobs(ctx, identity)
+		if err != nil {
+			return last, pollCount, time.Since(start), err
+		}
+		status, conclusion, observed := jobs.jobResult(identity.ProviderJobID)
+		last = githubWorkflowJobResult{Status: status, Conclusion: conclusion, Observed: observed}
+		pollCount++
+		if last.terminal() {
+			return last, pollCount, time.Since(start), nil
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return last, pollCount, time.Since(start), nil
+		}
+		sleep := githubWorkflowJobTerminalPoll
+		if remaining < sleep {
+			sleep = remaining
+		}
+		timer := time.NewTimer(sleep)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return last, pollCount, time.Since(start), ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.UUID) (executionWorkItem, error) {

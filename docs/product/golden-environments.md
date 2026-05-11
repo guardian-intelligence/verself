@@ -74,9 +74,10 @@ not tool-specific cache APIs.
 6. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
 7. Customer steps execute normally and read or write cache paths as ordinary
    directories.
-8. After the provider reports the job completed successfully, vm-bridge
-   attempts to seal each writable durable volume by syncing and unmounting
-   guest mounts.
+8. After the runner exits, sandbox-rental waits for the attempt-specific
+   GitHub workflow job to reach `status=completed` and `conclusion=success`.
+   vm-bridge then attempts to seal each writable durable volume by syncing and
+   unmounting guest mounts.
 9. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
    volume that the guest sealed cleanly.
 10. The service records committed generations observed from the host result.
@@ -106,7 +107,8 @@ Verself differences:
 - Protected branch promotion is gated by the provider workflow result, not by a
   single job's local exit code.
 - Seal and commit eligibility for GitHub Actions jobs is gated by the GitHub
-  workflow-job conclusion, not by the actions-runner process exit code.
+  workflow-job conclusion for the observed run attempt, not by the
+  actions-runner process exit code.
 - Cache volumes are ZFS-backed block devices attached to Firecracker guests,
   not archive uploads or downloads.
 
@@ -288,10 +290,13 @@ vm-orchestrator commit procedure after guest seal succeeds:
 5. Create `@sealed` on the promoted generation.
 6. Return snapshot reference, used bytes, written bytes, and commit time.
 
-Seal eligibility and product promotion are separate service decisions. Failed,
-cancelled, lease-expired, and provider-non-success executions skip seal and
-commit. A successful non-promotable execution may still commit a retained
-generation, but it cannot advance a protected branch current pointer.
+Seal eligibility and product promotion are separate service decisions.
+Sandbox-rental waits briefly for GitHub's attempt-specific workflow-job result
+after the local runner exits so the provider terminal state, not GitHub API
+propagation timing, decides seal eligibility. Failed, cancelled, lease-expired,
+and provider-non-success executions skip seal and commit. A successful
+non-promotable execution may still commit a retained generation, but it cannot
+advance a protected branch current pointer.
 
 Ambiguous seal states skip promotion:
 

@@ -41,9 +41,10 @@ acquisition rather than a guest-originated side effect.
 
 ## Commit
 
-After sandbox-rental has verified that the provider job result is successful,
-it may ask vm-orchestrator to commit a named writable filesystem mount. The
-commit path:
+After sandbox-rental has verified that the attempt-specific provider job result
+is successful, it may ask vm-orchestrator to commit a named writable filesystem
+mount. GitHub runner jobs are gated on the workflow-job terminal conclusion
+after the local runner process exits. The commit path:
 
 1. Seals the guest mount through vm-bridge.
 2. Flushes the host block device.

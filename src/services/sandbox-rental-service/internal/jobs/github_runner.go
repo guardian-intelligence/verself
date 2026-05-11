@@ -1254,6 +1254,9 @@ func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref gol
 	if ref.ProviderRunID <= 0 {
 		return githubWorkflowRunJobsState{}, fmt.Errorf("github provider run id is required")
 	}
+	if ref.ProviderRunAttempt <= 0 {
+		return githubWorkflowRunJobsState{}, fmt.Errorf("github provider run attempt is required")
+	}
 	token, err := r.installationToken(ctx, ref.ProviderInstallationID)
 	if err != nil {
 		return githubWorkflowRunJobsState{}, err
@@ -1266,7 +1269,7 @@ func (r *GitHubRunner) refreshWorkflowRunJobsForRun(ctx context.Context, ref gol
 	}
 	for page := 1; ; page++ {
 		var resp githubWorkflowRunJobsResponse
-		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), ref.ProviderRunID, perPage, page)
+		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/attempts/%d/jobs?per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), ref.ProviderRunID, ref.ProviderRunAttempt, perPage, page)
 		if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
 			return githubWorkflowRunJobsState{}, err
 		}
