@@ -45,6 +45,26 @@ filegroup(
 )
 
 filegroup(
+    name = "workspace_install_inputs",
+    srcs = [
+        ".npmrc",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "//src/websites/apps/company:package_manifest",
+        "//src/websites/apps/verself-web:package_manifest",
+        "//src/websites/packages/auth-web:package_manifest",
+        "//src/websites/packages/brand:package_manifest",
+        "//src/websites/packages/nitro-plugins:package_manifest",
+        "//src/websites/packages/sdk:package_manifest",
+        "//src/websites/packages/ui:package_manifest",
+        "//src/websites/packages/web-env:package_manifest",
+    ] + glob([
+        "patches/**/*",
+    ]),
+)
+
+filegroup(
     name = "workspace_sbom_sources",
     srcs = [
         ".npmrc",

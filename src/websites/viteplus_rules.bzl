@@ -21,14 +21,15 @@ def viteplus_workspace_install(name):
     """Materialize the Vite+ workspace dependency tree through Bazel.
 
     The app build still runs as a source-tree action because TanStack Start's
-    route splitting is sensitive to sandbox path layout. This target makes the
-    dependency install an explicit input of every packaged frontend artifact, so
-    deploy orchestration does not perform a hidden `vp install` preflight.
+    route splitting is sensitive to sandbox path layout. This target keys the
+    dependency install on package-manager inputs and makes it an explicit input
+    of every packaged frontend artifact, so deploy orchestration does not
+    perform a hidden `vp install` preflight.
     """
     native.genrule(
         name = name,
         srcs = [
-            ":workspace_sources",
+            ":workspace_install_inputs",
         ],
         outs = [name + ".stamp"],
         cmd = """
@@ -85,6 +86,11 @@ def viteplus_source_package(npm_name, srcs, name = "pkg"):
         ),
     )
 
+    native.filegroup(
+        name = "package_manifest",
+        srcs = ["package.json"],
+    )
+
     npm_package(
         name = name,
         srcs = [":sources"],
@@ -131,6 +137,11 @@ def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
             allow_empty = True,
             exclude = ["**/__generated/**"],
         ),
+    )
+
+    native.filegroup(
+        name = "package_manifest",
+        srcs = ["package.json"],
     )
 
     # Bundle `instrumentation.mts` (the OTel preload) into a self-contained
