@@ -87,6 +87,7 @@ Idempotent: short-circuits when the existing binary already matches the pinned s
 | `aspect deploy` | Run the canonical deploy path from authored inputs (`--site`, `--sha`). |
 | `aspect check` | Run a verification gate (`--kind=go-test\|go-vet\|go-lint\|conversions\|ansible\|supply-chain\|all`). |
 | `aspect observe` | Discover or query telemetry (`--what catalog\|queries\|describe\|metric\|trace\|logs\|http\|service\|errors\|mail\|deploy\|supply-chain\|workload-identity\|temporal`). |
+| `aspect tidy` | Run repo-wide source formatting and metadata tidying (vp, gofumpt + `go mod tidy`, buildifier, gazelle, `bazelisk mod tidy`). |
 | `aspect detect-intrusions` | Scan `verself.host_auth_events` for accepted SSH sessions that bypassed Pomerium. |
 
 ### `aspect provision`
@@ -172,32 +173,20 @@ Naming is deliberately split: `--product-id=sandbox` is the product catalog/mete
 
 | Task | Description |
 | --- | --- |
-| `list` | List recent emails (defaults to agents inbox). |
-| `accounts` | List synced mailbox accounts. |
-| `mailboxes` | List mailboxes for an account (defaults to agents). |
-| `read` | Read a specific email by ID (get IDs from `aspect mail list`). |
-| `code` | Extract latest 2FA/verification code (defaults to agents). |
 | `send` | Send via Resend (e.g. `--to=agents --subject=hello --body='...'`). |
 | `passwords` | Print Stalwart mailbox passwords for ceo and agents. |
 
-### `aspect artifacts`
-
-Supply-chain admission and content-addressed artifact publishing.
+### `aspect actions`
 
 | Task | Description |
 | --- | --- |
-| `publish` | Build and publish content-addressed Nomad artifacts to private Garage. |
-| `inventory` | Inventory supply-chain install/fetch paths or render the artifact policy. |
-| `evidence` | Assert deploy-time supply-chain rows and spans exist in ClickHouse. |
-| `admission-evidence` | Assert artifact admission/install rows and spans exist in ClickHouse. |
+| `publish` | Publish a repo-owned GitHub Action distribution to its public action repository (`--name`, `--repo`, `--ref`). |
 
-Artifact admission and install verification are deploy-flow internals. The
-operator-facing checks assert the ClickHouse evidence emitted by that flow.
-The supply-chain policy is generated output and lives under
-`src/host/supply-chain/__generated/policy.json` (gitignored).
-Supply-chain checks regenerate it on demand if missing; rerun
-`aspect artifacts inventory --format=policy --write-policy=src/host/supply-chain/__generated/policy.json`
-after changing inventory inputs.
+### `aspect canary`
+
+| Task | Description |
+| --- | --- |
+| `service-discovery` | Drive billing → IAM traffic through the runtime catalog resolver on the host and fail loud on any 5xx or dial error. |
 
 ### `aspect bazel`
 
