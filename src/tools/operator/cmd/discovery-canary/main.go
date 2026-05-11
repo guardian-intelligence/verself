@@ -21,6 +21,8 @@ import (
 
 	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
+	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -39,6 +41,10 @@ type result struct {
 	FailureRequests  int64         `json:"failure_requests"`
 	NetworkErrors    int64         `json:"network_errors"`
 	StatusCounts     map[int]int64 `json:"status_counts"`
+	AuthzChecks      int64         `json:"authz_checks"`
+	AuthzAllowed     int64         `json:"authz_allowed"`
+	AuthzDenied      int64         `json:"authz_denied"`
+	AuthzErrors      int64         `json:"authz_errors"`
 	ZeroDowntime     bool          `json:"zero_downtime"`
 	LatencyP50Millis int64         `json:"latency_p50_ms"`
 	LatencyP95Millis int64         `json:"latency_p95_ms"`
@@ -62,6 +68,10 @@ func run() error {
 	slugFlag := flag.String("slug", "platform", "Org slug to resolve. 404 still counts as a successful round-trip.")
 	format := flag.String("format", "json", "Output format: json | table.")
 	spiffeSocket := flag.String("spiffe-socket", "unix:///run/spire-agent/sockets/agent.sock", "SPIFFE workload API socket address.")
+	authzProbe := flag.Bool("authz-probe", true, "Also call the generated IAM operation authorizer with a typed policy.")
+	authzOrgID := flag.String("authz-org-id", "1", "Organization ID used for the authorization probe.")
+	authzSubject := flag.String("authz-subject", "discovery-canary", "Subject ID used for the authorization probe.")
+	authzPermission := flag.String("authz-permission", "iam:organization:read", "Known IAM permission used for the authorization probe.")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -90,6 +100,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("iam client: %w", err)
 	}
+	authorizer := iamclient.NewAuthorizer(iam)
 	slug := slugFlag
 
 	startedAt := time.Now()
@@ -101,13 +112,17 @@ func run() error {
 	}
 
 	var (
-		total     atomic.Int64
-		success   atomic.Int64
-		failure   atomic.Int64
-		netErrors atomic.Int64
-		latencies = newLatencyRecorder()
-		statuses  = newStatusRecorder()
-		firstErr  atomic.Value
+		total        atomic.Int64
+		success      atomic.Int64
+		failure      atomic.Int64
+		netErrors    atomic.Int64
+		authzTotal   atomic.Int64
+		authzAllowed atomic.Int64
+		authzDenied  atomic.Int64
+		authzErrors  atomic.Int64
+		latencies    = newLatencyRecorder()
+		statuses     = newStatusRecorder()
+		firstErr     atomic.Value
 	)
 
 	work := make(chan struct{}, *concurrency*2)
@@ -137,6 +152,27 @@ func run() error {
 					continue
 				}
 				success.Add(1)
+				if *authzProbe {
+					authzCtx, authzCancel := context.WithTimeout(ctx, *timeout)
+					decision, err := authorizer.AuthorizeOperation(authzCtx, &auth.Identity{
+						Subject: *authzSubject,
+						OrgID:   *authzOrgID,
+					}, runtimeiam.OperationPolicy{
+						Permission: runtimeiam.Permission(*authzPermission),
+					})
+					authzCancel()
+					authzTotal.Add(1)
+					if err != nil {
+						authzErrors.Add(1)
+						firstErr.CompareAndSwap(nil, "authorize: "+err.Error())
+						continue
+					}
+					if decision.Allowed {
+						authzAllowed.Add(1)
+					} else {
+						authzDenied.Add(1)
+					}
+				}
 			}
 		}()
 	}
@@ -177,7 +213,11 @@ loop:
 		FailureRequests:  failure.Load(),
 		NetworkErrors:    netErrors.Load(),
 		StatusCounts:     statuses.snapshot(),
-		ZeroDowntime:     failure.Load() == 0 && total.Load() > 0,
+		AuthzChecks:      authzTotal.Load(),
+		AuthzAllowed:     authzAllowed.Load(),
+		AuthzDenied:      authzDenied.Load(),
+		AuthzErrors:      authzErrors.Load(),
+		ZeroDowntime:     failure.Load() == 0 && total.Load() > 0 && authzErrors.Load() == 0,
 		LatencyP50Millis: p50.Milliseconds(),
 		LatencyP95Millis: p95.Milliseconds(),
 		LatencyP99Millis: p99.Milliseconds(),
@@ -210,6 +250,7 @@ func printTable(r result) {
 	fmt.Fprintf(w, "  success         %d\n", r.SuccessRequests)
 	fmt.Fprintf(w, "  failure (5xx)   %d\n", r.FailureRequests-r.NetworkErrors)
 	fmt.Fprintf(w, "  network errors  %d\n", r.NetworkErrors)
+	fmt.Fprintf(w, "  authz checks    %d allowed=%d denied=%d errors=%d\n", r.AuthzChecks, r.AuthzAllowed, r.AuthzDenied, r.AuthzErrors)
 	fmt.Fprintf(w, "  zero-downtime   %v\n", r.ZeroDowntime)
 	fmt.Fprintf(w, "  latency p50/p95/p99/max  %dms / %dms / %dms / %dms\n",
 		r.LatencyP50Millis, r.LatencyP95Millis, r.LatencyP99Millis, r.LatencyMaxMillis)
@@ -286,4 +327,3 @@ func (s *statusRecorder) snapshot() map[int]int64 {
 	}
 	return out
 }
-
