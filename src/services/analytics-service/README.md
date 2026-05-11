@@ -12,8 +12,8 @@ Every observation is a labeled event.
 analytics.recordEvent("build.typecheck", {
   "build.tool": "typescript",
   "build.package": "//src/websites/packages/brand",
-  "typescript.tsconfig_path": "src/websites/packages/brand/tsconfig.json",
-  "typescript.tsbuildinfo.result": "hit",
+  "build.config_path": "src/websites/packages/brand/tsconfig.json",
+  "cache.result": "hit",
   "duration_ms": 184,
   "status": "succeeded",
 })
@@ -122,8 +122,8 @@ Recommended naming:
 ```text
 build.tool
 build.package
-typescript.version
-typescript.tsbuildinfo.result
+build.config_path
+cache.result
 duration_ms
 page.path
 user.id_hash
@@ -201,22 +201,20 @@ The browser SDK should not require customers to understand OpenTelemetry. It exp
 
 Build tooling is a first internal use case.
 
-TypeScript typecheck instrumentation should emit:
+Build-tool integrations should live at the build-tool boundary and emit generic build labels:
 
 ```text
 event_name = build.typecheck
 build.tool = typescript
 build.package = @verself/brand
-typescript.tsconfig_path = packages/brand/tsconfig.json
-typescript.version = 5.9.3
-typescript.tsbuildinfo.result = hit
-typescript.check_ms = 0
-typescript.total_ms = 180
+build.config_path = packages/brand/tsconfig.json
+cache.source = native-tool-cache
+cache.result = hit
 duration_ms = 184
 status = succeeded
 ```
 
-Vite/Rolldown, Go, Zig, and Bazel should use their native timing and cache surfaces. The runner service should not encode language-specific behavior. It only provides the execution environment and credentials needed for a job to emit telemetry.
+Tool-specific facts remain attributes under tool-owned prefixes. Vite/Rolldown, TypeScript, Go, Zig, and Bazel should use their native timing and cache surfaces. The runner service and analytics service should not encode language-specific behavior. They provide execution, authentication, policy, and storage for events emitted by the build boundary.
 
 ## Responses
 

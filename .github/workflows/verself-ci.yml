@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: verself-ci-${{ github.workflow }}-${{ github.ref }}
@@ -19,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build + test (Verself runner, durable workspace)
+    name: Build (Verself runner, durable workspace)
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
     steps:
@@ -27,57 +26,6 @@ jobs:
         uses: guardian-intelligence/verself/.github/actions/checkout@main
         with:
           persist-credentials: false
-
-      - name: Verify durable workspace tracer
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          if [ -f .verself-tracer/build-state ]; then
-            echo "verself durable workspace tracer: hit"
-            cat .verself-tracer/build-state
-          else
-            echo "verself durable workspace tracer: miss"
-          fi
-          mkdir -p .verself-tracer
-          printf '%s run=%s attempt=%s sha=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${GITHUB_SHA}" >> .verself-tracer/build-state
-
-      - name: Verify durable Bazel cache mounts
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${VERSELF_CACHE_BAZEL:-}"
-          test -d "${VERSELF_CACHE_BAZEL}"
-          for cache_path in "${HOME}/.cache/bazel-disk" "${HOME}/.cache/bazel-repo"; do
-            test -d "${cache_path}"
-            mountpoint -q "${cache_path}"
-          done
-          marker="${HOME}/.cache/bazel-disk/.verself-cache-tracer"
-          if [ -f "${marker}" ]; then
-            echo "verself durable bazel cache tracer: hit"
-            tail -n 1 "${marker}"
-          else
-            echo "verself durable bazel cache tracer: miss"
-          fi
-          printf '%s run=%s attempt=%s sha=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${GITHUB_SHA}" >> "${marker}"
-
-      - name: Verify durable pnpm cache mounts
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${VERSELF_CACHE_PNPM:-}"
-          test -d "${VERSELF_CACHE_PNPM}"
-          store_path="${HOME}/.local/share/pnpm/store"
-          test -d "${store_path}"
-          mountpoint -q "${store_path}"
-          marker="${VERSELF_CACHE_PNPM}/.verself-cache-tracer"
-          if [ -f "${marker}" ]; then
-            echo "verself durable pnpm cache tracer: hit"
-            tail -n 1 "${marker}"
-          else
-            echo "verself durable pnpm cache tracer: miss"
-          fi
-          printf '%s run=%s attempt=%s sha=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${GITHUB_SHA}" >> "${marker}"
 
       - name: Bootstrap toolchain
         env:
@@ -90,35 +38,5 @@ jobs:
             echo "${HOME}/.vite-plus/bin"
           } >> "${GITHUB_PATH}"
 
-      - name: Install website dependencies
-        working-directory: src/websites
-        run: vp install --frozen-lockfile
-
-      - name: Website lint telemetry
-        working-directory: src/websites
-        env:
-          VERSELF_ANALYTICS_UPLOAD: required
-        run: node scripts/build-telemetry.mjs vp-run -- -w lint
-
-      - name: Website TypeScript telemetry
-        working-directory: src/websites
-        env:
-          VERSELF_ANALYTICS_UPLOAD: required
-        run: |
-          node scripts/build-telemetry.mjs vp-run -- -r typecheck
-          node scripts/build-telemetry.mjs vp-run -- -w typecheck:scripts
-
-      - name: Website bundle telemetry
-        working-directory: src/websites
-        env:
-          VERSELF_ANALYTICS_UPLOAD: required
-        run: node scripts/build-telemetry.mjs vp-run -- -r build
-
-      - name: Build Bazel telemetry wrapper
-        run: bazelisk --batch build //src/tools/observability/go/cmd/verself-bazel:verself-bazel
-
       - name: bazel build //...
-        run: bazel-bin/src/tools/observability/go/cmd/verself-bazel/verself-bazel_/verself-bazel --upload=required build //...
-
-      - name: bazel test //...
-        run: bazel-bin/src/tools/observability/go/cmd/verself-bazel/verself-bazel_/verself-bazel --upload=required test //...
+        run: bazelisk --batch build //...

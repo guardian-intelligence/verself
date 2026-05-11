@@ -10,7 +10,3 @@ cache:
     size: 40GiB
     paths:
       - ~/.local/share/pnpm/store
-  - name: web-build
-    size: 10GiB
-    paths:
-      - ~/.cache/verself-web

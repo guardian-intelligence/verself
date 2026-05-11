@@ -16,7 +16,7 @@ func TestRowsFromLogsPromotesBuildLabels(t *testing.T) {
 		ResourceLogs: []*logrecordpb.ResourceLogs{{
 			Resource: &resourcepb.Resource{
 				Attributes: []*commonpb.KeyValue{
-					stringAttr("service.name", "verself-build-telemetry"),
+					stringAttr("service.name", "verself-build-tools"),
 					stringAttr("service.version", "0.1.0"),
 				},
 			},
@@ -27,8 +27,8 @@ func TestRowsFromLogsPromotesBuildLabels(t *testing.T) {
 					Attributes: []*commonpb.KeyValue{
 						stringAttr("build.tool", "typescript"),
 						stringAttr("build.package", "@verself/brand"),
-						stringAttr("typescript.tsconfig_path", "packages/brand/tsconfig.json"),
-						stringAttr("typescript.tsbuildinfo.result", "hit"),
+						stringAttr("build.config_path", "packages/brand/tsconfig.json"),
+						stringAttr("cache.result", "hit"),
 						intAttr("duration_ms", 42),
 					},
 				}},

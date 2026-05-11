@@ -111,9 +111,6 @@ func rowFromLogRecord(
 	}
 	eventID := firstNonEmpty(attrs.Strings["event.id"], randomHex(16))
 	durationMs := uint64FromAttributes(attrs, "duration_ms")
-	configPath := firstNonEmpty(attrs.Strings["build.config_path"], attrs.Strings["typescript.tsconfig_path"], attrs.Strings["vite.config_path"])
-	cacheSource := firstNonEmpty(attrs.Strings["cache.source"], attrs.Strings["viteplus.cache.source"], attrs.Strings["typescript.tsbuildinfo.source"])
-	cacheResult := firstNonEmpty(attrs.Strings["cache.result"], attrs.Strings["viteplus.cache.result"], attrs.Strings["typescript.tsbuildinfo.result"])
 	return EventRow{
 		EventDate:          observedAt.Truncate(24 * time.Hour),
 		ObservedAt:         observedAt,
@@ -138,11 +135,11 @@ func rowFromLogRecord(
 		BuildTool:          attrs.Strings["build.tool"],
 		BuildPackage:       attrs.Strings["build.package"],
 		BuildCommand:       attrs.Strings["build.command"],
-		BuildTarget:        firstNonEmpty(attrs.Strings["build.target"], attrs.Strings["bazel.target_label"]),
-		ConfigPath:         configPath,
-		CacheSource:        cacheSource,
-		CacheResult:        cacheResult,
-		CacheReason:        firstNonEmpty(attrs.Strings["cache.reason"], attrs.Strings["viteplus.cache.reason"]),
+		BuildTarget:        attrs.Strings["build.target"],
+		ConfigPath:         attrs.Strings["build.config_path"],
+		CacheSource:        attrs.Strings["cache.source"],
+		CacheResult:        attrs.Strings["cache.result"],
+		CacheReason:        attrs.Strings["cache.reason"],
 		Status:             attrs.Strings["status"],
 		DurationMs:         durationMs,
 		StringAttributes:   attrs.Strings,

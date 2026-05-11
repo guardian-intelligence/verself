@@ -31,7 +31,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "typecheck": "node ../../scripts/build-telemetry.mjs tsc --project tsconfig.json"
+    "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
     "@base-ui/react": "catalog:",

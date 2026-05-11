@@ -10,7 +10,7 @@
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mjs ./.output/server/index.mjs",
     "generate": "bazelisk run //src/websites/apps/verself-web:dev_update",
-    "typecheck": "node ../../scripts/build-telemetry.mjs tsc --project tsconfig.json"
+    "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
     "@opentelemetry/api": "catalog:",
