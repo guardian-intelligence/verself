@@ -72,10 +72,7 @@ jobs:
           } >> "${GITHUB_PATH}"
 
       - name: Build Bazel telemetry wrapper
-        run: bazelisk build //src/tools/observability/go/cmd/verself-bazel:verself-bazel
-
-      - name: Restart Bazel server
-        run: bazelisk shutdown
+        run: bazelisk --batch build //src/tools/observability/go/cmd/verself-bazel:verself-bazel
 
       - name: bazel build //...
         run: bazel-bin/src/tools/observability/go/cmd/verself-bazel/verself-bazel_/verself-bazel --upload=required build //...
