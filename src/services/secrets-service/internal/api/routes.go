@@ -10,11 +10,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	dto "github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.OperationAuthorizer) {
+func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.OperationAuthorizer, installationID string) {
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "put-secret",
 		Method:        http.MethodPut,
@@ -35,7 +36,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "write",
 		OpenBaoRole:     "secrets-direct-put-secret",
 		BillingSKU:      billingSKUSecretsKV,
-	}), putSecret(svc, secrets.KindSecret))
+	}), putSecret(svc, secrets.KindSecret, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "read-secret",
@@ -54,7 +55,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "read",
 		OpenBaoRole:     "secrets-direct-read-secret",
 		BillingSKU:      billingSKUSecretsKV,
-	}), readSecret(svc, secrets.KindSecret))
+	}), readSecret(svc, secrets.KindSecret, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-secrets",
@@ -73,7 +74,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "list",
 		OpenBaoRole:     "secrets-direct-list-secrets",
 		BillingSKU:      billingSKUSecretsKV,
-	}), listSecrets(svc, secrets.KindSecret))
+	}), listSecrets(svc, secrets.KindSecret, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "resolve-secrets",
@@ -93,7 +94,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "read",
 		OpenBaoRole:     "secrets-direct-read-secret",
 		BillingSKU:      billingSKUSecretsKV,
-	}), resolveSecrets(svc, secrets.KindSecret))
+	}), resolveSecrets(svc, secrets.KindSecret, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "delete-secret",
@@ -114,7 +115,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "delete",
 		OpenBaoRole:     "secrets-direct-delete-secret",
 		BillingSKU:      billingSKUSecretsKV,
-	}), deleteSecret(svc, secrets.KindSecret))
+	}), deleteSecret(svc, secrets.KindSecret, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "put-variable",
@@ -136,7 +137,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "write",
 		OpenBaoRole:     "secrets-direct-put-variable",
 		BillingSKU:      billingSKUSecretsKV,
-	}), putVariable(svc))
+	}), putVariable(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "read-variable",
@@ -155,7 +156,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "read",
 		OpenBaoRole:     "secrets-direct-read-variable",
 		BillingSKU:      billingSKUSecretsKV,
-	}), readVariable(svc))
+	}), readVariable(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-variables",
@@ -174,7 +175,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "list",
 		OpenBaoRole:     "secrets-direct-list-variables",
 		BillingSKU:      billingSKUSecretsKV,
-	}), listVariables(svc))
+	}), listVariables(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "delete-variable",
@@ -195,7 +196,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "delete",
 		OpenBaoRole:     "secrets-direct-delete-variable",
 		BillingSKU:      billingSKUSecretsKV,
-	}), deleteVariable(svc))
+	}), deleteVariable(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "create-opaque-credential",
@@ -217,7 +218,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "credential_create",
 		OpenBaoRole:     "secrets-direct-create-credential",
 		BillingSKU:      billingSKUSecretsCredential,
-	}), createOpaqueCredential(svc))
+	}), createOpaqueCredential(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "get-opaque-credential",
@@ -236,7 +237,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "credential_read",
 		OpenBaoRole:     "secrets-direct-read-credential",
 		BillingSKU:      billingSKUSecretsCredential,
-	}), getOpaqueCredential(svc))
+	}), getOpaqueCredential(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-opaque-credentials",
@@ -255,7 +256,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "credential_list",
 		OpenBaoRole:     "secrets-direct-list-credentials",
 		BillingSKU:      billingSKUSecretsCredential,
-	}), listOpaqueCredentials(svc))
+	}), listOpaqueCredentials(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "roll-opaque-credential",
@@ -276,7 +277,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "credential_roll",
 		OpenBaoRole:     "secrets-direct-roll-credential",
 		BillingSKU:      billingSKUSecretsCredential,
-	}), rollOpaqueCredential(svc))
+	}), rollOpaqueCredential(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "revoke-opaque-credential",
@@ -297,7 +298,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "credential_revoke",
 		OpenBaoRole:     "secrets-direct-revoke-credential",
 		BillingSKU:      billingSKUSecretsCredential,
-	}), revokeOpaqueCredential(svc))
+	}), revokeOpaqueCredential(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID:   "create-transit-key",
@@ -319,7 +320,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "key_create",
 		OpenBaoRole:     "secrets-direct-create-transit-key",
 		BillingSKU:      billingSKUSecretsTransit,
-	}), createTransitKey(svc))
+	}), createTransitKey(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "rotate-transit-key",
@@ -340,7 +341,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 		SecretOperation: "key_rotate",
 		OpenBaoRole:     "secrets-direct-rotate-transit-key",
 		BillingSKU:      billingSKUSecretsTransit,
-	}), rotateTransitKey(svc))
+	}), rotateTransitKey(svc, installationID))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "encrypt-with-transit-key",
@@ -534,16 +535,17 @@ type opaqueCredentialsOutput struct {
 }
 
 type SecretDTO struct {
-	SecretID       string `json:"secret_id"`
-	Kind           string `json:"kind"`
-	Name           string `json:"name"`
-	ScopeLevel     string `json:"scope_level"`
-	SourceID       string `json:"source_id,omitempty"`
-	EnvID          string `json:"env_id,omitempty"`
-	Branch         string `json:"branch,omitempty"`
-	CurrentVersion string `json:"current_version"`
-	CreatedAt      string `json:"created_at" format:"date-time"`
-	UpdatedAt      string `json:"updated_at" format:"date-time"`
+	SecretID       string           `json:"secret_id"`
+	ResourceName   dto.ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this secret."`
+	Kind           string           `json:"kind"`
+	Name           string           `json:"name"`
+	ScopeLevel     string           `json:"scope_level"`
+	SourceID       string           `json:"source_id,omitempty"`
+	EnvID          string           `json:"env_id,omitempty"`
+	Branch         string           `json:"branch,omitempty"`
+	CurrentVersion string           `json:"current_version"`
+	CreatedAt      string           `json:"created_at" format:"date-time"`
+	UpdatedAt      string           `json:"updated_at" format:"date-time"`
 }
 
 type SecretValueDTO struct {
@@ -560,16 +562,17 @@ type ResolvedSecretsDTO struct {
 }
 
 type VariableDTO struct {
-	VariableID     string `json:"variable_id"`
-	Kind           string `json:"kind"`
-	Name           string `json:"name"`
-	ScopeLevel     string `json:"scope_level"`
-	SourceID       string `json:"source_id,omitempty"`
-	EnvID          string `json:"env_id,omitempty"`
-	Branch         string `json:"branch,omitempty"`
-	CurrentVersion string `json:"current_version"`
-	CreatedAt      string `json:"created_at" format:"date-time"`
-	UpdatedAt      string `json:"updated_at" format:"date-time"`
+	VariableID     string           `json:"variable_id"`
+	ResourceName   dto.ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this variable."`
+	Kind           string           `json:"kind"`
+	Name           string           `json:"name"`
+	ScopeLevel     string           `json:"scope_level"`
+	SourceID       string           `json:"source_id,omitempty"`
+	EnvID          string           `json:"env_id,omitempty"`
+	Branch         string           `json:"branch,omitempty"`
+	CurrentVersion string           `json:"current_version"`
+	CreatedAt      string           `json:"created_at" format:"date-time"`
+	UpdatedAt      string           `json:"updated_at" format:"date-time"`
 }
 
 type VariableValueDTO struct {
@@ -596,6 +599,7 @@ type RollOpaqueCredentialBody struct {
 
 type OpaqueCredentialDTO struct {
 	CredentialID   string            `json:"credential_id" format:"uuid"`
+	ResourceName   dto.ResourceName  `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this opaque credential."`
 	OrgID          string            `json:"org_id"`
 	Kind           string            `json:"kind"`
 	Subject        string            `json:"subject"`
@@ -621,7 +625,7 @@ type OpaqueCredentialsDTO struct {
 	Credentials []OpaqueCredentialDTO `json:"credentials"`
 }
 
-func putSecret(svc *secrets.Service, kind string) func(context.Context, secrets.Principal, *putSecretInput) (*secretOutput, error) {
+func putSecret(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *putSecretInput) (*secretOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *putSecretInput) (*secretOutput, error) {
 		record, err := svc.PutSecret(ctx, principal, secrets.PutSecretRequest{
 			Kind: kind,
@@ -637,11 +641,11 @@ func putSecret(svc *secrets.Service, kind string) func(context.Context, secrets.
 		if err != nil {
 			return nil, err
 		}
-		return &secretOutput{Body: secretDTO(record)}, nil
+		return &secretOutput{Body: secretDTO(record, installationID)}, nil
 	}
 }
 
-func readSecret(svc *secrets.Service, kind string) func(context.Context, secrets.Principal, *readSecretInput) (*secretValueOutput, error) {
+func readSecret(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *readSecretInput) (*secretValueOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *readSecretInput) (*secretValueOutput, error) {
 		value, err := svc.ReadSecret(ctx, principal, kind, input.Name, secrets.Scope{
 			Level:    input.ScopeLevel,
@@ -652,12 +656,12 @@ func readSecret(svc *secrets.Service, kind string) func(context.Context, secrets
 		if err != nil {
 			return nil, err
 		}
-		dto := secretDTO(value.Record)
-		return &secretValueOutput{Body: SecretValueDTO{SecretDTO: dto, Value: value.Value}}, nil
+		secret := secretDTO(value.Record, installationID)
+		return &secretValueOutput{Body: SecretValueDTO{SecretDTO: secret, Value: value.Value}}, nil
 	}
 }
 
-func listSecrets(svc *secrets.Service, kind string) func(context.Context, secrets.Principal, *listSecretsInput) (*secretsOutput, error) {
+func listSecrets(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *listSecretsInput) (*secretsOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *listSecretsInput) (*secretsOutput, error) {
 		records, err := svc.ListSecrets(ctx, principal, kind, input.Limit)
 		if err != nil {
@@ -665,13 +669,13 @@ func listSecrets(svc *secrets.Service, kind string) func(context.Context, secret
 		}
 		out := SecretsDTO{Secrets: make([]SecretDTO, 0, len(records))}
 		for _, record := range records {
-			out.Secrets = append(out.Secrets, secretDTO(record))
+			out.Secrets = append(out.Secrets, secretDTO(record, installationID))
 		}
 		return &secretsOutput{Body: out}, nil
 	}
 }
 
-func resolveSecrets(svc *secrets.Service, kind string) func(context.Context, secrets.Principal, *resolveSecretsInput) (*resolvedSecretsOutput, error) {
+func resolveSecrets(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *resolveSecretsInput) (*resolvedSecretsOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *resolveSecretsInput) (*resolvedSecretsOutput, error) {
 		values, err := svc.ResolveSecrets(ctx, principal, kind, secrets.Scope{
 			Level:    input.Body.ScopeLevel,
@@ -684,8 +688,8 @@ func resolveSecrets(svc *secrets.Service, kind string) func(context.Context, sec
 		}
 		out := ResolvedSecretsDTO{Values: make([]SecretValueDTO, 0, len(values))}
 		for _, value := range values {
-			dto := secretDTO(value.Record)
-			out.Values = append(out.Values, SecretValueDTO{SecretDTO: dto, Value: value.Value})
+			secret := secretDTO(value.Record, installationID)
+			out.Values = append(out.Values, SecretValueDTO{SecretDTO: secret, Value: value.Value})
 		}
 		sort.Slice(out.Values, func(i, j int) bool {
 			return out.Values[i].Name < out.Values[j].Name
@@ -694,7 +698,7 @@ func resolveSecrets(svc *secrets.Service, kind string) func(context.Context, sec
 	}
 }
 
-func deleteSecret(svc *secrets.Service, kind string) func(context.Context, secrets.Principal, *deleteSecretInput) (*secretOutput, error) {
+func deleteSecret(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *deleteSecretInput) (*secretOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *deleteSecretInput) (*secretOutput, error) {
 		record, err := svc.DeleteSecret(ctx, principal, kind, input.Name, secrets.Scope{
 			Level:    input.ScopeLevel,
@@ -705,11 +709,11 @@ func deleteSecret(svc *secrets.Service, kind string) func(context.Context, secre
 		if err != nil {
 			return nil, err
 		}
-		return &secretOutput{Body: secretDTO(record)}, nil
+		return &secretOutput{Body: secretDTO(record, installationID)}, nil
 	}
 }
 
-func putVariable(svc *secrets.Service) func(context.Context, secrets.Principal, *putSecretInput) (*variableOutput, error) {
+func putVariable(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *putSecretInput) (*variableOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *putSecretInput) (*variableOutput, error) {
 		record, err := svc.PutSecret(ctx, principal, secrets.PutSecretRequest{
 			Kind: secrets.KindVariable,
@@ -725,11 +729,11 @@ func putVariable(svc *secrets.Service) func(context.Context, secrets.Principal, 
 		if err != nil {
 			return nil, err
 		}
-		return &variableOutput{Body: variableDTO(record)}, nil
+		return &variableOutput{Body: variableDTO(record, installationID)}, nil
 	}
 }
 
-func readVariable(svc *secrets.Service) func(context.Context, secrets.Principal, *readSecretInput) (*variableValueOutput, error) {
+func readVariable(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *readSecretInput) (*variableValueOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *readSecretInput) (*variableValueOutput, error) {
 		value, err := svc.ReadSecret(ctx, principal, secrets.KindVariable, input.Name, secrets.Scope{
 			Level:    input.ScopeLevel,
@@ -740,12 +744,12 @@ func readVariable(svc *secrets.Service) func(context.Context, secrets.Principal,
 		if err != nil {
 			return nil, err
 		}
-		dto := variableDTO(value.Record)
-		return &variableValueOutput{Body: VariableValueDTO{VariableDTO: dto, Value: value.Value}}, nil
+		variable := variableDTO(value.Record, installationID)
+		return &variableValueOutput{Body: VariableValueDTO{VariableDTO: variable, Value: value.Value}}, nil
 	}
 }
 
-func listVariables(svc *secrets.Service) func(context.Context, secrets.Principal, *listSecretsInput) (*variablesOutput, error) {
+func listVariables(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *listSecretsInput) (*variablesOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *listSecretsInput) (*variablesOutput, error) {
 		records, err := svc.ListSecrets(ctx, principal, secrets.KindVariable, input.Limit)
 		if err != nil {
@@ -753,13 +757,13 @@ func listVariables(svc *secrets.Service) func(context.Context, secrets.Principal
 		}
 		out := VariablesDTO{Variables: make([]VariableDTO, 0, len(records))}
 		for _, record := range records {
-			out.Variables = append(out.Variables, variableDTO(record))
+			out.Variables = append(out.Variables, variableDTO(record, installationID))
 		}
 		return &variablesOutput{Body: out}, nil
 	}
 }
 
-func deleteVariable(svc *secrets.Service) func(context.Context, secrets.Principal, *deleteSecretInput) (*variableOutput, error) {
+func deleteVariable(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *deleteSecretInput) (*variableOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *deleteSecretInput) (*variableOutput, error) {
 		record, err := svc.DeleteSecret(ctx, principal, secrets.KindVariable, input.Name, secrets.Scope{
 			Level:    input.ScopeLevel,
@@ -770,11 +774,11 @@ func deleteVariable(svc *secrets.Service) func(context.Context, secrets.Principa
 		if err != nil {
 			return nil, err
 		}
-		return &variableOutput{Body: variableDTO(record)}, nil
+		return &variableOutput{Body: variableDTO(record, installationID)}, nil
 	}
 }
 
-func createOpaqueCredential(svc *secrets.Service) func(context.Context, secrets.Principal, *createOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
+func createOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *createOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *createOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 		expiresAt := time.Time{}
 		if input.Body.ExpiresInSeconds > 0 {
@@ -791,21 +795,21 @@ func createOpaqueCredential(svc *secrets.Service) func(context.Context, secrets.
 		if err != nil {
 			return nil, err
 		}
-		return &opaqueCredentialMaterialOutput{Body: opaqueCredentialMaterialDTO(material)}, nil
+		return &opaqueCredentialMaterialOutput{Body: opaqueCredentialMaterialDTO(material, installationID)}, nil
 	}
 }
 
-func getOpaqueCredential(svc *secrets.Service) func(context.Context, secrets.Principal, *opaqueCredentialPathInput) (*opaqueCredentialOutput, error) {
+func getOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *opaqueCredentialPathInput) (*opaqueCredentialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *opaqueCredentialPathInput) (*opaqueCredentialOutput, error) {
 		credential, err := svc.GetOpaqueCredential(ctx, principal, input.CredentialID)
 		if err != nil {
 			return nil, err
 		}
-		return &opaqueCredentialOutput{Body: opaqueCredentialDTO(credential)}, nil
+		return &opaqueCredentialOutput{Body: opaqueCredentialDTO(credential, installationID)}, nil
 	}
 }
 
-func listOpaqueCredentials(svc *secrets.Service) func(context.Context, secrets.Principal, *listOpaqueCredentialsInput) (*opaqueCredentialsOutput, error) {
+func listOpaqueCredentials(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *listOpaqueCredentialsInput) (*opaqueCredentialsOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *listOpaqueCredentialsInput) (*opaqueCredentialsOutput, error) {
 		credentials, err := svc.ListOpaqueCredentials(ctx, principal, input.Kind, input.Limit)
 		if err != nil {
@@ -813,13 +817,13 @@ func listOpaqueCredentials(svc *secrets.Service) func(context.Context, secrets.P
 		}
 		out := OpaqueCredentialsDTO{Credentials: make([]OpaqueCredentialDTO, 0, len(credentials))}
 		for _, credential := range credentials {
-			out.Credentials = append(out.Credentials, opaqueCredentialDTO(credential))
+			out.Credentials = append(out.Credentials, opaqueCredentialDTO(credential, installationID))
 		}
 		return &opaqueCredentialsOutput{Body: out}, nil
 	}
 }
 
-func rollOpaqueCredential(svc *secrets.Service) func(context.Context, secrets.Principal, *rollOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
+func rollOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *rollOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *rollOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 		expiresAt := time.Time{}
 		if input.Body.ExpiresInSeconds > 0 {
@@ -832,17 +836,17 @@ func rollOpaqueCredential(svc *secrets.Service) func(context.Context, secrets.Pr
 		if err != nil {
 			return nil, err
 		}
-		return &opaqueCredentialMaterialOutput{Body: opaqueCredentialMaterialDTO(material)}, nil
+		return &opaqueCredentialMaterialOutput{Body: opaqueCredentialMaterialDTO(material, installationID)}, nil
 	}
 }
 
-func revokeOpaqueCredential(svc *secrets.Service) func(context.Context, secrets.Principal, *revokeOpaqueCredentialInput) (*opaqueCredentialOutput, error) {
+func revokeOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *revokeOpaqueCredentialInput) (*opaqueCredentialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *revokeOpaqueCredentialInput) (*opaqueCredentialOutput, error) {
 		credential, err := svc.RevokeOpaqueCredential(ctx, principal, input.CredentialID)
 		if err != nil {
 			return nil, err
 		}
-		return &opaqueCredentialOutput{Body: opaqueCredentialDTO(credential)}, nil
+		return &opaqueCredentialOutput{Body: opaqueCredentialDTO(credential, installationID)}, nil
 	}
 }
 
@@ -857,21 +861,22 @@ type transitKeyOutput struct {
 }
 
 type TransitKeyDTO struct {
-	KeyID          string `json:"key_id"`
-	Name           string `json:"name"`
-	CurrentVersion string `json:"current_version"`
-	PublicKey      string `json:"public_key"`
-	CreatedAt      string `json:"created_at" format:"date-time"`
-	UpdatedAt      string `json:"updated_at" format:"date-time"`
+	KeyID          string           `json:"key_id"`
+	ResourceName   dto.ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this transit key."`
+	Name           string           `json:"name"`
+	CurrentVersion string           `json:"current_version"`
+	PublicKey      string           `json:"public_key"`
+	CreatedAt      string           `json:"created_at" format:"date-time"`
+	UpdatedAt      string           `json:"updated_at" format:"date-time"`
 }
 
-func createTransitKey(svc *secrets.Service) func(context.Context, secrets.Principal, *createTransitKeyInput) (*transitKeyOutput, error) {
+func createTransitKey(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *createTransitKeyInput) (*transitKeyOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *createTransitKeyInput) (*transitKeyOutput, error) {
 		key, err := svc.CreateTransitKey(ctx, principal, input.Body.Name)
 		if err != nil {
 			return nil, err
 		}
-		return &transitKeyOutput{Body: transitKeyDTO(key)}, nil
+		return &transitKeyOutput{Body: transitKeyDTO(key, installationID)}, nil
 	}
 }
 
@@ -879,13 +884,13 @@ type rotateTransitKeyInput struct {
 	KeyName string `path:"key_name" minLength:"1" maxLength:"255"`
 }
 
-func rotateTransitKey(svc *secrets.Service) func(context.Context, secrets.Principal, *rotateTransitKeyInput) (*transitKeyOutput, error) {
+func rotateTransitKey(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *rotateTransitKeyInput) (*transitKeyOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *rotateTransitKeyInput) (*transitKeyOutput, error) {
 		key, err := svc.RotateTransitKey(ctx, principal, input.KeyName)
 		if err != nil {
 			return nil, err
 		}
-		return &transitKeyOutput{Body: transitKeyDTO(key)}, nil
+		return &transitKeyOutput{Body: transitKeyDTO(key, installationID)}, nil
 	}
 }
 
@@ -985,9 +990,10 @@ func verifyTransit(svc *secrets.Service) func(context.Context, secrets.Principal
 	}
 }
 
-func secretDTO(record secrets.SecretRecord) SecretDTO {
+func secretDTO(record secrets.SecretRecord, installationID string) SecretDTO {
 	return SecretDTO{
 		SecretID:       record.SecretID,
+		ResourceName:   secretResourceName(record, installationID),
 		Kind:           record.Kind,
 		Name:           record.Name,
 		ScopeLevel:     record.Scope.Level,
@@ -1000,9 +1006,10 @@ func secretDTO(record secrets.SecretRecord) SecretDTO {
 	}
 }
 
-func variableDTO(record secrets.SecretRecord) VariableDTO {
+func variableDTO(record secrets.SecretRecord, installationID string) VariableDTO {
 	return VariableDTO{
 		VariableID:     record.SecretID,
+		ResourceName:   optionalResourceName(installationID, record.OrgID, record.SecretID, dto.ResourceNameVariable),
 		Kind:           record.Kind,
 		Name:           record.Name,
 		ScopeLevel:     record.Scope.Level,
@@ -1015,9 +1022,10 @@ func variableDTO(record secrets.SecretRecord) VariableDTO {
 	}
 }
 
-func transitKeyDTO(key secrets.TransitKey) TransitKeyDTO {
+func transitKeyDTO(key secrets.TransitKey, installationID string) TransitKeyDTO {
 	return TransitKeyDTO{
 		KeyID:          key.KeyID,
+		ResourceName:   optionalResourceName(installationID, key.OrgID, key.KeyID, dto.ResourceNameTransitKey),
 		Name:           key.Name,
 		CurrentVersion: strconv.FormatUint(key.CurrentVersion, 10),
 		PublicKey:      key.PublicKey,
@@ -1026,16 +1034,17 @@ func transitKeyDTO(key secrets.TransitKey) TransitKeyDTO {
 	}
 }
 
-func opaqueCredentialMaterialDTO(material secrets.OpaqueCredentialMaterial) OpaqueCredentialMaterialDTO {
+func opaqueCredentialMaterialDTO(material secrets.OpaqueCredentialMaterial, installationID string) OpaqueCredentialMaterialDTO {
 	return OpaqueCredentialMaterialDTO{
-		Credential: opaqueCredentialDTO(material.Credential),
+		Credential: opaqueCredentialDTO(material.Credential, installationID),
 		Token:      material.Token,
 	}
 }
 
-func opaqueCredentialDTO(credential secrets.OpaqueCredential) OpaqueCredentialDTO {
+func opaqueCredentialDTO(credential secrets.OpaqueCredential, installationID string) OpaqueCredentialDTO {
 	return OpaqueCredentialDTO{
 		CredentialID:   credential.CredentialID,
+		ResourceName:   optionalResourceName(installationID, credential.OrgID, credential.CredentialID, dto.ResourceNameOpaqueCredential),
 		OrgID:          credential.OrgID,
 		Kind:           credential.Kind,
 		Subject:        credential.Subject,
@@ -1051,6 +1060,22 @@ func opaqueCredentialDTO(credential secrets.OpaqueCredential) OpaqueCredentialDT
 		UpdatedAt:      credential.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		RevokedAt:      formatOptionalDTOTime(credential.RevokedAt),
 	}
+}
+
+func secretResourceName(record secrets.SecretRecord, installationID string) dto.ResourceName {
+	switch record.Kind {
+	case secrets.KindVariable:
+		return optionalResourceName(installationID, record.OrgID, record.SecretID, dto.ResourceNameVariable)
+	default:
+		return optionalResourceName(installationID, record.OrgID, record.SecretID, dto.ResourceNameSecret)
+	}
+}
+
+func optionalResourceName(installationID, orgID, id string, format func(string, string, string) dto.ResourceName) dto.ResourceName {
+	if installationID == "" || orgID == "" || id == "" {
+		return ""
+	}
+	return format(installationID, orgID, id)
 }
 
 func copyStringMap(input map[string]string) map[string]string {

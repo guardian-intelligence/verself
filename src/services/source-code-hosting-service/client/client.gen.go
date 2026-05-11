@@ -84,14 +84,23 @@ type WorkflowRun struct {
 	FailureReason     *string           `json:"failure_reason,omitempty"`
 	Inputs            map[string]string `json:"inputs"`
 	OrgId             string            `json:"org_id"`
-	ProjectId         string            `json:"project_id"`
-	Ref               string            `json:"ref"`
-	RepoId            string            `json:"repo_id"`
-	State             string            `json:"state"`
-	TraceId           *string           `json:"trace_id,omitempty"`
-	UpdatedAt         time.Time         `json:"updated_at"`
-	WorkflowPath      string            `json:"workflow_path"`
-	WorkflowRunId     string            `json:"workflow_run_id"`
+
+	// ProjectResourceName Globally unique Verself resource name for the parent project.
+	ProjectResourceName string `json:"projectResourceName"`
+	ProjectId           string `json:"project_id"`
+	Ref                 string `json:"ref"`
+	RepoId              string `json:"repo_id"`
+
+	// RepositoryResourceName Globally unique Verself resource name for the repository.
+	RepositoryResourceName string `json:"repositoryResourceName"`
+
+	// ResourceName Globally unique Verself resource name for this workflow run.
+	ResourceName  string    `json:"resourceName"`
+	State         string    `json:"state"`
+	TraceId       *string   `json:"trace_id,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	WorkflowPath  string    `json:"workflow_path"`
+	WorkflowRunId string    `json:"workflow_run_id"`
 }
 
 // DownloadSourceCheckoutArchiveParams defines parameters for DownloadSourceCheckoutArchive.

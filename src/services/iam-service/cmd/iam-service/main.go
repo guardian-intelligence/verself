@@ -85,6 +85,7 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
 	browserAuthLoginAudiencesRaw := cfg.RequireCredential("browser-auth-login-audiences")
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
@@ -218,7 +219,7 @@ func run() error {
 	api.RegisterBrowserAuthRoutes(rootMux, browserAuth)
 
 	privateMux := http.NewServeMux()
-	api.NewAPI(privateMux, api.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: identityService, Authz: authzService})
+	api.NewAPI(privateMux, api.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: identityService, Authz: authzService, InstallationID: installationID})
 	authConfig := auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

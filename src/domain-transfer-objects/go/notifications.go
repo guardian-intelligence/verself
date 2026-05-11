@@ -32,21 +32,21 @@ type NotificationPreferences struct {
 }
 
 type Notification struct {
-	NotificationID     string     `json:"notification_id" doc:"Notification UUID."`
-	OrgID              string     `json:"org_id"`
-	RecipientSubjectID string     `json:"recipient_subject_id"`
-	RecipientSequence  string     `json:"recipient_sequence" doc:"Per-recipient sequence, decimal-encoded for JavaScript safety."`
-	Kind               string     `json:"kind"`
-	Priority           string     `json:"priority" enum:"low,normal,high"`
-	Title              string     `json:"title"`
-	Body               string     `json:"body"`
-	ActionURL          string     `json:"action_url,omitempty"`
-	ResourceKind       string     `json:"resource_kind,omitempty"`
-	ResourceID         string     `json:"resource_id,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	ExpiresAt          *time.Time `json:"expires_at,omitempty"`
-	ReadAt             *time.Time `json:"read_at,omitempty"`
-	DismissedAt        *time.Time `json:"dismissed_at,omitempty"`
+	NotificationID     string       `json:"notification_id" doc:"Notification UUID."`
+	ResourceName       ResourceName `json:"resourceName" doc:"Globally unique Verself resource name for this notification."`
+	OrgID              string       `json:"org_id"`
+	RecipientSubjectID string       `json:"recipient_subject_id"`
+	RecipientSequence  string       `json:"recipient_sequence" doc:"Per-recipient sequence, decimal-encoded for JavaScript safety."`
+	Kind               string       `json:"kind"`
+	Priority           string       `json:"priority" enum:"low,normal,high"`
+	Title              string       `json:"title"`
+	Body               string       `json:"body"`
+	ActionURL          string       `json:"action_url,omitempty"`
+	TargetResourceName ResourceName `json:"targetResourceName,omitempty" doc:"Globally unique Verself resource name for the related product resource."`
+	CreatedAt          time.Time    `json:"created_at"`
+	ExpiresAt          *time.Time   `json:"expires_at,omitempty"`
+	ReadAt             *time.Time   `json:"read_at,omitempty"`
+	DismissedAt        *time.Time   `json:"dismissed_at,omitempty"`
 }
 
 type NotificationPutPreferencesRequest struct {
@@ -79,16 +79,15 @@ type NotificationWorkflowRecipient struct {
 }
 
 type NotificationWorkflowTriggerRequest struct {
-	OrgID        string                          `json:"org_id" maxLength:"200"`
-	Recipients   []NotificationWorkflowRecipient `json:"recipients" minItems:"1" maxItems:"100"`
-	Title        string                          `json:"title,omitempty" maxLength:"120"`
-	Body         string                          `json:"body,omitempty" maxLength:"500"`
-	ActionURL    string                          `json:"action_url,omitempty" maxLength:"500"`
-	Priority     string                          `json:"priority,omitempty" enum:"low,normal,high"`
-	ResourceKind string                          `json:"resource_kind,omitempty" maxLength:"120"`
-	ResourceID   string                          `json:"resource_id,omitempty" maxLength:"200"`
-	Data         json.RawMessage                 `json:"data,omitempty"`
-	Traceparent  string                          `json:"traceparent,omitempty" maxLength:"200"`
+	OrgID              string                          `json:"org_id" maxLength:"200"`
+	Recipients         []NotificationWorkflowRecipient `json:"recipients" minItems:"1" maxItems:"100"`
+	Title              string                          `json:"title,omitempty" maxLength:"120"`
+	Body               string                          `json:"body,omitempty" maxLength:"500"`
+	ActionURL          string                          `json:"action_url,omitempty" maxLength:"500"`
+	Priority           string                          `json:"priority,omitempty" enum:"low,normal,high"`
+	TargetResourceName ResourceName                    `json:"targetResourceName,omitempty" maxLength:"512"`
+	Data               json.RawMessage                 `json:"data,omitempty"`
+	Traceparent        string                          `json:"traceparent,omitempty" maxLength:"200"`
 }
 
 type NotificationWorkflowTriggerResponse struct {

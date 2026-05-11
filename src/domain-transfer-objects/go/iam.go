@@ -4,6 +4,7 @@ import "time"
 
 type IAMOrganization struct {
 	OrgID              OrgID                         `json:"org_id"`
+	ResourceName       ResourceName                  `json:"resourceName" doc:"Globally unique Verself resource name for this organization."`
 	DisplayName        string                        `json:"display_name"`
 	Slug               string                        `json:"slug"`
 	Version            int32                         `json:"version" minimum:"0" maximum:"2147483647"`
@@ -14,9 +15,10 @@ type IAMOrganization struct {
 }
 
 type IAMOrganizationMetadata struct {
-	OrgID       OrgID  `json:"org_id"`
-	DisplayName string `json:"display_name"`
-	Slug        string `json:"slug"`
+	OrgID        OrgID        `json:"org_id"`
+	ResourceName ResourceName `json:"resourceName" doc:"Globally unique Verself resource name for this organization."`
+	DisplayName  string       `json:"display_name"`
+	Slug         string       `json:"slug"`
 }
 
 type IAMUpdateOrganizationRequest struct {
@@ -26,13 +28,14 @@ type IAMUpdateOrganizationRequest struct {
 }
 
 type IAMOrganizationProfile struct {
-	OrgID          OrgID     `json:"org_id"`
-	DisplayName    string    `json:"display_name"`
-	Slug           string    `json:"slug"`
-	State          string    `json:"state"`
-	Version        int32     `json:"version" minimum:"0" maximum:"2147483647"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	RedirectedFrom string    `json:"redirected_from,omitempty"`
+	OrgID          OrgID        `json:"org_id"`
+	ResourceName   ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this organization."`
+	DisplayName    string       `json:"display_name"`
+	Slug           string       `json:"slug"`
+	State          string       `json:"state"`
+	Version        int32        `json:"version" minimum:"0" maximum:"2147483647"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	RedirectedFrom string       `json:"redirected_from,omitempty"`
 }
 
 type IAMResolveOrganizationRequest struct {
@@ -46,12 +49,13 @@ type IAMResolveOrganizationResponse struct {
 }
 
 type IAMMember struct {
-	UserID      string   `json:"user_id"`
-	Email       string   `json:"email"`
-	LoginName   string   `json:"login_name"`
-	DisplayName string   `json:"display_name"`
-	State       string   `json:"state"`
-	RoleKeys    []string `json:"role_keys"`
+	UserID       string       `json:"user_id"`
+	ResourceName ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this member when the parent organization is known."`
+	Email        string       `json:"email"`
+	LoginName    string       `json:"login_name"`
+	DisplayName  string       `json:"display_name"`
+	State        string       `json:"state"`
+	RoleKeys     []string     `json:"role_keys"`
 }
 
 type IAMMembers struct {
@@ -107,11 +111,11 @@ type IAMPutMemberCapabilitiesRequest struct {
 }
 
 type IAMPolicy struct {
-	Resource string             `json:"resource,omitempty" maxLength:"256"`
-	Version  int32              `json:"version" minimum:"0" maximum:"2147483647"`
-	Etag     string             `json:"etag,omitempty" maxLength:"128"`
-	Bindings []IAMPolicyBinding `json:"bindings"`
-	ZedToken string             `json:"zed_token,omitempty" maxLength:"1024"`
+	ResourceName ResourceName       `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for the protected resource."`
+	Version      int32              `json:"version" minimum:"0" maximum:"2147483647"`
+	Etag         string             `json:"etag,omitempty" maxLength:"128"`
+	Bindings     []IAMPolicyBinding `json:"bindings"`
+	ZedToken     string             `json:"zed_token,omitempty" maxLength:"1024"`
 }
 
 type IAMPolicyBinding struct {
@@ -192,41 +196,43 @@ type IAMWriteResourceParentEdgeResponse struct {
 }
 
 type IAMAPICredential struct {
-	CredentialID         string     `json:"credential_id"`
-	ServiceAccountID     string     `json:"service_account_id"`
-	OrgID                OrgID      `json:"org_id"`
-	SubjectID            string     `json:"subject_id"`
-	ClientID             string     `json:"client_id"`
-	DisplayName          string     `json:"display_name"`
-	Status               string     `json:"status"`
-	AuthMethod           string     `json:"auth_method"`
-	Fingerprint          string     `json:"fingerprint"`
-	Permissions          []string   `json:"permissions"`
-	PolicyVersionAtIssue int32      `json:"policy_version_at_issue" minimum:"0" maximum:"2147483647"`
-	CreatedAt            time.Time  `json:"created_at"`
-	CreatedBy            string     `json:"created_by"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
-	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
-	RevokedBy            string     `json:"revoked_by,omitempty"`
-	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
+	CredentialID         string       `json:"credential_id"`
+	ResourceName         ResourceName `json:"resourceName" doc:"Globally unique Verself resource name for this credential."`
+	ServiceAccountID     string       `json:"service_account_id"`
+	OrgID                OrgID        `json:"org_id"`
+	SubjectID            string       `json:"subject_id"`
+	ClientID             string       `json:"client_id"`
+	DisplayName          string       `json:"display_name"`
+	Status               string       `json:"status"`
+	AuthMethod           string       `json:"auth_method"`
+	Fingerprint          string       `json:"fingerprint"`
+	Permissions          []string     `json:"permissions"`
+	PolicyVersionAtIssue int32        `json:"policy_version_at_issue" minimum:"0" maximum:"2147483647"`
+	CreatedAt            time.Time    `json:"created_at"`
+	CreatedBy            string       `json:"created_by"`
+	UpdatedAt            time.Time    `json:"updated_at"`
+	ExpiresAt            *time.Time   `json:"expires_at,omitempty"`
+	RevokedAt            *time.Time   `json:"revoked_at,omitempty"`
+	RevokedBy            string       `json:"revoked_by,omitempty"`
+	LastUsedAt           *time.Time   `json:"last_used_at,omitempty"`
 }
 
 type IAMServiceAccount struct {
-	ServiceAccountID string     `json:"service_account_id"`
-	OrgID            OrgID      `json:"org_id"`
-	SubjectID        string     `json:"subject_id"`
-	ClientID         string     `json:"client_id"`
-	DisplayName      string     `json:"display_name"`
-	Description      string     `json:"description,omitempty"`
-	Status           string     `json:"status"`
-	Permissions      []string   `json:"permissions"`
-	CreatedAt        time.Time  `json:"created_at"`
-	CreatedBy        string     `json:"created_by"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	DisabledAt       *time.Time `json:"disabled_at,omitempty"`
-	DisabledBy       string     `json:"disabled_by,omitempty"`
-	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
+	ServiceAccountID string       `json:"service_account_id"`
+	ResourceName     ResourceName `json:"resourceName" doc:"Globally unique Verself resource name for this service account."`
+	OrgID            OrgID        `json:"org_id"`
+	SubjectID        string       `json:"subject_id"`
+	ClientID         string       `json:"client_id"`
+	DisplayName      string       `json:"display_name"`
+	Description      string       `json:"description,omitempty"`
+	Status           string       `json:"status"`
+	Permissions      []string     `json:"permissions"`
+	CreatedAt        time.Time    `json:"created_at"`
+	CreatedBy        string       `json:"created_by"`
+	UpdatedAt        time.Time    `json:"updated_at"`
+	DisabledAt       *time.Time   `json:"disabled_at,omitempty"`
+	DisabledBy       string       `json:"disabled_by,omitempty"`
+	LastUsedAt       *time.Time   `json:"last_used_at,omitempty"`
 }
 
 type IAMServiceAccounts struct {

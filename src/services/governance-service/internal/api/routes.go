@@ -103,17 +103,18 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 }
 
 type listAuditEventsInput struct {
-	Limit        int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum events to return."`
-	Cursor       string `query:"cursor,omitempty" maxLength:"64" doc:"Opaque pagination cursor returned by the previous page."`
-	Order        string `query:"order,omitempty" enum:"asc,desc" doc:"Time ordering of results; defaults to 'desc' (newest first)."`
-	ActorID      string `query:"actor_id,omitempty" maxLength:"255"`
-	AuditEvent   string `query:"audit_event,omitempty" maxLength:"255"`
-	CredentialID string `query:"credential_id,omitempty" maxLength:"255"`
-	EventName    string `query:"event_name,omitempty" maxLength:"128"`
-	EventSource  string `query:"event_source,omitempty" maxLength:"128"`
-	Outcome      string `query:"outcome,omitempty" enum:"allowed,denied,error"`
-	TargetID     string `query:"target_id,omitempty" maxLength:"255"`
-	TargetType   string `query:"target_type,omitempty" maxLength:"128"`
+	Limit              int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum events to return."`
+	Cursor             string `query:"cursor,omitempty" maxLength:"64" doc:"Opaque pagination cursor returned by the previous page."`
+	Order              string `query:"order,omitempty" enum:"asc,desc" doc:"Time ordering of results; defaults to 'desc' (newest first)."`
+	ActorID            string `query:"actor_id,omitempty" maxLength:"255"`
+	AuditEvent         string `query:"audit_event,omitempty" maxLength:"255"`
+	CredentialID       string `query:"credential_id,omitempty" maxLength:"255"`
+	EventName          string `query:"event_name,omitempty" maxLength:"128"`
+	EventSource        string `query:"event_source,omitempty" maxLength:"128"`
+	Outcome            string `query:"outcome,omitempty" enum:"allowed,denied,error"`
+	TargetID           string `query:"target_id,omitempty" maxLength:"255"`
+	TargetType         string `query:"target_type,omitempty" maxLength:"128"`
+	TargetResourceName string `query:"targetResourceName,omitempty" maxLength:"1024"`
 }
 
 type auditEventsOutput struct {
@@ -123,17 +124,18 @@ type auditEventsOutput struct {
 func listAuditEvents(svc *governance.Service) func(context.Context, governance.Principal, *listAuditEventsInput) (*auditEventsOutput, error) {
 	return func(ctx context.Context, principal governance.Principal, input *listAuditEventsInput) (*auditEventsOutput, error) {
 		page, err := svc.ListAuditEvents(ctx, principal, governance.AuditListFilters{
-			Limit:        input.Limit,
-			Cursor:       input.Cursor,
-			Order:        input.Order,
-			ActorID:      input.ActorID,
-			AuditEvent:   input.AuditEvent,
-			CredentialID: input.CredentialID,
-			EventName:    input.EventName,
-			EventSource:  input.EventSource,
-			Outcome:      input.Outcome,
-			TargetID:     input.TargetID,
-			TargetType:   input.TargetType,
+			Limit:              input.Limit,
+			Cursor:             input.Cursor,
+			Order:              input.Order,
+			ActorID:            input.ActorID,
+			AuditEvent:         input.AuditEvent,
+			CredentialID:       input.CredentialID,
+			EventName:          input.EventName,
+			EventSource:        input.EventSource,
+			Outcome:            input.Outcome,
+			TargetID:           input.TargetID,
+			TargetType:         input.TargetType,
+			TargetResourceName: input.TargetResourceName,
 		})
 		if err != nil {
 			return nil, err
@@ -143,14 +145,15 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 			NextCursor: page.NextCursor,
 			Limit:      int32FromInt(page.Limit, "audit page limit"),
 			Filters: dto.GovernanceAuditFilters{
-				ActorID:      input.ActorID,
-				AuditEvent:   input.AuditEvent,
-				CredentialID: input.CredentialID,
-				EventName:    input.EventName,
-				EventSource:  input.EventSource,
-				Outcome:      input.Outcome,
-				TargetID:     input.TargetID,
-				TargetType:   input.TargetType,
+				ActorID:            input.ActorID,
+				AuditEvent:         input.AuditEvent,
+				CredentialID:       input.CredentialID,
+				EventName:          input.EventName,
+				EventSource:        input.EventSource,
+				Outcome:            input.Outcome,
+				TargetID:           input.TargetID,
+				TargetType:         input.TargetType,
+				TargetResourceName: dto.ResourceName(input.TargetResourceName),
 			},
 		}
 		for _, event := range page.Events {
@@ -170,7 +173,7 @@ func listExports(svc *governance.Service) func(context.Context, governance.Princ
 		if err != nil {
 			return nil, err
 		}
-		return &exportsOutput{Body: dto.GovernanceExportJobs{Exports: exportJobDTOs(jobs, svc.PublicBaseURL)}}, nil
+		return &exportsOutput{Body: dto.GovernanceExportJobs{Exports: exportJobDTOs(jobs, svc.PublicBaseURL, svc.InstallationID)}}, nil
 	}
 }
 
@@ -193,7 +196,7 @@ func createExport(svc *governance.Service) func(context.Context, governance.Prin
 		if err != nil {
 			return nil, err
 		}
-		return &exportOutput{Body: exportJobDTO(*job, svc.PublicBaseURL)}, nil
+		return &exportOutput{Body: exportJobDTO(*job, svc.PublicBaseURL, svc.InstallationID)}, nil
 	}
 }
 
@@ -207,7 +210,7 @@ func getExport(svc *governance.Service) func(context.Context, governance.Princip
 		if err != nil {
 			return nil, err
 		}
-		return &exportOutput{Body: exportJobDTO(*job, svc.PublicBaseURL)}, nil
+		return &exportOutput{Body: exportJobDTO(*job, svc.PublicBaseURL, svc.InstallationID)}, nil
 	}
 }
 
@@ -253,38 +256,39 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 
 func auditEventDTO(event governance.AuditEvent) dto.GovernanceAuditEvent {
 	return dto.GovernanceAuditEvent{
-		EventID:      event.EventID.String(),
-		RecordedAt:   event.RecordedAt.UTC().Format(time.RFC3339Nano),
-		OrgID:        event.OrgID,
-		Sequence:     strconv.FormatUint(event.Sequence, 10),
-		EventSource:  event.EventSource,
-		EventName:    event.EventName,
-		AuditEvent:   event.AuditEvent,
-		ActorType:    event.ActorType,
-		ActorID:      event.ActorID,
-		CredentialID: event.CredentialID,
-		TargetType:   event.TargetType,
-		TargetID:     event.TargetID,
-		Permission:   event.Permission,
-		Outcome:      event.Outcome,
-		ErrorCode:    event.ErrorCode,
-		TraceID:      event.TraceID,
-		DetailSHA256: event.DetailSHA256,
-		PrevHMAC:     event.PrevHMAC,
-		RowHMAC:      event.RowHMAC,
-		HMACKeyID:    event.HMACKeyID,
+		EventID:            event.EventID.String(),
+		RecordedAt:         event.RecordedAt.UTC().Format(time.RFC3339Nano),
+		OrgID:              event.OrgID,
+		Sequence:           strconv.FormatUint(event.Sequence, 10),
+		EventSource:        event.EventSource,
+		EventName:          event.EventName,
+		AuditEvent:         event.AuditEvent,
+		ActorType:          event.ActorType,
+		ActorID:            event.ActorID,
+		CredentialID:       event.CredentialID,
+		TargetType:         event.TargetType,
+		TargetID:           event.TargetID,
+		TargetResourceName: dto.ResourceName(event.TargetResourceName),
+		Permission:         event.Permission,
+		Outcome:            event.Outcome,
+		ErrorCode:          event.ErrorCode,
+		TraceID:            event.TraceID,
+		DetailSHA256:       event.DetailSHA256,
+		PrevHMAC:           event.PrevHMAC,
+		RowHMAC:            event.RowHMAC,
+		HMACKeyID:          event.HMACKeyID,
 	}
 }
 
-func exportJobDTOs(jobs []governance.ExportJob, baseURL string) []dto.GovernanceExportJob {
+func exportJobDTOs(jobs []governance.ExportJob, baseURL string, installationID string) []dto.GovernanceExportJob {
 	out := make([]dto.GovernanceExportJob, 0, len(jobs))
 	for _, job := range jobs {
-		out = append(out, exportJobDTO(job, baseURL))
+		out = append(out, exportJobDTO(job, baseURL, installationID))
 	}
 	return out
 }
 
-func exportJobDTO(job governance.ExportJob, baseURL string) dto.GovernanceExportJob {
+func exportJobDTO(job governance.ExportJob, baseURL string, installationID string) dto.GovernanceExportJob {
 	files := make([]dto.GovernanceExportFile, 0, len(job.Files))
 	for _, file := range job.Files {
 		files = append(files, dto.GovernanceExportFile{
@@ -301,6 +305,7 @@ func exportJobDTO(job governance.ExportJob, baseURL string) dto.GovernanceExport
 	}
 	return dto.GovernanceExportJob{
 		ExportID:       job.ExportID.String(),
+		ResourceName:   dto.ResourceNameAuditExport(installationID, job.OrgID, job.ExportID.String()),
 		OrgID:          job.OrgID,
 		RequestedBy:    job.RequestedBy,
 		Scopes:         job.Scopes,

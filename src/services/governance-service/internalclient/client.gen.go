@@ -31,24 +31,25 @@ type AppendAuditEventAccepted struct {
 // AuditRecord defines model for AuditRecord.
 type AuditRecord struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string                 `json:"$schema,omitempty"`
-	ActorId       string                  `json:"actor_id"`
-	ActorType     string                  `json:"actor_type"`
-	AuditEvent    string                  `json:"audit_event"`
-	CredentialId  *string                 `json:"credential_id,omitempty"`
-	Detail        *map[string]interface{} `json:"detail,omitempty"`
-	ErrorCode     *string                 `json:"error_code,omitempty"`
-	EventName     string                  `json:"event_name"`
-	EventSource   string                  `json:"event_source"`
-	HmacKeyId     *string                 `json:"hmac_key_id,omitempty"`
-	OrgId         string                  `json:"org_id"`
-	Outcome       string                  `json:"outcome"`
-	Permission    string                  `json:"permission"`
-	RecordedAt    *time.Time              `json:"recorded_at,omitempty"`
-	SchemaVersion *string                 `json:"schema_version,omitempty"`
-	TargetId      *string                 `json:"target_id,omitempty"`
-	TargetType    string                  `json:"target_type"`
-	TraceId       *string                 `json:"trace_id,omitempty"`
+	Schema             *string                 `json:"$schema,omitempty"`
+	ActorId            string                  `json:"actor_id"`
+	ActorType          string                  `json:"actor_type"`
+	AuditEvent         string                  `json:"audit_event"`
+	CredentialId       *string                 `json:"credential_id,omitempty"`
+	Detail             *map[string]interface{} `json:"detail,omitempty"`
+	ErrorCode          *string                 `json:"error_code,omitempty"`
+	EventName          string                  `json:"event_name"`
+	EventSource        string                  `json:"event_source"`
+	HmacKeyId          *string                 `json:"hmac_key_id,omitempty"`
+	OrgId              string                  `json:"org_id"`
+	Outcome            string                  `json:"outcome"`
+	Permission         string                  `json:"permission"`
+	RecordedAt         *time.Time              `json:"recorded_at,omitempty"`
+	SchemaVersion      *string                 `json:"schema_version,omitempty"`
+	TargetResourceName *string                 `json:"targetResourceName,omitempty"`
+	TargetId           *string                 `json:"target_id,omitempty"`
+	TargetType         string                  `json:"target_type"`
+	TraceId            *string                 `json:"trace_id,omitempty"`
 }
 
 // ErrorDetail defines model for ErrorDetail.

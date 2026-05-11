@@ -39,51 +39,54 @@ const (
 )
 
 type ListGovernanceAuditEventsOptions struct {
-	Limit        int
-	Cursor       string
-	Order        GovernanceAuditOrder
-	ActorID      string
-	AuditEvent   string
-	CredentialID string
-	EventName    string
-	EventSource  string
-	Outcome      GovernanceAuditOutcome
-	TargetID     string
-	TargetType   string
+	Limit              int
+	Cursor             string
+	Order              GovernanceAuditOrder
+	ActorID            string
+	AuditEvent         string
+	CredentialID       string
+	EventName          string
+	EventSource        string
+	Outcome            GovernanceAuditOutcome
+	TargetID           string
+	TargetType         string
+	TargetResourceName string
 }
 
 type GovernanceAuditEvent struct {
-	ActorID      string    `json:"actor_id"`
-	ActorType    string    `json:"actor_type"`
-	AuditEvent   string    `json:"audit_event"`
-	CredentialID string    `json:"credential_id,omitempty"`
-	DetailSHA256 string    `json:"detail_sha256"`
-	ErrorCode    string    `json:"error_code,omitempty"`
-	EventID      string    `json:"event_id"`
-	EventName    string    `json:"event_name"`
-	EventSource  string    `json:"event_source"`
-	HMACKeyID    string    `json:"hmac_key_id,omitempty"`
-	OrgID        string    `json:"org_id"`
-	Outcome      string    `json:"outcome"`
-	Permission   string    `json:"permission"`
-	PrevHMAC     string    `json:"prev_hmac"`
-	RecordedAt   time.Time `json:"recorded_at"`
-	RowHMAC      string    `json:"row_hmac"`
-	Sequence     string    `json:"sequence"`
-	TargetID     string    `json:"target_id,omitempty"`
-	TargetType   string    `json:"target_type"`
-	TraceID      string    `json:"trace_id,omitempty"`
+	ActorID            string    `json:"actor_id"`
+	ActorType          string    `json:"actor_type"`
+	AuditEvent         string    `json:"audit_event"`
+	CredentialID       string    `json:"credential_id,omitempty"`
+	DetailSHA256       string    `json:"detail_sha256"`
+	ErrorCode          string    `json:"error_code,omitempty"`
+	EventID            string    `json:"event_id"`
+	EventName          string    `json:"event_name"`
+	EventSource        string    `json:"event_source"`
+	HMACKeyID          string    `json:"hmac_key_id,omitempty"`
+	OrgID              string    `json:"org_id"`
+	Outcome            string    `json:"outcome"`
+	Permission         string    `json:"permission"`
+	PrevHMAC           string    `json:"prev_hmac"`
+	RecordedAt         time.Time `json:"recorded_at"`
+	RowHMAC            string    `json:"row_hmac"`
+	Sequence           string    `json:"sequence"`
+	TargetID           string    `json:"target_id,omitempty"`
+	TargetType         string    `json:"target_type"`
+	TargetResourceName string    `json:"targetResourceName,omitempty"`
+	TraceID            string    `json:"trace_id,omitempty"`
 }
 
 type GovernanceAuditFilters struct {
-	ActorID      string `json:"actor_id,omitempty"`
-	AuditEvent   string `json:"audit_event,omitempty"`
-	CredentialID string `json:"credential_id,omitempty"`
-	EventName    string `json:"event_name,omitempty"`
-	EventSource  string `json:"event_source,omitempty"`
-	Outcome      string `json:"outcome,omitempty"`
-	TargetID     string `json:"target_id,omitempty"`
-	TargetType   string `json:"target_type,omitempty"`
+	ActorID            string `json:"actor_id,omitempty"`
+	AuditEvent         string `json:"audit_event,omitempty"`
+	CredentialID       string `json:"credential_id,omitempty"`
+	EventName          string `json:"event_name,omitempty"`
+	EventSource        string `json:"event_source,omitempty"`
+	Outcome            string `json:"outcome,omitempty"`
+	TargetID           string `json:"target_id,omitempty"`
+	TargetType         string `json:"target_type,omitempty"`
+	TargetResourceName string `json:"targetResourceName,omitempty"`
 }
 
 type GovernanceAuditEvents struct {
@@ -109,6 +112,7 @@ type GovernanceExportFile struct {
 
 type GovernanceExportJob struct {
 	ExportID       string                 `json:"export_id"`
+	ResourceName   string                 `json:"resourceName"`
 	OrgID          string                 `json:"org_id"`
 	RequestedBy    string                 `json:"requested_by"`
 	Scopes         []string               `json:"scopes"`
@@ -186,6 +190,10 @@ func (c *GovernanceClient) ListAuditEvents(ctx context.Context, options ListGove
 	if strings.TrimSpace(options.TargetType) != "" {
 		targetType := strings.TrimSpace(options.TargetType)
 		params.TargetType = &targetType
+	}
+	if strings.TrimSpace(options.TargetResourceName) != "" {
+		targetResourceName := strings.TrimSpace(options.TargetResourceName)
+		params.TargetResourceName = &targetResourceName
 	}
 
 	response, err := c.client.ListAuditEventsWithResponse(ctx, params)
@@ -333,39 +341,41 @@ func governanceAuditEventsFromGenerated(input governancecore.GovernanceAuditEven
 
 func governanceAuditFiltersFromGenerated(input governancecore.GovernanceAuditFilters) GovernanceAuditFilters {
 	return GovernanceAuditFilters{
-		ActorID:      stringValue(input.ActorId),
-		AuditEvent:   stringValue(input.AuditEvent),
-		CredentialID: stringValue(input.CredentialId),
-		EventName:    stringValue(input.EventName),
-		EventSource:  stringValue(input.EventSource),
-		Outcome:      stringValue(input.Outcome),
-		TargetID:     stringValue(input.TargetId),
-		TargetType:   stringValue(input.TargetType),
+		ActorID:            stringValue(input.ActorId),
+		AuditEvent:         stringValue(input.AuditEvent),
+		CredentialID:       stringValue(input.CredentialId),
+		EventName:          stringValue(input.EventName),
+		EventSource:        stringValue(input.EventSource),
+		Outcome:            stringValue(input.Outcome),
+		TargetID:           stringValue(input.TargetId),
+		TargetType:         stringValue(input.TargetType),
+		TargetResourceName: stringValue(input.TargetResourceName),
 	}
 }
 
 func governanceAuditEventFromGenerated(input governancecore.GovernanceAuditEvent) GovernanceAuditEvent {
 	return GovernanceAuditEvent{
-		ActorID:      input.ActorId,
-		ActorType:    input.ActorType,
-		AuditEvent:   input.AuditEvent,
-		CredentialID: stringValue(input.CredentialId),
-		DetailSHA256: input.DetailSha256,
-		ErrorCode:    stringValue(input.ErrorCode),
-		EventID:      input.EventId,
-		EventName:    input.EventName,
-		EventSource:  input.EventSource,
-		HMACKeyID:    stringValue(input.HmacKeyId),
-		OrgID:        input.OrgId,
-		Outcome:      input.Outcome,
-		Permission:   input.Permission,
-		PrevHMAC:     input.PrevHmac,
-		RecordedAt:   input.RecordedAt,
-		RowHMAC:      input.RowHmac,
-		Sequence:     input.Sequence,
-		TargetID:     stringValue(input.TargetId),
-		TargetType:   input.TargetType,
-		TraceID:      stringValue(input.TraceId),
+		ActorID:            input.ActorId,
+		ActorType:          input.ActorType,
+		AuditEvent:         input.AuditEvent,
+		CredentialID:       stringValue(input.CredentialId),
+		DetailSHA256:       input.DetailSha256,
+		ErrorCode:          stringValue(input.ErrorCode),
+		EventID:            input.EventId,
+		EventName:          input.EventName,
+		EventSource:        input.EventSource,
+		HMACKeyID:          stringValue(input.HmacKeyId),
+		OrgID:              input.OrgId,
+		Outcome:            input.Outcome,
+		Permission:         input.Permission,
+		PrevHMAC:           input.PrevHmac,
+		RecordedAt:         input.RecordedAt,
+		RowHMAC:            input.RowHmac,
+		Sequence:           input.Sequence,
+		TargetID:           stringValue(input.TargetId),
+		TargetType:         input.TargetType,
+		TargetResourceName: stringValue(input.TargetResourceName),
+		TraceID:            stringValue(input.TraceId),
 	}
 }
 
@@ -384,6 +394,7 @@ func governanceExportJobFromGenerated(input governancecore.GovernanceExportJob) 
 	}
 	return GovernanceExportJob{
 		ExportID:       input.ExportId,
+		ResourceName:   input.ResourceName,
 		OrgID:          input.OrgId,
 		RequestedBy:    input.RequestedBy,
 		Scopes:         append([]string(nil), input.Scopes...),

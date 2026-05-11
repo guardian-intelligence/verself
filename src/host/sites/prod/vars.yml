@@ -5,6 +5,7 @@ bare_metal_host_alias: vs-dev-w0
 bare_metal_public_ipv4: 206.223.228.101
 verself_domain: verself.sh
 verself_version: 0.1.0
+verself_installation_id: inst_5NZSEA08R8P3HN566DNH8D301M
 verself_bin: /opt/verself/profile/bin
 company_domain: guardianintelligence.org
 

@@ -73,7 +73,7 @@ type acceptedOutput struct {
 	Body dto.NotificationAccepted
 }
 
-func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtimeiam.OperationAuthorizer) {
+func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtimeiam.OperationAuthorizer, installationID string) {
 	register(api, huma.Operation{
 		OperationID: "list-notifications",
 		Method:      http.MethodGet,
@@ -86,7 +86,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		OrgScope:       runtimeiam.OrgScopeTokenSubject,
 		RateLimitClass: "read",
 		AuditEvent:     "notifications.list",
-	}, listNotifications(svc))
+	}, listNotifications(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID: "get-notification-summary",
@@ -100,7 +100,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		OrgScope:       runtimeiam.OrgScopeTokenSubject,
 		RateLimitClass: "read",
 		AuditEvent:     "notifications.summary.read",
-	}, getSummary(svc))
+	}, getSummary(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID:   "put-notification-preferences",
@@ -118,7 +118,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Idempotency:    runtimeiam.IdempotencyHeaderKey,
 		AuditEvent:     "notifications.preferences.write",
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}, putPreferences(svc))
+	}, putPreferences(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID:   "advance-notification-read-cursor",
@@ -136,7 +136,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Idempotency:    runtimeiam.IdempotencyHeaderKey,
 		AuditEvent:     "notifications.read_cursor.advance",
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}, markRead(svc))
+	}, markRead(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID:   "dismiss-notification",
@@ -153,7 +153,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Idempotency:    runtimeiam.IdempotencyHeaderKey,
 		AuditEvent:     "notifications.dismiss",
 		BodyLimitBytes: bodyLimitNoBody,
-	}, dismissNotification(svc))
+	}, dismissNotification(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID:   "mark-notification-read",
@@ -170,7 +170,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Idempotency:    runtimeiam.IdempotencyHeaderKey,
 		AuditEvent:     "notifications.mark_read",
 		BodyLimitBytes: bodyLimitNoBody,
-	}, markNotificationRead(svc))
+	}, markNotificationRead(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID:   "clear-notifications",
@@ -187,7 +187,7 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Idempotency:    runtimeiam.IdempotencyHeaderKey,
 		AuditEvent:     "notifications.clear",
 		BodyLimitBytes: bodyLimitNoBody,
-	}, clearNotifications(svc))
+	}, clearNotifications(svc, installationID))
 
 	register(api, huma.Operation{
 		OperationID:   "publish-test-notification",
@@ -273,7 +273,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	return identity, nil
 }
 
-func listNotifications(svc *notifications.Service) func(context.Context, *listInput) (*listOutput, error) {
+func listNotifications(svc *notifications.Service, installationID string) func(context.Context, *listInput) (*listOutput, error) {
 	return func(ctx context.Context, input *listInput) (*listOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -283,11 +283,11 @@ func listNotifications(svc *notifications.Service) func(context.Context, *listIn
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &listOutput{Body: listDTO(result)}, nil
+		return &listOutput{Body: listDTO(result, installationID)}, nil
 	}
 }
 
-func getSummary(svc *notifications.Service) func(context.Context, *emptyInput) (*summaryOutput, error) {
+func getSummary(svc *notifications.Service, installationID string) func(context.Context, *emptyInput) (*summaryOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*summaryOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -297,11 +297,11 @@ func getSummary(svc *notifications.Service) func(context.Context, *emptyInput) (
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary)}, nil
+		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
 	}
 }
 
-func putPreferences(svc *notifications.Service) func(context.Context, *putPreferencesInput) (*summaryOutput, error) {
+func putPreferences(svc *notifications.Service, installationID string) func(context.Context, *putPreferencesInput) (*summaryOutput, error) {
 	return func(ctx context.Context, input *putPreferencesInput) (*summaryOutput, error) {
 		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
 			return nil, err
@@ -321,11 +321,11 @@ func putPreferences(svc *notifications.Service) func(context.Context, *putPrefer
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary)}, nil
+		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
 	}
 }
 
-func markRead(svc *notifications.Service) func(context.Context, *markReadInput) (*summaryOutput, error) {
+func markRead(svc *notifications.Service, installationID string) func(context.Context, *markReadInput) (*summaryOutput, error) {
 	return func(ctx context.Context, input *markReadInput) (*summaryOutput, error) {
 		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
 			return nil, err
@@ -342,11 +342,11 @@ func markRead(svc *notifications.Service) func(context.Context, *markReadInput) 
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary)}, nil
+		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
 	}
 }
 
-func dismissNotification(svc *notifications.Service) func(context.Context, *dismissInput) (*summaryOutput, error) {
+func dismissNotification(svc *notifications.Service, installationID string) func(context.Context, *dismissInput) (*summaryOutput, error) {
 	return func(ctx context.Context, input *dismissInput) (*summaryOutput, error) {
 		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
 			return nil, err
@@ -363,11 +363,11 @@ func dismissNotification(svc *notifications.Service) func(context.Context, *dism
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary)}, nil
+		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
 	}
 }
 
-func markNotificationRead(svc *notifications.Service) func(context.Context, *markNotificationInput) (*summaryOutput, error) {
+func markNotificationRead(svc *notifications.Service, installationID string) func(context.Context, *markNotificationInput) (*summaryOutput, error) {
 	return func(ctx context.Context, input *markNotificationInput) (*summaryOutput, error) {
 		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
 			return nil, err
@@ -384,11 +384,11 @@ func markNotificationRead(svc *notifications.Service) func(context.Context, *mar
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary)}, nil
+		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
 	}
 }
 
-func clearNotifications(svc *notifications.Service) func(context.Context, *clearInput) (*summaryOutput, error) {
+func clearNotifications(svc *notifications.Service, installationID string) func(context.Context, *clearInput) (*summaryOutput, error) {
 	return func(ctx context.Context, input *clearInput) (*summaryOutput, error) {
 		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
 			return nil, err
@@ -401,7 +401,7 @@ func clearNotifications(svc *notifications.Service) func(context.Context, *clear
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary)}, nil
+		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
 	}
 }
 
@@ -455,18 +455,18 @@ func validateIdempotencyKey(ctx context.Context, value string) error {
 	return nil
 }
 
-func listDTO(result notifications.ListResult) dto.NotificationList {
+func listDTO(result notifications.ListResult, installationID string) dto.NotificationList {
 	out := dto.NotificationList{
-		Summary:       summaryDTO(result.Summary),
+		Summary:       summaryDTO(result.Summary, installationID),
 		Notifications: make([]dto.Notification, 0, len(result.Notifications)),
 	}
 	for _, notification := range result.Notifications {
-		out.Notifications = append(out.Notifications, notificationDTO(notification))
+		out.Notifications = append(out.Notifications, notificationDTO(notification, installationID))
 	}
 	return out
 }
 
-func summaryDTO(summary notifications.Summary) dto.NotificationSummary {
+func summaryDTO(summary notifications.Summary, installationID string) dto.NotificationSummary {
 	return dto.NotificationSummary{
 		OrgID:              summary.OrgID,
 		SubjectID:          summary.SubjectID,
@@ -474,7 +474,7 @@ func summaryDTO(summary notifications.Summary) dto.NotificationSummary {
 		LatestSequence:     strconv.FormatInt(summary.LatestSequence, 10),
 		ReadUpToSequence:   strconv.FormatInt(summary.ReadUpToSequence, 10),
 		Preferences:        preferencesDTO(summary.Preferences),
-		LatestNotification: notificationPtrDTO(summary.LatestNotification),
+		LatestNotification: notificationPtrDTO(summary.LatestNotification, installationID),
 	}
 }
 
@@ -491,17 +491,18 @@ func preferencesDTO(preferences notifications.Preferences) dto.NotificationPrefe
 	}
 }
 
-func notificationPtrDTO(notification *notifications.Notification) *dto.Notification {
+func notificationPtrDTO(notification *notifications.Notification, installationID string) *dto.Notification {
 	if notification == nil {
 		return nil
 	}
-	out := notificationDTO(*notification)
+	out := notificationDTO(*notification, installationID)
 	return &out
 }
 
-func notificationDTO(notification notifications.Notification) dto.Notification {
+func notificationDTO(notification notifications.Notification, installationID string) dto.Notification {
 	return dto.Notification{
 		NotificationID:     notification.NotificationID.String(),
+		ResourceName:       dto.ResourceNameNotification(installationID, notification.OrgID, notification.NotificationID.String()),
 		OrgID:              notification.OrgID,
 		RecipientSubjectID: notification.RecipientSubjectID,
 		RecipientSequence:  strconv.FormatInt(notification.RecipientSequence, 10),
@@ -510,11 +511,19 @@ func notificationDTO(notification notifications.Notification) dto.Notification {
 		Title:              notification.Title,
 		Body:               notification.Body,
 		ActionURL:          notification.ActionURL,
-		ResourceKind:       notification.ResourceKind,
-		ResourceID:         notification.ResourceID,
+		TargetResourceName: notificationTargetResourceName(notification),
 		CreatedAt:          notification.CreatedAt,
 		ExpiresAt:          notification.ExpiresAt,
 		ReadAt:             notification.ReadAt,
 		DismissedAt:        notification.DismissedAt,
+	}
+}
+
+func notificationTargetResourceName(notification notifications.Notification) dto.ResourceName {
+	switch strings.TrimSpace(notification.ResourceKind) {
+	case "resource_name", "target_resource_name":
+		return dto.ResourceName(strings.TrimSpace(notification.ResourceID))
+	default:
+		return ""
 	}
 }

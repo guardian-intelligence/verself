@@ -70,6 +70,7 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
@@ -156,6 +157,7 @@ func run() error {
 		Environment:      environment,
 		ServiceVersion:   "1.0.0",
 		WriterInstanceID: writerInstanceID,
+		InstallationID:   installationID,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("governance readiness: %w", err)

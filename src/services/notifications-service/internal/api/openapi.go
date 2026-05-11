@@ -13,10 +13,11 @@ import (
 )
 
 type Config struct {
-	Version    string
-	ListenAddr string
-	Service    *notifications.Service
-	Authorizer runtimeiam.OperationAuthorizer
+	Version        string
+	ListenAddr     string
+	Service        *notifications.Service
+	Authorizer     runtimeiam.OperationAuthorizer
+	InstallationID string
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -30,7 +31,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, cfg.Service, cfg.Authorizer)
+	RegisterRoutes(api, cfg.Service, cfg.Authorizer, cfg.InstallationID)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
@@ -58,12 +59,12 @@ func serverURL(addr string) string {
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr})
+	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr, InstallationID: "inst_openapi"})
 	return api.OpenAPI().YAML()
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr})
+	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr, InstallationID: "inst_openapi"})
 	return api.OpenAPI().DowngradeYAML()
 }
 

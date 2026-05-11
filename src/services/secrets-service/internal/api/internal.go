@@ -288,10 +288,10 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 				}
 				return
 			}
-			dto := secretDTO(value.Record)
+			secret := secretDTO(value.Record, "")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(SecretValueDTO{SecretDTO: dto, Value: value.Value})
+			_ = json.NewEncoder(w).Encode(SecretValueDTO{SecretDTO: secret, Value: value.Value})
 		case http.MethodPut:
 			if _, ok := workloadauth.PeerIDFromContext(r.Context()); !ok {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -323,7 +323,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(secretDTO(record))
+			_ = json.NewEncoder(w).Encode(secretDTO(record, ""))
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -109,7 +110,7 @@ func listProjectEventsOperation() projectOperation {
 	}, listEvents)
 }
 
-func resolveProject(svc *projects.Service) func(context.Context, projects.Principal, *resolveProjectInput) (*resolveProjectOutput, error) {
+func resolveProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *resolveProjectInput) (*resolveProjectOutput, error) {
 	return func(ctx context.Context, _ projects.Principal, input *resolveProjectInput) (*resolveProjectOutput, error) {
 		projectID, err := optionalUUID(ctx, input.Body.ProjectID, "project_id")
 		if err != nil {
@@ -124,11 +125,11 @@ func resolveProject(svc *projects.Service) func(context.Context, projects.Princi
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &resolveProjectOutput{Body: dto.ResolveProjectResponse{Project: projectDTO(project)}}, nil
+		return &resolveProjectOutput{Body: dto.ResolveProjectResponse{Project: projectDTO(project, installationID)}}, nil
 	}
 }
 
-func resolveEnvironment(svc *projects.Service) func(context.Context, projects.Principal, *resolveEnvironmentInput) (*resolveEnvironmentOutput, error) {
+func resolveEnvironment(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *resolveEnvironmentInput) (*resolveEnvironmentOutput, error) {
 	return func(ctx context.Context, _ projects.Principal, input *resolveEnvironmentInput) (*resolveEnvironmentOutput, error) {
 		projectID, err := parseUUID(ctx, input.Body.ProjectID, "project_id")
 		if err != nil {
@@ -148,17 +149,17 @@ func resolveEnvironment(svc *projects.Service) func(context.Context, projects.Pr
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &resolveEnvironmentOutput{Body: dto.ResolveProjectEnvironmentResponse{Environment: environmentDTO(env)}}, nil
+		return &resolveEnvironmentOutput{Body: dto.ResolveProjectEnvironmentResponse{Environment: environmentDTO(env, installationID)}}, nil
 	}
 }
 
-func listEvents(svc *projects.Service) func(context.Context, projects.Principal, *projectEventsInput) (*projectEventsOutput, error) {
+func listEvents(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *projectEventsInput) (*projectEventsOutput, error) {
 	return func(ctx context.Context, _ projects.Principal, input *projectEventsInput) (*projectEventsOutput, error) {
 		events, nextCursor, err := svc.ListEvents(ctx, input.OrgID.Uint64(), input.Cursor, input.Limit)
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectEventsOutput{Body: dto.ProjectEventList{Events: eventDTOs(events), NextCursor: nextCursor}}, nil
+		return &projectEventsOutput{Body: dto.ProjectEventList{Events: eventDTOs(events, installationID), NextCursor: nextCursor}}, nil
 	}
 }
 
@@ -169,28 +170,32 @@ func optionalUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
 	return parseUUID(ctx, value, field)
 }
 
-func eventDTO(event projects.Event) dto.ProjectEvent {
+func eventDTO(event projects.Event, installationID string) dto.ProjectEvent {
 	environmentID := ""
+	environmentResourceName := dto.ResourceName("")
 	if event.EnvironmentID != uuid.Nil {
 		environmentID = event.EnvironmentID.String()
+		environmentResourceName = dto.ResourceNameEnvironment(installationID, strconv.FormatUint(event.OrgID, 10), event.ProjectID.String(), environmentID)
 	}
 	return dto.ProjectEvent{
-		EventID:       event.ID.String(),
-		OrgID:         dto.Uint64(event.OrgID),
-		ProjectID:     event.ProjectID.String(),
-		EnvironmentID: environmentID,
-		EventType:     event.EventType,
-		ActorID:       event.ActorID,
-		Payload:       event.Payload,
-		TraceID:       event.TraceID,
-		CreatedAt:     event.CreatedAt,
+		EventID:                 event.ID.String(),
+		OrgID:                   dto.Uint64(event.OrgID),
+		ProjectID:               event.ProjectID.String(),
+		ProjectResourceName:     dto.ResourceNameProject(installationID, strconv.FormatUint(event.OrgID, 10), event.ProjectID.String()),
+		EnvironmentID:           environmentID,
+		EnvironmentResourceName: environmentResourceName,
+		EventType:               event.EventType,
+		ActorID:                 event.ActorID,
+		Payload:                 event.Payload,
+		TraceID:                 event.TraceID,
+		CreatedAt:               event.CreatedAt,
 	}
 }
 
-func eventDTOs(records []projects.Event) []dto.ProjectEvent {
+func eventDTOs(records []projects.Event, installationID string) []dto.ProjectEvent {
 	out := make([]dto.ProjectEvent, 0, len(records))
 	for _, record := range records {
-		out = append(out, eventDTO(record))
+		out = append(out, eventDTO(record, installationID))
 	}
 	return out
 }

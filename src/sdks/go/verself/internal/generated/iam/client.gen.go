@@ -109,11 +109,15 @@ type IAMAPICredential struct {
 	OrgId                string     `json:"org_id"`
 	Permissions          *[]string  `json:"permissions"`
 	PolicyVersionAtIssue int32      `json:"policy_version_at_issue"`
-	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
-	RevokedBy            *string    `json:"revoked_by,omitempty"`
-	Status               string     `json:"status"`
-	SubjectId            string     `json:"subject_id"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+
+	// ResourceName Globally unique Verself resource name for this credential.
+	ResourceName     string     `json:"resourceName"`
+	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy        *string    `json:"revoked_by,omitempty"`
+	ServiceAccountId string     `json:"service_account_id"`
+	Status           string     `json:"status"`
+	SubjectId        string     `json:"subject_id"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // IAMAPICredentialIssuedMaterial defines model for IAMAPICredentialIssuedMaterial.
@@ -137,11 +141,13 @@ type IAMAPICredentials struct {
 // IAMCreateAPICredentialRequest defines model for IAMCreateAPICredentialRequest.
 type IAMCreateAPICredentialRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string                                  `json:"$schema,omitempty"`
-	AuthMethod  *IAMCreateAPICredentialRequestAuthMethod `json:"auth_method,omitempty"`
-	DisplayName string                                   `json:"display_name"`
-	ExpiresAt   *time.Time                               `json:"expires_at,omitempty"`
-	Permissions *[]string                                `json:"permissions"`
+	Schema           *string                                  `json:"$schema,omitempty"`
+	AuthMethod       *IAMCreateAPICredentialRequestAuthMethod `json:"auth_method,omitempty"`
+	Description      *string                                  `json:"description,omitempty"`
+	DisplayName      string                                   `json:"display_name"`
+	ExpiresAt        *time.Time                               `json:"expires_at,omitempty"`
+	Permissions      *[]string                                `json:"permissions"`
+	ServiceAccountId *string                                  `json:"service_account_id,omitempty"`
 }
 
 // IAMCreateAPICredentialRequestAuthMethod defines model for IAMCreateAPICredentialRequest.AuthMethod.
@@ -178,13 +184,16 @@ type IAMInviteMemberResponse struct {
 // IAMMember defines model for IAMMember.
 type IAMMember struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string   `json:"$schema,omitempty"`
-	DisplayName string    `json:"display_name"`
-	Email       string    `json:"email"`
-	LoginName   string    `json:"login_name"`
-	RoleKeys    *[]string `json:"role_keys"`
-	State       string    `json:"state"`
-	UserId      string    `json:"user_id"`
+	Schema      *string `json:"$schema,omitempty"`
+	DisplayName string  `json:"display_name"`
+	Email       string  `json:"email"`
+	LoginName   string  `json:"login_name"`
+
+	// ResourceName Globally unique Verself resource name for this member when the parent organization is known.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	RoleKeys     *[]string `json:"role_keys"`
+	State        string    `json:"state"`
+	UserId       string    `json:"user_id"`
 }
 
 // IAMMemberCapabilities defines model for IAMMemberCapabilities.
@@ -230,15 +239,21 @@ type IAMOrganization struct {
 	OrgAclVersion      int32                         `json:"org_acl_version"`
 	OrgId              string                        `json:"org_id"`
 	Permissions        *[]string                     `json:"permissions"`
-	Slug               string                        `json:"slug"`
-	Version            int32                         `json:"version"`
+
+	// ResourceName Globally unique Verself resource name for this organization.
+	ResourceName string `json:"resourceName"`
+	Slug         string `json:"slug"`
+	Version      int32  `json:"version"`
 }
 
 // IAMOrganizationMetadata defines model for IAMOrganizationMetadata.
 type IAMOrganizationMetadata struct {
 	DisplayName string `json:"display_name"`
 	OrgId       string `json:"org_id"`
-	Slug        string `json:"slug"`
+
+	// ResourceName Globally unique Verself resource name for this organization.
+	ResourceName string `json:"resourceName"`
+	Slug         string `json:"slug"`
 }
 
 // IAMPolicy defines model for IAMPolicy.
@@ -247,9 +262,11 @@ type IAMPolicy struct {
 	Schema   *string             `json:"$schema,omitempty"`
 	Bindings *[]IAMPolicyBinding `json:"bindings"`
 	Etag     *string             `json:"etag,omitempty"`
-	Resource *string             `json:"resource,omitempty"`
-	Version  int32               `json:"version"`
-	ZedToken *string             `json:"zed_token,omitempty"`
+
+	// ResourceName Globally unique Verself resource name for the protected resource.
+	ResourceName *string `json:"resourceName,omitempty"`
+	Version      int32   `json:"version"`
+	ZedToken     *string `json:"zed_token,omitempty"`
 }
 
 // IAMPolicyBinding defines model for IAMPolicyBinding.
@@ -282,6 +299,36 @@ type IAMRollAPICredentialResponse struct {
 	Schema         *string                        `json:"$schema,omitempty"`
 	Credential     IAMAPICredential               `json:"credential"`
 	IssuedMaterial IAMAPICredentialIssuedMaterial `json:"issued_material"`
+}
+
+// IAMServiceAccount defines model for IAMServiceAccount.
+type IAMServiceAccount struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string    `json:"$schema,omitempty"`
+	ClientId    string     `json:"client_id"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CreatedBy   string     `json:"created_by"`
+	Description *string    `json:"description,omitempty"`
+	DisabledAt  *time.Time `json:"disabled_at,omitempty"`
+	DisabledBy  *string    `json:"disabled_by,omitempty"`
+	DisplayName string     `json:"display_name"`
+	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+	OrgId       string     `json:"org_id"`
+	Permissions *[]string  `json:"permissions"`
+
+	// ResourceName Globally unique Verself resource name for this service account.
+	ResourceName     string    `json:"resourceName"`
+	ServiceAccountId string    `json:"service_account_id"`
+	Status           string    `json:"status"`
+	SubjectId        string    `json:"subject_id"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// IAMServiceAccounts defines model for IAMServiceAccounts.
+type IAMServiceAccounts struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string              `json:"$schema,omitempty"`
+	ServiceAccounts *[]IAMServiceAccount `json:"service_accounts"`
 }
 
 // IAMSetPolicyRequest defines model for IAMSetPolicyRequest.
@@ -362,6 +409,12 @@ type InviteOrganizationMemberParams struct {
 
 // UpdateOrganizationMemberRolesParams defines parameters for UpdateOrganizationMemberRoles.
 type UpdateOrganizationMemberRolesParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// DisableServiceAccountParams defines parameters for DisableServiceAccount.
+type DisableServiceAccountParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
@@ -519,6 +572,15 @@ type ClientInterface interface {
 	UpdateOrganizationMemberRolesWithBody(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateOrganizationMemberRoles(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, body UpdateOrganizationMemberRolesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListServiceAccounts request
+	ListServiceAccounts(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetServiceAccount request
+	GetServiceAccount(ctx context.Context, serviceAccountId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DisableServiceAccount request
+	DisableServiceAccount(ctx context.Context, serviceAccountId string, params *DisableServiceAccountParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetOrganizationIamPolicy request
 	GetOrganizationIamPolicy(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -752,6 +814,42 @@ func (c *Client) UpdateOrganizationMemberRolesWithBody(ctx context.Context, user
 
 func (c *Client) UpdateOrganizationMemberRoles(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, body UpdateOrganizationMemberRolesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateOrganizationMemberRolesRequest(c.Server, userId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListServiceAccounts(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListServiceAccountsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetServiceAccount(ctx context.Context, serviceAccountId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetServiceAccountRequest(c.Server, serviceAccountId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DisableServiceAccount(ctx context.Context, serviceAccountId string, params *DisableServiceAccountParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableServiceAccountRequest(c.Server, serviceAccountId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1370,6 +1468,114 @@ func NewUpdateOrganizationMemberRolesRequestWithBody(server string, userId strin
 	return req, nil
 }
 
+// NewListServiceAccountsRequest generates requests for ListServiceAccounts
+func NewListServiceAccountsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organization/service-accounts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetServiceAccountRequest generates requests for GetServiceAccount
+func NewGetServiceAccountRequest(server string, serviceAccountId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "service_account_id", serviceAccountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organization/service-accounts/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDisableServiceAccountRequest generates requests for DisableServiceAccount
+func NewDisableServiceAccountRequest(server string, serviceAccountId string, params *DisableServiceAccountParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "service_account_id", serviceAccountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organization/service-accounts/%s/disable", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetOrganizationIamPolicyRequest generates requests for GetOrganizationIamPolicy
 func NewGetOrganizationIamPolicyRequest(server string, orgId string) (*http.Request, error) {
 	var err error
@@ -1604,6 +1810,15 @@ type ClientWithResponsesInterface interface {
 	UpdateOrganizationMemberRolesWithBodyWithResponse(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOrganizationMemberRolesResponse, error)
 
 	UpdateOrganizationMemberRolesWithResponse(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, body UpdateOrganizationMemberRolesJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationMemberRolesResponse, error)
+
+	// ListServiceAccountsWithResponse request
+	ListServiceAccountsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListServiceAccountsResponse, error)
+
+	// GetServiceAccountWithResponse request
+	GetServiceAccountWithResponse(ctx context.Context, serviceAccountId string, reqEditors ...RequestEditorFn) (*GetServiceAccountResponse, error)
+
+	// DisableServiceAccountWithResponse request
+	DisableServiceAccountWithResponse(ctx context.Context, serviceAccountId string, params *DisableServiceAccountParams, reqEditors ...RequestEditorFn) (*DisableServiceAccountResponse, error)
 
 	// GetOrganizationIamPolicyWithResponse request
 	GetOrganizationIamPolicyWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetOrganizationIamPolicyResponse, error)
@@ -1918,6 +2133,75 @@ func (r UpdateOrganizationMemberRolesResponse) StatusCode() int {
 	return 0
 }
 
+type ListServiceAccountsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IAMServiceAccounts
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListServiceAccountsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListServiceAccountsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetServiceAccountResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IAMServiceAccount
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetServiceAccountResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetServiceAccountResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DisableServiceAccountResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IAMServiceAccount
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r DisableServiceAccountResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisableServiceAccountResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetOrganizationIamPolicyResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -2150,6 +2434,33 @@ func (c *ClientWithResponses) UpdateOrganizationMemberRolesWithResponse(ctx cont
 		return nil, err
 	}
 	return ParseUpdateOrganizationMemberRolesResponse(rsp)
+}
+
+// ListServiceAccountsWithResponse request returning *ListServiceAccountsResponse
+func (c *ClientWithResponses) ListServiceAccountsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListServiceAccountsResponse, error) {
+	rsp, err := c.ListServiceAccounts(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListServiceAccountsResponse(rsp)
+}
+
+// GetServiceAccountWithResponse request returning *GetServiceAccountResponse
+func (c *ClientWithResponses) GetServiceAccountWithResponse(ctx context.Context, serviceAccountId string, reqEditors ...RequestEditorFn) (*GetServiceAccountResponse, error) {
+	rsp, err := c.GetServiceAccount(ctx, serviceAccountId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetServiceAccountResponse(rsp)
+}
+
+// DisableServiceAccountWithResponse request returning *DisableServiceAccountResponse
+func (c *ClientWithResponses) DisableServiceAccountWithResponse(ctx context.Context, serviceAccountId string, params *DisableServiceAccountParams, reqEditors ...RequestEditorFn) (*DisableServiceAccountResponse, error) {
+	rsp, err := c.DisableServiceAccount(ctx, serviceAccountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableServiceAccountResponse(rsp)
 }
 
 // GetOrganizationIamPolicyWithResponse request returning *GetOrganizationIamPolicyResponse
@@ -2607,6 +2918,105 @@ func ParseUpdateOrganizationMemberRolesResponse(rsp *http.Response) (*UpdateOrga
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest IAMMember
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListServiceAccountsResponse parses an HTTP response from a ListServiceAccountsWithResponse call
+func ParseListServiceAccountsResponse(rsp *http.Response) (*ListServiceAccountsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListServiceAccountsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IAMServiceAccounts
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetServiceAccountResponse parses an HTTP response from a GetServiceAccountWithResponse call
+func ParseGetServiceAccountResponse(rsp *http.Response) (*GetServiceAccountResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetServiceAccountResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IAMServiceAccount
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDisableServiceAccountResponse parses an HTTP response from a DisableServiceAccountWithResponse call
+func ParseDisableServiceAccountResponse(rsp *http.Response) (*DisableServiceAccountResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DisableServiceAccountResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IAMServiceAccount
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

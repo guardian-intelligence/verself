@@ -255,12 +255,15 @@ type OpaqueCredentialDTO struct {
 	LastUsedAt     *time.Time         `json:"last_used_at,omitempty"`
 	Metadata       map[string]string  `json:"metadata"`
 	OrgId          string             `json:"org_id"`
-	RevokedAt      *time.Time         `json:"revoked_at,omitempty"`
-	Scopes         []string           `json:"scopes"`
-	Status         string             `json:"status"`
-	Subject        string             `json:"subject"`
-	TokenPrefix    string             `json:"token_prefix"`
-	UpdatedAt      time.Time          `json:"updated_at"`
+
+	// ResourceName Globally unique Verself resource name for this opaque credential.
+	ResourceName *string    `json:"resourceName,omitempty"`
+	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
+	Scopes       []string   `json:"scopes"`
+	Status       string     `json:"status"`
+	Subject      string     `json:"subject"`
+	TokenPrefix  string     `json:"token_prefix"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // OpaqueCredentialMaterialDTO defines model for OpaqueCredentialMaterialDTO.
@@ -337,10 +340,13 @@ type SecretDTO struct {
 	EnvId          *string   `json:"env_id,omitempty"`
 	Kind           string    `json:"kind"`
 	Name           string    `json:"name"`
-	ScopeLevel     string    `json:"scope_level"`
-	SecretId       string    `json:"secret_id"`
-	SourceId       *string   `json:"source_id,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
+
+	// ResourceName Globally unique Verself resource name for this secret.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	ScopeLevel   string    `json:"scope_level"`
+	SecretId     string    `json:"secret_id"`
+	SourceId     *string   `json:"source_id,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // SecretValueDTO defines model for SecretValueDTO.
@@ -353,11 +359,14 @@ type SecretValueDTO struct {
 	EnvId          *string   `json:"env_id,omitempty"`
 	Kind           string    `json:"kind"`
 	Name           string    `json:"name"`
-	ScopeLevel     string    `json:"scope_level"`
-	SecretId       string    `json:"secret_id"`
-	SourceId       *string   `json:"source_id,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Value          string    `json:"value"`
+
+	// ResourceName Globally unique Verself resource name for this secret.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	ScopeLevel   string    `json:"scope_level"`
+	SecretId     string    `json:"secret_id"`
+	SourceId     *string   `json:"source_id,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Value        string    `json:"value"`
 }
 
 // SecretsDTO defines model for SecretsDTO.
@@ -383,7 +392,10 @@ type TransitKeyDTO struct {
 	KeyId          string    `json:"key_id"`
 	Name           string    `json:"name"`
 	PublicKey      string    `json:"public_key"`
-	UpdatedAt      time.Time `json:"updated_at"`
+
+	// ResourceName Globally unique Verself resource name for this transit key.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // TransitPayloadInputBody defines model for TransitPayloadInputBody.
@@ -406,10 +418,13 @@ type VariableDTO struct {
 	EnvId          *string   `json:"env_id,omitempty"`
 	Kind           string    `json:"kind"`
 	Name           string    `json:"name"`
-	ScopeLevel     string    `json:"scope_level"`
-	SourceId       *string   `json:"source_id,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	VariableId     string    `json:"variable_id"`
+
+	// ResourceName Globally unique Verself resource name for this variable.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	ScopeLevel   string    `json:"scope_level"`
+	SourceId     *string   `json:"source_id,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	VariableId   string    `json:"variable_id"`
 }
 
 // VariableValueDTO defines model for VariableValueDTO.
@@ -422,11 +437,14 @@ type VariableValueDTO struct {
 	EnvId          *string   `json:"env_id,omitempty"`
 	Kind           string    `json:"kind"`
 	Name           string    `json:"name"`
-	ScopeLevel     string    `json:"scope_level"`
-	SourceId       *string   `json:"source_id,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Value          string    `json:"value"`
-	VariableId     string    `json:"variable_id"`
+
+	// ResourceName Globally unique Verself resource name for this variable.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	ScopeLevel   string    `json:"scope_level"`
+	SourceId     *string   `json:"source_id,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Value        string    `json:"value"`
+	VariableId   string    `json:"variable_id"`
 }
 
 // VariablesDTO defines model for VariablesDTO.

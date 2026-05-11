@@ -41,6 +41,7 @@ job "secrets-service" {
         VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/secrets-service/auth-audience"
         VERSELF_CRED_OPENBAO_CA_CERT = "/etc/credstore/secrets-service/openbao-ca-cert"
+        VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_SUPERVISOR = "nomad"

@@ -114,6 +114,7 @@ type BillingContracts struct {
 
 type BillingDocument struct {
 	DocumentID             string        `json:"document_id"`
+	ResourceName           ResourceName  `json:"resourceName" doc:"Globally unique Verself resource name for this billing document."`
 	DocumentNumber         string        `json:"document_number"`
 	DocumentKind           string        `json:"document_kind" enum:"invoice,statement,internal_statement,credit_note,adjustment_invoice"`
 	FinalizationID         string        `json:"finalization_id"`

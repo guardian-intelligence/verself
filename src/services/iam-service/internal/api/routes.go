@@ -15,7 +15,7 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
+func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string) {
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-organization",
 		Method:      http.MethodGet,
@@ -28,7 +28,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditOrganizationRead,
-	}), getOrganization(svc))
+	}), getOrganization(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-my-organizations",
@@ -42,7 +42,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenRoleAssignmentOrgIDs,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditOrganizationMembershipList,
-	}), listMyOrganizations(svc, authzSvc))
+	}), listMyOrganizations(svc, authzSvc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "patch-organization",
@@ -59,7 +59,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditOrganizationUpdate,
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), updateOrganization(svc))
+	}), updateOrganization(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-organization-members",
@@ -73,7 +73,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditOrganizationMemberList,
-	}), listMembers(svc))
+	}), listMembers(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "invite-organization-member",
@@ -107,7 +107,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditOrganizationMemberRolesWrite,
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), updateMemberRoles(svc))
+	}), updateMemberRoles(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-organization-member-capabilities",
@@ -152,7 +152,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditOrganizationPolicyRead,
-	}), getOrganizationIAMPolicy(authzSvc))
+	}), getOrganizationIAMPolicy(authzSvc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "set-organization-iam-policy",
@@ -169,7 +169,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditOrganizationPolicyWrite,
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), setOrganizationIAMPolicy(authzSvc))
+	}), setOrganizationIAMPolicy(authzSvc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "test-organization-iam-permissions",
@@ -199,7 +199,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditServiceAccountList,
-	}), listServiceAccounts(svc))
+	}), listServiceAccounts(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-service-account",
@@ -213,7 +213,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditServiceAccountRead,
-	}), getServiceAccount(svc))
+	}), getServiceAccount(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "disable-service-account",
@@ -230,7 +230,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditServiceAccountDisable,
 		BodyLimitBytes: bodyLimitNoBody,
-	}), disableServiceAccount(svc))
+	}), disableServiceAccount(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "list-api-credentials",
@@ -244,7 +244,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditAPICredentialList,
-	}), listAPICredentials(svc))
+	}), listAPICredentials(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID: "get-api-credential",
@@ -258,7 +258,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		OrgScope:       orgScopeTokenOrgID,
 		RateLimitClass: rateLimitRead,
 		AuditEvent:     auditAPICredentialRead,
-	}), getAPICredential(svc))
+	}), getAPICredential(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "create-api-credential",
@@ -275,7 +275,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditAPICredentialCreate,
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createAPICredential(svc))
+	}), createAPICredential(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "roll-api-credential",
@@ -292,7 +292,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditAPICredentialRoll,
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), rollAPICredential(svc))
+	}), rollAPICredential(svc, installationID))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
 		OperationID:   "revoke-api-credential",
@@ -309,7 +309,7 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditAPICredentialRevoke,
 		BodyLimitBytes: bodyLimitNoBody,
-	}), revokeAPICredential(svc))
+	}), revokeAPICredential(svc, installationID))
 }
 
 type emptyInput struct{}
@@ -456,7 +456,7 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 	}, nil
 }
 
-func getOrganization(svc *identity.Service) func(context.Context, *emptyInput) (*organizationOutput, error) {
+func getOrganization(svc *identity.Service, installationID string) func(context.Context, *emptyInput) (*organizationOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*organizationOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -466,11 +466,11 @@ func getOrganization(svc *identity.Service) func(context.Context, *emptyInput) (
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &organizationOutput{Body: organizationDTO(org)}, nil
+		return &organizationOutput{Body: organizationDTO(org, installationID)}, nil
 	}
 }
 
-func listMyOrganizations(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *emptyInput) (*accessibleOrganizationsOutput, error) {
+func listMyOrganizations(svc *identity.Service, authzSvc *authz.Service, installationID string) func(context.Context, *emptyInput) (*accessibleOrganizationsOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*accessibleOrganizationsOutput, error) {
 		authIdentity, err := requireIdentity(ctx)
 		if err != nil {
@@ -484,11 +484,11 @@ func listMyOrganizations(svc *identity.Service, authzSvc *authz.Service) func(co
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &accessibleOrganizationsOutput{Body: organizationMetadataDTOs(organizations)}, nil
+		return &accessibleOrganizationsOutput{Body: organizationMetadataDTOs(organizations, installationID)}, nil
 	}
 }
 
-func updateOrganization(svc *identity.Service) func(context.Context, *updateOrganizationInput) (*organizationOutput, error) {
+func updateOrganization(svc *identity.Service, installationID string) func(context.Context, *updateOrganizationInput) (*organizationOutput, error) {
 	return func(ctx context.Context, input *updateOrganizationInput) (*organizationOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -502,11 +502,11 @@ func updateOrganization(svc *identity.Service) func(context.Context, *updateOrga
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &organizationOutput{Body: organizationDTO(org)}, nil
+		return &organizationOutput{Body: organizationDTO(org, installationID)}, nil
 	}
 }
 
-func listMembers(svc *identity.Service) func(context.Context, *emptyInput) (*membersOutput, error) {
+func listMembers(svc *identity.Service, installationID string) func(context.Context, *emptyInput) (*membersOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*membersOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -516,7 +516,7 @@ func listMembers(svc *identity.Service) func(context.Context, *emptyInput) (*mem
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &membersOutput{Body: dto.IAMMembers{Members: memberDTOs(members)}}, nil
+		return &membersOutput{Body: dto.IAMMembers{Members: memberDTOs(members, principal.OrgID, installationID)}}, nil
 	}
 }
 
@@ -544,7 +544,7 @@ func inviteMember(svc *identity.Service) func(context.Context, *inviteMemberInpu
 	}
 }
 
-func updateMemberRoles(svc *identity.Service) func(context.Context, *memberRolesPath) (*memberOutput, error) {
+func updateMemberRoles(svc *identity.Service, installationID string) func(context.Context, *memberRolesPath) (*memberOutput, error) {
 	return func(ctx context.Context, input *memberRolesPath) (*memberOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -561,7 +561,7 @@ func updateMemberRoles(svc *identity.Service) func(context.Context, *memberRoles
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &memberOutput{Body: memberDTO(result.Member)}, nil
+		return &memberOutput{Body: memberDTO(result.Member, principal.OrgID, installationID)}, nil
 	}
 }
 
@@ -596,7 +596,7 @@ func putMemberCapabilities(svc *identity.Service) func(context.Context, *putMemb
 	}
 }
 
-func getOrganizationIAMPolicy(authzSvc *authz.Service) func(context.Context, *organizationIAMPolicyPath) (*organizationIAMPolicyOutput, error) {
+func getOrganizationIAMPolicy(authzSvc *authz.Service, installationID string) func(context.Context, *organizationIAMPolicyPath) (*organizationIAMPolicyOutput, error) {
 	return func(ctx context.Context, input *organizationIAMPolicyPath) (*organizationIAMPolicyOutput, error) {
 		if err := requirePathOrgMatchesToken(ctx, input.OrgID); err != nil {
 			return nil, err
@@ -608,11 +608,11 @@ func getOrganizationIAMPolicy(authzSvc *authz.Service) func(context.Context, *or
 		if err != nil {
 			return nil, authzError(ctx, err)
 		}
-		return &organizationIAMPolicyOutput{Body: policyDTO(policy)}, nil
+		return &organizationIAMPolicyOutput{Body: policyDTO(policy, input.OrgID, installationID)}, nil
 	}
 }
 
-func setOrganizationIAMPolicy(authzSvc *authz.Service) func(context.Context, *setOrganizationIAMPolicyInput) (*organizationIAMPolicyOutput, error) {
+func setOrganizationIAMPolicy(authzSvc *authz.Service, installationID string) func(context.Context, *setOrganizationIAMPolicyInput) (*organizationIAMPolicyOutput, error) {
 	return func(ctx context.Context, input *setOrganizationIAMPolicyInput) (*organizationIAMPolicyOutput, error) {
 		if err := requirePathOrgMatchesToken(ctx, input.OrgID); err != nil {
 			return nil, err
@@ -624,7 +624,7 @@ func setOrganizationIAMPolicy(authzSvc *authz.Service) func(context.Context, *se
 		if err != nil {
 			return nil, authzError(ctx, err)
 		}
-		return &organizationIAMPolicyOutput{Body: policyDTO(policy)}, nil
+		return &organizationIAMPolicyOutput{Body: policyDTO(policy, input.OrgID, installationID)}, nil
 	}
 }
 
@@ -651,7 +651,7 @@ func testOrganizationIAMPermissions(authzSvc *authz.Service) func(context.Contex
 	}
 }
 
-func listServiceAccounts(svc *identity.Service) func(context.Context, *emptyInput) (*serviceAccountsOutput, error) {
+func listServiceAccounts(svc *identity.Service, installationID string) func(context.Context, *emptyInput) (*serviceAccountsOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*serviceAccountsOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -661,11 +661,11 @@ func listServiceAccounts(svc *identity.Service) func(context.Context, *emptyInpu
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &serviceAccountsOutput{Body: dto.IAMServiceAccounts{ServiceAccounts: serviceAccountDTOs(accounts)}}, nil
+		return &serviceAccountsOutput{Body: dto.IAMServiceAccounts{ServiceAccounts: serviceAccountDTOs(accounts, installationID)}}, nil
 	}
 }
 
-func getServiceAccount(svc *identity.Service) func(context.Context, *serviceAccountPath) (*serviceAccountOutput, error) {
+func getServiceAccount(svc *identity.Service, installationID string) func(context.Context, *serviceAccountPath) (*serviceAccountOutput, error) {
 	return func(ctx context.Context, input *serviceAccountPath) (*serviceAccountOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -675,11 +675,11 @@ func getServiceAccount(svc *identity.Service) func(context.Context, *serviceAcco
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &serviceAccountOutput{Body: serviceAccountDTO(account)}, nil
+		return &serviceAccountOutput{Body: serviceAccountDTO(account, installationID)}, nil
 	}
 }
 
-func disableServiceAccount(svc *identity.Service) func(context.Context, *serviceAccountPath) (*serviceAccountOutput, error) {
+func disableServiceAccount(svc *identity.Service, installationID string) func(context.Context, *serviceAccountPath) (*serviceAccountOutput, error) {
 	return func(ctx context.Context, input *serviceAccountPath) (*serviceAccountOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -689,11 +689,11 @@ func disableServiceAccount(svc *identity.Service) func(context.Context, *service
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &serviceAccountOutput{Body: serviceAccountDTO(result.ServiceAccount)}, nil
+		return &serviceAccountOutput{Body: serviceAccountDTO(result.ServiceAccount, installationID)}, nil
 	}
 }
 
-func listAPICredentials(svc *identity.Service) func(context.Context, *emptyInput) (*apiCredentialsOutput, error) {
+func listAPICredentials(svc *identity.Service, installationID string) func(context.Context, *emptyInput) (*apiCredentialsOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*apiCredentialsOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -703,11 +703,11 @@ func listAPICredentials(svc *identity.Service) func(context.Context, *emptyInput
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &apiCredentialsOutput{Body: dto.IAMAPICredentials{Credentials: apiCredentialDTOs(credentials)}}, nil
+		return &apiCredentialsOutput{Body: dto.IAMAPICredentials{Credentials: apiCredentialDTOs(credentials, installationID)}}, nil
 	}
 }
 
-func getAPICredential(svc *identity.Service) func(context.Context, *apiCredentialPath) (*apiCredentialOutput, error) {
+func getAPICredential(svc *identity.Service, installationID string) func(context.Context, *apiCredentialPath) (*apiCredentialOutput, error) {
 	return func(ctx context.Context, input *apiCredentialPath) (*apiCredentialOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -717,11 +717,11 @@ func getAPICredential(svc *identity.Service) func(context.Context, *apiCredentia
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &apiCredentialOutput{Body: apiCredentialDTO(credential)}, nil
+		return &apiCredentialOutput{Body: apiCredentialDTO(credential, installationID)}, nil
 	}
 }
 
-func createAPICredential(svc *identity.Service) func(context.Context, *createAPICredentialInput) (*createAPICredentialOutput, error) {
+func createAPICredential(svc *identity.Service, installationID string) func(context.Context, *createAPICredentialInput) (*createAPICredentialOutput, error) {
 	return func(ctx context.Context, input *createAPICredentialInput) (*createAPICredentialOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -739,13 +739,13 @@ func createAPICredential(svc *identity.Service) func(context.Context, *createAPI
 			return nil, identityError(ctx, err)
 		}
 		return &createAPICredentialOutput{Body: dto.IAMCreateAPICredentialResponse{
-			Credential:     apiCredentialDTO(result.Credential),
+			Credential:     apiCredentialDTO(result.Credential, installationID),
 			IssuedMaterial: issuedMaterialDTO(result.IssuedMaterial),
 		}}, nil
 	}
 }
 
-func rollAPICredential(svc *identity.Service) func(context.Context, *rollAPICredentialInput) (*rollAPICredentialOutput, error) {
+func rollAPICredential(svc *identity.Service, installationID string) func(context.Context, *rollAPICredentialInput) (*rollAPICredentialOutput, error) {
 	return func(ctx context.Context, input *rollAPICredentialInput) (*rollAPICredentialOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -758,13 +758,13 @@ func rollAPICredential(svc *identity.Service) func(context.Context, *rollAPICred
 			return nil, identityError(ctx, err)
 		}
 		return &rollAPICredentialOutput{Body: dto.IAMRollAPICredentialResponse{
-			Credential:     apiCredentialDTO(result.Credential),
+			Credential:     apiCredentialDTO(result.Credential, installationID),
 			IssuedMaterial: issuedMaterialDTO(result.IssuedMaterial),
 		}}, nil
 	}
 }
 
-func revokeAPICredential(svc *identity.Service) func(context.Context, *apiCredentialPath) (*apiCredentialOutput, error) {
+func revokeAPICredential(svc *identity.Service, installationID string) func(context.Context, *apiCredentialPath) (*apiCredentialOutput, error) {
 	return func(ctx context.Context, input *apiCredentialPath) (*apiCredentialOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
@@ -774,30 +774,32 @@ func revokeAPICredential(svc *identity.Service) func(context.Context, *apiCreden
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &apiCredentialOutput{Body: apiCredentialDTO(credential)}, nil
+		return &apiCredentialOutput{Body: apiCredentialDTO(credential, installationID)}, nil
 	}
 }
 
-func organizationDTO(org identity.Organization) dto.IAMOrganization {
+func organizationDTO(org identity.Organization, installationID string) dto.IAMOrganization {
 	return dto.IAMOrganization{
 		OrgID:              orgID(org.OrgID),
+		ResourceName:       dto.ResourceNameOrg(installationID, org.OrgID),
 		DisplayName:        org.DisplayName,
 		Slug:               org.Slug,
 		Version:            org.Version,
 		OrgACLVersion:      org.OrgACLVersion,
-		Caller:             memberDTO(org.Caller),
+		Caller:             memberDTO(org.Caller, org.OrgID, installationID),
 		MemberCapabilities: memberCapabilitiesDocumentDTO(org.MemberCapabilities),
 		Permissions:        append([]string(nil), org.Permissions...),
 	}
 }
 
-func organizationMetadataDTOs(organizations []identity.OrganizationMetadata) []dto.IAMOrganizationMetadata {
+func organizationMetadataDTOs(organizations []identity.OrganizationMetadata, installationID string) []dto.IAMOrganizationMetadata {
 	out := make([]dto.IAMOrganizationMetadata, 0, len(organizations))
 	for _, organization := range organizations {
 		out = append(out, dto.IAMOrganizationMetadata{
-			OrgID:       orgID(organization.OrgID),
-			DisplayName: organization.DisplayName,
-			Slug:        organization.Slug,
+			OrgID:        orgID(organization.OrgID),
+			ResourceName: dto.ResourceNameOrg(installationID, organization.OrgID),
+			DisplayName:  organization.DisplayName,
+			Slug:         organization.Slug,
 		})
 	}
 	return out
@@ -815,22 +817,23 @@ func organizationProfileDTO(profile identity.OrganizationProfile) dto.IAMOrganiz
 	}
 }
 
-func memberDTOs(members []identity.Member) []dto.IAMMember {
+func memberDTOs(members []identity.Member, orgID string, installationID string) []dto.IAMMember {
 	out := make([]dto.IAMMember, 0, len(members))
 	for _, member := range members {
-		out = append(out, memberDTO(member))
+		out = append(out, memberDTO(member, orgID, installationID))
 	}
 	return out
 }
 
-func memberDTO(member identity.Member) dto.IAMMember {
+func memberDTO(member identity.Member, orgID string, installationID string) dto.IAMMember {
 	return dto.IAMMember{
-		UserID:      member.UserID,
-		Email:       member.Email,
-		LoginName:   member.LoginName,
-		DisplayName: member.DisplayName,
-		State:       member.State,
-		RoleKeys:    append([]string(nil), member.RoleKeys...),
+		UserID:       member.UserID,
+		ResourceName: dto.ResourceNameMember(installationID, orgID, member.UserID),
+		Email:        member.Email,
+		LoginName:    member.LoginName,
+		DisplayName:  member.DisplayName,
+		State:        member.State,
+		RoleKeys:     append([]string(nil), member.RoleKeys...),
 	}
 }
 
@@ -862,17 +865,18 @@ func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) dto.IAMMembe
 	}
 }
 
-func serviceAccountDTOs(accounts []identity.ServiceAccount) []dto.IAMServiceAccount {
+func serviceAccountDTOs(accounts []identity.ServiceAccount, installationID string) []dto.IAMServiceAccount {
 	out := make([]dto.IAMServiceAccount, 0, len(accounts))
 	for _, account := range accounts {
-		out = append(out, serviceAccountDTO(account))
+		out = append(out, serviceAccountDTO(account, installationID))
 	}
 	return out
 }
 
-func serviceAccountDTO(account identity.ServiceAccount) dto.IAMServiceAccount {
+func serviceAccountDTO(account identity.ServiceAccount, installationID string) dto.IAMServiceAccount {
 	return dto.IAMServiceAccount{
 		ServiceAccountID: account.ServiceAccountID,
+		ResourceName:     dto.ResourceNameMachinePrincipal(installationID, account.OrgID, account.ServiceAccountID),
 		OrgID:            orgID(account.OrgID),
 		SubjectID:        account.SubjectID,
 		ClientID:         account.ClientID,
@@ -889,17 +893,18 @@ func serviceAccountDTO(account identity.ServiceAccount) dto.IAMServiceAccount {
 	}
 }
 
-func apiCredentialDTOs(credentials []identity.APICredential) []dto.IAMAPICredential {
+func apiCredentialDTOs(credentials []identity.APICredential, installationID string) []dto.IAMAPICredential {
 	out := make([]dto.IAMAPICredential, 0, len(credentials))
 	for _, credential := range credentials {
-		out = append(out, apiCredentialDTO(credential))
+		out = append(out, apiCredentialDTO(credential, installationID))
 	}
 	return out
 }
 
-func apiCredentialDTO(credential identity.APICredential) dto.IAMAPICredential {
+func apiCredentialDTO(credential identity.APICredential, installationID string) dto.IAMAPICredential {
 	return dto.IAMAPICredential{
 		CredentialID:         credential.CredentialID,
+		ResourceName:         dto.ResourceNameCredential(installationID, credential.OrgID, credential.CredentialID),
 		ServiceAccountID:     credential.ServiceAccountID,
 		OrgID:                orgID(credential.OrgID),
 		SubjectID:            credential.SubjectID,
@@ -961,13 +966,13 @@ func authzSubjectFromIdentity(authIdentity *auth.Identity) identity.Authorizatio
 	return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser, ID: authIdentity.Subject}
 }
 
-func policyDTO(policy authz.Policy) dto.IAMPolicy {
+func policyDTO(policy authz.Policy, orgID string, installationID string) dto.IAMPolicy {
 	return dto.IAMPolicy{
-		Resource: policy.Resource,
-		Version:  policy.Version,
-		Etag:     policy.Etag,
-		Bindings: policyBindingDTOs(policy.Bindings),
-		ZedToken: policy.ZedToken,
+		ResourceName: dto.ResourceNameOrg(installationID, orgID),
+		Version:      policy.Version,
+		Etag:         policy.Etag,
+		Bindings:     policyBindingDTOs(policy.Bindings),
+		ZedToken:     policy.ZedToken,
 	}
 }
 
@@ -984,7 +989,6 @@ func policyBindingDTOs(bindings []authz.PolicyBinding) []dto.IAMPolicyBinding {
 
 func policyFromDTO(policy dto.IAMPolicy) authz.Policy {
 	return authz.Policy{
-		Resource: policy.Resource,
 		Version:  policy.Version,
 		Etag:     policy.Etag,
 		Bindings: policyBindingsFromDTO(policy.Bindings),

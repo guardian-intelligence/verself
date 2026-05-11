@@ -13,10 +13,11 @@ import (
 )
 
 type Config struct {
-	Version    string
-	ListenAddr string
-	Service    *projects.Service
-	Authorizer runtimeiam.OperationAuthorizer
+	Version        string
+	ListenAddr     string
+	Service        *projects.Service
+	Authorizer     runtimeiam.OperationAuthorizer
+	InstallationID string
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -30,7 +31,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	applyPublicSecurityScheme(api)
-	registerProjectOperations(api, cfg.Service, apiProjectionPublic, cfg.Authorizer)
+	registerProjectOperations(api, cfg.Service, apiProjectionPublic, cfg.Authorizer, cfg.InstallationID)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }

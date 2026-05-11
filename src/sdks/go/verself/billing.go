@@ -34,6 +34,7 @@ type BillingGrants struct {
 
 type BillingDocument struct {
 	DocumentID             string     `json:"document_id"`
+	ResourceName           string     `json:"resourceName"`
 	DocumentNumber         string     `json:"document_number"`
 	DocumentKind           string     `json:"document_kind"`
 	FinalizationID         string     `json:"finalization_id"`

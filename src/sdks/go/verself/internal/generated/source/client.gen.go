@@ -43,7 +43,10 @@ type CheckoutGrant struct {
 	GrantId   string    `json:"grant_id"`
 	Ref       string    `json:"ref"`
 	RepoId    string    `json:"repo_id"`
-	Token     string    `json:"token"`
+
+	// ResourceName Globally unique Verself resource name for this checkout grant.
+	ResourceName string `json:"resourceName"`
+	Token        string `json:"token"`
 }
 
 // CreateCheckoutGrantRequest defines model for CreateCheckoutGrantRequest.
@@ -125,6 +128,9 @@ type GitCredential struct {
 	CredentialId string    `json:"credential_id"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	OrgId        string    `json:"org_id"`
+
+	// ResourceName Globally unique Verself resource name for this Git credential.
+	ResourceName string    `json:"resourceName"`
 	Scopes       *[]string `json:"scopes"`
 	Token        string    `json:"token"`
 	TokenPrefix  string    `json:"token_prefix"`
@@ -157,13 +163,19 @@ type Repository struct {
 	Name          string     `json:"name"`
 	OrgId         string     `json:"org_id"`
 	OrgSlug       string     `json:"org_slug"`
-	ProjectId     string     `json:"project_id"`
-	ProjectSlug   string     `json:"project_slug"`
-	RepoId        string     `json:"repo_id"`
-	State         string     `json:"state"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	Version       int32      `json:"version"`
-	Visibility    string     `json:"visibility"`
+
+	// ProjectResourceName Globally unique Verself resource name for the parent project.
+	ProjectResourceName string `json:"projectResourceName"`
+	ProjectId           string `json:"project_id"`
+	ProjectSlug         string `json:"project_slug"`
+	RepoId              string `json:"repo_id"`
+
+	// ResourceName Globally unique Verself resource name for this repository.
+	ResourceName string    `json:"resourceName"`
+	State        string    `json:"state"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Version      int32     `json:"version"`
+	Visibility   string    `json:"visibility"`
 }
 
 // RepositoryList defines model for RepositoryList.
@@ -200,14 +212,23 @@ type WorkflowRun struct {
 	FailureReason     *string           `json:"failure_reason,omitempty"`
 	Inputs            map[string]string `json:"inputs"`
 	OrgId             string            `json:"org_id"`
-	ProjectId         string            `json:"project_id"`
-	Ref               string            `json:"ref"`
-	RepoId            string            `json:"repo_id"`
-	State             string            `json:"state"`
-	TraceId           *string           `json:"trace_id,omitempty"`
-	UpdatedAt         time.Time         `json:"updated_at"`
-	WorkflowPath      string            `json:"workflow_path"`
-	WorkflowRunId     string            `json:"workflow_run_id"`
+
+	// ProjectResourceName Globally unique Verself resource name for the parent project.
+	ProjectResourceName string `json:"projectResourceName"`
+	ProjectId           string `json:"project_id"`
+	Ref                 string `json:"ref"`
+	RepoId              string `json:"repo_id"`
+
+	// RepositoryResourceName Globally unique Verself resource name for the repository.
+	RepositoryResourceName string `json:"repositoryResourceName"`
+
+	// ResourceName Globally unique Verself resource name for this workflow run.
+	ResourceName  string    `json:"resourceName"`
+	State         string    `json:"state"`
+	TraceId       *string   `json:"trace_id,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	WorkflowPath  string    `json:"workflow_path"`
+	WorkflowRunId string    `json:"workflow_run_id"`
 }
 
 // WorkflowRunList defines model for WorkflowRunList.

@@ -50,7 +50,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.github_installation.list",
-	}), listGitHubInstallations(svc))
+	}), listGitHubInstallations(svc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "sync-github-installation-repositories",
@@ -81,7 +81,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.execution.read",
-	}), getExecution(svc))
+	}), getExecution(svc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-execution-logs",
@@ -109,7 +109,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run.list",
-	}), listRuns(svc))
+	}), listRuns(svc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-run",
@@ -123,7 +123,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run.read",
-	}), getRun(svc))
+	}), getRun(svc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "search-run-logs",
@@ -196,7 +196,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Idempotency:    idempotencyRequestBodyKey,
 		AuditEvent:     "sandbox.execution_schedule.create",
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createExecutionSchedule(recurringSvc))
+	}), createExecutionSchedule(recurringSvc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "list-execution-schedules",
@@ -210,7 +210,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.execution_schedule.list",
-	}), listExecutionSchedules(recurringSvc))
+	}), listExecutionSchedules(recurringSvc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID: "get-execution-schedule",
@@ -224,7 +224,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.execution_schedule.read",
-	}), getExecutionSchedule(recurringSvc))
+	}), getExecutionSchedule(recurringSvc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "pause-execution-schedule",
@@ -241,7 +241,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.execution_schedule.pause",
 		BodyLimitBytes: bodyLimitNoBody,
-	}), pauseExecutionSchedule(recurringSvc))
+	}), pauseExecutionSchedule(recurringSvc, publicConfig.InstallationID))
 
 	registerSecured(api, publicConfig.Authorizer, secured(huma.Operation{
 		OperationID:   "resume-execution-schedule",
@@ -258,7 +258,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.execution_schedule.resume",
 		BodyLimitBytes: bodyLimitNoBody,
-	}), resumeExecutionSchedule(recurringSvc))
+	}), resumeExecutionSchedule(recurringSvc, publicConfig.InstallationID))
 
 }
 
@@ -431,7 +431,7 @@ func beginGitHubInstallation(svc *jobs.Service) func(context.Context, *EmptyInpu
 	}
 }
 
-func listGitHubInstallations(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListGitHubInstallationsOutput, error) {
+func listGitHubInstallations(svc *jobs.Service, installationID string) func(context.Context, *EmptyInput) (*ListGitHubInstallationsOutput, error) {
 	return func(ctx context.Context, _ *EmptyInput) (*ListGitHubInstallationsOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -441,7 +441,7 @@ func listGitHubInstallations(svc *jobs.Service) func(context.Context, *EmptyInpu
 		if err != nil {
 			return nil, internalFailure(ctx, "github-installation-list-failed", "list github installations failed", err)
 		}
-		return &ListGitHubInstallationsOutput{Body: githubInstallationRecords(records)}, nil
+		return &ListGitHubInstallationsOutput{Body: githubInstallationRecords(records, installationID)}, nil
 	}
 }
 
@@ -473,7 +473,7 @@ func syncGitHubInstallationRepositories(svc *jobs.Service) func(context.Context,
 	}
 }
 
-func getExecution(svc *jobs.Service) func(context.Context, *ExecutionIDPath) (*GetExecutionOutput, error) {
+func getExecution(svc *jobs.Service, installationID string) func(context.Context, *ExecutionIDPath) (*GetExecutionOutput, error) {
 	return func(ctx context.Context, input *ExecutionIDPath) (*GetExecutionOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -493,7 +493,7 @@ func getExecution(svc *jobs.Service) func(context.Context, *ExecutionIDPath) (*G
 		}
 
 		out := &GetExecutionOutput{}
-		out.Body = executionRecord(*execution)
+		out.Body = executionRecord(*execution, installationID)
 		return out, nil
 	}
 }
@@ -527,7 +527,7 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 	}
 }
 
-func listRuns(svc *jobs.Service) func(context.Context, *RunsInput) (*RunsOutput, error) {
+func listRuns(svc *jobs.Service, installationID string) func(context.Context, *RunsInput) (*RunsOutput, error) {
 	return func(ctx context.Context, input *RunsInput) (*RunsOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -550,11 +550,11 @@ func listRuns(svc *jobs.Service) func(context.Context, *RunsInput) (*RunsOutput,
 			}
 			return nil, internalFailure(ctx, "list-runs-failed", "list runs failed", err)
 		}
-		return &RunsOutput{Body: runPage(page, filters)}, nil
+		return &RunsOutput{Body: runPage(page, filters, installationID)}, nil
 	}
 }
 
-func getRun(svc *jobs.Service) func(context.Context, *RunIDPath) (*RunOutput, error) {
+func getRun(svc *jobs.Service, installationID string) func(context.Context, *RunIDPath) (*RunOutput, error) {
 	return func(ctx context.Context, input *RunIDPath) (*RunOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -571,7 +571,7 @@ func getRun(svc *jobs.Service) func(context.Context, *RunIDPath) (*RunOutput, er
 			}
 			return nil, internalFailure(ctx, "get-run-failed", "get run failed", err)
 		}
-		return &RunOutput{Body: executionRecord(*run)}, nil
+		return &RunOutput{Body: executionRecord(*run, installationID)}, nil
 	}
 }
 
@@ -668,7 +668,7 @@ func getRunnerSizingAnalytics(svc *jobs.Service) func(context.Context, *Analytic
 	}
 }
 
-func createExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *CreateExecutionScheduleInput) (*ExecutionScheduleOutput, error) {
+func createExecutionSchedule(recurringSvc *recurring.Service, installationID string) func(context.Context, *CreateExecutionScheduleInput) (*ExecutionScheduleOutput, error) {
 	return func(ctx context.Context, input *CreateExecutionScheduleInput) (*ExecutionScheduleOutput, error) {
 		identity, err := requireIdentity(ctx)
 		if err != nil {
@@ -688,11 +688,11 @@ func createExecutionSchedule(recurringSvc *recurring.Service) func(context.Conte
 			}
 			return nil, internalFailure(ctx, "create-execution-schedule-failed", "create execution schedule failed", err)
 		}
-		return &ExecutionScheduleOutput{Body: executionScheduleRecord(record)}, nil
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(record, installationID)}, nil
 	}
 }
 
-func listExecutionSchedules(recurringSvc *recurring.Service) func(context.Context, *EmptyInput) (*ListExecutionSchedulesOutput, error) {
+func listExecutionSchedules(recurringSvc *recurring.Service, installationID string) func(context.Context, *EmptyInput) (*ListExecutionSchedulesOutput, error) {
 	return func(ctx context.Context, _ *EmptyInput) (*ListExecutionSchedulesOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -704,13 +704,13 @@ func listExecutionSchedules(recurringSvc *recurring.Service) func(context.Contex
 		}
 		out := make([]dto.SandboxExecutionScheduleRecord, 0, len(records))
 		for _, record := range records {
-			out = append(out, executionScheduleRecord(record))
+			out = append(out, executionScheduleRecord(record, installationID))
 		}
 		return &ListExecutionSchedulesOutput{Body: out}, nil
 	}
 }
 
-func getExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+func getExecutionSchedule(recurringSvc *recurring.Service, installationID string) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
 	return func(ctx context.Context, input *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -727,11 +727,11 @@ func getExecutionSchedule(recurringSvc *recurring.Service) func(context.Context,
 			}
 			return nil, internalFailure(ctx, "get-execution-schedule-failed", "get execution schedule failed", err)
 		}
-		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record)}, nil
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record, installationID)}, nil
 	}
 }
 
-func pauseExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+func pauseExecutionSchedule(recurringSvc *recurring.Service, installationID string) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
 	return func(ctx context.Context, input *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -748,11 +748,11 @@ func pauseExecutionSchedule(recurringSvc *recurring.Service) func(context.Contex
 			}
 			return nil, internalFailure(ctx, "pause-execution-schedule-failed", "pause execution schedule failed", err)
 		}
-		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record)}, nil
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record, installationID)}, nil
 	}
 }
 
-func resumeExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+func resumeExecutionSchedule(recurringSvc *recurring.Service, installationID string) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
 	return func(ctx context.Context, input *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -769,7 +769,7 @@ func resumeExecutionSchedule(recurringSvc *recurring.Service) func(context.Conte
 			}
 			return nil, internalFailure(ctx, "resume-execution-schedule-failed", "resume execution schedule failed", err)
 		}
-		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record)}, nil
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record, installationID)}, nil
 	}
 }
 

@@ -88,21 +88,24 @@ type SandboxAnalyticsBucket struct {
 
 // SandboxAttemptRecord defines model for SandboxAttemptRecord.
 type SandboxAttemptRecord struct {
-	AttemptId              string     `json:"attempt_id"`
-	AttemptSeq             int64      `json:"attempt_seq"`
-	BillingJobId           *int64     `json:"billing_job_id,omitempty"`
-	BlockReadBytes         *int64     `json:"block_read_bytes,omitempty"`
-	BlockWriteBytes        *int64     `json:"block_write_bytes,omitempty"`
-	BootTimeUs             *int64     `json:"boot_time_us,omitempty"`
-	CompletedAt            *time.Time `json:"completed_at,omitempty"`
-	CreatedAt              time.Time  `json:"created_at"`
-	DurationMs             *int64     `json:"duration_ms,omitempty"`
-	ExecId                 *string    `json:"exec_id,omitempty"`
-	ExitCode               *int64     `json:"exit_code,omitempty"`
-	FailureReason          *string    `json:"failure_reason,omitempty"`
-	LeaseId                *string    `json:"lease_id,omitempty"`
-	NetRxBytes             *int64     `json:"net_rx_bytes,omitempty"`
-	NetTxBytes             *int64     `json:"net_tx_bytes,omitempty"`
+	AttemptId       string     `json:"attempt_id"`
+	AttemptSeq      int64      `json:"attempt_seq"`
+	BillingJobId    *int64     `json:"billing_job_id,omitempty"`
+	BlockReadBytes  *int64     `json:"block_read_bytes,omitempty"`
+	BlockWriteBytes *int64     `json:"block_write_bytes,omitempty"`
+	BootTimeUs      *int64     `json:"boot_time_us,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	DurationMs      *int64     `json:"duration_ms,omitempty"`
+	ExecId          *string    `json:"exec_id,omitempty"`
+	ExitCode        *int64     `json:"exit_code,omitempty"`
+	FailureReason   *string    `json:"failure_reason,omitempty"`
+	LeaseId         *string    `json:"lease_id,omitempty"`
+	NetRxBytes      *int64     `json:"net_rx_bytes,omitempty"`
+	NetTxBytes      *int64     `json:"net_tx_bytes,omitempty"`
+
+	// ResourceName Globally unique Verself resource name for this attempt when the parent run is known.
+	ResourceName           *string    `json:"resourceName,omitempty"`
 	RootfsProvisionedBytes *int64     `json:"rootfs_provisioned_bytes,omitempty"`
 	StartedAt              *time.Time `json:"started_at,omitempty"`
 	State                  string     `json:"state"`
@@ -158,31 +161,34 @@ type SandboxExecutionLogs struct {
 // SandboxExecutionRecord defines model for SandboxExecutionRecord.
 type SandboxExecutionRecord struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                     `json:"$schema,omitempty"`
-	ActorId          string                      `json:"actor_id"`
-	BillingSummary   *SandboxRunBillingSummary   `json:"billing_summary,omitempty"`
-	BillingWindows   *[]SandboxBillingWindow     `json:"billing_windows,omitempty"`
-	CorrelationId    *string                     `json:"correlation_id,omitempty"`
-	CreatedAt        time.Time                   `json:"created_at"`
-	ExecutionId      string                      `json:"execution_id"`
-	ExternalProvider *string                     `json:"external_provider,omitempty"`
-	ExternalTaskId   *string                     `json:"external_task_id,omitempty"`
-	IdempotencyKey   *string                     `json:"idempotency_key,omitempty"`
-	Kind             string                      `json:"kind"`
-	LatestAttempt    SandboxAttemptRecord        `json:"latest_attempt"`
-	OrgId            string                      `json:"org_id"`
-	ProductId        string                      `json:"product_id"`
-	Provider         *string                     `json:"provider,omitempty"`
-	RunCommand       *string                     `json:"run_command,omitempty"`
-	RunId            string                      `json:"run_id"`
-	Runner           *SandboxRunnerRunMetadata   `json:"runner,omitempty"`
-	RunnerClass      *string                     `json:"runner_class,omitempty"`
-	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
-	SourceKind       *string                     `json:"source_kind,omitempty"`
-	SourceRef        *string                     `json:"source_ref,omitempty"`
-	Status           string                      `json:"status"`
-	UpdatedAt        time.Time                   `json:"updated_at"`
-	WorkloadKind     *string                     `json:"workload_kind,omitempty"`
+	Schema           *string                   `json:"$schema,omitempty"`
+	ActorId          string                    `json:"actor_id"`
+	BillingSummary   *SandboxRunBillingSummary `json:"billing_summary,omitempty"`
+	BillingWindows   *[]SandboxBillingWindow   `json:"billing_windows,omitempty"`
+	CorrelationId    *string                   `json:"correlation_id,omitempty"`
+	CreatedAt        time.Time                 `json:"created_at"`
+	ExecutionId      string                    `json:"execution_id"`
+	ExternalProvider *string                   `json:"external_provider,omitempty"`
+	ExternalTaskId   *string                   `json:"external_task_id,omitempty"`
+	IdempotencyKey   *string                   `json:"idempotency_key,omitempty"`
+	Kind             string                    `json:"kind"`
+	LatestAttempt    SandboxAttemptRecord      `json:"latest_attempt"`
+	OrgId            string                    `json:"org_id"`
+	ProductId        string                    `json:"product_id"`
+	Provider         *string                   `json:"provider,omitempty"`
+
+	// ResourceName Globally unique Verself resource name for this run.
+	ResourceName string                      `json:"resourceName"`
+	RunCommand   *string                     `json:"run_command,omitempty"`
+	RunId        string                      `json:"run_id"`
+	Runner       *SandboxRunnerRunMetadata   `json:"runner,omitempty"`
+	RunnerClass  *string                     `json:"runner_class,omitempty"`
+	Schedule     *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
+	SourceKind   *string                     `json:"source_kind,omitempty"`
+	SourceRef    *string                     `json:"source_ref,omitempty"`
+	Status       string                      `json:"status"`
+	UpdatedAt    time.Time                   `json:"updated_at"`
+	WorkloadKind *string                     `json:"workload_kind,omitempty"`
 }
 
 // SandboxExecutionScheduleCreateRequest defines model for SandboxExecutionScheduleCreateRequest.
@@ -219,25 +225,34 @@ type SandboxExecutionScheduleDispatchRecord struct {
 // SandboxExecutionScheduleRecord defines model for SandboxExecutionScheduleRecord.
 type SandboxExecutionScheduleRecord struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string                                   `json:"$schema,omitempty"`
-	ActorId            string                                    `json:"actor_id"`
-	CreatedAt          time.Time                                 `json:"created_at"`
-	Dispatches         *[]SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
-	DisplayName        *string                                   `json:"display_name,omitempty"`
-	IdempotencyKey     *string                                   `json:"idempotency_key,omitempty"`
-	Inputs             *map[string]string                        `json:"inputs,omitempty"`
-	IntervalSeconds    int32                                     `json:"interval_seconds"`
-	OrgId              string                                    `json:"org_id"`
-	ProjectId          string                                    `json:"project_id"`
-	Ref                *string                                   `json:"ref,omitempty"`
-	ScheduleId         string                                    `json:"schedule_id"`
-	SourceRepositoryId string                                    `json:"source_repository_id"`
-	State              string                                    `json:"state"`
-	TaskQueue          string                                    `json:"task_queue"`
-	TemporalNamespace  string                                    `json:"temporal_namespace"`
-	TemporalScheduleId string                                    `json:"temporal_schedule_id"`
-	UpdatedAt          time.Time                                 `json:"updated_at"`
-	WorkflowPath       string                                    `json:"workflow_path"`
+	Schema          *string                                   `json:"$schema,omitempty"`
+	ActorId         string                                    `json:"actor_id"`
+	CreatedAt       time.Time                                 `json:"created_at"`
+	Dispatches      *[]SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
+	DisplayName     *string                                   `json:"display_name,omitempty"`
+	IdempotencyKey  *string                                   `json:"idempotency_key,omitempty"`
+	Inputs          *map[string]string                        `json:"inputs,omitempty"`
+	IntervalSeconds int32                                     `json:"interval_seconds"`
+	OrgId           string                                    `json:"org_id"`
+
+	// ProjectResourceName Globally unique Verself resource name for the project.
+	ProjectResourceName string  `json:"projectResourceName"`
+	ProjectId           string  `json:"project_id"`
+	Ref                 *string `json:"ref,omitempty"`
+
+	// ResourceName Globally unique Verself resource name for this schedule.
+	ResourceName string `json:"resourceName"`
+	ScheduleId   string `json:"schedule_id"`
+
+	// SourceRepositoryResourceName Globally unique Verself resource name for the source repository.
+	SourceRepositoryResourceName string    `json:"sourceRepositoryResourceName"`
+	SourceRepositoryId           string    `json:"source_repository_id"`
+	State                        string    `json:"state"`
+	TaskQueue                    string    `json:"task_queue"`
+	TemporalNamespace            string    `json:"temporal_namespace"`
+	TemporalScheduleId           string    `json:"temporal_schedule_id"`
+	UpdatedAt                    time.Time `json:"updated_at"`
+	WorkflowPath                 string    `json:"workflow_path"`
 }
 
 // SandboxGitHubInstallationConnectResponse defines model for SandboxGitHubInstallationConnectResponse.
@@ -263,9 +278,12 @@ type SandboxGitHubInstallationRecord struct {
 	CreatedAt    time.Time `json:"created_at"`
 
 	// InstallationId GitHub App installation ID encoded as a string for JavaScript-safe transport.
-	InstallationId string    `json:"installation_id"`
-	OrgId          string    `json:"org_id"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	InstallationId string `json:"installation_id"`
+	OrgId          string `json:"org_id"`
+
+	// ResourceName Globally unique Verself resource name for this GitHub installation connection.
+	ResourceName string    `json:"resourceName"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // SandboxJobsAnalytics defines model for SandboxJobsAnalytics.
@@ -401,10 +419,13 @@ type SandboxRunsPage struct {
 
 // SandboxScheduleRunMetadata defines model for SandboxScheduleRunMetadata.
 type SandboxScheduleRunMetadata struct {
-	DisplayName        *string `json:"display_name,omitempty"`
-	ScheduleId         *string `json:"schedule_id,omitempty"`
-	TemporalRunId      *string `json:"temporal_run_id,omitempty"`
-	TemporalWorkflowId *string `json:"temporal_workflow_id,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// ScheduleResourceName Globally unique Verself resource name for the schedule.
+	ScheduleResourceName *string `json:"scheduleResourceName,omitempty"`
+	ScheduleId           *string `json:"schedule_id,omitempty"`
+	TemporalRunId        *string `json:"temporal_run_id,omitempty"`
+	TemporalWorkflowId   *string `json:"temporal_workflow_id,omitempty"`
 }
 
 // PauseExecutionScheduleParams defines parameters for PauseExecutionSchedule.

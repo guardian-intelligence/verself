@@ -93,6 +93,7 @@ func run() error {
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	temporalFrontendAddress := cfg.RequireString("SANDBOX_TEMPORAL_FRONTEND_ADDRESS")
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
@@ -355,10 +356,11 @@ func run() error {
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
 	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, sandboxapi.PublicAPIConfig{
-		PublicBaseURL: publicBaseURL,
-		Authorizer:    iamclient.NewAuthorizer(iamClient),
+		PublicBaseURL:  publicBaseURL,
+		Authorizer:     iamclient.NewAuthorizer(iamClient),
+		InstallationID: installationID,
 	})
-	sandboxapi.RegisterPublicRoutes(rootMux, jobService)
+	sandboxapi.RegisterPublicRoutes(rootMux, jobService, installationID)
 
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,

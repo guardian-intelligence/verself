@@ -10,23 +10,23 @@ import (
 	"github.com/verself/projects-service/internal/projects"
 )
 
-func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service) huma.API {
+func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service, installationID string) huma.API {
 	config := huma.DefaultConfig("Projects Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalSecurityScheme(api)
-	registerProjectOperations(api, svc, apiProjectionInternal, nil)
+	registerProjectOperations(api, svc, apiProjectionInternal, nil, installationID)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
 func InternalOpenAPIYAML(version, serverURL string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
+	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{}, "inst_openapi")
 	return api.OpenAPI().YAML()
 }
 
 func InternalOpenAPIDowngradeYAML(version, serverURL string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{})
+	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{}, "inst_openapi")
 	return api.OpenAPI().DowngradeYAML()
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	dto "github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/governance"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -328,18 +329,20 @@ func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operat
 	}
 	info := operationRequestInfoFromContext(ctx)
 	targetID, _ := targetFromBoundary(input, output)
+	targetResourceName := governanceTargetResourceName(svc.InstallationID, principal.OrgID, string(policy.Resource), targetID)
 	record := governance.AuditRecord{
-		OrgID:        principal.OrgID,
-		EventSource:  "governance-service",
-		EventName:    op.OperationID,
-		AuditEvent:   string(policy.AuditEvent),
-		ActorType:    principal.Type,
-		ActorID:      principal.Subject,
-		CredentialID: principal.CredentialID,
-		Permission:   string(policy.Permission),
-		TargetType:   string(policy.Resource),
-		TargetID:     targetID,
-		Outcome:      outcome,
+		OrgID:              principal.OrgID,
+		EventSource:        "governance-service",
+		EventName:          op.OperationID,
+		AuditEvent:         string(policy.AuditEvent),
+		ActorType:          principal.Type,
+		ActorID:            principal.Subject,
+		CredentialID:       principal.CredentialID,
+		Permission:         string(policy.Permission),
+		TargetType:         string(policy.Resource),
+		TargetID:           targetID,
+		TargetResourceName: targetResourceName,
+		Outcome:            outcome,
 		Detail: compactAuditDetail(map[string]any{
 			"idempotency_key_hash":   governanceHashForAPI(info.IdempotencyKey),
 			"credential_fingerprint": principal.CredentialFingerprint,
@@ -354,6 +357,16 @@ func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operat
 	if _, auditErr := svc.RecordAuditEvent(ctx, record); auditErr != nil {
 		slog.Default().ErrorContext(ctx, "governance audit write failed", "error", auditErr, "audit_event", policy.AuditEvent, "org_id", principal.OrgID)
 	}
+}
+
+func governanceTargetResourceName(installationID, orgID, resource, targetID string) string {
+	if installationID == "" || orgID == "" {
+		return ""
+	}
+	if resource == "audit_log" && targetID != "" {
+		return dto.ResourceNameAuditExport(installationID, orgID, targetID).String()
+	}
+	return dto.ResourceNameOrg(installationID, orgID).String()
 }
 
 func compactAuditDetail(values map[string]any) map[string]any {

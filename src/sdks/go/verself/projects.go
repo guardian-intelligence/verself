@@ -41,6 +41,7 @@ const (
 
 type Project struct {
 	ProjectID          string     `json:"project_id"`
+	ResourceName       string     `json:"resourceName"`
 	OrgID              string     `json:"org_id"`
 	Slug               string     `json:"slug"`
 	RedirectedFromSlug string     `json:"redirected_from_slug,omitempty"`
@@ -56,20 +57,22 @@ type Project struct {
 }
 
 type ProjectEnvironment struct {
-	EnvironmentID    string            `json:"environment_id"`
-	ProjectID        string            `json:"project_id"`
-	OrgID            string            `json:"org_id"`
-	Slug             string            `json:"slug"`
-	DisplayName      string            `json:"display_name"`
-	Kind             string            `json:"kind"`
-	State            string            `json:"state"`
-	ProtectionPolicy map[string]string `json:"protection_policy,omitempty"`
-	Version          string            `json:"version"`
-	CreatedBy        string            `json:"created_by"`
-	UpdatedBy        string            `json:"updated_by"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
-	ArchivedAt       *time.Time        `json:"archived_at,omitempty"`
+	EnvironmentID       string            `json:"environment_id"`
+	ResourceName        string            `json:"resourceName"`
+	ProjectID           string            `json:"project_id"`
+	ProjectResourceName string            `json:"projectResourceName"`
+	OrgID               string            `json:"org_id"`
+	Slug                string            `json:"slug"`
+	DisplayName         string            `json:"display_name"`
+	Kind                string            `json:"kind"`
+	State               string            `json:"state"`
+	ProtectionPolicy    map[string]string `json:"protection_policy,omitempty"`
+	Version             string            `json:"version"`
+	CreatedBy           string            `json:"created_by"`
+	UpdatedBy           string            `json:"updated_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
+	ArchivedAt          *time.Time        `json:"archived_at,omitempty"`
 }
 
 type ProjectList struct {
@@ -499,6 +502,7 @@ func projectFromGenerated(input projectscore.Project) Project {
 	}
 	return Project{
 		ProjectID:          input.ProjectId.String(),
+		ResourceName:       input.ResourceName,
 		OrgID:              input.OrgId,
 		Slug:               input.Slug,
 		RedirectedFromSlug: redirectedFromSlug,
@@ -520,20 +524,22 @@ func environmentFromGenerated(input projectscore.ProjectEnvironment) ProjectEnvi
 		protectionPolicy = copyStringMap(*input.ProtectionPolicy)
 	}
 	return ProjectEnvironment{
-		EnvironmentID:    input.EnvironmentId.String(),
-		ProjectID:        input.ProjectId.String(),
-		OrgID:            input.OrgId,
-		Slug:             input.Slug,
-		DisplayName:      input.DisplayName,
-		Kind:             input.Kind,
-		State:            input.State,
-		ProtectionPolicy: protectionPolicy,
-		Version:          input.Version,
-		CreatedBy:        input.CreatedBy,
-		UpdatedBy:        input.UpdatedBy,
-		CreatedAt:        input.CreatedAt,
-		UpdatedAt:        input.UpdatedAt,
-		ArchivedAt:       input.ArchivedAt,
+		EnvironmentID:       input.EnvironmentId.String(),
+		ResourceName:        input.ResourceName,
+		ProjectID:           input.ProjectId.String(),
+		ProjectResourceName: input.ProjectResourceName,
+		OrgID:               input.OrgId,
+		Slug:                input.Slug,
+		DisplayName:         input.DisplayName,
+		Kind:                input.Kind,
+		State:               input.State,
+		ProtectionPolicy:    protectionPolicy,
+		Version:             input.Version,
+		CreatedBy:           input.CreatedBy,
+		UpdatedBy:           input.UpdatedBy,
+		CreatedAt:           input.CreatedAt,
+		UpdatedAt:           input.UpdatedAt,
+		ArchivedAt:          input.ArchivedAt,
 	}
 }
 

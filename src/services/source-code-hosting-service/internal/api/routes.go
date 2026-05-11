@@ -20,10 +20,11 @@ import (
 )
 
 type Config struct {
-	Service       *source.Service
-	PublicBaseURL string
-	WebhookSecret string
-	Authorizer    runtimeiam.OperationAuthorizer
+	Service        *source.Service
+	PublicBaseURL  string
+	WebhookSecret  string
+	Authorizer     runtimeiam.OperationAuthorizer
+	InstallationID string
 }
 
 type repositoryPath struct {
@@ -157,7 +158,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 			AuditEvent:     "source.git_credential.create",
 			BodyLimitBytes: bodyLimitSmallJSON,
 		},
-	}, createGitCredential(svc))
+	}, createGitCredential(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "list-source-repositories",
@@ -256,7 +257,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 			AuditEvent:     "source.checkout_grant.create",
 			BodyLimitBytes: bodyLimitSmallJSON,
 		},
-	}, createCheckoutGrant(svc))
+	}, createCheckoutGrant(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID:   "create-source-workflow-run",
@@ -275,7 +276,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 			AuditEvent:     "source.workflow.dispatch",
 			BodyLimitBytes: bodyLimitSmallJSON,
 		},
-	}, createWorkflowRun(svc))
+	}, createWorkflowRun(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "list-source-workflow-runs",
@@ -291,7 +292,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 			RateLimitClass: "read",
 			AuditEvent:     "source.workflow_run.list",
 		},
-	}, listWorkflowRuns(svc))
+	}, listWorkflowRuns(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "get-source-workflow-run",
@@ -307,7 +308,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 			RateLimitClass: "read",
 			AuditEvent:     "source.workflow_run.read",
 		},
-	}, getWorkflowRun(svc))
+	}, getWorkflowRun(svc, cfg))
 }
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
@@ -329,7 +330,7 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 			BodyLimitBytes: bodyLimitSmallJSON,
 		},
 		Internal: true,
-	}, internalCreateWorkflowRun(svc))
+	}, internalCreateWorkflowRun(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
 		OperationID: "download-source-checkout-archive",
@@ -375,7 +376,7 @@ func createRepository(svc *source.Service, cfg Config) func(context.Context, sou
 	}
 }
 
-func createGitCredential(svc *source.Service) func(context.Context, source.Principal, *createGitCredentialInput) (*gitCredentialOutput, error) {
+func createGitCredential(svc *source.Service, cfg Config) func(context.Context, source.Principal, *createGitCredentialInput) (*gitCredentialOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *createGitCredentialInput) (*gitCredentialOutput, error) {
 		credential, err := svc.CreateGitCredential(ctx, principal, source.CreateGitCredentialRequest{
 			Label:            input.Body.Label,
@@ -385,7 +386,7 @@ func createGitCredential(svc *source.Service) func(context.Context, source.Princ
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &gitCredentialOutput{Body: gitCredentialDTO(credential)}, nil
+		return &gitCredentialOutput{Body: gitCredentialDTO(credential, cfg.InstallationID)}, nil
 	}
 }
 
@@ -441,7 +442,7 @@ func repositoryResponse(ctx context.Context, svc *source.Service, cfg Config, re
 	if err != nil {
 		return Repository{}, err
 	}
-	return repositoryDTO(repo, org, project, cfg.PublicBaseURL), nil
+	return repositoryDTO(repo, org, project, cfg.PublicBaseURL, cfg.InstallationID), nil
 }
 
 func repositoryListResponse(ctx context.Context, svc *source.Service, cfg Config, repos []source.Repository) ([]Repository, error) {
@@ -466,7 +467,7 @@ func repositoryListResponse(ctx context.Context, svc *source.Service, cfg Config
 		}
 		projects[repo.ProjectID] = project
 	}
-	return repositoryDTOs(repos, org, projects, cfg.PublicBaseURL), nil
+	return repositoryDTOs(repos, org, projects, cfg.PublicBaseURL, cfg.InstallationID), nil
 }
 
 func listRefs(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*refListOutput, error) {
@@ -511,7 +512,7 @@ func getBlob(svc *source.Service) func(context.Context, source.Principal, *blobI
 	}
 }
 
-func createCheckoutGrant(svc *source.Service) func(context.Context, source.Principal, *createCheckoutGrantInput) (*checkoutGrantOutput, error) {
+func createCheckoutGrant(svc *source.Service, cfg Config) func(context.Context, source.Principal, *createCheckoutGrantInput) (*checkoutGrantOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *createCheckoutGrantInput) (*checkoutGrantOutput, error) {
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
@@ -521,11 +522,11 @@ func createCheckoutGrant(svc *source.Service) func(context.Context, source.Princ
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &checkoutGrantOutput{Body: checkoutGrantDTO(grant)}, nil
+		return &checkoutGrantOutput{Body: checkoutGrantDTO(grant, cfg.InstallationID)}, nil
 	}
 }
 
-func createWorkflowRun(svc *source.Service) func(context.Context, source.Principal, *createWorkflowRunInput) (*workflowRunOutput, error) {
+func createWorkflowRun(svc *source.Service, cfg Config) func(context.Context, source.Principal, *createWorkflowRunInput) (*workflowRunOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *createWorkflowRunInput) (*workflowRunOutput, error) {
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
@@ -542,11 +543,11 @@ func createWorkflowRun(svc *source.Service) func(context.Context, source.Princip
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &workflowRunOutput{Body: workflowRunDTO(run)}, nil
+		return &workflowRunOutput{Body: workflowRunDTO(run, cfg.InstallationID)}, nil
 	}
 }
 
-func listWorkflowRuns(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*workflowRunListOutput, error) {
+func listWorkflowRuns(svc *source.Service, cfg Config) func(context.Context, source.Principal, *repositoryPath) (*workflowRunListOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *repositoryPath) (*workflowRunListOutput, error) {
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
@@ -556,11 +557,11 @@ func listWorkflowRuns(svc *source.Service) func(context.Context, source.Principa
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &workflowRunListOutput{Body: WorkflowRunList{WorkflowRuns: workflowRunDTOs(runs)}}, nil
+		return &workflowRunListOutput{Body: WorkflowRunList{WorkflowRuns: workflowRunDTOs(runs, cfg.InstallationID)}}, nil
 	}
 }
 
-func getWorkflowRun(svc *source.Service) func(context.Context, source.Principal, *workflowRunPath) (*workflowRunOutput, error) {
+func getWorkflowRun(svc *source.Service, cfg Config) func(context.Context, source.Principal, *workflowRunPath) (*workflowRunOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *workflowRunPath) (*workflowRunOutput, error) {
 		runID, err := uuid.Parse(input.WorkflowRunID)
 		if err != nil {
@@ -570,11 +571,11 @@ func getWorkflowRun(svc *source.Service) func(context.Context, source.Principal,
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &workflowRunOutput{Body: workflowRunDTO(run)}, nil
+		return &workflowRunOutput{Body: workflowRunDTO(run, cfg.InstallationID)}, nil
 	}
 }
 
-func internalCreateWorkflowRun(svc *source.Service) func(context.Context, source.Principal, *internalCreateWorkflowRunInput) (*workflowRunOutput, error) {
+func internalCreateWorkflowRun(svc *source.Service, cfg Config) func(context.Context, source.Principal, *internalCreateWorkflowRunInput) (*workflowRunOutput, error) {
 	return func(ctx context.Context, _ source.Principal, input *internalCreateWorkflowRunInput) (*workflowRunOutput, error) {
 		orgID, err := strconv.ParseUint(strings.TrimSpace(input.Body.OrgID), 10, 64)
 		if err != nil || orgID == 0 {
@@ -593,7 +594,7 @@ func internalCreateWorkflowRun(svc *source.Service) func(context.Context, source
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &workflowRunOutput{Body: workflowRunDTO(run)}, nil
+		return &workflowRunOutput{Body: workflowRunDTO(run, cfg.InstallationID)}, nil
 	}
 }
 

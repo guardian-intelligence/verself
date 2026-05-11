@@ -73,6 +73,7 @@ func run() error {
 	serviceListenAddr := cfg.String("VERSELF_SERVICE_LISTEN_ADDR", "127.0.0.1:4265")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
@@ -128,7 +129,7 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	projectsapi.NewAPI(privateMux, projectsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
+	projectsapi.NewAPI(privateMux, projectsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient), InstallationID: installationID})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
@@ -149,7 +150,7 @@ func run() error {
 		return fmt.Errorf("projects spiffe service tls: %w", err)
 	}
 	serviceMux := http.NewServeMux()
-	projectsapi.NewInternalAPI(serviceMux, serviceVersion, "https://"+serviceListenAddr, svc)
+	projectsapi.NewInternalAPI(serviceMux, serviceVersion, "https://"+serviceListenAddr, svc, installationID)
 	serviceAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(servicePeerIDs, serviceMux)
 	if err != nil {
 		return fmt.Errorf("projects service allowlist: %w", err)

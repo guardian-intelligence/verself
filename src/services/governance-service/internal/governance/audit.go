@@ -17,60 +17,63 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	dto "github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 const (
-	AuditSchemaVersion = "2026-05-08.v1"
+	AuditSchemaVersion = "2026-05-11.v1"
 	zeroHMAC           = "0000000000000000000000000000000000000000000000000000000000000000"
 	emptyDetailJSON    = "{}"
 )
 
 type AuditRecord struct {
-	SchemaVersion string         `json:"schema_version,omitempty"`
-	OrgID         string         `json:"org_id"`
-	EventSource   string         `json:"event_source"`
-	EventName     string         `json:"event_name"`
-	AuditEvent    string         `json:"audit_event"`
-	ActorType     string         `json:"actor_type"`
-	ActorID       string         `json:"actor_id"`
-	CredentialID  string         `json:"credential_id,omitempty"`
-	TargetType    string         `json:"target_type"`
-	TargetID      string         `json:"target_id,omitempty"`
-	Permission    string         `json:"permission"`
-	Outcome       string         `json:"outcome"`
-	ErrorCode     string         `json:"error_code,omitempty"`
-	TraceID       string         `json:"trace_id,omitempty"`
-	HMACKeyID     string         `json:"hmac_key_id,omitempty"`
-	Detail        map[string]any `json:"detail,omitempty"`
-	RecordedAt    time.Time      `json:"recorded_at,omitempty"`
+	SchemaVersion      string         `json:"schema_version,omitempty"`
+	OrgID              string         `json:"org_id"`
+	EventSource        string         `json:"event_source"`
+	EventName          string         `json:"event_name"`
+	AuditEvent         string         `json:"audit_event"`
+	ActorType          string         `json:"actor_type"`
+	ActorID            string         `json:"actor_id"`
+	CredentialID       string         `json:"credential_id,omitempty"`
+	TargetType         string         `json:"target_type"`
+	TargetID           string         `json:"target_id,omitempty"`
+	TargetResourceName string         `json:"targetResourceName,omitempty"`
+	Permission         string         `json:"permission"`
+	Outcome            string         `json:"outcome"`
+	ErrorCode          string         `json:"error_code,omitempty"`
+	TraceID            string         `json:"trace_id,omitempty"`
+	HMACKeyID          string         `json:"hmac_key_id,omitempty"`
+	Detail             map[string]any `json:"detail,omitempty"`
+	RecordedAt         time.Time      `json:"recorded_at,omitempty"`
 }
 
 type AuditEvent struct {
-	RecordedAt    time.Time `ch:"recorded_at"`
-	EventDate     time.Time `ch:"event_date"`
-	SchemaVersion string    `ch:"schema_version"`
-	EventID       uuid.UUID `ch:"event_id"`
-	OrgID         string    `ch:"org_id"`
-	Sequence      uint64    `ch:"sequence"`
-	EventSource   string    `ch:"event_source"`
-	EventName     string    `ch:"event_name"`
-	AuditEvent    string    `ch:"audit_event"`
-	ActorType     string    `ch:"actor_type"`
-	ActorID       string    `ch:"actor_id"`
-	CredentialID  string    `ch:"credential_id"`
-	TargetType    string    `ch:"target_type"`
-	TargetID      string    `ch:"target_id"`
-	Permission    string    `ch:"permission"`
-	Outcome       string    `ch:"outcome"`
-	ErrorCode     string    `ch:"error_code"`
-	TraceID       string    `ch:"trace_id"`
-	DetailSHA256  string    `ch:"detail_sha256"`
-	PrevHMAC      string    `ch:"prev_hmac"`
-	RowHMAC       string    `ch:"row_hmac"`
-	HMACKeyID     string    `ch:"hmac_key_id"`
+	RecordedAt         time.Time `ch:"recorded_at"`
+	EventDate          time.Time `ch:"event_date"`
+	SchemaVersion      string    `ch:"schema_version"`
+	EventID            uuid.UUID `ch:"event_id"`
+	OrgID              string    `ch:"org_id"`
+	Sequence           uint64    `ch:"sequence"`
+	EventSource        string    `ch:"event_source"`
+	EventName          string    `ch:"event_name"`
+	AuditEvent         string    `ch:"audit_event"`
+	ActorType          string    `ch:"actor_type"`
+	ActorID            string    `ch:"actor_id"`
+	CredentialID       string    `ch:"credential_id"`
+	TargetType         string    `ch:"target_type"`
+	TargetID           string    `ch:"target_id"`
+	TargetResourceName string    `ch:"target_resource_name"`
+	Permission         string    `ch:"permission"`
+	Outcome            string    `ch:"outcome"`
+	ErrorCode          string    `ch:"error_code"`
+	TraceID            string    `ch:"trace_id"`
+	DetailSHA256       string    `ch:"detail_sha256"`
+	PrevHMAC           string    `ch:"prev_hmac"`
+	RowHMAC            string    `ch:"row_hmac"`
+	HMACKeyID          string    `ch:"hmac_key_id"`
 }
 
 type AuditEventDetail struct {
@@ -82,17 +85,18 @@ type AuditEventDetail struct {
 }
 
 type AuditListFilters struct {
-	Limit        int
-	Cursor       string
-	Order        string // "desc" (default) or "asc"; controls (recorded_at, sequence) ordering.
-	ActorID      string
-	AuditEvent   string
-	CredentialID string
-	EventName    string
-	EventSource  string
-	Outcome      string
-	TargetID     string
-	TargetType   string
+	Limit              int
+	Cursor             string
+	Order              string // "desc" (default) or "asc"; controls (recorded_at, sequence) ordering.
+	ActorID            string
+	AuditEvent         string
+	CredentialID       string
+	EventName          string
+	EventSource        string
+	Outcome            string
+	TargetID           string
+	TargetType         string
+	TargetResourceName string
 }
 
 type AuditListPage struct {
@@ -188,6 +192,10 @@ func (s *Service) normalizeAuditRecord(ctx context.Context, record AuditRecord) 
 	record.CredentialID = strings.TrimSpace(record.CredentialID)
 	record.TargetType = strings.TrimSpace(record.TargetType)
 	record.TargetID = strings.TrimSpace(record.TargetID)
+	record.TargetResourceName = strings.TrimSpace(record.TargetResourceName)
+	if record.TargetResourceName == "" {
+		record.TargetResourceName = s.targetResourceName(record).String()
+	}
 	record.Permission = strings.TrimSpace(record.Permission)
 	record.Outcome = strings.TrimSpace(record.Outcome)
 	record.ErrorCode = strings.TrimSpace(record.ErrorCode)
@@ -204,27 +212,68 @@ func (s *Service) normalizeAuditRecord(ctx context.Context, record AuditRecord) 
 	return record
 }
 
+func (s *Service) targetResourceName(record AuditRecord) dto.ResourceName {
+	if s.InstallationID == "" || record.OrgID == "" {
+		return ""
+	}
+	switch record.TargetType {
+	case "organization", "audit_log":
+		if record.TargetID != "" && record.TargetType == "audit_log" {
+			return dto.ResourceNameAuditExport(s.InstallationID, record.OrgID, record.TargetID)
+		}
+		return dto.ResourceNameOrg(s.InstallationID, record.OrgID)
+	case "organization_member":
+		return optionalResourceName(record.TargetID, dto.ResourceNameMember(s.InstallationID, record.OrgID, record.TargetID))
+	case "service_account":
+		return optionalResourceName(record.TargetID, dto.ResourceNameMachinePrincipal(s.InstallationID, record.OrgID, record.TargetID))
+	case "api_credential", "opaque_credential":
+		return optionalResourceName(record.TargetID, dto.ResourceNameCredential(s.InstallationID, record.OrgID, record.TargetID))
+	case "secret":
+		return optionalResourceName(record.TargetID, dto.ResourceNameSecret(s.InstallationID, record.OrgID, record.TargetID))
+	case "variable":
+		return optionalResourceName(record.TargetID, dto.ResourceNameVariable(s.InstallationID, record.OrgID, record.TargetID))
+	case "transit_key":
+		return optionalResourceName(record.TargetID, dto.ResourceNameTransitKey(s.InstallationID, record.OrgID, record.TargetID))
+	case "run", "execution":
+		return optionalResourceName(record.TargetID, dto.ResourceNameRun(s.InstallationID, record.OrgID, record.TargetID))
+	case "execution_schedule":
+		return optionalResourceName(record.TargetID, dto.ResourceNameSchedule(s.InstallationID, record.OrgID, record.TargetID))
+	case "github_installation":
+		return optionalResourceName(record.TargetID, dto.ResourceNameGitHubInstallation(s.InstallationID, record.OrgID, record.TargetID))
+	default:
+		return ""
+	}
+}
+
+func optionalResourceName(id string, name dto.ResourceName) dto.ResourceName {
+	if id == "" {
+		return ""
+	}
+	return name
+}
+
 func eventFromAuditRecord(record AuditRecord, detailHash string) *AuditEvent {
 	return &AuditEvent{
-		RecordedAt:    record.RecordedAt,
-		EventDate:     truncateDate(record.RecordedAt),
-		SchemaVersion: record.SchemaVersion,
-		EventID:       uuid.New(),
-		OrgID:         record.OrgID,
-		EventSource:   record.EventSource,
-		EventName:     record.EventName,
-		AuditEvent:    record.AuditEvent,
-		ActorType:     record.ActorType,
-		ActorID:       record.ActorID,
-		CredentialID:  record.CredentialID,
-		TargetType:    record.TargetType,
-		TargetID:      record.TargetID,
-		Permission:    record.Permission,
-		Outcome:       record.Outcome,
-		ErrorCode:     record.ErrorCode,
-		TraceID:       record.TraceID,
-		DetailSHA256:  detailHash,
-		HMACKeyID:     record.HMACKeyID,
+		RecordedAt:         record.RecordedAt,
+		EventDate:          truncateDate(record.RecordedAt),
+		SchemaVersion:      record.SchemaVersion,
+		EventID:            uuid.New(),
+		OrgID:              record.OrgID,
+		EventSource:        record.EventSource,
+		EventName:          record.EventName,
+		AuditEvent:         record.AuditEvent,
+		ActorType:          record.ActorType,
+		ActorID:            record.ActorID,
+		CredentialID:       record.CredentialID,
+		TargetType:         record.TargetType,
+		TargetID:           record.TargetID,
+		TargetResourceName: record.TargetResourceName,
+		Permission:         record.Permission,
+		Outcome:            record.Outcome,
+		ErrorCode:          record.ErrorCode,
+		TraceID:            record.TraceID,
+		DetailSHA256:       detailHash,
+		HMACKeyID:          record.HMACKeyID,
 	}
 }
 
@@ -445,9 +494,10 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 		  AND ($7 = '' OR target_type = $7)
 		  AND ($8 = '' OR audit_event = $8)
 		  AND ($9 = '' OR credential_id = $9)
-		  AND ($10 = 0 OR (recorded_at, sequence) > ($11, $12))
+		  AND ($10 = '' OR target_resource_name = $10)
+		  AND ($11 = 0 OR (recorded_at, sequence) > ($12, $13))
 		ORDER BY recorded_at ASC, sequence ASC
-		LIMIT $13
+		LIMIT $14
 	`
 	} else {
 		query = auditEventSelectSQL() + `
@@ -461,12 +511,13 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 		  AND ($7 = '' OR target_type = $7)
 		  AND ($8 = '' OR audit_event = $8)
 		  AND ($9 = '' OR credential_id = $9)
-		  AND ($10 = 0 OR (recorded_at, sequence) < ($11, $12))
+		  AND ($10 = '' OR target_resource_name = $10)
+		  AND ($11 = 0 OR (recorded_at, sequence) < ($12, $13))
 		ORDER BY recorded_at DESC, sequence DESC
-		LIMIT $13
+		LIMIT $14
 	`
 	}
-	rows, err := s.CH.Query(ctx, query, orgID, filters.EventSource, filters.EventName, filters.Outcome, filters.ActorID, filters.TargetID, filters.TargetType, filters.AuditEvent, filters.CredentialID, cursorEnabled, cursor.RecordedAt, cursor.Sequence, limit+1)
+	rows, err := s.CH.Query(ctx, query, orgID, filters.EventSource, filters.EventName, filters.Outcome, filters.ActorID, filters.TargetID, filters.TargetType, filters.AuditEvent, filters.CredentialID, filters.TargetResourceName, cursorEnabled, cursor.RecordedAt, cursor.Sequence, limit+1)
 	if err != nil {
 		return AuditListPage{}, fmt.Errorf("%w: list audit events: %v", ErrStore, err)
 	}
@@ -498,7 +549,7 @@ func auditEventSelectSQL() string {
 			recorded_at, event_date, schema_version, event_id, org_id, sequence,
 			event_source, event_name, audit_event,
 			actor_type, actor_id, credential_id,
-			target_type, target_id, permission,
+			target_type, target_id, target_resource_name, permission,
 			outcome, error_code, trace_id, detail_sha256,
 			prev_hmac, row_hmac, hmac_key_id
 	`
@@ -506,7 +557,7 @@ func auditEventSelectSQL() string {
 
 func (s *Service) computeRowHMAC(event *AuditEvent) string {
 	mac := hmac.New(sha256.New, s.HMACKey)
-	_, _ = fmt.Fprintf(mac, "%s\n%s\n%s\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+	_, _ = fmt.Fprintf(mac, "%s\n%s\n%s\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
 		event.SchemaVersion,
 		event.OrgID,
 		event.EventID.String(),
@@ -517,6 +568,7 @@ func (s *Service) computeRowHMAC(event *AuditEvent) string {
 		event.EventName,
 		event.ActorType,
 		event.ActorID,
+		event.TargetResourceName,
 		event.Outcome,
 		event.DetailSHA256,
 		event.TraceID,

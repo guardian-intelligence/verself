@@ -21,12 +21,15 @@ const (
 // Defines values for InternalRegisterRunnerRepositoryRequestProvider.
 const (
 	Forgejo InternalRegisterRunnerRepositoryRequestProvider = "forgejo"
+	Github  InternalRegisterRunnerRepositoryRequestProvider = "github"
 )
 
 // Valid indicates whether the value is a known member of the InternalRegisterRunnerRepositoryRequestProvider enum.
 func (e InternalRegisterRunnerRepositoryRequestProvider) Valid() bool {
 	switch e {
 	case Forgejo:
+		return true
+	case Github:
 		return true
 	default:
 		return false

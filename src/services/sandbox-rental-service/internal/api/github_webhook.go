@@ -40,13 +40,13 @@ type githubCheckoutBundleRequest struct {
 	GitHubToken string `json:"github_token"`
 }
 
-func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
+func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service, installationID string) {
 	if mux == nil || svc == nil {
 		return
 	}
 	mux.HandleFunc(githubActionsWebhookPath, githubActionsWebhookHandler(svc))
 	mux.HandleFunc(forgejoActionsWebhookPath, forgejoActionsWebhookHandler(svc))
-	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc))
+	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc, installationID))
 	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
 	mux.HandleFunc(runnerBootstrapConfigPath, runnerBootstrapConfigHandler(svc))
 	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
@@ -337,7 +337,7 @@ func writeBazelTelemetryError(w http.ResponseWriter, err error) {
 	writePublicWebhookError(w, status, err)
 }
 
-func githubInstallationCallbackHandler(svc *jobs.Service) http.HandlerFunc {
+func githubInstallationCallbackHandler(svc *jobs.Service, verselfInstallationID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -369,7 +369,7 @@ func githubInstallationCallbackHandler(svc *jobs.Service) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(githubInstallationRecord(record))
+		_ = json.NewEncoder(w).Encode(githubInstallationRecord(record, verselfInstallationID))
 	}
 }
 

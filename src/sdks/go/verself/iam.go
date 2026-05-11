@@ -18,6 +18,7 @@ const (
 
 type Organization struct {
 	OrgID              string                     `json:"org_id"`
+	ResourceName       string                     `json:"resourceName"`
 	DisplayName        string                     `json:"display_name"`
 	Slug               string                     `json:"slug"`
 	Version            int32                      `json:"version"`
@@ -28,18 +29,20 @@ type Organization struct {
 }
 
 type OrganizationMetadata struct {
-	OrgID       string `json:"org_id"`
-	DisplayName string `json:"display_name"`
-	Slug        string `json:"slug"`
+	OrgID        string `json:"org_id"`
+	ResourceName string `json:"resourceName"`
+	DisplayName  string `json:"display_name"`
+	Slug         string `json:"slug"`
 }
 
 type Member struct {
-	UserID      string   `json:"user_id"`
-	Email       string   `json:"email"`
-	LoginName   string   `json:"login_name"`
-	DisplayName string   `json:"display_name"`
-	State       string   `json:"state"`
-	RoleKeys    []string `json:"role_keys"`
+	UserID       string   `json:"user_id"`
+	ResourceName string   `json:"resourceName,omitempty"`
+	Email        string   `json:"email"`
+	LoginName    string   `json:"login_name"`
+	DisplayName  string   `json:"display_name"`
+	State        string   `json:"state"`
+	RoleKeys     []string `json:"role_keys"`
 }
 
 type MemberCapabilitiesDocument struct {
@@ -65,6 +68,7 @@ type MemberCapabilities struct {
 
 type APICredential struct {
 	CredentialID         string     `json:"credential_id"`
+	ResourceName         string     `json:"resourceName"`
 	OrgID                string     `json:"org_id"`
 	SubjectID            string     `json:"subject_id"`
 	ClientID             string     `json:"client_id"`
@@ -81,6 +85,24 @@ type APICredential struct {
 	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
 	RevokedBy            string     `json:"revoked_by,omitempty"`
 	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
+}
+
+type ServiceAccount struct {
+	ServiceAccountID string     `json:"service_account_id"`
+	ResourceName     string     `json:"resourceName"`
+	OrgID            string     `json:"org_id"`
+	SubjectID        string     `json:"subject_id"`
+	ClientID         string     `json:"client_id"`
+	DisplayName      string     `json:"display_name"`
+	Description      string     `json:"description,omitempty"`
+	Status           string     `json:"status"`
+	Permissions      []string   `json:"permissions"`
+	CreatedAt        time.Time  `json:"created_at"`
+	CreatedBy        string     `json:"created_by"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	DisabledAt       *time.Time `json:"disabled_at,omitempty"`
+	DisabledBy       string     `json:"disabled_by,omitempty"`
+	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
 }
 
 type APICredentialIssuedMaterial struct {
@@ -149,6 +171,11 @@ type UpdateMemberRolesInput struct {
 type RevokeAPICredentialInput struct {
 	CredentialID   string
 	IdempotencyKey string
+}
+
+type DisableServiceAccountInput struct {
+	ServiceAccountID string
+	IdempotencyKey   string
 }
 
 type IAMClient struct {
@@ -315,6 +342,54 @@ func (c *IAMClient) PutMemberCapabilities(ctx context.Context, input PutMemberCa
 	return memberCapabilitiesFromGenerated(*response.JSON200), nil
 }
 
+func (c *IAMClient) ListServiceAccounts(ctx context.Context) ([]ServiceAccount, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	response, err := c.client.ListServiceAccountsWithResponse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if response.JSON200 == nil {
+		return nil, iamAPIError("list service accounts", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return serviceAccountsFromGenerated(*response.JSON200), nil
+}
+
+func (c *IAMClient) GetServiceAccount(ctx context.Context, serviceAccountID string) (ServiceAccount, error) {
+	if c == nil || c.client == nil {
+		return ServiceAccount{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	id := strings.TrimSpace(serviceAccountID)
+	response, err := c.client.GetServiceAccountWithResponse(ctx, id)
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	if response.JSON200 == nil {
+		return ServiceAccount{}, iamAPIError("get service account", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return serviceAccountFromGenerated(*response.JSON200), nil
+}
+
+func (c *IAMClient) DisableServiceAccount(ctx context.Context, input DisableServiceAccountInput) (ServiceAccount, error) {
+	if c == nil || c.client == nil {
+		return ServiceAccount{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	key, err := mutationKey("iam-service-account-disable", input.IdempotencyKey)
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	id := strings.TrimSpace(input.ServiceAccountID)
+	response, err := c.client.DisableServiceAccountWithResponse(ctx, id, &iamcore.DisableServiceAccountParams{IdempotencyKey: key})
+	if err != nil {
+		return ServiceAccount{}, err
+	}
+	if response.JSON200 == nil {
+		return ServiceAccount{}, iamAPIError("disable service account", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	}
+	return serviceAccountFromGenerated(*response.JSON200), nil
+}
+
 func (c *IAMClient) ListAPICredentials(ctx context.Context) ([]APICredential, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("verself sdk: iam client is not initialized")
@@ -418,6 +493,7 @@ func (c *IAMClient) RevokeAPICredential(ctx context.Context, input RevokeAPICred
 func organizationFromGenerated(input iamcore.IAMOrganization) Organization {
 	return Organization{
 		OrgID:              input.OrgId,
+		ResourceName:       input.ResourceName,
 		DisplayName:        input.DisplayName,
 		Slug:               input.Slug,
 		Version:            input.Version,
@@ -432,9 +508,10 @@ func organizationMetadataFromGenerated(input []iamcore.IAMOrganizationMetadata) 
 	out := make([]OrganizationMetadata, 0, len(input))
 	for _, organization := range input {
 		out = append(out, OrganizationMetadata{
-			OrgID:       organization.OrgId,
-			DisplayName: organization.DisplayName,
-			Slug:        organization.Slug,
+			OrgID:        organization.OrgId,
+			ResourceName: organization.ResourceName,
+			DisplayName:  organization.DisplayName,
+			Slug:         organization.Slug,
 		})
 	}
 	return out
@@ -453,12 +530,13 @@ func membersFromGenerated(input iamcore.IAMMembers) []Member {
 
 func memberFromGenerated(input iamcore.IAMMember) Member {
 	return Member{
-		UserID:      input.UserId,
-		Email:       input.Email,
-		LoginName:   input.LoginName,
-		DisplayName: input.DisplayName,
-		State:       input.State,
-		RoleKeys:    stringSliceValue(input.RoleKeys),
+		UserID:       input.UserId,
+		ResourceName: stringValue(input.ResourceName),
+		Email:        input.Email,
+		LoginName:    input.LoginName,
+		DisplayName:  input.DisplayName,
+		State:        input.State,
+		RoleKeys:     stringSliceValue(input.RoleKeys),
 	}
 }
 
@@ -502,9 +580,41 @@ func apiCredentialsFromGenerated(input iamcore.IAMAPICredentials) []APICredentia
 	return out
 }
 
+func serviceAccountsFromGenerated(input iamcore.IAMServiceAccounts) []ServiceAccount {
+	if input.ServiceAccounts == nil {
+		return nil
+	}
+	out := make([]ServiceAccount, 0, len(*input.ServiceAccounts))
+	for _, account := range *input.ServiceAccounts {
+		out = append(out, serviceAccountFromGenerated(account))
+	}
+	return out
+}
+
+func serviceAccountFromGenerated(input iamcore.IAMServiceAccount) ServiceAccount {
+	return ServiceAccount{
+		ServiceAccountID: input.ServiceAccountId,
+		ResourceName:     input.ResourceName,
+		OrgID:            input.OrgId,
+		SubjectID:        input.SubjectId,
+		ClientID:         input.ClientId,
+		DisplayName:      input.DisplayName,
+		Description:      stringValue(input.Description),
+		Status:           input.Status,
+		Permissions:      stringSliceValue(input.Permissions),
+		CreatedAt:        input.CreatedAt,
+		CreatedBy:        input.CreatedBy,
+		UpdatedAt:        input.UpdatedAt,
+		DisabledAt:       input.DisabledAt,
+		DisabledBy:       stringValue(input.DisabledBy),
+		LastUsedAt:       input.LastUsedAt,
+	}
+}
+
 func apiCredentialFromGenerated(input iamcore.IAMAPICredential) APICredential {
 	return APICredential{
 		CredentialID:         input.CredentialId,
+		ResourceName:         input.ResourceName,
 		OrgID:                input.OrgId,
 		SubjectID:            input.SubjectId,
 		ClientID:             input.ClientId,

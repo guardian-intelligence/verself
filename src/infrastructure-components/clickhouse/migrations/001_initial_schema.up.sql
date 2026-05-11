@@ -791,6 +791,7 @@ CREATE TABLE verself.audit_events
     credential_id String,
     target_type LowCardinality(String),
     target_id String,
+    target_resource_name String,
     permission LowCardinality(String),
     outcome LowCardinality(String),
     error_code LowCardinality(String),

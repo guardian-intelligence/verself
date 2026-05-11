@@ -10,9 +10,12 @@ import (
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
-func githubInstallationRecord(record jobs.GitHubInstallationRecord) dto.SandboxGitHubInstallationRecord {
+func githubInstallationRecord(record jobs.GitHubInstallationRecord, installationID string) dto.SandboxGitHubInstallationRecord {
+	orgID := strconv.FormatUint(record.OrgID, 10)
+	githubInstallationID := strconv.FormatInt(record.InstallationID, 10)
 	return dto.SandboxGitHubInstallationRecord{
-		InstallationID: strconv.FormatInt(record.InstallationID, 10),
+		InstallationID: githubInstallationID,
+		ResourceName:   dto.ResourceNameGitHubInstallation(installationID, orgID, githubInstallationID),
 		OrgID:          dto.Uint64(record.OrgID),
 		AccountLogin:   record.AccountLogin,
 		AccountType:    record.AccountType,
@@ -30,10 +33,10 @@ func githubInstallationConnect(connect jobs.GitHubInstallationConnect) dto.Sandb
 	}
 }
 
-func githubInstallationRecords(records []jobs.GitHubInstallationRecord) []dto.SandboxGitHubInstallationRecord {
+func githubInstallationRecords(records []jobs.GitHubInstallationRecord, installationID string) []dto.SandboxGitHubInstallationRecord {
 	out := make([]dto.SandboxGitHubInstallationRecord, 0, len(records))
 	for _, record := range records {
-		out = append(out, githubInstallationRecord(record))
+		out = append(out, githubInstallationRecord(record, installationID))
 	}
 	return out
 }
@@ -65,9 +68,11 @@ func githubInstallationRepositorySync(installationID string, records []jobs.GitH
 	}
 }
 
-func executionRecord(record jobs.ExecutionRecord) dto.SandboxExecutionRecord {
+func executionRecord(record jobs.ExecutionRecord, installationID string) dto.SandboxExecutionRecord {
+	orgID := strconv.FormatUint(record.OrgID, 10)
 	return dto.SandboxExecutionRecord{
 		RunID:            record.RunID,
+		ResourceName:     dto.ResourceNameRun(installationID, orgID, record.RunID.String()),
 		ExecutionID:      record.ExecutionID,
 		OrgID:            dto.Uint64(record.OrgID),
 		ActorID:          record.ActorID,
@@ -84,17 +89,17 @@ func executionRecord(record jobs.ExecutionRecord) dto.SandboxExecutionRecord {
 		CorrelationID:    record.CorrelationID,
 		IdempotencyKey:   record.IdempotencyKey,
 		RunCommand:       record.RunCommand,
-		LatestAttempt:    attemptRecord(record.LatestAttempt),
+		LatestAttempt:    attemptRecord(record.LatestAttempt, record.OrgID, record.RunID, installationID),
 		CreatedAt:        record.CreatedAt,
 		UpdatedAt:        record.UpdatedAt,
 		BillingWindows:   billingWindows(record.BillingWindows),
 		BillingSummary:   runBillingSummary(record.BillingSummary),
 		Runner:           runnerRunMetadata(record.Runner),
-		Schedule:         scheduleRunMetadata(record.Schedule),
+		Schedule:         scheduleRunMetadata(record.Schedule, record.OrgID, installationID),
 	}
 }
 
-func attemptRecord(record jobs.AttemptRecord) dto.SandboxAttemptRecord {
+func attemptRecord(record jobs.AttemptRecord, orgID uint64, runID uuid.UUID, installationID string) dto.SandboxAttemptRecord {
 	var exitCode *int
 	if record.CompletedAt != nil {
 		exitCodeValue := record.ExitCode
@@ -103,6 +108,7 @@ func attemptRecord(record jobs.AttemptRecord) dto.SandboxAttemptRecord {
 
 	return dto.SandboxAttemptRecord{
 		AttemptID:              record.AttemptID,
+		ResourceName:           dto.ResourceNameAttempt(installationID, strconv.FormatUint(orgID, 10), runID.String(), record.AttemptID.String()),
 		AttemptSeq:             record.AttemptSeq,
 		State:                  record.State,
 		LeaseID:                record.LeaseID,
@@ -189,7 +195,7 @@ func runnerRunMetadata(metadata jobs.RunnerRunMetadata) *dto.SandboxRunnerRunMet
 	}
 }
 
-func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata) *dto.SandboxScheduleRunMetadata {
+func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata, orgID uint64, installationID string) *dto.SandboxScheduleRunMetadata {
 	if metadata.ScheduleID == uuid.Nil && metadata.DisplayName == "" && metadata.TemporalWorkflowID == "" && metadata.TemporalRunID == "" {
 		return nil
 	}
@@ -201,11 +207,12 @@ func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata) *dto.SandboxSchedule
 	if metadata.ScheduleID != uuid.Nil {
 		scheduleID := metadata.ScheduleID
 		out.ScheduleID = &scheduleID
+		out.ScheduleResourceName = dto.ResourceNameSchedule(installationID, strconv.FormatUint(orgID, 10), scheduleID.String())
 	}
 	return &out
 }
 
-func runPage(page jobs.RunPage, filters jobs.RunListFilters) dto.SandboxRunsPage {
+func runPage(page jobs.RunPage, filters jobs.RunListFilters, installationID string) dto.SandboxRunsPage {
 	out := dto.SandboxRunsPage{
 		Runs:       make([]dto.SandboxExecutionRecord, 0, len(page.Runs)),
 		NextCursor: page.NextCursor,
@@ -220,7 +227,7 @@ func runPage(page jobs.RunPage, filters jobs.RunListFilters) dto.SandboxRunsPage
 		},
 	}
 	for _, record := range page.Runs {
-		out.Runs = append(out.Runs, executionRecord(record))
+		out.Runs = append(out.Runs, executionRecord(record, installationID))
 	}
 	return out
 }
@@ -373,26 +380,31 @@ func executionScheduleCreateRequest(request dto.SandboxExecutionScheduleCreateRe
 	}
 }
 
-func executionScheduleRecord(record recurring.ScheduleRecord) dto.SandboxExecutionScheduleRecord {
+func executionScheduleRecord(record recurring.ScheduleRecord, installationID string) dto.SandboxExecutionScheduleRecord {
+	orgID := strconv.FormatUint(record.OrgID, 10)
+	projectID := record.ProjectID.String()
 	return dto.SandboxExecutionScheduleRecord{
-		ScheduleID:         record.ScheduleID,
-		OrgID:              dto.Uint64(record.OrgID),
-		ActorID:            record.ActorID,
-		DisplayName:        record.DisplayName,
-		IdempotencyKey:     record.IdempotencyKey,
-		TemporalScheduleID: record.TemporalScheduleID,
-		TemporalNamespace:  record.TemporalNamespace,
-		TaskQueue:          record.TaskQueue,
-		State:              record.State,
-		IntervalSeconds:    record.IntervalSeconds,
-		ProjectID:          record.ProjectID,
-		SourceRepositoryID: record.SourceRepositoryID,
-		WorkflowPath:       record.WorkflowPath,
-		Ref:                record.Ref,
-		Inputs:             record.Inputs,
-		CreatedAt:          record.CreatedAt,
-		UpdatedAt:          record.UpdatedAt,
-		Dispatches:         executionScheduleDispatches(record.Dispatches),
+		ScheduleID:                   record.ScheduleID,
+		ResourceName:                 dto.ResourceNameSchedule(installationID, orgID, record.ScheduleID.String()),
+		OrgID:                        dto.Uint64(record.OrgID),
+		ActorID:                      record.ActorID,
+		DisplayName:                  record.DisplayName,
+		IdempotencyKey:               record.IdempotencyKey,
+		TemporalScheduleID:           record.TemporalScheduleID,
+		TemporalNamespace:            record.TemporalNamespace,
+		TaskQueue:                    record.TaskQueue,
+		State:                        record.State,
+		IntervalSeconds:              record.IntervalSeconds,
+		ProjectID:                    record.ProjectID,
+		ProjectResourceName:          dto.ResourceNameProject(installationID, orgID, projectID),
+		SourceRepositoryID:           record.SourceRepositoryID,
+		SourceRepositoryResourceName: dto.ResourceNameRepository(installationID, orgID, projectID, record.SourceRepositoryID.String()),
+		WorkflowPath:                 record.WorkflowPath,
+		Ref:                          record.Ref,
+		Inputs:                       record.Inputs,
+		CreatedAt:                    record.CreatedAt,
+		UpdatedAt:                    record.UpdatedAt,
+		Dispatches:                   executionScheduleDispatches(record.Dispatches),
 	}
 }
 

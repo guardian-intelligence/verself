@@ -43,6 +43,7 @@ type Service struct {
 	Environment      string
 	ServiceVersion   string
 	WriterInstanceID string
+	InstallationID   string
 }
 
 type Principal struct {

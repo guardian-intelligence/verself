@@ -67,6 +67,7 @@ func run() error {
 	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -219,7 +220,7 @@ func run() error {
 	}
 
 	privateMux := http.NewServeMux()
-	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, Authorizer: iamclient.NewAuthorizer(iamClient), StripeWebhookSecret: webhookSecret, BillingReturnOrigins: billingReturnOrigins})
+	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, Authorizer: iamclient.NewAuthorizer(iamClient), StripeWebhookSecret: webhookSecret, BillingReturnOrigins: billingReturnOrigins, InstallationID: installationID})
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -227,7 +228,7 @@ func run() error {
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
 	internalMux := http.NewServeMux()
-	billingapi.NewInternalAPI(internalMux, billingapi.Config{Version: serviceVersion, ListenAddr: "https://" + internalListenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs})
+	billingapi.NewInternalAPI(internalMux, billingapi.Config{Version: serviceVersion, ListenAddr: "https://" + internalListenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs, InstallationID: installationID})
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("billing internal allowlist: %w", err)

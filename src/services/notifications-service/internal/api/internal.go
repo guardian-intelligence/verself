@@ -114,8 +114,8 @@ func triggerWorkflow(svc *notifications.Service) func(context.Context, *triggerW
 			Body:           input.Body.Body,
 			ActionURL:      input.Body.ActionURL,
 			Priority:       input.Body.Priority,
-			ResourceKind:   input.Body.ResourceKind,
-			ResourceID:     input.Body.ResourceID,
+			ResourceKind:   notificationResourceKind(input.Body.TargetResourceName),
+			ResourceID:     input.Body.TargetResourceName.String(),
 			Data:           input.Body.Data,
 			Traceparent:    input.Body.Traceparent,
 		})
@@ -134,6 +134,13 @@ func triggerWorkflow(svc *notifications.Service) func(context.Context, *triggerW
 			Traceparent:              result.Traceparent,
 		}}, nil
 	}
+}
+
+func notificationResourceKind(name dto.ResourceName) string {
+	if strings.TrimSpace(name.String()) == "" {
+		return ""
+	}
+	return "resource_name"
 }
 
 func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *grafanaWebhookInput) (*triggerWorkflowOutput, error) {

@@ -13,17 +13,19 @@ type SandboxGitHubInstallationConnectResponse struct {
 }
 
 type SandboxGitHubInstallationRecord struct {
-	InstallationID string    `json:"installation_id" doc:"GitHub App installation ID encoded as a string for JavaScript-safe transport."`
-	OrgID          OrgID     `json:"org_id"`
-	AccountLogin   string    `json:"account_login"`
-	AccountType    string    `json:"account_type"`
-	Active         bool      `json:"active"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	InstallationID string       `json:"installation_id" doc:"GitHub App installation ID encoded as a string for JavaScript-safe transport."`
+	ResourceName   ResourceName `json:"resourceName" doc:"Globally unique Verself resource name for this GitHub installation connection."`
+	OrgID          OrgID        `json:"org_id"`
+	AccountLogin   string       `json:"account_login"`
+	AccountType    string       `json:"account_type"`
+	Active         bool         `json:"active"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
 }
 
 type SandboxExecutionRecord struct {
 	RunID            uuid.UUID                   `json:"run_id"`
+	ResourceName     ResourceName                `json:"resourceName" doc:"Globally unique Verself resource name for this run."`
 	ExecutionID      uuid.UUID                   `json:"execution_id"`
 	OrgID            OrgID                       `json:"org_id"`
 	ActorID          string                      `json:"actor_id"`
@@ -67,10 +69,11 @@ type SandboxRunnerRunMetadata struct {
 }
 
 type SandboxScheduleRunMetadata struct {
-	ScheduleID         *uuid.UUID `json:"schedule_id,omitempty"`
-	DisplayName        string     `json:"display_name,omitempty"`
-	TemporalWorkflowID string     `json:"temporal_workflow_id,omitempty"`
-	TemporalRunID      string     `json:"temporal_run_id,omitempty"`
+	ScheduleID           *uuid.UUID   `json:"schedule_id,omitempty"`
+	ScheduleResourceName ResourceName `json:"scheduleResourceName,omitempty" doc:"Globally unique Verself resource name for the schedule."`
+	DisplayName          string       `json:"display_name,omitempty"`
+	TemporalWorkflowID   string       `json:"temporal_workflow_id,omitempty"`
+	TemporalRunID        string       `json:"temporal_run_id,omitempty"`
 }
 
 type SandboxRunBillingSummary struct {
@@ -206,24 +209,27 @@ type SandboxExecutionScheduleCreateRequest struct {
 }
 
 type SandboxExecutionScheduleRecord struct {
-	ScheduleID         uuid.UUID                                `json:"schedule_id"`
-	OrgID              OrgID                                    `json:"org_id"`
-	ActorID            string                                   `json:"actor_id"`
-	DisplayName        string                                   `json:"display_name,omitempty"`
-	IdempotencyKey     string                                   `json:"idempotency_key,omitempty"`
-	TemporalScheduleID string                                   `json:"temporal_schedule_id"`
-	TemporalNamespace  string                                   `json:"temporal_namespace"`
-	TaskQueue          string                                   `json:"task_queue"`
-	State              string                                   `json:"state"`
-	ProjectID          uuid.UUID                                `json:"project_id"`
-	SourceRepositoryID uuid.UUID                                `json:"source_repository_id"`
-	WorkflowPath       string                                   `json:"workflow_path"`
-	Ref                string                                   `json:"ref,omitempty"`
-	Inputs             map[string]string                        `json:"inputs,omitempty"`
-	IntervalSeconds    uint32                                   `json:"interval_seconds" minimum:"15" maximum:"4294967295"`
-	CreatedAt          time.Time                                `json:"created_at"`
-	UpdatedAt          time.Time                                `json:"updated_at"`
-	Dispatches         []SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
+	ScheduleID                   uuid.UUID                                `json:"schedule_id"`
+	ResourceName                 ResourceName                             `json:"resourceName" doc:"Globally unique Verself resource name for this schedule."`
+	OrgID                        OrgID                                    `json:"org_id"`
+	ActorID                      string                                   `json:"actor_id"`
+	DisplayName                  string                                   `json:"display_name,omitempty"`
+	IdempotencyKey               string                                   `json:"idempotency_key,omitempty"`
+	TemporalScheduleID           string                                   `json:"temporal_schedule_id"`
+	TemporalNamespace            string                                   `json:"temporal_namespace"`
+	TaskQueue                    string                                   `json:"task_queue"`
+	State                        string                                   `json:"state"`
+	ProjectID                    uuid.UUID                                `json:"project_id"`
+	ProjectResourceName          ResourceName                             `json:"projectResourceName" doc:"Globally unique Verself resource name for the project."`
+	SourceRepositoryID           uuid.UUID                                `json:"source_repository_id"`
+	SourceRepositoryResourceName ResourceName                             `json:"sourceRepositoryResourceName" doc:"Globally unique Verself resource name for the source repository."`
+	WorkflowPath                 string                                   `json:"workflow_path"`
+	Ref                          string                                   `json:"ref,omitempty"`
+	Inputs                       map[string]string                        `json:"inputs,omitempty"`
+	IntervalSeconds              uint32                                   `json:"interval_seconds" minimum:"15" maximum:"4294967295"`
+	CreatedAt                    time.Time                                `json:"created_at"`
+	UpdatedAt                    time.Time                                `json:"updated_at"`
+	Dispatches                   []SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
 }
 
 type SandboxExecutionScheduleDispatchRecord struct {
@@ -242,29 +248,30 @@ type SandboxExecutionScheduleDispatchRecord struct {
 }
 
 type SandboxAttemptRecord struct {
-	AttemptID              uuid.UUID  `json:"attempt_id"`
-	AttemptSeq             int        `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`
-	State                  string     `json:"state"`
-	LeaseID                string     `json:"lease_id,omitempty"`
-	ExecID                 string     `json:"exec_id,omitempty"`
-	BillingJobID           int64      `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
-	FailureReason          string     `json:"failure_reason,omitempty"`
-	ExitCode               *int       `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
-	DurationMs             int64      `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
-	StdoutBytes            int64      `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	StderrBytes            int64      `json:"stderr_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	RootfsProvisionedBytes int64      `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	BootTimeUs             int64      `json:"boot_time_us,omitempty" minimum:"0" maximum:"9007199254740991"`
-	BlockReadBytes         int64      `json:"block_read_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	BlockWriteBytes        int64      `json:"block_write_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	NetRXBytes             int64      `json:"net_rx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	NetTXBytes             int64      `json:"net_tx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	VCPUExitCount          int64      `json:"vcpu_exit_count,omitempty" minimum:"0" maximum:"9007199254740991"`
-	TraceID                string     `json:"trace_id,omitempty"`
-	StartedAt              *time.Time `json:"started_at,omitempty"`
-	CompletedAt            *time.Time `json:"completed_at,omitempty"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	AttemptID              uuid.UUID    `json:"attempt_id"`
+	ResourceName           ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this attempt when the parent run is known."`
+	AttemptSeq             int          `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`
+	State                  string       `json:"state"`
+	LeaseID                string       `json:"lease_id,omitempty"`
+	ExecID                 string       `json:"exec_id,omitempty"`
+	BillingJobID           int64        `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
+	FailureReason          string       `json:"failure_reason,omitempty"`
+	ExitCode               *int         `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
+	DurationMs             int64        `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
+	StdoutBytes            int64        `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	StderrBytes            int64        `json:"stderr_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	RootfsProvisionedBytes int64        `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BootTimeUs             int64        `json:"boot_time_us,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BlockReadBytes         int64        `json:"block_read_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BlockWriteBytes        int64        `json:"block_write_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	NetRXBytes             int64        `json:"net_rx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	NetTXBytes             int64        `json:"net_tx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	VCPUExitCount          int64        `json:"vcpu_exit_count,omitempty" minimum:"0" maximum:"9007199254740991"`
+	TraceID                string       `json:"trace_id,omitempty"`
+	StartedAt              *time.Time   `json:"started_at,omitempty"`
+	CompletedAt            *time.Time   `json:"completed_at,omitempty"`
+	CreatedAt              time.Time    `json:"created_at"`
+	UpdatedAt              time.Time    `json:"updated_at"`
 }
 
 type SandboxBillingWindow struct {

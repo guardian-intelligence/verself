@@ -27,6 +27,7 @@ const (
 
 type Project struct {
 	ProjectID          string       `json:"project_id" format:"uuid"`
+	ResourceName       ResourceName `json:"resourceName" doc:"Globally unique Verself resource name for this project."`
 	OrgID              OrgID        `json:"org_id"`
 	Slug               string       `json:"slug"`
 	RedirectedFromSlug string       `json:"redirected_from_slug,omitempty"`
@@ -64,20 +65,22 @@ type ProjectLifecycleRequest struct {
 }
 
 type ProjectEnvironment struct {
-	EnvironmentID    string                  `json:"environment_id" format:"uuid"`
-	ProjectID        string                  `json:"project_id" format:"uuid"`
-	OrgID            OrgID                   `json:"org_id"`
-	Slug             string                  `json:"slug"`
-	DisplayName      string                  `json:"display_name"`
-	Kind             ProjectEnvironmentKind  `json:"kind"`
-	State            ProjectEnvironmentState `json:"state"`
-	ProtectionPolicy map[string]string       `json:"protection_policy,omitempty"`
-	Version          DecimalInt64            `json:"version"`
-	CreatedBy        string                  `json:"created_by"`
-	UpdatedBy        string                  `json:"updated_by"`
-	CreatedAt        time.Time               `json:"created_at"`
-	UpdatedAt        time.Time               `json:"updated_at"`
-	ArchivedAt       *time.Time              `json:"archived_at,omitempty"`
+	EnvironmentID       string                  `json:"environment_id" format:"uuid"`
+	ResourceName        ResourceName            `json:"resourceName" doc:"Globally unique Verself resource name for this environment."`
+	ProjectID           string                  `json:"project_id" format:"uuid"`
+	ProjectResourceName ResourceName            `json:"projectResourceName" doc:"Globally unique Verself resource name for the parent project."`
+	OrgID               OrgID                   `json:"org_id"`
+	Slug                string                  `json:"slug"`
+	DisplayName         string                  `json:"display_name"`
+	Kind                ProjectEnvironmentKind  `json:"kind"`
+	State               ProjectEnvironmentState `json:"state"`
+	ProtectionPolicy    map[string]string       `json:"protection_policy,omitempty"`
+	Version             DecimalInt64            `json:"version"`
+	CreatedBy           string                  `json:"created_by"`
+	UpdatedBy           string                  `json:"updated_by"`
+	CreatedAt           time.Time               `json:"created_at"`
+	UpdatedAt           time.Time               `json:"updated_at"`
+	ArchivedAt          *time.Time              `json:"archived_at,omitempty"`
 }
 
 type ProjectEnvironmentList struct {
@@ -122,15 +125,17 @@ type ResolveProjectEnvironmentResponse struct {
 }
 
 type ProjectEvent struct {
-	EventID       string            `json:"event_id" format:"uuid"`
-	OrgID         OrgID             `json:"org_id"`
-	ProjectID     string            `json:"project_id" format:"uuid"`
-	EnvironmentID string            `json:"environment_id,omitempty" format:"uuid"`
-	EventType     string            `json:"event_type"`
-	ActorID       string            `json:"actor_id"`
-	Payload       map[string]string `json:"payload,omitempty"`
-	TraceID       string            `json:"trace_id,omitempty"`
-	CreatedAt     time.Time         `json:"created_at"`
+	EventID                 string            `json:"event_id" format:"uuid"`
+	OrgID                   OrgID             `json:"org_id"`
+	ProjectID               string            `json:"project_id" format:"uuid"`
+	ProjectResourceName     ResourceName      `json:"projectResourceName" doc:"Globally unique Verself resource name for the project."`
+	EnvironmentID           string            `json:"environment_id,omitempty" format:"uuid"`
+	EnvironmentResourceName ResourceName      `json:"environmentResourceName,omitempty" doc:"Globally unique Verself resource name for the environment when present."`
+	EventType               string            `json:"event_type"`
+	ActorID                 string            `json:"actor_id"`
+	Payload                 map[string]string `json:"payload,omitempty"`
+	TraceID                 string            `json:"trace_id,omitempty"`
+	CreatedAt               time.Time         `json:"created_at"`
 }
 
 type ProjectEventList struct {

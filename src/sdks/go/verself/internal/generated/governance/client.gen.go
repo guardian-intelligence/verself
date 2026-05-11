@@ -150,6 +150,9 @@ type GovernanceAuditEvent struct {
 	// Sequence Per-organization tamper-evident sequence number.
 	Sequence string `json:"sequence"`
 
+	// TargetResourceName Globally unique Verself resource name for the target when known.
+	TargetResourceName *string `json:"targetResourceName,omitempty"`
+
 	// TargetId Target identifier when known and safe to expose.
 	TargetId *string `json:"target_id,omitempty"`
 
@@ -175,14 +178,15 @@ type GovernanceAuditEvents struct {
 
 // GovernanceAuditFilters defines model for GovernanceAuditFilters.
 type GovernanceAuditFilters struct {
-	ActorId      *string `json:"actor_id,omitempty"`
-	AuditEvent   *string `json:"audit_event,omitempty"`
-	CredentialId *string `json:"credential_id,omitempty"`
-	EventName    *string `json:"event_name,omitempty"`
-	EventSource  *string `json:"event_source,omitempty"`
-	Outcome      *string `json:"outcome,omitempty"`
-	TargetId     *string `json:"target_id,omitempty"`
-	TargetType   *string `json:"target_type,omitempty"`
+	ActorId            *string `json:"actor_id,omitempty"`
+	AuditEvent         *string `json:"audit_event,omitempty"`
+	CredentialId       *string `json:"credential_id,omitempty"`
+	EventName          *string `json:"event_name,omitempty"`
+	EventSource        *string `json:"event_source,omitempty"`
+	Outcome            *string `json:"outcome,omitempty"`
+	TargetResourceName *string `json:"targetResourceName,omitempty"`
+	TargetId           *string `json:"target_id,omitempty"`
+	TargetType         *string `json:"target_type,omitempty"`
 }
 
 // GovernanceCreateExportRequest defines model for GovernanceCreateExportRequest.
@@ -238,10 +242,13 @@ type GovernanceExportJob struct {
 	OrgId string `json:"org_id"`
 
 	// RequestedBy Zitadel subject that requested the export.
-	RequestedBy string    `json:"requested_by"`
-	Scopes      []string  `json:"scopes"`
-	State       string    `json:"state"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	RequestedBy string `json:"requested_by"`
+
+	// ResourceName Globally unique Verself resource name for this export.
+	ResourceName string    `json:"resourceName"`
+	Scopes       []string  `json:"scopes"`
+	State        string    `json:"state"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // GovernanceExportJobs defines model for GovernanceExportJobs.
@@ -259,15 +266,16 @@ type ListAuditEventsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 
 	// Order Time ordering of results; defaults to 'desc' (newest first).
-	Order        *ListAuditEventsParamsOrder   `form:"order,omitempty" json:"order,omitempty"`
-	ActorId      *string                       `form:"actor_id,omitempty" json:"actor_id,omitempty"`
-	AuditEvent   *string                       `form:"audit_event,omitempty" json:"audit_event,omitempty"`
-	CredentialId *string                       `form:"credential_id,omitempty" json:"credential_id,omitempty"`
-	EventName    *string                       `form:"event_name,omitempty" json:"event_name,omitempty"`
-	EventSource  *string                       `form:"event_source,omitempty" json:"event_source,omitempty"`
-	Outcome      *ListAuditEventsParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
-	TargetId     *string                       `form:"target_id,omitempty" json:"target_id,omitempty"`
-	TargetType   *string                       `form:"target_type,omitempty" json:"target_type,omitempty"`
+	Order              *ListAuditEventsParamsOrder   `form:"order,omitempty" json:"order,omitempty"`
+	ActorId            *string                       `form:"actor_id,omitempty" json:"actor_id,omitempty"`
+	AuditEvent         *string                       `form:"audit_event,omitempty" json:"audit_event,omitempty"`
+	CredentialId       *string                       `form:"credential_id,omitempty" json:"credential_id,omitempty"`
+	EventName          *string                       `form:"event_name,omitempty" json:"event_name,omitempty"`
+	EventSource        *string                       `form:"event_source,omitempty" json:"event_source,omitempty"`
+	Outcome            *ListAuditEventsParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
+	TargetId           *string                       `form:"target_id,omitempty" json:"target_id,omitempty"`
+	TargetType         *string                       `form:"target_type,omitempty" json:"target_type,omitempty"`
+	TargetResourceName *string                       `form:"targetResourceName,omitempty" json:"targetResourceName,omitempty"`
 }
 
 // ListAuditEventsParamsOrder defines parameters for ListAuditEvents.
@@ -633,6 +641,22 @@ func NewListAuditEventsRequest(server string, params *ListAuditEventsParams) (*h
 		if params.TargetType != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "target_type", *params.TargetType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.TargetResourceName != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "targetResourceName", *params.TargetResourceName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

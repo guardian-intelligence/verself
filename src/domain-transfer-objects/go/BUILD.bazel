@@ -15,6 +15,7 @@ go_library(
         "openapi.go",
         "profile.go",
         "projects.go",
+        "resource_name.go",
         "sandbox.go",
         "vmresources.go",
     ],
@@ -28,7 +29,10 @@ go_library(
 
 go_test(
     name = "dto_test",
-    srcs = ["decimal_test.go"],
+    srcs = [
+        "decimal_test.go",
+        "resource_name_test.go",
+    ],
     embed = [":dto"],
     deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
 )

@@ -95,10 +95,14 @@ type Notification struct {
 	ReadAt         *time.Time           `json:"read_at,omitempty"`
 
 	// RecipientSequence Per-recipient sequence, decimal-encoded for JavaScript safety.
-	RecipientSequence  string  `json:"recipient_sequence"`
-	RecipientSubjectId string  `json:"recipient_subject_id"`
-	ResourceId         *string `json:"resource_id,omitempty"`
-	ResourceKind       *string `json:"resource_kind,omitempty"`
+	RecipientSequence  string `json:"recipient_sequence"`
+	RecipientSubjectId string `json:"recipient_subject_id"`
+
+	// ResourceName Globally unique Verself resource name for this notification.
+	ResourceName string `json:"resourceName"`
+
+	// TargetResourceName Globally unique Verself resource name for the related product resource.
+	TargetResourceName *string `json:"targetResourceName,omitempty"`
 	Title              string  `json:"title"`
 }
 

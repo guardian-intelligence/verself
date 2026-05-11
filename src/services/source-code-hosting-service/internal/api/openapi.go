@@ -30,12 +30,12 @@ func serverURL(addr string) string {
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, Config{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, Config{InstallationID: "inst_openapi"})
 	return api.OpenAPI().YAML()
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, Config{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, Config{InstallationID: "inst_openapi"})
 	return api.OpenAPI().DowngradeYAML()
 }
 
@@ -52,7 +52,7 @@ func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) 
 }
 
 func NewInternalAPIYAML(version, listenAddr string, downgrade bool) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, Config{})
+	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, Config{InstallationID: "inst_openapi"})
 	if downgrade {
 		return api.OpenAPI().DowngradeYAML()
 	}

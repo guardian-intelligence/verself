@@ -27,6 +27,7 @@ type SecretScope struct {
 
 type Secret struct {
 	SecretID       string      `json:"secret_id"`
+	ResourceName   string      `json:"resourceName,omitempty"`
 	Kind           string      `json:"kind"`
 	Name           string      `json:"name"`
 	Scope          SecretScope `json:"scope"`
@@ -215,9 +216,10 @@ func trimPointer(value string) *string {
 
 func secretFromGenerated(input secretscore.SecretDTO) Secret {
 	return Secret{
-		SecretID: input.SecretId,
-		Kind:     input.Kind,
-		Name:     input.Name,
+		SecretID:     input.SecretId,
+		ResourceName: stringFromPointer(input.ResourceName),
+		Kind:         input.Kind,
+		Name:         input.Name,
 		Scope: SecretScope{
 			Level:    SecretScopeLevel(input.ScopeLevel),
 			SourceID: stringFromPointer(input.SourceId),
@@ -233,9 +235,10 @@ func secretFromGenerated(input secretscore.SecretDTO) Secret {
 func secretValueFromGenerated(input secretscore.SecretValueDTO) SecretValue {
 	return SecretValue{
 		Secret: Secret{
-			SecretID: input.SecretId,
-			Kind:     input.Kind,
-			Name:     input.Name,
+			SecretID:     input.SecretId,
+			ResourceName: stringFromPointer(input.ResourceName),
+			Kind:         input.Kind,
+			Name:         input.Name,
 			Scope: SecretScope{
 				Level:    SecretScopeLevel(input.ScopeLevel),
 				SourceID: stringFromPointer(input.SourceId),

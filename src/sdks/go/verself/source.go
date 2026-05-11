@@ -15,22 +15,24 @@ const (
 )
 
 type SourceRepository struct {
-	RepoID        string     `json:"repo_id"`
-	OrgID         string     `json:"org_id"`
-	OrgSlug       string     `json:"org_slug"`
-	ProjectID     string     `json:"project_id"`
-	ProjectSlug   string     `json:"project_slug"`
-	Name          string     `json:"name"`
-	Description   string     `json:"description"`
-	DefaultBranch string     `json:"default_branch"`
-	Visibility    string     `json:"visibility"`
-	State         string     `json:"state"`
-	Version       int32      `json:"version"`
-	Backend       string     `json:"backend"`
-	GitHTTPURL    string     `json:"git_http_url"`
-	LastPushedAt  *time.Time `json:"last_pushed_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	RepoID              string     `json:"repo_id"`
+	ResourceName        string     `json:"resourceName"`
+	OrgID               string     `json:"org_id"`
+	OrgSlug             string     `json:"org_slug"`
+	ProjectID           string     `json:"project_id"`
+	ProjectResourceName string     `json:"projectResourceName"`
+	ProjectSlug         string     `json:"project_slug"`
+	Name                string     `json:"name"`
+	Description         string     `json:"description"`
+	DefaultBranch       string     `json:"default_branch"`
+	Visibility          string     `json:"visibility"`
+	State               string     `json:"state"`
+	Version             int32      `json:"version"`
+	Backend             string     `json:"backend"`
+	GitHTTPURL          string     `json:"git_http_url"`
+	LastPushedAt        *time.Time `json:"last_pushed_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type SourceRepositoryList struct {
@@ -68,15 +70,17 @@ type SourceBlob struct {
 }
 
 type SourceCheckoutGrant struct {
-	GrantID   string    `json:"grant_id"`
-	RepoID    string    `json:"repo_id"`
-	Ref       string    `json:"ref"`
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
+	GrantID      string    `json:"grant_id"`
+	ResourceName string    `json:"resourceName"`
+	RepoID       string    `json:"repo_id"`
+	Ref          string    `json:"ref"`
+	Token        string    `json:"token"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 type SourceGitCredential struct {
 	CredentialID string    `json:"credential_id"`
+	ResourceName string    `json:"resourceName"`
 	OrgID        string    `json:"org_id"`
 	Username     string    `json:"username"`
 	Token        string    `json:"token"`
@@ -87,22 +91,25 @@ type SourceGitCredential struct {
 }
 
 type SourceWorkflowRun struct {
-	WorkflowRunID     string            `json:"workflow_run_id"`
-	OrgID             string            `json:"org_id"`
-	ProjectID         string            `json:"project_id"`
-	RepoID            string            `json:"repo_id"`
-	ActorID           string            `json:"actor_id"`
-	Backend           string            `json:"backend"`
-	WorkflowPath      string            `json:"workflow_path"`
-	Ref               string            `json:"ref"`
-	Inputs            map[string]string `json:"inputs"`
-	State             string            `json:"state"`
-	BackendDispatchID string            `json:"backend_dispatch_id,omitempty"`
-	FailureReason     string            `json:"failure_reason,omitempty"`
-	TraceID           string            `json:"trace_id,omitempty"`
-	DispatchedAt      *time.Time        `json:"dispatched_at,omitempty"`
-	CreatedAt         time.Time         `json:"created_at"`
-	UpdatedAt         time.Time         `json:"updated_at"`
+	WorkflowRunID          string            `json:"workflow_run_id"`
+	ResourceName           string            `json:"resourceName"`
+	OrgID                  string            `json:"org_id"`
+	ProjectID              string            `json:"project_id"`
+	ProjectResourceName    string            `json:"projectResourceName"`
+	RepoID                 string            `json:"repo_id"`
+	RepositoryResourceName string            `json:"repositoryResourceName"`
+	ActorID                string            `json:"actor_id"`
+	Backend                string            `json:"backend"`
+	WorkflowPath           string            `json:"workflow_path"`
+	Ref                    string            `json:"ref"`
+	Inputs                 map[string]string `json:"inputs"`
+	State                  string            `json:"state"`
+	BackendDispatchID      string            `json:"backend_dispatch_id,omitempty"`
+	FailureReason          string            `json:"failure_reason,omitempty"`
+	TraceID                string            `json:"trace_id,omitempty"`
+	DispatchedAt           *time.Time        `json:"dispatched_at,omitempty"`
+	CreatedAt              time.Time         `json:"created_at"`
+	UpdatedAt              time.Time         `json:"updated_at"`
 }
 
 type SourceWorkflowRunList struct {
@@ -453,22 +460,24 @@ func sourceRepositoryListFromGenerated(input sourcecore.RepositoryList) SourceRe
 
 func sourceRepositoryFromGenerated(input sourcecore.Repository) SourceRepository {
 	return SourceRepository{
-		RepoID:        input.RepoId,
-		OrgID:         input.OrgId,
-		OrgSlug:       input.OrgSlug,
-		ProjectID:     input.ProjectId,
-		ProjectSlug:   input.ProjectSlug,
-		Name:          input.Name,
-		Description:   input.Description,
-		DefaultBranch: input.DefaultBranch,
-		Visibility:    input.Visibility,
-		State:         input.State,
-		Version:       input.Version,
-		Backend:       input.Backend,
-		GitHTTPURL:    input.GitHttpUrl,
-		LastPushedAt:  input.LastPushedAt,
-		CreatedAt:     input.CreatedAt,
-		UpdatedAt:     input.UpdatedAt,
+		RepoID:              input.RepoId,
+		ResourceName:        input.ResourceName,
+		OrgID:               input.OrgId,
+		OrgSlug:             input.OrgSlug,
+		ProjectID:           input.ProjectId,
+		ProjectResourceName: input.ProjectResourceName,
+		ProjectSlug:         input.ProjectSlug,
+		Name:                input.Name,
+		Description:         input.Description,
+		DefaultBranch:       input.DefaultBranch,
+		Visibility:          input.Visibility,
+		State:               input.State,
+		Version:             input.Version,
+		Backend:             input.Backend,
+		GitHTTPURL:          input.GitHttpUrl,
+		LastPushedAt:        input.LastPushedAt,
+		CreatedAt:           input.CreatedAt,
+		UpdatedAt:           input.UpdatedAt,
 	}
 }
 
@@ -516,17 +525,19 @@ func sourceBlobFromGenerated(input sourcecore.Blob) SourceBlob {
 
 func sourceCheckoutGrantFromGenerated(input sourcecore.CheckoutGrant) SourceCheckoutGrant {
 	return SourceCheckoutGrant{
-		GrantID:   input.GrantId,
-		RepoID:    input.RepoId,
-		Ref:       input.Ref,
-		Token:     input.Token,
-		ExpiresAt: input.ExpiresAt,
+		GrantID:      input.GrantId,
+		ResourceName: input.ResourceName,
+		RepoID:       input.RepoId,
+		Ref:          input.Ref,
+		Token:        input.Token,
+		ExpiresAt:    input.ExpiresAt,
 	}
 }
 
 func sourceGitCredentialFromGenerated(input sourcecore.GitCredential) SourceGitCredential {
 	out := SourceGitCredential{
 		CredentialID: input.CredentialId,
+		ResourceName: input.ResourceName,
 		OrgID:        input.OrgId,
 		Username:     input.Username,
 		Token:        input.Token,
@@ -553,19 +564,22 @@ func sourceWorkflowRunListFromGenerated(input sourcecore.WorkflowRunList) Source
 
 func sourceWorkflowRunFromGenerated(input sourcecore.WorkflowRun) SourceWorkflowRun {
 	out := SourceWorkflowRun{
-		WorkflowRunID: input.WorkflowRunId,
-		OrgID:         input.OrgId,
-		ProjectID:     input.ProjectId,
-		RepoID:        input.RepoId,
-		ActorID:       input.ActorId,
-		Backend:       input.Backend,
-		WorkflowPath:  input.WorkflowPath,
-		Ref:           input.Ref,
-		Inputs:        copyStringMap(input.Inputs),
-		State:         input.State,
-		DispatchedAt:  input.DispatchedAt,
-		CreatedAt:     input.CreatedAt,
-		UpdatedAt:     input.UpdatedAt,
+		WorkflowRunID:          input.WorkflowRunId,
+		ResourceName:           input.ResourceName,
+		OrgID:                  input.OrgId,
+		ProjectID:              input.ProjectId,
+		ProjectResourceName:    input.ProjectResourceName,
+		RepoID:                 input.RepoId,
+		RepositoryResourceName: input.RepositoryResourceName,
+		ActorID:                input.ActorId,
+		Backend:                input.Backend,
+		WorkflowPath:           input.WorkflowPath,
+		Ref:                    input.Ref,
+		Inputs:                 copyStringMap(input.Inputs),
+		State:                  input.State,
+		DispatchedAt:           input.DispatchedAt,
+		CreatedAt:              input.CreatedAt,
+		UpdatedAt:              input.UpdatedAt,
 	}
 	if input.BackendDispatchId != nil {
 		out.BackendDispatchID = *input.BackendDispatchId

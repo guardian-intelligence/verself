@@ -98,6 +98,31 @@ type IAMAuthorizeRequest struct {
 	Subject     IAMAuthorizationSubject `json:"subject"`
 }
 
+// IAMAuthorizeResourceRequest defines model for IAMAuthorizeResourceRequest.
+type IAMAuthorizeResourceRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string                 `json:"$schema,omitempty"`
+	MinZedToken         *string                 `json:"min_zed_token,omitempty"`
+	OperationPermission *string                 `json:"operation_permission,omitempty"`
+	OrgId               string                  `json:"org_id"`
+	Resource            IAMResourceRef          `json:"resource"`
+	ResourcePermission  string                  `json:"resource_permission"`
+	Subject             IAMAuthorizationSubject `json:"subject"`
+}
+
+// IAMAuthorizeResourceResponse defines model for IAMAuthorizeResourceResponse.
+type IAMAuthorizeResourceResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string                 `json:"$schema,omitempty"`
+	Allowed             bool                    `json:"allowed"`
+	OperationPermission *string                 `json:"operation_permission,omitempty"`
+	OrgId               string                  `json:"org_id"`
+	Resource            IAMResourceRef          `json:"resource"`
+	ResourcePermission  string                  `json:"resource_permission"`
+	Subject             IAMAuthorizationSubject `json:"subject"`
+	ZedToken            *string                 `json:"zed_token,omitempty"`
+}
+
 // IAMAuthorizeResponse defines model for IAMAuthorizeResponse.
 type IAMAuthorizeResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -110,13 +135,16 @@ type IAMAuthorizeResponse struct {
 
 // IAMOrganizationProfile defines model for IAMOrganizationProfile.
 type IAMOrganizationProfile struct {
-	DisplayName    string    `json:"display_name"`
-	OrgId          string    `json:"org_id"`
-	RedirectedFrom *string   `json:"redirected_from,omitempty"`
-	Slug           string    `json:"slug"`
-	State          string    `json:"state"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Version        int32     `json:"version"`
+	DisplayName    string  `json:"display_name"`
+	OrgId          string  `json:"org_id"`
+	RedirectedFrom *string `json:"redirected_from,omitempty"`
+
+	// ResourceName Globally unique Verself resource name for this organization.
+	ResourceName *string   `json:"resourceName,omitempty"`
+	Slug         string    `json:"slug"`
+	State        string    `json:"state"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Version      int32     `json:"version"`
 }
 
 // IAMResolveOrganizationRequest defines model for IAMResolveOrganizationRequest.
@@ -133,6 +161,12 @@ type IAMResolveOrganizationResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string                `json:"$schema,omitempty"`
 	Organization IAMOrganizationProfile `json:"organization"`
+}
+
+// IAMResourceRef defines model for IAMResourceRef.
+type IAMResourceRef struct {
+	Id   string `json:"id"`
+	Type string `json:"type"`
 }
 
 // IAMUpdateHumanProfileRequest defines model for IAMUpdateHumanProfileRequest.
@@ -156,8 +190,36 @@ type IAMUpdateHumanProfileResponse struct {
 	SyncedAt    time.Time `json:"synced_at"`
 }
 
+// IAMWriteResourceParentEdgeRequest defines model for IAMWriteResourceParentEdgeRequest.
+type IAMWriteResourceParentEdgeRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string        `json:"$schema,omitempty"`
+	Operation *string        `json:"operation,omitempty"`
+	OrgId     string         `json:"org_id"`
+	Parent    IAMResourceRef `json:"parent"`
+	Relation  string         `json:"relation"`
+	Resource  IAMResourceRef `json:"resource"`
+}
+
+// IAMWriteResourceParentEdgeResponse defines model for IAMWriteResourceParentEdgeResponse.
+type IAMWriteResourceParentEdgeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string        `json:"$schema,omitempty"`
+	Operation *string        `json:"operation,omitempty"`
+	Parent    IAMResourceRef `json:"parent"`
+	Relation  string         `json:"relation"`
+	Resource  IAMResourceRef `json:"resource"`
+	ZedToken  *string        `json:"zed_token,omitempty"`
+}
+
 // AuthorizeOperationJSONRequestBody defines body for AuthorizeOperation for application/json ContentType.
 type AuthorizeOperationJSONRequestBody = IAMAuthorizeRequest
+
+// AuthorizeResourceJSONRequestBody defines body for AuthorizeResource for application/json ContentType.
+type AuthorizeResourceJSONRequestBody = IAMAuthorizeResourceRequest
+
+// WriteResourceParentEdgeJSONRequestBody defines body for WriteResourceParentEdge for application/json ContentType.
+type WriteResourceParentEdgeJSONRequestBody = IAMWriteResourceParentEdgeRequest
 
 // ResolveOrganizationJSONRequestBody defines body for ResolveOrganization for application/json ContentType.
 type ResolveOrganizationJSONRequestBody = IAMResolveOrganizationRequest
@@ -243,6 +305,16 @@ type ClientInterface interface {
 
 	AuthorizeOperation(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AuthorizeResourceWithBody request with any body
+	AuthorizeResourceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AuthorizeResource(ctx context.Context, body AuthorizeResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// WriteResourceParentEdgeWithBody request with any body
+	WriteResourceParentEdgeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	WriteResourceParentEdge(ctx context.Context, body WriteResourceParentEdgeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ResolveOrganizationWithBody request with any body
 	ResolveOrganizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -268,6 +340,54 @@ func (c *Client) AuthorizeOperationWithBody(ctx context.Context, contentType str
 
 func (c *Client) AuthorizeOperation(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAuthorizeOperationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthorizeResourceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizeResourceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthorizeResource(ctx context.Context, body AuthorizeResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizeResourceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WriteResourceParentEdgeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWriteResourceParentEdgeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WriteResourceParentEdge(ctx context.Context, body WriteResourceParentEdgeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWriteResourceParentEdgeRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -347,6 +467,86 @@ func NewAuthorizeOperationRequestWithBody(server string, contentType string, bod
 	}
 
 	operationPath := fmt.Sprintf("/internal/v1/authorization/authorize")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAuthorizeResourceRequest calls the generic AuthorizeResource builder with application/json body
+func NewAuthorizeResourceRequest(server string, body AuthorizeResourceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAuthorizeResourceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAuthorizeResourceRequestWithBody generates requests for AuthorizeResource with any type of body
+func NewAuthorizeResourceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/authorization/resources/authorize")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewWriteResourceParentEdgeRequest calls the generic WriteResourceParentEdge builder with application/json body
+func NewWriteResourceParentEdgeRequest(server string, body WriteResourceParentEdgeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewWriteResourceParentEdgeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewWriteResourceParentEdgeRequestWithBody generates requests for WriteResourceParentEdge with any type of body
+func NewWriteResourceParentEdgeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/authorization/resources/parent-edge")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -501,6 +701,16 @@ type ClientWithResponsesInterface interface {
 
 	AuthorizeOperationWithResponse(ctx context.Context, body AuthorizeOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeOperationHTTPResponse, error)
 
+	// AuthorizeResourceWithBodyWithResponse request with any body
+	AuthorizeResourceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeResourceHTTPResponse, error)
+
+	AuthorizeResourceWithResponse(ctx context.Context, body AuthorizeResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeResourceHTTPResponse, error)
+
+	// WriteResourceParentEdgeWithBodyWithResponse request with any body
+	WriteResourceParentEdgeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteResourceParentEdgeHTTPResponse, error)
+
+	WriteResourceParentEdgeWithResponse(ctx context.Context, body WriteResourceParentEdgeJSONRequestBody, reqEditors ...RequestEditorFn) (*WriteResourceParentEdgeHTTPResponse, error)
+
 	// ResolveOrganizationWithBodyWithResponse request with any body
 	ResolveOrganizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error)
 
@@ -529,6 +739,52 @@ func (r AuthorizeOperationHTTPResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r AuthorizeOperationHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AuthorizeResourceHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IAMAuthorizeResourceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthorizeResourceHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthorizeResourceHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type WriteResourceParentEdgeHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IAMWriteResourceParentEdgeResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r WriteResourceParentEdgeHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WriteResourceParentEdgeHTTPResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -598,6 +854,40 @@ func (c *ClientWithResponses) AuthorizeOperationWithResponse(ctx context.Context
 	return ParseAuthorizeOperationHTTPResponse(rsp)
 }
 
+// AuthorizeResourceWithBodyWithResponse request with arbitrary body returning *AuthorizeResourceHTTPResponse
+func (c *ClientWithResponses) AuthorizeResourceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeResourceHTTPResponse, error) {
+	rsp, err := c.AuthorizeResourceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizeResourceHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) AuthorizeResourceWithResponse(ctx context.Context, body AuthorizeResourceJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeResourceHTTPResponse, error) {
+	rsp, err := c.AuthorizeResource(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizeResourceHTTPResponse(rsp)
+}
+
+// WriteResourceParentEdgeWithBodyWithResponse request with arbitrary body returning *WriteResourceParentEdgeHTTPResponse
+func (c *ClientWithResponses) WriteResourceParentEdgeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteResourceParentEdgeHTTPResponse, error) {
+	rsp, err := c.WriteResourceParentEdgeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWriteResourceParentEdgeHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) WriteResourceParentEdgeWithResponse(ctx context.Context, body WriteResourceParentEdgeJSONRequestBody, reqEditors ...RequestEditorFn) (*WriteResourceParentEdgeHTTPResponse, error) {
+	rsp, err := c.WriteResourceParentEdge(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWriteResourceParentEdgeHTTPResponse(rsp)
+}
+
 // ResolveOrganizationWithBodyWithResponse request with arbitrary body returning *ResolveOrganizationHTTPResponse
 func (c *ClientWithResponses) ResolveOrganizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error) {
 	rsp, err := c.ResolveOrganizationWithBody(ctx, contentType, body, reqEditors...)
@@ -648,6 +938,72 @@ func ParseAuthorizeOperationHTTPResponse(rsp *http.Response) (*AuthorizeOperatio
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest IAMAuthorizeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthorizeResourceHTTPResponse parses an HTTP response from a AuthorizeResourceWithResponse call
+func ParseAuthorizeResourceHTTPResponse(rsp *http.Response) (*AuthorizeResourceHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthorizeResourceHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IAMAuthorizeResourceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWriteResourceParentEdgeHTTPResponse parses an HTTP response from a WriteResourceParentEdgeWithResponse call
+func ParseWriteResourceParentEdgeHTTPResponse(rsp *http.Response) (*WriteResourceParentEdgeHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WriteResourceParentEdgeHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IAMWriteResourceParentEdgeResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

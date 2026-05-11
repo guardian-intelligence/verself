@@ -25,7 +25,7 @@ var publicServicePeers = []string{
 type projectOperation interface {
 	id() string
 	projections() apiProjection
-	register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer)
+	register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer, installationID string)
 }
 
 type projectOperationDef[I, O any] struct {
@@ -33,7 +33,7 @@ type projectOperationDef[I, O any] struct {
 	policy             projectsOperationPolicy
 	enabledProjections apiProjection
 	serviceMirrorPeers []string
-	handler            func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error)
+	handler            func(*projects.Service, string) func(context.Context, projects.Principal, *I) (*O, error)
 }
 
 func (o projectOperationDef[I, O]) id() string {
@@ -44,28 +44,28 @@ func (o projectOperationDef[I, O]) projections() apiProjection {
 	return o.enabledProjections
 }
 
-func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer) {
+func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer, installationID string) {
 	policy := o.policy
 	if projection == apiProjectionInternal && !policy.Service {
 		policy.Service = true
 		policy.ServicePeers = append([]string(nil), o.serviceMirrorPeers...)
 	}
-	registerProjectsRoute(api, authorizer, o.op, policy, o.handler(svc))
+	registerProjectsRoute(api, authorizer, o.op, policy, o.handler(svc, installationID))
 }
 
-func registerProjectOperations(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer) {
+func registerProjectOperations(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer, installationID string) {
 	for _, op := range projectOperations() {
 		if op.projections()&projection == 0 {
 			continue
 		}
-		op.register(api, svc, projection, authorizer)
+		op.register(api, svc, projection, authorizer, installationID)
 	}
 }
 
 func publicProjectOperation[I, O any](
 	op huma.Operation,
 	policy projectsOperationPolicy,
-	handler func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error),
+	handler func(*projects.Service, string) func(context.Context, projects.Principal, *I) (*O, error),
 ) projectOperationDef[I, O] {
 	return projectOperationDef[I, O]{
 		op:                 op,
@@ -79,7 +79,7 @@ func publicProjectOperation[I, O any](
 func serviceOnlyProjectOperation[I, O any](
 	op huma.Operation,
 	policy projectsOperationPolicy,
-	handler func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error),
+	handler func(*projects.Service, string) func(context.Context, projects.Principal, *I) (*O, error),
 ) projectOperationDef[I, O] {
 	policy.Service = true
 	return projectOperationDef[I, O]{

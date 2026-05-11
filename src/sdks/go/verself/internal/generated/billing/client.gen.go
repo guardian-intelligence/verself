@@ -204,25 +204,28 @@ type BillingCreatePortalSessionRequest struct {
 
 // BillingDocument defines model for BillingDocument.
 type BillingDocument struct {
-	AdjustmentUnits        string                      `json:"adjustment_units"`
-	Currency               string                      `json:"currency"`
-	CycleId                string                      `json:"cycle_id"`
-	DocumentId             string                      `json:"document_id"`
-	DocumentKind           BillingDocumentDocumentKind `json:"document_kind"`
-	DocumentNumber         string                      `json:"document_number"`
-	FinalizationId         string                      `json:"finalization_id"`
-	IssuedAt               *time.Time                  `json:"issued_at,omitempty"`
-	PaymentStatus          string                      `json:"payment_status"`
-	PeriodEnd              time.Time                   `json:"period_end"`
-	PeriodStart            time.Time                   `json:"period_start"`
-	ProductId              string                      `json:"product_id"`
-	Status                 string                      `json:"status"`
-	StripeHostedInvoiceUrl *string                     `json:"stripe_hosted_invoice_url,omitempty"`
-	StripeInvoicePdfUrl    *string                     `json:"stripe_invoice_pdf_url,omitempty"`
-	StripePaymentIntentId  *string                     `json:"stripe_payment_intent_id,omitempty"`
-	SubtotalUnits          string                      `json:"subtotal_units"`
-	TaxUnits               string                      `json:"tax_units"`
-	TotalDueUnits          string                      `json:"total_due_units"`
+	AdjustmentUnits string                      `json:"adjustment_units"`
+	Currency        string                      `json:"currency"`
+	CycleId         string                      `json:"cycle_id"`
+	DocumentId      string                      `json:"document_id"`
+	DocumentKind    BillingDocumentDocumentKind `json:"document_kind"`
+	DocumentNumber  string                      `json:"document_number"`
+	FinalizationId  string                      `json:"finalization_id"`
+	IssuedAt        *time.Time                  `json:"issued_at,omitempty"`
+	PaymentStatus   string                      `json:"payment_status"`
+	PeriodEnd       time.Time                   `json:"period_end"`
+	PeriodStart     time.Time                   `json:"period_start"`
+	ProductId       string                      `json:"product_id"`
+
+	// ResourceName Globally unique Verself resource name for this billing document.
+	ResourceName           string  `json:"resourceName"`
+	Status                 string  `json:"status"`
+	StripeHostedInvoiceUrl *string `json:"stripe_hosted_invoice_url,omitempty"`
+	StripeInvoicePdfUrl    *string `json:"stripe_invoice_pdf_url,omitempty"`
+	StripePaymentIntentId  *string `json:"stripe_payment_intent_id,omitempty"`
+	SubtotalUnits          string  `json:"subtotal_units"`
+	TaxUnits               string  `json:"tax_units"`
+	TotalDueUnits          string  `json:"total_due_units"`
 }
 
 // BillingDocumentDocumentKind defines model for BillingDocument.DocumentKind.

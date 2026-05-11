@@ -56,6 +56,7 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
 	platformOrgID := cfg.RequireString("SECRETS_PLATFORM_ORG_ID")
@@ -154,7 +155,7 @@ func run() error {
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	privateMux := http.NewServeMux()
-	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc, iamclient.NewAuthorizer(iamClient))
+	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc, installationID, iamclient.NewAuthorizer(iamClient))
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,

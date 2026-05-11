@@ -12,7 +12,7 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service, authorizers ...runtimeiam.OperationAuthorizer) huma.API {
+func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service, installationID string, authorizers ...runtimeiam.OperationAuthorizer) huma.API {
 	config := huma.DefaultConfig("Verself Secrets Service API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
@@ -21,7 +21,7 @@ func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service,
 	if len(authorizers) > 0 {
 		authorizer = authorizers[0]
 	}
-	RegisterRoutes(api, svc, authorizer)
+	RegisterRoutes(api, svc, authorizer, installationID)
 	dto.ApplyOpenAPIWireDefaults(api)
 	return api
 }
@@ -29,7 +29,7 @@ func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service,
 func OpenAPIYAML(format string) ([]byte, error) {
 	mux := http.NewServeMux()
 	svc := &secrets.Service{}
-	api := NewAPI(mux, "dev", "https://secrets.api.verself.sh", svc)
+	api := NewAPI(mux, "dev", "https://secrets.api.verself.sh", svc, "inst_openapi")
 	switch format {
 	case "3.0":
 		return OpenAPIDowngradeYAML(api.OpenAPI())

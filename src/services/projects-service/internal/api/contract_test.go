@@ -12,7 +12,7 @@ import (
 
 func TestProjectsInternalProjectionContainsPublicOperations(t *testing.T) {
 	publicAPI := NewAPI(http.NewServeMux(), Config{Version: "1.0.0", ListenAddr: "127.0.0.1:0", Service: &projects.Service{}})
-	internalAPI := NewInternalAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{})
+	internalAPI := NewInternalAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{}, "inst_test")
 
 	publicSpec := publicAPI.OpenAPI()
 	internalSpec := internalAPI.OpenAPI()

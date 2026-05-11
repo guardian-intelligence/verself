@@ -31,6 +31,7 @@ type NotificationPreferences struct {
 
 type Notification struct {
 	NotificationID     string               `json:"notification_id"`
+	ResourceName       string               `json:"resourceName"`
 	OrgID              string               `json:"org_id"`
 	RecipientSubjectID string               `json:"recipient_subject_id"`
 	RecipientSequence  int64                `json:"recipient_sequence"`
@@ -39,8 +40,7 @@ type Notification struct {
 	Title              string               `json:"title"`
 	Body               string               `json:"body"`
 	ActionURL          string               `json:"action_url,omitempty"`
-	ResourceKind       string               `json:"resource_kind,omitempty"`
-	ResourceID         string               `json:"resource_id,omitempty"`
+	TargetResourceName string               `json:"targetResourceName,omitempty"`
 	CreatedAt          time.Time            `json:"created_at"`
 	ExpiresAt          *time.Time           `json:"expires_at,omitempty"`
 	ReadAt             *time.Time           `json:"read_at,omitempty"`
@@ -341,6 +341,7 @@ func notificationFromGenerated(input notificationscore.Notification) (Notificati
 	}
 	return Notification{
 		NotificationID:     input.NotificationId,
+		ResourceName:       input.ResourceName,
 		OrgID:              input.OrgId,
 		RecipientSubjectID: input.RecipientSubjectId,
 		RecipientSequence:  sequence,
@@ -349,8 +350,7 @@ func notificationFromGenerated(input notificationscore.Notification) (Notificati
 		Title:              input.Title,
 		Body:               input.Body,
 		ActionURL:          stringFromPointer(input.ActionUrl),
-		ResourceKind:       stringFromPointer(input.ResourceKind),
-		ResourceID:         stringFromPointer(input.ResourceId),
+		TargetResourceName: stringFromPointer(input.TargetResourceName),
 		CreatedAt:          input.CreatedAt,
 		ExpiresAt:          input.ExpiresAt,
 		ReadAt:             input.ReadAt,

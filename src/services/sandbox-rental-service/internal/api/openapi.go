@@ -14,8 +14,9 @@ import (
 )
 
 type PublicAPIConfig struct {
-	PublicBaseURL string
-	Authorizer    runtimeiam.OperationAuthorizer
+	PublicBaseURL  string
+	Authorizer     runtimeiam.OperationAuthorizer
+	InstallationID string
 }
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, publicConfig PublicAPIConfig) huma.API {
@@ -46,12 +47,12 @@ func serverURL(addr string) string {
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{InstallationID: "inst_openapi"})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{InstallationID: "inst_openapi"})
 	return api.OpenAPI().YAML()
 }
 

@@ -12,6 +12,7 @@ import (
 
 type SandboxAttempt struct {
 	AttemptID              string     `json:"attempt_id"`
+	ResourceName           *string    `json:"resourceName,omitempty"`
 	AttemptSeq             int64      `json:"attempt_seq"`
 	State                  string     `json:"state"`
 	LeaseID                *string    `json:"lease_id,omitempty"`
@@ -75,15 +76,17 @@ type SandboxRunnerRunMetadata struct {
 }
 
 type SandboxScheduleRunMetadata struct {
-	ScheduleID         *string `json:"schedule_id,omitempty"`
-	DisplayName        *string `json:"display_name,omitempty"`
-	TemporalScheduleID *string `json:"temporal_schedule_id,omitempty"`
-	TemporalWorkflowID *string `json:"temporal_workflow_id,omitempty"`
-	TemporalRunID      *string `json:"temporal_run_id,omitempty"`
+	ScheduleID           *string `json:"schedule_id,omitempty"`
+	ScheduleResourceName *string `json:"scheduleResourceName,omitempty"`
+	DisplayName          *string `json:"display_name,omitempty"`
+	TemporalScheduleID   *string `json:"temporal_schedule_id,omitempty"`
+	TemporalWorkflowID   *string `json:"temporal_workflow_id,omitempty"`
+	TemporalRunID        *string `json:"temporal_run_id,omitempty"`
 }
 
 type SandboxExecution struct {
 	ExecutionID      string                      `json:"execution_id"`
+	ResourceName     string                      `json:"resourceName"`
 	RunID            string                      `json:"run_id"`
 	OrgID            string                      `json:"org_id"`
 	ActorID          string                      `json:"actor_id"`
@@ -228,6 +231,7 @@ type SandboxRunLogSearchPage struct {
 
 type SandboxGitHubInstallation struct {
 	InstallationID string    `json:"installation_id"`
+	ResourceName   string    `json:"resourceName"`
 	OrgID          string    `json:"org_id"`
 	AccountLogin   string    `json:"account_login"`
 	AccountType    string    `json:"account_type"`
@@ -259,24 +263,27 @@ type SandboxExecutionScheduleDispatch struct {
 }
 
 type SandboxExecutionSchedule struct {
-	ScheduleID         string                             `json:"schedule_id"`
-	OrgID              string                             `json:"org_id"`
-	ProjectID          string                             `json:"project_id"`
-	SourceRepositoryID string                             `json:"source_repository_id"`
-	ActorID            string                             `json:"actor_id"`
-	DisplayName        *string                            `json:"display_name,omitempty"`
-	WorkflowPath       string                             `json:"workflow_path"`
-	Ref                *string                            `json:"ref,omitempty"`
-	Inputs             map[string]string                  `json:"inputs,omitempty"`
-	IntervalSeconds    int32                              `json:"interval_seconds"`
-	State              string                             `json:"state"`
-	TaskQueue          string                             `json:"task_queue"`
-	TemporalNamespace  string                             `json:"temporal_namespace"`
-	TemporalScheduleID string                             `json:"temporal_schedule_id"`
-	IdempotencyKey     *string                            `json:"idempotency_key,omitempty"`
-	Dispatches         []SandboxExecutionScheduleDispatch `json:"dispatches,omitempty"`
-	CreatedAt          time.Time                          `json:"created_at"`
-	UpdatedAt          time.Time                          `json:"updated_at"`
+	ScheduleID                   string                             `json:"schedule_id"`
+	ResourceName                 string                             `json:"resourceName"`
+	OrgID                        string                             `json:"org_id"`
+	ProjectID                    string                             `json:"project_id"`
+	ProjectResourceName          string                             `json:"projectResourceName"`
+	SourceRepositoryID           string                             `json:"source_repository_id"`
+	SourceRepositoryResourceName string                             `json:"sourceRepositoryResourceName"`
+	ActorID                      string                             `json:"actor_id"`
+	DisplayName                  *string                            `json:"display_name,omitempty"`
+	WorkflowPath                 string                             `json:"workflow_path"`
+	Ref                          *string                            `json:"ref,omitempty"`
+	Inputs                       map[string]string                  `json:"inputs,omitempty"`
+	IntervalSeconds              int32                              `json:"interval_seconds"`
+	State                        string                             `json:"state"`
+	TaskQueue                    string                             `json:"task_queue"`
+	TemporalNamespace            string                             `json:"temporal_namespace"`
+	TemporalScheduleID           string                             `json:"temporal_schedule_id"`
+	IdempotencyKey               *string                            `json:"idempotency_key,omitempty"`
+	Dispatches                   []SandboxExecutionScheduleDispatch `json:"dispatches,omitempty"`
+	CreatedAt                    time.Time                          `json:"created_at"`
+	UpdatedAt                    time.Time                          `json:"updated_at"`
 }
 
 type SandboxExecutionSchedules struct {

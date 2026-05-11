@@ -107,31 +107,40 @@ type Project struct {
 	OrgId              string             `json:"org_id"`
 	ProjectId          openapi_types.UUID `json:"project_id"`
 	RedirectedFromSlug *string            `json:"redirected_from_slug,omitempty"`
-	Slug               string             `json:"slug"`
-	State              string             `json:"state"`
-	UpdatedAt          time.Time          `json:"updated_at"`
-	UpdatedBy          string             `json:"updated_by"`
-	Version            string             `json:"version"`
+
+	// ResourceName Globally unique Verself resource name for this project.
+	ResourceName string    `json:"resourceName"`
+	Slug         string    `json:"slug"`
+	State        string    `json:"state"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	UpdatedBy    string    `json:"updated_by"`
+	Version      string    `json:"version"`
 }
 
 // ProjectEnvironment defines model for ProjectEnvironment.
 type ProjectEnvironment struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string            `json:"$schema,omitempty"`
-	ArchivedAt       *time.Time         `json:"archived_at,omitempty"`
-	CreatedAt        time.Time          `json:"created_at"`
-	CreatedBy        string             `json:"created_by"`
-	DisplayName      string             `json:"display_name"`
-	EnvironmentId    openapi_types.UUID `json:"environment_id"`
-	Kind             string             `json:"kind"`
-	OrgId            string             `json:"org_id"`
-	ProjectId        openapi_types.UUID `json:"project_id"`
-	ProtectionPolicy *map[string]string `json:"protection_policy,omitempty"`
-	Slug             string             `json:"slug"`
-	State            string             `json:"state"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	UpdatedBy        string             `json:"updated_by"`
-	Version          string             `json:"version"`
+	Schema        *string            `json:"$schema,omitempty"`
+	ArchivedAt    *time.Time         `json:"archived_at,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+	CreatedBy     string             `json:"created_by"`
+	DisplayName   string             `json:"display_name"`
+	EnvironmentId openapi_types.UUID `json:"environment_id"`
+	Kind          string             `json:"kind"`
+	OrgId         string             `json:"org_id"`
+
+	// ProjectResourceName Globally unique Verself resource name for the parent project.
+	ProjectResourceName string             `json:"projectResourceName"`
+	ProjectId           openapi_types.UUID `json:"project_id"`
+	ProtectionPolicy    *map[string]string `json:"protection_policy,omitempty"`
+
+	// ResourceName Globally unique Verself resource name for this environment.
+	ResourceName string    `json:"resourceName"`
+	Slug         string    `json:"slug"`
+	State        string    `json:"state"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	UpdatedBy    string    `json:"updated_by"`
+	Version      string    `json:"version"`
 }
 
 // ProjectEnvironmentList defines model for ProjectEnvironmentList.
@@ -144,15 +153,21 @@ type ProjectEnvironmentList struct {
 
 // ProjectEvent defines model for ProjectEvent.
 type ProjectEvent struct {
-	ActorId       string              `json:"actor_id"`
-	CreatedAt     time.Time           `json:"created_at"`
-	EnvironmentId *openapi_types.UUID `json:"environment_id,omitempty"`
-	EventId       openapi_types.UUID  `json:"event_id"`
-	EventType     string              `json:"event_type"`
-	OrgId         string              `json:"org_id"`
-	Payload       *map[string]string  `json:"payload,omitempty"`
-	ProjectId     openapi_types.UUID  `json:"project_id"`
-	TraceId       *string             `json:"trace_id,omitempty"`
+	ActorId   string    `json:"actor_id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// EnvironmentResourceName Globally unique Verself resource name for the environment when present.
+	EnvironmentResourceName *string             `json:"environmentResourceName,omitempty"`
+	EnvironmentId           *openapi_types.UUID `json:"environment_id,omitempty"`
+	EventId                 openapi_types.UUID  `json:"event_id"`
+	EventType               string              `json:"event_type"`
+	OrgId                   string              `json:"org_id"`
+	Payload                 *map[string]string  `json:"payload,omitempty"`
+
+	// ProjectResourceName Globally unique Verself resource name for the project.
+	ProjectResourceName string             `json:"projectResourceName"`
+	ProjectId           openapi_types.UUID `json:"project_id"`
+	TraceId             *string            `json:"trace_id,omitempty"`
 }
 
 // ProjectEventList defines model for ProjectEventList.

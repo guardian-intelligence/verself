@@ -28,7 +28,7 @@ func NewAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Servi
 
 func OpenAPIYAML(format string) ([]byte, error) {
 	mux := http.NewServeMux()
-	svc := &governance.Service{}
+	svc := &governance.Service{InstallationID: "inst_openapi"}
 	api := NewAPI(mux, "dev", "https://governance.api.verself.sh", svc)
 	switch format {
 	case "3.0":

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -274,7 +275,7 @@ func archiveProjectEnvironmentOperation() projectOperation {
 	}, archiveEnvironment)
 }
 
-func createProject(svc *projects.Service) func(context.Context, projects.Principal, *createProjectInput) (*projectOutput, error) {
+func createProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *createProjectInput) (*projectOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *createProjectInput) (*projectOutput, error) {
 		project, err := svc.CreateProject(ctx, principal, projects.CreateProjectRequest{
 			Slug:           input.Body.Slug,
@@ -285,11 +286,11 @@ func createProject(svc *projects.Service) func(context.Context, projects.Princip
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectOutput{Body: projectDTO(project)}, nil
+		return &projectOutput{Body: projectDTO(project, installationID)}, nil
 	}
 }
 
-func listProjects(svc *projects.Service) func(context.Context, projects.Principal, *listProjectsInput) (*projectListOutput, error) {
+func listProjects(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *listProjectsInput) (*projectListOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *listProjectsInput) (*projectListOutput, error) {
 		records, nextCursor, err := svc.ListProjects(ctx, principal, projects.ListProjectsRequest{
 			State:  input.State,
@@ -299,11 +300,11 @@ func listProjects(svc *projects.Service) func(context.Context, projects.Principa
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectListOutput{Body: dto.ProjectList{Projects: projectDTOs(records), NextCursor: nextCursor}}, nil
+		return &projectListOutput{Body: dto.ProjectList{Projects: projectDTOs(records, installationID), NextCursor: nextCursor}}, nil
 	}
 }
 
-func getProject(svc *projects.Service) func(context.Context, projects.Principal, *projectPath) (*projectOutput, error) {
+func getProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *projectPath) (*projectOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *projectPath) (*projectOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -313,11 +314,11 @@ func getProject(svc *projects.Service) func(context.Context, projects.Principal,
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectOutput{Body: projectDTO(project)}, nil
+		return &projectOutput{Body: projectDTO(project, installationID)}, nil
 	}
 }
 
-func updateProject(svc *projects.Service) func(context.Context, projects.Principal, *updateProjectInput) (*projectOutput, error) {
+func updateProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *updateProjectInput) (*projectOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *updateProjectInput) (*projectOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -334,11 +335,11 @@ func updateProject(svc *projects.Service) func(context.Context, projects.Princip
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectOutput{Body: projectDTO(project)}, nil
+		return &projectOutput{Body: projectDTO(project, installationID)}, nil
 	}
 }
 
-func archiveProject(svc *projects.Service) func(context.Context, projects.Principal, *projectLifecycleInput) (*projectOutput, error) {
+func archiveProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *projectLifecycleInput) (*projectOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *projectLifecycleInput) (*projectOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -352,11 +353,11 @@ func archiveProject(svc *projects.Service) func(context.Context, projects.Princi
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectOutput{Body: projectDTO(project)}, nil
+		return &projectOutput{Body: projectDTO(project, installationID)}, nil
 	}
 }
 
-func restoreProject(svc *projects.Service) func(context.Context, projects.Principal, *projectLifecycleInput) (*projectOutput, error) {
+func restoreProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *projectLifecycleInput) (*projectOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *projectLifecycleInput) (*projectOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -370,11 +371,11 @@ func restoreProject(svc *projects.Service) func(context.Context, projects.Princi
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectOutput{Body: projectDTO(project)}, nil
+		return &projectOutput{Body: projectDTO(project, installationID)}, nil
 	}
 }
 
-func listEnvironments(svc *projects.Service) func(context.Context, projects.Principal, *listEnvironmentsInput) (*environmentListOutput, error) {
+func listEnvironments(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *listEnvironmentsInput) (*environmentListOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *listEnvironmentsInput) (*environmentListOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -384,11 +385,11 @@ func listEnvironments(svc *projects.Service) func(context.Context, projects.Prin
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &environmentListOutput{Body: dto.ProjectEnvironmentList{Environments: environmentDTOs(envs)}}, nil
+		return &environmentListOutput{Body: dto.ProjectEnvironmentList{Environments: environmentDTOs(envs, installationID)}}, nil
 	}
 }
 
-func createEnvironment(svc *projects.Service) func(context.Context, projects.Principal, *createEnvironmentInput) (*environmentOutput, error) {
+func createEnvironment(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *createEnvironmentInput) (*environmentOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *createEnvironmentInput) (*environmentOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -405,11 +406,11 @@ func createEnvironment(svc *projects.Service) func(context.Context, projects.Pri
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &environmentOutput{Body: environmentDTO(env)}, nil
+		return &environmentOutput{Body: environmentDTO(env, installationID)}, nil
 	}
 }
 
-func updateEnvironment(svc *projects.Service) func(context.Context, projects.Principal, *updateEnvironmentInput) (*environmentOutput, error) {
+func updateEnvironment(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *updateEnvironmentInput) (*environmentOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *updateEnvironmentInput) (*environmentOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -430,11 +431,11 @@ func updateEnvironment(svc *projects.Service) func(context.Context, projects.Pri
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &environmentOutput{Body: environmentDTO(env)}, nil
+		return &environmentOutput{Body: environmentDTO(env, installationID)}, nil
 	}
 }
 
-func archiveEnvironment(svc *projects.Service) func(context.Context, projects.Principal, *environmentLifecycleInput) (*environmentOutput, error) {
+func archiveEnvironment(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *environmentLifecycleInput) (*environmentOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *environmentLifecycleInput) (*environmentOutput, error) {
 		projectID, err := parseUUID(ctx, input.ProjectID, "project_id")
 		if err != nil {
@@ -453,7 +454,7 @@ func archiveEnvironment(svc *projects.Service) func(context.Context, projects.Pr
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &environmentOutput{Body: environmentDTO(env)}, nil
+		return &environmentOutput{Body: environmentDTO(env, installationID)}, nil
 	}
 }
 
@@ -465,9 +466,11 @@ func parseUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func projectDTO(project projects.Project) dto.Project {
+func projectDTO(project projects.Project, installationID string) dto.Project {
+	orgID := strconv.FormatUint(project.OrgID, 10)
 	return dto.Project{
 		ProjectID:          project.ID.String(),
+		ResourceName:       dto.ResourceNameProject(installationID, orgID, project.ID.String()),
 		OrgID:              dto.Uint64(project.OrgID),
 		Slug:               project.Slug,
 		RedirectedFromSlug: project.RedirectedFromSlug,
@@ -483,37 +486,41 @@ func projectDTO(project projects.Project) dto.Project {
 	}
 }
 
-func projectDTOs(records []projects.Project) []dto.Project {
+func projectDTOs(records []projects.Project, installationID string) []dto.Project {
 	out := make([]dto.Project, 0, len(records))
 	for _, record := range records {
-		out = append(out, projectDTO(record))
+		out = append(out, projectDTO(record, installationID))
 	}
 	return out
 }
 
-func environmentDTO(env projects.Environment) dto.ProjectEnvironment {
+func environmentDTO(env projects.Environment, installationID string) dto.ProjectEnvironment {
+	orgID := strconv.FormatUint(env.OrgID, 10)
+	projectID := env.ProjectID.String()
 	return dto.ProjectEnvironment{
-		EnvironmentID:    env.ID.String(),
-		ProjectID:        env.ProjectID.String(),
-		OrgID:            dto.Uint64(env.OrgID),
-		Slug:             env.Slug,
-		DisplayName:      env.DisplayName,
-		Kind:             dto.ProjectEnvironmentKind(env.Kind),
-		State:            dto.ProjectEnvironmentState(env.State),
-		ProtectionPolicy: env.ProtectionPolicy,
-		Version:          dto.Int64(env.Version),
-		CreatedBy:        env.CreatedBy,
-		UpdatedBy:        env.UpdatedBy,
-		CreatedAt:        env.CreatedAt,
-		UpdatedAt:        env.UpdatedAt,
-		ArchivedAt:       env.ArchivedAt,
+		EnvironmentID:       env.ID.String(),
+		ResourceName:        dto.ResourceNameEnvironment(installationID, orgID, projectID, env.ID.String()),
+		ProjectID:           projectID,
+		ProjectResourceName: dto.ResourceNameProject(installationID, orgID, projectID),
+		OrgID:               dto.Uint64(env.OrgID),
+		Slug:                env.Slug,
+		DisplayName:         env.DisplayName,
+		Kind:                dto.ProjectEnvironmentKind(env.Kind),
+		State:               dto.ProjectEnvironmentState(env.State),
+		ProtectionPolicy:    env.ProtectionPolicy,
+		Version:             dto.Int64(env.Version),
+		CreatedBy:           env.CreatedBy,
+		UpdatedBy:           env.UpdatedBy,
+		CreatedAt:           env.CreatedAt,
+		UpdatedAt:           env.UpdatedAt,
+		ArchivedAt:          env.ArchivedAt,
 	}
 }
 
-func environmentDTOs(records []projects.Environment) []dto.ProjectEnvironment {
+func environmentDTOs(records []projects.Environment, installationID string) []dto.ProjectEnvironment {
 	out := make([]dto.ProjectEnvironment, 0, len(records))
 	for _, record := range records {
-		out = append(out, environmentDTO(record))
+		out = append(out, environmentDTO(record, installationID))
 	}
 	return out
 }

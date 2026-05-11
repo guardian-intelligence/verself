@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -31,6 +32,7 @@ type Config struct {
 	InternalPeers        []spiffeid.ID
 	StripeWebhookSecret  string
 	BillingReturnOrigins []string
+	InstallationID       string
 }
 
 type Handler struct {
@@ -39,6 +41,7 @@ type Handler struct {
 	internalPeers        []spiffeid.ID
 	stripeWebhookSecret  string
 	billingReturnOrigins []string
+	installationID       string
 }
 
 type body[T any] struct {
@@ -94,13 +97,13 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 }
 
 func OpenAPIYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0"})
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", InstallationID: "inst_openapi"})
 	api.OpenAPI().Servers = []*huma.Server{{URL: "https://billing.api.verself.sh"}}
 	return api.OpenAPI().YAML()
 }
 
 func OpenAPIDowngradeYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0"})
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", InstallationID: "inst_openapi"})
 	api.OpenAPI().Servers = []*huma.Server{{URL: "https://billing.api.verself.sh"}}
 	return api.OpenAPI().DowngradeYAML()
 }
@@ -139,7 +142,7 @@ func serverURL(addr string) string {
 }
 
 func RegisterPublicRoutes(api huma.API, cfg Config) {
-	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins}
+	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins, installationID: cfg.InstallationID}
 	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "get-billing-entitlements", Method: http.MethodGet, Path: "/api/v1/entitlements", Summary: "Get org entitlements view"}, readPolicy("billing_entitlements", "read", "billing.entitlements.read"), h.getEntitlements)
 	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "list-billing-grants", Method: http.MethodGet, Path: "/api/v1/grants", Summary: "List org credit grants"}, readPolicy("billing_grant", "list", "billing.grant.list"), h.listGrants)
 	registerPublicBillingRoute(api, cfg.Authorizer, huma.Operation{OperationID: "list-billing-documents", Method: http.MethodGet, Path: "/api/v1/billing-documents", Summary: "List issued billing documents"}, readPolicy("billing_document", "list", "billing.document.list"), h.listDocuments)
@@ -157,7 +160,7 @@ func RegisterPublicRoutes(api huma.API, cfg Config) {
 }
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
-	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins}
+	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins, installationID: cfg.InstallationID}
 	service := huma.NewGroup(api, "/internal/billing/v1")
 	service.UseMiddleware(requireInternalPeerMiddleware(api, h.internalPeers))
 	huma.Post(service, "/reserve", h.reserveWindow, internalOp("reserve-window", "Reserve billing window", http.StatusPaymentRequired, http.StatusForbidden))
@@ -202,7 +205,7 @@ func (h *Handler) listDocuments(ctx context.Context, orgID billing.OrgID, input 
 	}
 	out := make([]dto.BillingDocument, 0, len(documents))
 	for _, document := range documents {
-		out = append(out, documentResponse(document))
+		out = append(out, documentResponse(h.installationID, orgID, document))
 	}
 	return &body[dto.BillingDocuments]{Body: dto.BillingDocuments{Documents: out}}, nil
 }
@@ -404,9 +407,10 @@ func statementResponse(statement billing.Statement) dto.BillingStatement {
 	return dto.BillingStatement{OrgID: dto.Uint64(uint64(statement.OrgID)), ProductID: statement.ProductID, PeriodStart: statement.PeriodStart, PeriodEnd: statement.PeriodEnd, PeriodSource: statement.PeriodSource, GeneratedAt: statement.GeneratedAt, Currency: statement.Currency, UnitLabel: statement.UnitLabel, LineItems: items, GrantSummaries: summaries, Totals: dto.BillingStatementTotals{ChargeUnits: dto.Uint64(statement.Totals.ChargeUnits), FreeTierUnits: dto.Uint64(statement.Totals.FreeTierUnits), ContractUnits: dto.Uint64(statement.Totals.ContractUnits), PurchaseUnits: dto.Uint64(statement.Totals.PurchaseUnits), PromoUnits: dto.Uint64(statement.Totals.PromoUnits), RefundUnits: dto.Uint64(statement.Totals.RefundUnits), ReceivableUnits: dto.Uint64(statement.Totals.ReceivableUnits), ReservedUnits: dto.Uint64(statement.Totals.ReservedUnits), TotalDueUnits: dto.Uint64(statement.Totals.TotalDueUnits)}}
 }
 
-func documentResponse(document billing.DocumentRecord) dto.BillingDocument {
+func documentResponse(installationID string, orgID billing.OrgID, document billing.DocumentRecord) dto.BillingDocument {
 	return dto.BillingDocument{
 		DocumentID:             document.DocumentID,
+		ResourceName:           dto.ResourceNameBillingDocument(installationID, strconv.FormatUint(uint64(orgID), 10), document.DocumentID),
 		DocumentNumber:         document.DocumentNumber,
 		DocumentKind:           document.DocumentKind,
 		FinalizationID:         document.FinalizationID,

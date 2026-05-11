@@ -73,6 +73,7 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4262")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
+	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
 	forgejoToken := cfg.RequireCredential("forgejo-token")
@@ -173,10 +174,11 @@ func run() error {
 
 	privateMux := http.NewServeMux()
 	sourceapi.NewAPI(privateMux, serviceVersion, publicBaseURL, sourceapi.Config{
-		Service:       svc,
-		PublicBaseURL: publicBaseURL,
-		WebhookSecret: webhookSecret,
-		Authorizer:    iamclient.NewAuthorizer(iamClient.Client),
+		Service:        svc,
+		PublicBaseURL:  publicBaseURL,
+		WebhookSecret:  webhookSecret,
+		Authorizer:     iamclient.NewAuthorizer(iamClient.Client),
+		InstallationID: installationID,
 	})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
@@ -200,7 +202,7 @@ func run() error {
 		return fmt.Errorf("source spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	sourceapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, sourceapi.Config{Service: svc})
+	sourceapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, sourceapi.Config{Service: svc, InstallationID: installationID})
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("source internal allowlist: %w", err)
