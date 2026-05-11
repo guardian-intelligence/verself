@@ -10,8 +10,13 @@ INSERT INTO cache_declaration (
     sqlc.arg(declaration_sha256), sqlc.arg(declaration_hash), sqlc.arg(normalized_json)::jsonb,
     sqlc.arg(parsed_at)
 )
-ON CONFLICT (repository_id, declaration_hash, source_kind, source_ref, workflow_identity, job_identity, step_identity)
-DO UPDATE SET parsed_at = EXCLUDED.parsed_at
+ON CONFLICT (repository_id, declaration_hash, source_kind, source_path, workflow_identity, job_identity, step_identity)
+DO UPDATE SET
+    source_ref = EXCLUDED.source_ref,
+    source_sha = EXCLUDED.source_sha,
+    declaration_sha256 = EXCLUDED.declaration_sha256,
+    normalized_json = EXCLUDED.normalized_json,
+    parsed_at = EXCLUDED.parsed_at
 RETURNING cache_declaration_id;
 
 -- name: InsertCacheVolumeSpec :exec

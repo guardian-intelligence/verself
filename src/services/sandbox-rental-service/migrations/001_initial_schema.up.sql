@@ -540,7 +540,7 @@ CREATE TABLE cache_declaration (
 );
 
 CREATE UNIQUE INDEX idx_cache_declaration_hash
-    ON cache_declaration (repository_id, declaration_hash, source_kind, source_ref, workflow_identity, job_identity, step_identity);
+    ON cache_declaration (repository_id, declaration_hash, source_kind, source_path, workflow_identity, job_identity, step_identity);
 
 CREATE TABLE cache_volume_spec (
     cache_volume_spec_id UUID        PRIMARY KEY,
