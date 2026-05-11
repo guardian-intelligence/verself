@@ -31,6 +31,7 @@ const (
 	durableWorkspaceMountName     = "github-workspace"
 	durableWorkspaceComponentKind = "github_workspace"
 	durableCacheComponentKind     = "cache_volume"
+	durableDeclarationKind        = "cache_declaration"
 	durableTrustProtectedBranch   = "protected_branch"
 	durablePlatformImage          = "ubuntu-2404-actions-runner"
 	durableGuestArch              = "x86_64"
@@ -44,6 +45,20 @@ const (
 	durableMaxVolumesPerJob       = 99
 	durableRetainedGenerationTTL  = 7 * 24 * time.Hour
 	durablePruneBatchSize         = 32
+)
+
+const (
+	durableEventDeclarationResolve = "durable.declaration.resolve"
+	durableEventPrepare            = "durable.volume.prepare"
+	durableEventSelect             = "durable.volume.select"
+	durableEventMount              = "durable.volume.mount"
+	durableEventBind               = "durable.volume.bind"
+	durableEventSeal               = "durable.volume.seal"
+	durableEventCommit             = "durable.volume.commit"
+	durableEventPromote            = "durable.volume.promote"
+	durableEventRetain             = "durable.volume.retain"
+	durableEventPrune              = "durable.volume.prune"
+	durableEventReconcile          = "durable.volume.reconcile"
 )
 
 var ErrCacheDeclarationInvalid = errors.New("sandbox-rental: cache declaration invalid")
@@ -72,6 +87,25 @@ type durableVolumeOperation struct {
 	Mounted               bool
 	MountSkipped          bool
 	MountSkipReason       string
+}
+
+func (op durableVolumeOperation) event(executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, name, result, reason, zfsSnapshotRef string) durableEvent {
+	return durableEvent{
+		OperationID:           &op.OperationID,
+		ScopeID:               &op.DurableScopeID,
+		SourceGenerationID:    op.SourceGenerationID,
+		CandidateGenerationID: &op.CandidateGenerationID,
+		ExecutionID:           &executionID,
+		AttemptID:             &attemptID,
+		Identity:              identity,
+		ComponentKind:         op.ComponentKind,
+		ComponentName:         op.ComponentName,
+		Name:                  name,
+		Result:                result,
+		Reason:                reason,
+		MountName:             op.MountName,
+		ZFSSnapshotRef:        zfsSnapshotRef,
+	}
 }
 
 type goldenWorkflowRunRef struct {
@@ -184,7 +218,7 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 	if item.WorkloadKind != WorkloadKindRunner || item.ExternalProvider != RunnerProviderGitHub {
 		return durableVolumePlan{}, nil
 	}
-	ctx, span := tracer.Start(ctx, "durable.volume.select", trace.WithAttributes(
+	ctx, span := tracer.Start(ctx, durableEventPrepare, trace.WithAttributes(
 		attribute.String("execution.id", item.ExecutionID.String()),
 		attribute.String("attempt.id", item.AttemptID.String()),
 	))
@@ -211,6 +245,16 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 
 	decl, err := s.resolveCacheDeclaration(ctx, identity)
 	if err != nil {
+		_ = s.appendDurableEvent(ctx, durableEvent{
+			ExecutionID:   &item.ExecutionID,
+			AttemptID:     &item.AttemptID,
+			Identity:      identity,
+			ComponentKind: durableDeclarationKind,
+			ComponentName: "unknown",
+			Name:          durableEventDeclarationResolve,
+			Result:        "failed",
+			Reason:        err.Error(),
+		})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return durableVolumePlan{}, err
@@ -244,6 +288,16 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 	if err != nil {
 		return durableVolumePlan{}, fmt.Errorf("upsert cache declaration: %w", err)
 	}
+	_ = s.appendDurableEvent(ctx, durableEvent{
+		ExecutionID:   &item.ExecutionID,
+		AttemptID:     &item.AttemptID,
+		Identity:      identity,
+		ComponentKind: durableDeclarationKind,
+		ComponentName: decl.SourceKind,
+		Name:          durableEventDeclarationResolve,
+		Result:        "succeeded",
+		Reason:        firstNonEmpty(decl.SourcePath, decl.SourceSHA),
+	})
 	for _, volume := range decl.Volumes {
 		pathsJSON, pathHash, err := normalizedPathsJSON(volume.Paths)
 		if err != nil {
@@ -338,7 +392,12 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		attribute.String("github.scope_ref", scopeRef),
 	)
 	for _, op := range plan.Operations {
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.select", Result: boolResult(op.SourceSnapshotRef != "", "hit", "miss"), MountName: op.MountName})
+		_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, identity, durableEventPrepare, "succeeded", "", ""))
+		selectEvent := op.event(item.ExecutionID, item.AttemptID, identity, durableEventSelect, boolResult(op.SourceSnapshotRef != "", "hit", "miss"), "", op.SourceSnapshotRef)
+		if op.SourceSnapshotRef == "" {
+			selectEvent.Reason = "current_generation_missing"
+		}
+		_ = s.appendDurableEvent(ctx, selectEvent)
 	}
 	return plan, nil
 }
@@ -459,7 +518,10 @@ func (s *Service) recordDurableLeaseMountResults(ctx context.Context, plan durab
 			op.MountSkipped = true
 			op.MountSkipReason = reason
 			_ = s.storeQueries().MarkDurableOperationSkipped(ctx, store.MarkDurableOperationSkippedParams{RecordedAt: pgTime(now), FailureReason: reason, OperationID: op.OperationID})
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &plan.Identity.ExecutionID, AttemptID: &plan.Identity.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.mount", Result: "skipped", Reason: reason, MountName: op.MountName})
+			_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventMount, "skipped", reason, ""))
+			if len(op.BindPaths) > 0 {
+				_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventBind, "skipped", reason, ""))
+			}
 			continue
 		}
 		if result.Mounted {
@@ -467,7 +529,10 @@ func (s *Service) recordDurableLeaseMountResults(ctx context.Context, plan durab
 			if err := s.storeQueries().MarkDurableOperationMounted(ctx, store.MarkDurableOperationMountedParams{MountedAt: pgTime(now), OperationID: op.OperationID}); err != nil && s.Logger != nil {
 				s.Logger.WarnContext(ctx, "mark durable volume mounted failed", "operation_id", op.OperationID, "error", err)
 			}
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &plan.Identity.ExecutionID, AttemptID: &plan.Identity.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.mount", Result: "mounted", MountName: op.MountName})
+			_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventMount, "mounted", "", ""))
+			if len(op.BindPaths) > 0 {
+				_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventBind, "mounted", "", ""))
+			}
 			continue
 		}
 		reason := strings.TrimSpace(result.Error)
@@ -482,7 +547,10 @@ func (s *Service) recordDurableLeaseMountResults(ctx context.Context, plan durab
 		if err := s.storeQueries().MarkDurableOperationSkipped(ctx, store.MarkDurableOperationSkippedParams{RecordedAt: pgTime(now), FailureReason: reason, OperationID: op.OperationID}); err != nil && s.Logger != nil {
 			s.Logger.WarnContext(ctx, "mark durable volume skipped failed", "operation_id", op.OperationID, "error", err)
 		}
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &plan.Identity.ExecutionID, AttemptID: &plan.Identity.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.mount", Result: "skipped", Reason: reason, MountName: op.MountName})
+		_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventMount, "skipped", reason, ""))
+		if len(op.BindPaths) > 0 {
+			_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventBind, "skipped", reason, ""))
+		}
 	}
 	if len(errs) > 0 {
 		return plan, errors.Join(errs...)
@@ -500,7 +568,7 @@ func (s *Service) failDurableVolumes(ctx context.Context, plan durableVolumePlan
 		if err := s.storeQueries().MarkDurableOperationFailed(ctx, store.MarkDurableOperationFailedParams{FailureReason: failureReason, RecordedAt: pgTime(now), OperationID: op.OperationID}); err != nil && s.Logger != nil {
 			s.Logger.WarnContext(ctx, "mark durable volume failed", "operation_id", op.OperationID, "error", err)
 		}
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &plan.Identity.ExecutionID, AttemptID: &plan.Identity.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.prepare", Result: "failed", Reason: failureReason, MountName: op.MountName})
+		_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventPrepare, "failed", failureReason, ""))
 	}
 }
 
@@ -514,7 +582,7 @@ func (s *Service) failOpenDurableOperationsForAttempt(ctx context.Context, item 
 		return
 	}
 	for _, row := range rows {
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Name: "durable.volume.reconcile", Result: "failed", Reason: failureReason})
+		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Name: durableEventReconcile, Result: "failed", Reason: failureReason})
 	}
 }
 
@@ -522,38 +590,48 @@ func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWork
 	if !plan.Enabled {
 		return nil
 	}
-	ctx, span := tracer.Start(ctx, "durable.volume.seal", trace.WithAttributes(
+	ctx, span := tracer.Start(ctx, durableEventSeal, trace.WithAttributes(
 		attribute.String("lease.id", leaseID),
 		attribute.Int("durable.volume_count", len(plan.Operations)),
 	))
 	defer span.End()
 	var errs []error
 	anyCandidate := false
+	sealDecision := durableSealDecisionForExec(finalExec)
+	span.SetAttributes(
+		attribute.Bool("durable.commit_allowed", sealDecision.Commit),
+		attribute.String("durable.commit_skip_reason", sealDecision.SkipReason),
+	)
 	for _, op := range plan.Operations {
 		if !op.Mounted {
 			skipReason := firstNonEmpty(op.MountSkipReason, "mount_not_available")
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.seal", Result: "skipped", Reason: skipReason, MountName: op.MountName})
+			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "skipped", skipReason, ""))
 			continue
 		}
-		allowed, skipReason := durableSealAllowed(finalExec)
-		if !allowed {
+		if !sealDecision.Commit {
 			now := time.Now().UTC()
-			_ = s.storeQueries().MarkDurableOperationResultRecorded(ctx, store.MarkDurableOperationResultRecordedParams{FinalState: "skipped", SealedAt: pgTime(now), RecordedAt: pgTime(now), FailureReason: skipReason, OperationID: op.OperationID})
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.seal", Result: "skipped", Reason: skipReason, MountName: op.MountName})
+			_ = s.storeQueries().MarkDurableOperationResultRecorded(ctx, store.MarkDurableOperationResultRecordedParams{FinalState: "skipped", SealedAt: pgTime(now), RecordedAt: pgTime(now), FailureReason: sealDecision.SkipReason, OperationID: op.OperationID})
+			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "skipped", sealDecision.SkipReason, ""))
 			continue
 		}
 		if err := s.storeQueries().MarkDurableOperationSealStarted(ctx, store.MarkDurableOperationSealStartedParams{SealStartedAt: pgTime(time.Now().UTC()), OperationID: op.OperationID}); err != nil {
+			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "failed", err.Error(), ""))
 			errs = append(errs, err)
 			continue
 		}
 		commit, err := s.Orchestrator.CommitFilesystemMount(ctx, leaseID, op.OperationID.String()+":commit", op.OperationID.String(), op.MountName, op.DurableScopeID.String(), op.SourceSnapshotRef, op.CandidateGenerationID.String())
 		if err != nil {
 			_ = s.storeQueries().MarkDurableOperationFailed(ctx, store.MarkDurableOperationFailedParams{FailureReason: err.Error(), RecordedAt: pgTime(time.Now().UTC()), OperationID: op.OperationID})
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.seal", Result: "failed", Reason: err.Error(), MountName: op.MountName})
+			for _, event := range durableCommitFailureEvents(op, item.ExecutionID, item.AttemptID, plan.Identity, err) {
+				_ = s.appendDurableEvent(ctx, event)
+			}
 			errs = append(errs, fmt.Errorf("commit durable volume %s: %w", op.ComponentName, err))
 			continue
 		}
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.seal", Result: "succeeded", MountName: op.MountName, ZFSSnapshotRef: commit.Snapshot, UsedBytes: commit.UsedBytes, WrittenBytes: commit.WrittenBytes})
+		sealEvent := op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "succeeded", "", commit.Snapshot)
+		sealEvent.UsedBytes = commit.UsedBytes
+		sealEvent.WrittenBytes = commit.WrittenBytes
+		_ = s.appendDurableEvent(ctx, sealEvent)
 		usedBytes, err := int64FromUint64("durable used bytes", commit.UsedBytes)
 		if err != nil {
 			errs = append(errs, err)
@@ -594,9 +672,17 @@ func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWork
 			errs = append(errs, err)
 			continue
 		}
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, GenerationID: &generationID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.commit", Result: "succeeded", MountName: op.MountName, ZFSSnapshotRef: commit.Snapshot, UsedBytes: commit.UsedBytes, WrittenBytes: commit.WrittenBytes})
+		commitEvent := op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventCommit, "succeeded", "", commit.Snapshot)
+		commitEvent.GenerationID = &generationID
+		commitEvent.UsedBytes = commit.UsedBytes
+		commitEvent.WrittenBytes = commit.WrittenBytes
+		_ = s.appendDurableEvent(ctx, commitEvent)
 		if !op.PromotionEligible {
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &op.OperationID, ScopeID: &op.DurableScopeID, GenerationID: &generationID, SourceGenerationID: op.SourceGenerationID, CandidateGenerationID: &op.CandidateGenerationID, ExecutionID: &item.ExecutionID, AttemptID: &item.AttemptID, Identity: plan.Identity, ComponentKind: op.ComponentKind, ComponentName: op.ComponentName, Name: "durable.volume.retain", Result: "succeeded", Reason: "non_promotable_scope", MountName: op.MountName, ZFSSnapshotRef: commit.Snapshot, UsedBytes: commit.UsedBytes, WrittenBytes: commit.WrittenBytes})
+			retainEvent := op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventRetain, "succeeded", "non_promotable_scope", commit.Snapshot)
+			retainEvent.GenerationID = &generationID
+			retainEvent.UsedBytes = commit.UsedBytes
+			retainEvent.WrittenBytes = commit.WrittenBytes
+			_ = s.appendDurableEvent(ctx, retainEvent)
 		}
 		anyCandidate = anyCandidate || op.PromotionEligible
 	}
@@ -611,21 +697,73 @@ func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWork
 	return nil
 }
 
-func durableSealAllowed(finalExec vmorchestrator.ExecRecord) (bool, string) {
-	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
-		reason := "exec_failed"
-		if strings.TrimSpace(finalExec.TerminalReason) != "" {
-			reason += ": " + strings.TrimSpace(finalExec.TerminalReason)
-		}
-		return false, reason
-	}
+type durableSealDecision struct {
+	Commit     bool
+	SkipReason string
+}
+
+func durableSealDecisionForExec(finalExec vmorchestrator.ExecRecord) durableSealDecision {
 	switch finalExec.State {
+	case vmorchestrator.ExecStateExited:
+		if finalExec.ExitCode == 0 {
+			return durableSealDecision{Commit: true}
+		}
+		return durableSealDecision{SkipReason: durableExecFailedReason(finalExec)}
 	case vmorchestrator.ExecStateCanceled:
-		return false, "exec_canceled"
+		return durableSealDecision{SkipReason: "exec_canceled"}
 	case vmorchestrator.ExecStateKilledByLeaseExpiry:
-		return false, "exec_killed_by_lease_expiry"
+		return durableSealDecision{SkipReason: "exec_killed_by_lease_expiry"}
+	case vmorchestrator.ExecStateFailed:
+		return durableSealDecision{SkipReason: durableExecFailedReason(finalExec)}
 	}
-	return true, ""
+	return durableSealDecision{SkipReason: "exec_not_success"}
+}
+
+func durableExecFailedReason(finalExec vmorchestrator.ExecRecord) string {
+	reason := "exec_failed"
+	if strings.TrimSpace(finalExec.TerminalReason) != "" {
+		reason += ": " + strings.TrimSpace(finalExec.TerminalReason)
+	}
+	return reason
+}
+
+func durableCommitFailureEvents(op durableVolumeOperation, executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, cause error) []durableEvent {
+	reason := durableFailureReason("commit_failed", cause)
+	if durableCommitFailureReachedGuestSeal(cause) {
+		sealEvent := op.event(executionID, attemptID, identity, durableEventSeal, "succeeded", "", "")
+		commitEvent := op.event(executionID, attemptID, identity, durableEventCommit, "failed", reason, "")
+		return []durableEvent{sealEvent, commitEvent}
+	}
+	if durableCommitFailureBeforeGuestSeal(cause) {
+		commitEvent := op.event(executionID, attemptID, identity, durableEventCommit, "failed", reason, "")
+		return []durableEvent{commitEvent}
+	}
+	sealEvent := op.event(executionID, attemptID, identity, durableEventSeal, "failed", reason, "")
+	return []durableEvent{sealEvent}
+}
+
+func durableCommitFailureReachedGuestSeal(cause error) bool {
+	if cause == nil {
+		return false
+	}
+	reason := strings.TrimSpace(cause.Error())
+	return strings.HasPrefix(reason, "flush filesystem mount device ") ||
+		strings.HasPrefix(reason, "clone ") ||
+		strings.HasPrefix(reason, "snapshot ") ||
+		strings.HasPrefix(reason, "promote ") ||
+		strings.HasPrefix(reason, "seal generation ") ||
+		strings.Contains(reason, " zfs ")
+}
+
+func durableCommitFailureBeforeGuestSeal(cause error) bool {
+	if cause == nil {
+		return false
+	}
+	reason := strings.TrimSpace(cause.Error())
+	return strings.HasPrefix(reason, "unknown filesystem mount ") ||
+		strings.Contains(reason, " is read-only") ||
+		strings.Contains(reason, " belongs to operation ") ||
+		strings.Contains(reason, "guest control is not available")
 }
 
 func durableGenerationInitialState(op durableVolumeOperation) string {
@@ -699,7 +837,7 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 		}
 		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":prune", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZfsSnapshotRef)
 		if err != nil {
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: "durable.volume.prune", Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZfsSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")})
+			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZfsSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")})
 			errs = append(errs, fmt.Errorf("prune durable generation %s: %w", row.DurableGenerationID, err))
 			continue
 		}
@@ -707,7 +845,7 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("mark durable generation pruned %s: %w", row.DurableGenerationID, err))
 			continue
 		}
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: "durable.volume.prune", Result: "succeeded", ZFSSnapshotRef: row.ZfsSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")})
+		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: durableEventPrune, Result: "succeeded", ZFSSnapshotRef: row.ZfsSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")})
 	}
 	return errors.Join(errs...)
 }
@@ -784,7 +922,7 @@ func (s *Service) promoteDurableWorkflowRun(ctx context.Context, ref goldenWorkf
 }
 
 func (s *Service) promoteDurableCandidate(ctx context.Context, candidate store.ListDurablePromotionCandidatesForRunRow, ref goldenWorkflowRunRef) (bool, error) {
-	ctx, span := tracer.Start(ctx, "durable.volume.promote", trace.WithAttributes(
+	ctx, span := tracer.Start(ctx, durableEventPromote, trace.WithAttributes(
 		attribute.String("durable.operation_id", candidate.OperationID.String()),
 		attribute.String("durable.scope_id", candidate.DurableScopeID.String()),
 		attribute.String("durable.generation_id", candidate.DurableGenerationID.String()),
@@ -800,21 +938,31 @@ func (s *Service) promoteDurableCandidate(ctx context.Context, candidate store.L
 	}
 	result := "conflicted"
 	promoted := rows > 0
+	currentGenerationID := uuid.Nil
 	if rows > 0 {
 		result = "succeeded"
+		currentGenerationID = candidateID
 	} else {
 		current, err := s.storeQueries().GetCurrentDurableGeneration(ctx, store.GetCurrentDurableGenerationParams{DurableScopeID: candidate.DurableScopeID})
 		if err == nil && current.DurableGenerationID == candidateID {
 			result = "already_current"
 			promoted = true
+			currentGenerationID = current.DurableGenerationID
+		} else if err == nil {
+			currentGenerationID = current.DurableGenerationID
 		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return false, err
 		} else if err := s.storeQueries().RetainDurableGeneration(ctx, store.RetainDurableGenerationParams{RetainedAt: pgTime(now), ExpiresAt: pgTime(now.Add(durableRetainedGenerationTTL)), DurableGenerationID: candidate.DurableGenerationID, DurableScopeID: candidate.DurableScopeID}); err != nil {
 			return false, err
 		}
 	}
+	span.SetAttributes(
+		attribute.Bool("durable.promoted", promoted),
+		attribute.String("durable.promotion_result", result),
+		attribute.String("durable.current_generation_id", currentGenerationID.String()),
+	)
 	identity := RunnerExecutionIdentity{OrgID: ref.OrgID, Provider: ref.Provider, ProviderRepositoryID: ref.ProviderRepositoryID, ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, ProviderJobID: candidate.ProviderJobID, RepositoryFullName: ref.RepositoryFullName}
-	_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, SourceGenerationID: candidate.SourceGenerationID, CurrentGenerationID: &candidateID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, ComponentKind: candidate.ComponentKind, ComponentName: candidate.ComponentName, Name: "durable.volume.promote", Result: result, ZFSSnapshotRef: candidate.ZfsSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")})
+	_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, SourceGenerationID: candidate.SourceGenerationID, CurrentGenerationID: &currentGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, ComponentKind: candidate.ComponentKind, ComponentName: candidate.ComponentName, Name: durableEventPromote, Result: result, ZFSSnapshotRef: candidate.ZfsSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")})
 	return promoted, nil
 }
 
@@ -844,14 +992,35 @@ func (s *Service) githubWorkflowRunPromotionGate(ctx context.Context, ref golden
 }
 
 func (s *Service) resolveCacheDeclaration(ctx context.Context, identity RunnerExecutionIdentity) (cacheDeclaration, error) {
+	ctx, span := tracer.Start(ctx, durableEventDeclarationResolve, trace.WithAttributes(
+		attribute.String("runner.provider", identity.Provider),
+		attribute.Int64("runner.provider_repository_id", identity.ProviderRepositoryID),
+		attribute.Int64("runner.provider_run_id", identity.ProviderRunID),
+		attribute.String("github.repository", identity.RepositoryFullName),
+	))
+	defer span.End()
 	manifest, manifestPresent, err := s.fetchManifestCacheDeclaration(ctx, identity)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return cacheDeclaration{}, err
 	}
 	if manifestPresent {
+		span.SetAttributes(
+			attribute.String("cache.source_kind", manifest.SourceKind),
+			attribute.String("cache.source_path", manifest.SourcePath),
+			attribute.String("cache.source_ref", manifest.SourceSHA),
+			attribute.Int("cache.volume_count", len(manifest.Volumes)),
+		)
 		return manifest, nil
 	}
-	return cacheDeclaration{SourceKind: "none", SourceSHA: cacheDeclarationRef(identity), Version: 1, Volumes: []cacheVolumeDecl{}}, nil
+	decl := cacheDeclaration{SourceKind: "none", SourceSHA: cacheDeclarationRef(identity), Version: 1, Volumes: []cacheVolumeDecl{}}
+	span.SetAttributes(
+		attribute.String("cache.source_kind", decl.SourceKind),
+		attribute.String("cache.source_ref", decl.SourceSHA),
+		attribute.Int("cache.volume_count", 0),
+	)
+	return decl, nil
 }
 
 func (s *Service) fetchManifestCacheDeclaration(ctx context.Context, identity RunnerExecutionIdentity) (cacheDeclaration, bool, error) {
@@ -1156,10 +1325,27 @@ func durableFailureReason(reason string, cause error) string {
 }
 
 func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) error {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(event.Name, trace.WithAttributes(
+		attribute.String("durable.event_name", event.Name),
+		attribute.String("durable.result", event.Result),
+		attribute.String("durable.reason", event.Reason),
+		attribute.String("durable.component_kind", event.ComponentKind),
+		attribute.String("durable.component_name", event.ComponentName),
+		attribute.String("durable.mount_name", event.MountName),
+		attribute.String("durable.operation_id", uuidValue(event.OperationID).String()),
+		attribute.String("durable.scope_id", uuidValue(event.ScopeID).String()),
+		attribute.String("durable.generation_id", uuidValue(event.GenerationID).String()),
+		attribute.String("durable.source_generation_id", uuidValue(event.SourceGenerationID).String()),
+		attribute.String("durable.candidate_generation_id", uuidValue(event.CandidateGenerationID).String()),
+		attribute.String("durable.current_generation_id", uuidValue(event.CurrentGenerationID).String()),
+		attribute.String("zfs.snapshot_ref", event.ZFSSnapshotRef),
+		attribute.String("zfs.used_bytes", strconv.FormatUint(event.UsedBytes, 10)),
+		attribute.String("zfs.written_bytes", strconv.FormatUint(event.WrittenBytes, 10)),
+	))
 	if s.CH == nil {
 		return nil
 	}
-	span := trace.SpanFromContext(ctx)
 	spanContext := span.SpanContext()
 	row := durableEventRow{
 		ObservedAt:            time.Now().UTC(),

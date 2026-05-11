@@ -12,7 +12,7 @@ Default roots under the configured pool:
 | --- | --- |
 | `images/` | Read-only composable toolchain images seeded by `SeedImage`. |
 | `workloads/` | Ephemeral per-lease root disks and writable mount clones. |
-| `goldens/` | Immutable golden environment generations committed after a successful job. |
+| `goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution. |
 
 `EnsureRoots` creates those roots at daemon startup. Ansible configures the host
 and service unit; it does not issue runtime ZFS mutations for workloads.
@@ -27,6 +27,8 @@ and service unit; it does not issue runtime ZFS mutations for workloads.
 4. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
    devices, starts Firecracker, and sends the filesystem manifest to vm-bridge.
 5. vm-bridge mounts the declared filesystems before the runner process starts.
+   Cache filesystems mount once at `/verself/.mounts/<name>` and then bind
+   into the declared customer paths.
 6. vm-bridge returns per-filesystem mount results. Required mount failures
    fail lease acquisition; optional cache mount failures are reported to the
    product service as degraded cache state.
@@ -37,8 +39,8 @@ acquisition rather than a guest-originated side effect.
 
 ## Commit
 
-After the runner exits, sandbox-rental may ask vm-orchestrator to commit a named
-writable filesystem mount. The commit path:
+After a successful runner execution, sandbox-rental may ask vm-orchestrator to
+commit a named writable filesystem mount. The commit path:
 
 1. Seals the guest mount through vm-bridge.
 2. Flushes the host block device.
@@ -49,9 +51,11 @@ writable filesystem mount. The commit path:
 6. Creates `@sealed` on the promoted generation and returns the full snapshot
    ref plus used/written byte counters.
 
-Postgres records the operation and promotion decision. ZFS runs only in
-vm-orchestrator; sandbox-rental records observed results and advances current
-pointers with compare-and-swap.
+Postgres records the operation, generation, and product promotion decision. ZFS
+runs only in vm-orchestrator; sandbox-rental records observed results and
+advances current pointers with compare-and-swap. Successful non-promotable
+executions may produce retained generations, but provider-gated promotion of
+protected branch pointers happens outside the host commit path.
 
 ## Retention
 

@@ -74,10 +74,10 @@ not tool-specific cache APIs.
 6. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
 7. Customer steps execute normally and read or write cache paths as ordinary
    directories.
-8. After job exit, vm-bridge attempts to seal each writable durable volume by
-   syncing and unmounting guest mounts.
-9. vm-orchestrator flushes, snapshots, clones, promotes, and seals each volume
-   that the guest sealed cleanly.
+8. After a successful job exit, vm-bridge attempts to seal each writable
+   durable volume by syncing and unmounting guest mounts.
+9. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
+   volume that the guest sealed cleanly.
 10. The service records committed generations observed from the host result.
 11. A protected target-branch workflow run promotes per-job, per-volume
     generations only after the provider run's required jobs are green.
@@ -283,6 +283,11 @@ vm-orchestrator commit procedure after guest seal succeeds:
 5. Create `@sealed` on the promoted generation.
 6. Return snapshot reference, used bytes, written bytes, and commit time.
 
+Seal eligibility and product promotion are separate service decisions. Failed,
+cancelled, and lease-expired executions skip seal and commit. A successful
+non-promotable execution may still commit a retained generation, but it cannot
+advance a protected branch current pointer.
+
 Ambiguous seal states skip promotion:
 
 - Guest control socket disappears before a seal result.
@@ -462,6 +467,11 @@ failed
 
 `skipped` means no reusable generation was produced and the previous current
 pointer remains authoritative.
+
+Failed, cancelled, lease-expired, and ambiguous executions set the operation to
+`skipped` or `failed` and do not create a durable generation row. The current
+pointer is only updated by `durable_current_pointer` CAS promotion after a
+committed generation exists.
 
 ### Durable Generation
 
@@ -767,15 +777,17 @@ Conflicts are represented by pointer CAS results and retention metadata.
 
 ## Observability
 
-Every cache volume operation emits ClickHouse and trace evidence keyed by
-`operation_id`, `attempt_id`, `provider_run_id`, and `provider_job_id`.
+Every durable operation emits ClickHouse rows in `verself.durable_events` and
+adds matching OpenTelemetry span events. Rows are keyed by `operation_id`,
+`durable_scope_id`, `durable_generation_id`, `attempt_id`, `provider_run_id`,
+and `provider_job_id`.
 
-Recommended spans:
+Canonical event names:
 
 ```text
 durable.declaration.resolve
-durable.volume.select
 durable.volume.prepare
+durable.volume.select
 durable.volume.mount
 durable.volume.bind
 durable.volume.seal
@@ -783,35 +795,66 @@ durable.volume.commit
 durable.volume.promote
 durable.volume.retain
 durable.volume.prune
+durable.volume.reconcile
 ```
 
-Required attributes:
+Expected cache-volume sequence for a mounted successful protected-branch run:
 
 ```text
-cache.name
-cache.paths_hash
-cache.path_count
-cache.hit
-cache.miss_reason
-durable.scope_id
-durable.source_generation_id
-durable.candidate_generation_id
-durable.current_generation_id
-seal.result
-seal.skipped_reason
-zfs.dataset
-zfs.snapshot_ref
-zfs.used_bytes
-zfs.written_bytes
-guest.arch
-runner.class
-platform.image_id
+durable.declaration.resolve  cache_declaration  manifest|none  succeeded
+durable.volume.prepare       cache_volume        <name>         succeeded
+durable.volume.select        cache_volume        <name>         hit|miss
+durable.volume.mount         cache_volume        <name>         mounted
+durable.volume.bind          cache_volume        <name>         mounted
+durable.volume.seal          cache_volume        <name>         succeeded
+durable.volume.commit        cache_volume        <name>         succeeded
+durable.volume.promote       cache_volume        <name>         succeeded|already_current|conflicted
+```
+
+Mount misses remain visible and non-terminal after declaration acceptance:
+
+```text
+durable.volume.mount         cache_volume        <name>         skipped
+durable.volume.bind          cache_volume        <name>         skipped
+durable.volume.seal          cache_volume        <name>         skipped
+```
+
+Failed, cancelled, and lease-expired jobs skip seal and commit:
+
+```text
+durable.volume.seal          cache_volume        <name>         skipped
+```
+
+Successful non-promotable contexts may retain committed generations:
+
+```text
+durable.volume.commit        cache_volume        <name>         succeeded
+durable.volume.retain        cache_volume        <name>         succeeded
+```
+
+Required row fields for debugging and verification:
+
+```text
+event_name
+result
+reason
+component_kind
+component_name
+mount_name
+source_generation_id
+candidate_generation_id
+current_generation_id
+zfs_snapshot_ref
+used_bytes
+written_bytes
+trace_id
+span_id
 ```
 
 Customer debugging surfaces show cache hit or miss, selected source generation,
-mount misses, seal result, promotion result, and retention state. Cache misses
-are expected operational states and should not require support access to
-diagnose.
+mount misses, seal result, commit result, promotion result, and retention state.
+Cache misses are expected operational states and should not require support
+access to diagnose.
 
 ## References
 

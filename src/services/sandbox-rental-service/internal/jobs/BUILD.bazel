@@ -53,3 +53,13 @@ alias(
     actual = ":jobs",
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
 )
+
+go_test(
+    name = "go_default_test",
+    srcs = [
+        "durable_volumes_test.go",
+        "execution_lifecycle_test.go",
+    ],
+    embed = [":jobs"],
+    deps = ["//src/substrate/vm-orchestrator"],
+)

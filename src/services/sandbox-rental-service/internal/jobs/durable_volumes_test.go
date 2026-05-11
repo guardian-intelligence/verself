@@ -1,0 +1,109 @@
+package jobs
+
+import (
+	"errors"
+	"testing"
+
+	vmorchestrator "github.com/verself/vm-orchestrator"
+)
+
+func TestParseCacheManifestNormalizesHomePathsAndSorts(t *testing.T) {
+	decl, err := parseCacheManifest([]byte(`
+version: 1
+cache:
+  - name: bazel
+    size: 100GiB
+    paths:
+      - ~/.cache/bazel-repo
+      - ~/.cache/bazel-disk
+`), "manifest", ".verself/cache.yml", "abc123", "", "", "")
+	if err != nil {
+		t.Fatalf("parse cache manifest: %v", err)
+	}
+	if got, want := len(decl.Volumes), 1; got != want {
+		t.Fatalf("volume count = %d, want %d", got, want)
+	}
+	volume := decl.Volumes[0]
+	if got, want := volume.SizeBytes, uint64(100<<30); got != want {
+		t.Fatalf("size bytes = %d, want %d", got, want)
+	}
+	wantPaths := []string{"/home/runner/.cache/bazel-disk", "/home/runner/.cache/bazel-repo"}
+	if got := volume.Paths; len(got) != len(wantPaths) || got[0] != wantPaths[0] || got[1] != wantPaths[1] {
+		t.Fatalf("paths = %#v, want %#v", got, wantPaths)
+	}
+}
+
+func TestParseCacheManifestRejectsWorkspacePaths(t *testing.T) {
+	_, err := parseCacheManifest([]byte(`
+version: 1
+cache:
+  - name: workspace-cache
+    size: 1GiB
+    paths:
+      - /workspace/project/cache
+`), "manifest", ".verself/cache.yml", "abc123", "", "", "")
+	if !errors.Is(err, ErrCacheDeclarationInvalid) {
+		t.Fatalf("error = %v, want ErrCacheDeclarationInvalid", err)
+	}
+}
+
+func TestParseCacheManifestRejectsNestedPaths(t *testing.T) {
+	_, err := parseCacheManifest([]byte(`
+version: 1
+cache:
+  - name: nested
+    size: 1GiB
+    paths:
+      - /verself/cache
+      - /verself/cache/bazel
+`), "manifest", ".verself/cache.yml", "abc123", "", "", "")
+	if !errors.Is(err, ErrCacheDeclarationInvalid) {
+		t.Fatalf("error = %v, want ErrCacheDeclarationInvalid", err)
+	}
+}
+
+func TestDurableSealDecisionForExec(t *testing.T) {
+	tests := []struct {
+		name       string
+		finalExec  vmorchestrator.ExecRecord
+		wantCommit bool
+		wantReason string
+	}{
+		{
+			name:       "clean exit",
+			finalExec:  vmorchestrator.ExecRecord{State: vmorchestrator.ExecStateExited, ExitCode: 0},
+			wantCommit: true,
+		},
+		{
+			name:       "nonzero exit",
+			finalExec:  vmorchestrator.ExecRecord{State: vmorchestrator.ExecStateFailed, ExitCode: 1, TerminalReason: "tests failed"},
+			wantReason: "exec_failed: tests failed",
+		},
+		{
+			name:       "canceled",
+			finalExec:  vmorchestrator.ExecRecord{State: vmorchestrator.ExecStateCanceled},
+			wantReason: "exec_canceled",
+		},
+		{
+			name:       "lease expiry",
+			finalExec:  vmorchestrator.ExecRecord{State: vmorchestrator.ExecStateKilledByLeaseExpiry},
+			wantReason: "exec_killed_by_lease_expiry",
+		},
+		{
+			name:       "nonterminal state",
+			finalExec:  vmorchestrator.ExecRecord{State: vmorchestrator.ExecStateRunning},
+			wantReason: "exec_not_success",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := durableSealDecisionForExec(tt.finalExec)
+			if got.Commit != tt.wantCommit {
+				t.Fatalf("commit = %t, want %t", got.Commit, tt.wantCommit)
+			}
+			if got.SkipReason != tt.wantReason {
+				t.Fatalf("skip reason = %q, want %q", got.SkipReason, tt.wantReason)
+			}
+		})
+	}
+}
