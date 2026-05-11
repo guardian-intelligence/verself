@@ -96,6 +96,7 @@ type Runner interface {
 type SchedulerRuntime interface {
 	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
 	EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerCapacityReconcileRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerCapacityReconcile(ctx context.Context, req scheduler.RunnerCapacityReconcileRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerAllocateRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerJobBindRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)

@@ -348,6 +348,24 @@ func (r *Runtime) EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.T
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
+func (r *Runtime) EnqueueRunnerCapacityReconcile(ctx context.Context, req RunnerCapacityReconcileRequest) (ProbeResult, error) {
+	args := RunnerCapacityReconcileArgs{
+		Provider:               strings.TrimSpace(req.Provider),
+		ProviderInstallationID: req.ProviderInstallationID,
+		ProviderRepositoryID:   req.ProviderRepositoryID,
+		ProviderJobID:          req.ProviderJobID,
+		CorrelationID:          strings.TrimSpace(req.CorrelationID),
+		TraceParent:            strings.TrimSpace(req.TraceParent),
+		SubmittedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.Insert(ctx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue runner capacity reconcile: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
 func (r *Runtime) EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req RunnerAllocateRequest) (ProbeResult, error) {
 	args := RunnerAllocateArgs{
 		AllocationID:  strings.TrimSpace(req.AllocationID),

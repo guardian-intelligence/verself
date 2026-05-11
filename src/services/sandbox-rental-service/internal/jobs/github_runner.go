@@ -941,6 +941,24 @@ func (r *GitHubRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUID
 		return err
 	}
 	_ = r.service.storeQueries().DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID})
+	if allocation.RequestedJobID != 0 && allocation.State != "assigned" && allocation.State != "job_completed" && r.service.Scheduler != nil {
+		job, err := r.loadJobForBinding(ctx, allocation.RequestedJobID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if job.status == "queued" {
+			_, err = r.service.Scheduler.EnqueueRunnerCapacityReconcile(ctx, scheduler.RunnerCapacityReconcileRequest{
+				Provider:      RunnerProviderGitHub,
+				ProviderJobID: allocation.RequestedJobID,
+				CorrelationID: CorrelationIDFromContext(ctx),
+				TraceParent:   traceParent(ctx),
+			})
+			if err != nil {
+				return err
+			}
+			span.SetAttributes(attribute.Bool("github.capacity.requeued", true), attribute.Int64("github.job_id", allocation.RequestedJobID))
+		}
+	}
 	return nil
 }
 
