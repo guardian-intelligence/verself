@@ -3,13 +3,19 @@ load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "analytics-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "query.go",
+    ],
     importpath = "github.com/verself/analytics-service/cmd/analytics-service",
     visibility = ["//visibility:private"],
     deps = [
         "//src/services/analytics-service/internal/analytics",
+        "//src/services/iam-service/client",
+        "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "//src/tools/observability/go/otel",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",

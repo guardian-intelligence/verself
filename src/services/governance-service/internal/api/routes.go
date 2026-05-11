@@ -19,19 +19,19 @@ import (
 
 var apiTracer = otel.Tracer("governance-service/internal/api")
 
-func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam.OperationAuthorizer) {
+func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam.ResourceAuthorizer) {
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
 		OperationID: "list-audit-events",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/audit/events",
 		Summary:     "List organization audit events",
 	}, runtimeiam.OperationPolicy{
-		Permission:     permissionAuditRead,
-		Resource:       "audit_event",
+		Permission:     permissionAuditLogRead,
+		Resource:       "audit_log",
 		Action:         runtimeiam.ActionList,
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
-		AuditEvent:     "governance.audit_event.list",
+		AuditEvent:     "governance.audit_log.list",
 	}), listAuditEvents(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -40,12 +40,12 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Path:        "/api/v1/governance/exports",
 		Summary:     "List organization data exports",
 	}, runtimeiam.OperationPolicy{
-		Permission:     permissionExportRead,
-		Resource:       "data_export",
+		Permission:     permissionAuditLogExport,
+		Resource:       "audit_log",
 		Action:         runtimeiam.ActionList,
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
-		AuditEvent:     "governance.data_export.list",
+		AuditEvent:     "governance.audit_log.export.list",
 	}), listExports(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -55,13 +55,13 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Summary:       "Create an organization data export",
 		DefaultStatus: 201,
 	}, runtimeiam.OperationPolicy{
-		Permission:     permissionExportCreate,
-		Resource:       "data_export",
+		Permission:     permissionAuditLogExport,
+		Resource:       "audit_log",
 		Action:         runtimeiam.ActionCreate,
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "export_create",
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "governance.data_export.create",
+		AuditEvent:     "governance.audit_log.export.create",
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createExport(svc))
 
@@ -71,12 +71,12 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Path:        "/api/v1/governance/exports/{export_id}",
 		Summary:     "Get an organization data export",
 	}, runtimeiam.OperationPolicy{
-		Permission:     permissionExportRead,
-		Resource:       "data_export",
+		Permission:     permissionAuditLogExport,
+		Resource:       "audit_log",
 		Action:         runtimeiam.ActionRead,
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
-		AuditEvent:     "governance.data_export.read",
+		AuditEvent:     "governance.audit_log.export.read",
 	}), getExport(svc))
 
 	registerSecured(api, svc, authorizer, secured(huma.Operation{
@@ -93,12 +93,12 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 			},
 		},
 	}, runtimeiam.OperationPolicy{
-		Permission:     permissionExportRead,
-		Resource:       "data_export",
+		Permission:     permissionAuditLogExport,
+		Resource:       "audit_log",
 		Action:         runtimeiam.ActionDownload,
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "export_download",
-		AuditEvent:     "governance.data_export.download",
+		AuditEvent:     "governance.audit_log.export.download",
 	}), downloadExport(svc))
 }
 

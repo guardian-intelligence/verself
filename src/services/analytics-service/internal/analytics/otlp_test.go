@@ -10,7 +10,7 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 )
 
-func TestRowsFromLogsPromotesBuildLabels(t *testing.T) {
+func TestRowsFromLogsStampsDatasetAndSourceAttributes(t *testing.T) {
 	now := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
 	req := &logspb.ExportLogsServiceRequest{
 		ResourceLogs: []*logrecordpb.ResourceLogs{{
@@ -35,10 +35,14 @@ func TestRowsFromLogsPromotesBuildLabels(t *testing.T) {
 			}},
 		}},
 	}
-	rows, err := RowsFromLogs(Source{
+	rows, err := RowsFromLogs(DatasetContext{
+		OrgID:       "371564185181576922",
+		ProjectID:   "verself",
+		DatasetID:   "build",
+		Environment: "prod",
+	}, Source{
 		Kind:            SourceKindGitHubActionsOIDC,
 		Subject:         "repo:guardian-intelligence/verself:ref:refs/heads/main",
-		TenantID:        "github:guardian-intelligence",
 		Repository:      "guardian-intelligence/verself",
 		RepositoryOwner: "guardian-intelligence",
 		RunID:           "1",
@@ -51,20 +55,52 @@ func TestRowsFromLogsPromotesBuildLabels(t *testing.T) {
 		t.Fatalf("rows = %d, want 1", len(rows))
 	}
 	row := rows[0]
+	if row.OrgID != "371564185181576922" || row.ProjectID != "verself" || row.DatasetID != "build" || row.Environment != "prod" {
+		t.Fatalf("dataset identity = %q/%q/%q/%q", row.OrgID, row.ProjectID, row.DatasetID, row.Environment)
+	}
 	if row.EventName != "build.typecheck" {
 		t.Fatalf("EventName = %q", row.EventName)
 	}
-	if row.BuildTool != "typescript" || row.BuildPackage != "@verself/brand" {
-		t.Fatalf("promoted build labels = %q %q", row.BuildTool, row.BuildPackage)
+	if row.SignalKind != SignalKindLog {
+		t.Fatalf("SignalKind = %q", row.SignalKind)
 	}
-	if row.ConfigPath != "packages/brand/tsconfig.json" {
-		t.Fatalf("ConfigPath = %q", row.ConfigPath)
+	if row.StringAttributes["build.tool"] != "typescript" || row.StringAttributes["build.package"] != "@verself/brand" {
+		t.Fatalf("build attributes = %q %q", row.StringAttributes["build.tool"], row.StringAttributes["build.package"])
 	}
-	if row.CacheResult != "hit" {
-		t.Fatalf("CacheResult = %q", row.CacheResult)
+	if row.StringAttributes["github.repository"] != "guardian-intelligence/verself" {
+		t.Fatalf("github.repository = %q", row.StringAttributes["github.repository"])
 	}
 	if row.DurationMs != 42 {
 		t.Fatalf("DurationMs = %d", row.DurationMs)
+	}
+}
+
+func TestRowsFromLogsRedactsBearerMaterial(t *testing.T) {
+	now := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
+	req := &logspb.ExportLogsServiceRequest{
+		ResourceLogs: []*logrecordpb.ResourceLogs{{
+			ScopeLogs: []*logrecordpb.ScopeLogs{{
+				LogRecords: []*logrecordpb.LogRecord{{
+					TimeUnixNano: uint64(now.UnixNano()),
+					Body:         &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "Bearer secret-token build.secret"}},
+					Attributes: []*commonpb.KeyValue{
+						stringAttr("event.name", "build.secret"),
+						stringAttr("authorization", "Bearer secret-token"),
+					},
+				}},
+			}},
+		}},
+	}
+	rows, err := RowsFromLogs(DatasetContext{OrgID: "org", ProjectID: "project", DatasetID: "build", Environment: "prod"}, Source{Kind: SourceKindGitHubActionsOIDC}, req, []string{"build."}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := rows[0]
+	if row.BodyRedactionStatus != "redacted" {
+		t.Fatalf("BodyRedactionStatus = %q", row.BodyRedactionStatus)
+	}
+	if row.Body == "Bearer secret-token build.secret" || row.StringAttributes["authorization"] == "Bearer secret-token" {
+		t.Fatalf("secret material was not redacted")
 	}
 }
 

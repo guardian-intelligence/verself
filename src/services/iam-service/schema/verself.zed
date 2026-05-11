@@ -51,6 +51,34 @@ definition environment {
   permission write = parent_project->write
 }
 
+definition analytics_dataset {
+  relation parent_project: project
+  relation viewer: user | service_account | role#member
+  relation raw_viewer: user | service_account | role#member
+  relation ingester: service_account | workload | role#member
+  relation manager: user | service_account | role#member
+
+  permission read = viewer + raw_viewer + manager + parent_project->read
+  permission read_raw = raw_viewer + manager + parent_project->write
+  permission ingest = ingester + manager + parent_project->write
+  permission manage = manager + parent_project->write
+}
+
+definition audit_log {
+  relation parent_org: org
+  relation viewer: user | service_account | role#member
+  relation detail_viewer: user | service_account | role#member
+  relation exporter: user | service_account | role#member
+  relation manager: user | service_account | role#member
+  relation appender: workload
+
+  permission read = viewer + detail_viewer + exporter + manager + parent_org->manage_iam
+  permission read_detail = detail_viewer + exporter + manager + parent_org->manage_iam
+  permission export = exporter + manager + parent_org->manage_iam
+  permission manage = manager + parent_org->manage_iam
+  permission append = appender
+}
+
 definition repository {
   relation parent_org: org
 

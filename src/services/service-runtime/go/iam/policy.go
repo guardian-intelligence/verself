@@ -53,8 +53,11 @@ const (
 	ActionDownload Action = "download"
 	ActionEncrypt  Action = "encrypt"
 	ActionInvite   Action = "invite"
+	ActionIngest   Action = "ingest"
 	ActionList     Action = "list"
+	ActionManage   Action = "manage"
 	ActionPause    Action = "pause"
+	ActionQuery    Action = "query"
 	ActionRead     Action = "read"
 	ActionRegister Action = "register"
 	ActionResolve  Action = "resolve"
@@ -267,7 +270,7 @@ func validateAction(action Action) error {
 	switch action {
 	case ActionArchive, ActionCancel, ActionConnect, ActionCreate, ActionDecrypt,
 		ActionDelete, ActionDisable, ActionDownload, ActionEncrypt, ActionInvite,
-		ActionList, ActionPause, ActionRead, ActionRegister, ActionResolve, ActionResume,
+		ActionIngest, ActionList, ActionManage, ActionPause, ActionQuery, ActionRead, ActionRegister, ActionResolve, ActionResume,
 		ActionRestore, ActionRevoke, ActionRoll, ActionRotate, ActionSearch,
 		ActionSet, ActionSign, ActionSync, ActionTest, ActionUpdate, ActionVerify,
 		ActionWrite, ActionExport, ActionErase:

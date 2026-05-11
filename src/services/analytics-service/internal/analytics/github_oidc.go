@@ -78,7 +78,6 @@ func (v *GitHubOIDCVerifier) SourceFromRequest(ctx context.Context, r *http.Requ
 	return Source{
 		Kind:            SourceKindGitHubActionsOIDC,
 		Subject:         verified.Subject,
-		TenantID:        "github:" + claims.RepositoryOwner,
 		Repository:      claims.Repository,
 		RepositoryOwner: claims.RepositoryOwner,
 		Ref:             claims.Ref,

@@ -22,7 +22,13 @@ const (
 	maxStringAttributeBytes = 2048
 )
 
-var eventNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,127}$`)
+var (
+	eventNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,127}$`)
+	secretPatterns   = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`),
+		regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`),
+	}
+)
 
 func DecodeLogsRequest(contentType string, body []byte) (*logspb.ExportLogsServiceRequest, error) {
 	req := &logspb.ExportLogsServiceRequest{}
@@ -55,7 +61,11 @@ func EncodeLogsResponse(contentType string) ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func RowsFromLogs(source Source, req *logspb.ExportLogsServiceRequest, allowedPrefixes []string, now time.Time) ([]EventRow, error) {
+func RowsFromLogs(dataset DatasetContext, source Source, req *logspb.ExportLogsServiceRequest, allowedPrefixes []string, now time.Time) ([]EventRow, error) {
+	dataset = dataset.Normalized()
+	if err := validateDatasetContext(dataset); err != nil {
+		return nil, err
+	}
 	if req == nil {
 		return nil, fmt.Errorf("otlp logs request is nil")
 	}
@@ -70,7 +80,7 @@ func RowsFromLogs(source Source, req *logspb.ExportLogsServiceRequest, allowedPr
 				if len(rows) >= maxRecordsPerRequest {
 					return nil, fmt.Errorf("too many log records: max %d", maxRecordsPerRequest)
 				}
-				row, err := rowFromLogRecord(source, resourceLogs.GetResource(), resourceAttrs, record.GetTraceId(), record.GetSpanId(), record.GetTimeUnixNano(), record.GetObservedTimeUnixNano(), record.GetBody(), record.GetAttributes(), allowedPrefixes, now)
+				row, err := rowFromLogRecord(dataset, source, resourceLogs.GetResource(), resourceAttrs, record.GetTraceId(), record.GetSpanId(), record.GetTimeUnixNano(), record.GetObservedTimeUnixNano(), record.GetBody(), record.GetSeverityText(), record.GetAttributes(), allowedPrefixes, now)
 				if err != nil {
 					return nil, err
 				}
@@ -82,6 +92,7 @@ func RowsFromLogs(source Source, req *logspb.ExportLogsServiceRequest, allowedPr
 }
 
 func rowFromLogRecord(
+	dataset DatasetContext,
 	source Source,
 	_ *resourcepb.Resource,
 	resourceAttrs scalarAttributeMaps,
@@ -90,6 +101,7 @@ func rowFromLogRecord(
 	timeUnixNano uint64,
 	observedTimeUnixNano uint64,
 	body *commonpb.AnyValue,
+	severityText string,
 	attributes []*commonpb.KeyValue,
 	allowedPrefixes []string,
 	now time.Time,
@@ -102,50 +114,49 @@ func rowFromLogRecord(
 	if err := validateEventName(eventName, allowedPrefixes); err != nil {
 		return EventRow{}, err
 	}
-	observedAt := timestampFromNanos(timeUnixNano)
+	timestamp := timestampFromNanos(timeUnixNano)
+	observedAt := timestampFromNanos(observedTimeUnixNano)
 	if observedAt.IsZero() {
-		observedAt = timestampFromNanos(observedTimeUnixNano)
+		observedAt = timestamp
 	}
 	if observedAt.IsZero() {
 		observedAt = now.UTC()
 	}
+	if timestamp.IsZero() {
+		timestamp = observedAt
+	}
 	eventID := firstNonEmpty(attrs.Strings["event.id"], randomHex(16))
 	durationMs := uint64FromAttributes(attrs, "duration_ms")
+	bodyText, redactionStatus := redactedBody(stringValue(body))
+	stringAttrs := safeStringAttributes(attrs.Strings)
+	annotateSourceAttributes(stringAttrs, source)
 	return EventRow{
-		EventDate:          observedAt.Truncate(24 * time.Hour),
-		ObservedAt:         observedAt,
-		EventID:            eventID,
-		Dataset:            firstNonEmpty(attrs.Strings["analytics.dataset"], DatasetBuild),
-		EventName:          eventName,
-		SourceKind:         source.Kind,
-		SourceSubject:      source.Subject,
-		TenantID:           source.TenantID,
-		Repository:         source.Repository,
-		RepositoryOwner:    source.RepositoryOwner,
-		GitRef:             source.Ref,
-		GitSHA:             source.SHA,
-		ProviderRunID:      source.RunID,
-		ProviderRunAttempt: source.RunAttempt,
-		ProviderWorkflow:   source.Workflow,
-		ProviderJob:        firstNonEmpty(attrs.Strings["github.job"], source.Job),
-		ServiceName:        resourceAttrs.Strings["service.name"],
-		ServiceVersion:     resourceAttrs.Strings["service.version"],
-		TraceID:            hex.EncodeToString(traceID),
-		SpanID:             hex.EncodeToString(spanID),
-		BuildTool:          attrs.Strings["build.tool"],
-		BuildPackage:       attrs.Strings["build.package"],
-		BuildCommand:       attrs.Strings["build.command"],
-		BuildTarget:        attrs.Strings["build.target"],
-		ConfigPath:         attrs.Strings["build.config_path"],
-		CacheSource:        attrs.Strings["cache.source"],
-		CacheResult:        attrs.Strings["cache.result"],
-		CacheReason:        attrs.Strings["cache.reason"],
-		Status:             attrs.Strings["status"],
-		DurationMs:         durationMs,
-		StringAttributes:   attrs.Strings,
-		IntAttributes:      attrs.Ints,
-		FloatAttributes:    attrs.Floats,
-		BoolAttributes:     attrs.Bools,
+		EventDate:           observedAt.Truncate(24 * time.Hour),
+		ObservedAt:          observedAt,
+		Timestamp:           timestamp,
+		EventID:             eventID,
+		OrgID:               dataset.OrgID,
+		ProjectID:           dataset.ProjectID,
+		DatasetID:           dataset.DatasetID,
+		Environment:         dataset.Environment,
+		SignalKind:          SignalKindLog,
+		EventName:           eventName,
+		SourceKind:          source.Kind,
+		SourceSubject:       source.Subject,
+		ServiceName:         resourceAttrs.Strings["service.name"],
+		ServiceVersion:      resourceAttrs.Strings["service.version"],
+		SeverityText:        strings.TrimSpace(severityText),
+		Status:              firstNonEmpty(attrs.Strings["status"], attrs.Strings["status.code"]),
+		TraceID:             hex.EncodeToString(traceID),
+		SpanID:              hex.EncodeToString(spanID),
+		ParentSpanID:        attrs.Strings["parent_span_id"],
+		DurationMs:          durationMs,
+		Body:                bodyText,
+		BodyRedactionStatus: redactionStatus,
+		StringAttributes:    stringAttrs,
+		IntAttributes:       attrs.Ints,
+		FloatAttributes:     attrs.Floats,
+		BoolAttributes:      attrs.Bools,
 	}, nil
 }
 
@@ -174,6 +185,9 @@ func scalarAttributes(attrs []*commonpb.KeyValue) (scalarAttributeMaps, error) {
 		if len(key) > maxAttributeKeyBytes {
 			return scalarAttributeMaps{}, fmt.Errorf("attribute key %q exceeds %d bytes", key, maxAttributeKeyBytes)
 		}
+		if strings.HasPrefix(key, "analytics.") || strings.HasPrefix(key, "verself.") {
+			continue
+		}
 		if err := putScalar(&out, key, attr.GetValue()); err != nil {
 			return scalarAttributeMaps{}, err
 		}
@@ -200,6 +214,22 @@ func putScalar(out *scalarAttributeMaps, key string, value *commonpb.AnyValue) e
 		}
 	default:
 		return fmt.Errorf("attribute %q uses unsupported non-scalar OTLP value", key)
+	}
+	return nil
+}
+
+func validateDatasetContext(dataset DatasetContext) error {
+	if dataset.OrgID == "" {
+		return fmt.Errorf("dataset org_id is required")
+	}
+	if dataset.ProjectID == "" {
+		return fmt.Errorf("dataset project_id is required")
+	}
+	if dataset.DatasetID == "" {
+		return fmt.Errorf("dataset_id is required")
+	}
+	if dataset.Environment == "" {
+		return fmt.Errorf("dataset environment is required")
 	}
 	return nil
 }
@@ -244,6 +274,61 @@ func stringValue(value *commonpb.AnyValue) string {
 		return typed.StringValue
 	}
 	return ""
+}
+
+func safeStringAttributes(attrs map[string]string) map[string]string {
+	out := make(map[string]string, len(attrs))
+	for key, value := range attrs {
+		out[key] = redactSecrets(value)
+	}
+	return out
+}
+
+func annotateSourceAttributes(attrs map[string]string, source Source) {
+	if strings.TrimSpace(source.Repository) != "" {
+		attrs["github.repository"] = source.Repository
+	}
+	if strings.TrimSpace(source.RepositoryOwner) != "" {
+		attrs["github.repository_owner"] = source.RepositoryOwner
+	}
+	if strings.TrimSpace(source.Ref) != "" {
+		attrs["git.ref"] = source.Ref
+	}
+	if strings.TrimSpace(source.SHA) != "" {
+		attrs["git.sha"] = source.SHA
+	}
+	if strings.TrimSpace(source.RunID) != "" {
+		attrs["github.run_id"] = source.RunID
+	}
+	if source.RunAttempt > 0 {
+		attrs["github.run_attempt"] = fmt.Sprintf("%d", source.RunAttempt)
+	}
+	if strings.TrimSpace(source.Workflow) != "" {
+		attrs["github.workflow"] = source.Workflow
+	}
+	if strings.TrimSpace(source.Job) != "" {
+		attrs["github.job"] = source.Job
+	}
+}
+
+func redactedBody(value string) (string, string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", "empty"
+	}
+	redacted := redactSecrets(value)
+	if redacted != value {
+		return redacted, "redacted"
+	}
+	return redacted, "not_redacted"
+}
+
+func redactSecrets(value string) string {
+	out := value
+	for _, pattern := range secretPatterns {
+		out = pattern.ReplaceAllString(out, "[REDACTED]")
+	}
+	return out
 }
 
 func randomHex(bytes int) string {

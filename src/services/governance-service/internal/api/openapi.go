@@ -12,12 +12,12 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func NewAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service, authorizers ...runtimeiam.OperationAuthorizer) huma.API {
+func NewAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service, authorizers ...runtimeiam.ResourceAuthorizer) huma.API {
 	config := huma.DefaultConfig("Verself Governance Service API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	var authorizer runtimeiam.OperationAuthorizer
+	var authorizer runtimeiam.ResourceAuthorizer
 	if len(authorizers) > 0 {
 		authorizer = authorizers[0]
 	}

@@ -1,4 +1,8 @@
-CREATE TABLE IF NOT EXISTS verself.analytics_events
+DROP TABLE IF EXISTS verself.analytics_access_events;
+DROP TABLE IF EXISTS verself.analytics_ingest_events;
+DROP TABLE IF EXISTS verself.analytics_events;
+
+CREATE TABLE verself.analytics_events
 (
     `event_date`              Date                                      DEFAULT toDate(observed_at) CODEC(Delta(2), ZSTD(3)),
     `observed_at`             DateTime64(6, 'UTC')                      CODEC(DoubleDelta, ZSTD(3)),
@@ -36,7 +40,7 @@ ORDER BY (org_id, project_id, dataset_id, environment, signal_kind, event_name, 
 TTL toDateTime(observed_at) + INTERVAL 180 DAY
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-CREATE TABLE IF NOT EXISTS verself.analytics_ingest_events
+CREATE TABLE verself.analytics_ingest_events
 (
     `event_date`       Date                         DEFAULT toDate(recorded_at) CODEC(Delta(2), ZSTD(3)),
     `recorded_at`      DateTime64(6, 'UTC')         CODEC(DoubleDelta, ZSTD(3)),
@@ -59,7 +63,7 @@ ORDER BY (org_id, project_id, dataset_id, environment, outcome, recorded_at)
 TTL toDateTime(recorded_at) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-CREATE TABLE IF NOT EXISTS verself.analytics_access_events
+CREATE TABLE verself.analytics_access_events
 (
     `event_date`            Date                   DEFAULT toDate(recorded_at) CODEC(Delta(2), ZSTD(3)),
     `recorded_at`           DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3)),

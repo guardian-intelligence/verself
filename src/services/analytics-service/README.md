@@ -1,8 +1,8 @@
 # Analytics Service
 
-`analytics-service` is Verself's private OpenTelemetry-compatible ingestion service for append-only analytics events. It accepts standard OTLP payloads, applies Verself policy at the service boundary, stamps tenant and dataset identity, and stores queryable wide events in ClickHouse.
+`analytics-service` is Verself's OpenTelemetry-compatible ingestion and query service for append-only analytics events. It accepts standard OTLP payloads, applies Verself policy at the service boundary, stamps organization/project/dataset identity, and stores queryable wide events in ClickHouse.
 
-The service is private while the economics, governance, retention, and multi-tenant query model are proven. The API is designed as if it will later be public: client SDKs use a small `recordEvent` surface, and existing OpenTelemetry SDKs can export directly to the OTLP endpoints.
+The current write path is private to trusted producers while the economics, governance, retention, and organization-scoped query model are proven. The read path is a public bearer-auth API guarded by IAM resource checks on `analytics_dataset` resources.
 
 ## Mental model
 
@@ -64,7 +64,7 @@ References:
 - writes canonical rows to ClickHouse
 - emits its own OTLP telemetry about ingestion behavior
 
-Client-supplied tenant identity is never trusted. A client may describe the application or package that emitted an event. The service stamps Verself-owned identity from the credential.
+Client-supplied organization identity is never trusted. A client may describe the application or package that emitted an event. The service stamps Verself-owned identity from the credential.
 
 ## Credential classes
 
@@ -75,9 +75,11 @@ There are two ingest credential classes.
 | Public write key | Browser and other untrusted clients | Insert-only, origin-bound, dataset-bound, strict payload limits, no read access |
 | Private ingest token | CI, servers, internal tools, trusted automation | Insert-only, stronger authentication, richer resource context, stricter accountability |
 
-Public write keys are safe to embed in browser code because they cannot query data, select arbitrary tenants, or write outside their configured dataset. They are still abuse surfaces, so origin checks, rate limits, event-name policy, and payload caps are mandatory.
+Public write keys are safe to embed in browser code because they cannot query data, select arbitrary organizations, or write outside their configured dataset. They are still abuse surfaces, so origin checks, rate limits, event-name policy, and payload caps are mandatory.
 
 Private ingest tokens are used by build tooling and services. For example, Verself CI can emit TypeScript, Vite/Rolldown, Bazel, Go, and Zig build telemetry without teaching the runner lifecycle about those tools.
+
+The deployed CI ingestion path currently uses GitHub Actions OIDC for the Verself monorepo dataset. Browser write keys and customer private ingest tokens use the same dataset model when those producer classes are enabled.
 
 ## Event names
 
@@ -134,10 +136,11 @@ deployment.environment.name
 Reserved prefixes:
 
 ```text
+analytics.*
 verself.*
 ```
 
-`verself.*` attributes are owned by the service. If a payload includes them, the service replaces them with values derived from the credential or rejects the record according to dataset policy.
+`analytics.*` and `verself.*` attributes are owned by the service. If a payload includes them, the service replaces them with values derived from the credential or rejects the record according to dataset policy.
 
 ## Canonical storage
 
@@ -152,34 +155,30 @@ dataset_id
 environment
 source_kind
 event_name
-event_kind
+signal_kind
 trace_id
 span_id
 parent_span_id
 service_name
-session_id
-anonymous_id
-user_id_hash
 status
 severity
 duration_ms
-string_attrs
-number_attrs
-bool_attrs
+body
+body_redaction_status
+string_attributes
+int_attributes
+float_attributes
+bool_attributes
 ```
 
-Derived tables and materialized views provide product-specific query surfaces:
+Access and ingestion evidence are stored separately:
 
 ```text
-analytics.build_tool_events
-analytics.page_views
-analytics.sessions
-analytics.funnels
-analytics.otel_spans
-analytics.metric_points
+verself.analytics_ingest_events
+verself.analytics_access_events
 ```
 
-The canonical event row is append-only. Derived rows are reproducible projections.
+The canonical event row is append-only. Product-specific projections are reproducible from `verself.analytics_events`.
 
 ## Browser analytics
 
@@ -286,8 +285,10 @@ The first query surfaces should answer product and engineering questions directl
 SELECT
   event_name,
   count() AS events
-FROM analytics.events
-WHERE dataset_id = {dataset_id:UUID}
+FROM verself.analytics_events
+WHERE org_id = {org_id:String}
+  AND project_id = {project_id:String}
+  AND dataset_id = {dataset_id:String}
   AND timestamp >= now() - INTERVAL 1 DAY
 GROUP BY event_name
 ORDER BY events DESC;
@@ -297,12 +298,12 @@ Build telemetry:
 
 ```sql
 SELECT
-  string_attrs['build.package'] AS package,
+  string_attributes['build.package'] AS package,
   quantile(0.95)(duration_ms) AS p95_ms,
   count() AS runs
-FROM analytics.events
+FROM verself.analytics_events
 WHERE event_name = 'build.typecheck'
-  AND string_attrs['build.tool'] = 'typescript'
+  AND string_attributes['build.tool'] = 'typescript'
 GROUP BY package
 ORDER BY p95_ms DESC;
 ```
@@ -311,25 +312,26 @@ Product analytics:
 
 ```sql
 SELECT
-  string_attrs['page.path'] AS path,
+  string_attributes['page.path'] AS path,
   count() AS views
-FROM analytics.events
+FROM verself.analytics_events
 WHERE event_name = 'page.view'
 GROUP BY path
 ORDER BY views DESC;
 ```
 
-Future customer-facing querying should go through service APIs and typed read models before direct ClickHouse access is considered. ClickHouse row policies and quotas are useful defense-in-depth, but `analytics-service` remains the authorization and governance boundary.
+Customer-facing querying goes through service APIs and typed read models before direct ClickHouse access is considered. ClickHouse row policies and quotas are useful defense-in-depth, but `analytics-service` remains the authorization and governance boundary.
 
 ## Deployment stance
 
 Initial deployment is private:
 
 - internal Verself datasets only
-- private service identity
-- no public query API
+- GitHub Actions OIDC write path
+- bearer-auth query API
+- IAM resource checks on `analytics_dataset`
 - no customer-facing UI
 - explicit allowlist of producers
-- ClickHouse evidence for accepted, rejected, and delayed records
+- ClickHouse evidence for accepted, rejected, denied, and allowed records
 
 The API is still designed for public use. Keeping the public shape early prevents internal-only shortcuts from becoming the architecture.

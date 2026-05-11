@@ -47,6 +47,22 @@ type authorizeOperationOutput struct {
 	Body dto.IAMAuthorizeResponse
 }
 
+type authorizeResourceInput struct {
+	Body dto.IAMAuthorizeResourceRequest
+}
+
+type authorizeResourceOutput struct {
+	Body dto.IAMAuthorizeResourceResponse
+}
+
+type writeResourceParentEdgeInput struct {
+	Body dto.IAMWriteResourceParentEdgeRequest
+}
+
+type writeResourceParentEdgeOutput struct {
+	Body dto.IAMWriteResourceParentEdgeResponse
+}
+
 func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
 	op := huma.Operation{
 		OperationID:   "update-human-profile",
@@ -86,6 +102,32 @@ func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz
 	}
 	authorizeOp.Middlewares = append(authorizeOp.Middlewares, operationRequestMiddleware)
 	huma.Register(api, authorizeOp, authorizeOperation(authzSvc))
+
+	authorizeResourceOp := huma.Operation{
+		OperationID:   "authorize-resource",
+		Method:        http.MethodPost,
+		Path:          "/internal/v1/authorization/resources/authorize",
+		Summary:       "Authorize a product operation against a Zanzibar resource",
+		Description:   "SPIFFE-mTLS internal endpoint for product services to check a user, service account, or workload against a concrete IAM resource.",
+		Security:      []map[string][]string{{"mutualTLS": {}}},
+		DefaultStatus: http.StatusOK,
+		MaxBodyBytes:  bodyLimitSmallJSON,
+	}
+	authorizeResourceOp.Middlewares = append(authorizeResourceOp.Middlewares, operationRequestMiddleware)
+	huma.Register(api, authorizeResourceOp, authorizeResource(authzSvc))
+
+	parentEdgeOp := huma.Operation{
+		OperationID:   "write-resource-parent-edge",
+		Method:        http.MethodPost,
+		Path:          "/internal/v1/authorization/resources/parent-edge",
+		Summary:       "Write an IAM resource parent edge",
+		Description:   "SPIFFE-mTLS internal endpoint for product services to materialize idempotent Zanzibar parent edges for IAM-owned resources.",
+		Security:      []map[string][]string{{"mutualTLS": {}}},
+		DefaultStatus: http.StatusOK,
+		MaxBodyBytes:  bodyLimitSmallJSON,
+	}
+	parentEdgeOp.Middlewares = append(parentEdgeOp.Middlewares, operationRequestMiddleware)
+	huma.Register(api, parentEdgeOp, writeResourceParentEdge(authzSvc))
 }
 
 func updateHumanProfile(svc *identity.Service) func(context.Context, *updateHumanProfileInput) (*updateHumanProfileOutput, error) {
@@ -209,6 +251,109 @@ func authorizeOperation(authzSvc *authz.Service) func(context.Context, *authoriz
 	}
 }
 
+func authorizeResource(authzSvc *authz.Service) func(context.Context, *authorizeResourceInput) (*authorizeResourceOutput, error) {
+	return func(ctx context.Context, input *authorizeResourceInput) (*authorizeResourceOutput, error) {
+		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.resource_check")
+		defer span.End()
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
+		if !ok {
+			err := problem(ctx, http.StatusUnauthorized, "missing-workload-identity", "missing SPIFFE peer identity", nil)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "missing SPIFFE peer identity")
+			return nil, err
+		}
+		if authzSvc == nil {
+			err := internalFailure(ctx, "iam-authz-unavailable", "authorization graph unavailable", authz.ErrUnavailable)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, problemCode(err))
+			return nil, err
+		}
+		orgID := input.Body.OrgID.String()
+		subject, err := authorizationSubjectFromDTO(input.Body.Subject)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
+		}
+		resource := resourceRefFromDTO(input.Body.Resource)
+		span.SetAttributes(
+			attribute.String("spiffe.peer_id", peerID.String()),
+			attribute.String("verself.org_id", orgID),
+			attribute.String("iam.subject_type", string(subject.Kind)),
+			attribute.String("iam.subject_id", subject.ID),
+			attribute.String("iam.operation_permission", strings.TrimSpace(input.Body.OperationPermission)),
+			attribute.String("iam.resource_type", resource.Type),
+			attribute.String("iam.resource_id", resource.ID),
+			attribute.String("iam.resource_permission", strings.TrimSpace(input.Body.ResourcePermission)),
+		)
+		decision, err := authzSvc.CheckResourcePermission(ctx, orgID, subject, resource, input.Body.ResourcePermission, input.Body.OperationPermission, input.Body.MinZedToken)
+		if err != nil {
+			mapped := authzError(ctx, err)
+			span.RecordError(mapped)
+			span.SetStatus(codes.Error, problemCode(mapped))
+			return nil, mapped
+		}
+		span.SetAttributes(
+			attribute.Bool("iam.allowed", decision.Allowed),
+			attribute.String("iam.zed_token", decision.ZedToken),
+		)
+		return &authorizeResourceOutput{Body: dto.IAMAuthorizeResourceResponse{
+			OrgID:               input.Body.OrgID,
+			Subject:             authorizationSubjectDTO(decision.Subject),
+			OperationPermission: decision.OperationPermission,
+			Resource:            resourceRefDTO(decision.Resource),
+			ResourcePermission:  decision.ResourcePermission,
+			Allowed:             decision.Allowed,
+			ZedToken:            decision.ZedToken,
+		}}, nil
+	}
+}
+
+func writeResourceParentEdge(authzSvc *authz.Service) func(context.Context, *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
+	return func(ctx context.Context, input *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
+		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.resource_parent_edge.write")
+		defer span.End()
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
+		if !ok {
+			err := problem(ctx, http.StatusUnauthorized, "missing-workload-identity", "missing SPIFFE peer identity", nil)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "missing SPIFFE peer identity")
+			return nil, err
+		}
+		if authzSvc == nil {
+			err := internalFailure(ctx, "iam-authz-unavailable", "authorization graph unavailable", authz.ErrUnavailable)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, problemCode(err))
+			return nil, err
+		}
+		orgID := input.Body.OrgID.String()
+		resource := resourceRefFromDTO(input.Body.Resource)
+		parent := resourceRefFromDTO(input.Body.Parent)
+		span.SetAttributes(
+			attribute.String("spiffe.peer_id", peerID.String()),
+			attribute.String("verself.org_id", orgID),
+			attribute.String("iam.resource_type", resource.Type),
+			attribute.String("iam.resource_id", resource.ID),
+			attribute.String("iam.parent_relation", strings.TrimSpace(input.Body.Relation)),
+			attribute.String("iam.parent_type", parent.Type),
+			attribute.String("iam.parent_id", parent.ID),
+		)
+		edge, err := authzSvc.WriteResourceParentEdge(ctx, orgID, resource, input.Body.Relation, parent, input.Body.Operation)
+		if err != nil {
+			mapped := authzError(ctx, err)
+			span.RecordError(mapped)
+			span.SetStatus(codes.Error, problemCode(mapped))
+			return nil, mapped
+		}
+		span.SetAttributes(attribute.String("iam.zed_token", edge.ZedToken))
+		return &writeResourceParentEdgeOutput{Body: dto.IAMWriteResourceParentEdgeResponse{
+			Resource:  resourceRefDTO(edge.Resource),
+			Relation:  edge.Relation,
+			Parent:    resourceRefDTO(edge.Parent),
+			ZedToken:  edge.ZedToken,
+			Operation: edge.Operation,
+		}}, nil
+	}
+}
+
 func authorizationSubjectFromDTO(subject dto.IAMAuthorizationSubject) (identity.AuthorizationSubject, error) {
 	out := identity.AuthorizationSubject{ID: strings.TrimSpace(subject.ID)}
 	switch strings.TrimSpace(subject.Type) {
@@ -225,6 +370,27 @@ func authorizationSubjectFromDTO(subject dto.IAMAuthorizationSubject) (identity.
 		return identity.AuthorizationSubject{}, fmt.Errorf("subject id is required")
 	}
 	return out, nil
+}
+
+func authorizationSubjectDTO(subject authz.Subject) dto.IAMAuthorizationSubject {
+	return dto.IAMAuthorizationSubject{
+		Type: string(subject.Kind),
+		ID:   subject.ID,
+	}
+}
+
+func resourceRefFromDTO(resource dto.IAMResourceRef) authz.ResourceRef {
+	return authz.ResourceRef{
+		Type: strings.TrimSpace(resource.Type),
+		ID:   strings.TrimSpace(resource.ID),
+	}
+}
+
+func resourceRefDTO(resource authz.ResourceRef) dto.IAMResourceRef {
+	return dto.IAMResourceRef{
+		Type: strings.TrimSpace(resource.Type),
+		ID:   strings.TrimSpace(resource.ID),
+	}
 }
 
 func setInternalProfileIAMAttributes(span trace.Span, identity *auth.Identity) {

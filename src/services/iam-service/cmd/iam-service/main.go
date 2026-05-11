@@ -228,6 +228,7 @@ func run() error {
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
+		workloadauth.ServiceAnalytics,
 		workloadauth.ServiceBilling,
 		workloadauth.ServiceGovernance,
 		workloadauth.ServiceMailbox,

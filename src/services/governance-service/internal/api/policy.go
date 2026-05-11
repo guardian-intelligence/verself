@@ -26,9 +26,10 @@ import (
 type permission = runtimeiam.Permission
 
 const (
-	permissionAuditRead    permission = "governance:audit:read"
-	permissionExportRead   permission = "governance:export:read"
-	permissionExportCreate permission = "governance:export:create"
+	permissionAuditLogRead       permission = "governance:audit_log:read"
+	permissionAuditLogReadDetail permission = "governance:audit_log:read_detail"
+	permissionAuditLogExport     permission = "governance:audit_log:export"
+	permissionAuditLogManage     permission = "governance:audit_log:manage"
 
 	idempotencyHeaderKey        = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength     = 128
@@ -36,6 +37,10 @@ const (
 
 	bodyLimitNoBody    int64 = 1024
 	bodyLimitSmallJSON int64 = 16 << 10
+
+	auditLogResourceType = "audit_log"
+	orgResourceType      = "org"
+	parentOrgRelation    = "parent_org"
 )
 
 type securedOperation struct {
@@ -47,7 +52,7 @@ func secured(op huma.Operation, policy runtimeiam.OperationPolicy) securedOperat
 	return securedOperation{Operation: op, Policy: policy}
 }
 
-func registerSecured[I, O any](api huma.API, svc *governance.Service, authorizer runtimeiam.OperationAuthorizer, securedOp securedOperation, handler func(context.Context, governance.Principal, *I) (*O, error)) {
+func registerSecured[I, O any](api huma.API, svc *governance.Service, authorizer runtimeiam.ResourceAuthorizer, securedOp securedOperation, handler func(context.Context, governance.Principal, *I) (*O, error)) {
 	op := securedOp.Operation
 	policy := securedOp.Policy
 	if op.OperationID == "" {
@@ -123,7 +128,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) (governance.Principal, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceAuthorizer, policy runtimeiam.OperationPolicy) (governance.Principal, error) {
 	authIdentity, err := requireIdentity(ctx)
 	if err != nil {
 		return governance.Principal{}, err
@@ -132,7 +137,28 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, authIdentity, policy)
+	resourcePermission, err := auditLogResourcePermission(policy.Permission)
+	if err != nil {
+		return principal, problem(ctx, http.StatusInternalServerError, "iam-policy-invalid", "governance IAM policy is invalid", err)
+	}
+	orgID := strings.TrimSpace(authIdentity.OrgID)
+	auditLogResource := runtimeiam.ResourceRef{Type: auditLogResourceType, ID: orgID}
+	_, err = authorizer.EnsureResourceParent(ctx, runtimeiam.ResourceParentEdgeRequest{
+		OrgID:     orgID,
+		Resource:  auditLogResource,
+		Relation:  parentOrgRelation,
+		Parent:    runtimeiam.ResourceRef{Type: orgResourceType, ID: orgID},
+		Operation: string(policy.AuditEvent),
+	})
+	if err != nil {
+		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM audit log resource write failed", err)
+	}
+	decision, err := authorizer.AuthorizeResource(ctx, authIdentity, runtimeiam.ResourceAuthorizationRequest{
+		OrgID:               orgID,
+		OperationPermission: policy.Permission,
+		Resource:            auditLogResource,
+		ResourcePermission:  resourcePermission,
+	})
 	if err != nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -146,6 +172,21 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 		return principal, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return principal, nil
+}
+
+func auditLogResourcePermission(productPermission permission) (string, error) {
+	switch productPermission {
+	case permissionAuditLogRead:
+		return "read", nil
+	case permissionAuditLogReadDetail:
+		return "read_detail", nil
+	case permissionAuditLogExport:
+		return "export", nil
+	case permissionAuditLogManage:
+		return "manage", nil
+	default:
+		return "", fmt.Errorf("unsupported governance permission %q", productPermission)
+	}
 }
 
 func principalFromIdentity(identity *auth.Identity) governance.Principal {

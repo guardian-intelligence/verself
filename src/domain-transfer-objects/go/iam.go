@@ -151,6 +151,46 @@ type IAMAuthorizeResponse struct {
 	ZedToken    string                  `json:"zed_token,omitempty" maxLength:"1024"`
 }
 
+type IAMResourceRef struct {
+	Type string `json:"type" required:"true" minLength:"1" maxLength:"128"`
+	ID   string `json:"id" required:"true" minLength:"1" maxLength:"512"`
+}
+
+type IAMAuthorizeResourceRequest struct {
+	OrgID               OrgID                   `json:"org_id" required:"true"`
+	Subject             IAMAuthorizationSubject `json:"subject" required:"true"`
+	OperationPermission string                  `json:"operation_permission,omitempty" maxLength:"256"`
+	Resource            IAMResourceRef          `json:"resource" required:"true"`
+	ResourcePermission  string                  `json:"resource_permission" required:"true" minLength:"1" maxLength:"128"`
+	MinZedToken         string                  `json:"min_zed_token,omitempty" maxLength:"1024"`
+}
+
+type IAMAuthorizeResourceResponse struct {
+	OrgID               OrgID                   `json:"org_id"`
+	Subject             IAMAuthorizationSubject `json:"subject"`
+	OperationPermission string                  `json:"operation_permission,omitempty"`
+	Resource            IAMResourceRef          `json:"resource"`
+	ResourcePermission  string                  `json:"resource_permission"`
+	Allowed             bool                    `json:"allowed"`
+	ZedToken            string                  `json:"zed_token,omitempty" maxLength:"1024"`
+}
+
+type IAMWriteResourceParentEdgeRequest struct {
+	OrgID     OrgID          `json:"org_id" required:"true"`
+	Resource  IAMResourceRef `json:"resource" required:"true"`
+	Relation  string         `json:"relation" required:"true" minLength:"1" maxLength:"128"`
+	Parent    IAMResourceRef `json:"parent" required:"true"`
+	Operation string         `json:"operation,omitempty" maxLength:"256"`
+}
+
+type IAMWriteResourceParentEdgeResponse struct {
+	Resource  IAMResourceRef `json:"resource"`
+	Relation  string         `json:"relation"`
+	Parent    IAMResourceRef `json:"parent"`
+	ZedToken  string         `json:"zed_token,omitempty" maxLength:"1024"`
+	Operation string         `json:"operation,omitempty"`
+}
+
 type IAMAPICredential struct {
 	CredentialID         string     `json:"credential_id"`
 	ServiceAccountID     string     `json:"service_account_id"`

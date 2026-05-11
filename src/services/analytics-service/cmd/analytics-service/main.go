@@ -19,7 +19,9 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/verself/analytics-service/internal/analytics"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
@@ -63,9 +65,17 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", defaultCHUser)
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireCredential("auth-audience")
 	oidcAudience := cfg.RequireURL("ANALYTICS_GITHUB_OIDC_AUDIENCE")
 	allowedRepositories := cfg.RequireString("ANALYTICS_GITHUB_ALLOWED_REPOSITORIES")
 	allowedPrefixes := analytics.ParseAllowedPrefixes(cfg.String("ANALYTICS_ALLOWED_EVENT_PREFIXES", "build."))
+	dataset := analytics.DatasetContext{
+		OrgID:       cfg.RequireString("ANALYTICS_DEFAULT_ORG_ID"),
+		ProjectID:   cfg.RequireString("ANALYTICS_DEFAULT_PROJECT_ID"),
+		DatasetID:   cfg.RequireString("ANALYTICS_DEFAULT_DATASET_ID"),
+		Environment: cfg.RequireString("ANALYTICS_DEFAULT_ENVIRONMENT"),
+	}
 	if err := cfg.Err(); err != nil {
 		return err
 	}
@@ -82,6 +92,15 @@ func run() error {
 	if _, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceAnalytics); err != nil {
 		return err
 	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("analytics iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("analytics iam client: %w", err)
+	}
+	authorizer := iamclient.NewAuthorizer(iamClient)
 
 	chConn, err := newClickHouseConn(ctx, spiffeSource, chAddress, chUser, chCACertPath)
 	if err != nil {
@@ -93,10 +112,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	svc := &analytics.Service{CH: chConn, AllowedPrefixes: allowedPrefixes}
+	svc := &analytics.Service{CH: chConn, Dataset: dataset, AllowedPrefixes: allowedPrefixes}
 	if err := svc.Ready(ctx); err != nil {
 		return err
 	}
+	authConfig := auth.Config{IssuerURL: authIssuerURL, Audience: authAudience}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -114,6 +134,7 @@ func run() error {
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	mux.HandleFunc("/v1/logs", logsHandler(svc, verifier, logger))
+	mux.Handle("/api/v1/projects/", auth.Middleware(authConfig)(queryEventsHandler(svc, authorizer, logger)))
 
 	server := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(mux, requestBodyLimit), serviceName))
 	return httpserver.Run(ctx, logger, server)
@@ -127,23 +148,27 @@ func logsHandler(svc *analytics.Service, verifier *analytics.GitHubOIDCVerifier,
 		}
 		source, err := verifier.SourceFromRequest(r.Context(), r)
 		if err != nil {
+			_ = svc.RecordIngestEvent(r.Context(), analytics.Source{Kind: analytics.SourceKindGitHubActionsOIDC}, analytics.OutcomeDenied, 0, 1, "github_oidc")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			logger.WarnContext(r.Context(), "analytics oidc rejected", "error", err)
 			return
 		}
 		body, err := readRequestBody(r, requestBodyLimit)
 		if err != nil {
+			_ = svc.RecordIngestEvent(r.Context(), source, analytics.OutcomeError, 0, 1, "request_body")
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 		req, err := analytics.DecodeLogsRequest(r.Header.Get("Content-Type"), body)
 		if err != nil {
+			_ = svc.RecordIngestEvent(r.Context(), source, analytics.OutcomeError, 0, 1, "otlp_decode")
 			http.Error(w, "invalid otlp logs request", http.StatusBadRequest)
 			logger.WarnContext(r.Context(), "analytics otlp decode rejected", "error", err)
 			return
 		}
 		count, err := svc.IngestLogs(r.Context(), source, req)
 		if err != nil {
+			_ = svc.RecordIngestEvent(r.Context(), source, analytics.OutcomeError, 0, 1, compactErrorCode(err))
 			http.Error(w, "analytics ingest rejected", http.StatusBadRequest)
 			logger.WarnContext(r.Context(), "analytics ingest rejected", "error", err)
 			return

@@ -113,6 +113,7 @@ func platformOwnerGrantSpecs() []platformOwnerGrantSpec {
 
 func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 	return []platformRuntimeAuthAudienceSpec{
+		{ComponentName: "analytics-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/analytics-service/auth-audience", Group: "analytics_service"},
 		{ComponentName: "iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/iam-service/auth-audience", Group: "iam_service"},
 		{ComponentName: "governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
 		{ComponentName: "notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},

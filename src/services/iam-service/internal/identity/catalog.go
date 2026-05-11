@@ -56,9 +56,14 @@ const (
 	PermissionTransitDecrypt                = "secrets:transit:decrypt"
 	PermissionTransitSign                   = "secrets:transit:sign"
 	PermissionTransitVerify                 = "secrets:transit:verify"
-	PermissionGovernanceAuditRead           = "governance:audit:read"
-	PermissionGovernanceExportRead          = "governance:export:read"
-	PermissionGovernanceExportCreate        = "governance:export:create"
+	PermissionAnalyticsDatasetRead          = "analytics:dataset:read"
+	PermissionAnalyticsDatasetReadRaw       = "analytics:dataset:read_raw"
+	PermissionAnalyticsDatasetIngest        = "analytics:dataset:ingest"
+	PermissionAnalyticsDatasetManage        = "analytics:dataset:manage"
+	PermissionGovernanceAuditLogRead        = "governance:audit_log:read"
+	PermissionGovernanceAuditLogReadDetail  = "governance:audit_log:read_detail"
+	PermissionGovernanceAuditLogExport      = "governance:audit_log:export"
+	PermissionGovernanceAuditLogManage      = "governance:audit_log:manage"
 	PermissionProfileRead                   = "profile:self:read"
 	PermissionProfileIdentityWrite          = "profile:self:identity:write"
 	PermissionProfilePreferencesWrite       = "profile:self:preferences:write"
@@ -228,11 +233,20 @@ var defaultOperations = Operations{
 		{
 			Service: "governance-service",
 			Operations: []Operation{
-				{OperationID: "list-audit-events", Permission: PermissionGovernanceAuditRead, Resource: "audit_event", Action: "list", OrgScope: "token_org_id"},
-				{OperationID: "list-data-exports", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "list", OrgScope: "token_org_id"},
-				{OperationID: "create-data-export", Permission: PermissionGovernanceExportCreate, Resource: "data_export", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "get-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "read", OrgScope: "token_org_id"},
-				{OperationID: "download-data-export", Permission: PermissionGovernanceExportRead, Resource: "data_export", Action: "download", OrgScope: "token_org_id"},
+				{OperationID: "list-audit-events", Permission: PermissionGovernanceAuditLogRead, Resource: "audit_log", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-data-exports", Permission: PermissionGovernanceAuditLogExport, Resource: "audit_log", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "create-data-export", Permission: PermissionGovernanceAuditLogExport, Resource: "audit_log", Action: "export", OrgScope: "token_org_id"},
+				{OperationID: "get-data-export", Permission: PermissionGovernanceAuditLogExport, Resource: "audit_log", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "download-data-export", Permission: PermissionGovernanceAuditLogExport, Resource: "audit_log", Action: "download", OrgScope: "token_org_id"},
+			},
+		},
+		{
+			Service: "analytics-service",
+			Operations: []Operation{
+				{OperationID: "ingest-analytics-logs", Permission: PermissionAnalyticsDatasetIngest, Resource: "analytics_dataset", Action: "ingest", OrgScope: "token_org_id"},
+				{OperationID: "query-analytics-events", Permission: PermissionAnalyticsDatasetRead, Resource: "analytics_dataset", Action: "query", OrgScope: "token_org_id"},
+				{OperationID: "query-raw-analytics-events", Permission: PermissionAnalyticsDatasetReadRaw, Resource: "analytics_dataset", Action: "query", OrgScope: "token_org_id"},
+				{OperationID: "manage-analytics-dataset", Permission: PermissionAnalyticsDatasetManage, Resource: "analytics_dataset", Action: "manage", OrgScope: "token_org_id"},
 			},
 		},
 		{

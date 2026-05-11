@@ -17,9 +17,14 @@ const (
 	resourceTypeOrg                 = "org"
 	resourceTypeOperationPermission = "operation_permission"
 	resourceTypeRole                = "role"
+	resourceTypeProject             = "project"
+	resourceTypeAnalyticsDataset    = "analytics_dataset"
+	resourceTypeAuditLog            = "audit_log"
 
-	relationGrantee = "grantee"
-	relationMember  = "member"
+	relationGrantee       = "grantee"
+	relationMember        = "member"
+	relationParentProject = "parent_project"
+	relationParentOrg     = "parent_org"
 
 	subjectTypeUser           = "user"
 	subjectTypeServiceAccount = "service_account"
@@ -77,6 +82,29 @@ type Policy struct {
 type PolicyBinding struct {
 	Role    string
 	Members []string
+}
+
+type ResourceRef struct {
+	Type string
+	ID   string
+}
+
+type ResourceAuthorizationDecision struct {
+	Allowed             bool
+	OrgID               string
+	Subject             Subject
+	OperationPermission string
+	Resource            ResourceRef
+	ResourcePermission  string
+	ZedToken            string
+}
+
+type ResourceParentEdge struct {
+	Resource  ResourceRef
+	Relation  string
+	Parent    ResourceRef
+	ZedToken  string
+	Operation string
 }
 
 type roleDefinition struct {
@@ -165,9 +193,14 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionTransitDecrypt:                "use_secrets",
 	identity.PermissionTransitSign:                   "use_secrets",
 	identity.PermissionTransitVerify:                 "use_secrets",
-	identity.PermissionGovernanceAuditRead:           "manage_iam",
-	identity.PermissionGovernanceExportRead:          "manage_iam",
-	identity.PermissionGovernanceExportCreate:        "manage_iam",
+	identity.PermissionAnalyticsDatasetRead:          "read",
+	identity.PermissionAnalyticsDatasetReadRaw:       "manage_iam",
+	identity.PermissionAnalyticsDatasetIngest:        "manage_iam",
+	identity.PermissionAnalyticsDatasetManage:        "manage_iam",
+	identity.PermissionGovernanceAuditLogRead:        "manage_iam",
+	identity.PermissionGovernanceAuditLogReadDetail:  "manage_iam",
+	identity.PermissionGovernanceAuditLogExport:      "manage_iam",
+	identity.PermissionGovernanceAuditLogManage:      "manage_iam",
 	identity.PermissionProfileRead:                   "read",
 	identity.PermissionProfileIdentityWrite:          "read",
 	identity.PermissionProfilePreferencesWrite:       "read",
@@ -355,6 +388,97 @@ func (s *Service) TestOrganizationPermissions(ctx context.Context, orgID string,
 		}
 	}
 	return allowed, checkedAt, nil
+}
+
+func (s *Service) CheckResourcePermission(ctx context.Context, orgID string, authSubject identity.AuthorizationSubject, resource ResourceRef, resourcePermission, operationPermission, minZedToken string) (ResourceAuthorizationDecision, error) {
+	if err := validateOrgID(orgID); err != nil {
+		return ResourceAuthorizationDecision{}, err
+	}
+	subject := subjectFromAuthorizationSubject(authSubject)
+	if err := validateSubject(subject); err != nil {
+		return ResourceAuthorizationDecision{}, err
+	}
+	resource = normalizeResourceRef(resource)
+	resourcePermission = strings.TrimSpace(resourcePermission)
+	operationPermission = strings.TrimSpace(operationPermission)
+	if err := validateResourcePermission(resource, resourcePermission); err != nil {
+		return ResourceAuthorizationDecision{}, err
+	}
+	if operationPermission != "" {
+		if _, ok := identity.KnownPermissions()[operationPermission]; !ok {
+			return ResourceAuthorizationDecision{}, fmt.Errorf("%w: unknown product permission %q", ErrInvalid, operationPermission)
+		}
+	}
+	if s == nil || s.backend == nil {
+		return ResourceAuthorizationDecision{}, ErrUnavailable
+	}
+	decision := ResourceAuthorizationDecision{
+		OrgID:               strings.TrimSpace(orgID),
+		Subject:             subject,
+		OperationPermission: operationPermission,
+		Resource:            resource,
+		ResourcePermission:  resourcePermission,
+	}
+	if operationPermission != "" {
+		ok, token, err := s.backend.Check(ctx, operationPermissionResource(orgID, operationPermission), permissionUse, subjectRef(subject), strings.TrimSpace(minZedToken))
+		if err != nil {
+			return ResourceAuthorizationDecision{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+		decision.ZedToken = token
+		if ok {
+			decision.Allowed = true
+			return decision, nil
+		}
+	}
+	ok, token, err := s.backend.Check(ctx, spicedbResourceRef(resource), resourcePermission, subjectRef(subject), strings.TrimSpace(minZedToken))
+	if err != nil {
+		return ResourceAuthorizationDecision{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	if token != "" {
+		decision.ZedToken = token
+	}
+	decision.Allowed = ok
+	return decision, nil
+}
+
+func (s *Service) WriteResourceParentEdge(ctx context.Context, orgID string, resource ResourceRef, relation string, parent ResourceRef, operation string) (ResourceParentEdge, error) {
+	if err := validateOrgID(orgID); err != nil {
+		return ResourceParentEdge{}, err
+	}
+	resource = normalizeResourceRef(resource)
+	parent = normalizeResourceRef(parent)
+	relation = strings.TrimSpace(relation)
+	if err := validateResourceParentEdge(orgID, resource, relation, parent); err != nil {
+		return ResourceParentEdge{}, err
+	}
+	if s == nil || s.backend == nil {
+		return ResourceParentEdge{}, ErrUnavailable
+	}
+	spiceResource := spicedbResourceRef(resource)
+	current, _, err := s.backend.ReadResourceRelationships(ctx, spiceResource, relationSet(relation))
+	if err != nil {
+		return ResourceParentEdge{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	desired := []spicedb.Relationship{{
+		Resource: spiceResource,
+		Relation: relation,
+		Subject: spicedb.SubjectRef{
+			Type: spicedbResourceRef(parent).Type,
+			ID:   spicedbResourceRef(parent).ID,
+		},
+	}}
+	edge := ResourceParentEdge{
+		Resource:  resource,
+		Relation:  relation,
+		Parent:    parent,
+		Operation: strings.TrimSpace(operation),
+	}
+	zedToken, err := s.replace(ctx, current, desired, metadata(firstNonEmpty(operation, "iam.write_resource_parent_edge"), orgID))
+	if err != nil {
+		return ResourceParentEdge{}, err
+	}
+	edge.ZedToken = zedToken
+	return edge, nil
 }
 
 func (s *Service) replace(ctx context.Context, current []spicedb.Relationship, desired []spicedb.Relationship, metadata map[string]any) (string, error) {
@@ -741,6 +865,13 @@ func sameSubject(ref spicedb.SubjectRef, subject Subject) bool {
 	return ref.Type == subjectRef(subject).Type && ref.ID == subjectRef(subject).ID
 }
 
+func normalizeResourceRef(resource ResourceRef) ResourceRef {
+	return ResourceRef{
+		Type: strings.TrimSpace(resource.Type),
+		ID:   strings.TrimSpace(resource.ID),
+	}
+}
+
 func parsePolicyMember(member string) (Subject, error) {
 	member = strings.TrimSpace(member)
 	switch {
@@ -789,6 +920,55 @@ func validateSubject(subject Subject) error {
 	}
 }
 
+func validateResourcePermission(resource ResourceRef, permission string) error {
+	if resource.Type == "" {
+		return fmt.Errorf("%w: resource type is required", ErrInvalid)
+	}
+	if resource.ID == "" {
+		return fmt.Errorf("%w: resource id is required", ErrInvalid)
+	}
+	if permission == "" {
+		return fmt.Errorf("%w: resource permission is required", ErrInvalid)
+	}
+	switch resource.Type {
+	case resourceTypeAnalyticsDataset:
+		switch permission {
+		case "read", "read_raw", "ingest", "manage":
+			return nil
+		default:
+			return fmt.Errorf("%w: unsupported analytics_dataset permission %q", ErrInvalid, permission)
+		}
+	case resourceTypeAuditLog:
+		switch permission {
+		case "read", "read_detail", "export", "manage", "append":
+			return nil
+		default:
+			return fmt.Errorf("%w: unsupported audit_log permission %q", ErrInvalid, permission)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported resource type %q", ErrInvalid, resource.Type)
+	}
+}
+
+func validateResourceParentEdge(orgID string, resource ResourceRef, relation string, parent ResourceRef) error {
+	if relation == "" {
+		return fmt.Errorf("%w: parent relation is required", ErrInvalid)
+	}
+	if resource.ID == "" || parent.ID == "" {
+		return fmt.Errorf("%w: resource and parent ids are required", ErrInvalid)
+	}
+	switch {
+	case resource.Type == resourceTypeProject && relation == relationParentOrg && parent.Type == resourceTypeOrg && parent.ID == strings.TrimSpace(orgID):
+		return nil
+	case resource.Type == resourceTypeAnalyticsDataset && relation == relationParentProject && parent.Type == resourceTypeProject:
+		return nil
+	case resource.Type == resourceTypeAuditLog && relation == relationParentOrg && parent.Type == resourceTypeOrg && parent.ID == strings.TrimSpace(orgID) && resource.ID == strings.TrimSpace(orgID):
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported resource parent edge %s#%s@%s", ErrInvalid, resource.Type, relation, parent.Type)
+	}
+}
+
 func isZitadelRole(role string) bool {
 	for _, definition := range zitadelRoleDefinitions {
 		if definition.RoleKey == role {
@@ -820,6 +1000,10 @@ func roleKeys(definitions []roleDefinition) []string {
 		out = append(out, definition.RoleKey)
 	}
 	return compactSorted(out)
+}
+
+func spicedbResourceRef(resource ResourceRef) spicedb.ResourceRef {
+	return spicedb.ResourceRef{Type: strings.TrimSpace(resource.Type), ID: strings.TrimSpace(resource.ID)}
 }
 
 func orgResource(orgID string) spicedb.ResourceRef {
@@ -936,6 +1120,16 @@ func sortedKeys(values map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizeKnownProductPermissions(permissions []string) ([]string, error) {
