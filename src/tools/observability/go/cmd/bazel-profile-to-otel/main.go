@@ -52,6 +52,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/verself/observability/bazeltelemetry"
 	verselfotel "github.com/verself/observability/otel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -187,6 +188,14 @@ func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event)
 		attribute.String("bazel.cat", e.Cat),
 		attribute.String("bazel.event_name", e.Name),
 		attribute.Int64("bazel.duration_ms", e.Dur/1000),
+	}
+	if e.Cat == "package creation" {
+		parts := bazeltelemetry.PackageParts(e.Name)
+		attrs = append(attrs,
+			attribute.String("bazel.package", parts.Package),
+			attribute.String("bazel.build_file", parts.BuildFile),
+			attribute.String("bazel.external_repo", parts.Repository),
+		)
 	}
 	if mnemonic, ok := e.Args["mnemonic"].(string); ok && mnemonic != "" {
 		attrs = append(attrs, attribute.String("bazel.mnemonic", mnemonic))

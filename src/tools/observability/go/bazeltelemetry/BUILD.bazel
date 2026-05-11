@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bazeltelemetry",
+    srcs = [
+        "bep.go",
+        "collect.go",
+        "execlog.go",
+        "label.go",
+        "profile.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/observability/bazeltelemetry",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "bazeltelemetry_test",
+    srcs = ["bazeltelemetry_test.go"],
+    embed = [":bazeltelemetry"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":bazeltelemetry",
+    visibility = ["//visibility:public"],
+)

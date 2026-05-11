@@ -56,6 +56,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/verself/observability/bazeltelemetry"
 	verselfotel "github.com/verself/observability/otel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -155,9 +156,13 @@ func emitSpawn(ctx context.Context, tracer trace.Tracer, sp spawnExec) error {
 	if sp.Mnemonic != "" {
 		spanName = "bazel.spawn." + sp.Mnemonic
 	}
+	parts := bazeltelemetry.ParseLabel(sp.TargetLabel)
 
 	attrs := []attribute.KeyValue{
 		attribute.String("bazel.target_label", sp.TargetLabel),
+		attribute.String("bazel.package", parts.Package),
+		attribute.String("bazel.build_file", parts.BuildFile),
+		attribute.String("bazel.rule_name", parts.RuleName),
 		attribute.String("bazel.mnemonic", sp.Mnemonic),
 		attribute.String("bazel.runner", sp.Runner),
 		attribute.Bool("bazel.cache_hit", sp.CacheHit),

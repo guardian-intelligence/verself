@@ -73,6 +73,13 @@ func buildQueries(cfg config) ([]query, error) {
 		return []query{
 			newQuery("deploy.tasks", deployTasksSQL, params),
 		}, nil
+	case "bazel":
+		return []query{
+			newQuery("bazel.invocations", bazelInvocationsSQL, params),
+			newQuery("bazel.events", bazelEventsSQL, params),
+			newQuery("bazel.packages", bazelPackagesSQL, params),
+			newQuery("bazel.spawns", bazelSpawnsSQL, params),
+		}, nil
 	case "supply-chain":
 		return []query{
 			newQuery("supply_chain.policy_summary", supplyChainPolicySummarySQL, params),
@@ -170,19 +177,20 @@ func buildDescribeQueries(cfg config, params map[string]string) ([]query, error)
 
 func baseParams(cfg config) map[string]string {
 	return map[string]string{
-		"minutes":    strconv.FormatUint(uint64(cfg.minutes), 10),
-		"row_limit":  strconv.FormatUint(uint64(cfg.limit), 10),
-		"service":    cfg.service,
-		"metric":     cfg.metric,
-		"span":       cfg.span,
-		"field":      cfg.field,
-		"prefix":     cfg.prefix,
-		"search":     cfg.search,
-		"group_by":   cfg.groupBy,
-		"trace_id":   cfg.traceID,
-		"run_key":    cfg.runKey,
-		"host":       cfg.host,
-		"status_min": strconv.FormatUint(uint64(cfg.statusMin), 10),
+		"minutes":         strconv.FormatUint(uint64(cfg.minutes), 10),
+		"row_limit":       strconv.FormatUint(uint64(cfg.limit), 10),
+		"service":         cfg.service,
+		"metric":          cfg.metric,
+		"span":            cfg.span,
+		"field":           cfg.field,
+		"prefix":          cfg.prefix,
+		"search":          cfg.search,
+		"group_by":        cfg.groupBy,
+		"trace_id":        cfg.traceID,
+		"run_key":         cfg.runKey,
+		"provider_run_id": cfg.providerRunID,
+		"host":            cfg.host,
+		"status_min":      strconv.FormatUint(uint64(cfg.statusMin), 10),
 	}
 }
 
@@ -863,6 +871,81 @@ WHERE ServiceName = 'bazel'
 GROUP BY service
 HAVING service != ''
 ORDER BY execution_spawns DESC, total_spawns DESC
+LIMIT {row_limit:UInt32}`
+
+const bazelInvocationsSQL = `
+SELECT
+  formatDateTime(observed_at, '%Y-%m-%d %H:%i:%S') AS observed,
+  provider_run_id,
+  provider_job_id,
+  command,
+  exit_code,
+  duration_ms,
+  package_count,
+  spawn_count,
+  target_count,
+  failed_target_count,
+  arrayStringConcat(target_patterns, ' ') AS targets,
+  invocation_id,
+  trace_id
+FROM verself.bazel_invocations
+WHERE ({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String}))
+ORDER BY observed_at DESC, command
+LIMIT {row_limit:UInt32}`
+
+const bazelEventsSQL = `
+SELECT
+  formatDateTime(observed_at, '%H:%i:%S') AS time,
+  provider_run_id,
+  command,
+  event_name,
+  result,
+  duration_ms,
+  package_count,
+  spawn_count,
+  target_count,
+  left(reason, 180) AS reason,
+  invocation_id
+FROM verself.bazel_events
+WHERE ({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String}))
+ORDER BY observed_at, invocation_id, event_name
+LIMIT {row_limit:UInt32}`
+
+const bazelPackagesSQL = `
+SELECT
+  provider_run_id,
+  command,
+  build_file,
+  count() AS events,
+  sum(duration_ms) AS total_ms,
+  max(duration_ms) AS max_ms,
+  any(invocation_id) AS invocation_id
+FROM verself.bazel_profile_spans
+WHERE span_kind = 'package'
+  AND (({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+    OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String})))
+GROUP BY provider_run_id, command, build_file
+ORDER BY total_ms DESC, max_ms DESC, build_file
+LIMIT {row_limit:UInt32}`
+
+const bazelSpawnsSQL = `
+SELECT
+  provider_run_id,
+  command,
+  mnemonic,
+  runner,
+  cache_hit = 1 AS cache_hit,
+  target_label,
+  build_file,
+  duration_ms,
+  exit_code,
+  invocation_id
+FROM verself.bazel_spawns
+WHERE ({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+   OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String}))
+ORDER BY duration_ms DESC, started_at DESC
 LIMIT {row_limit:UInt32}`
 
 const supplyChainPolicySummarySQL = `

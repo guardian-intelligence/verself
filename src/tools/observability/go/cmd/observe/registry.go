@@ -43,6 +43,7 @@ var families = []family{
 	{Name: "logs", Purpose: "Discover or query structured log attributes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events."},
 	{Name: "deploy", Purpose: "Inspect verself-deploy, Bazel, and Nomad spans correlated by deploy_run_key."},
+	{Name: "bazel", Purpose: "Inspect instrumented CI Bazel invocations, parser lifecycle events, BUILD.bazel package spans, and execution spawns."},
 	{Name: "supply-chain", Purpose: "Inspect artifact policy results recorded during deploy runs."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
 	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
@@ -565,6 +566,26 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
+		ID:      "bazel.invocations",
+		Family:  "bazel",
+		Title:   "Bazel Invocations",
+		Purpose: "Instrumented CI Bazel build/test invocations with package, spawn, target, exit-code, and duration summaries.",
+		Optional: []string{
+			"--provider-run-id=<github-run-id>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=bazel --provider-run-id=<github-run-id>",
+			"aspect observe --what=bazel --minutes=1440",
+		},
+		Next: []string{
+			"aspect observe --what=bazel --provider-run-id=<github-run-id>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
+		},
+	},
+	{
 		ID:      "supply_chain.policy_summary",
 		Family:  "supply-chain",
 		Title:   "Supply-Chain Policy Summary",
@@ -924,6 +945,8 @@ func canonicalDocID(id string) string {
 		return "temporal.activity"
 	case id == "deploy.run":
 		return "deploy.tasks"
+	case strings.HasPrefix(id, "bazel."):
+		return "bazel.invocations"
 	default:
 		return id
 	}

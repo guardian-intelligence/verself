@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/verself/observability/cmd/bazel-profile-to-otel",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/tools/observability/go/bazeltelemetry",
         "//src/tools/observability/go/otel",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",

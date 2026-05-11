@@ -42,6 +42,7 @@ const (
 	githubRunnerWorkFolder   = "_work"
 	githubJITConfigFetchPath = "/internal/sandbox/v1/github-runner-jit"
 	githubCheckoutPath       = "/internal/sandbox/v1/github-checkout"
+	githubBazelTelemetryPath = "/internal/sandbox/v1/bazel-telemetry/invocations"
 	runnerToolCacheDir       = "/tmp/verself-hostedtoolcache"
 )
 
@@ -950,10 +951,12 @@ func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.
 		return nil
 	}
 	return map[string]string{
-		"VERSELF_GITHUB_JIT_TOKEN": r.deriveJITFetchToken(allocationID, attemptID),
-		"VERSELF_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
-		"VERSELF_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
-		"VERSELF_CHECKOUT_PATH":    githubCheckoutPath,
+		"VERSELF_GITHUB_JIT_TOKEN":      r.deriveJITFetchToken(allocationID, attemptID),
+		"VERSELF_GITHUB_JIT_PATH":       githubJITConfigFetchPath,
+		"VERSELF_CHECKOUT_TOKEN":        r.deriveCheckoutToken(executionID, attemptID),
+		"VERSELF_CHECKOUT_PATH":         githubCheckoutPath,
+		"VERSELF_BAZEL_TELEMETRY_TOKEN": r.deriveBazelTelemetryToken(executionID, attemptID),
+		"VERSELF_BAZEL_TELEMETRY_PATH":  githubBazelTelemetryPath,
 	}
 }
 
@@ -1476,6 +1479,14 @@ func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) st
 
 func (r *GitHubRunner) deriveCheckoutToken(executionID, attemptID uuid.UUID) string {
 	mac := hmac.New(sha256.New, []byte("verself-checkout:"+r.cfg.WebhookSecret))
+	mac.Write([]byte(executionID.String()))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(attemptID.String()))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (r *GitHubRunner) deriveBazelTelemetryToken(executionID, attemptID uuid.UUID) string {
+	mac := hmac.New(sha256.New, []byte("verself-bazel-telemetry:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))

@@ -56,6 +56,7 @@ type config struct {
 	mode          string
 	traceID       string
 	runKey        string
+	providerRunID string
 	host          string
 	statusMin     uint
 	minutes       uint
@@ -223,6 +224,7 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.mode, "mode", strings.TrimSpace(os.Getenv("MODE")), "metric mode: latest or rate")
 	flags.StringVar(&cfg.traceID, "trace-id", strings.TrimSpace(os.Getenv("TRACE_ID")), "trace id to inspect")
 	flags.StringVar(&cfg.runKey, "run-key", strings.TrimSpace(os.Getenv("RUN_KEY")), "deploy_run_key to inspect")
+	flags.StringVar(&cfg.providerRunID, "provider-run-id", strings.TrimSpace(os.Getenv("PROVIDER_RUN_ID")), "GitHub provider run id to inspect")
 	flags.StringVar(&cfg.host, "host", strings.TrimSpace(os.Getenv("HOST")), "HTTP host filter")
 	defaults := envconfig.New()
 	flags.UintVar(&cfg.statusMin, "status-min", defaults.Uint("STATUS_MIN", 0), "minimum HTTP status")
@@ -248,6 +250,7 @@ func parseConfig(args []string) (config, error) {
 	cfg.mode = normalize(strings.TrimSpace(cfg.mode))
 	cfg.traceID = strings.TrimSpace(cfg.traceID)
 	cfg.runKey = strings.TrimSpace(cfg.runKey)
+	cfg.providerRunID = strings.TrimSpace(cfg.providerRunID)
 	cfg.host = strings.TrimSpace(cfg.host)
 	cfg.site = strings.TrimSpace(cfg.site)
 	if cfg.mode == "" {
@@ -284,16 +287,17 @@ func parseConfig(args []string) (config, error) {
 		return cfg, errors.New("--format must be table, json, or markdown")
 	}
 	for label, value := range map[string]string{
-		"--service":  cfg.service,
-		"--metric":   cfg.metric,
-		"--span":     cfg.span,
-		"--field":    cfg.field,
-		"--query":    cfg.queryName,
-		"--prefix":   cfg.prefix,
-		"--group-by": cfg.groupBy,
-		"--trace-id": cfg.traceID,
-		"--run-key":  cfg.runKey,
-		"--host":     cfg.host,
+		"--service":         cfg.service,
+		"--metric":          cfg.metric,
+		"--span":            cfg.span,
+		"--field":           cfg.field,
+		"--query":           cfg.queryName,
+		"--prefix":          cfg.prefix,
+		"--group-by":        cfg.groupBy,
+		"--trace-id":        cfg.traceID,
+		"--run-key":         cfg.runKey,
+		"--provider-run-id": cfg.providerRunID,
+		"--host":            cfg.host,
 	} {
 		if err := validateToken(label, value); err != nil {
 			return cfg, err

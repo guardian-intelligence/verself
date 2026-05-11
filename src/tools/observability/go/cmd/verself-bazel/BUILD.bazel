@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "verself-bazel_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/observability/cmd/verself-bazel",
+    visibility = ["//visibility:private"],
+    deps = ["//src/tools/observability/go/bazeltelemetry"],
+)
+
+go_binary(
+    name = "verself-bazel",
+    embed = [":verself-bazel_lib"],
+    visibility = ["//visibility:public"],
+)
