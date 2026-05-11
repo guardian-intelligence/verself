@@ -10,14 +10,4 @@ table inet verself_nats {
 
         tcp dport { 4222, 8222 } iifname != "lo" drop
     }
-
-    chain output {
-        type filter hook output priority filter; policy accept;
-
-        ct state established,related accept
-        meta skuid != nats accept
-        meta l4proto != tcp meta l4proto != udp accept
-
-        drop
-    }
 }

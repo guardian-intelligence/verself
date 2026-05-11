@@ -10,15 +10,4 @@ table inet verself_object_storage_service {
 
         tcp dport 20000-32000 iifname != "lo" drop
     }
-
-    chain output {
-        type filter hook output priority filter; policy accept;
-
-        ct state established,related accept
-        meta skuid != object_storage_service accept
-        oifname "lo" tcp dport { 4646, 5432, 9440, 4317, 3900, 3910, 3920, 20000-32000 } accept
-        meta l4proto != tcp meta l4proto != udp accept
-
-        drop
-    }
 }

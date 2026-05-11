@@ -35,19 +35,11 @@ nomad_component(
 
 component_substrate_json(
     name = "component_substrate",
-    srcs = ["nftables/stalwart.nft"],
+    srcs = [],
     definition_json = """
 {
   "component": "stalwart",
   "kind": "platform_component",
-  "nftables_rulesets": [
-    {
-      "name": "stalwart",
-      "source": "src/infrastructure-components/stalwart/nftables/stalwart.nft",
-      "table": "verself_stalwart",
-      "target": "/etc/nftables.d/stalwart.nft"
-    }
-  ],
   "nomad_component_label": "//src/infrastructure-components/stalwart:nomad_component",
   "order": 65,
   "postgres": {},

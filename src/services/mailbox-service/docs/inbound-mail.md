@@ -43,15 +43,13 @@ Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, HAProxy 
 
 ## Security model
 
-Four layers:
+Three layers:
 
-**1. Per-process nftables egress lockdown:** Stalwart itself can only talk to loopback and DNS. It no longer owns any relay or Resend credentials, and its old outbound queue settings are deleted during deploy. `mailbox-service` has its own tighter box-local rules for JMAP/PostgreSQL/JWKS access plus HTTPS egress for the tactical operator-forwarding path.
+**1. Receive-only SMTP:** Stalwart rejects relay attempts from external SMTP clients and only performs local delivery during inbound SMTP sessions. Outbound relay is not configured in Stalwart. The only current outbound path is the separate operator-forwarding sidecar inside `mailbox-service`, which forwards a copy of `ceo@` mail through Resend's HTTPS API.
 
-**2. Receive-only SMTP:** Stalwart rejects relay attempts from external SMTP clients and only performs local delivery during inbound SMTP sessions. Outbound relay is not configured in Stalwart. The only current outbound path is the separate operator-forwarding sidecar inside `mailbox-service`, which forwards a copy of `ceo@` mail through Resend's HTTPS API.
+**2. systemd hardening:** Stalwart runs with `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`. `mailbox-service` runs as a separate unprivileged service with its own credstore.
 
-**3. systemd hardening:** Stalwart runs with `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`. `mailbox-service` runs as a separate unprivileged service with its own credstore and nftables profile.
-
-**4. Public HTTP boundary at HAProxy:** The JMAP API is not directly internet-accessible; external access routes through HAProxy, which enforces body-size limits, security-header policy, and structured access logging. Stalwart's Management API remains loopback-only because `/api/*` on `mail.<domain>` is routed to `mailbox-service`, not to Stalwart. Repo-owned HTTP behavior on that host is the authenticated `/api/v1/mail/*` API, Electric sync shape proxying, and the JMAP session rewrite handled by `mailbox-service`.
+**3. Public HTTP boundary at HAProxy:** The JMAP API is not directly internet-accessible; external access routes through HAProxy, which enforces body-size limits, security-header policy, and structured access logging. Stalwart's Management API remains loopback-only because `/api/*` on `mail.<domain>` is routed to `mailbox-service`, not to Stalwart. Repo-owned HTTP behavior on that host is the authenticated `/api/v1/mail/*` API, Electric sync shape proxying, and the JMAP session rewrite handled by `mailbox-service`.
 
 ## Storage
 
@@ -185,11 +183,10 @@ aspect mail list --mailbox=ceo                # Switch to ceo@
 ## Relevant files
 
 - `src/services/mailbox-service/` — repo-owned mailbox sync, write API, JMAP session rewrite, operator forwarder
-- `roles/mailbox_service/` — deploy + credstore + nftables + migrations for `mailbox-service`
+- `roles/mailbox_service/` — deploy + credstore + migrations for `mailbox-service`
 - `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
 - `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
 - `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
-- `src/infrastructure-components/stalwart/nftables/stalwart.nft` — Stalwart nftables contract copied to `/etc/nftables.d/` by owner-local substrate convergence
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
 - `cmd/mailbox-openapi/` + `client/` — generated authenticated mailbox API client surface
