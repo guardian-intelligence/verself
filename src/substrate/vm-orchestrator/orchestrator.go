@@ -915,6 +915,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
 	mountResults, err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort), guestFilesystemMounts(mounts))
 	runtime.MountResults = filesystemMountResults(mounts, mountResults)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("filesystem.result_count", len(runtime.MountResults)))
 	if err != nil {
 		return nil, err
 	}

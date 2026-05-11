@@ -277,11 +277,20 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 		return nil, status.Error(codes.Internal, out.err.Error())
 	}
 	resp := acquireLeaseResponseFromRecord(out.record)
+	span.SetAttributes(
+		attribute.String("lease.id", leaseID),
+		attribute.Int("filesystem.result_count", len(out.record.FilesystemMounts)),
+	)
+	if len(spec.FilesystemMounts) > 0 && len(out.record.FilesystemMounts) == 0 {
+		s.logger.WarnContext(ctx, "lease ready without filesystem mount results",
+			"lease_id", leaseID,
+			"requested_mount_count", len(spec.FilesystemMounts),
+		)
+	}
 	data, _ := json.Marshal(resp)
 	if err := s.state.putIdempotency(context.Background(), "acquire_lease", key, string(data)); err != nil {
 		s.logger.WarnContext(ctx, "store acquire lease idempotency failed", "error", err)
 	}
-	span.SetAttributes(attribute.String("lease.id", leaseID))
 	return resp, nil
 }
 
@@ -891,7 +900,11 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	if err := a.server.state.setLeaseReady(ctx, a.leaseID, runtime.Network.GuestIP, readyAt); err != nil {
 		return acquireReply{err: err}
 	}
-	a.server.logger.InfoContext(ctx, "lease ready", "lease_id", a.leaseID, "vm_ip", runtime.Network.GuestIP)
+	a.server.logger.InfoContext(ctx, "lease ready",
+		"lease_id", a.leaseID,
+		"vm_ip", runtime.Network.GuestIP,
+		"filesystem_result_count", len(runtime.MountResults),
+	)
 	return acquireReply{record: LeaseRecord{
 		LeaseID:          a.leaseID,
 		State:            LeaseStateReady,

@@ -96,7 +96,6 @@ type Runner interface {
 type SchedulerRuntime interface {
 	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
 	EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerCapacityReconcileRequest) (scheduler.ProbeResult, error)
-	EnqueueRunnerCapacityReconcile(ctx context.Context, req scheduler.RunnerCapacityReconcileRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerAllocateRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerJobBindRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)
@@ -581,6 +580,18 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	item.LeaseID = lease.LeaseID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
+	span.SetAttributes(
+		attribute.Int("filesystem.requested_mount_count", len(item.FilesystemMounts)),
+		attribute.Int("filesystem.result_count", len(lease.FilesystemMounts)),
+	)
+	if len(item.FilesystemMounts) > 0 && len(lease.FilesystemMounts) == 0 && s.Logger != nil {
+		s.Logger.WarnContext(ctx, "lease returned no filesystem mount results",
+			"execution_id", item.ExecutionID,
+			"attempt_id", item.AttemptID,
+			"lease_id", lease.LeaseID,
+			"requested_mount_count", len(item.FilesystemMounts),
+		)
+	}
 	durablePlan, err = s.recordDurableLeaseMountResults(ctx, durablePlan, lease.FilesystemMounts)
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
