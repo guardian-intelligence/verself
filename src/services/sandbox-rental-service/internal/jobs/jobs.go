@@ -653,7 +653,14 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.transition(ctx, item, StateRunning, StateFinalizing, "exec_finished", nil); err != nil {
 		return err
 	}
-	durableErr := s.finalizeDurableVolumes(ctx, item, lease.LeaseID, durablePlan, finalExec)
+	outcome, outcomeErr := s.executionTerminalOutcome(ctx, item, finalExec)
+	if outcomeErr != nil {
+		span.RecordError(outcomeErr)
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "execution outcome verification failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", outcomeErr)
+		}
+	}
+	durableErr := s.finalizeDurableVolumes(ctx, item, lease.LeaseID, durablePlan, outcome.SealDecision)
 	if durableErr != nil {
 		span.RecordError(durableErr)
 		if s.Logger != nil {
@@ -682,16 +689,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return nil
 	}
 	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs), settleResult)
-	state := StateSucceeded
-	reason := ""
-	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
-		state = StateFailed
-		reason = "exec_failed"
-		if finalExec.TerminalReason != "" {
-			reason = "exec_failed: " + finalExec.TerminalReason
-		}
-	}
-	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
+	if err := s.completeAttempt(ctx, item, outcome.State, outcome.Reason, finalExec, durationMs, completedAt); err != nil {
 		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release-after-complete-failed"); releaseErr != nil {
 			s.Logger.WarnContext(ctx, "release lease after completion failure failed", "lease_id", lease.LeaseID, "error", releaseErr)
 		}
@@ -704,7 +702,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	stopRenew()
 	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false)
 	if err == nil {
-		runRecord.Status = state
+		runRecord.Status = outcome.State
 		runRecord.LatestAttempt.TraceID = span.SpanContext().TraceID().String()
 		_ = s.writeExecutionLogs(context.Background(), *runRecord, finalExec.Output)
 		_ = s.writeJobEvent(context.Background(), jobEventRowForRun(*runRecord))
@@ -715,6 +713,75 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		s.MarkRunnerExecutionExited(detachedContext(ctx), item.ExecutionID)
 	}
 	return nil
+}
+
+type executionTerminalOutcome struct {
+	State        string
+	Reason       string
+	SealDecision durableSealDecision
+}
+
+func executionOutcomeFromExec(finalExec vmorchestrator.ExecRecord) executionTerminalOutcome {
+	sealDecision := durableSealDecisionForExec(finalExec)
+	if sealDecision.Commit {
+		return executionTerminalOutcome{State: StateSucceeded, SealDecision: sealDecision}
+	}
+	return executionTerminalOutcome{State: StateFailed, Reason: sealDecision.SkipReason, SealDecision: sealDecision}
+}
+
+func executionOutcomeFromGitHubJobResult(status, conclusion string, observed bool) executionTerminalOutcome {
+	status = strings.TrimSpace(status)
+	conclusion = strings.TrimSpace(conclusion)
+	if !observed {
+		reason := "github_job_result_missing"
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}
+	}
+	if status != "completed" {
+		reason := "github_job_not_completed"
+		if status != "" {
+			reason += ": " + status
+		}
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}
+	}
+	switch conclusion {
+	case "success", "skipped":
+		return executionTerminalOutcome{State: StateSucceeded, SealDecision: durableSealDecision{Commit: true}}
+	case "":
+		reason := "github_job_conclusion_missing"
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}
+	default:
+		reason := "github_job_" + conclusion
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}
+	}
+}
+
+func (s *Service) executionTerminalOutcome(ctx context.Context, item executionWorkItem, finalExec vmorchestrator.ExecRecord) (executionTerminalOutcome, error) {
+	outcome := executionOutcomeFromExec(finalExec)
+	if item.WorkloadKind != WorkloadKindRunner || item.Provider != RunnerProviderGitHub {
+		return outcome, nil
+	}
+	if s.GitHubRunner == nil {
+		reason := "github_runner_not_configured"
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, nil
+	}
+	identity, err := s.runnerExecutionIdentity(ctx, item.ExecutionID, item.AttemptID)
+	if err != nil {
+		reason := durableFailureReason("github_job_identity_failed", err)
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, err
+	}
+	jobs, err := s.GitHubRunner.refreshWorkflowRunJobs(ctx, identity)
+	if err != nil {
+		reason := durableFailureReason("github_job_result_refresh_failed", err)
+		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, err
+	}
+	status, conclusion, observed := jobs.jobResult(identity.ProviderJobID)
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int64("github.job_id", identity.ProviderJobID),
+		attribute.String("github.workflow_job.status", status),
+		attribute.String("github.workflow_job.conclusion", conclusion),
+		attribute.Bool("github.workflow_job.observed", observed),
+	)
+	return executionOutcomeFromGitHubJobResult(status, conclusion, observed), nil
 }
 
 func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.UUID) (executionWorkItem, error) {

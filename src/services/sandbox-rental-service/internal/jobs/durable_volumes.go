@@ -586,7 +586,7 @@ func (s *Service) failOpenDurableOperationsForAttempt(ctx context.Context, item 
 	}
 }
 
-func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWorkItem, leaseID string, plan durableVolumePlan, finalExec vmorchestrator.ExecRecord) error {
+func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWorkItem, leaseID string, plan durableVolumePlan, sealDecision durableSealDecision) error {
 	if !plan.Enabled {
 		return nil
 	}
@@ -597,7 +597,6 @@ func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWork
 	defer span.End()
 	var errs []error
 	anyCandidate := false
-	sealDecision := durableSealDecisionForExec(finalExec)
 	span.SetAttributes(
 		attribute.Bool("durable.commit_allowed", sealDecision.Commit),
 		attribute.String("durable.commit_skip_reason", sealDecision.SkipReason),

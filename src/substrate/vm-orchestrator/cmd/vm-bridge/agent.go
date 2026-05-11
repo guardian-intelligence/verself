@@ -779,7 +779,7 @@ func bindFilesystemPath(fs vmproto.FilesystemMount, target string) error {
 			return fmt.Errorf("bind target %s for filesystem %s is not empty", target, fs.Name)
 		}
 	} else if os.IsNotExist(err) {
-		if err := os.MkdirAll(target, 0o755); err != nil {
+		if err := mkdirAllOwned(target, 0o755, runnerUID, runnerGID); err != nil {
 			return fmt.Errorf("mkdir bind target %s: %w", target, err)
 		}
 	} else {
@@ -799,6 +799,39 @@ func bindFilesystemPath(fs vmproto.FilesystemMount, target string) error {
 	if err := syscall.Mount(source, target, "", remountFlags, ""); err != nil {
 		_ = syscall.Unmount(target, 0)
 		return fmt.Errorf("remount bind filesystem %s on %s: %w", fs.Name, target, err)
+	}
+	return nil
+}
+
+func mkdirAllOwned(path string, mode os.FileMode, uid, gid int) error {
+	clean := filepath.Clean(path)
+	if clean == "/" {
+		return nil
+	}
+	var created []string
+	current := string(os.PathSeparator)
+	for _, elem := range strings.Split(strings.TrimPrefix(clean, string(os.PathSeparator)), string(os.PathSeparator)) {
+		if elem == "" {
+			continue
+		}
+		current = filepath.Join(current, elem)
+		if stat, err := os.Stat(current); err == nil {
+			if !stat.IsDir() {
+				return fmt.Errorf("%s is not a directory", current)
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Mkdir(current, mode); err != nil && !os.IsExist(err) {
+			return err
+		}
+		created = append(created, current)
+	}
+	for _, dir := range created {
+		if err := os.Chown(dir, uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", dir, err)
+		}
 	}
 	return nil
 }

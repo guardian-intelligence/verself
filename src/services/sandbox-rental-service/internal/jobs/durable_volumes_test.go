@@ -107,3 +107,39 @@ func TestDurableSealDecisionForExec(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionOutcomeFromGitHubJobResult(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		conclusion string
+		observed   bool
+		wantState  string
+		wantCommit bool
+		wantReason string
+	}{
+		{name: "success", status: "completed", conclusion: "success", observed: true, wantState: StateSucceeded, wantCommit: true},
+		{name: "skipped", status: "completed", conclusion: "skipped", observed: true, wantState: StateSucceeded, wantCommit: true},
+		{name: "failure", status: "completed", conclusion: "failure", observed: true, wantState: StateFailed, wantReason: "github_job_failure"},
+		{name: "missing conclusion", status: "completed", observed: true, wantState: StateFailed, wantReason: "github_job_conclusion_missing"},
+		{name: "still running", status: "in_progress", observed: true, wantState: StateFailed, wantReason: "github_job_not_completed: in_progress"},
+		{name: "not observed", observed: false, wantState: StateFailed, wantReason: "github_job_result_missing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := executionOutcomeFromGitHubJobResult(tt.status, tt.conclusion, tt.observed)
+			if got.State != tt.wantState {
+				t.Fatalf("state = %q, want %q", got.State, tt.wantState)
+			}
+			if got.SealDecision.Commit != tt.wantCommit {
+				t.Fatalf("commit = %t, want %t", got.SealDecision.Commit, tt.wantCommit)
+			}
+			if got.Reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", got.Reason, tt.wantReason)
+			}
+			if !tt.wantCommit && got.SealDecision.SkipReason != tt.wantReason {
+				t.Fatalf("skip reason = %q, want %q", got.SealDecision.SkipReason, tt.wantReason)
+			}
+		})
+	}
+}

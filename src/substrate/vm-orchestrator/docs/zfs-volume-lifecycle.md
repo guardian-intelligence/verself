@@ -28,7 +28,9 @@ and service unit; it does not issue runtime ZFS mutations for workloads.
    devices, starts Firecracker, and sends the filesystem manifest to vm-bridge.
 5. vm-bridge mounts the declared filesystems before the runner process starts.
    Cache filesystems mount once at `/verself/.mounts/<name>` and then bind
-   into the declared customer paths.
+   into the declared customer paths. Missing bind-target directories created
+   by vm-bridge are owned by the runner user; existing directories keep their
+   image-provided ownership and must be empty.
 6. vm-bridge returns per-filesystem mount results. Required mount failures
    fail lease acquisition; optional cache mount failures are reported to the
    product service as degraded cache state.
@@ -39,8 +41,9 @@ acquisition rather than a guest-originated side effect.
 
 ## Commit
 
-After a successful runner execution, sandbox-rental may ask vm-orchestrator to
-commit a named writable filesystem mount. The commit path:
+After sandbox-rental has verified that the provider job result is successful,
+it may ask vm-orchestrator to commit a named writable filesystem mount. The
+commit path:
 
 1. Seals the guest mount through vm-bridge.
 2. Flushes the host block device.

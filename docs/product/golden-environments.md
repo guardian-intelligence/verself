@@ -74,8 +74,9 @@ not tool-specific cache APIs.
 6. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
 7. Customer steps execute normally and read or write cache paths as ordinary
    directories.
-8. After a successful job exit, vm-bridge attempts to seal each writable
-   durable volume by syncing and unmounting guest mounts.
+8. After the provider reports the job completed successfully, vm-bridge
+   attempts to seal each writable durable volume by syncing and unmounting
+   guest mounts.
 9. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
    volume that the guest sealed cleanly.
 10. The service records committed generations observed from the host result.
@@ -104,6 +105,8 @@ Verself differences:
   PR writes never promote that protected branch pointer.
 - Protected branch promotion is gated by the provider workflow result, not by a
   single job's local exit code.
+- Seal and commit eligibility for GitHub Actions jobs is gated by the GitHub
+  workflow-job conclusion, not by the actions-runner process exit code.
 - Cache volumes are ZFS-backed block devices attached to Firecracker guests,
   not archive uploads or downloads.
 
@@ -244,6 +247,8 @@ vm-bridge is responsible for:
 - Expanding `~/...` against the runner user's home directory.
 - Creating parent directories for target paths.
 - Ensuring target paths are absent or empty directories before binding.
+- Chowning bind-target directories it creates so sibling tool directories under
+  paths such as `~/.cache` remain writable by the runner user.
 - Creating source subdirectories under the mounted cache root.
 - Chowning writable cache roots and bind source subdirectories to the runner
   UID and GID.
@@ -284,9 +289,9 @@ vm-orchestrator commit procedure after guest seal succeeds:
 6. Return snapshot reference, used bytes, written bytes, and commit time.
 
 Seal eligibility and product promotion are separate service decisions. Failed,
-cancelled, and lease-expired executions skip seal and commit. A successful
-non-promotable execution may still commit a retained generation, but it cannot
-advance a protected branch current pointer.
+cancelled, lease-expired, and provider-non-success executions skip seal and
+commit. A successful non-promotable execution may still commit a retained
+generation, but it cannot advance a protected branch current pointer.
 
 Ambiguous seal states skip promotion:
 

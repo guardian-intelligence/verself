@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,5 +63,22 @@ func TestRemoveEmptyLostFoundLeavesNonEmptyDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(lostFound); err != nil {
 		t.Fatalf("lost+found should remain: %v", err)
+	}
+}
+
+func TestMkdirAllOwnedChownsOnlyCreatedDirectories(t *testing.T) {
+	root := t.TempDir()
+	existing := filepath.Join(root, "home", "runner")
+	if err := os.MkdirAll(existing, 0o755); err != nil {
+		t.Fatalf("mkdir existing parent: %v", err)
+	}
+	if err := mkdirAllOwned(filepath.Join(existing, ".cache", "bazel-disk"), 0o755, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatalf("mkdirAllOwned returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(existing, ".cache")); err != nil {
+		t.Fatalf("created cache parent missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(existing, ".cache", "bazel-disk")); err != nil {
+		t.Fatalf("created bind target missing: %v", err)
 	}
 }
