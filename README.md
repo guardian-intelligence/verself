@@ -1,14 +1,33 @@
 # Verself
 
-Verself sells sandbox compute on Firecracker. Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement; Lambda-style workloads and persistent dev VMs are planned on the same isolation substrate. Customer code runs inside short-lived sandboxes the customer rents — Verself does not host customer applications as managed long-lived services. The hosted runner product contract lives in [`docs/product/hosted-actions-runners.md`](docs/product/hosted-actions-runners.md).
+Verself is two things:
 
-The platform itself is open-source and self-hostable. The self-hosted bootstrap path is currently an operator/internal surface that renders site artifacts for operator-supplied Latitude.sh bare metal; public SDK and CLI docs lead with hosted `verself.sh` APIs. See [`docs/verself-cli.md`](docs/verself-cli.md).
+1. Prima facie, a PaaS selling stateful, suspendable compute with near-serverless economics via fast-launching Firecracker VMs with hot-swappable filesystems via `zfs clone`.
 
-The repo holds services, console, marketing site, and operator tooling, almost entirely self-hosted on bare metal: Forgejo for source, fast CI via Firecracker + ZFS, Grafana + ClickHouse observability (logs, traces, metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general-purpose RDBMS.
+2. The "golden image" of a self-contained self-replicating software company that can clone itself via an API call to `source-code-hosting-service`, which clones the repo with the user's configured company name, founder details, domain name, Resend API key, Stripe API key, etc. and uses all that to configure the repository for the caller, culminating in a download link. The user can then download their white-labelled clone configured for their providers and execute a shell script to bootstrap a replica of Verself for themselves. IOW: technology that converts any bare metal into structured, useful general purpose compute with economically valuable systems already set up for the user like auth, billing/payments, CI, observability, and a fully-functioning end-to-end revenue-generating product.
 
-The unified product app lives at `https://<domain>` (authenticated browser console, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://iam.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`. See [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App where we run customer's GitHub actions on our bare metal. Where we differ is that instead of distributed storage via Rook/Ceph + dmapper, we colocate stored golden zfs images custom GitHub action that replaces the standard `actions/checkout` with our custom checkout action that:
 
-This README is a map. Per-task documentation lives in `aspect <task> --help`.
+1. Runs the customer's workload on our bare metal, inside a firecracker VM that boots with a composed set of zvols mounted at user-configured directories + the repo's main branch checked out and ready before the CI job even starts. Once the CI Job starts, our custom `checkout` action applies the TIP of the `github.event.pull_request.head.sha` against the base branch.
+
+2. When default branch's latest commit's CI goes green, we promote the repo file system post-CI (`GITHUB_WORKSPACE`) + durable VM directories outside the `GITHUB_WORKSPACE` such as installed binaries, Bazel caches, DB files, and so on. The next PR that executes CI will now have its VM mount its starting file-system from the golden ZFS volumes composed prior to the job running. 
+
+2a. `getRepoZvolForPR` is approximately `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)` for GitHub. (Forgejo/Codeberg/GitLab support pending)
+
+* Verself does not host customer applications as managed long-lived services (yet, but as you may imagine by the `verself` branding we are poised to do that soon via Open vSwitch or something similar). 
+
+The software offerings are layered as follows:
+
+a. Internal Core -- Infrastructure, bootstrap configuration, integration with 3p APIs, privileged processes
+b. Services -- OpenAPI HTTP, SPIFFE mTLS for cross-service communication over public+internal APIs.
+c. SDK -- Programmatic multi-language wrappers over our services
+d. Clients -- websites, mobile apps, CLI. Call the SDK under the hood. See [`docs/verself-cli.md`](docs/verself-cli.md) for more on the CLI.
+
+(Note on above, the structure is still WIP and we are at maybe 5% parity in terms of having even just a golang SDK over our services.)
+
+The web app lives at `https://<domain>` (cnsole, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://iam.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`. See [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+
+Per-task documentation lives in `aspect <task> --help`.
 
 ## Quickstart
 
@@ -30,7 +49,7 @@ bazelisk mod tidy
 bazelisk mod tidy
 ```
 
-### Continue from either platform
+### (optional) Cloning this repo onto your own infrastructure
 
 ```bash
 # 2. Tell OpenTofu where to provision (one time per environment).
@@ -46,27 +65,16 @@ aspect provision apply
 aspect deploy
 
 # 5. Mint a persona env file and start working.
-aspect persona assume platform-admin
+aspect persona assume platform-admin # Will become `verself cli 
 ```
 
-## Bootstrap
+`scripts/bootstrap-linux-amd64` and `scripts/bootstrap-darwin-arm64` are the only sanctioned shell scripts in the repo. Everything else is done through `aspect` and `bazelisk`. The two scripts just get any fresh developer/agent environment set up and good to at least start authenticating as a user and rocking and rolling.
 
-The bootstrap scripts are platform-specific:
-
-| Controller platform | Entrypoint |
-| --- | --- |
-| Linux x86_64 | `./scripts/bootstrap-linux-amd64` |
-| macOS Apple Silicon | `./scripts/bootstrap-darwin-arm64` |
-
-`scripts/bootstrap-linux-amd64` and `scripts/bootstrap-darwin-arm64` are the only sanctioned shell scripts in the repo. Everything else routes through `aspect`. They pin the three platform-specific bootstrap_pivot binaries that have to land before any Bazel- or Aspect-driven channel can run:
-
-- **bazelisk** — sha256-pinned download. Symlinked as `bazel` next to the installed `bazelisk` so the Aspect CLI's `ctx.bazel.{build,test,run,query}` (which spawn `bazel` directly) resolve through bazelisk's version-pinned downloader.
+- **bazelisk** — sha256-pinned download. Installed alongside a bazel → bazelisk symlink on PATH, so tools that invoke bazel directly (Aspect CLI's ctx.bazel.{build,test,run,query}, IDE plugins, rules_* scripts) resolve through bazelisk's version-pinned launcher.
 - **aspect CLI** — sha256-pinned download. Hosts every task surface enumerated below.
 - **vp (Vite+)** — owns `vp` / `vite` / `rolldown` / `vitest` invocation in the JS workspace at `~/.vite-plus/`. Uses `vp upgrade <version>` for catalog pinning.
 
 Idempotent: short-circuits when the existing binary already matches the pinned sha256 / version. Falls back to `~/.local/bin` when the install directory is non-writable and `sudo` is unavailable, with a PATH warning. Set `BOOTSTRAP_INSTALL_DIR` to override the default `/usr/local/bin`.
-
-Versions of record live as constants at the top of each `scripts/bootstrap-*` entrypoint. The dev-tools catalog under `src/tools/dev/` is the version-of-record for everything else; `aspect dev install` lays those down.
 
 ## Aspect command map
 
