@@ -365,6 +365,13 @@ manifest
 none
 ```
 
+`source_ref` and `source_sha` record the last observed source for diagnostics.
+The declaration identity is repository, normalized declaration hash, source
+kind, source path, workflow identity, job identity, and step identity. The
+compatible runtime lineage is keyed later by `job_shape` and
+`durable_scope.scope_ref`, so the same trusted manifest content observed through
+a branch, tag, or rerun resolves to the same declaration row.
+
 `declaration_hash` is the canonical hash of the normalized declaration. It
 changes when volume names, sizes, paths, or mount policy change.
 
