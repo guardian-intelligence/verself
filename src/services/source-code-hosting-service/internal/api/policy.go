@@ -18,7 +18,7 @@ import (
 	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
-type permission string
+type permission = runtimeiam.Permission
 
 const (
 	permissionRepoRead           permission = "source:repo:read"
@@ -28,7 +28,7 @@ const (
 	permissionWorkflowRead       permission = "source:workflow:read"
 	permissionWorkflowWrite      permission = "source:workflow:write"
 
-	idempotencyHeaderKey    = "idempotency_key_header"
+	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
 	bodyLimitSmallJSON      = 64 << 10
 	bodyLimitNoBody         = 1
@@ -36,16 +36,9 @@ const (
 
 var apiTracer = otel.Tracer("source-code-hosting-service/internal/api")
 
-type operationPolicy struct {
-	Permission     permission
-	Resource       string
-	Action         string
-	OrgScope       string
-	RateLimitClass string
-	Idempotency    string
-	AuditEvent     string
-	BodyLimitBytes int64
-	Internal       bool
+type sourceOperationPolicy struct {
+	runtimeiam.OperationPolicy
+	Internal bool
 }
 
 type operationRequestInfoKey struct{}
@@ -54,7 +47,7 @@ type operationRequestInfo struct {
 	IdempotencyKey string
 }
 
-func registerSourceRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, source.Principal, *I) (*O, error)) {
+func registerSourceRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy sourceOperationPolicy, handler func(context.Context, source.Principal, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for source API route")
 	}
@@ -78,18 +71,18 @@ func registerSourceRoute[I, O any](api huma.API, authorizer runtimeiam.Operation
 	})
 }
 
-func startOperationSpan(ctx context.Context, operationID string, policy operationPolicy) (context.Context, trace.Span) {
-	return apiTracer.Start(ctx, policy.AuditEvent, trace.WithAttributes(
+func startOperationSpan(ctx context.Context, operationID string, policy sourceOperationPolicy) (context.Context, trace.Span) {
+	return apiTracer.Start(ctx, policy.AuditEvent.String(), trace.WithAttributes(
 		attribute.String("source.operation_id", operationID),
 		attribute.String("source.permission", string(policy.Permission)),
-		attribute.String("source.resource", policy.Resource),
-		attribute.String("source.action", policy.Action),
-		attribute.String("source.audit_event", policy.AuditEvent),
+		attribute.String("source.resource", string(policy.Resource)),
+		attribute.String("source.action", string(policy.Action)),
+		attribute.String("source.audit_event", string(policy.AuditEvent)),
 		attribute.Bool("source.internal", policy.Internal),
 	))
 }
 
-func finishOperationSpan(span trace.Span, principal source.Principal, policy operationPolicy, outcome string, err error) {
+func finishOperationSpan(span trace.Span, principal source.Principal, policy sourceOperationPolicy, outcome string, err error) {
 	if span == nil {
 		return
 	}
@@ -101,7 +94,7 @@ func finishOperationSpan(span trace.Span, principal source.Principal, policy ope
 	}
 	span.SetAttributes(
 		attribute.String("source.outcome", outcome),
-		attribute.String("source.rate_limit_class", policy.RateLimitClass),
+		attribute.String("source.rate_limit_class", string(policy.RateLimitClass)),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -111,12 +104,9 @@ func finishOperationSpan(span trace.Span, principal source.Principal, policy ope
 	}
 }
 
-func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
-		panic("incomplete source operation policy for " + op.OperationID)
-	}
-	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
-		panic("missing body limit for mutating operation " + op.OperationID)
+func withOperationPolicy(op huma.Operation, policy sourceOperationPolicy) huma.Operation {
+	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
 	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
@@ -127,21 +117,8 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	iam := map[string]any{
-		"permission":       string(policy.Permission),
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        policy.OrgScope,
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
-		"internal":         policy.Internal,
-	}
-	if policy.Idempotency != "" {
-		iam["idempotency"] = policy.Idempotency
-	}
-	if policy.BodyLimitBytes > 0 {
-		iam["request_body_max_bytes"] = policy.BodyLimitBytes
-	}
+	iam := policy.OpenAPIExtension()
+	iam["internal"] = policy.Internal
 	op.Extensions["x-verself-iam"] = iam
 	if policy.Internal {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
@@ -152,12 +129,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 }
 
 func operationRequiresBodyBudget(op huma.Operation) bool {
-	switch op.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -178,7 +150,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (source.Principal, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy sourceOperationPolicy) (source.Principal, error) {
 	if policy.Internal {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
@@ -201,7 +173,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy.OperationPolicy)
 	if err != nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -214,8 +186,8 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	return principal, nil
 }
 
-func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {
-	if policy.Idempotency == "" {
+func requireOperationIdempotency(ctx context.Context, policy sourceOperationPolicy) error {
+	if policy.Idempotency == runtimeiam.IdempotencyNone {
 		return nil
 	}
 	value := strings.TrimSpace(operationRequestInfoFromContext(ctx).IdempotencyKey)

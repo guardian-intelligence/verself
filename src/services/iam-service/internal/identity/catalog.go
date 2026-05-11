@@ -304,10 +304,21 @@ func KnownPermissions() map[string]struct{} {
 	known := map[string]struct{}{}
 	for _, service := range defaultOperations.Services {
 		for _, operation := range service.Operations {
-			known[operation.Permission] = struct{}{}
+			known[string(operation.Permission)] = struct{}{}
 		}
 	}
 	return known
+}
+
+// DefaultOperations returns a copy of the static operation catalog used by IAM
+// capability resolution and API credential permission validation.
+func DefaultOperations() Operations {
+	services := make([]ServiceOperations, len(defaultOperations.Services))
+	for i, service := range defaultOperations.Services {
+		service.Operations = append([]Operation(nil), service.Operations...)
+		services[i] = service
+	}
+	return Operations{Services: services}
 }
 
 func OpenBaoRolesForPermissions(permissions []string) []string {
@@ -325,7 +336,7 @@ func memberEligiblePermissions() map[string]struct{} {
 	for _, service := range defaultOperations.Services {
 		for _, operation := range service.Operations {
 			if operation.MemberEligible {
-				eligible[operation.Permission] = struct{}{}
+				eligible[string(operation.Permission)] = struct{}{}
 			}
 		}
 	}

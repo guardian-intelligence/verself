@@ -86,7 +86,8 @@ func TestSourceCheckoutGrantPublicRequestDoesNotExposeUnimplementedPathPrefix(t 
 func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
 
-	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionRepoWrite): true}, operationPolicy{Permission: permissionRepoWrite})
+	policy := sourceOperationPolicy{OperationPolicy: runtimeiam.OperationPolicy{Permission: permissionRepoWrite}}
+	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionRepoWrite): true}, policy)
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
@@ -98,7 +99,8 @@ func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 func TestSourceEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
 
-	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, operationPolicy{Permission: permissionRepoWrite})
+	policy := sourceOperationPolicy{OperationPolicy: runtimeiam.OperationPolicy{Permission: permissionRepoWrite}}
+	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, policy)
 	if principal.OrgID != 42 {
 		t.Fatalf("expected denied operation to retain org id, got %d", principal.OrgID)
 	}
@@ -113,8 +115,16 @@ func TestSourceEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 
 type fakeAuthorizer map[string]bool
 
-func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, permission string) (runtimeiam.AuthorizationDecision, error) {
-	return runtimeiam.AuthorizationDecision{Allowed: f[permission], Permissions: []string{permission}}, nil
+func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, policy runtimeiam.OperationPolicy) (runtimeiam.AuthorizationDecision, error) {
+	permission := string(policy.Permission)
+	return runtimeiam.AuthorizationDecision{
+		Allowed:     f[permission],
+		Permission:  policy.Permission,
+		Resource:    policy.Resource,
+		Action:      policy.Action,
+		OrgScope:    policy.OrgScope,
+		Permissions: []runtimeiam.Permission{policy.Permission},
+	}, nil
 }
 
 func sourceServiceToken(orgID string, roles ...string) *auth.Identity {
@@ -150,7 +160,7 @@ func assertSourcePolicy(t *testing.T, openAPI *huma.OpenAPI, op *huma.Operation,
 	} else if rawPolicy["org_scope"] != "token_org_id" {
 		t.Fatalf("%s %s public operation has unexpected org_scope: %#v", op.Method, path, rawPolicy)
 	}
-	if rawPolicy["idempotency"] == idempotencyHeaderKey && !operationHasRequiredParameter(op, "header", "Idempotency-Key") {
+	if rawPolicy["idempotency"] == string(idempotencyHeaderKey) && !operationHasRequiredParameter(op, "header", "Idempotency-Key") {
 		t.Fatalf("%s %s requires Idempotency-Key but does not declare it", op.Method, path)
 	}
 	if operationRequiresBodyBudget(*op) && rawPolicy["request_body_max_bytes"] == nil {

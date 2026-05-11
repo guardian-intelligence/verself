@@ -25,11 +25,11 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/audit/events",
 		Summary:     "List organization audit events",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAuditRead,
 		Resource:       "audit_event",
-		Action:         "list",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionList,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "governance.audit_event.list",
 	}), listAuditEvents(svc))
@@ -39,11 +39,11 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/exports",
 		Summary:     "List organization data exports",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExportRead,
 		Resource:       "data_export",
-		Action:         "list",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionList,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "governance.data_export.list",
 	}), listExports(svc))
@@ -54,11 +54,11 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Path:          "/api/v1/governance/exports",
 		Summary:       "Create an organization data export",
 		DefaultStatus: 201,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExportCreate,
 		Resource:       "data_export",
-		Action:         "create",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionCreate,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "export_create",
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "governance.data_export.create",
@@ -70,11 +70,11 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 		Method:      http.MethodGet,
 		Path:        "/api/v1/governance/exports/{export_id}",
 		Summary:     "Get an organization data export",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExportRead,
 		Resource:       "data_export",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "governance.data_export.read",
 	}), getExport(svc))
@@ -92,11 +92,11 @@ func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam
 				},
 			},
 		},
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExportRead,
 		Resource:       "data_export",
-		Action:         "download",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionDownload,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "export_download",
 		AuditEvent:     "governance.data_export.download",
 	}), downloadExport(svc))

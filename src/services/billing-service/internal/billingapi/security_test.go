@@ -41,7 +41,7 @@ func TestOpenAPIPublicBillingOperationsDeclareIAMPolicy(t *testing.T) {
 			if len(op.Security) != 1 || len(op.Security[0]["bearerAuth"]) != 0 {
 				t.Fatalf("%s %s must require bearerAuth with no OpenAPI scopes: %#v", op.Method, path, op.Security)
 			}
-			if rawPolicy["idempotency"] == idempotencyHeaderKey && !operationHasRequiredParameter(op, "header", "Idempotency-Key") {
+			if rawPolicy["idempotency"] == string(idempotencyHeaderKey) && !operationHasRequiredParameter(op, "header", "Idempotency-Key") {
 				t.Fatalf("%s %s requires Idempotency-Key but does not declare it in OpenAPI", op.Method, path)
 			}
 			if operationRequiresBodyBudget(*op) && rawPolicy["request_body_max_bytes"] == nil {
@@ -58,7 +58,7 @@ func TestOpenAPIPublicBillingOperationsDeclareIAMPolicy(t *testing.T) {
 func TestBillingEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{Subject: "user-123", OrgID: "42"})
 
-	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionBillingCheckout): true}, operationPolicy{Permission: permissionBillingCheckout})
+	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionBillingCheckout): true}, runtimeiam.OperationPolicy{Permission: permissionBillingCheckout})
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
@@ -77,7 +77,7 @@ func TestBillingEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 		}},
 	})
 
-	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, operationPolicy{Permission: permissionBillingCheckout})
+	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, runtimeiam.OperationPolicy{Permission: permissionBillingCheckout})
 	if orgID == 0 {
 		t.Fatalf("expected denied operation to retain org id")
 	}
@@ -89,8 +89,16 @@ func TestBillingEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 
 type fakeAuthorizer map[string]bool
 
-func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, permission string) (runtimeiam.AuthorizationDecision, error) {
-	return runtimeiam.AuthorizationDecision{Allowed: f[permission], Permissions: []string{permission}}, nil
+func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, policy runtimeiam.OperationPolicy) (runtimeiam.AuthorizationDecision, error) {
+	permission := string(policy.Permission)
+	return runtimeiam.AuthorizationDecision{
+		Allowed:     f[permission],
+		Permission:  policy.Permission,
+		Resource:    policy.Resource,
+		Action:      policy.Action,
+		OrgScope:    policy.OrgScope,
+		Permissions: []runtimeiam.Permission{policy.Permission},
+	}, nil
 }
 
 func TestBillingReturnURLValidationRequiresAllowedOrigin(t *testing.T) {

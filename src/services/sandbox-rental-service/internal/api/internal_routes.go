@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -47,6 +48,18 @@ type InternalRunnerRepositoryRegistration struct {
 }
 
 func RegisterInternalRoutes(api huma.API, svc *jobs.Service) {
+	policy := runtimeiam.OperationPolicy{
+		Permission:     "sandbox:runner_repository:register",
+		Resource:       "runner_repository",
+		Action:         runtimeiam.ActionRegister,
+		OrgScope:       runtimeiam.OrgScopeBodyOrgID,
+		RateLimitClass: "internal_mutation",
+		AuditEvent:     "sandbox.runner_repository.register",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}
+	if err := policy.ValidateHTTPOperation(http.MethodPost, "internal-register-runner-repository"); err != nil {
+		panic(err)
+	}
 	huma.Register(api, huma.Operation{
 		OperationID:   "internal-register-runner-repository",
 		Method:        http.MethodPost,
@@ -56,14 +69,7 @@ func RegisterInternalRoutes(api huma.API, svc *jobs.Service) {
 		MaxBodyBytes:  bodyLimitSmallJSON,
 		Security:      []map[string][]string{{"mutualTLS": {}}},
 		Extensions: map[string]any{
-			"x-verself-iam": map[string]any{
-				"permission":       "sandbox:runner_repository:register",
-				"resource":         "runner_repository",
-				"action":           "register",
-				"org_scope":        "body_org_id",
-				"rate_limit_class": "internal_mutation",
-				"audit_event":      "sandbox.runner_repository.register",
-			},
+			"x-verself-iam": policy.OpenAPIExtension(),
 		},
 	}, internalRegisterRunnerRepository(svc))
 }

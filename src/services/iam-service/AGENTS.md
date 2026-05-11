@@ -42,6 +42,14 @@ method/path/OpenAPI declaration and the operation policy together in route
 registration so IAM metadata, rate limits, idempotency, audit events, body
 limits, and generated-client contracts cannot drift.
 
+Public route policy metadata uses the shared `service-runtime/iam.OperationPolicy`
+vocabulary. `Permission` is the product permission sent to the Zanzibar-backed
+iam-service authorization API; `Resource` and `Action` are audit/OpenAPI labels,
+not raw SpiceDB tuples or a Cedar action expression. `OrgScope`, `Idempotency`,
+and common `Action` values are closed enums. Service-owned `Resource`,
+`RateLimitClass`, and `AuditEvent` values should be declared as typed constants
+next to the route catalog, not repeated as anonymous strings.
+
 Public organization APIs derive organization scope from the validated Zitadel
 token. Do not trust `org_id`, role keys, user IDs, or customer IDs supplied by
 browser request bodies as evidence of authority. Handlers must still validate

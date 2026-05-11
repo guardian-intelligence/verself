@@ -9,31 +9,23 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type operationPolicy struct {
-	Permission     string
-	Resource       string
-	Action         string
-	OrgScope       string
-	RateLimitClass string
-	AuditEvent     string
-}
+const bodyLimitSmallJSON int64 = 16 << 10
 
-func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, *I) (*O, error)) {
+func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy runtimeiam.OperationPolicy, handler func(context.Context, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for mailbox API route")
+	}
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
+	}
+	if policy.BodyLimitBytes > 0 {
+		op.MaxBodyBytes = policy.BodyLimitBytes
 	}
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
-	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":       policy.Permission,
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        policy.OrgScope,
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
-	}
+	op.Extensions["x-verself-iam"] = policy.OpenAPIExtension()
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		if err := enforceOperationPolicy(ctx, authorizer, policy); err != nil {
 			return nil, err
@@ -42,7 +34,7 @@ func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAu
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) error {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) error {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
 		return huma.Error401Unauthorized("missing identity")
@@ -50,7 +42,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return huma.Error503ServiceUnavailable("IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy.Permission)
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy)
 	if err != nil {
 		return huma.Error503ServiceUnavailable("IAM authorization check failed", err)
 	}
@@ -60,24 +52,25 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	return nil
 }
 
-func mailReadPolicy(operationID, resource, action string) operationPolicy {
-	return operationPolicy{
-		Permission:     "mailbox:mail:read",
-		Resource:       resource,
-		Action:         action,
-		OrgScope:       "token_subject",
+func mailReadPolicy(operationID, resource, _ string) runtimeiam.OperationPolicy {
+	return runtimeiam.OperationPolicy{
+		Permission:     runtimeiam.Permission("mailbox:mail:read"),
+		Resource:       runtimeiam.ResourceKind(resource),
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
 		RateLimitClass: "read",
-		AuditEvent:     "mailbox." + operationID,
+		AuditEvent:     runtimeiam.AuditEvent("mailbox." + operationID),
 	}
 }
 
-func mailWritePolicy(operationID, resource, action string) operationPolicy {
-	return operationPolicy{
-		Permission:     "mailbox:mail:write",
-		Resource:       resource,
-		Action:         action,
-		OrgScope:       "token_subject",
+func mailWritePolicy(operationID, resource, _ string) runtimeiam.OperationPolicy {
+	return runtimeiam.OperationPolicy{
+		Permission:     runtimeiam.Permission("mailbox:mail:write"),
+		Resource:       runtimeiam.ResourceKind(resource),
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
 		RateLimitClass: "mailbox_mutation",
-		AuditEvent:     "mailbox." + operationID,
+		AuditEvent:     runtimeiam.AuditEvent("mailbox." + operationID),
+		BodyLimitBytes: bodyLimitSmallJSON,
 	}
 }

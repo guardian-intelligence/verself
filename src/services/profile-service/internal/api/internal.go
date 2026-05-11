@@ -9,6 +9,7 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -38,15 +39,17 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Path:          "/internal/v1/data-rights/org-export",
 		Summary:       "Export organization-local profile data",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProfileDataRights,
-		Resource:       "profile_data_rights",
-		Action:         "export",
-		OrgScope:       "request_org_id",
-		RateLimitClass: "internal_data_rights",
-		AuditEvent:     "profile.data_rights.org_export",
-		BodyLimitBytes: bodyLimitDataRightsJSON,
-		Internal:       true,
+	}, profileOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProfileDataRights,
+			Resource:       "profile_data_rights",
+			Action:         runtimeiam.ActionExport,
+			OrgScope:       runtimeiam.OrgScopeRequestOrgID,
+			RateLimitClass: "internal_data_rights",
+			AuditEvent:     "profile.data_rights.org_export",
+			BodyLimitBytes: bodyLimitDataRightsJSON,
+		},
+		Internal: true,
 	}, orgExport(svc))
 
 	registerProfileRoute(api, nil, huma.Operation{
@@ -55,15 +58,17 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Path:          "/internal/v1/data-rights/subject-export",
 		Summary:       "Export subject-local profile data",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProfileDataRights,
-		Resource:       "profile_data_rights",
-		Action:         "export",
-		OrgScope:       "request_subject_id",
-		RateLimitClass: "internal_data_rights",
-		AuditEvent:     "profile.data_rights.subject_export",
-		BodyLimitBytes: bodyLimitDataRightsJSON,
-		Internal:       true,
+	}, profileOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProfileDataRights,
+			Resource:       "profile_data_rights",
+			Action:         runtimeiam.ActionExport,
+			OrgScope:       runtimeiam.OrgScopeRequestSubjectID,
+			RateLimitClass: "internal_data_rights",
+			AuditEvent:     "profile.data_rights.subject_export",
+			BodyLimitBytes: bodyLimitDataRightsJSON,
+		},
+		Internal: true,
 	}, subjectExport(svc))
 
 	registerProfileRoute(api, nil, huma.Operation{
@@ -72,15 +77,17 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Path:          "/internal/v1/data-rights/subject-erasure",
 		Summary:       "Erase subject-local profile data",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProfileDataRights,
-		Resource:       "profile_data_rights",
-		Action:         "erase",
-		OrgScope:       "request_subject_id",
-		RateLimitClass: "internal_data_rights",
-		AuditEvent:     "profile.data_rights.subject_erasure",
-		BodyLimitBytes: bodyLimitDataRightsJSON,
-		Internal:       true,
+	}, profileOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProfileDataRights,
+			Resource:       "profile_data_rights",
+			Action:         runtimeiam.ActionErase,
+			OrgScope:       runtimeiam.OrgScopeRequestSubjectID,
+			RateLimitClass: "internal_data_rights",
+			AuditEvent:     "profile.data_rights.subject_erasure",
+			BodyLimitBytes: bodyLimitDataRightsJSON,
+		},
+		Internal: true,
 	}, subjectErasure(svc))
 
 	registerProfileRoute(api, nil, huma.Operation{
@@ -88,14 +95,16 @@ func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
 		Method:      http.MethodGet,
 		Path:        "/internal/v1/data-rights/requests/{request_id}",
 		Summary:     "Get profile data-rights request status",
-	}, operationPolicy{
-		Permission:     permissionProfileDataRights,
-		Resource:       "profile_data_rights",
-		Action:         "read",
-		OrgScope:       "request_id",
-		RateLimitClass: "internal_data_rights",
-		AuditEvent:     "profile.data_rights.status",
-		Internal:       true,
+	}, profileOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProfileDataRights,
+			Resource:       "profile_data_rights",
+			Action:         runtimeiam.ActionRead,
+			OrgScope:       runtimeiam.OrgScopeRequestID,
+			RateLimitClass: "internal_data_rights",
+			AuditEvent:     "profile.data_rights.status",
+		},
+		Internal: true,
 	}, dataRightsStatus(svc))
 }
 

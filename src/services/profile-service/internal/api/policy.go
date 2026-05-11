@@ -20,7 +20,7 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission string
+type permission = runtimeiam.Permission
 
 const (
 	permissionProfileRead        permission = "profile:self:read"
@@ -28,7 +28,7 @@ const (
 	permissionProfilePreferences permission = "profile:self:preferences:write"
 	permissionProfileDataRights  permission = "profile:data_rights:write"
 
-	idempotencyHeaderKey    = "idempotency_key_header"
+	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
 	bodyLimitSmallJSON      = 16 << 10
 	bodyLimitDataRightsJSON = 64 << 10
@@ -36,16 +36,9 @@ const (
 
 var apiTracer = otel.Tracer("profile-service/internal/api")
 
-type operationPolicy struct {
-	Permission     permission
-	Resource       string
-	Action         string
-	OrgScope       string
-	RateLimitClass string
-	Idempotency    string
-	AuditEvent     string
-	BodyLimitBytes int64
-	Internal       bool
+type profileOperationPolicy struct {
+	runtimeiam.OperationPolicy
+	Internal bool
 }
 
 type operationRequestInfoKey struct{}
@@ -56,7 +49,7 @@ type operationRequestInfo struct {
 	IdempotencyKey string
 }
 
-func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, *I) (*O, error)) {
+func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy profileOperationPolicy, handler func(context.Context, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for profile API route")
 	}
@@ -84,13 +77,13 @@ func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.Operatio
 	})
 }
 
-func startOperationSpan(ctx context.Context, operationID string, policy operationPolicy) (context.Context, trace.Span) {
-	return apiTracer.Start(ctx, policy.AuditEvent, trace.WithAttributes(
+func startOperationSpan(ctx context.Context, operationID string, policy profileOperationPolicy) (context.Context, trace.Span) {
+	return apiTracer.Start(ctx, policy.AuditEvent.String(), trace.WithAttributes(
 		attribute.String("profile.operation_id", operationID),
 		attribute.String("profile.permission", string(policy.Permission)),
-		attribute.String("profile.resource", policy.Resource),
-		attribute.String("profile.action", policy.Action),
-		attribute.String("profile.audit_event", policy.AuditEvent),
+		attribute.String("profile.resource", string(policy.Resource)),
+		attribute.String("profile.action", string(policy.Action)),
+		attribute.String("profile.audit_event", string(policy.AuditEvent)),
 		attribute.Bool("profile.internal", policy.Internal),
 	))
 }
@@ -105,14 +98,14 @@ func setIdentitySpanAttributes(span trace.Span, identity *auth.Identity) {
 	)
 }
 
-func finishOperationSpan(span trace.Span, identity *auth.Identity, policy operationPolicy, outcome string, err error) {
+func finishOperationSpan(span trace.Span, identity *auth.Identity, policy profileOperationPolicy, outcome string, err error) {
 	if span == nil {
 		return
 	}
 	setIdentitySpanAttributes(span, identity)
 	span.SetAttributes(
 		attribute.String("profile.outcome", outcome),
-		attribute.String("profile.rate_limit_class", policy.RateLimitClass),
+		attribute.String("profile.rate_limit_class", string(policy.RateLimitClass)),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -123,12 +116,9 @@ func finishOperationSpan(span trace.Span, identity *auth.Identity, policy operat
 	}
 }
 
-func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
-		panic("incomplete profile operation policy for " + op.OperationID)
-	}
-	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
-		panic("missing body limit for mutating operation " + op.OperationID)
+func withOperationPolicy(op huma.Operation, policy profileOperationPolicy) huma.Operation {
+	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
 	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
@@ -139,20 +129,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	iam := map[string]any{
-		"permission":       string(policy.Permission),
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        policy.OrgScope,
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
-	}
-	if policy.Idempotency != "" {
-		iam["idempotency"] = policy.Idempotency
-	}
-	if policy.BodyLimitBytes > 0 {
-		iam["request_body_max_bytes"] = policy.BodyLimitBytes
-	}
+	iam := policy.OpenAPIExtension()
 	op.Extensions["x-verself-iam"] = iam
 	if policy.Internal {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
@@ -163,12 +140,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 }
 
 func operationRequiresBodyBudget(op huma.Operation) bool {
-	switch op.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -193,7 +165,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (*auth.Identity, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy profileOperationPolicy) (*auth.Identity, error) {
 	if policy.Internal {
 		if err := requireOperationIdempotency(ctx, policy); err != nil {
 			return nil, err
@@ -211,7 +183,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy.OperationPolicy)
 	if err != nil {
 		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -224,8 +196,8 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	return identity, nil
 }
 
-func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {
-	if policy.Idempotency == "" {
+func requireOperationIdempotency(ctx context.Context, policy profileOperationPolicy) error {
+	if policy.Idempotency == runtimeiam.IdempotencyNone {
 		return nil
 	}
 	value := strings.TrimSpace(operationRequestInfoFromContext(ctx).IdempotencyKey)
@@ -255,7 +227,7 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	return info
 }
 
-func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
+func auditOperation(ctx context.Context, operationID string, policy profileOperationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
 	orgID := ""
 	actorID := ""
 	actorType := "service"
@@ -279,11 +251,11 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		OrgID:       orgID,
 		EventSource: "profile-service",
 		EventName:   operationID,
-		AuditEvent:  policy.AuditEvent,
+		AuditEvent:  string(policy.AuditEvent),
 		ActorType:   actorType,
 		ActorID:     actorID,
 		Permission:  string(policy.Permission),
-		TargetType:  policy.Resource,
+		TargetType:  string(policy.Resource),
 		TargetID:    targetIDFromInput(input, identity),
 		Outcome:     outcome,
 		ErrorCode:   stableErrorCode(err),

@@ -409,7 +409,8 @@ Only resource types that support directly attached policy receive these routes.
 Inherited leaf resources such as execution attempts may support
 `testIamPermissions` without supporting `setIamPolicy`.
 
-Huma operation declarations should stay next to policy metadata:
+Huma operation declarations should stay next to shared `service-runtime/iam`
+policy metadata:
 
 ```go
 registerIAMRoute(api, huma.Operation{
@@ -418,20 +419,21 @@ registerIAMRoute(api, huma.Operation{
     Path:          "/api/v1/organizations/{org_id}/iamPolicy",
     Summary:       "Set organization IAM policy",
     DefaultStatus: http.StatusOK,
-}, operationPolicy{
-    Permission:         permissionIAMPolicySet,
-    Resource:           "organization_iam_policy",
-    Action:             "set",
-    OrgScope:           "path_org_id",
-    RateLimitClass:     "iam_policy_mutation",
-    Idempotency:        idempotencyHeaderKey,
-    AuditEvent:         "iam.policy.set",
-    OperationType:      "write",
-    RiskLevel:          "high",
-    DataClassification: "authorization_policy",
-    BodyLimitBytes:     bodyLimitSmallJSON,
+}, runtimeiam.OperationPolicy{
+    Permission:     permissionIAMPolicySet,
+    Resource:       resourceOrganizationIAMPolicy,
+    Action:         runtimeiam.ActionWrite,
+    OrgScope:       runtimeiam.OrgScopePathOrgID,
+    RateLimitClass: rateLimitIAMPolicyMutation,
+    Idempotency:    runtimeiam.IdempotencyHeaderKey,
+    AuditEvent:     auditOrganizationPolicyWrite,
+    BodyLimitBytes: bodyLimitSmallJSON,
 }, setOrganizationIAMPolicy(svc))
 ```
+
+`OperationPolicy` deliberately has one stable service-owned `AuditEvent` source
+value. Governance/OCSF/SIEM category mappings belong in the audit pipeline so
+product services do not invent local taxonomy strings.
 
 Core wire DTOs:
 

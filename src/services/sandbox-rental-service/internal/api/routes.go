@@ -13,6 +13,7 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"github.com/verself/sandbox-rental-service/internal/recurring"
@@ -26,11 +27,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Path:          "/api/v1/github/installations/connect",
 		Summary:       "Start GitHub App installation for the current org",
 		DefaultStatus: 201,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionGitHubWrite,
 		Resource:       "github_installation",
-		Action:         "connect",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionConnect,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "github_installation_mutation",
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.github_installation.connect",
@@ -42,11 +43,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/github/installations",
 		Summary:     "List GitHub App installations for the current org",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionGitHubRead,
 		Resource:       "github_installation",
-		Action:         "list",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionList,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.github_installation.list",
 	}), listGitHubInstallations(svc))
@@ -57,11 +58,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Path:          "/api/v1/github/installations/{installation_id}/repositories/sync",
 		Summary:       "Sync GitHub App repositories into runner ownership",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionGitHubWrite,
 		Resource:       "github_installation_repository",
-		Action:         "sync",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionSync,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "github_installation_mutation",
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.github_installation.repositories.sync",
@@ -73,11 +74,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}",
 		Summary:     "Get execution status and latest attempt",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExecutionRead,
 		Resource:       "execution",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.execution.read",
 	}), getExecution(svc))
@@ -87,11 +88,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}/logs",
 		Summary:     "Get latest execution attempt log output",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionLogsRead,
 		Resource:       "execution_logs",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "logs_read",
 		AuditEvent:     "sandbox.execution.logs.read",
 	}), getExecutionLogs(svc))
@@ -101,11 +102,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/runs",
 		Summary:     "List CI and scheduled runs for the current org",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExecutionRead,
 		Resource:       "run",
-		Action:         "list",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionList,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run.list",
 	}), listRuns(svc))
@@ -115,11 +116,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/runs/{run_id}",
 		Summary:     "Get a CI or scheduled run",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionExecutionRead,
 		Resource:       "run",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run.read",
 	}), getRun(svc))
@@ -129,11 +130,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-logs/search",
 		Summary:     "Search logs across CI and scheduled runs",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionLogsRead,
 		Resource:       "run_logs",
-		Action:         "search",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionSearch,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "logs_read",
 		AuditEvent:     "sandbox.run_logs.search",
 	}), searchRunLogs(svc))
@@ -143,11 +144,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/jobs",
 		Summary:     "Get run duration and success analytics",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAnalyticsRead,
 		Resource:       "run_analytics_jobs",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run_analytics.jobs.read",
 	}), getJobsAnalytics(svc))
@@ -157,11 +158,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/costs",
 		Summary:     "Get run cost analytics",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAnalyticsRead,
 		Resource:       "run_analytics_costs",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run_analytics.costs.read",
 	}), getCostsAnalytics(svc))
@@ -171,11 +172,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/run-analytics/runner-sizing",
 		Summary:     "Get runner sizing analytics",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAnalyticsRead,
 		Resource:       "run_analytics_runner_sizing",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.run_analytics.runner_sizing.read",
 	}), getRunnerSizingAnalytics(svc))
@@ -186,11 +187,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Path:          "/api/v1/execution-schedules",
 		Summary:       "Create a recurring execution schedule",
 		DefaultStatus: 201,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionScheduleWrite,
 		Resource:       "execution_schedule",
-		Action:         "create",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionCreate,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "execution_schedule_mutation",
 		Idempotency:    idempotencyRequestBodyKey,
 		AuditEvent:     "sandbox.execution_schedule.create",
@@ -202,11 +203,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/execution-schedules",
 		Summary:     "List recurring execution schedules",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionScheduleRead,
 		Resource:       "execution_schedule",
-		Action:         "list",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionList,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.execution_schedule.list",
 	}), listExecutionSchedules(recurringSvc))
@@ -216,11 +217,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Method:      http.MethodGet,
 		Path:        "/api/v1/execution-schedules/{schedule_id}",
 		Summary:     "Get a recurring execution schedule",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionScheduleRead,
 		Resource:       "execution_schedule",
-		Action:         "read",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     "sandbox.execution_schedule.read",
 	}), getExecutionSchedule(recurringSvc))
@@ -231,11 +232,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Path:          "/api/v1/execution-schedules/{schedule_id}/pause",
 		Summary:       "Pause a recurring execution schedule",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionScheduleWrite,
 		Resource:       "execution_schedule",
-		Action:         "pause",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionPause,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "execution_schedule_mutation",
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.execution_schedule.pause",
@@ -248,11 +249,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		Path:          "/api/v1/execution-schedules/{schedule_id}/resume",
 		Summary:       "Resume a recurring execution schedule",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionScheduleWrite,
 		Resource:       "execution_schedule",
-		Action:         "resume",
-		OrgScope:       "token_org_id",
+		Action:         runtimeiam.ActionResume,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "execution_schedule_mutation",
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.execution_schedule.resume",

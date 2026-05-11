@@ -13,7 +13,7 @@ var (
 )
 
 type OperationAuthorizer interface {
-	AuthorizeOperation(ctx context.Context, identity *auth.Identity, permission string) (AuthorizationDecision, error)
+	AuthorizeOperation(ctx context.Context, identity *auth.Identity, policy OperationPolicy) (AuthorizationDecision, error)
 }
 
 type AuthorizationDecision struct {
@@ -21,6 +21,10 @@ type AuthorizationDecision struct {
 	OrgID       string
 	SubjectType string
 	SubjectID   string
-	Permissions []string
+	Permission  Permission
+	Resource    ResourceKind
+	Action      Action
+	OrgScope    OrgScope
+	Permissions []Permission
 	ZedToken    string
 }

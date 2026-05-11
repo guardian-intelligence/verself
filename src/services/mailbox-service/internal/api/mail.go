@@ -93,11 +93,11 @@ func registerMailRoutes(api huma.API, svc provider, authorizer runtimeiam.Operat
 		Method:      http.MethodGet,
 		Path:        "/api/v1/mail/account",
 		Summary:     "Get the authenticated user's bound mailbox account",
-	}, operationPolicy{
-		Permission:     "mailbox:account:read",
+	}, runtimeiam.OperationPolicy{
+		Permission:     runtimeiam.Permission("mailbox:account:read"),
 		Resource:       "mailbox_account",
-		Action:         "read",
-		OrgScope:       "token_subject",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
 		RateLimitClass: "read",
 		AuditEvent:     "mailbox.mail_account",
 	}, accountInfo(svc))
@@ -107,11 +107,11 @@ func registerMailRoutes(api huma.API, svc provider, authorizer runtimeiam.Operat
 		Method:      http.MethodGet,
 		Path:        "/api/v1/mail/sync/status",
 		Summary:     "Mailbox sync status",
-	}, operationPolicy{
-		Permission:     "mailbox:sync_status:read",
+	}, runtimeiam.OperationPolicy{
+		Permission:     runtimeiam.Permission("mailbox:sync_status:read"),
 		Resource:       "mailbox_sync_status",
-		Action:         "read",
-		OrgScope:       "token_subject",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
 		RateLimitClass: "read",
 		AuditEvent:     "mailbox.mail_sync_status",
 	}, syncStatus(svc))

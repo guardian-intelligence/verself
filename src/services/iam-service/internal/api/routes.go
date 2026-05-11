@@ -12,6 +12,7 @@ import (
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
 	auth "github.com/verself/service-runtime/auth"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
@@ -20,13 +21,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization",
 		Summary:     "Get organization identity state",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionOrganizationRead,
-		Resource:       "organization",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.organization.read",
+		Resource:       resourceOrganization,
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditOrganizationRead,
 	}), getOrganization(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -34,13 +35,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/me/organizations",
 		Summary:     "List organizations available to the caller",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionOrganizationRead,
-		Resource:       "organization",
-		Action:         "list",
+		Resource:       resourceOrganization,
+		Action:         runtimeiam.ActionList,
 		OrgScope:       orgScopeTokenRoleAssignmentOrgIDs,
-		RateLimitClass: "read",
-		AuditEvent:     "iam.organization.membership.list",
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditOrganizationMembershipList,
 	}), listMyOrganizations(svc, authzSvc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -49,14 +50,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization",
 		Summary:       "Update organization profile",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionOrganizationWrite,
-		Resource:       "organization",
-		Action:         "update",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "organization_mutation",
+		Resource:       resourceOrganization,
+		Action:         runtimeiam.ActionUpdate,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitOrganizationMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.organization.update",
+		AuditEvent:     auditOrganizationUpdate,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), updateOrganization(svc))
 
@@ -65,13 +66,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/members",
 		Summary:     "List organization members",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionMemberRead,
-		Resource:       "organization_member",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.organization.member.list",
+		Resource:       resourceOrganizationMember,
+		Action:         runtimeiam.ActionList,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditOrganizationMemberList,
 	}), listMembers(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -80,14 +81,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/members",
 		Summary:       "Invite an organization member",
 		DefaultStatus: 201,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionMemberInvite,
-		Resource:       "organization_member",
-		Action:         "invite",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "member_mutation",
+		Resource:       resourceOrganizationMember,
+		Action:         runtimeiam.ActionInvite,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitMemberMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.organization.member.invite",
+		AuditEvent:     auditOrganizationMemberInvite,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), inviteMember(svc))
 
@@ -97,14 +98,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/members/{user_id}/roles",
 		Summary:       "Update organization member roles",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionMemberRolesWrite,
-		Resource:       "organization_member_roles",
-		Action:         "write",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "member_mutation",
+		Resource:       resourceOrganizationMemberRoles,
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitMemberMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.organization.member.roles.write",
+		AuditEvent:     auditOrganizationMemberRolesWrite,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), updateMemberRoles(svc))
 
@@ -113,13 +114,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/member-capabilities",
 		Summary:     "Get organization member capabilities and the static capability catalog",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionMemberCapabilitiesRead,
-		Resource:       "organization_member_capabilities",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.organization.member_capabilities.read",
+		Resource:       resourceOrganizationCapabilities,
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditOrganizationCapabilitiesRead,
 	}), getMemberCapabilities(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -128,14 +129,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/member-capabilities",
 		Summary:       "Replace the organization's enabled member capability set",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionMemberCapabilitiesWrite,
-		Resource:       "organization_member_capabilities",
-		Action:         "write",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "member_capabilities_mutation",
+		Resource:       resourceOrganizationCapabilities,
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitMemberCapabilitiesMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.organization.member_capabilities.write",
+		AuditEvent:     auditOrganizationCapabilitiesWrite,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), putMemberCapabilities(svc))
 
@@ -144,13 +145,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organizations/{org_id}/iamPolicy",
 		Summary:     "Get organization IAM policy",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionIAMPolicyRead,
-		Resource:       "organization_iam_policy",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.organization.policy.read",
+		Resource:       resourceOrganizationIAMPolicy,
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditOrganizationPolicyRead,
 	}), getOrganizationIAMPolicy(authzSvc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -159,14 +160,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organizations/{org_id}/iamPolicy",
 		Summary:       "Replace organization IAM policy",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionIAMPolicySet,
-		Resource:       "organization_iam_policy",
-		Action:         "write",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "iam_policy_mutation",
+		Resource:       resourceOrganizationIAMPolicy,
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitIAMPolicyMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.organization.policy.write",
+		AuditEvent:     auditOrganizationPolicyWrite,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), setOrganizationIAMPolicy(authzSvc))
 
@@ -176,13 +177,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organizations/{org_id}/iamPolicy:testPermissions",
 		Summary:       "Test caller permissions on an organization",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionIAMPolicyTest,
-		Resource:       "organization_iam_policy",
-		Action:         "test",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.organization.policy.test_permissions",
+		Resource:       resourceOrganizationIAMPolicy,
+		Action:         runtimeiam.ActionTest,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditOrganizationPolicyTest,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), testOrganizationIAMPermissions(authzSvc))
 
@@ -191,13 +192,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/service-accounts",
 		Summary:     "List organization service accounts",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRead,
-		Resource:       "service_account",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.service_account.list",
+		Resource:       resourceServiceAccount,
+		Action:         runtimeiam.ActionList,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditServiceAccountList,
 	}), listServiceAccounts(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -205,13 +206,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/service-accounts/{service_account_id}",
 		Summary:     "Get service account metadata",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRead,
-		Resource:       "service_account",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.service_account.read",
+		Resource:       resourceServiceAccount,
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditServiceAccountRead,
 	}), getServiceAccount(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -220,14 +221,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/service-accounts/{service_account_id}/disable",
 		Summary:       "Disable a service account and revoke its API credentials",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRevoke,
-		Resource:       "service_account",
-		Action:         "disable",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "api_credential_mutation",
+		Resource:       resourceServiceAccount,
+		Action:         runtimeiam.ActionDisable,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitAPICredentialMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.service_account.disable",
+		AuditEvent:     auditServiceAccountDisable,
 		BodyLimitBytes: bodyLimitNoBody,
 	}), disableServiceAccount(svc))
 
@@ -236,13 +237,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/api-credentials",
 		Summary:     "List organization API credentials",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRead,
-		Resource:       "api_credential",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.api_credential.list",
+		Resource:       resourceAPICredential,
+		Action:         runtimeiam.ActionList,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditAPICredentialList,
 	}), listAPICredentials(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -250,13 +251,13 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/api-credentials/{credential_id}",
 		Summary:     "Get API credential metadata",
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRead,
-		Resource:       "api_credential",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "iam.api_credential.read",
+		Resource:       resourceAPICredential,
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitRead,
+		AuditEvent:     auditAPICredentialRead,
 	}), getAPICredential(svc))
 
 	registerSecured(api, svc, authzSvc, secured(huma.Operation{
@@ -265,14 +266,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/api-credentials",
 		Summary:       "Create an API credential",
 		DefaultStatus: 201,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsCreate,
-		Resource:       "api_credential",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "api_credential_mutation",
+		Resource:       resourceAPICredential,
+		Action:         runtimeiam.ActionCreate,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitAPICredentialMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.api_credential.create",
+		AuditEvent:     auditAPICredentialCreate,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createAPICredential(svc))
 
@@ -282,14 +283,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/api-credentials/{credential_id}/roll",
 		Summary:       "Roll API credential secret material",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRoll,
-		Resource:       "api_credential",
-		Action:         "roll",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "api_credential_mutation",
+		Resource:       resourceAPICredential,
+		Action:         runtimeiam.ActionRoll,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitAPICredentialMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.api_credential.roll",
+		AuditEvent:     auditAPICredentialRoll,
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), rollAPICredential(svc))
 
@@ -299,14 +300,14 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		Path:          "/api/v1/organization/api-credentials/{credential_id}",
 		Summary:       "Revoke an API credential",
 		DefaultStatus: 200,
-	}, operationPolicy{
+	}, runtimeiam.OperationPolicy{
 		Permission:     permissionAPICredentialsRevoke,
-		Resource:       "api_credential",
-		Action:         "revoke",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "api_credential_mutation",
+		Resource:       resourceAPICredential,
+		Action:         runtimeiam.ActionRevoke,
+		OrgScope:       orgScopeTokenOrgID,
+		RateLimitClass: rateLimitAPICredentialMutation,
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "iam.api_credential.revoke",
+		AuditEvent:     auditAPICredentialRevoke,
 		BodyLimitBytes: bodyLimitNoBody,
 	}), revokeAPICredential(svc))
 }

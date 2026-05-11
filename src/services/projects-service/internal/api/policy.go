@@ -18,7 +18,7 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type permission string
+type permission = runtimeiam.Permission
 
 const (
 	permissionProjectRead      permission = "projects:project:read"
@@ -28,9 +28,9 @@ const (
 	permissionProjectEventRead permission = "projects:event:read"
 	permissionProjectResolve   permission = "projects:resolve"
 
-	idempotencyHeaderKey    = "idempotency_key_header"
-	orgScopeTokenOrgID      = "token_org_id"
-	orgScopeRequestOrgID    = "request_org_id"
+	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
+	orgScopeTokenOrgID      = runtimeiam.OrgScopeTokenOrgID
+	orgScopeRequestOrgID    = runtimeiam.OrgScopeRequestOrgID
 	maxIdempotencyKeyLength = 128
 	maxOriginSubjectLength  = 256
 	maxOriginEmailLength    = 320
@@ -43,17 +43,10 @@ const (
 
 var apiTracer = otel.Tracer("projects-service/internal/api")
 
-type operationPolicy struct {
-	Permission     permission
-	Resource       string
-	Action         string
-	OrgScope       string
-	RateLimitClass string
-	Idempotency    string
-	AuditEvent     string
-	BodyLimitBytes int64
-	Service        bool
-	ServicePeers   []string
+type projectsOperationPolicy struct {
+	runtimeiam.OperationPolicy
+	Service      bool
+	ServicePeers []string
 }
 
 type operationRequestInfoKey struct{}
@@ -65,7 +58,7 @@ type operationRequestInfo struct {
 	OriginEmail    string
 }
 
-func registerProjectsRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, projects.Principal, *I) (*O, error)) {
+func registerProjectsRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy projectsOperationPolicy, handler func(context.Context, projects.Principal, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for projects API route")
 	}
@@ -89,18 +82,18 @@ func registerProjectsRoute[I, O any](api huma.API, authorizer runtimeiam.Operati
 	})
 }
 
-func startOperationSpan(ctx context.Context, operationID string, policy operationPolicy) (context.Context, trace.Span) {
-	return apiTracer.Start(ctx, policy.AuditEvent, trace.WithAttributes(
+func startOperationSpan(ctx context.Context, operationID string, policy projectsOperationPolicy) (context.Context, trace.Span) {
+	return apiTracer.Start(ctx, policy.AuditEvent.String(), trace.WithAttributes(
 		attribute.String("projects.operation_id", operationID),
 		attribute.String("projects.permission", string(policy.Permission)),
-		attribute.String("projects.resource", policy.Resource),
-		attribute.String("projects.action", policy.Action),
-		attribute.String("projects.audit_event", policy.AuditEvent),
+		attribute.String("projects.resource", string(policy.Resource)),
+		attribute.String("projects.action", string(policy.Action)),
+		attribute.String("projects.audit_event", string(policy.AuditEvent)),
 		attribute.Bool("projects.service_projection", policy.Service),
 	))
 }
 
-func finishOperationSpan(span trace.Span, principal projects.Principal, policy operationPolicy, outcome string, err error) {
+func finishOperationSpan(span trace.Span, principal projects.Principal, policy projectsOperationPolicy, outcome string, err error) {
 	if span == nil {
 		return
 	}
@@ -112,7 +105,7 @@ func finishOperationSpan(span trace.Span, principal projects.Principal, policy o
 	}
 	span.SetAttributes(
 		attribute.String("projects.outcome", outcome),
-		attribute.String("projects.rate_limit_class", policy.RateLimitClass),
+		attribute.String("projects.rate_limit_class", string(policy.RateLimitClass)),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -122,12 +115,9 @@ func finishOperationSpan(span trace.Span, principal projects.Principal, policy o
 	}
 }
 
-func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
-		panic("incomplete projects operation policy for " + op.OperationID)
-	}
-	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
-		panic("missing body limit for mutating operation " + op.OperationID)
+func withOperationPolicy(op huma.Operation, policy projectsOperationPolicy) huma.Operation {
+	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
 	}
 	if policy.Service && len(policy.ServicePeers) == 0 {
 		panic("missing service peer allowlist for " + op.OperationID)
@@ -144,20 +134,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":       string(policy.Permission),
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        policy.OrgScope,
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
-	}
-	if policy.Idempotency != "" {
-		op.Extensions["x-verself-iam"].(map[string]any)["idempotency"] = policy.Idempotency
-	}
-	if policy.BodyLimitBytes > 0 {
-		op.Extensions["x-verself-iam"].(map[string]any)["request_body_max_bytes"] = policy.BodyLimitBytes
-	}
+	op.Extensions["x-verself-iam"] = policy.OpenAPIExtension()
 	if policy.Service && policy.OrgScope == orgScopeTokenOrgID {
 		op.Extensions["x-verself-origin"] = map[string]any{
 			"org_id_header":  originOrgIDHeader,
@@ -174,12 +151,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 }
 
 func operationRequiresBodyBudget(op huma.Operation) bool {
-	switch op.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -237,7 +209,7 @@ func appendOptionalStringHeader(parameters []*huma.Param, name, description stri
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (projects.Principal, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy projectsOperationPolicy) (projects.Principal, error) {
 	if policy.Service {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
@@ -273,7 +245,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy.OperationPolicy)
 	if err != nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -324,8 +296,8 @@ func servicePeerAllowed(peerID string, allowedServices []string) bool {
 	return false
 }
 
-func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {
-	if policy.Idempotency == "" {
+func requireOperationIdempotency(ctx context.Context, policy projectsOperationPolicy) error {
+	if policy.Idempotency == runtimeiam.IdempotencyNone {
 		return nil
 	}
 	value := strings.TrimSpace(operationRequestInfoFromContext(ctx).IdempotencyKey)

@@ -23,6 +23,7 @@ go_library(
         "//src/services/iam-service/internal/identity",
         "//src/services/iam-service/internal/store",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_danielgtaylor_huma_v2//:huma",
@@ -51,6 +52,7 @@ go_test(
         "//src/services/iam-service/internal/identity",
         "//src/services/iam-service/internal/spicedb",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/iam",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

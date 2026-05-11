@@ -17,28 +17,18 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission string
+type permission = runtimeiam.Permission
 
 const (
 	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
-	idempotencyHeaderKey    = "idempotency_key_header"
+	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
 	bodyLimitSmallJSON      = 64 << 10
 )
 
 var apiTracer = otel.Tracer("billing-service/internal/billingapi")
-
-type operationPolicy struct {
-	Permission     permission
-	Resource       string
-	Action         string
-	RateLimitClass string
-	Idempotency    string
-	AuditEvent     string
-	BodyLimitBytes int64
-}
 
 type operationRequestInfoKey struct{}
 
@@ -46,22 +36,24 @@ type operationRequestInfo struct {
 	IdempotencyKey string
 }
 
-func readPolicy(resource, action, auditEvent string) operationPolicy {
-	return operationPolicy{
+func readPolicy(resource runtimeiam.ResourceKind, action runtimeiam.Action, auditEvent runtimeiam.AuditEvent) runtimeiam.OperationPolicy {
+	return runtimeiam.OperationPolicy{
 		Permission:     permissionBillingRead,
 		Resource:       resource,
 		Action:         action,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
 		AuditEvent:     auditEvent,
 		BodyLimitBytes: 0,
 	}
 }
 
-func checkoutPolicy(resource, action, auditEvent string) operationPolicy {
-	return operationPolicy{
+func checkoutPolicy(resource runtimeiam.ResourceKind, action runtimeiam.Action, auditEvent runtimeiam.AuditEvent) runtimeiam.OperationPolicy {
+	return runtimeiam.OperationPolicy{
 		Permission:     permissionBillingCheckout,
 		Resource:       resource,
 		Action:         action,
+		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "billing_mutation",
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     auditEvent,
@@ -69,7 +61,7 @@ func checkoutPolicy(resource, action, auditEvent string) operationPolicy {
 	}
 }
 
-func registerPublicBillingRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy operationPolicy, handler func(context.Context, billing.OrgID, *I) (*O, error)) {
+func registerPublicBillingRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy runtimeiam.OperationPolicy, handler func(context.Context, billing.OrgID, *I) (*O, error)) {
 	if op.OperationID == "" {
 		panic("missing operation ID for billing API route")
 	}
@@ -93,17 +85,17 @@ func registerPublicBillingRoute[I, O any](api huma.API, authorizer runtimeiam.Op
 	})
 }
 
-func startOperationSpan(ctx context.Context, operationID string, policy operationPolicy) (context.Context, trace.Span) {
-	return apiTracer.Start(ctx, policy.AuditEvent, trace.WithAttributes(
+func startOperationSpan(ctx context.Context, operationID string, policy runtimeiam.OperationPolicy) (context.Context, trace.Span) {
+	return apiTracer.Start(ctx, policy.AuditEvent.String(), trace.WithAttributes(
 		attribute.String("billing.operation_id", operationID),
 		attribute.String("billing.permission", string(policy.Permission)),
-		attribute.String("billing.resource", policy.Resource),
-		attribute.String("billing.action", policy.Action),
-		attribute.String("billing.audit_event", policy.AuditEvent),
+		attribute.String("billing.resource", string(policy.Resource)),
+		attribute.String("billing.action", string(policy.Action)),
+		attribute.String("billing.audit_event", string(policy.AuditEvent)),
 	))
 }
 
-func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy operationPolicy, outcome string, err error) {
+func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy runtimeiam.OperationPolicy, outcome string, err error) {
 	if span == nil {
 		return
 	}
@@ -112,7 +104,7 @@ func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy operationP
 	}
 	span.SetAttributes(
 		attribute.String("billing.outcome", outcome),
-		attribute.String("billing.rate_limit_class", policy.RateLimitClass),
+		attribute.String("billing.rate_limit_class", string(policy.RateLimitClass)),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -122,12 +114,9 @@ func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy operationP
 	}
 }
 
-func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
-		panic("incomplete billing operation policy for " + op.OperationID)
-	}
-	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
-		panic("missing body limit for mutating operation " + op.OperationID)
+func withOperationPolicy(op huma.Operation, policy runtimeiam.OperationPolicy) huma.Operation {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
 	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
@@ -138,31 +127,13 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":       string(policy.Permission),
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        "token_org_id",
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
-	}
-	if policy.Idempotency != "" {
-		op.Extensions["x-verself-iam"].(map[string]any)["idempotency"] = policy.Idempotency
-	}
-	if policy.BodyLimitBytes > 0 {
-		op.Extensions["x-verself-iam"].(map[string]any)["request_body_max_bytes"] = policy.BodyLimitBytes
-	}
+	op.Extensions["x-verself-iam"] = policy.OpenAPIExtension()
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
 }
 
 func operationRequiresBodyBudget(op huma.Operation) bool {
-	switch op.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -183,7 +154,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (billing.OrgID, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) (billing.OrgID, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
 		return 0, problem(ctx, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
@@ -195,7 +166,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return billing.OrgID(orgID), problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy)
 	if err != nil {
 		return billing.OrgID(orgID), problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -208,8 +179,8 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	return billing.OrgID(orgID), nil
 }
 
-func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {
-	if policy.Idempotency == "" {
+func requireOperationIdempotency(ctx context.Context, policy runtimeiam.OperationPolicy) error {
+	if policy.Idempotency == runtimeiam.IdempotencyNone {
 		return nil
 	}
 	value := strings.TrimSpace(operationRequestInfoFromContext(ctx).IdempotencyKey)

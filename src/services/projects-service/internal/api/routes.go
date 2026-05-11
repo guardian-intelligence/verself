@@ -9,6 +9,7 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/projects-service/internal/projects"
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 type projectPath struct {
@@ -79,15 +80,17 @@ func createProjectOperation() projectOperation {
 		Path:          "/api/v1/projects",
 		Summary:       "Create a project",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionProjectWrite,
-		Resource:       "project",
-		Action:         "create",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.project.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectWrite,
+			Resource:       "project",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.project.create",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, createProject)
 }
 
@@ -97,13 +100,15 @@ func listProjectsOperation() projectOperation {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/projects",
 		Summary:     "List projects",
-	}, operationPolicy{
-		Permission:     permissionProjectRead,
-		Resource:       "project",
-		Action:         "list",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     "projects.project.list",
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectRead,
+			Resource:       "project",
+			Action:         runtimeiam.ActionList,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "projects.project.list",
+		},
 	}, listProjects)
 }
 
@@ -113,13 +118,15 @@ func getProjectOperation() projectOperation {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/projects/{project_id}",
 		Summary:     "Get a project",
-	}, operationPolicy{
-		Permission:     permissionProjectRead,
-		Resource:       "project",
-		Action:         "read",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     "projects.project.read",
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectRead,
+			Resource:       "project",
+			Action:         runtimeiam.ActionRead,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "projects.project.read",
+		},
 	}, getProject)
 }
 
@@ -130,15 +137,17 @@ func updateProjectOperation() projectOperation {
 		Path:          "/api/v1/projects/{project_id}",
 		Summary:       "Update a project",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProjectWrite,
-		Resource:       "project",
-		Action:         "update",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.project.update",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectWrite,
+			Resource:       "project",
+			Action:         runtimeiam.ActionUpdate,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.project.update",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, updateProject)
 }
 
@@ -149,15 +158,17 @@ func archiveProjectOperation() projectOperation {
 		Path:          "/api/v1/projects/{project_id}/archive",
 		Summary:       "Archive a project",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProjectWrite,
-		Resource:       "project",
-		Action:         "archive",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.project.archive",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectWrite,
+			Resource:       "project",
+			Action:         runtimeiam.ActionArchive,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.project.archive",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, archiveProject)
 }
 
@@ -168,15 +179,17 @@ func restoreProjectOperation() projectOperation {
 		Path:          "/api/v1/projects/{project_id}/restore",
 		Summary:       "Restore a project",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProjectWrite,
-		Resource:       "project",
-		Action:         "restore",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.project.restore",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectWrite,
+			Resource:       "project",
+			Action:         runtimeiam.ActionRestore,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.project.restore",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, restoreProject)
 }
 
@@ -186,13 +199,15 @@ func listProjectEnvironmentsOperation() projectOperation {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/projects/{project_id}/environments",
 		Summary:     "List project environments",
-	}, operationPolicy{
-		Permission:     permissionEnvironmentRead,
-		Resource:       "project_environment",
-		Action:         "list",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     "projects.environment.list",
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionEnvironmentRead,
+			Resource:       "project_environment",
+			Action:         runtimeiam.ActionList,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "projects.environment.list",
+		},
 	}, listEnvironments)
 }
 
@@ -203,15 +218,17 @@ func createProjectEnvironmentOperation() projectOperation {
 		Path:          "/api/v1/projects/{project_id}/environments",
 		Summary:       "Create a project environment",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionEnvironmentWrite,
-		Resource:       "project_environment",
-		Action:         "create",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.environment.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionEnvironmentWrite,
+			Resource:       "project_environment",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.environment.create",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, createEnvironment)
 }
 
@@ -222,15 +239,17 @@ func updateProjectEnvironmentOperation() projectOperation {
 		Path:          "/api/v1/projects/{project_id}/environments/{environment_id}",
 		Summary:       "Update a project environment",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionEnvironmentWrite,
-		Resource:       "project_environment",
-		Action:         "update",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.environment.update",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionEnvironmentWrite,
+			Resource:       "project_environment",
+			Action:         runtimeiam.ActionUpdate,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.environment.update",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, updateEnvironment)
 }
 
@@ -241,15 +260,17 @@ func archiveProjectEnvironmentOperation() projectOperation {
 		Path:          "/api/v1/projects/{project_id}/environments/{environment_id}/archive",
 		Summary:       "Archive a project environment",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionEnvironmentWrite,
-		Resource:       "project_environment",
-		Action:         "archive",
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: "projects_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "projects.environment.archive",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionEnvironmentWrite,
+			Resource:       "project_environment",
+			Action:         runtimeiam.ActionArchive,
+			OrgScope:       orgScopeTokenOrgID,
+			RateLimitClass: "projects_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "projects.environment.archive",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, archiveEnvironment)
 }
 

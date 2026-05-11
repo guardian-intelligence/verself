@@ -30,7 +30,7 @@ type projectOperation interface {
 
 type projectOperationDef[I, O any] struct {
 	op                 huma.Operation
-	policy             operationPolicy
+	policy             projectsOperationPolicy
 	enabledProjections apiProjection
 	serviceMirrorPeers []string
 	handler            func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error)
@@ -64,7 +64,7 @@ func registerProjectOperations(api huma.API, svc *projects.Service, projection a
 
 func publicProjectOperation[I, O any](
 	op huma.Operation,
-	policy operationPolicy,
+	policy projectsOperationPolicy,
 	handler func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error),
 ) projectOperationDef[I, O] {
 	return projectOperationDef[I, O]{
@@ -78,7 +78,7 @@ func publicProjectOperation[I, O any](
 
 func serviceOnlyProjectOperation[I, O any](
 	op huma.Operation,
-	policy operationPolicy,
+	policy projectsOperationPolicy,
 	handler func(*projects.Service) func(context.Context, projects.Principal, *I) (*O, error),
 ) projectOperationDef[I, O] {
 	policy.Service = true

@@ -17,6 +17,7 @@ go_library(
     visibility = ["//src/services/iam-service:__subpackages__"],
     deps = [
         "//src/services/iam-service/internal/store",
+        "//src/services/service-runtime/go/iam",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_google_uuid//:uuid",
         "@com_github_jackc_pgx_v5//:pgx",

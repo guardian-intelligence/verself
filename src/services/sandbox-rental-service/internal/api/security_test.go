@@ -43,11 +43,11 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 			if len(op.Security) != 1 || len(op.Security[0]["bearerAuth"]) != 0 {
 				t.Fatalf("%s %s must require bearerAuth with no OpenAPI scopes: %#v", op.Method, path, op.Security)
 			}
-			if rawPolicy["idempotency"] == idempotencyHeaderKey &&
+			if rawPolicy["idempotency"] == string(idempotencyHeaderKey) &&
 				!operationHasRequiredParameter(op, "header", "Idempotency-Key") {
 				t.Fatalf("%s %s requires Idempotency-Key but does not declare it in OpenAPI", op.Method, path)
 			}
-			if rawPolicy["idempotency"] == idempotencyRequestBodyKey &&
+			if rawPolicy["idempotency"] == string(idempotencyRequestBodyKey) &&
 				!operationHasRequiredRequestBodyProperty(openAPI, op, "idempotency_key") {
 				t.Fatalf("%s %s requires idempotency_key but does not declare it as a required request body field", op.Method, path)
 			}
@@ -162,7 +162,7 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 func TestEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), sandboxServiceToken("42", "member"))
 
-	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionGitHubWrite): true}, operationPolicy{
+	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionGitHubWrite): true}, runtimeiam.OperationPolicy{
 		Permission: permissionGitHubWrite,
 	}, &EmptyInput{})
 	if err != nil {
@@ -198,7 +198,7 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 		}},
 	})
 
-	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, operationPolicy{
+	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, runtimeiam.OperationPolicy{
 		Permission: permissionGitHubWrite,
 	}, &EmptyInput{})
 	if identity == nil || identity.Subject != "user-123" {
@@ -212,26 +212,34 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 
 type fakeAuthorizer map[string]bool
 
-func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, permission string) (runtimeiam.AuthorizationDecision, error) {
-	return runtimeiam.AuthorizationDecision{Allowed: f[permission], Permissions: []string{permission}}, nil
+func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, policy runtimeiam.OperationPolicy) (runtimeiam.AuthorizationDecision, error) {
+	permission := string(policy.Permission)
+	return runtimeiam.AuthorizationDecision{
+		Allowed:     f[permission],
+		Permission:  policy.Permission,
+		Resource:    policy.Resource,
+		Action:      policy.Action,
+		OrgScope:    policy.OrgScope,
+		Permissions: []runtimeiam.Permission{policy.Permission},
+	}, nil
 }
 
 func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 	tests := []struct {
 		name   string
-		policy operationPolicy
+		policy runtimeiam.OperationPolicy
 		input  any
 		ctx    context.Context
 	}{
 		{
 			name:   "schedule body key",
-			policy: operationPolicy{Idempotency: idempotencyRequestBodyKey},
+			policy: runtimeiam.OperationPolicy{Idempotency: idempotencyRequestBodyKey},
 			input:  &CreateExecutionScheduleInput{},
 			ctx:    context.Background(),
 		},
 		{
 			name:   "github install header key",
-			policy: operationPolicy{Idempotency: idempotencyHeaderKey},
+			policy: runtimeiam.OperationPolicy{Idempotency: idempotencyHeaderKey},
 			input:  &EmptyInput{},
 			ctx:    context.Background(),
 		},

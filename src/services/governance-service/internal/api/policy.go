@@ -23,16 +23,14 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission string
-
-func (p permission) LogValue() slog.Value { return slog.StringValue(string(p)) }
+type permission = runtimeiam.Permission
 
 const (
 	permissionAuditRead    permission = "governance:audit:read"
 	permissionExportRead   permission = "governance:export:read"
 	permissionExportCreate permission = "governance:export:create"
 
-	idempotencyHeaderKey        = "idempotency_key_header"
+	idempotencyHeaderKey        = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
 
@@ -40,23 +38,12 @@ const (
 	bodyLimitSmallJSON int64 = 16 << 10
 )
 
-type operationPolicy struct {
-	Permission     permission
-	Resource       string
-	Action         string
-	OrgScope       string
-	RateLimitClass string
-	Idempotency    string
-	AuditEvent     string
-	BodyLimitBytes int64
-}
-
 type securedOperation struct {
 	Operation huma.Operation
-	Policy    operationPolicy
+	Policy    runtimeiam.OperationPolicy
 }
 
-func secured(op huma.Operation, policy operationPolicy) securedOperation {
+func secured(op huma.Operation, policy runtimeiam.OperationPolicy) securedOperation {
 	return securedOperation{Operation: op, Policy: policy}
 }
 
@@ -88,12 +75,9 @@ func registerSecured[I, O any](api huma.API, svc *governance.Service, authorizer
 	})
 }
 
-func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
-		panic("incomplete IAM policy for operation: " + op.OperationID)
-	}
-	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
-		panic("empty request body limit for mutating operation: " + op.OperationID)
+func withOperationPolicy(op huma.Operation, policy runtimeiam.OperationPolicy) huma.Operation {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
 	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
@@ -103,37 +87,18 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	case idempotencyHeaderKey:
 		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
 	default:
-		panic("unsupported idempotency policy for operation " + op.OperationID + ": " + policy.Idempotency)
+		panic("unsupported idempotency policy for operation " + op.OperationID + ": " + string(policy.Idempotency))
 	}
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	iam := map[string]any{
-		"permission":       string(policy.Permission),
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        policy.OrgScope,
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
-	}
-	if policy.Idempotency != "" {
-		iam["idempotency"] = policy.Idempotency
-	}
-	if policy.BodyLimitBytes > 0 {
-		iam["request_body_max_bytes"] = policy.BodyLimitBytes
-	}
-	op.Extensions["x-verself-iam"] = iam
+	op.Extensions["x-verself-iam"] = policy.OpenAPIExtension()
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
 }
 
 func operationRequiresBodyBudget(op huma.Operation) bool {
-	switch op.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -158,7 +123,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (governance.Principal, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) (governance.Principal, error) {
 	authIdentity, err := requireIdentity(ctx)
 	if err != nil {
 		return governance.Principal{}, err
@@ -167,7 +132,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, authIdentity, string(policy.Permission))
+	decision, err := authorizer.AuthorizeOperation(ctx, authIdentity, policy)
 	if err != nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -177,7 +142,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, err
 	}
-	if decision := apiOperationRateLimiter.allow(policy.RateLimitClass, operationRateLimitKey(ctx, authIdentity, policy), time.Now()); !decision.Allowed {
+	if decision := apiOperationRateLimiter.allow(string(policy.RateLimitClass), operationRateLimitKey(ctx, authIdentity, policy), time.Now()); !decision.Allowed {
 		return principal, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return principal, nil
@@ -244,8 +209,8 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
 }
 
-func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {
-	if policy.Idempotency == "" {
+func requireOperationIdempotency(ctx context.Context, policy runtimeiam.OperationPolicy) error {
+	if policy.Idempotency == runtimeiam.IdempotencyNone {
 		return nil
 	}
 	value := operationRequestInfoFromContext(ctx).IdempotencyKey
@@ -263,9 +228,9 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	return info
 }
 
-func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy operationPolicy) string {
+func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy runtimeiam.OperationPolicy) string {
 	info := operationRequestInfoFromContext(ctx)
-	return strings.Join([]string{policy.RateLimitClass, string(policy.Permission), identity.OrgID, identity.Subject, info.ClientIP}, "\x00")
+	return strings.Join([]string{string(policy.RateLimitClass), string(policy.Permission), identity.OrgID, identity.Subject, info.ClientIP}, "\x00")
 }
 
 func clientIPFromHuma(ctx huma.Context) string {
@@ -316,7 +281,7 @@ func originFromURL(value string) string {
 	return parsed.Scheme + "://" + parsed.Host
 }
 
-func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operation, policy operationPolicy, principal governance.Principal, input any, output any, outcome string, err error) {
+func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operation, policy runtimeiam.OperationPolicy, principal governance.Principal, input any, output any, outcome string, err error) {
 	if svc == nil || principal.OrgID == "" {
 		return
 	}
@@ -326,12 +291,12 @@ func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operat
 		OrgID:        principal.OrgID,
 		EventSource:  "governance-service",
 		EventName:    op.OperationID,
-		AuditEvent:   policy.AuditEvent,
+		AuditEvent:   string(policy.AuditEvent),
 		ActorType:    principal.Type,
 		ActorID:      principal.Subject,
 		CredentialID: principal.CredentialID,
 		Permission:   string(policy.Permission),
-		TargetType:   policy.Resource,
+		TargetType:   string(policy.Resource),
 		TargetID:     targetID,
 		Outcome:      outcome,
 		Detail: compactAuditDetail(map[string]any{

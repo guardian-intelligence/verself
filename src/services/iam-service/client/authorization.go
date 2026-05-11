@@ -42,11 +42,11 @@ func NewAuthorizer(client *ClientWithResponses) Authorizer {
 	return Authorizer{Client: client}
 }
 
-func (a Authorizer) AuthorizeOperation(ctx context.Context, identity *auth.Identity, permission string) (AuthorizationDecision, error) {
+func (a Authorizer) AuthorizeOperation(ctx context.Context, identity *auth.Identity, policy runtimeiam.OperationPolicy) (AuthorizationDecision, error) {
 	if a.Client == nil {
 		return AuthorizationDecision{}, ErrAuthorizerUnavailable
 	}
-	permission = strings.TrimSpace(permission)
+	permission := strings.TrimSpace(string(policy.Permission))
 	if permission == "" {
 		return AuthorizationDecision{}, fmt.Errorf("%w: permission is required", ErrInvalidIdentity)
 	}
@@ -81,11 +81,15 @@ func (a Authorizer) AuthorizeOperation(ctx context.Context, identity *auth.Ident
 		OrgID:       strings.TrimSpace(resp.JSON200.OrgId),
 		SubjectType: strings.TrimSpace(string(resp.JSON200.Subject.Type)),
 		SubjectID:   strings.TrimSpace(resp.JSON200.Subject.Id),
-		Permissions: append([]string(nil), permissionsFromResponse(resp.JSON200.Permissions)...),
+		Permission:  policy.Permission,
+		Resource:    policy.Resource,
+		Action:      policy.Action,
+		OrgScope:    policy.OrgScope,
+		Permissions: permissionsFromResponse(resp.JSON200.Permissions),
 		ZedToken:    zedToken,
 	}
 	for _, allowed := range decision.Permissions {
-		if strings.TrimSpace(allowed) == permission {
+		if strings.TrimSpace(string(allowed)) == permission {
 			decision.Allowed = true
 			break
 		}
@@ -111,11 +115,17 @@ func AuthorizationSubjectForIdentity(identity *auth.Identity) (IAMAuthorizationS
 	return IAMAuthorizationSubject{Type: User, Id: subject}, nil
 }
 
-func permissionsFromResponse(permissions *[]string) []string {
+func permissionsFromResponse(permissions *[]string) []runtimeiam.Permission {
 	if permissions == nil {
 		return nil
 	}
-	return *permissions
+	out := make([]runtimeiam.Permission, 0, len(*permissions))
+	for _, permission := range *permissions {
+		if permission = strings.TrimSpace(permission); permission != "" {
+			out = append(out, runtimeiam.Permission(permission))
+		}
+	}
+	return out
 }
 
 func claimString(claims map[string]any, key string) string {

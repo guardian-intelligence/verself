@@ -27,7 +27,7 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission string
+type permission = runtimeiam.Permission
 
 const (
 	permissionSecretWrite      permission = "secrets:secret:write"
@@ -56,7 +56,7 @@ const (
 	billingSKUSecretsTransit      = "secrets_transit_operation"
 	billingSourceTypeAPIOperation = "secrets_api_operation"
 
-	idempotencyHeaderKey              = "idempotency_key_header"
+	idempotencyHeaderKey              = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength           = 128
 	rateLimiterMaxWindowEntries       = 10000
 	bodyLimitSmallJSON          int64 = 64 << 10
@@ -66,15 +66,8 @@ const (
 
 var apiTracer = otel.Tracer("secrets-service/internal/api")
 
-type operationPolicy struct {
-	Permission      permission
-	Resource        string
-	Action          string
-	OrgScope        string
-	RateLimitClass  string
-	Idempotency     string
-	AuditEvent      string
-	BodyLimitBytes  int64
+type secretsOperationPolicy struct {
+	runtimeiam.OperationPolicy
 	SecretOperation string
 	OpenBaoRole     string
 	BillingSKU      string
@@ -82,10 +75,10 @@ type operationPolicy struct {
 
 type securedOperation struct {
 	Operation huma.Operation
-	Policy    operationPolicy
+	Policy    secretsOperationPolicy
 }
 
-func secured(op huma.Operation, policy operationPolicy) securedOperation {
+func secured(op huma.Operation, policy secretsOperationPolicy) securedOperation {
 	return securedOperation{Operation: op, Policy: policy}
 }
 
@@ -130,9 +123,9 @@ func registerSecured[I, O any](api huma.API, svc *secrets.Service, authorizer ru
 	})
 }
 
-func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operation {
-	if policy.Permission == "" || policy.Resource == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" {
-		panic("incomplete IAM policy for operation: " + op.OperationID)
+func withOperationPolicy(op huma.Operation, policy secretsOperationPolicy) huma.Operation {
+	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
 	}
 	if policy.OpenBaoRole == "" {
 		panic("missing OpenBao role for operation: " + op.OperationID)
@@ -140,42 +133,28 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.BillingSKU == "" {
 		panic("missing billing SKU for operation: " + op.OperationID)
 	}
-	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
-		panic("empty request body limit for mutating operation: " + op.OperationID)
-	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
 	}
 	if policy.Idempotency == idempotencyHeaderKey {
 		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
 	} else if policy.Idempotency != "" {
-		panic("unsupported idempotency policy for operation " + op.OperationID + ": " + policy.Idempotency)
+		panic("unsupported idempotency policy for operation " + op.OperationID + ": " + string(policy.Idempotency))
 	}
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":         string(policy.Permission),
-		"resource":           policy.Resource,
-		"action":             policy.Action,
-		"org_scope":          policy.OrgScope,
-		"rate_limit_class":   policy.RateLimitClass,
-		"audit_event":        policy.AuditEvent,
-		"openbao_role":       policy.OpenBaoRole,
-		"billing_product_id": billingProductSecrets,
-		"billing_sku_id":     policy.BillingSKU,
-	}
+	iam := policy.OpenAPIExtension()
+	iam["openbao_role"] = policy.OpenBaoRole
+	iam["billing_product_id"] = billingProductSecrets
+	iam["billing_sku_id"] = policy.BillingSKU
+	op.Extensions["x-verself-iam"] = iam
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
 }
 
 func operationRequiresBodyBudget(op huma.Operation) bool {
-	switch op.Method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
+	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -200,7 +179,7 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy operationPolicy) (secrets.Principal, *auth.Identity, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy secretsOperationPolicy) (secrets.Principal, *auth.Identity, error) {
 	identity, err := requireIdentity(ctx)
 	if err != nil {
 		return secrets.Principal{}, nil, err
@@ -209,7 +188,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return principal, identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, string(policy.Permission))
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy.OperationPolicy)
 	if err != nil {
 		return principal, identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -222,7 +201,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, identity, err
 	}
-	if decision := apiOperationRateLimiter.allow(policy.RateLimitClass, operationRateLimitKey(ctx, identity, policy), time.Now()); !decision.Allowed {
+	if decision := apiOperationRateLimiter.allow(string(policy.RateLimitClass), operationRateLimitKey(ctx, identity, policy), time.Now()); !decision.Allowed {
 		return principal, identity, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return principal, identity, nil
@@ -239,7 +218,7 @@ func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 	return identity, nil
 }
 
-func principalFromIdentity(identity *auth.Identity, policy operationPolicy) secrets.Principal {
+func principalFromIdentity(identity *auth.Identity, policy secretsOperationPolicy) secrets.Principal {
 	principalType := "user"
 	credentialID := claimString(identity.Raw, "verself:credential_id")
 	serviceAccountID := claimString(identity.Raw, "verself:service_account_id")
@@ -263,7 +242,7 @@ func principalFromIdentity(identity *auth.Identity, policy operationPolicy) secr
 	}
 }
 
-func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) string {
+func openBaoRoleForIdentity(identity *auth.Identity, policy secretsOperationPolicy) string {
 	if identity == nil {
 		return ""
 	}
@@ -294,7 +273,7 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) str
 	return ""
 }
 
-func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy operationPolicy, identity *auth.Identity, input any) (*dto.BillingWindowReservation, error) {
+func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any) (*dto.BillingWindowReservation, error) {
 	if policy.BillingSKU == "" {
 		return nil, nil
 	}
@@ -365,7 +344,7 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	}
 }
 
-func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *dto.BillingWindowReservation, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any) error {
+func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *dto.BillingWindowReservation, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any, output any) error {
 	if reservation == nil {
 		return nil
 	}
@@ -375,7 +354,7 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 		"permission":       string(policy.Permission),
 		"credential_id":    claimString(identity.Raw, "verself:credential_id"),
 		"actor_subject":    identity.Subject,
-		"target_type":      policy.Resource,
+		"target_type":      string(policy.Resource),
 		"target_id":        targetID,
 		"target_scope":     targetScope,
 		"target_path_hash": targetPathHash,
@@ -493,8 +472,8 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
 }
 
-func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {
-	if policy.Idempotency == "" {
+func requireOperationIdempotency(ctx context.Context, policy secretsOperationPolicy) error {
+	if policy.Idempotency == runtimeiam.IdempotencyNone {
 		return nil
 	}
 	value := strings.TrimSpace(operationRequestInfoFromContext(ctx).IdempotencyKey)
@@ -515,10 +494,10 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	return info
 }
 
-func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy operationPolicy) string {
+func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy secretsOperationPolicy) string {
 	info := operationRequestInfoFromContext(ctx)
 	return strings.Join([]string{
-		policy.RateLimitClass,
+		string(policy.RateLimitClass),
 		string(policy.Permission),
 		identity.OrgID,
 		identity.Subject,
@@ -546,7 +525,7 @@ func clientIPFromHuma(ctx huma.Context) string {
 	return remote
 }
 
-func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
+func auditOperation(ctx context.Context, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
 	if identity == nil {
 		return
 	}
@@ -568,12 +547,12 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		OrgID:        identity.OrgID,
 		EventSource:  "secrets-service",
 		EventName:    operationID,
-		AuditEvent:   policy.AuditEvent,
+		AuditEvent:   string(policy.AuditEvent),
 		ActorType:    principalFromIdentity(identity, policy).Type,
 		ActorID:      identity.Subject,
 		CredentialID: claimString(identity.Raw, "verself:credential_id"),
 		Permission:   string(policy.Permission),
-		TargetType:   policy.Resource,
+		TargetType:   string(policy.Resource),
 		TargetID:     targetID,
 		Outcome:      outcome,
 		Detail: compactAuditDetail(map[string]any{

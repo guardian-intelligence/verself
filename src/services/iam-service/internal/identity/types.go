@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
+
+	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
 const (
@@ -179,10 +181,10 @@ type ServiceOperations struct {
 
 type Operation struct {
 	OperationID    string
-	Permission     string
-	Resource       string
-	Action         string
-	OrgScope       string
+	Permission     runtimeiam.Permission
+	Resource       runtimeiam.ResourceKind
+	Action         runtimeiam.Action
+	OrgScope       runtimeiam.OrgScope
 	MemberEligible bool
 }
 

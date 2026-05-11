@@ -9,6 +9,7 @@ import (
 
 	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/projects-service/internal/projects"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -45,15 +46,17 @@ func resolveProjectOperation() projectOperation {
 		Path:          "/service/v1/projects/resolve",
 		Summary:       "Resolve a project for a repo-owned service",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProjectResolve,
-		Resource:       "project",
-		Action:         "resolve",
-		OrgScope:       orgScopeRequestOrgID,
-		RateLimitClass: "service_read",
-		AuditEvent:     "projects.project.resolve",
-		BodyLimitBytes: bodyLimitSmallJSON,
-		Service:        true,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectResolve,
+			Resource:       "project",
+			Action:         runtimeiam.ActionResolve,
+			OrgScope:       orgScopeRequestOrgID,
+			RateLimitClass: "service_read",
+			AuditEvent:     "projects.project.resolve",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
+		Service: true,
 		ServicePeers: []string{
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
@@ -68,15 +71,17 @@ func resolveProjectEnvironmentOperation() projectOperation {
 		Path:          "/service/v1/project-environments/resolve",
 		Summary:       "Resolve a project environment for a repo-owned service",
 		DefaultStatus: http.StatusOK,
-	}, operationPolicy{
-		Permission:     permissionProjectResolve,
-		Resource:       "project_environment",
-		Action:         "resolve",
-		OrgScope:       orgScopeRequestOrgID,
-		RateLimitClass: "service_read",
-		AuditEvent:     "projects.environment.resolve",
-		BodyLimitBytes: bodyLimitSmallJSON,
-		Service:        true,
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectResolve,
+			Resource:       "project_environment",
+			Action:         runtimeiam.ActionResolve,
+			OrgScope:       orgScopeRequestOrgID,
+			RateLimitClass: "service_read",
+			AuditEvent:     "projects.environment.resolve",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
+		Service: true,
 		ServicePeers: []string{
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
@@ -90,15 +95,17 @@ func listProjectEventsOperation() projectOperation {
 		Method:      http.MethodGet,
 		Path:        "/service/v1/project-events",
 		Summary:     "List project domain events",
-	}, operationPolicy{
-		Permission:     permissionProjectEventRead,
-		Resource:       "project_event",
-		Action:         "list",
-		OrgScope:       orgScopeRequestOrgID,
-		RateLimitClass: "service_read",
-		AuditEvent:     "projects.event.list",
-		Service:        true,
-		ServicePeers:   []string{workloadauth.ServiceGovernance},
+	}, projectsOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionProjectEventRead,
+			Resource:       "project_event",
+			Action:         runtimeiam.ActionList,
+			OrgScope:       orgScopeRequestOrgID,
+			RateLimitClass: "service_read",
+			AuditEvent:     "projects.event.list",
+		},
+		Service:      true,
+		ServicePeers: []string{workloadauth.ServiceGovernance},
 	}, listEvents)
 }
 

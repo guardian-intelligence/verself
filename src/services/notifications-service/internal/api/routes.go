@@ -20,6 +20,7 @@ import (
 
 const (
 	maxIdempotencyKeyLength = 128
+	bodyLimitNoBody         = 1024
 	bodyLimitSmallJSON      = 16 << 10
 )
 
@@ -78,14 +79,28 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Method:      http.MethodGet,
 		Path:        "/api/v1/notifications",
 		Summary:     "List current human notifications",
-	}, authorizer, "notifications:self:read", listNotifications(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:read",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionList,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "read",
+		AuditEvent:     "notifications.list",
+	}, listNotifications(svc))
 
 	register(api, huma.Operation{
 		OperationID: "get-notification-summary",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/notifications/summary",
 		Summary:     "Get current human notification summary",
-	}, authorizer, "notifications:self:read", getSummary(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:read",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionRead,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "read",
+		AuditEvent:     "notifications.summary.read",
+	}, getSummary(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "put-notification-preferences",
@@ -94,7 +109,16 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Summary:       "Replace current human notification preferences",
 		DefaultStatus: http.StatusOK,
 		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, authorizer, "notifications:self:preferences:write", putPreferences(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:preferences:write",
+		Resource:       "notification_preferences",
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "notification_mutation",
+		Idempotency:    runtimeiam.IdempotencyHeaderKey,
+		AuditEvent:     "notifications.preferences.write",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}, putPreferences(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "advance-notification-read-cursor",
@@ -103,7 +127,16 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Summary:       "Advance current human notification read cursor",
 		DefaultStatus: http.StatusOK,
 		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, authorizer, "notifications:self:write", markRead(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:write",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "notification_mutation",
+		Idempotency:    runtimeiam.IdempotencyHeaderKey,
+		AuditEvent:     "notifications.read_cursor.advance",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}, markRead(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "dismiss-notification",
@@ -111,7 +144,16 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Path:          "/api/v1/notifications/{notification_id}/dismiss",
 		Summary:       "Dismiss a current human notification",
 		DefaultStatus: http.StatusOK,
-	}, authorizer, "notifications:self:write", dismissNotification(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:write",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "notification_mutation",
+		Idempotency:    runtimeiam.IdempotencyHeaderKey,
+		AuditEvent:     "notifications.dismiss",
+		BodyLimitBytes: bodyLimitNoBody,
+	}, dismissNotification(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "mark-notification-read",
@@ -119,7 +161,16 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Path:          "/api/v1/notifications/{notification_id}/read",
 		Summary:       "Mark one current human notification read",
 		DefaultStatus: http.StatusOK,
-	}, authorizer, "notifications:self:write", markNotificationRead(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:write",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "notification_mutation",
+		Idempotency:    runtimeiam.IdempotencyHeaderKey,
+		AuditEvent:     "notifications.mark_read",
+		BodyLimitBytes: bodyLimitNoBody,
+	}, markNotificationRead(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "clear-notifications",
@@ -127,7 +178,16 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Path:          "/api/v1/notifications/clear",
 		Summary:       "Dismiss all current human notifications",
 		DefaultStatus: http.StatusOK,
-	}, authorizer, "notifications:self:write", clearNotifications(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:write",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionWrite,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "notification_mutation",
+		Idempotency:    runtimeiam.IdempotencyHeaderKey,
+		AuditEvent:     "notifications.clear",
+		BodyLimitBytes: bodyLimitNoBody,
+	}, clearNotifications(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "publish-test-notification",
@@ -136,26 +196,40 @@ func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtime
 		Summary:       "Publish a synthetic notification to the current human",
 		DefaultStatus: http.StatusAccepted,
 		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, authorizer, "notifications:self:test", publishTestNotification(svc))
+	}, authorizer, runtimeiam.OperationPolicy{
+		Permission:     "notifications:self:test",
+		Resource:       "notification_subject",
+		Action:         runtimeiam.ActionTest,
+		OrgScope:       runtimeiam.OrgScopeTokenSubject,
+		RateLimitClass: "notification_mutation",
+		Idempotency:    runtimeiam.IdempotencyHeaderKey,
+		AuditEvent:     "notifications.test.publish",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}, publishTestNotification(svc))
 }
 
-func register[I, O any](api huma.API, op huma.Operation, authorizer runtimeiam.OperationAuthorizer, permission string, handler func(context.Context, *I) (*O, error)) {
+func register[I, O any](api huma.API, op huma.Operation, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy, handler func(context.Context, *I) (*O, error)) {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+		panic(err)
+	}
+	if policy.BodyLimitBytes > 0 {
+		op.MaxBodyBytes = policy.BodyLimitBytes
+	}
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
-	op.Extensions["x-verself-iam"] = map[string]any{
-		"permission":       permission,
-		"resource":         "notification_subject",
-		"action":           actionFromMethod(op.Method),
-		"org_scope":        "token_subject",
-		"rate_limit_class": rateLimitClass(op.Method),
-		"audit_event":      "notification." + strings.ReplaceAll(op.OperationID, "-", "."),
-	}
+	op.Extensions["x-verself-iam"] = policy.OpenAPIExtension()
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		ctx, span := apiTracer.Start(ctx, "notifications.api."+op.OperationID)
 		defer span.End()
-		identity, err := enforceOperationPolicy(ctx, authorizer, permission)
+		span.SetAttributes(
+			attribute.String("notifications.permission", string(policy.Permission)),
+			attribute.String("notifications.resource", string(policy.Resource)),
+			attribute.String("notifications.action", string(policy.Action)),
+			attribute.String("notifications.audit_event", string(policy.AuditEvent)),
+		)
+		identity, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -177,7 +251,7 @@ func register[I, O any](api huma.API, op huma.Operation, authorizer runtimeiam.O
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, permission string) (*auth.Identity, error) {
+func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) (*auth.Identity, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
 		return nil, unauthorized(ctx)
@@ -189,7 +263,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if authorizer == nil {
 		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	decision, err := authorizer.AuthorizeOperation(ctx, identity, permission)
+	decision, err := authorizer.AuthorizeOperation(ctx, identity, policy)
 	if err != nil {
 		return identity, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
 	}
@@ -443,20 +517,4 @@ func notificationDTO(notification notifications.Notification) dto.Notification {
 		ReadAt:             notification.ReadAt,
 		DismissedAt:        notification.DismissedAt,
 	}
-}
-
-func actionFromMethod(method string) string {
-	switch method {
-	case http.MethodGet:
-		return "read"
-	default:
-		return "write"
-	}
-}
-
-func rateLimitClass(method string) string {
-	if method == http.MethodGet {
-		return "read"
-	}
-	return "notification_mutation"
 }

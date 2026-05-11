@@ -127,15 +127,17 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Path:          "/api/v1/repos",
 		Summary:       "Create a source repository",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionRepoWrite,
-		Resource:       "source_repository",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "source_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "source.repo.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionRepoWrite,
+			Resource:       "source_repository",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "source_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "source.repo.create",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, createRepository(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -144,15 +146,17 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Path:          "/api/v1/git-credentials",
 		Summary:       "Create a scoped HTTPS Git credential",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionGitCredentialWrite,
-		Resource:       "source_git_credential",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "source_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "source.git_credential.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionGitCredentialWrite,
+			Resource:       "source_git_credential",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "source_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "source.git_credential.create",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, createGitCredential(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -160,13 +164,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos",
 		Summary:     "List source repositories",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "source_repository",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.repo.list",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionRepoRead,
+			Resource:       "source_repository",
+			Action:         runtimeiam.ActionList,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.repo.list",
+		},
 	}, listRepositories(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -174,13 +180,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}",
 		Summary:     "Get a source repository",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "source_repository",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.repo.read",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionRepoRead,
+			Resource:       "source_repository",
+			Action:         runtimeiam.ActionRead,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.repo.read",
+		},
 	}, getRepository(svc, cfg))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -188,13 +196,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/refs",
 		Summary:     "List repository refs",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "source_ref",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.refs.list",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionRepoRead,
+			Resource:       "source_ref",
+			Action:         runtimeiam.ActionList,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.refs.list",
+		},
 	}, listRefs(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -202,13 +212,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/tree",
 		Summary:     "Get a repository tree path",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "source_tree",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.tree.get",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionRepoRead,
+			Resource:       "source_tree",
+			Action:         runtimeiam.ActionRead,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.tree.get",
+		},
 	}, getTree(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -216,13 +228,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/blob",
 		Summary:     "Get a repository blob",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "source_blob",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.blob.get",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionRepoRead,
+			Resource:       "source_blob",
+			Action:         runtimeiam.ActionRead,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.blob.get",
+		},
 	}, getBlob(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -231,15 +245,17 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Path:          "/api/v1/repos/{repo_id}/checkout-grants",
 		Summary:       "Create a short-lived checkout grant",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionCheckoutWrite,
-		Resource:       "source_checkout_grant",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "source_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "source.checkout_grant.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionCheckoutWrite,
+			Resource:       "source_checkout_grant",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "source_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "source.checkout_grant.create",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, createCheckoutGrant(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -248,15 +264,17 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Path:          "/api/v1/repos/{repo_id}/workflow-runs",
 		Summary:       "Dispatch a repository workflow",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionWorkflowWrite,
-		Resource:       "source_workflow_run",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "source_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "source.workflow.dispatch",
-		BodyLimitBytes: bodyLimitSmallJSON,
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionWorkflowWrite,
+			Resource:       "source_workflow_run",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "source_mutation",
+			Idempotency:    idempotencyHeaderKey,
+			AuditEvent:     "source.workflow.dispatch",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
 	}, createWorkflowRun(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -264,13 +282,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/workflow-runs",
 		Summary:     "List repository workflow runs",
-	}, operationPolicy{
-		Permission:     permissionWorkflowRead,
-		Resource:       "source_workflow_run",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.workflow_run.list",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionWorkflowRead,
+			Resource:       "source_workflow_run",
+			Action:         runtimeiam.ActionList,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.workflow_run.list",
+		},
 	}, listWorkflowRuns(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -278,13 +298,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		Method:      http.MethodGet,
 		Path:        "/api/v1/workflow-runs/{workflow_run_id}",
 		Summary:     "Get a workflow run",
-	}, operationPolicy{
-		Permission:     permissionWorkflowRead,
-		Resource:       "source_workflow_run",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "source.workflow_run.read",
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionWorkflowRead,
+			Resource:       "source_workflow_run",
+			Action:         runtimeiam.ActionRead,
+			OrgScope:       runtimeiam.OrgScopeTokenOrgID,
+			RateLimitClass: "read",
+			AuditEvent:     "source.workflow_run.read",
+		},
 	}, getWorkflowRun(svc))
 }
 
@@ -296,15 +318,17 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 		Path:          "/internal/v1/workflow-runs",
 		Summary:       "Dispatch a source workflow on behalf of a service-owned schedule",
 		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:     permissionWorkflowWrite,
-		Resource:       "source_workflow_run",
-		Action:         "create",
-		OrgScope:       "body_org_id",
-		RateLimitClass: "internal_mutation",
-		AuditEvent:     "source.workflow.dispatch.internal",
-		BodyLimitBytes: bodyLimitSmallJSON,
-		Internal:       true,
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionWorkflowWrite,
+			Resource:       "source_workflow_run",
+			Action:         runtimeiam.ActionCreate,
+			OrgScope:       runtimeiam.OrgScopeBodyOrgID,
+			RateLimitClass: "internal_mutation",
+			AuditEvent:     "source.workflow.dispatch.internal",
+			BodyLimitBytes: bodyLimitSmallJSON,
+		},
+		Internal: true,
 	}, internalCreateWorkflowRun(svc))
 
 	registerSourceRoute(api, cfg.Authorizer, huma.Operation{
@@ -320,14 +344,16 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 				},
 			},
 		},
-	}, operationPolicy{
-		Permission:     permissionCheckoutWrite,
-		Resource:       "source_checkout_grant",
-		Action:         "consume",
-		OrgScope:       "checkout_grant",
-		RateLimitClass: "checkout_download",
-		AuditEvent:     "source.archive.stream",
-		Internal:       true,
+	}, sourceOperationPolicy{
+		OperationPolicy: runtimeiam.OperationPolicy{
+			Permission:     permissionCheckoutWrite,
+			Resource:       "source_checkout_archive",
+			Action:         runtimeiam.ActionDownload,
+			OrgScope:       runtimeiam.OrgScopeCheckoutGrant,
+			RateLimitClass: "checkout_download",
+			AuditEvent:     "source.archive.stream",
+		},
+		Internal: true,
 	}, downloadArchive(svc))
 }
 
