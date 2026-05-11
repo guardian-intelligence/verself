@@ -148,27 +148,27 @@ func logsHandler(svc *analytics.Service, verifier *analytics.GitHubOIDCVerifier,
 		}
 		source, err := verifier.SourceFromRequest(r.Context(), r)
 		if err != nil {
-			_ = svc.RecordIngestEvent(r.Context(), analytics.Source{Kind: analytics.SourceKindGitHubActionsOIDC}, analytics.OutcomeDenied, 0, 1, "github_oidc")
+			recordIngestEvent(r.Context(), svc, analytics.Source{Kind: analytics.SourceKindGitHubActionsOIDC}, analytics.OutcomeDenied, 0, 1, "github_oidc", logger)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			logger.WarnContext(r.Context(), "analytics oidc rejected", "error", err)
 			return
 		}
 		body, err := readRequestBody(r, requestBodyLimit)
 		if err != nil {
-			_ = svc.RecordIngestEvent(r.Context(), source, analytics.OutcomeError, 0, 1, "request_body")
+			recordIngestEvent(r.Context(), svc, source, analytics.OutcomeError, 0, 1, "request_body", logger)
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 		req, err := analytics.DecodeLogsRequest(r.Header.Get("Content-Type"), body)
 		if err != nil {
-			_ = svc.RecordIngestEvent(r.Context(), source, analytics.OutcomeError, 0, 1, "otlp_decode")
+			recordIngestEvent(r.Context(), svc, source, analytics.OutcomeError, 0, 1, "otlp_decode", logger)
 			http.Error(w, "invalid otlp logs request", http.StatusBadRequest)
 			logger.WarnContext(r.Context(), "analytics otlp decode rejected", "error", err)
 			return
 		}
 		count, err := svc.IngestLogs(r.Context(), source, req)
 		if err != nil {
-			_ = svc.RecordIngestEvent(r.Context(), source, analytics.OutcomeError, 0, 1, compactErrorCode(err))
+			recordIngestEvent(r.Context(), svc, source, analytics.OutcomeError, 0, 1, compactErrorCode(err), logger)
 			http.Error(w, "analytics ingest rejected", http.StatusBadRequest)
 			logger.WarnContext(r.Context(), "analytics ingest rejected", "error", err)
 			return
@@ -182,6 +182,12 @@ func logsHandler(svc *analytics.Service, verifier *analytics.GitHubOIDCVerifier,
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(resp)
 		logger.InfoContext(r.Context(), "analytics logs ingested", "event_count", count, "repository", source.Repository, "run_id", source.RunID)
+	}
+}
+
+func recordIngestEvent(ctx context.Context, svc *analytics.Service, source analytics.Source, outcome string, accepted, rejected uint32, errorCode string, logger *slog.Logger) {
+	if err := svc.RecordIngestEvent(ctx, source, outcome, accepted, rejected, errorCode); err != nil {
+		logger.WarnContext(ctx, "analytics ingest event write failed", "error", err)
 	}
 }
 
