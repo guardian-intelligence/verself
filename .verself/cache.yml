@@ -6,3 +6,7 @@ cache:
     paths:
       - ~/.cache/bazel-disk
       - ~/.cache/bazel-repo
+  - name: pnpm
+    size: 40GiB
+    paths:
+      - ~/.local/share/pnpm/store

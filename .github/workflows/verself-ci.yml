@@ -60,6 +60,24 @@ jobs:
           fi
           printf '%s run=%s attempt=%s sha=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${GITHUB_SHA}" >> "${marker}"
 
+      - name: Verify durable pnpm cache mounts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VERSELF_CACHE_PNPM:-}"
+          test -d "${VERSELF_CACHE_PNPM}"
+          store_path="${HOME}/.local/share/pnpm/store"
+          test -d "${store_path}"
+          mountpoint -q "${store_path}"
+          marker="${VERSELF_CACHE_PNPM}/.verself-cache-tracer"
+          if [ -f "${marker}" ]; then
+            echo "verself durable pnpm cache tracer: hit"
+            tail -n 1 "${marker}"
+          else
+            echo "verself durable pnpm cache tracer: miss"
+          fi
+          printf '%s run=%s attempt=%s sha=%s\n' "$(date -u +%FT%TZ)" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "${GITHUB_SHA}" >> "${marker}"
+
       - name: Bootstrap toolchain
         env:
           BOOTSTRAP_INSTALL_DIR: ${{ runner.temp }}/bootstrap-bin

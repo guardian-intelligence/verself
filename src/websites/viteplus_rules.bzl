@@ -48,8 +48,10 @@ chmod 0600 "$$npm_userconfig"
 printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
 export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
 cd "src/websites"
-"$$vp" install --frozen-lockfile
-printf 'viteplus install %s\\n' "$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')" > "$$out"
+"$$vp" install --frozen-lockfile --prefer-offline
+lockfile_hash="$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')"
+tool_fingerprint="$$($$vp --version | sha256sum | awk '{{ print $$1 }}')"
+printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_fingerprint" > "$$out"
 """,
         local = True,
         tags = [
@@ -93,7 +95,7 @@ def viteplus_source_package(npm_name, srcs, name = "pkg"):
 def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
     """Bazel surface for a viteplus app.
 
-    `:node_app_nomad_artifact` runs `vp build` from the source tree as a local,
+    `:node_app_nomad_artifact` runs `vp build` from the source tree as an
     unsandboxed action. The root `:workspace_install` target materializes
     dependencies before artifact packaging; Bazel declares the app/workspace
     input set and decides when the packaging action reruns.
@@ -330,6 +332,14 @@ for generated in {generated_locations}; do
       ;;
   esac
   if [ -e "$$generated_dest" ]; then
+    if [ -d "$$generated_abs" ] || [ -d "$$generated_dest" ]; then
+      if diff -qr "$$generated_abs" "$$generated_dest" >/dev/null; then
+        continue
+      fi
+    elif cmp -s "$$generated_abs" "$$generated_dest"; then
+      continue
+    fi
+    # Bazel refuses to cache actions that rewrite declared inputs mid-build.
     chmod -R u+w "$$generated_dest"
   fi
   rm -rf "$$generated_dest"
@@ -392,9 +402,7 @@ fi
             migration_cmds = migration_cmds,
             generated_sync_cmds = generated_sync_cmds,
         ),
-        local = True,
         tags = [
-            "local",
             "no-remote",
             "no-sandbox",
         ],
