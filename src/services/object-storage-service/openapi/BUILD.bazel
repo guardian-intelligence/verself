@@ -1,4 +1,4 @@
-load("//bazel:openapi_codegen.bzl", "verself_openapi_specs")
+load("//src/tools/build:openapi_codegen.bzl", "verself_openapi_specs")
 
 verself_openapi_specs(
     public_tool = "//src/services/object-storage-service/cmd/object-storage-openapi",

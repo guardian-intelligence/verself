@@ -115,12 +115,12 @@ go_deps.gazelle_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//bazel/patches:tigerbeetle-go-bazel-cgo.patch"],
+    patches = ["//patches:tigerbeetle-go-bazel-cgo.patch"],
     path = "github.com/tigerbeetle/tigerbeetle-go",
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//bazel/patches:temporal-server-bazel-embedded-schemas.patch"],
+    patches = ["//src/infrastructure-components/temporal-platform/patches:temporal-server-bazel-embedded-schemas.patch"],
     path = "go.temporal.io/server",
 )
 go_deps.gazelle_override(
@@ -134,7 +134,7 @@ go_deps.gazelle_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//bazel/patches:pg-query-go-bazel-cgo.patch"],
+    patches = ["//patches:pg-query-go-bazel-cgo.patch"],
     path = "github.com/pganalyze/pg_query_go/v6",
 )
 go_deps.gazelle_override(

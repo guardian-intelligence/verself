@@ -43,7 +43,7 @@ zig_configure_binary(
     name = "vm-guest-telemetry",
     actual = ":_vm-guest-telemetry",
     mode = "release_safe",
-    target = "//bazel/platforms:linux_amd64_musl",
+    target = "//src/substrate/vm-guest-telemetry/platforms:linux_amd64_musl",
     visibility = ["//src/substrate/vm-orchestrator/guest-images/substrate:__pkg__"],
 )
 
