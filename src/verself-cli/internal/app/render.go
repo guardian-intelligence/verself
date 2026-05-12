@@ -336,7 +336,7 @@ Runtime substrate: customer-provisioned Latitude bare metal.
 ## First Commands
 
 `+"```text"+`
-./scripts/bootstrap-linux-amd64
+./src/tools/dev/bootstrap/bootstrap-linux-amd64
 bazelisk build //src/%s-cli:%s
 ./bazel-bin/src/%s-cli/%s env get %s --org %s --project %s --environment bootstrap
 ./bazel-bin/src/%s-cli/%s company inspect %s --json

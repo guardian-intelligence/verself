@@ -556,7 +556,8 @@ func classifySurface(rel, kind, artifact string) string {
 }
 
 func isBootstrapScript(rel string) bool {
-	return strings.HasPrefix(rel, "scripts/bootstrap-") && !strings.Contains(strings.TrimPrefix(rel, "scripts/"), "/")
+	const dir = "src/tools/dev/bootstrap/"
+	return strings.HasPrefix(rel, dir+"bootstrap-") && !strings.Contains(strings.TrimPrefix(rel, dir), "/")
 }
 
 func finding(rel string, line uint32, kind, surface, artifact, upstreamURL, digest, evidence string) Finding {

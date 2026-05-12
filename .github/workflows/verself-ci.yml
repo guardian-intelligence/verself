@@ -32,7 +32,7 @@ jobs:
           BOOTSTRAP_INSTALL_DIR: ${{ runner.temp }}/bootstrap-bin
         run: |
           mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
-          scripts/bootstrap-linux-amd64
+          src/tools/dev/bootstrap/bootstrap-linux-amd64
           {
             echo "${BOOTSTRAP_INSTALL_DIR}"
             echo "${HOME}/.vite-plus/bin"

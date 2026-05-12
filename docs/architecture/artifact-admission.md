@@ -86,7 +86,7 @@ The generated admitted-artifacts catalog is the handoff between policy and
 installers. It is produced by the Artifacts Service after admission and contains
 only digest-addressed OCI references, expected signatures, attestation subjects,
 media types, unpack instructions, and policy evidence pointers. Bazel repository
-rules, Ansible roles, guest rootfs staging, `scripts/bootstrap-*`, and developer
+rules, Ansible roles, guest rootfs staging, `src/tools/dev/bootstrap/`, and developer
 tool installers read the catalog rather than embedding upstream URLs.
 
 ## Signing
