@@ -43,6 +43,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileExpiredRunnerAllocations(ctx); err != nil {
 		return err
 	}
+	if err := s.reconcileQueuedRunnerJobs(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -254,6 +257,25 @@ func failureReasonForExpiredAllocation(state string) string {
 	default:
 		return "deadline_exceeded"
 	}
+}
+
+func (s *Service) reconcileQueuedRunnerJobs(ctx context.Context) error {
+	rows, err := s.storeQueries().ListQueuedRunnerJobsWithoutActiveAllocation(ctx)
+	if err != nil {
+		return fmt.Errorf("query queued runner jobs without active allocation: %w", err)
+	}
+	for _, row := range rows {
+		if err := s.ReconcileRunnerCapacity(ctx, row.Provider, row.ProviderJobID); err != nil {
+			return fmt.Errorf("reconcile queued runner job %s/%d: %w", row.Provider, row.ProviderJobID, err)
+		}
+		if s.Logger != nil {
+			s.Logger.InfoContext(ctx, "reconciled queued runner job without active allocation",
+				"provider", row.Provider,
+				"provider_job_id", row.ProviderJobID,
+			)
+		}
+	}
+	return nil
 }
 
 func orchestratorLeaseMissing(err error) bool {

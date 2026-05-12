@@ -90,7 +90,16 @@ SELECT allocation_id
 FROM runner_allocations
 WHERE provider = $1
   AND requested_for_provider_job_id = $2
-  AND state IN ('pending', 'jit_creating', 'jit_created', 'vm_submitted', 'runner_config_fetched')
+  AND state IN (
+        'pending',
+        'jit_creating',
+        'jit_created',
+        'bootstrap_creating',
+        'bootstrap_created',
+        'vm_submitted',
+        'runner_config_fetched',
+        'assigned'
+      )
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -412,6 +421,65 @@ func (q *Queries) ListExpiredRunnerAllocations(ctx context.Context) ([]ListExpir
 			&i.AttemptID,
 			&i.RunnerName,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listQueuedRunnerJobsWithoutActiveAllocation = `-- name: ListQueuedRunnerJobsWithoutActiveAllocation :many
+SELECT j.provider, j.provider_job_id
+FROM runner_jobs j
+WHERE (
+        (j.provider = 'github' AND j.status = 'queued')
+     OR (j.provider = 'forgejo' AND j.status IN ('waiting', 'queued'))
+      )
+  AND NOT EXISTS (
+        SELECT 1
+        FROM runner_allocations a
+        WHERE a.provider = j.provider
+          AND a.requested_for_provider_job_id = j.provider_job_id
+          AND a.state IN (
+                'pending',
+                'jit_creating',
+                'jit_created',
+                'bootstrap_creating',
+                'bootstrap_created',
+                'vm_submitted',
+                'runner_config_fetched',
+                'assigned'
+          )
+      )
+  AND NOT EXISTS (
+        SELECT 1
+        FROM runner_allocations a
+        WHERE a.provider = j.provider
+          AND a.requested_for_provider_job_id = j.provider_job_id
+          AND a.created_at > now() - interval '60 seconds'
+      )
+ORDER BY j.updated_at ASC, j.provider, j.provider_job_id
+LIMIT 50
+`
+
+type ListQueuedRunnerJobsWithoutActiveAllocationRow struct {
+	Provider      string
+	ProviderJobID int64
+}
+
+func (q *Queries) ListQueuedRunnerJobsWithoutActiveAllocation(ctx context.Context) ([]ListQueuedRunnerJobsWithoutActiveAllocationRow, error) {
+	rows, err := q.db.Query(ctx, listQueuedRunnerJobsWithoutActiveAllocation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListQueuedRunnerJobsWithoutActiveAllocationRow{}
+	for rows.Next() {
+		var i ListQueuedRunnerJobsWithoutActiveAllocationRow
+		if err := rows.Scan(&i.Provider, &i.ProviderJobID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

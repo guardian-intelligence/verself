@@ -62,6 +62,7 @@
       {%- endfor %}
         ];
       BEGIN
+        EXECUTE 'GRANT USAGE ON SCHEMA public TO {{ electric_pg_role }}';
         FOREACH tbl IN ARRAY tables LOOP
           EXECUTE format('ALTER TABLE public.%I OWNER TO {{ electric_pg_role }}', tbl);
           EXECUTE format('ALTER TABLE public.%I REPLICA IDENTITY FULL', tbl);
