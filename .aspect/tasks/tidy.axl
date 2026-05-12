@@ -4,7 +4,7 @@ This is the one-stop local hygiene command. It runs ecosystem-native formatters
 and metadata tidiers in a fixed order, then regenerates Bazel metadata.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_tracked_files", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
 
 def _viteplus(ctx):
     return checked_spawn(
@@ -36,6 +36,20 @@ def _go(ctx):
         if rc != 0:
             return rc
     return 0
+
+def _java(ctx):
+    files = java_tracked_files(ctx)
+    if files == None:
+        return 1
+    if len(files) == 0:
+        return 0
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        ["run", "--java_runtime_version=remotejdk_25", "//src/smithy/tools:google_java_format", "--", "--replace"] + files,
+        cwd = ws_path(ctx),
+        label = "google-java-format --replace",
+    )
 
 def _buildifier(ctx):
     files = bazel_tracked_files(ctx)
@@ -77,7 +91,7 @@ def _bzlmod(ctx):
 def _impl(ctx):
     # gazelle runs after buildifier so newly emitted BUILD files inherit
     # the canonical format on the same pass.
-    for step in [_viteplus, _go, _buildifier, _gazelle, _bzlmod]:
+    for step in [_viteplus, _go, _java, _buildifier, _gazelle, _bzlmod]:
         rc = step(ctx)
         if rc != 0:
             return rc

@@ -12,7 +12,7 @@ $(location //src/smithy/cmd/ir-go:ir-go) \
   -package contractapi \
   -out "$@"
 """,
-    tools = ["//src/smithy/cmd/ir-go:ir-go"],
+    tools = ["//src/smithy/cmd/ir-go"],
 )
 
 go_library(

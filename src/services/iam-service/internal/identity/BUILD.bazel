@@ -3,7 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "identity",
     srcs = [
-        ":iam_catalog_go",
         "capabilities.go",
         "catalog.go",
         "command_store.go",
@@ -13,6 +12,7 @@ go_library(
         "service.go",
         "store.go",
         "types.go",
+        ":iam_catalog_go",
     ],
     importpath = "github.com/verself/iam-service/internal/identity",
     visibility = ["//src/services/iam-service:__subpackages__"],
@@ -45,7 +45,7 @@ $(location //src/smithy/cmd/ir-go:ir-go) \
   -package identity \
   -out "$@"
 """,
-    tools = ["//src/smithy/cmd/ir-go:ir-go"],
+    tools = ["//src/smithy/cmd/ir-go"],
 )
 
 go_test(

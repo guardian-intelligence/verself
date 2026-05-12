@@ -227,6 +227,22 @@ def bazel_tracked_files(ctx):
             files.append(path)
     return files
 
+def java_tracked_files(ctx):
+    """Return authored Java files under repo-owned Java source roots."""
+    r = (ctx.std.process.command("git")
+        .args(["ls-files", "-z", "--cached", "--others", "--exclude-standard", "src/smithy/**/*.java"])
+        .current_dir(ws_path(ctx))
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: git ls-files for Java sources failed\n")
+        return None
+    files = []
+    for path in r.stdout.split("\x00"):
+        if path != "":
+            files.append(ws_path(ctx, path))
+    return files
+
 def tool_version(ctx, program, *args):
     """Run `<program> <args...>` and return the first stdout line, or None."""
     r = (ctx.std.process.command(program)

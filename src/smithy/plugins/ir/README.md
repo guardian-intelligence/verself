@@ -24,11 +24,24 @@ than re-reading Smithy traits independently.
 The authored source remains Smithy IDL under `src/smithy/models`. The IR is a
 generated build artifact and must not become a hand-authored contract language.
 
+## Compiler Phases
+
+The Java plugin is split by compiler responsibility:
+
+- `VerselfIrPlugin` owns Smithy-Build lifecycle integration only.
+- `SmithyModelIndex` resolves the service, top-down operation/resource sets,
+  and transitive shape closure from the projected `Model`.
+- `VerselfIrModel` normalizes plugin settings into the semantic compilation
+  unit.
+- `VerselfIrJsonEmitter` serializes the semantic model into the stable IR JSON
+  shape consumed by generators.
+- `SmithyNodes`, `SmithyNames`, `SmithyDiagnostics`, and `VerselfTraitIds`
+  centralize Smithy node access, naming, diagnostics, and trait identifiers.
+
 ## Libraries
 
-The plugin compiles against the repository-pinned Smithy CLI distribution,
-currently `1.70.0`, via the same `@dev_tool_smithy_cli//file` input used by the
-validators. The relevant APIs are:
+The plugin compiles against repository-pinned Maven artifacts from the Smithy
+`1.70.0` BOM through `rules_jvm_external`. The relevant APIs are:
 
 - `software.amazon.smithy.build.SmithyBuildPlugin` for plugin registration.
 - `software.amazon.smithy.build.PluginContext` for the projected `Model`,
@@ -44,6 +57,7 @@ validators. The relevant APIs are:
 Use these targets while developing the plugin:
 
 ```shell
+aspect check --kind=java
 bazelisk build //src/smithy/plugins/ir:verself_smithy_ir_plugin
 bazelisk build //src/smithy/models/verself:smithy_validate
 bazelisk build //src/smithy/models/verself:smithy_build
@@ -52,13 +66,12 @@ bazelisk build //src/smithy/models/verself:iam_audit_catalog
 bazelisk build //src/smithy/models/verself:iam_observability_catalog
 bazelisk build //src/smithy/models/verself:iam_conformance_fixtures
 bazelisk build //src/smithy/models/verself:iam_proto_projection
-tar -tf bazel-bin/src/smithy/models/verself/smithy-build.tar | rg 'ir/verself'
 ```
 
-The current implementation emits a bootstrap IR document to prove the plugin
-classpath, SPI registration, Smithy projection wiring, and deterministic output
-path. The next iterations should replace the bootstrap fields with the full IR
-schema described in `src/smithy/ir/README.md`.
+`smithy_validate` and `smithy_build` are repo-owned Bazel rules under
+`//src/smithy/build`. They run Smithy through Bazel-managed Java tooling and
+keep model sources, validator/plugin jars, generated projection trees, and
+archived outputs explicit in the action graph.
 
 ## Engineering Rules
 

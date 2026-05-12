@@ -44,10 +44,12 @@ the shape.
 ## Current Tooling
 
 The first package-local contract target is `src/smithy/models/verself`.
-It pins the Smithy CLI through the dev-tools catalog and validates the model
-before any service or SDK integration is generated.
+It pins Smithy through Maven coordinates resolved by `rules_jvm_external`,
+validates the model, and emits IR-derived IAM artifacts before service or SDK
+integration is generated.
 
 ```shell
+aspect check --kind=java
 bazelisk build //src/smithy/models/verself:smithy_validate
 bazelisk build //src/smithy/models/verself:smithy_build
 ```
@@ -55,9 +57,9 @@ bazelisk build //src/smithy/models/verself:smithy_build
 `smithy_validate` runs Smithy core validation. Repository-specific invariants
 should move into Smithy validators or generated protocol/conformance suites
 rather than package-local AST tests. `smithy_build` runs the configured Smithy
-projections and archives their artifacts for downstream generators. The
-Verself contract IR described in [`ir/`](ir/) is the first downstream artifact
-that generators should consume.
+projections through repo-owned Bazel rules and archives their artifacts for
+downstream generators. The Verself contract IR described in [`ir/`](ir/) is the
+first downstream artifact that generators should consume.
 
 The active repository validator is `Verself`, implemented in
 `//src/smithy/validators:verself_smithy_validators`. It is loaded onto the

@@ -1,24 +1,6 @@
-load("@rules_java//java:defs.bzl", "java_import", "java_library")
+load("@rules_java//java:defs.bzl", "java_library")
 
 package(default_visibility = ["//visibility:public"])
-
-genrule(
-    name = "smithy_build_jar",
-    srcs = ["@dev_tool_smithy_cli//file"],
-    outs = ["smithy-build-1.70.0.jar"],
-    cmd = """
-set -euo pipefail
-tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tmp"' EXIT
-unzip -q "$(location @dev_tool_smithy_cli//file:file)" -d "$$tmp"
-cp "$$tmp/smithy-cli-linux-x86_64/lib/smithy-build-1.70.0.jar" "$@"
-""",
-)
-
-java_import(
-    name = "smithy_build",
-    jars = [":smithy-build-1.70.0.jar"],
-)
 
 java_library(
     name = "verself_smithy_ir_plugin",
@@ -26,8 +8,8 @@ java_library(
     resource_strip_prefix = "src/smithy/plugins/ir/resources",
     resources = glob(["resources/**"]),
     deps = [
-        ":smithy_build",
-        "//src/smithy/validators:smithy_model",
-        "//src/smithy/validators:smithy_utils",
+        "@maven//:software_amazon_smithy_smithy_build",
+        "@maven//:software_amazon_smithy_smithy_model",
+        "@maven//:software_amazon_smithy_smithy_utils",
     ],
 )

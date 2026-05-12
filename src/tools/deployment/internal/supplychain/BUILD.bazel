@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "supplychain",
@@ -16,4 +16,10 @@ alias(
     name = "go_default_library",
     actual = ":supplychain",
     visibility = ["//src/tools/deployment:__subpackages__"],
+)
+
+go_test(
+    name = "supplychain_test",
+    srcs = ["scan_test.go"],
+    embed = [":supplychain"],
 )

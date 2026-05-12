@@ -3,6 +3,7 @@ package supplychain
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -83,7 +86,7 @@ func shouldSkipDir(rel string) bool {
 
 func shouldScanFile(rel string) bool {
 	switch rel {
-	case "MODULE.bazel", "MODULE.aspect":
+	case "MODULE.bazel", "MODULE.aspect", "maven_install.json":
 		return true
 	}
 	if isBootstrapScript(rel) {
@@ -139,6 +142,10 @@ func scanFile(path, rel string) ([]Finding, error) {
 	}
 	if rel == "src/websites/.npmrc" {
 		findings = append(findings, scanNpmrcSettings(rel, text)...)
+	}
+	if rel == "maven_install.json" {
+		findings = append(findings, scanMavenLock(rel, raw)...)
+		return dedupeFindings(findings), nil
 	}
 	if strings.HasSuffix(rel, "catalog.yml") {
 		findings = append(findings, scanCatalogURLs(rel, text)...)
@@ -381,6 +388,66 @@ func scanLines(rel, text string) []Finding {
 		findings = append(findings, commandFindingsForLine(rel, lineNo, line)...)
 	}
 	return findings
+}
+
+type mavenLockfile struct {
+	Artifacts map[string]mavenLockedArtifact `json:"artifacts"`
+}
+
+type mavenLockedArtifact struct {
+	Version string            `json:"version"`
+	Shasums map[string]string `json:"shasums"`
+}
+
+func scanMavenLock(rel string, raw []byte) []Finding {
+	var lock mavenLockfile
+	if err := json.Unmarshal(raw, &lock); err != nil || len(lock.Artifacts) == 0 {
+		return nil
+	}
+	text := string(raw)
+	coords := make([]string, 0, len(lock.Artifacts))
+	for coord := range lock.Artifacts {
+		coords = append(coords, coord)
+	}
+	sort.Strings(coords)
+	findings := make([]Finding, 0, len(coords))
+	for _, coord := range coords {
+		artifact := lock.Artifacts[coord]
+		digest := normalizeDigest(artifact.Shasums["jar"])
+		if artifact.Version == "" || digest == "" {
+			continue
+		}
+		versioned := coord + ":" + artifact.Version
+		findings = append(findings, finding(
+			rel,
+			lineForJSONKey(text, coord),
+			"maven_artifact",
+			"build-time",
+			versioned,
+			mavenJarURL(coord, artifact.Version),
+			digest,
+			versioned,
+		))
+	}
+	return findings
+}
+
+func lineForJSONKey(text, key string) uint32 {
+	needle := strconv.Quote(key)
+	idx := strings.Index(text, needle)
+	if idx < 0 {
+		return 1
+	}
+	return uint32(strings.Count(text[:idx], "\n") + 1)
+}
+
+func mavenJarURL(coord, version string) string {
+	parts := strings.Split(coord, ":")
+	if len(parts) != 2 {
+		return "https://repo1.maven.org/maven2"
+	}
+	groupPath := strings.ReplaceAll(parts[0], ".", "/")
+	return "https://repo1.maven.org/maven2/" + groupPath + "/" + parts[1] + "/" + version + "/" + parts[1] + "-" + version + ".jar"
 }
 
 func commandFindingsForLine(rel string, lineNo uint32, line string) []Finding {

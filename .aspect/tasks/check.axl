@@ -1,10 +1,10 @@
-"""aspect check --kind=go-test|go-vet|go-lint|conversions|ansible|topology|buildifier|all
+"""aspect check --kind=go-test|go-vet|go-lint|java|conversions|ansible|topology|buildifier|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: buildifier → topology → ansible → conversions → vet → lint → test.
+fast-failure order: buildifier → topology → java → ansible → conversions → vet → lint → test.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
 
 def _go_each(ctx, args, label_prefix):
     for d in GO_DIRS:
@@ -80,6 +80,34 @@ def _buildifier(ctx):
         label = "buildifier -mode=check -lint=warn",
     )
 
+def _java(ctx):
+    files = java_tracked_files(ctx)
+    if files == None:
+        return 1
+    if len(files) > 0:
+        rc = checked_spawn(
+            ctx,
+            "bazelisk",
+            ["run", "--java_runtime_version=remotejdk_25", "//src/smithy/tools:google_java_format", "--", "--dry-run", "--set-exit-if-changed"] + files,
+            cwd = ws_path(ctx),
+            label = "google-java-format --dry-run",
+        )
+        if rc != 0:
+            return rc
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        [
+            "build",
+            "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
+            "//src/smithy/validators:verself_smithy_validators",
+            "//src/smithy/models/verself:smithy_validate",
+            "//src/smithy/models/verself:iam_public_ir",
+        ],
+        cwd = ws_path(ctx),
+        label = "bazelisk build Smithy Java lane",
+    )
+
 def _legacy_topology_api(ctx):
     return checked_spawn(
         ctx,
@@ -96,6 +124,7 @@ _CHECKERS = {
     "go-test": _go_test,
     "go-vet": _go_vet,
     "go-lint": _go_lint,
+    "java": _java,
     "conversions": _conversions,
     "ansible": _ansible_lint,
     "topology": _legacy_topology_api,
@@ -103,7 +132,7 @@ _CHECKERS = {
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "topology", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "topology", "java", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -121,7 +150,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|ansible|topology|buildifier|all).",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|java|conversions|ansible|topology|buildifier|all).",
     args = {
         "kind": args.string(
             default = "all",
