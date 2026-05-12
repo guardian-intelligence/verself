@@ -61,16 +61,16 @@ catalogs:
       specifier: 0.1.82
       version: 0.1.82
     '@tanstack/react-form':
-      specifier: ^1.28.6
+      specifier: 1.28.6
       version: 1.28.6
     '@tanstack/react-query':
-      specifier: ^5.75.0
+      specifier: 5.96.2
       version: 5.96.2
     '@tanstack/react-router':
-      specifier: ^1.167.0
+      specifier: 1.168.10
       version: 1.168.10
     '@tanstack/react-start':
-      specifier: ^1.166.0
+      specifier: 1.167.16
       version: 1.167.16
     '@tanstack/router-generator':
       specifier: 1.166.24
