@@ -62,13 +62,13 @@ function GovernanceDocs() {
             payloads are stored as hashed detail records behind the canonical row.
           </p>
         </Prose>
-        <Command>{`const verself = new Verself({
-  bearerToken: process.env.VERSELF_TOKEN!,
-  governanceURL: "https://governance.api.verself.sh",
+        <Command>{`const verself = await Verself.fromWorkloadIdentity({
+  org: "guardian-intelligence",
+  provider: "github-actions",
 });
 
-const page = await verself.governance.listAuditEvents({
-  event_source: "governance-service",
+const page = await verself.audit.events.list({
+  eventSource: "governance-service",
   limit: 50,
   outcome: "allowed",
 });`}</Command>

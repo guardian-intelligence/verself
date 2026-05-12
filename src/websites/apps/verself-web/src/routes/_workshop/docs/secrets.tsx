@@ -420,7 +420,7 @@ function AccessControl() {
         />
         <DefinitionCard
           term="Member"
-          definition="Read secrets and use keys only on resources explicitly granted to the member, their team, or a service account they hold. No blanket access."
+          definition="Read secrets and use keys only on resources explicitly granted to the member, their team, or a machine principal they hold. No blanket access."
         />
       </DefinitionGrid>
 
@@ -429,14 +429,13 @@ function AccessControl() {
         <Prose>
           <p>
             Owners and admins grant specific operations (<code>read</code>, <code>use</code>,{" "}
-            <code>rotate</code>) on specific resources to specific actors — members, teams, or
-            service accounts. Grants can be time-boxed and are audited on every use. Revoking a
+            <code>rotate</code>) on specific resources to specific actors: members, teams, or
+            machine principals. Grants can be time-boxed and are audited on every use. Revoking a
             grant takes effect on the next read.
           </p>
           <p>
-            For automated callers such as CI jobs and service accounts, issue API credentials with
-            the exact operations the caller needs. API credentials never inherit blanket role
-            permissions.
+            For automated callers such as CI jobs and agents, issue credentials with the exact
+            operations the caller needs. Credentials never inherit blanket role permissions.
           </p>
         </Prose>
       </div>
