@@ -79,30 +79,30 @@ type UpdateMemberRoleInput struct {
 }
 
 type IAMClient struct {
-	client *iamcore.ClientWithResponses
+	client *iamcore.Client
 }
 
 func (c *IAMClient) ListOrganizations(ctx context.Context, options ListOrganizationsOptions) (OrganizationList, error) {
 	if c == nil || c.client == nil {
 		return OrganizationList{}, fmt.Errorf("verself sdk: iam client is not initialized")
 	}
-	params := &iamcore.ListOrganizationsParams{}
+	request := iamcore.ListOrganizationsRequest{}
 	if options.PageSize > 0 {
-		pageSize := int64(options.PageSize)
-		params.PageSize = &pageSize
+		pageSize := iamcore.PageSize(options.PageSize)
+		request.PageSize = &pageSize
 	}
 	if strings.TrimSpace(options.PageToken) != "" {
 		pageToken := strings.TrimSpace(options.PageToken)
-		params.PageToken = &pageToken
+		request.PageToken = &pageToken
 	}
-	response, err := c.client.ListOrganizationsWithResponse(ctx, params)
+	response, err := c.client.ListOrganizations(ctx, request)
 	if err != nil {
 		return OrganizationList{}, err
 	}
-	if response.JSON200 == nil {
-		return OrganizationList{}, iamAPIError("list organizations", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return OrganizationList{}, iamAPIError("list organizations", response.StatusCode, response.Problem, response.Body)
 	}
-	return organizationListFromGenerated(*response.JSON200), nil
+	return organizationListFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) GetOrganization(ctx context.Context, orgID string) (Organization, error) {
@@ -113,14 +113,14 @@ func (c *IAMClient) GetOrganization(ctx context.Context, orgID string) (Organiza
 	if id == "" {
 		return Organization{}, fmt.Errorf("verself sdk: org id is required")
 	}
-	response, err := c.client.GetOrganizationWithResponse(ctx, id)
+	response, err := c.client.GetOrganization(ctx, iamcore.GetOrganizationRequest{OrgID: id})
 	if err != nil {
 		return Organization{}, err
 	}
-	if response.JSON200 == nil {
-		return Organization{}, iamAPIError("get organization", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return Organization{}, iamAPIError("get organization", response.StatusCode, response.Problem, response.Body)
 	}
-	return organizationFromGenerated(*response.JSON200), nil
+	return organizationFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) UpdateOrganization(ctx context.Context, input UpdateOrganizationInput) (Organization, error) {
@@ -144,14 +144,18 @@ func (c *IAMClient) UpdateOrganization(ctx context.Context, input UpdateOrganiza
 	if input.Slug != nil {
 		body.Slug = trimStringPointer(input.Slug)
 	}
-	response, err := c.client.UpdateOrganizationWithResponse(ctx, orgID, &iamcore.UpdateOrganizationParams{IdempotencyKey: key}, body)
+	response, err := c.client.UpdateOrganization(ctx, iamcore.UpdateOrganizationRequest{
+		OrgID:          orgID,
+		IdempotencyKey: key,
+		Body:           body,
+	})
 	if err != nil {
 		return Organization{}, err
 	}
-	if response.JSON200 == nil {
-		return Organization{}, iamAPIError("update organization", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return Organization{}, iamAPIError("update organization", response.StatusCode, response.Problem, response.Body)
 	}
-	return organizationFromGenerated(*response.JSON200), nil
+	return organizationFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) ListMembers(ctx context.Context, options ListMembersOptions) (MemberList, error) {
@@ -162,23 +166,23 @@ func (c *IAMClient) ListMembers(ctx context.Context, options ListMembersOptions)
 	if orgID == "" {
 		return MemberList{}, fmt.Errorf("verself sdk: org id is required")
 	}
-	params := &iamcore.ListMembersParams{}
+	request := iamcore.ListMembersRequest{OrgID: orgID}
 	if options.PageSize > 0 {
-		pageSize := int64(options.PageSize)
-		params.PageSize = &pageSize
+		pageSize := iamcore.PageSize(options.PageSize)
+		request.PageSize = &pageSize
 	}
 	if strings.TrimSpace(options.PageToken) != "" {
 		pageToken := strings.TrimSpace(options.PageToken)
-		params.PageToken = &pageToken
+		request.PageToken = &pageToken
 	}
-	response, err := c.client.ListMembersWithResponse(ctx, orgID, params)
+	response, err := c.client.ListMembers(ctx, request)
 	if err != nil {
 		return MemberList{}, err
 	}
-	if response.JSON200 == nil {
-		return MemberList{}, iamAPIError("list members", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return MemberList{}, iamAPIError("list members", response.StatusCode, response.Problem, response.Body)
 	}
-	return memberListFromGenerated(*response.JSON200), nil
+	return memberListFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) GetMember(ctx context.Context, input GetMemberInput) (Member, error) {
@@ -190,14 +194,17 @@ func (c *IAMClient) GetMember(ctx context.Context, input GetMemberInput) (Member
 	if orgID == "" || memberID == "" {
 		return Member{}, fmt.Errorf("verself sdk: org id and member id are required")
 	}
-	response, err := c.client.GetMemberWithResponse(ctx, orgID, memberID)
+	response, err := c.client.GetMember(ctx, iamcore.GetMemberRequest{
+		OrgID:    orgID,
+		MemberID: memberID,
+	})
 	if err != nil {
 		return Member{}, err
 	}
-	if response.JSON200 == nil {
-		return Member{}, iamAPIError("get member", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return Member{}, iamAPIError("get member", response.StatusCode, response.Problem, response.Body)
 	}
-	return memberFromGenerated(*response.JSON200), nil
+	return memberFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) UpdateMemberRole(ctx context.Context, input UpdateMemberRoleInput) (Member, error) {
@@ -214,18 +221,23 @@ func (c *IAMClient) UpdateMemberRole(ctx context.Context, input UpdateMemberRole
 		return Member{}, err
 	}
 	body := iamcore.UpdateMemberRoleInputBody{
-		ExpectedOrgAclVersion: input.ExpectedOrgACLVersion,
-		ExpectedRole:          strings.TrimSpace(string(input.ExpectedRole)),
-		Role:                  strings.TrimSpace(string(input.Role)),
+		ExpectedOrgACLVersion: input.ExpectedOrgACLVersion,
+		ExpectedRole:          iamcore.OrganizationRole(strings.TrimSpace(string(input.ExpectedRole))),
+		Role:                  iamcore.OrganizationRole(strings.TrimSpace(string(input.Role))),
 	}
-	response, err := c.client.UpdateMemberRoleWithResponse(ctx, orgID, memberID, &iamcore.UpdateMemberRoleParams{IdempotencyKey: key}, body)
+	response, err := c.client.UpdateMemberRole(ctx, iamcore.UpdateMemberRoleRequest{
+		OrgID:          orgID,
+		MemberID:       memberID,
+		IdempotencyKey: key,
+		Body:           body,
+	})
 	if err != nil {
 		return Member{}, err
 	}
-	if response.JSON200 == nil {
-		return Member{}, iamAPIError("update member role", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return Member{}, iamAPIError("update member role", response.StatusCode, response.Problem, response.Body)
 	}
-	return memberFromGenerated(*response.JSON200), nil
+	return memberFromGenerated(*response.Result), nil
 }
 
 func organizationListFromGenerated(input iamcore.ListOrganizationsOutputBody) OrganizationList {
@@ -234,8 +246,8 @@ func organizationListFromGenerated(input iamcore.ListOrganizationsOutputBody) Or
 		out.NextPageToken = *input.NextPageToken
 	}
 	if input.Organizations != nil {
-		out.Organizations = make([]Organization, 0, len(*input.Organizations))
-		for _, organization := range *input.Organizations {
+		out.Organizations = make([]Organization, 0, len(input.Organizations))
+		for _, organization := range input.Organizations {
 			out.Organizations = append(out.Organizations, organizationFromGenerated(organization))
 		}
 	}
@@ -244,13 +256,13 @@ func organizationListFromGenerated(input iamcore.ListOrganizationsOutputBody) Or
 
 func organizationFromGenerated(input iamcore.OrganizationSummary) Organization {
 	return Organization{
-		OrgID:         input.OrgId,
+		OrgID:         input.OrgID,
 		ResourceName:  input.ResourceName,
 		DisplayName:   input.DisplayName,
 		Slug:          stringValue(input.Slug),
-		CallerRole:    input.CallerRole,
+		CallerRole:    string(input.CallerRole),
 		Version:       input.Version,
-		OrgACLVersion: input.OrgAclVersion,
+		OrgACLVersion: input.OrgACLVersion,
 	}
 }
 
@@ -260,8 +272,8 @@ func memberListFromGenerated(input iamcore.ListMembersOutputBody) MemberList {
 		out.NextPageToken = *input.NextPageToken
 	}
 	if input.Members != nil {
-		out.Members = make([]Member, 0, len(*input.Members))
-		for _, member := range *input.Members {
+		out.Members = make([]Member, 0, len(input.Members))
+		for _, member := range input.Members {
 			out.Members = append(out.Members, memberFromGenerated(member))
 		}
 	}
@@ -270,12 +282,12 @@ func memberListFromGenerated(input iamcore.ListMembersOutputBody) MemberList {
 
 func memberFromGenerated(input iamcore.MemberSummary) Member {
 	return Member{
-		OrgID:        input.OrgId,
-		MemberID:     input.MemberId,
+		OrgID:        input.OrgID,
+		MemberID:     input.MemberID,
 		ResourceName: input.ResourceName,
 		Email:        input.Email,
 		DisplayName:  input.DisplayName,
-		Role:         input.Role,
+		Role:         string(input.Role),
 	}
 }
 

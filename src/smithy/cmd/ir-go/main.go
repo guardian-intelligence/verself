@@ -381,17 +381,317 @@ func generateCatalogJSON(ir *contractIR, catalog string) ([]byte, error) {
 
 func generateConformanceJSON(ir *contractIR) ([]byte, error) {
 	type fixture struct {
-		Service    string          `json:"service"`
-		Projection string          `json:"projection"`
-		Operations []operationSpec `json:"operations"`
-		Problems   []problemSpec   `json:"problems"`
+		SchemaVersion string                        `json:"schemaVersion"`
+		Service       string                        `json:"service"`
+		Projection    string                        `json:"projection"`
+		Operations    []conformanceOperationFixture `json:"operations"`
+		Problems      []problemSpec                 `json:"problems"`
+	}
+	ops := make([]conformanceOperationFixture, 0, len(ir.Operations))
+	for _, op := range ir.Operations {
+		opFixture, err := conformanceOperation(ir, op)
+		if err != nil {
+			return nil, err
+		}
+		ops = append(ops, opFixture)
 	}
 	return json.MarshalIndent(fixture{
-		Service:    ir.Service.Runtime.ServiceName,
-		Projection: ir.Projection,
-		Operations: ir.Operations,
-		Problems:   ir.Problems,
+		SchemaVersion: "verself.sdk-conformance.v1",
+		Service:       ir.Service.Runtime.ServiceName,
+		Projection:    ir.Projection,
+		Operations:    ops,
+		Problems:      ir.Problems,
 	}, "", "  ")
+}
+
+type conformanceOperationFixture struct {
+	Name          string                   `json:"name"`
+	OperationID   string                   `json:"operationId"`
+	Method        string                   `json:"method"`
+	PathTemplate  string                   `json:"pathTemplate"`
+	SuccessStatus int                      `json:"successStatus"`
+	Cases         []conformanceCaseFixture `json:"cases"`
+}
+
+type conformanceCaseFixture struct {
+	Name     string                      `json:"name"`
+	Request  *conformanceRequestFixture  `json:"request,omitempty"`
+	Response *conformanceResponseFixture `json:"response,omitempty"`
+}
+
+type conformanceRequestFixture struct {
+	Input   map[string]any    `json:"input"`
+	Method  string            `json:"method"`
+	Path    string            `json:"path"`
+	Query   map[string]string `json:"query,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    any               `json:"body,omitempty"`
+}
+
+type conformanceResponseFixture struct {
+	Status  int            `json:"status"`
+	Body    any            `json:"body"`
+	Result  any            `json:"result,omitempty"`
+	Problem map[string]any `json:"problem,omitempty"`
+}
+
+func conformanceOperation(ir *contractIR, op operationSpec) (conformanceOperationFixture, error) {
+	inputShape, ok := ir.Shapes[op.Input]
+	if !ok {
+		return conformanceOperationFixture{}, fmt.Errorf("operation %s input shape %s missing", op.Name, op.Input)
+	}
+	input := map[string]any{}
+	body := map[string]any{}
+	headers := map[string]string{}
+	query := map[string]string{}
+	path := op.HTTP.Path
+	for _, member := range inputShape.Members {
+		value := conformanceSampleValue(ir, member.Target, member.Name)
+		input[member.Name] = value
+		if member.HTTPBinding == nil {
+			body[member.JSONName] = value
+			continue
+		}
+		switch member.HTTPBinding.Location {
+		case "label":
+			path = strings.ReplaceAll(path, "{"+member.HTTPBinding.Name+"}", fmt.Sprint(value))
+		case "query":
+			query[member.HTTPBinding.Name] = fmt.Sprint(value)
+		case "header":
+			headers[member.HTTPBinding.Name] = fmt.Sprint(value)
+		case "document", "":
+			body[member.JSONName] = value
+		}
+	}
+	var bodyValue any
+	if len(body) > 0 {
+		bodyValue = body
+	}
+	successBody, err := conformanceSuccessBody(ir, op)
+	if err != nil {
+		return conformanceOperationFixture{}, err
+	}
+	problem := conformanceProblem(op)
+	return conformanceOperationFixture{
+		Name:          op.Name,
+		OperationID:   op.OperationID,
+		Method:        op.HTTP.Method,
+		PathTemplate:  op.HTTP.Path,
+		SuccessStatus: op.HTTP.SuccessStatus,
+		Cases: []conformanceCaseFixture{
+			{
+				Name: "http_serialization",
+				Request: &conformanceRequestFixture{
+					Input:   input,
+					Method:  op.HTTP.Method,
+					Path:    path,
+					Query:   emptyStringMapAsNil(query),
+					Headers: emptyStringMapAsNil(headers),
+					Body:    bodyValue,
+				},
+			},
+			{
+				Name: "response_parsing",
+				Response: &conformanceResponseFixture{
+					Status: op.HTTP.SuccessStatus,
+					Body:   successBody,
+					Result: successBody,
+				},
+			},
+			{
+				Name: "problem_parsing",
+				Response: &conformanceResponseFixture{
+					Status:  intValue(problem["status"]),
+					Body:    problem,
+					Problem: problem,
+				},
+			},
+		},
+	}, nil
+}
+
+func conformanceSuccessBody(ir *contractIR, op operationSpec) (any, error) {
+	output, ok := ir.Shapes[op.Output]
+	if !ok {
+		return map[string]any{}, nil
+	}
+	for _, member := range output.Members {
+		if member.NestedProperties {
+			return conformanceSampleValue(ir, member.Target, member.Name), nil
+		}
+	}
+	return conformanceSampleStruct(ir, output, ""), nil
+}
+
+func conformanceProblem(op operationSpec) map[string]any {
+	problem := problemSpec{
+		Name:   "ServiceUnavailableError",
+		Type:   "urn:verself:problem:service:unavailable",
+		Code:   "service.unavailable",
+		Status: 503,
+	}
+	if len(op.Problems) > 0 {
+		problem = op.Problems[0]
+	}
+	return map[string]any{
+		"type":   problem.Type,
+		"title":  conformanceProblemTitle(problem.Name),
+		"status": problem.Status,
+		"detail": "Conformance fixture problem for " + op.OperationID + ".",
+		"code":   problem.Code,
+	}
+}
+
+func conformanceSampleValue(ir *contractIR, target string, memberName string) any {
+	if target == "smithy.api#String" || target == "smithy.api#Timestamp" || target == "smithy.api#Blob" {
+		return conformanceSampleString(localName(target), memberName)
+	}
+	if target == "smithy.api#Integer" || target == "smithy.api#Long" {
+		return conformanceSampleInteger(localName(target), memberName, constraintsSpec{})
+	}
+	if target == "smithy.api#Boolean" {
+		return true
+	}
+	shape, ok := ir.Shapes[target]
+	if !ok {
+		return conformanceSampleString(localName(target), memberName)
+	}
+	switch shape.Kind {
+	case "string":
+		return conformanceSampleString(shape.Name, memberName)
+	case "integer", "long":
+		return conformanceSampleInteger(shape.Name, memberName, shape.Constraints)
+	case "boolean":
+		return true
+	case "enum":
+		if strings.EqualFold(memberName, "expectedRole") {
+			return "member"
+		}
+		for _, value := range shape.Enum {
+			if strings.EqualFold(value.Value, "admin") {
+				return value.Value
+			}
+		}
+		if len(shape.Enum) > 0 {
+			return shape.Enum[0].Value
+		}
+		return "unknown"
+	case "list":
+		if shape.Member == nil {
+			return []any{}
+		}
+		return []any{conformanceSampleValue(ir, shape.Member.Target, singularName(shape.Name))}
+	case "structure":
+		return conformanceSampleStruct(ir, shape, memberName)
+	default:
+		return conformanceSampleString(shape.Name, memberName)
+	}
+}
+
+func conformanceSampleStruct(ir *contractIR, shape shapeSpec, memberName string) map[string]any {
+	out := map[string]any{}
+	for _, member := range shape.Members {
+		jsonName := member.JSONName
+		if jsonName == "" {
+			jsonName = member.Name
+		}
+		out[jsonName] = conformanceSampleValue(ir, member.Target, member.Name)
+	}
+	return out
+}
+
+func conformanceSampleString(shapeName string, memberName string) string {
+	switch strings.ToLower(shapeName) {
+	case "orgid":
+		return "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT"
+	case "memberid":
+		return "member_01J8QK4M5N6P7Q8R9S0T1V2W3X"
+	case "orgslug":
+		return "guardian-intelligence"
+	case "emailaddress":
+		return "operator@example.test"
+	case "idempotencykey":
+		return "iam:test-key"
+	case "pagetoken":
+		return "cursor-1"
+	case "organizationresourcename":
+		return "urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT"
+	case "memberresourcename":
+		return "urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT/members/member_01J8QK4M5N6P7Q8R9S0T1V2W3X"
+	case "problemtype":
+		return "urn:verself:problem:conformance:sample"
+	case "problemcode":
+		return "conformance.sample"
+	case "requestid":
+		return "req_01J8QK4M5N6P7Q8R9S0T1V2W3Y"
+	case "traceparent":
+		return "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+	}
+	switch strings.ToLower(memberName) {
+	case "displayname":
+		return "Guardian Intelligence"
+	case "title":
+		return "Conformance fixture problem"
+	case "detail":
+		return "Conformance fixture detail."
+	case "instance":
+		return "/api/v1/conformance"
+	}
+	return "sample-" + lowerSnake(shapeName)
+}
+
+func conformanceSampleInteger(shapeName string, memberName string, constraints constraintsSpec) int {
+	switch strings.ToLower(shapeName) {
+	case "pagesize":
+		return 10
+	case "organizationversion":
+		return 1
+	case "orgaclversion":
+		return 3
+	}
+	if constraints.Range.Min != nil {
+		return *constraints.Range.Min
+	}
+	return 1
+}
+
+func conformanceProblemTitle(name string) string {
+	name = strings.TrimSuffix(name, "Error")
+	if name == "" {
+		return "Problem"
+	}
+	words := strings.Fields(strings.ReplaceAll(lowerSnake(name), "_", " "))
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
+}
+
+func singularName(name string) string {
+	return strings.TrimSuffix(name, "s")
+}
+
+func emptyStringMapAsNil(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	return input
+}
+
+func intValue(input any) int {
+	switch value := input.(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
 }
 
 func generateProto(ir *contractIR) ([]byte, error) {

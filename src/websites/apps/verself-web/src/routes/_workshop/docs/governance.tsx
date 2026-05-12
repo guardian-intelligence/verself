@@ -57,9 +57,9 @@ function GovernanceDocs() {
         <SectionHeading id="audit-events">Audit Events</SectionHeading>
         <Prose>
           <p>
-            Audit queries support exact filters for actor, credential, target, event source,
-            event name, audit event, outcome, cursor, and ordering. Large operation-specific
-            payloads are stored as hashed detail records behind the canonical row.
+            Audit queries support exact filters for actor, credential, target, event source, event
+            name, audit event, outcome, cursor, and ordering. Large operation-specific payloads are
+            stored as hashed detail records behind the canonical row.
           </p>
         </Prose>
         <Command>{`const verself = await Verself.fromWorkloadIdentity({

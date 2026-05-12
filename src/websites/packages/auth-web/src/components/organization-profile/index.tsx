@@ -21,10 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@verself/ui/components/ui/table";
-import {
-  useUpdateOrganizationMutation,
-  useUpdateMemberRolesMutation,
-} from "../mutations.ts";
+import { useUpdateOrganizationMutation, useUpdateMemberRolesMutation } from "../mutations.ts";
 import { organizationMembersQuery, organizationQuery } from "../queries.ts";
 import { useSignedInAuth } from "../../react.ts";
 import { useIAMApi } from "../iam-api.ts";

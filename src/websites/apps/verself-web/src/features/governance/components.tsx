@@ -296,10 +296,7 @@ function AuditTrail({
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                   No audit events match this query.
                 </TableCell>
               </TableRow>
@@ -330,11 +327,7 @@ function AuditToolbar({
   return (
     <div className="flex flex-wrap items-end gap-2">
       {AUDIT_FILTER_KEYS.map((key) => (
-        <FilterControl
-          key={key}
-          definition={AUDIT_FILTER_DEFINITIONS[key]}
-          value={search[key]}
-        />
+        <FilterControl key={key} definition={AUDIT_FILTER_DEFINITIONS[key]} value={search[key]} />
       ))}
       <TimezoneSelect value={timezone} onChange={onTimezoneChange} />
       {activeKeyCount > 0 ? (
@@ -587,7 +580,11 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
   return (
     <Link
       to={GOVERNANCE_ROUTE}
-      search={(prev) => ({ ...prev, outcome: outcome as AuditSearch["outcome"], cursor: undefined })}
+      search={(prev) => ({
+        ...prev,
+        outcome: outcome as AuditSearch["outcome"],
+        cursor: undefined,
+      })}
       data-testid="audit-cell-outcome"
     >
       <Badge variant={variant}>{outcome}</Badge>

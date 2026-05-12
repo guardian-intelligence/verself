@@ -189,7 +189,9 @@ function requireSelectedOrgID(snapshot: AuthenticatedAuthSnapshot): string {
 
 function requireSelectedProviderOrgID(snapshot: AuthenticatedAuthSnapshot): string {
   const publicOrgID = requireSelectedOrgID(snapshot);
-  const organization = snapshot.user.availableOrganizations.find((org) => org.orgID === publicOrgID);
+  const organization = snapshot.user.availableOrganizations.find(
+    (org) => org.orgID === publicOrgID,
+  );
   if (!organization?.identityProviderOrgID) {
     throw new Error("selected organization is missing identity provider mapping");
   }

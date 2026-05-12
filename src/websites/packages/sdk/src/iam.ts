@@ -1,25 +1,14 @@
 import * as v from "valibot";
-import { createClient, type Client } from "./__generated/iam-api/client/index.js";
-import {
-  getOrganization as getGeneratedOrganization,
-  listMembers as listGeneratedMembers,
-  listOrganizations as listGeneratedOrganizations,
-  updateMemberRole as updateGeneratedMemberRole,
-  updateOrganization as updateGeneratedOrganization,
-} from "./__generated/iam-api/index.js";
 import type {
+  IAMTransport,
+  ListMembersOutputBody,
+  ListOrganizationsOutputBody,
   MemberSummary,
-  UpdateMemberRoleInputBodyWritable,
-  UpdateOrganizationInputBodyWritable,
-} from "./__generated/iam-api/types.gen.js";
-import {
-  vListMembersOutputBody,
-  vListOrganizationsOutputBody,
-  vMemberSummary,
-  vOrganizationSummary,
-  vUpdateMemberRoleInputBodyWritable,
-  vUpdateOrganizationInputBodyWritable,
-} from "./__generated/iam-api/valibot.gen.js";
+  OrganizationSummary,
+  UpdateMemberRoleInputBody,
+  UpdateOrganizationInputBody,
+} from "./__generated/iam-transport/client.gen.js";
+import { createIAMTransport } from "./__generated/iam-transport/client.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
   ServiceApiError,
@@ -44,8 +33,8 @@ export function isIAMApiError(error: unknown): error is IAMApiError {
   return error instanceof IAMApiError;
 }
 
-function createIAMClient(options: IAMClientOptions): Client {
-  return createClient({
+function createIAMClient(options: IAMClientOptions): IAMTransport {
+  return createIAMTransport({
     baseUrl: options.baseUrl,
     headers: createBearerJSONHeaders(options.accessToken, options.traceparent),
     ...(options.fetch ? { fetch: options.fetch } : {}),
@@ -56,8 +45,19 @@ function throwIAMError(path: string, response: Response | undefined, error: unkn
   throwGeneratedServiceError(IAMApiError, path, response, error);
 }
 
-function removeUndefined<T extends Record<string, unknown>>(input: T): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+function unwrapIAMResult<T>(
+  path: string,
+  result: {
+    readonly response: Response;
+    readonly bodyText: string;
+    readonly data?: T;
+    readonly error?: unknown;
+  },
+): T {
+  if (result.error !== undefined || result.data === undefined) {
+    throwIAMError(path, result.response, result.error ?? result.bodyText);
+  }
+  return result.data;
 }
 
 const organizationSlugSchema = v.pipe(
@@ -69,6 +69,31 @@ const organizationSlugSchema = v.pipe(
 );
 
 const organizationRoleSchema = v.picklist(["owner", "admin", "member"]);
+const organizationSummarySchema = v.strictObject({
+  orgId: v.string(),
+  resourceName: v.string(),
+  slug: v.optional(v.string()),
+  displayName: v.string(),
+  callerRole: organizationRoleSchema,
+  version: v.number(),
+  orgAclVersion: v.number(),
+});
+const memberSummarySchema = v.strictObject({
+  orgId: v.string(),
+  memberId: v.string(),
+  resourceName: v.string(),
+  email: v.string(),
+  displayName: v.string(),
+  role: organizationRoleSchema,
+});
+const listOrganizationsOutputBodySchema = v.strictObject({
+  organizations: v.array(organizationSummarySchema),
+  nextPageToken: v.optional(v.string()),
+});
+const listMembersOutputBodySchema = v.strictObject({
+  members: v.array(memberSummarySchema),
+  nextPageToken: v.optional(v.string()),
+});
 
 function parseRole(value: string): "owner" | "admin" | "member" {
   return v.parse(organizationRoleSchema, value);
@@ -133,8 +158,8 @@ export interface OrganizationMetadata {
   readonly slug: string;
 }
 
-function parseMember(input: unknown): Member {
-  const member = v.parse(vMemberSummary, input) as MemberSummary;
+function parseMember(input: MemberSummary): Member {
+  const member = v.parse(memberSummarySchema, input) as MemberSummary;
   const role = parseRole(member.role);
   return {
     user_id: member.memberId,
@@ -145,8 +170,8 @@ function parseMember(input: unknown): Member {
   };
 }
 
-function parseOrganization(input: unknown): Organization {
-  const organization = v.parse(vOrganizationSummary, input);
+function parseOrganization(input: OrganizationSummary): Organization {
+  const organization = v.parse(organizationSummarySchema, input) as OrganizationSummary;
   const callerRole = parseRole(organization.callerRole);
   return {
     org_id: organization.orgId,
@@ -166,7 +191,7 @@ function parseOrganization(input: unknown): Organization {
 }
 
 function parseOrganizationMetadata(input: unknown): OrganizationMetadata {
-  const organization = parseOrganization(input);
+  const organization = parseOrganization(input as OrganizationSummary);
   return {
     org_id: organization.org_id,
     display_name: organization.display_name,
@@ -204,31 +229,19 @@ export class IAM {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
     const path = `/api/v1/orgs/${org.org_id}`;
-    const result = await getGeneratedOrganization({
-      client,
-      path: { orgId: org.org_id },
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseOrganization(result.data);
+    const result = await client.getOrganization({ orgId: org.org_id });
+    return parseOrganization(unwrapIAMResult(path, result));
   }
 
   async listMyOrganizations(): Promise<Array<OrganizationMetadata>> {
     const client = createIAMClient(this.#options);
     const path = "/api/v1/orgs";
-    const result = await listGeneratedOrganizations({
-      client,
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    const body = v.parse(vListOrganizationsOutputBody, result.data);
-    return body.organizations?.map((organization) => parseOrganizationMetadata(organization)) ?? [];
+    const result = await client.listOrganizations();
+    const body = v.parse(
+      listOrganizationsOutputBodySchema,
+      unwrapIAMResult(path, result),
+    ) as ListOrganizationsOutputBody;
+    return body.organizations.map((organization) => parseOrganizationMetadata(organization));
   }
 
   async updateOrganization(
@@ -237,46 +250,33 @@ export class IAM {
   ): Promise<Organization> {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
-    const generatedBody = v.parse(vUpdateOrganizationInputBodyWritable, {
-      displayName: body.display_name,
-      slug: body.slug,
-      version: body.version,
-    });
-    const parsedBody = removeUndefined({
-      displayName: generatedBody.displayName,
-      slug: generatedBody.slug,
-      version: bigintToNumber(generatedBody.version),
-    }) as UpdateOrganizationInputBodyWritable;
+    const input = v.parse(updateOrganizationRequestSchema, body);
+    const parsedBody: UpdateOrganizationInputBody = {
+      ...(input.display_name !== undefined ? { displayName: input.display_name } : {}),
+      ...(input.slug !== undefined ? { slug: input.slug } : {}),
+      version: input.version,
+    };
     const path = `/api/v1/orgs/${org.org_id}`;
-    const result = await updateGeneratedOrganization({
+    const result = await client.updateOrganization({
       body: parsedBody,
-      client,
-      headers: idempotencyHeaders("iam-organization", options.idempotencyKey),
-      path: { orgId: org.org_id },
-      responseStyle: "fields",
-      throwOnError: false,
+      idempotencyKey: idempotencyHeaders("iam-organization", options.idempotencyKey)[
+        "Idempotency-Key"
+      ],
+      orgId: org.org_id,
     });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseOrganization(result.data);
+    return parseOrganization(unwrapIAMResult(path, result));
   }
 
   async listMembers(): Promise<Array<Member>> {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
     const path = `/api/v1/orgs/${org.org_id}/members`;
-    const result = await listGeneratedMembers({
-      client,
-      path: { orgId: org.org_id },
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    const body = v.parse(vListMembersOutputBody, result.data);
-    return body.members?.map((member) => parseMember(member)) ?? [];
+    const result = await client.listMembers({ orgId: org.org_id });
+    const body = v.parse(
+      listMembersOutputBodySchema,
+      unwrapIAMResult(path, result),
+    ) as ListMembersOutputBody;
+    return body.members.map((member) => parseMember(member));
   }
 
   async updateMemberRoles(
@@ -286,46 +286,45 @@ export class IAM {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
     const input = v.parse(updateMemberRolesRequestSchema, body);
-    const generatedBody = v.parse(vUpdateMemberRoleInputBodyWritable, {
+    const expectedRole = input.expectedRoleKeys[0];
+    const role = input.roleKeys[0];
+    if (expectedRole === undefined || role === undefined) {
+      throw new Error("IAM member role update requires current and desired roles");
+    }
+    const parsedBody: UpdateMemberRoleInputBody = {
       expectedOrgAclVersion: input.expectedOrgAclVersion,
-      expectedRole: input.expectedRoleKeys[0],
-      role: input.roleKeys[0],
-    });
-    const parsedBody: UpdateMemberRoleInputBodyWritable = {
-      expectedOrgAclVersion: bigintToNumber(generatedBody.expectedOrgAclVersion),
-      expectedRole: generatedBody.expectedRole,
-      role: generatedBody.role,
+      expectedRole,
+      role,
     };
     const path = `/api/v1/orgs/${org.org_id}/members/${input.userId}/role`;
-    const result = await updateGeneratedMemberRole({
+    const result = await client.updateMemberRole({
       body: parsedBody,
-      client,
-      headers: idempotencyHeaders("iam-member-role", options.idempotencyKey),
-      path: { orgId: org.org_id, memberId: input.userId },
-      responseStyle: "fields",
-      throwOnError: false,
+      idempotencyKey: idempotencyHeaders("iam-member-role", options.idempotencyKey)[
+        "Idempotency-Key"
+      ],
+      memberId: input.userId,
+      orgId: org.org_id,
     });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseMember(result.data);
+    return parseMember(unwrapIAMResult(path, result));
   }
 
   async currentOrganization(client = createIAMClient(this.#options)): Promise<Organization> {
     const path = "/api/v1/orgs";
-    const result = await listGeneratedOrganizations({
-      client,
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    const body = v.parse(vListOrganizationsOutputBody, result.data);
-    const organizations = body.organizations ?? [];
+    const result = await client.listOrganizations();
+    const body = v.parse(
+      listOrganizationsOutputBodySchema,
+      unwrapIAMResult(path, result),
+    ) as ListOrganizationsOutputBody;
+    const organizations = body.organizations;
     if (organizations.length !== 1) {
-      throw new Error(`IAM selected-organization token returned ${organizations.length} organizations`);
+      throw new Error(
+        `IAM selected-organization token returned ${organizations.length} organizations`,
+      );
     }
-    return parseOrganization(organizations[0]);
+    const organization = organizations[0];
+    if (organization === undefined) {
+      throw new Error("IAM selected-organization token returned no organization");
+    }
+    return parseOrganization(organization);
   }
 }

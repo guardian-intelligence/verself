@@ -100,7 +100,7 @@ func New(options Options) (*Client, error) {
 		httpClient = http.DefaultClient
 	}
 	iamEditor := iamRequestEditor(token, options.Traceparent)
-	generatedIAM, err := iamcore.NewClientWithResponses(
+	generatedIAM, err := iamcore.NewClient(
 		iamURL,
 		iamcore.WithHTTPClient(httpClient),
 		iamcore.WithRequestEditorFn(iamEditor),

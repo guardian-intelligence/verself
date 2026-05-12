@@ -90,8 +90,7 @@ go get github.com/verself/verself-go`,
     id: "credentials",
     title: "Credentials",
     status: "next",
-    summary:
-      "Machine credentials are the public non-human identity surface for SDK integrations.",
+    summary: "Machine credentials are the public non-human identity surface for SDK integrations.",
     body: [
       "A credential authenticates a backing machine principal in IAM. The SDK should expose credential lifecycle methods without requiring callers to manage the principal as a separate first-class workflow.",
       "Creation returns issued material once. SDK helpers should write credential bundles only when the caller explicitly asks for a file and should make owner-only file modes the default for local writes.",
@@ -295,16 +294,14 @@ urn:verself:<installation-id>:orgs/<org-id>/transitKeys/<key-id>`,
     id: "versioning",
     title: "Versioning",
     status: "coming-soon",
-    summary:
-      "SDK releases should pin API versions and make compatibility guarantees explicit.",
+    summary: "SDK releases should pin API versions and make compatibility guarantees explicit.",
     topics: ["API version headers", "SDK release cadence", "Deprecation policy", "Canary clients"],
   },
   {
     id: "standards",
     title: "Standards",
     status: "current",
-    summary:
-      "The SDK follows established OAuth, HTTP, tracing, and workload-identity primitives.",
+    summary: "The SDK follows established OAuth, HTTP, tracing, and workload-identity primitives.",
     body: [
       "Machine authentication is based on OAuth token exchange, client credentials, private-key JWT, and workload assertions. Future human CLI login belongs behind OAuth device authorization.",
       "Transport behavior uses RFC 9457 problem details, W3C trace context, HTTP retry semantics, and Idempotency-Key for retriable mutations.",
@@ -441,8 +438,7 @@ function SDKDocsSection({ section }: { section: SDKSection }) {
 }
 
 function StatusBadge({ status }: { status: SectionStatus }) {
-  const label =
-    status === "coming-soon" ? "Coming Soon" : status === "next" ? "Next" : "Current";
+  const label = status === "coming-soon" ? "Coming Soon" : status === "next" ? "Next" : "Current";
   return (
     <span
       data-status={status}

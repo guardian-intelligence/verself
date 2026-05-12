@@ -41,8 +41,7 @@ const CLI_SECTIONS: readonly CLISection[] = [
     id: "authentication",
     title: "Authentication",
     status: "next",
-    summary:
-      "Non-human authentication for headless CLI, CI, SDK integrations, and agent runs.",
+    summary: "Non-human authentication for headless CLI, CI, SDK integrations, and agent runs.",
     body: [
       "Use a credential file only when the runtime cannot present a stronger workload identity. The file contains one machine credential bundle and is exchanged for short-lived access tokens for the selected organization and service audience.",
       "Use workload trust when the runtime can prove its own identity. GitHub Actions OIDC, future Verself runner identity, and self-hosted SPIFFE identities should exchange runtime assertions for short-lived Verself tokens instead of storing long-lived secrets.",
@@ -103,8 +102,7 @@ verself projects create "API" --slug api --idempotency-key project-create-api-20
     id: "organizations",
     title: "Organizations",
     status: "next",
-    summary:
-      "Customer-facing organization creation and management through the public IAM service.",
+    summary: "Customer-facing organization creation and management through the public IAM service.",
     body: [
       "An organization is the tenant boundary for users, machine principals, repositories, sandbox runs, billing, audit records, and policy. Every authenticated CLI command runs in exactly one organization context unless the command is explicitly listing organizations available to the caller.",
       "Creating an organization creates the directory record, initializes its IAM graph, and grants the creator owner access. Organization slugs are stable customer-facing identifiers and should be used in command examples and automation.",
@@ -217,7 +215,13 @@ verself repos workflow-runs dispatch <repo-id> --project-id <project-id> --workf
     status: "current",
     summary:
       "Execution records, attempts, logs, analytics, and recurring workflow dispatch schedules.",
-    topics: ["List runs", "Read logs", "Search logs", "Create schedule", "Pause or resume schedule"],
+    topics: [
+      "List runs",
+      "Read logs",
+      "Search logs",
+      "Create schedule",
+      "Pause or resume schedule",
+    ],
     commands: `verself runs list --status succeeded
 verself runs logs <execution-id>
 verself schedules create --project-id <project-id> --source-repository-id <repo-id> --workflow-path .github/workflows/ci.yml --interval-seconds 900`,
@@ -248,8 +252,7 @@ verself notifications preferences set --version 1 --enabled true --web-enabled t
     id: "governance",
     title: "Governance and Audit",
     status: "current",
-    summary:
-      "Audit event search and organization data exports over the public Governance API.",
+    summary: "Audit event search and organization data exports over the public Governance API.",
     topics: ["Search audit events", "Create export", "Download export", "Trace context"],
     commands: `verself audit events --high-risk --limit 50
 verself audit exports create --scope audit
@@ -336,8 +339,7 @@ function CLIDocsSection({ section }: { section: CLISection }) {
 }
 
 function StatusBadge({ status }: { status: SectionStatus }) {
-  const label =
-    status === "coming-soon" ? "Coming Soon" : status === "next" ? "Next" : "Current";
+  const label = status === "coming-soon" ? "Coming Soon" : status === "next" ? "Next" : "Current";
   return (
     <span
       data-status={status}

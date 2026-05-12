@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "ir-sdk-go_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/verself/src/smithy/cmd/ir-sdk-go",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "ir-sdk-go",
+    embed = [":ir-sdk-go_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -20,10 +20,7 @@ export {
   organizationQuery,
   type OrganizationMetadataValue,
 } from "./queries.ts";
-export {
-  useUpdateOrganizationMutation,
-  useUpdateMemberRolesMutation,
-} from "./mutations.ts";
+export { useUpdateOrganizationMutation, useUpdateMemberRolesMutation } from "./mutations.ts";
 
 export {
   OrganizationProfile,

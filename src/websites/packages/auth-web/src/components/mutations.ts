@@ -2,10 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignedInAuth } from "../react.ts";
 import { useIAMApi } from "./iam-api.ts";
 import { invalidateOrganizationQueries } from "./queries.ts";
-import type {
-  UpdateOrganizationRequest,
-  UpdateMemberRolesRequest,
-} from "./types.ts";
+import type { UpdateOrganizationRequest, UpdateMemberRolesRequest } from "./types.ts";
 
 export function useUpdateOrganizationMutation() {
   const auth = useSignedInAuth();

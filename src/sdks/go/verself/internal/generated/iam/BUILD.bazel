@@ -1,10 +1,16 @@
-load("//src/tools/build:openapi_codegen.bzl", "verself_oapi_go_client")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_go")
 
-verself_oapi_go_client(
-    name = "iam",
-    importpath = "github.com/verself/verself-go/internal/generated/iam",
+ir_sdk_go(
+    name = "iam_client_src",
+    out = "client.gen.go",
+    ir = "//src/smithy/models/verself:iam_public_ir",
     package = "iam",
-    spec = "//src/services/iam-service/openapi:openapi-3.0.yaml",
+)
+
+go_library(
+    name = "iam",
+    srcs = [":iam_client_src"],
+    importpath = "github.com/verself/verself-go/internal/generated/iam",
     visibility = ["//src/sdks/go/verself:__pkg__"],
-    deps = ["@com_github_oapi_codegen_runtime//:runtime"],
 )
