@@ -47,7 +47,7 @@ repos:
           bash -lc '
             set -e
             vp_bin="$HOME/.vite-plus/bin/vp"
-            [ -x "$vp_bin" ] || { echo "vp not found at $vp_bin; run scripts/bootstrap-*" >&2; exit 1; }
+            [ -x "$vp_bin" ] || { echo "vp not found at $vp_bin; run src/tools/dev/bootstrap/bootstrap-*" >&2; exit 1; }
             cd src/websites
             files=()
             for f in "$@"; do files+=("${f#src/websites/}"); done

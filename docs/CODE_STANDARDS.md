@@ -8,8 +8,8 @@ The list below is not exhaustive but should be referenced for engineering decisi
 * Use nftables for perimeter, host, and guest-boundary policy. Do not encode service-to-service reachability or dependency ports in nftables.
 * Always think of the governance, IAM, quotas, and metering. Customers must know who did what, what they're allowed to do, and how much they used.
 * The optimal frontend is a real-time server-rendered optimistically-updating with periodic resync thin client. TanStack + Electric solves most of this. We're moving to add a write-path sync engine.
-* Think in terms of proviing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
+* Think in terms of providing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
 * Never use useEffect. Very rarely, if ever, use `useState` -- prefer TanStack Query primitives for all state. Sync snowflake client-side state with the URL.
 * SPIFFE mTLS solves some problems, unsure whether it's pulling its weight yet.
 * We should consider a QEMU warm pool.
-* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `scripts/bootstrap-*`. Choose the appropriate language and check the result into a Bazel target. Treat scripts as core load-bearing architecture + sharp knives. They are extremely dangerous and should be carefully reviewed.
+* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Choose the appropriate language and check the result into a Bazel target. Treat scripts as core load-bearing architecture + sharp knives. They are extremely dangerous and should be carefully reviewed.
