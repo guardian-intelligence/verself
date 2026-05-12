@@ -1,0 +1,58 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "smithy_sources",
+    srcs = glob(["*.smithy"]),
+)
+
+filegroup(
+    name = "smithy_config",
+    srcs = ["smithy-build.json"],
+)
+
+filegroup(
+    name = "docs",
+    srcs = ["README.md"],
+)
+
+genrule(
+    name = "smithy_validate",
+    srcs = [
+        ":smithy_config",
+        ":smithy_sources",
+        "//src/contracts/validators:verself_smithy_validators",
+        "@dev_tool_smithy_cli//file",
+    ],
+    outs = ["smithy.validate.ok"],
+    cmd = """
+set -euo pipefail
+	root="$$PWD"
+	tmp="$$(mktemp -d)"
+	trap 'rm -rf "$$tmp"' EXIT
+	unzip -q "$$root/$(location @dev_tool_smithy_cli//file:file)" -d "$$tmp"
+	smithy_cp="$$tmp/smithy-cli-linux-x86_64/lib/*:$$root/$(location //src/contracts/validators:verself_smithy_validators)"
+	"$$tmp/smithy-cli-linux-x86_64/bin/java" -XX:-UsePerfData -cp "$$smithy_cp" software.amazon.smithy.cli.SmithyCli validate --no-color --severity NOTE --config "$(location :smithy_config)" --output "$$tmp/build"
+	touch "$@"
+	""",
+)
+
+genrule(
+    name = "smithy_build",
+    srcs = [
+        ":smithy_config",
+        ":smithy_sources",
+        "//src/contracts/validators:verself_smithy_validators",
+        "@dev_tool_smithy_cli//file",
+    ],
+    outs = ["smithy-build.tar"],
+    cmd = """
+set -euo pipefail
+	root="$$PWD"
+	tmp="$$(mktemp -d)"
+	trap 'rm -rf "$$tmp"' EXIT
+	unzip -q "$$root/$(location @dev_tool_smithy_cli//file:file)" -d "$$tmp"
+	smithy_cp="$$tmp/smithy-cli-linux-x86_64/lib/*:$$root/$(location //src/contracts/validators:verself_smithy_validators)"
+	"$$tmp/smithy-cli-linux-x86_64/bin/java" -XX:-UsePerfData -cp "$$smithy_cp" software.amazon.smithy.cli.SmithyCli build --no-color --severity NOTE --config "$(location :smithy_config)" --output "$$tmp/build"
+	tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/build" .
+	""",
+)

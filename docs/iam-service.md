@@ -40,7 +40,7 @@ several SpiceDB processes.
   account; they are not authorization subjects.
 - Public IAM policy APIs follow Google Cloud IAM semantics:
   `getIamPolicy`, `setIamPolicy`, and `testIamPermissions`.
-- Public HTTP routes are OpenAPI-native concrete resource routes. SDKs expose
+- Public HTTP routes are Smithy-modeled concrete resource routes. SDKs expose
   URN resource-name helpers over those routes.
 - Policy replacement requires optimistic concurrency through `etag` after
   bootstrap/default creation.
@@ -208,9 +208,10 @@ scope epoch and forces affected active streams to recheck.
 ## Go Service Shape
 
 `iam-service` is a Go service using the same service contract as the rest of
-the product surface: Huma route declarations, generated OpenAPI clients,
-SPIFFE mTLS for internal calls, sqlc for PostgreSQL, and OpenTelemetry spans
-that land in ClickHouse.
+the product surface: Smithy-modeled HTTP contracts, generated transport
+clients, SPIFFE mTLS for internal calls, sqlc for PostgreSQL, and OpenTelemetry
+spans that land in ClickHouse. Huma route declarations mirror the contract
+during cutover.
 
 Repository layout:
 
@@ -304,44 +305,48 @@ src/services/iam-service/
 
 ## Wire Contracts
 
-The first implementation uses Huma/OpenAPI for `iam-service` public and
-internal APIs. There is no repo-owned IAM gRPC service proto in the first cut.
-The service still consumes protobufs through the upstream AuthZed Go client;
-those SpiceDB request and response types remain third-party API types and are
-confined to `internal/spicedb`.
+The canonical `iam-service` API contract lives in Smithy under
+`src/contracts/models`. Public and internal projections are generated from that
+model. OpenAPI files are compatibility projections for docs, import tools, and
+transitional generators. There is no repo-owned IAM gRPC service proto in the
+first cut. The service still consumes protobufs through the upstream AuthZed Go
+client; those SpiceDB request and response types remain third-party API types
+and are confined to `internal/spicedb`.
 
 Wire contract locations:
 
 | Contract | Location | Bazel owner |
 | --- | --- | --- |
-| Public IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
-| SPIFFE-only internal IAM API OpenAPI 3.0/3.1 | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` | `//src/services/iam-service/openapi` |
+| Canonical IAM API Smithy model | `src/contracts/models/verself/iam.smithy` | `//src/contracts:smithy_models` |
+| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` during cutover; target generated projection under `src/contracts/openapi/` | `//src/services/iam-service/openapi` during cutover |
+| SPIFFE-only internal IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` during cutover; target generated projection under `src/contracts/openapi/` | `//src/services/iam-service/openapi` during cutover |
 | Generated service Go transport client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
 | Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
 | Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
-| Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-api/` | `//src/websites/packages/sdk:openapi_clients` |
+| Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-api/` | `//src/websites/packages/sdk:contract_clients` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema validation | `src/services/iam-service/schema/verself.zed`, pinned `zed` CLI from the server-tool catalog | `//src/services/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
-| Future shared protobuf messages | `src/domain-transfer-objects/proto/<area>/v1/*.proto` | `//src/domain-transfer-objects/proto/<area>/v1:<area>_proto` |
+| Future shared protobuf messages | `src/contracts/proto/<area>/v1/*.proto` | `//src/contracts/proto/<area>/v1:<area>_proto` |
 | Future IAM-owned gRPC-only contract | `src/services/iam-service/proto/v1/*.proto` | `//src/services/iam-service/proto/v1:iam_proto` |
 
 Add a service-local protobuf directory only if the operation cannot be cleanly
-represented by the existing OpenAPI service pattern, for example a binary
+represented by the Smithy-modeled HTTP service pattern, for example a binary
 stream that should not become a public HTTP contract. If the message shape is
 consumed by more than `iam-service`, put the protobuf under
-`src/domain-transfer-objects/proto/` instead.
+`src/contracts/proto/` instead.
 
-OpenAPI remains the generated-client surface for product services. A missing
-service shape is fixed by adding the Huma route and regenerating the committed
-OpenAPI specs and clients, not by hand-writing HTTP or gRPC calls.
+Generated clients remain the service-to-service and SDK transport surface for
+product services. A missing service shape is fixed by adding or correcting the
+Smithy operation and regenerating projections and clients, not by hand-writing
+HTTP or gRPC calls.
 
 ## API Layering
 
 The product surface is organized in four layers:
 
-1. `iam-service` exposes HTTP JSON APIs generated from Huma/OpenAPI. Internal
-   product-service operations use the SPIFFE-only internal OpenAPI surface.
+1. `iam-service` exposes Smithy-modeled HTTP JSON APIs. Internal
+   product-service operations use the SPIFFE-only internal projection.
 2. Language SDKs wrap generated clients. SDKs own retries, idempotency key
    generation, auto-pagination, resource-name helpers, error normalization,
    request tracing headers, and DTO conversion.
@@ -350,9 +355,9 @@ The product surface is organized in four layers:
 4. The CLI calls the SDK directly. Server functions are not a CLI transport
    contract.
 
-The SDK should make the public API feel Google-IAM-like even when the HTTP
-routes are OpenAPI-native. The public target identifier is a Verself URN
-resource name:
+The SDK should make the public API feel Google-IAM-like while the HTTP
+contract remains concrete and resource-oriented. The public target identifier
+is a Verself URN resource name:
 
 ```go
 org := "urn:verself:inst_123:orgs/org_123"
@@ -372,7 +377,7 @@ verself iam test-permissions urn:verself:inst_123:orgs/org_123/runs/run_456 exec
 CLI convenience commands such as `add-binding` are read-modify-write helpers
 over `getIamPolicy` and `setIamPolicy`. The service API stays small.
 
-## Huma OpenAPI Shape
+## Contract Shape
 
 The public IAM API copies Google Cloud IAM semantics:
 
@@ -383,11 +388,11 @@ The public IAM API copies Google Cloud IAM semantics:
   currently has on a resource.
 
 Google's REST docs often use gRPC-transcoding paths such as
-`/{resource=projects/*}:setIamPolicy`. OpenAPI path parameters do not model
-slash-containing resource names cleanly, and Huma routes should remain
-ordinary OpenAPI routes. `iam-service` therefore registers concrete routes for
-each policy-bearing resource type and lets SDK helpers translate resource
-names to those routes.
+`/{resource=projects/*}:setIamPolicy`. The public IAM contract uses ordinary
+HTTP resource routes because slash-containing resource names are poor path
+labels for broad HTTP tooling. `iam-service` therefore registers concrete
+routes for each policy-bearing resource type and lets SDK helpers translate
+resource names to those routes.
 
 Initial public policy routes:
 
@@ -413,8 +418,8 @@ Only resource types that support directly attached policy receive these routes.
 Inherited leaf resources such as execution attempts may support
 `testIamPermissions` without supporting `setIamPolicy`.
 
-Huma operation declarations should stay next to shared `service-runtime/iam`
-policy metadata:
+During cutover, Huma operation declarations should stay next to shared
+`service-runtime/iam` policy metadata that mirrors the Smithy operation traits:
 
 ```go
 registerIAMRoute(api, huma.Operation{
@@ -511,8 +516,8 @@ Page tokens are opaque, URL-safe, and authorization-neutral. The service
 reauthorizes every request that includes a page token.
 
 All public operations accept `X-Request-ID` for trace correlation. Mutating
-operations declare `Idempotency-Key` in OpenAPI and reject requests that omit
-it.
+operations declare `Idempotency-Key` in the Smithy contract and generated
+projections, and reject requests that omit it.
 
 HTTP error responses use RFC 9457 Problem Details with stable Verself problem
 types and trace-backed `instance` values. The SDK maps those problem documents
@@ -537,10 +542,11 @@ The service should create these targets:
 
 //src/services/iam-service/cmd/iam-service:iam-service
 //src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact
-//src/services/iam-service/cmd/iam-openapi:iam-openapi
-//src/services/iam-service/cmd/iam-internal-openapi:iam-internal-openapi
+//src/services/iam-service/cmd/iam-openapi:iam-openapi              # transitional projection
+//src/services/iam-service/cmd/iam-internal-openapi:iam-internal-openapi  # transitional projection
 //src/services/iam-service/cmd/iam-schema-gen:iam-schema-gen
 
+//src/contracts:smithy_models
 //src/services/iam-service/openapi:openapi-3.0.yaml
 //src/services/iam-service/openapi:openapi-3.1.yaml
 //src/services/iam-service/openapi:internal-openapi-3.0.yaml
@@ -548,7 +554,7 @@ The service should create these targets:
 
 //src/services/iam-service/client:client
 //src/sdks/go/verself:verself
-//src/websites/packages/sdk:openapi_clients
+//src/websites/packages/sdk:contract_clients
 //src/services/iam-service/migrations:migrations
 //src/services/iam-service/schema:schema
 //src/services/iam-service/schema:schema_tests
@@ -592,8 +598,8 @@ The root `BUILD.bazel` contains only the Gazelle prefix:
 ```
 
 Package visibility should enforce the dependency rules below. Public visibility
-belongs only on generated clients, OpenAPI artifacts, and any explicit shared
-contract package.
+belongs only on generated clients, contract/projection artifacts, and any
+explicit shared contract package.
 
 The generated model package is the only ergonomic way to refer to schema
 terms:
@@ -625,7 +631,7 @@ surface:
 | Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |
 | Member invite and role update | `internal/members` plus `internal/roles` | Mutations write directory state and SpiceDB relationships through command envelopes. |
 | Member capability replacement | `internal/roles` | Represented as role grants and SpiceDB relationships; no customer-editable policy language in the first cut. |
-| IAM policy get/set/test | `internal/policies` plus `internal/authz` | Google-IAM-style resource policy operations over Huma/OpenAPI. `setIamPolicy` requires `etag` and idempotency after bootstrap. |
+| IAM policy get/set/test | `internal/policies` plus `internal/authz` | Google-IAM-style resource policy operations over Smithy-modeled HTTP APIs. `setIamPolicy` requires `etag` and idempotency after bootstrap. |
 | Permission and role catalog | `internal/roles` plus `internal/policies` | Exposes predefined roles, org-scoped roles, and permission metadata for SDKs, CLI, and console affordances. |
 | Service account list/read/disable | `internal/identity` plus `internal/authz` | Service accounts are non-human authorization subjects inside an organization. Direct permission grants are reconciled into SpiceDB. |
 | API credential list/read/create/roll/revoke | `internal/identity` | Secret material is returned only at create or roll. Credentials authenticate service accounts and keep credential metadata in PostgreSQL. |
@@ -679,9 +685,9 @@ HTTP server startup, background worker startup, and signal handling. It does
 not contain request handlers, policy logic, OIDC flow logic, SpiceDB tuple
 construction, or SQL queries.
 
-`internal/api` owns Huma operation declarations, request/response DTO mapping,
-security metadata, body limits, idempotency metadata, audit metadata, and route
-registration. Handlers should normalize boundary DTOs and call one command
+`internal/api` owns mirrored Huma operation declarations, request/response DTO
+mapping, security metadata, body limits, idempotency metadata, audit metadata,
+and route registration. Handlers should normalize boundary DTOs and call one command
 method. They should not contain business logic.
 
 Vertical packages own command methods and domain validation for one product
@@ -837,9 +843,9 @@ internal/api/
   operation_policy.go
 ```
 
-Each route file declares its Huma operations next to the policy metadata. A
-handler should be small enough that the operation declaration, DTO parsing, and
-command call fit on one screen.
+Each route file currently mirrors Smithy operation metadata next to Huma
+operations. A handler should be small enough that the operation declaration,
+DTO parsing, and command call fit on one screen.
 
 Authorization vocabulary is split by schema area:
 
@@ -1214,7 +1220,7 @@ customer credentials. The public surface is intentionally conventional:
 | Permission catalog | list permissions, inspect role-to-permission expansion, list effective permissions. |
 | Authorization history | audit-backed inspection by resource, actor, role, credential, and command ID. |
 
-Initial policy-bearing resource paths are concrete Huma routes:
+Initial policy-bearing resource paths are concrete Smithy-modeled HTTP routes:
 
 ```text
 /api/v1/organizations/{org_id}/iamPolicy
@@ -1225,8 +1231,8 @@ Initial policy-bearing resource paths are concrete Huma routes:
 
 The SDK accepts URN resource names such as
 `urn:verself:inst_123:orgs/org_123` and dispatches to the correct generated
-client method. This keeps OpenAPI generation straightforward without forcing
-callers to learn every route variant.
+client method. This keeps the generated projections straightforward without
+forcing callers to learn every route variant.
 
 Internal APIs are SPIFFE-only and serve product services:
 
@@ -1245,11 +1251,12 @@ services call generated transport clients with SPIFFE mTLS and typed origin
 context.
 
 Public route declarations include IAM metadata, audit metadata, idempotency
-metadata, body limits, rate-limit class, and response problem types in the Huma
-operation definition. Internal routes authorize exact SPIFFE peer IDs and carry
-their own operation policies. Service callers use generated transport clients
-from the service `client` package and provide SPIFFE-aware `http.Client`
-values at the call site.
+metadata, body limits, rate-limit class, and response problem types in Smithy
+operation traits. Huma operation definitions mirror those traits during
+cutover. Internal routes authorize exact SPIFFE peer IDs and carry their own
+operation policies. Service callers use generated transport clients from the
+service `client` package and provide SPIFFE-aware `http.Client` values at the
+call site.
 
 ## PostgreSQL State
 
@@ -1345,7 +1352,7 @@ Pre-deploy checks:
 - `zed validate` for schema syntax and typechecking.
 - Schema assertions and expected-relations tests.
 - Generated Go model freshness check.
-- OpenAPI generation and generated-client contract check.
+- Smithy validation, projection generation, and generated-client contract check.
 - Static scan proving only `internal/spicedb` imports the AuthZed Go client.
 - Static scan proving product services use generated IAM clients or the
   approved IAM client package.

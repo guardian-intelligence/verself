@@ -2,24 +2,27 @@
 
 The curated SDK is the public programming contract for Verself. The CLI,
 browser server routes, customer automation, agent workflows, docs examples, and
-future provider-style integrations use the SDK. Services implement Huma routes
-and public OpenAPI projections that make the SDK resource model straightforward.
+future provider-style integrations use the SDK. Product APIs are modeled in
+Smithy under `src/contracts`, and services implement generated or mirrored HTTP
+bindings from that model. Public OpenAPI remains a generated compatibility
+projection for docs and ecosystem tooling.
 
 The layering is:
 
 ```text
 facade: CLI, browser server route, customer automation, agent
   -> curated SDK resource method
-  -> SDK-owned generated OpenAPI transport
+  -> SDK-owned generated transport from Smithy
   -> public service API
   -> service-owned state and integrations
 ```
 
-Product services expose public OpenAPI projections and service-to-service
-OpenAPI projections. Product services do not import curated SDK packages.
-Generated service clients remain service-facing transport clients. SDK packages
-generate their own transport cores from public projections and wrap them with
-customer-facing resource modules.
+Product services expose public and internal contract projections. Product
+services do not import curated SDK packages. Generated service clients remain
+service-facing transport clients. SDK packages generate their own transport
+cores from public projections and wrap them with customer-facing resource
+modules. OpenAPI projections are downstream artifacts, not the API source of
+truth.
 
 Missing SDK coverage blocks public CLI commands and docs examples. If the SDK
 method would be awkward, the public API shape should be revisited before the
@@ -169,9 +172,9 @@ SDK request and response placement:
 The public field name is `resourceName`, not `urn`. URN is the syntax; resource
 name is the API concept. Google AIP-122 uses `name` for this concept; Verself
 uses `resourceName` in JSON and SDK DTOs so it is never confused with slugs,
-display names, profile names, or provider names. Generated OpenAPI schemas
-should document the expected format for each field that carries a resource
-name.
+display names, profile names, or provider names. Smithy shapes should document
+and validate the expected format for each field that carries a resource name;
+generated OpenAPI projections carry that constraint forward.
 
 Slug uniqueness is enforced by resource type and parent:
 
@@ -334,15 +337,17 @@ The initial public module target is:
 Public service APIs should be designed from the SDK method outward:
 
 1. Pick the customer resource and SDK method name.
-2. Define stable DTOs and typed errors for that method.
-3. Add or change the Huma route and public OpenAPI projection.
-4. Regenerate SDK-owned transports.
+2. Define stable Smithy shapes, typed errors, and operation traits for that
+   method.
+3. Generate or mirror the service HTTP binding and public/internal projections.
+4. Regenerate SDK-owned transports and conformance fixtures.
 5. Wrap the generated operation in the curated SDK.
 6. Use the SDK method from the CLI, browser server route, docs example, or agent.
 
-Operation IDs, OpenAPI tags, path names, and schema names should support the
-SDK resource module. Service ownership remains visible in code ownership,
-deployment, and telemetry; it should not leak into customer method names.
+Smithy service names, operation names, generated OpenAPI tags, path names, and
+schema names should support the SDK resource module. Service ownership remains
+visible in code ownership, deployment, and telemetry; it should not leak into
+customer method names.
 
 The public API contract needs these primitives for SDK quality:
 
@@ -422,9 +427,10 @@ bearer token material.
 ## Versioning
 
 SDK releases pin default API versions. The API version header remains available
-for staged rollouts, canaries, and compatibility testing. Generated transport
-packages may be versioned internally; curated SDK methods define the public
-compatibility surface.
+for staged rollouts, canaries, and compatibility testing. Contract evolution is
+modeled in Smithy and projected into generated transports, OpenAPI artifacts,
+and conformance fixtures. Curated SDK methods define the public compatibility
+surface.
 
 TypeScript and Go are the first curated SDKs. Python, Rust, and Terraform
 provider surfaces should follow only after the public API and first two SDKs

@@ -6,29 +6,31 @@ See @docs/CODE_STANDARDS.md for engineering opinions.
 product: verself.sh
 auth portal: auth.verself.sh
 services: <service>.api.verself.sh
-
 company website: guardianintelligence.org
 
-* `aspect` contains lots of helpful commands under .aspect/.
+* `aspect` contains lots of helpful commands under `.aspect/`. Run `aspect` to get the list of tasks and task groups and `aspect <task> --help` for more details.
 * Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output, filter accordingly)
 
 Current product: Blacksmith.sh clone (GitHub app that runs on bare metal).
 
-We compare ourselves to Blacksmith 4vcpu + sticky disks and GitHub actions with `actions/cache`.
+Benchmarks:
 
-Blacksmith # Currently disabled to save on cost - ~2m10s
-GitHub # currently disabled to save on cost  - ~20m
+Blacksmith.sh + Sticky Disks # Currently disabled to save on cost - ~2m10s
+GitHub with `actions/cache`# currently disabled to save on cost  - ~20m
 our internal CI - ~1m30s
+
+If we ever become slower than either platform, that becomes a top concern as speeding up our customers is a top priority.
 
 This is a polyglot monorepo structured as a modular monolith.
 
 Layers:
 
-1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer.
-2. Service API layer: Go Huma APIs at <service>.api.<domain> expose public + internal APIs.
-3. Generated client layer: pure transport clients, validators, DTOs, schemas. Cross service calls happen via generated clients authenticating to each other via SPIFFE mTLS.
-4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
-5. Facades: the verself-web app and the CLI and, in the future, mobile apps.
+1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
+2. Contract layer: Smithy models under `src/contracts` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, generated projections, and conformance cases.
+3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Go services may use Huma during the cutover, but Huma/OpenAPI output is an implementation/projection artifact rather than the semantic contract.
+4. Generated client layer: pure transport clients, validators, DTOs, schemas, OpenAPI compatibility artifacts, and conformance fixtures are generated from the contract model. Cross service calls happen via generated clients authenticating to each other via SPIFFE mTLS.
+5. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
+6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
 Tech Stack (partial description):
 
@@ -43,14 +45,18 @@ Tech Stack (partial description):
 
 Invariant patterns:
 
-* Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `scripts/bootstrap-*`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
+* Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
 * Generic CI jobs are secretless. Build/test workflows running under GitHub Actions, Blacksmith, or Verself runners must not inject repository, organization, or environment secrets such as `VERSELF_TOKEN`, npm registry tokens, cloud credentials, SSH keys, database URLs, or deployment API keys. Jobs that need real staging or production authority run in a separate trusted lane gated by protected refs and GitHub Environments, and they acquire short-lived scoped credentials through OIDC/JWT exchange with the owning service.
 * Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. Bazel cache state is local-only through the invoking user's disk and repository caches; do not add shared remote cache or remote-writer profiles. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
 * New server tools such as SpiceDB enter through the host server-tools catalog and artifact admission flow, with policy/evidence recorded before host bootstrap or Nomad jobs consume them; see `docs/architecture/artifact-admission.md`.
 * Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
-* Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through service OpenAPI projections of the same Huma operation catalogs that produce public APIs. Service projections use SPIFFE mTLS and may include repo-only operations; public projections use Zitadel bearer auth.
-* Service-owned generated Go clients are transport clients for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public OpenAPI projections, and product services must not import those SDKs.
+* Canonical API contracts live under `src/contracts` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
+* Why Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
+* Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through internal projections generated from the same Smithy model that produces public API projections. Internal projections use SPIFFE mTLS and may include repo-only operations; public projections use Zitadel bearer auth.
+* Every modeled operation should declare auth scheme, audience, permission, resource kind, action, org-scope derivation, rate-limit class, idempotency policy, audit event, request body budget, stable error set, SDK behavior, and conformance case coverage. Missing metadata is a contract bug, not a documentation gap.
+* Service-owned generated Go clients are transport clients for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public contract projections, and product services must not import those SDKs.
+* Connect/protobuf belongs under `src/contracts/proto` for RPC-shaped internal surfaces, streaming, binary payloads, and privileged substrate protocols where protobuf is the primary protocol. For the public product-control-plane contract we project OpenAPI in as many versions as possible.
 * Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through generated secrets-service clients over SPIFFE.
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
@@ -164,8 +170,8 @@ See `docs/product-direction.md`.
 Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
 - See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
-- Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen` and are consumed by repo-owned services as transport clients. SDK packages are generated separately under `src/sdks/` or frontend SDK packages from the same specs; services must not depend on curated SDKs. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the contract.
-- Services can be in any language as long as they expose OpenAPI-compatible endpoints.
+- Verself Go service clients and SDK transport cores are generated from canonical Smithy contracts under `src/contracts`. OpenAPI projections are generated compatibility artifacts. SDK packages are generated separately under `src/sdks/` or frontend SDK packages from public projections; services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and regenerate instead of bypassing the contract.
+- Services can be in any language as long as they implement the Smithy-modeled HTTP bindings and generated compatibility projections.
 - Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
 - Python package management is done through `uv`.
 - No need to be frugal with telemetry. We store 10+ million rows for around ~150MB in ClickHouse thanks to optimizations.
@@ -213,7 +219,8 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/services/mailbox-service/docs/inbound-mail.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/substrate/vm-orchestrator/AGENTS.md`
 - **ZFS golden environment lifecycle, zvol, clone, snapshot, promote:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
-- **Wire contracts, DTO patterns, protobuf schemas, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract gate:** `src/domain-transfer-objects/docs/wire-contracts.md`
+- **Canonical API contracts, Smithy models, OpenAPI projections, SDK conformance, Connect/protobuf boundary:** `src/contracts/README.md`
+- **DTO primitives, numeric safety, 64-bit, DecimalUint64, DecimalInt64, generated contract boundary patterns:** `src/domain-transfer-objects/docs/wire-contracts.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
@@ -237,8 +244,8 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Details matter. The founder cares about arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for technical argument.
 - Some directories have their own `AGENTS.md` file. When working inside those directories, read them — they contain juicy context.
 - Incidental edits from running linters and formatters are expected. Don't worry about them.
-- When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
-- `.aspect/`, `README.md`, `AGENTS.md`, schema migration files, and OpenAPI 3.1 YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
+- When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, Smithy/OpenAPI projections, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
+- `.aspect/`, `README.md`, `AGENTS.md`, schema migration files, Smithy models, and OpenAPI projection YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
 - Do not provide time estimates.
 - We work backwards from ensuring proper systems are in place to make incorrect behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
 - My 'd' key is broken so you may see frequently see the letter 'd' missing from user messages
@@ -250,7 +257,6 @@ The contained instructions in this block are guidelines that apply to writing ma
 
 - Avoid framing rhetoric, e.g. "X is Y, not Z". Just write "X is Y".
 - Avoid attention-grabby language like "The same X and Y that do A also does B" or "both X and Y". Or short punchy sentences like "One binary. Five nodes. Infinite possibilities." Prefer to be straightforward: "X and Y do A and B via a single binary across five nodes and are designed to be extensible."
-- Avoid 
 - Preferred writing style: advanced industry-level textbook sans historical context.
 - Write for an audience of expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.
 </writing_guidelines>

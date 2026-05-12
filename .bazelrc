@@ -18,6 +18,10 @@ build --disk_cache=~/.cache/bazel-disk
 build --repository_cache=~/.cache/bazel-repo
 build --incompatible_strict_action_env
 build --jobs=auto
+# The repository does not assume a host-installed JDK. Java actions, including
+# Smithy validators, use Bazel-managed runtimes.
+build --java_runtime_version=remotejdk_17
+build --tool_java_runtime_version=remotejdk_17
 # Subscribe to kernel filesystem events for source-file invalidation instead
 # of relying on stat-deltas at command start. Closes the stat-collision window
 # that the prior --max_idle_secs=86400 footgun depended on.

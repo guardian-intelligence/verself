@@ -36,6 +36,13 @@ http_file(
 )
 
 http_file(
+    name = "dev_tool_smithy_cli",
+    downloaded_file_path = "smithy-cli-linux-x86_64.zip",
+    sha256 = "363a8eaf6e94d2e7419dbfeaa01cdb87132326512d6be2e952f225259a592004",
+    url = "https://github.com/smithy-lang/smithy/releases/download/1.70.0/smithy-cli-linux-x86_64.zip",
+)
+
+http_file(
     name = "dev_tool_buildifier",
     downloaded_file_path = "buildifier-linux-amd64",
     sha256 = "887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",

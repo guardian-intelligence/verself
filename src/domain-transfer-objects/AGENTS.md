@@ -1,13 +1,21 @@
 # domain-transfer-objects
 
-`src/domain-transfer-objects` owns shared data-transfer contracts used at service boundaries: Go DTO types, committed OpenAPI-compatible wire schemas, future protobuf schemas, generated-client contract types, and app-facing TypeScript wrapper contracts. Domain packages stay free to use native Go types such as `uint64`, `int64`, service-local aliases, and richer business structs; this package owns only the transfer shape that another service, generated client, protobuf consumer, or frontend consumes.
+`src/contracts` owns canonical service contracts. `src/domain-transfer-objects`
+owns shared Go DTO primitives and transfer types used at service boundaries:
+decimal wire types, semantic aliases, generated-client contract types, and
+app-facing TypeScript wrapper contracts. Domain packages stay free to use
+native Go types such as `uint64`, `int64`, service-local aliases, and richer
+business structs; this package owns only language-level transfer shapes that
+another service, generated client, protobuf consumer, or frontend consumes.
 
 ## Ownership
 
-- Put a DTO or protobuf message here when its field language is shared across services, OpenAPI codegen, protobuf codegen, or frontend wrappers.
+- Put a DTO here when its field language is shared across services, generated clients, or frontend wrappers.
+- Put canonical API shapes and operation metadata under `src/contracts/models`.
+- Put protobuf contracts under `src/contracts/proto` when protobuf is the primary protocol.
 - Keep purely internal domain structs, persistence records, provider webhook payloads, and one-off adapter structs in the owning service package.
-- Keep conversion between domain structs and DTOs next to the Huma handler or client adapter that knows the local domain model.
-- Do not import service packages from this module; dependencies should stay limited to standard-library encoding/parsing packages plus schema-generation dependencies such as Huma and protobuf tooling.
+- Keep conversion between domain structs and DTOs next to the HTTP handler or client adapter that knows the local domain model.
+- Do not import service packages from this module; dependencies should stay limited to standard-library encoding/parsing packages plus schema-generation dependencies needed during the Huma cutover.
 - Do not add compatibility wrappers or legacy shims. When a wire shape moves here, cut callers over and delete the old service-local DTO.
 
 ## Numeric Wire Rules
@@ -15,16 +23,16 @@
 - Frontend-facing 64-bit identifiers are decimal strings, never JSON numbers.
 - Use `DecimalUint64`, `DecimalInt64`, or a semantic alias such as `OrgID` for those DTO fields.
 - Use `Uint64`, `Int64`, `ParseUint64`, and `ParseInt64`; do not hand-roll `strconv.FormatUint`, `strconv.ParseUint`, or raw string fields in service-local DTOs for shared 64-bit values.
-- Frontend-facing quantities may remain JSON numbers only when the OpenAPI schema proves `maximum <= 9007199254740991`.
+- Frontend-facing quantities may remain JSON numbers only when the canonical Smithy shape and generated projections prove `maximum <= 9007199254740991`.
 - Unbounded 64-bit quantities must be decimal string DTOs or an explicitly documented `x-js-wire: bigint` contract that a TypeScript wrapper converts deliberately.
 - Internal Go request handling can parse path/query strings into native numeric domain types after the transport boundary.
 
 ## Schema Contract
 
-- Decimal wire types must implement `json.Marshaler`, `json.Unmarshaler`, text marshal/unmarshal, and `huma.SchemaProvider`.
+- Decimal wire types must implement `json.Marshaler`, `json.Unmarshaler`, text marshal/unmarshal, and the schema providers needed by active generated projections.
 - `DecimalUint64` schemas must emit `type: string` and `pattern: "^[0-9]+$"`; signed decimal types must use the signed pattern.
-- If you add a new primitive wire type, add focused tests for JSON rejection of unsafe representations, parser edge cases, and Huma schema generation.
-- If a DTO intentionally exposes an integer number to TypeScript, include `minimum` and `maximum` tags where needed so the generated OpenAPI contract proves JavaScript safety.
+- If you add a new primitive wire type, add focused tests for JSON rejection of unsafe representations, parser edge cases, and active schema-generation paths.
+- If a DTO intentionally exposes an integer number to TypeScript, include `minimum` and `maximum` constraints in the canonical model and active generated projections so JavaScript safety is proved.
 
 ## DTO Shape
 
@@ -36,7 +44,7 @@
 
 ## Boundary Pattern
 
-Service handlers should return DTOs from Huma operations and convert close to the handler:
+Service handlers should return DTOs from HTTP operations and convert close to the handler:
 
 ```go
 type entitlementsOutput struct {
@@ -52,11 +60,11 @@ func toEntitlementsDTO(orgID billing.OrgID, view billing.EntitlementsView) dto.B
 }
 ```
 
-Generated clients are the supported SDK surface. Server functions and service-side adapters may invoke generated clients directly at the transport boundary, then Valibot-parse generated responses and convert decimal-string DTO fields into the app-facing type they intentionally expose. Browser-facing TypeScript app code should call server functions or wrapper modules instead of hand-rolling service fetches.
+Generated clients are the supported transport surface. Server functions and service-side adapters may invoke generated clients directly at the transport boundary, then Valibot-parse generated responses and convert decimal-string DTO fields into the app-facing type they intentionally expose. Browser-facing TypeScript app code should call server functions or wrapper modules instead of hand-rolling service fetches.
 
 ## Verification
 
 - Run `go test ./...` from `src/domain-transfer-objects/go` after changes in the Go DTO package.
-- Regenerate affected OpenAPI specs and generated clients when a DTO shape changes.
+- Regenerate affected contract projections and generated clients when a DTO shape changes.
 - Run affected service tests and frontend typechecks for wrappers consuming the regenerated clients.
 - For behavior-affecting contract changes, prove the deployed path through ClickHouse traces/logs, not just local tests.

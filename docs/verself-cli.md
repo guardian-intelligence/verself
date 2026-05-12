@@ -1,7 +1,7 @@
 # Verself CLI
 
 `verself` is the public CLI and SDK facade for hosted Verself APIs. It sits
-above curated SDKs, which wrap generated OpenAPI clients for product services.
+above curated SDKs, which wrap generated contract clients for product services.
 Browser server functions, the CLI, and customer automation use the same service
 contracts with different auth flows and local state handling.
 
@@ -26,13 +26,13 @@ The command pipeline is:
 CLI command
   -> local profile and project resolution
   -> curated SDK operation
-  -> generated OpenAPI client
+  -> generated contract client
   -> service API
   -> service-owned PostgreSQL, Zitadel, SpiceDB, ClickHouse, or external adapter
 ```
 
 Service calls go through SDK operations. Missing service behavior is added at
-the Huma route/OpenAPI layer, regenerated into clients, and wrapped by the SDK.
+the Smithy contract layer, regenerated into clients, and wrapped by the SDK.
 
 Bootstrap has a bounded artifact path:
 
@@ -283,7 +283,7 @@ are unset, but the logical layout remains stable.
 | Config | `$XDG_CONFIG_HOME/verself` | `~/.config/verself` | Non-secret profile and CLI configuration. |
 | State | `$XDG_STATE_HOME/verself` | `~/.local/state/verself` | Mutable command state, selected org/project history, bootstrap run records. |
 | Data | `$XDG_DATA_HOME/verself` | `~/.local/share/verself` | Durable non-secret company records, downloaded discovery manifests, and plugin metadata. |
-| Cache | `$XDG_CACHE_HOME/verself` | `~/.cache/verself` | Rebuildable caches: OpenAPI discovery, org/project display-name cache, SDK schema cache. |
+| Cache | `$XDG_CACHE_HOME/verself` | `~/.cache/verself` | Rebuildable caches: API discovery, org/project display-name cache, SDK schema cache. |
 | Runtime | `$XDG_RUNTIME_DIR/verself` | process-local `0700` temp dir when unset | Locks, auth callback sockets, PKCE state, nonce files, and short-lived IPC. |
 
 Directories are created with mode `0700`. Config and state files are written
@@ -846,7 +846,7 @@ writes the artifacts the operator's `aspect deploy` will consume:
 The operator-local flow is:
 
 ```text
-./scripts/bootstrap-linux-amd64
+./src/tools/dev/bootstrap/bootstrap-linux-amd64
 bazelisk build //src/<cli_name>-cli:<cli_name>
 ./bazel-bin/src/<cli_name>-cli/<cli_name> env get VERSELF_SOPS_AGE_IDENTITY --org <org> --project <project> --environment bootstrap
 ./bazel-bin/src/<cli_name>-cli/<cli_name> company inspect <company> --json

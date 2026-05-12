@@ -93,9 +93,9 @@ PostgreSQL and OTel collector.
 - `src/infrastructure-components/<name>/` owns each platform component's `BUILD.bazel`,
   `nomad.hcl`, runtime users, directories, SPIRE identities, endpoint exports,
   credential bindings, migrations, and reconcilers.
-- `src/services/<name>/` owns product service `nomad.hcl`, OpenAPI contracts,
-  PostgreSQL migrations, ClickHouse projections, service-to-service clients,
-  and public route metadata.
+- `src/services/<name>/` owns product service `nomad.hcl`, PostgreSQL
+  migrations, ClickHouse projections, service-to-service clients, and public
+  route metadata. Canonical API contracts live under `src/contracts`.
 - `src/websites/apps/<name>/` owns frontend `nomad.hcl`,
   server-function bindings, route metadata, browser canaries, and static/runtime
   assets.

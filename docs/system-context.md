@@ -28,7 +28,25 @@ Nomad.
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
-Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits public OpenAPI 3.0/3.1 projections for customer, CLI, browser-server-route, documentation, and SDK callers. Public route shape is designed from the SDK resource method outward; durable customer-facing resources return immutable IDs and globally unique URN resource names; see [`docs/architecture/sdk-api-surface.md`](architecture/sdk-api-surface.md). Services with repo-owned operations also commit service OpenAPI projections that use SPIFFE mTLS and may include repo-only routes. Repo-owned service callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated service client so trace propagation and peer authorization stay centralized. Shared cross-service transfer contracts live in `src/domain-transfer-objects`; use them for Huma boundary DTOs, protobuf schemas, and generated-client contracts instead of service-local 64-bit JSON encodings.
+Product service APIs are modeled in Smithy under `src/contracts`. The Smithy
+model is the semantic authority for resource DTOs, HTTP bindings, auth
+expectations, Zanzibar permissions, audit metadata, rate-limit classes,
+idempotency, pagination, problem details, SDK behavior, generated clients, and
+conformance fixtures. OpenAPI is generated from the model for documentation,
+API explorers, and ecosystem importers. Go services may continue to serve those
+HTTP APIs with Huma v2 during cutover, but Huma/OpenAPI output is not the source
+of truth. Do not write custom clients for repo-owned service calls; generate
+them from the contract model. Public route shape is designed from the SDK
+resource method outward; durable customer-facing resources return immutable IDs
+and globally unique URN resource names; see
+[`docs/architecture/sdk-api-surface.md`](architecture/sdk-api-surface.md).
+Services with repo-owned operations expose internal projections that use SPIFFE
+mTLS and may include repo-only routes. Repo-owned service callers pass a
+`workloadauth.MTLSClientForService` HTTP client into the generated service
+client so trace propagation and peer authorization stay centralized. Shared Go
+DTO primitives live in `src/domain-transfer-objects`; use them for boundary
+types and generated-client contracts instead of service-local 64-bit JSON
+encodings.
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):
@@ -120,8 +138,9 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
   Customer/operator CLIs are a generated-client surface over those same APIs,
   not a private control plane.
 - Repo-owned service-to-service calls use generated Go clients plus SPIFFE mTLS
-  HTTP clients. Public OpenAPI projections feed SDK-layer generated code;
-  service OpenAPI projections feed service-owned `client` packages that may
-  include SPIFFE-only operations and origin-attribution headers.
+  HTTP clients. Smithy public projections feed SDK-layer generated code;
+  internal projections feed service-owned `client` packages that may include
+  SPIFFE-only operations and origin-attribution headers. OpenAPI is a generated
+  compatibility projection.
 - Start telemetry investigation with `aspect observe` — discoverability-first.
 - `aspect db ch schemas` reads all ClickHouse tables (ground truth). Prefer `aspect observe` first, fall back to raw `aspect db ch query --query='...'` when observe has no named query.

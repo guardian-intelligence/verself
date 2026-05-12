@@ -19,9 +19,12 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   Zitadel, NATS, TigerBeetle, Electric, ClickHouse migrations, and HAProxy
   upstream reconciliation. Component Nomad descriptors live with their owning
   component.
+- `contracts/` — canonical Smithy API models, generated conformance fixtures,
+  generated OpenAPI compatibility projections, and Connect/protobuf contracts
+  for RPC-shaped surfaces.
 - `domain-transfer-objects/` — shared data-transfer contracts for service
-  boundaries, OpenAPI-compatible DTOs, shared protobuf schemas, numeric wire
-  primitives, and generated-client contract rules.
+  boundaries, Go DTO primitives, numeric wire primitives, and generated-client
+  contract rules used by the canonical models.
 - `websites/` — browser applications and shared web packages.
 - `sdks/` — generated and curated client layers, validators, and package-local
   SDK adapters.
@@ -38,7 +41,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   golden workspace generations, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `iam-service/`, `mailbox-service/`, and other `*-service/` packages —
-  service-owned databases, migrations, Huma APIs, and service-local workers.
+  service-owned databases, migrations, HTTP APIs, and service-local workers.
 - `service-runtime/auth/` — local JWT validation against Zitadel JWKS plus shared
   SPIFFE workload identity helpers.
 - `service-runtime/` — shared service startup/runtime packages such as Go env
@@ -65,7 +68,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `apps/` — TanStack Start applications:
   - `company` — Guardian Intelligence company site on `company_domain` (guardianintelligence.org). Owns landing, `/design`, `/letters` (+ RSS), `/solutions`, `/company`, `/careers`, `/press`, `/changelog`, `/contact`, `/og/*` dynamic OG cards. Forker-friendly split: `src/content/`, `src/brand/`, `src/routes/`, `src/components/`.
   - `verself-web` — the unified product app on the `verself_domain` apex. Owns the authenticated browser console (sandbox, billing, identity, profile, notifications, mail, source, future product workflows behind TanStack Start server functions), the public docs at `/docs` and `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog).
-- `packages/` — shared UI, brand marks, generated OpenAPI clients, Valibot validators.
+- `packages/` — shared UI, brand marks, generated contract clients, Valibot validators.
 
 ## Provisioning Tools (`src/tools/provisioning/`)
 

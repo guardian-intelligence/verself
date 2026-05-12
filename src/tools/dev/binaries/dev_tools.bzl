@@ -23,6 +23,7 @@ ZIP_SINGLE_BINARIES = [
 
 ZIP_DIRECTORY_INSTALLS = [
     ("protoc_include", "@dev_tool_protoc//file", "include", "usr/local/include"),
+    ("smithy_cli", "@dev_tool_smithy_cli//file", "smithy-cli-linux-x86_64", "usr/local/smithy-cli-1.70.0"),
 ]
 
 TAR_MULTI_BINARIES = [
@@ -74,6 +75,7 @@ DEV_TOOL_DEPS = [
     ":dev_tools_protoc_bin",
     ":dev_tools_protoc_include",
     ":dev_tools_shellcheck",
+    ":dev_tools_smithy_cli",
     ":dev_tools_sops",
     ":dev_tools_stripe",
     ":dev_tools_syft",
@@ -84,6 +86,7 @@ DEV_TOOL_DEPS = [
 
 DEV_TOOL_SYMLINKS = {
     "usr/local/bin/zig": "/usr/local/zig/zig",
+    "usr/local/bin/smithy": "/usr/local/smithy-cli-1.70.0/bin/smithy",
     "usr/local/go": "/usr/local/go-1.25.8",
     "usr/local/zig": "/usr/local/zig-0.15.2",
 }

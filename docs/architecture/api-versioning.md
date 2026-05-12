@@ -1,5 +1,11 @@
 # API Versioning Library Specification
 
+Status: superseded as the canonical direction. API evolution should be modeled
+in Smithy under `src/contracts`, then projected into generated transports,
+OpenAPI compatibility artifacts, and SDK conformance fixtures. This document is
+retained as historical design material for Stripe-style edge migration during
+the cutover from Huma/OpenAPI-owned contracts.
+
 A Go library that ports [Cadwyn](https://github.com/zmievsa/cadwyn)'s Stripe-style API versioning pattern onto Huma v2 + `dto`. Handlers always see the latest ("HEAD") request/response shape; a chain of dated, declarative `VersionChange`s ferries old wire payloads forward and new wire payloads backward at the edge.
 
 This document specifies the library's surface area and internals. Cadwyn is the reference implementation; we deviate where Go semantics or our existing toolchain demand it.
