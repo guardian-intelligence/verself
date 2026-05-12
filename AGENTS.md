@@ -1,9 +1,7 @@
 <repo_overview>
-Set of services + console + marketing page for a sandbox-compute business (Firecracker-based Blacksmith.sh-style CI runner today; Lambda-style workloads and persistent dev VMs planned).
-
-Verself sells compute time, not application hosting — customer code runs in short-lived sandboxes the customer rents.
-
-The platform is also self-hostable: an operator can stand up an independent Verself installation on their own Latitude.sh bare metal via the bootstrap CLI (`docs/verself-cli.md`). A self-hosted installation runs at its own domain under its own name, owns its own control plane, identity, data, and billing, and has no runtime coupling to verself.sh. Almost entirely self-hosted on a single bare metal node.
+See @README.md
+See @src/services/iam-service/schema/verself.zed for Zanzibar policies
+See @docs/CODE_STANDARDS.md for engineering opinions.
 
 product: verself.sh
 auth portal: auth.verself.sh
@@ -12,16 +10,15 @@ services: <service>.api.verself.sh
 company website: guardianintelligence.org
 
 * `aspect` contains lots of helpful commands under .aspect/.
-* Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output)
+* Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output, filter accordingly)
 
-Current product: Blacksmith.sh clone (GitHub app that runs on bare metal)
-3 runners should be running on every merge to main:
+Current product: Blacksmith.sh clone (GitHub app that runs on bare metal).
 
-Blacksmith
-GitHub
-our internal CI
+We compare ourselves to Blacksmith 4vcpu + sticky disks and GitHub actions with `actions/cache`.
 
-To reduce costs over time once our internal CI gets reliable enough we can run the other two only as a benchmarking tool.
+Blacksmith # Currently disabled to save on cost - ~2m10s
+GitHub # currently disabled to save on cost  - ~20m
+our internal CI - ~1m30s
 
 This is a polyglot monorepo structured as a modular monolith.
 
@@ -76,7 +73,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 </repo_overview>
 
 <product_context>
-Conceptually, the product is simple:
+Conceptually, the core product is sketched out as follows:
 
 1. You onboard, switch to our runner and our custom checkout action.
 2. You open a PR. You CI as normal.
@@ -106,9 +103,9 @@ cold run looks least dramatic, because lint scaffolding is already light.
 biggest speedup multiplier.
 - build-docker: docker daemon, buildx layer cache, base image layers. None of the Node toolchain. Totally different disk shape.
 
-We only promote zvol if *all* jobs go green on the commit to the trunk branch. A Bazel/npm/cache directory is allowed to be partially stale or corrupt. If it is bad, the tool should miss/rebuild. The cache is not semantic truth.
+We only promote the VM's GITHUB_WORKSPACE + durable volumes if *all* jobs go green on the commit to the trunk branch. A Bazel/npm/cache directory is allowed to be partially stale or corrupt. If it is bad, the tool should miss/rebuild. The cache is not semantic truth.
 
-all mounts are rebuildable promotion is best-effort previous golden remains authoritative ambiguous seal skips promotion. We will expose cache misses and warnings so customers can go in and debug their CI themselves when things fail.
+All mounts are rebuildable. Promotion is best-effort previous golden remains authoritative ambiguous seal skips promotion. We will expose cache misses and warnings so customers can go in and debug their CI themselves when things fail.
 
 `getRepoZvolForPR`, therefore, takes `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)`. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
 
@@ -275,6 +272,7 @@ The contained instructions in this block are guidelines that apply to writing ma
 </output_contract>
 
 <coding_contract>
+- Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.
 - When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
 - Treat errors as data. Use tagged and structured errors to aid control flow.
 - Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
