@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "identity",
     srcs = [
+        ":iam_catalog_go",
         "capabilities.go",
         "catalog.go",
         "command_store.go",
@@ -30,6 +31,22 @@ go_library(
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
+)
+
+genrule(
+    name = "iam_catalog_go",
+    srcs = ["//src/smithy/models/verself:smithy_build"],
+    outs = ["iam_catalog.gen.go"],
+    cmd = """
+set -euo pipefail
+$(location //src/smithy/cmd/smithy-huma-go:smithy-huma-go) \
+  -model-tar "$(location //src/smithy/models/verself:smithy_build)" \
+  -service 'verself.iam.v1#Iam' \
+  -mode identity-catalog \
+  -package identity \
+  -out "$@"
+""",
+    tools = ["//src/smithy/cmd/smithy-huma-go:smithy-huma-go"],
 )
 
 go_test(

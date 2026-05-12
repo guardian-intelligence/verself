@@ -14,15 +14,17 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/verself/iam-service/internal/authz"
+	"github.com/verself/iam-service/internal/contractapi"
 	"github.com/verself/iam-service/internal/identity"
 	"github.com/verself/iam-service/internal/spicedb"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
+func TestOpenAPIPublicAPIOperationsDeclareGeneratedContract(t *testing.T) {
 	api := NewAPI(http.NewServeMux(), Config{Version: "1.0.0", ListenAddr: "127.0.0.1:0"})
 	openAPI := api.OpenAPI()
+	contracts := contractOperationsByID(t)
 
 	var checked int
 	for path, pathItem := range openAPI.Paths {
@@ -34,99 +36,80 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 				continue
 			}
 			checked++
-			rawPolicy, ok := op.Extensions["x-verself-iam"].(map[string]any)
+			want, ok := contracts[op.OperationID]
 			if !ok {
-				t.Fatalf("%s %s missing x-verself-iam policy", op.Method, path)
+				t.Fatalf("%s %s operation %q is not generated from Smithy", op.Method, path, op.OperationID)
 			}
-			for _, key := range []string{"permission", "resource", "action", "org_scope", "rate_limit_class", "audit_event"} {
-				if rawPolicy[key] == "" {
-					t.Fatalf("%s %s empty policy field %q: %#v", op.Method, path, key, rawPolicy)
-				}
-			}
-			if rawPolicy["org_scope"] != "token_org_id" && rawPolicy["org_scope"] != "token_role_assignment_org_ids" {
-				t.Fatalf("%s %s unexpected org_scope: %#v", op.Method, path, rawPolicy)
-			}
-			policy := runtimeiam.OperationPolicy{
-				Permission:     runtimeiam.Permission(rawPolicy["permission"].(string)),
-				Resource:       runtimeiam.ResourceKind(rawPolicy["resource"].(string)),
-				Action:         runtimeiam.Action(rawPolicy["action"].(string)),
-				OrgScope:       runtimeiam.OrgScope(rawPolicy["org_scope"].(string)),
-				RateLimitClass: runtimeiam.RateLimitClass(rawPolicy["rate_limit_class"].(string)),
-				AuditEvent:     runtimeiam.AuditEvent(rawPolicy["audit_event"].(string)),
-			}
-			if value, _ := rawPolicy["idempotency"].(string); value != "" {
-				policy.Idempotency = runtimeiam.IdempotencyPolicy(value)
-			}
-			switch value := rawPolicy["request_body_max_bytes"].(type) {
-			case int64:
-				policy.BodyLimitBytes = value
-			case int:
-				policy.BodyLimitBytes = int64(value)
-			case float64:
-				policy.BodyLimitBytes = int64(value)
-			}
-			if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
-				t.Fatalf("%s %s has invalid typed operation policy: %v", op.Method, path, err)
+			if op.Method != want.Method || path != want.Path {
+				t.Fatalf("%s %s drifted from generated contract %s %s", op.Method, path, want.Method, want.Path)
 			}
 			if len(op.Security) != 1 || len(op.Security[0]["bearerAuth"]) != 0 {
 				t.Fatalf("%s %s must require bearerAuth with no OpenAPI scopes: %#v", op.Method, path, op.Security)
 			}
-			if operationRequiresBodyBudget(*op) {
-				if rawPolicy["request_body_max_bytes"] == nil {
-					t.Fatalf("%s %s missing request_body_max_bytes: %#v", op.Method, path, rawPolicy)
-				}
-				if rawPolicy["action"] != "read" && rawPolicy["action"] != "list" && rawPolicy["action"] != "test" {
-					if rawPolicy["idempotency"] != string(idempotencyHeaderKey) {
-						t.Fatalf("%s %s mutating IAM operation must require header idempotency: %#v", op.Method, path, rawPolicy)
-					}
-					if !operationHasRequiredParameter(op, "header", "Idempotency-Key") {
-						t.Fatalf("%s %s requires Idempotency-Key but does not declare it", op.Method, path)
-					}
-				}
-			}
-		}
-	}
-	if checked == 0 {
-		t.Fatal("checked no public API operations")
-	}
-}
-
-func TestIAMRoutePoliciesMatchIdentityCatalog(t *testing.T) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "1.0.0", ListenAddr: "127.0.0.1:0"})
-	openAPI := api.OpenAPI()
-	catalog := iamServiceOperationCatalog(t)
-
-	seen := map[string]struct{}{}
-	for path, pathItem := range openAPI.Paths {
-		if !strings.HasPrefix(path, "/api/") {
-			continue
-		}
-		for _, op := range operationsForPath(pathItem) {
-			if op == nil {
-				continue
-			}
-			want, ok := catalog[op.OperationID]
+			rawContract, ok := op.Extensions["x-verself-contract"].(map[string]any)
 			if !ok {
-				t.Fatalf("%s %s operation %q missing from IAM identity catalog", op.Method, path, op.OperationID)
+				t.Fatalf("%s %s missing x-verself-contract metadata", op.Method, path)
 			}
-			seen[op.OperationID] = struct{}{}
-			rawPolicy := op.Extensions["x-verself-iam"].(map[string]any)
 			for key, wantValue := range map[string]string{
-				"permission": string(want.Permission),
-				"resource":   string(want.Resource),
-				"action":     string(want.Action),
-				"org_scope":  string(want.OrgScope),
+				"shape_id":            want.ShapeID,
+				"operation_id":        want.OperationID,
+				"identity":            want.Identity.Mode,
+				"audience":            want.Identity.Audience,
+				"permission":          want.Authorization.Permission,
+				"organization_source": want.Authorization.OrganizationSource,
+				"organization_member": want.Authorization.OrganizationMember,
+				"audit_event":         want.Audit.Event,
+				"resource":            want.Audit.Resource,
+				"action":              want.Audit.Action,
+				"rate_limit_bucket":   want.RateLimitBucket,
+				"idempotency":         want.Idempotency.Policy,
 			} {
-				if got := rawPolicy[key]; got != wantValue {
+				if got := rawContract[key]; got != wantValue {
 					t.Fatalf("%s %s %s = %#v, want %#v", op.Method, path, key, got, wantValue)
 				}
 			}
+			if runtimeiam.OperationRequiresBodyBudget(op.Method) {
+				if got := rawContract["request_body_max_bytes"]; got != float64(want.RequestBodyMaxBytes) && got != want.RequestBodyMaxBytes && got != int(want.RequestBodyMaxBytes) {
+					t.Fatalf("%s %s request_body_max_bytes = %#v, want %d", op.Method, path, got, want.RequestBodyMaxBytes)
+				}
+				if want.Idempotency.Policy != string(idempotencyHeaderKey) {
+					t.Fatalf("%s %s mutating generated operation must require header idempotency: %#v", op.Method, path, rawContract)
+				}
+				if !operationHasRequiredParameter(op, "header", "Idempotency-Key") {
+					t.Fatalf("%s %s requires Idempotency-Key but does not declare it", op.Method, path)
+				}
+			}
 		}
 	}
+	if checked != len(contracts) {
+		t.Fatalf("checked %d public operations, want %d", checked, len(contracts))
+	}
+}
 
+func TestGeneratedIAMContractMatchesIdentityCatalog(t *testing.T) {
+	catalog := iamServiceOperationCatalog(t)
+
+	seen := map[string]struct{}{}
+	for _, operation := range contractapi.Operations {
+		want, ok := catalog[operation.OperationID]
+		if !ok {
+			t.Fatalf("generated operation %q missing from IAM identity catalog", operation.OperationID)
+		}
+		seen[operation.OperationID] = struct{}{}
+		for field, gotWant := range map[string][2]string{
+			"permission": {string(want.Permission), operation.Authorization.Permission},
+			"resource":   {string(want.Resource), operation.Audit.Resource},
+			"action":     {string(want.Action), operation.Audit.Action},
+			"org_scope":  {string(want.OrgScope), runtimeOrgScopeFromContract(operation.Authorization.OrganizationSource)},
+		} {
+			if gotWant[0] != gotWant[1] {
+				t.Fatalf("%s %s = %q, want %q", operation.OperationID, field, gotWant[0], gotWant[1])
+			}
+		}
+	}
 	for operationID := range catalog {
 		if _, ok := seen[operationID]; !ok {
-			t.Fatalf("IAM identity catalog operation %q is not registered as a public route", operationID)
+			t.Fatalf("IAM identity catalog operation %q is not generated from Smithy", operationID)
 		}
 	}
 }
@@ -138,13 +121,14 @@ func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 		allowedSubjectID: "user-1",
 		allowedOrgPerms:  map[string]struct{}{"read": {}, "manage_iam": {}},
 	})
+	runtime := publicRuntime{authz: authzSvc}
 	user := identityServiceToken("42", identity.RoleAdmin)
-	if allowed, err := identityHasPermission(ctx, authzSvc, user, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || !allowed {
-		t.Fatalf("graph grant should authorize member capability write, allowed=%v err=%v", allowed, err)
+	if allowed, err := runtime.identityHasContractPermission(ctx, user, contractapi.UpdateOrganizationOperation, []string{"42"}); err != nil || !allowed {
+		t.Fatalf("graph grant should authorize organization update, allowed=%v err=%v", allowed, err)
 	}
 
 	wrongOrg := identityServiceToken("99", identity.RoleAdmin)
-	if allowed, err := identityHasPermission(ctx, authzSvc, wrongOrg, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || allowed {
+	if allowed, err := runtime.identityHasContractPermission(ctx, wrongOrg, contractapi.UpdateOrganizationOperation, []string{"99"}); err != nil || allowed {
 		t.Fatalf("graph grant for org 42 must not authorize org 99, allowed=%v err=%v", allowed, err)
 	}
 
@@ -155,7 +139,7 @@ func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 			"verself:credential_id": "credential-1",
 		},
 	}
-	if allowed, err := identityHasPermission(ctx, authzSvc, credentialWithoutServiceAccount, permissionMemberInvite, orgScopeTokenOrgID); !errors.Is(err, authz.ErrInvalid) || allowed {
+	if allowed, err := runtime.identityHasContractPermission(ctx, credentialWithoutServiceAccount, contractapi.GetOrganizationOperation, []string{"42"}); !errors.Is(err, authz.ErrInvalid) || allowed {
 		t.Fatalf("credential without service_account_id must be invalid, allowed=%v err=%v", allowed, err)
 	}
 }
@@ -203,23 +187,31 @@ func (b staticAuthzBackend) ReplaceResourceRelationships(context.Context, []spic
 }
 
 func (s staticIdentityStore) GetOrganizationProfile(context.Context, string, string) (identity.OrganizationProfile, error) {
-	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
+	return identity.OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s staticIdentityStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]identity.OrganizationMetadata, error) {
 	out := make([]identity.OrganizationMetadata, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		out = append(out, identity.OrganizationMetadata{OrgID: orgID, DisplayName: "Acme", Slug: "acme"})
+		out = append(out, identity.OrganizationMetadata{OrgID: orgID, IdentityProviderOrgID: orgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
+	}
+	return out, nil
+}
+
+func (s staticIdentityStore) ListOrganizationMetadataByProviderOrgIDs(_ context.Context, providerOrgIDs []string) ([]identity.OrganizationMetadata, error) {
+	out := make([]identity.OrganizationMetadata, 0, len(providerOrgIDs))
+	for _, providerOrgID := range providerOrgIDs {
+		out = append(out, identity.OrganizationMetadata{OrgID: providerOrgID, IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
 	}
 	return out, nil
 }
 
 func (s staticIdentityStore) UpdateOrganizationProfile(context.Context, identity.Principal, identity.UpdateOrganizationRequest) (identity.OrganizationProfile, error) {
-	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 2}, nil
+	return identity.OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 2}, nil
 }
 
 func (s staticIdentityStore) ResolveOrganizationProfile(context.Context, identity.ResolveOrganizationRequest) (identity.OrganizationProfile, error) {
-	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
+	return identity.OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s staticIdentityStore) GetMemberCapabilities(context.Context, string, string) (identity.MemberCapabilitiesDocument, error) {
@@ -283,23 +275,23 @@ func (s staticIdentityStore) ResolveAPICredentialClaims(context.Context, string,
 }
 
 func TestOperationPolicyRequiresIdempotencyHeader(t *testing.T) {
-	err := requireOperationIdempotency(context.Background(), runtimeiam.OperationPolicy{Idempotency: idempotencyHeaderKey})
+	err := requireContractIdempotency(context.Background(), contractapi.UpdateOrganizationOperation)
 	var statusErr huma.StatusError
 	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusBadRequest {
 		t.Fatalf("expected bad request for missing idempotency key, got %#v", err)
 	}
 
 	ctx := context.WithValue(context.Background(), operationRequestInfoKey{}, operationRequestInfo{IdempotencyKey: "key-1"})
-	if err := requireOperationIdempotency(ctx, runtimeiam.OperationPolicy{Idempotency: idempotencyHeaderKey}); err != nil {
+	if err := requireContractIdempotency(ctx, contractapi.UpdateOrganizationOperation); err != nil {
 		t.Fatalf("valid idempotency key rejected: %v", err)
 	}
 }
 
-func TestRoleAssignmentOrgIDsNormalizeAndRejectInvalidInput(t *testing.T) {
+func TestRoleAssignmentOrgIDsNormalizeProviderIDs(t *testing.T) {
 	ctx := context.Background()
 	identity := &auth.Identity{RoleAssignments: []auth.RoleAssignment{
 		{OrganizationID: "42", Role: "owner"},
-		{OrganizationID: "7", Role: "member"},
+		{OrganizationID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", Role: "member"},
 		{OrganizationID: "42", Role: "admin"},
 		{OrganizationID: "", Role: "member"},
 	}}
@@ -307,17 +299,12 @@ func TestRoleAssignmentOrgIDsNormalizeAndRejectInvalidInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("role assignments rejected: %v", err)
 	}
-	if got := strings.Join(orgIDs, ","); got != "42,7" {
-		t.Fatalf("org IDs = %s, want sorted unique 42,7", got)
-	}
-
-	_, err = roleAssignmentOrgIDs(ctx, &auth.Identity{RoleAssignments: []auth.RoleAssignment{{OrganizationID: "not-a-number", Role: "member"}}})
-	var statusErr huma.StatusError
-	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusBadRequest {
-		t.Fatalf("invalid org assignment should be 400, got %#v", err)
+	if got := strings.Join(orgIDs, ","); got != "42,org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y" {
+		t.Fatalf("org IDs = %s, want sorted unique provider IDs", got)
 	}
 
 	_, err = roleAssignmentOrgIDs(ctx, &auth.Identity{})
+	var statusErr huma.StatusError
 	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
 		t.Fatalf("missing assignments should be 403, got %#v", err)
 	}
@@ -335,38 +322,31 @@ func TestAuditOperationWritesStructuredLogForUserAndServiceAccount(t *testing.T)
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	ctx := context.WithValue(context.Background(), operationRequestInfoKey{}, operationRequestInfo{IdempotencyKey: "secret-retry-key"})
-	policy := runtimeiam.OperationPolicy{
-		Permission:     permissionAPICredentialsCreate,
-		Resource:       resourceAPICredential,
-		Action:         runtimeiam.ActionCreate,
-		OrgScope:       orgScopeTokenOrgID,
-		RateLimitClass: rateLimitAPICredentialMutation,
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     auditAPICredentialCreate,
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}
-	auditOperation(ctx, huma.Operation{OperationID: "create-api-credential"}, policy, &auth.Identity{
+	operation := contractapi.UpdateMemberRoleOperation
+	policy := operationPolicyFromContract(operation)
+	input := contractapi.UpdateMemberRoleInput{MemberID: "member_00000000000000000000000000"}
+	auditOperation(ctx, huma.Operation{OperationID: operation.OperationID}, policy, &auth.Identity{
 		Subject: "user-1",
 		OrgID:   "42",
-	}, createAPICredentialInput{}, nil, "denied", forbidden(ctx, "permission-denied", "missing required permission"))
-	auditOperation(ctx, huma.Operation{OperationID: "create-api-credential"}, policy, &auth.Identity{
+	}, input, nil, "denied", forbidden(ctx, "permission-denied", "missing required permission"))
+	auditOperation(ctx, huma.Operation{OperationID: operation.OperationID}, policy, &auth.Identity{
 		Subject: "credential-subject",
 		OrgID:   "42",
 		Raw: map[string]any{
 			"verself:credential_id":      "credential-1",
 			"verself:service_account_id": "service-account-1",
 		},
-	}, createAPICredentialInput{}, nil, "allowed", nil)
+	}, input, nil, "allowed", nil)
 
 	body := logs.String()
 	for _, want := range []string{
 		"msg=\"identity api operation\"",
-		"audit_event=iam.api_credential.create",
-		"operation_id=create-api-credential",
-		"operation_permission=iam:api_credentials:create",
-		"operation_resource=api_credential",
-		"operation_action=create",
-		"rate_limit_class=api_credential_mutation",
+		"audit_event=iam.member.update_role",
+		"operation_id=update-member-role",
+		"operation_permission=iam:member:update_role",
+		"operation_resource=member",
+		"operation_action=update",
+		"rate_limit_class=iam_mutation",
 		"outcome=denied",
 		"outcome=allowed",
 		"subject=user-1",
@@ -401,16 +381,16 @@ func TestProblemRedactsInternalCause(t *testing.T) {
 
 func TestFixedWindowOperationRateLimiter(t *testing.T) {
 	limiter := newFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]rateLimitRule{
-		rateLimitMemberMutation: {Limit: 2, Window: time.Minute},
+		rateLimitIAMMutation: {Limit: 2, Window: time.Minute},
 	})
 	now := time.Unix(1700000000, 0)
-	if decision := limiter.allow(rateLimitMemberMutation, "org:subject:ip", now); !decision.Allowed {
+	if decision := limiter.allow(rateLimitIAMMutation, "org:subject:ip", now); !decision.Allowed {
 		t.Fatalf("first request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow(rateLimitMemberMutation, "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
+	if decision := limiter.allow(rateLimitIAMMutation, "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
 		t.Fatalf("second request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow(rateLimitMemberMutation, "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
+	if decision := limiter.allow(rateLimitIAMMutation, "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
 		t.Fatalf("third request should be throttled: %#v", decision)
 	}
 }
@@ -431,6 +411,21 @@ func iamServiceOperationCatalog(t *testing.T) map[string]identity.Operation {
 	}
 	if len(out) == 0 {
 		t.Fatal("IAM service operation catalog is empty")
+	}
+	return out
+}
+
+func contractOperationsByID(t *testing.T) map[string]contractapi.OperationDescriptor {
+	t.Helper()
+	out := map[string]contractapi.OperationDescriptor{}
+	for _, operation := range contractapi.Operations {
+		if _, duplicate := out[operation.OperationID]; duplicate {
+			t.Fatalf("duplicate generated operation %q", operation.OperationID)
+		}
+		out[operation.OperationID] = operation
+	}
+	if len(out) == 0 {
+		t.Fatal("generated IAM contract is empty")
 	}
 	return out
 }

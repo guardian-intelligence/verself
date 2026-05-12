@@ -24,10 +24,10 @@ type Capability struct {
 // capability keys are enabled. They cover the read-only "see your own org"
 // surface that exists at the moment a user is added to an organization.
 var baselineMemberPermissions = []string{
+	PermissionOrganizationList,
 	PermissionOrganizationRead,
+	PermissionMemberList,
 	PermissionMemberRead,
-	PermissionMemberCapabilitiesRead,
-	PermissionIAMPolicyTest,
 	PermissionProfileRead,
 	PermissionProfileIdentityWrite,
 	PermissionProfilePreferencesWrite,
@@ -53,19 +53,6 @@ var defaultCapabilities = []Capability{
 			PermissionSandboxExecutionScheduleWrite,
 			PermissionSandboxLogsRead,
 			PermissionSandboxAnalyticsRead,
-		},
-	},
-	{
-		// Members can extend an invite, but only admins/owners can change
-		// what role another member holds. PermissionMemberRolesWrite is
-		// intentionally not member-eligible (catalog.go) and the init()
-		// invariant below enforces it cannot leak into a capability bundle.
-		Key:            "invite_members",
-		Label:          "Invite members",
-		Description:    "Invite new users to the organization. Changing an existing member's role stays admin-only.",
-		DefaultEnabled: true,
-		Permissions: []string{
-			PermissionMemberInvite,
 		},
 	},
 	{

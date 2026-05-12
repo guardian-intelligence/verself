@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS iam_organizations (
     org_id TEXT PRIMARY KEY,
+    identity_provider_org_id TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     slug TEXT NOT NULL UNIQUE,
     state TEXT NOT NULL DEFAULT 'active',
@@ -8,7 +9,8 @@ CREATE TABLE IF NOT EXISTS iam_organizations (
     created_by TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by TEXT NOT NULL,
-    CHECK (org_id ~ '^[0-9]+$'),
+    CHECK (org_id ~ '^org_[0-9A-HJKMNP-TV-Z]{26}$'),
+    CHECK (identity_provider_org_id ~ '^[0-9]+$'),
     CHECK (length(btrim(display_name)) > 0),
     CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
     CHECK (state IN ('active')),

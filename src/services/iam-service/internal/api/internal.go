@@ -101,7 +101,7 @@ func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz
 		MaxBodyBytes:  bodyLimitSmallJSON,
 	}
 	authorizeOp.Middlewares = append(authorizeOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, authorizeOp, authorizeOperation(authzSvc))
+	huma.Register(api, authorizeOp, authorizeOperation(svc, authzSvc))
 
 	authorizeResourceOp := huma.Operation{
 		OperationID:   "authorize-resource",
@@ -114,7 +114,7 @@ func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz
 		MaxBodyBytes:  bodyLimitSmallJSON,
 	}
 	authorizeResourceOp.Middlewares = append(authorizeResourceOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, authorizeResourceOp, authorizeResource(authzSvc))
+	huma.Register(api, authorizeResourceOp, authorizeResource(svc, authzSvc))
 
 	parentEdgeOp := huma.Operation{
 		OperationID:   "write-resource-parent-edge",
@@ -127,7 +127,7 @@ func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz
 		MaxBodyBytes:  bodyLimitSmallJSON,
 	}
 	parentEdgeOp.Middlewares = append(parentEdgeOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, parentEdgeOp, writeResourceParentEdge(authzSvc))
+	huma.Register(api, parentEdgeOp, writeResourceParentEdge(svc, authzSvc))
 }
 
 func updateHumanProfile(svc *identity.Service) func(context.Context, *updateHumanProfileInput) (*updateHumanProfileOutput, error) {
@@ -183,9 +183,9 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOr
 			attribute.String("iam.org_slug.requested", strings.TrimSpace(input.Body.Slug)),
 		)
 		profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
-			OrgID:         orgID,
-			Slug:          input.Body.Slug,
-			RequireActive: input.Body.RequireActive,
+			IdentityProviderOrgID: orgID,
+			Slug:                  input.Body.Slug,
+			RequireActive:         input.Body.RequireActive,
 		})
 		if err != nil {
 			mapped := identityError(ctx, err)
@@ -202,7 +202,7 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOr
 	}
 }
 
-func authorizeOperation(authzSvc *authz.Service) func(context.Context, *authorizeOperationInput) (*authorizeOperationOutput, error) {
+func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *authorizeOperationInput) (*authorizeOperationOutput, error) {
 	return func(ctx context.Context, input *authorizeOperationInput) (*authorizeOperationOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.check")
 		defer span.End()
@@ -219,7 +219,10 @@ func authorizeOperation(authzSvc *authz.Service) func(context.Context, *authoriz
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID := input.Body.OrgID.String()
+		orgID, err := publicOrgIDForProviderDTO(ctx, svc, input.Body.OrgID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
 		subject, err := authorizationSubjectFromDTO(input.Body.Subject)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
@@ -251,7 +254,7 @@ func authorizeOperation(authzSvc *authz.Service) func(context.Context, *authoriz
 	}
 }
 
-func authorizeResource(authzSvc *authz.Service) func(context.Context, *authorizeResourceInput) (*authorizeResourceOutput, error) {
+func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *authorizeResourceInput) (*authorizeResourceOutput, error) {
 	return func(ctx context.Context, input *authorizeResourceInput) (*authorizeResourceOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.resource_check")
 		defer span.End()
@@ -268,7 +271,10 @@ func authorizeResource(authzSvc *authz.Service) func(context.Context, *authorize
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID := input.Body.OrgID.String()
+		orgID, err := publicOrgIDForProviderDTO(ctx, svc, input.Body.OrgID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
 		subject, err := authorizationSubjectFromDTO(input.Body.Subject)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
@@ -307,7 +313,7 @@ func authorizeResource(authzSvc *authz.Service) func(context.Context, *authorize
 	}
 }
 
-func writeResourceParentEdge(authzSvc *authz.Service) func(context.Context, *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
+func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
 	return func(ctx context.Context, input *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.resource_parent_edge.write")
 		defer span.End()
@@ -324,9 +330,15 @@ func writeResourceParentEdge(authzSvc *authz.Service) func(context.Context, *wri
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID := input.Body.OrgID.String()
+		orgID, err := publicOrgIDForProviderDTO(ctx, svc, input.Body.OrgID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
 		resource := resourceRefFromDTO(input.Body.Resource)
 		parent := resourceRefFromDTO(input.Body.Parent)
+		if parent.Type == "org" && parent.ID == input.Body.OrgID.String() {
+			parent.ID = orgID
+		}
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.String("verself.org_id", orgID),
@@ -391,6 +403,23 @@ func resourceRefDTO(resource authz.ResourceRef) dto.IAMResourceRef {
 		Type: strings.TrimSpace(resource.Type),
 		ID:   strings.TrimSpace(resource.ID),
 	}
+}
+
+func publicOrgIDForProviderDTO(ctx context.Context, svc *identity.Service, providerOrgID dto.OrgID) (string, error) {
+	if svc == nil {
+		return "", identity.ErrStoreUnavailable
+	}
+	if providerOrgID.Uint64() == 0 {
+		return "", fmt.Errorf("%w: org_id is required", identity.ErrInvalidInput)
+	}
+	profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
+		IdentityProviderOrgID: providerOrgID.String(),
+		RequireActive:         true,
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(profile.OrgID), nil
 }
 
 func setInternalProfileIAMAttributes(span trace.Span, identity *auth.Identity) {

@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,136 +16,22 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/verself/iam-service/internal/authz"
-	"github.com/verself/iam-service/internal/identity"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission = runtimeiam.Permission
-
 const (
-	permissionOrganizationRead        permission = identity.PermissionOrganizationRead
-	permissionOrganizationWrite       permission = identity.PermissionOrganizationWrite
-	permissionMemberRead              permission = identity.PermissionMemberRead
-	permissionMemberInvite            permission = identity.PermissionMemberInvite
-	permissionMemberRolesWrite        permission = identity.PermissionMemberRolesWrite
-	permissionMemberCapabilitiesRead  permission = identity.PermissionMemberCapabilitiesRead
-	permissionMemberCapabilitiesWrite permission = identity.PermissionMemberCapabilitiesWrite
-	permissionIAMPolicyRead           permission = identity.PermissionIAMPolicyRead
-	permissionIAMPolicySet            permission = identity.PermissionIAMPolicySet
-	permissionIAMPolicyTest           permission = identity.PermissionIAMPolicyTest
-	permissionAPICredentialsRead      permission = identity.PermissionAPICredentialsRead
-	permissionAPICredentialsCreate    permission = identity.PermissionAPICredentialsCreate
-	permissionAPICredentialsRoll      permission = identity.PermissionAPICredentialsRoll
-	permissionAPICredentialsRevoke    permission = identity.PermissionAPICredentialsRevoke
-
 	idempotencyHeaderKey        = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
 
-	bodyLimitNoBody    int64 = 1024
 	bodyLimitSmallJSON int64 = 16 << 10
-
-	orgScopeTokenOrgID                = runtimeiam.OrgScopeTokenOrgID
-	orgScopeTokenRoleAssignmentOrgIDs = runtimeiam.OrgScopeTokenRoleAssignmentOrgIDs
 )
 
 const (
-	resourceOrganization                runtimeiam.ResourceKind   = "organization"
-	resourceOrganizationMember          runtimeiam.ResourceKind   = "organization_member"
-	resourceOrganizationMemberRoles     runtimeiam.ResourceKind   = "organization_member_roles"
-	resourceOrganizationCapabilities    runtimeiam.ResourceKind   = "organization_member_capabilities"
-	resourceOrganizationIAMPolicy       runtimeiam.ResourceKind   = "organization_iam_policy"
-	resourceServiceAccount              runtimeiam.ResourceKind   = "service_account"
-	resourceAPICredential               runtimeiam.ResourceKind   = "api_credential"
-	rateLimitRead                       runtimeiam.RateLimitClass = "read"
-	rateLimitOrganizationMutation       runtimeiam.RateLimitClass = "organization_mutation"
-	rateLimitMemberMutation             runtimeiam.RateLimitClass = "member_mutation"
-	rateLimitMemberCapabilitiesMutation runtimeiam.RateLimitClass = "member_capabilities_mutation"
-	rateLimitIAMPolicyMutation          runtimeiam.RateLimitClass = "iam_policy_mutation"
-	rateLimitAPICredentialMutation      runtimeiam.RateLimitClass = "api_credential_mutation"
-	auditOrganizationRead               runtimeiam.AuditEvent     = "iam.organization.read"
-	auditOrganizationMembershipList     runtimeiam.AuditEvent     = "iam.organization.membership.list"
-	auditOrganizationUpdate             runtimeiam.AuditEvent     = "iam.organization.update"
-	auditOrganizationMemberList         runtimeiam.AuditEvent     = "iam.organization.member.list"
-	auditOrganizationMemberInvite       runtimeiam.AuditEvent     = "iam.organization.member.invite"
-	auditOrganizationMemberRolesWrite   runtimeiam.AuditEvent     = "iam.organization.member.roles.write"
-	auditOrganizationCapabilitiesRead   runtimeiam.AuditEvent     = "iam.organization.member_capabilities.read"
-	auditOrganizationCapabilitiesWrite  runtimeiam.AuditEvent     = "iam.organization.member_capabilities.write"
-	auditOrganizationPolicyRead         runtimeiam.AuditEvent     = "iam.organization.policy.read"
-	auditOrganizationPolicyWrite        runtimeiam.AuditEvent     = "iam.organization.policy.write"
-	auditOrganizationPolicyTest         runtimeiam.AuditEvent     = "iam.organization.policy.test_permissions"
-	auditServiceAccountList             runtimeiam.AuditEvent     = "iam.service_account.list"
-	auditServiceAccountRead             runtimeiam.AuditEvent     = "iam.service_account.read"
-	auditServiceAccountDisable          runtimeiam.AuditEvent     = "iam.service_account.disable"
-	auditAPICredentialList              runtimeiam.AuditEvent     = "iam.api_credential.list"
-	auditAPICredentialRead              runtimeiam.AuditEvent     = "iam.api_credential.read"
-	auditAPICredentialCreate            runtimeiam.AuditEvent     = "iam.api_credential.create"
-	auditAPICredentialRoll              runtimeiam.AuditEvent     = "iam.api_credential.roll"
-	auditAPICredentialRevoke            runtimeiam.AuditEvent     = "iam.api_credential.revoke"
+	rateLimitRead        runtimeiam.RateLimitClass = "read"
+	rateLimitIAMMutation runtimeiam.RateLimitClass = "iam_mutation"
 )
-
-type securedOperation struct {
-	Operation huma.Operation
-	Policy    runtimeiam.OperationPolicy
-}
-
-func secured(op huma.Operation, policy runtimeiam.OperationPolicy) securedOperation {
-	return securedOperation{Operation: op, Policy: policy}
-}
-
-func registerSecured[I, O any](api huma.API, svc *identity.Service, authzSvc *authz.Service, securedOp securedOperation, handler func(context.Context, *I) (*O, error)) {
-	op := securedOp.Operation
-	policy := securedOp.Policy
-	if op.OperationID == "" {
-		panic("missing operation ID for secured public API route")
-	}
-	if !strings.HasPrefix(op.Path, "/api/") {
-		panic("secured public API route must live under /api/: " + op.OperationID)
-	}
-	op = withOperationPolicy(op, policy)
-	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
-	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
-		identity, err := enforceOperationPolicy(ctx, svc, authzSvc, policy)
-		if err != nil {
-			auditOperation(ctx, op, policy, identity, input, nil, "denied", err)
-			return nil, err
-		}
-		output, err := handler(ctx, input)
-		if err != nil {
-			auditOperation(ctx, op, policy, identity, input, nil, "error", err)
-			return nil, err
-		}
-		auditOperation(ctx, op, policy, identity, input, output, "allowed", nil)
-		return output, nil
-	})
-}
-
-func withOperationPolicy(op huma.Operation, policy runtimeiam.OperationPolicy) huma.Operation {
-	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
-		panic(err)
-	}
-	if policy.BodyLimitBytes > 0 {
-		op.MaxBodyBytes = policy.BodyLimitBytes
-	}
-	switch policy.Idempotency {
-	case runtimeiam.IdempotencyNone:
-	case idempotencyHeaderKey:
-		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
-	default:
-		panic("unsupported idempotency policy for operation " + op.OperationID + ": " + string(policy.Idempotency))
-	}
-	if op.Extensions == nil {
-		op.Extensions = map[string]any{}
-	}
-	op.Extensions["x-verself-iam"] = policy.OpenAPIExtension()
-	op.Security = []map[string][]string{{"bearerAuth": {}}}
-	return op
-}
-
-func operationRequiresBodyBudget(op huma.Operation) bool {
-	return runtimeiam.OperationRequiresBodyBudget(op.Method)
-}
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
 	for _, param := range parameters {
@@ -170,58 +55,6 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 	})
 }
 
-func enforceOperationPolicy(ctx context.Context, svc *identity.Service, authzSvc *authz.Service, policy runtimeiam.OperationPolicy) (*auth.Identity, error) {
-	identity, err := requireIdentity(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := synchronizeAuthorizationGraph(ctx, svc, identity, policy); err != nil {
-		if errors.Is(err, authz.ErrInvalid) || errors.Is(err, authz.ErrUnavailable) {
-			return identity, authzError(ctx, err)
-		}
-		return identity, identityError(ctx, err)
-	}
-	allowed, err := identityHasPermission(ctx, authzSvc, identity, policy.Permission, policy.OrgScope)
-	if err != nil {
-		if errors.Is(err, authz.ErrInvalid) || errors.Is(err, authz.ErrUnavailable) {
-			return identity, authzError(ctx, err)
-		}
-		return identity, identityError(ctx, err)
-	}
-	if !allowed {
-		return identity, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
-	}
-	if err := requireOperationIdempotency(ctx, policy); err != nil {
-		return identity, err
-	}
-	if decision := apiOperationRateLimiter.allow(policy.RateLimitClass, operationRateLimitKey(ctx, identity, policy), time.Now()); !decision.Allowed {
-		return identity, rateLimitExceeded(ctx, decision.RetryAfter)
-	}
-	return identity, nil
-}
-
-func synchronizeAuthorizationGraph(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, policy runtimeiam.OperationPolicy) error {
-	if svc == nil || authIdentity == nil {
-		return identity.ErrStoreUnavailable
-	}
-	actor := authorizationActor(authIdentity)
-	switch policy.OrgScope {
-	case orgScopeTokenOrgID:
-		return svc.ReconcileOrganizationAuthorization(ctx, authIdentity.OrgID, actor, "authorize-"+string(policy.Permission))
-	case orgScopeTokenRoleAssignmentOrgIDs:
-		orgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
-		if err != nil {
-			return err
-		}
-		for _, orgID := range orgIDs {
-			if err := svc.ReconcileOrganizationAuthorization(ctx, orgID, actor, "authorize-"+string(policy.Permission)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func authorizationActor(authIdentity *auth.Identity) string {
 	subject := authzSubjectFromIdentity(authIdentity)
 	if strings.TrimSpace(subject.ID) != "" {
@@ -233,35 +66,20 @@ func authorizationActor(authIdentity *auth.Identity) string {
 	return strings.TrimSpace(authIdentity.Subject)
 }
 
-func identityHasPermission(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, required permission, orgScope runtimeiam.OrgScope) (bool, error) {
-	if authIdentity == nil || required == "" {
-		return false, nil
-	}
-	if authzSvc == nil {
-		return false, authz.ErrUnavailable
-	}
-	if orgScope == orgScopeTokenRoleAssignmentOrgIDs {
-		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, authzSvc, authIdentity, required)
-		return len(orgIDs) > 0, err
-	}
-	orgID := strings.TrimSpace(authIdentity.OrgID)
-	if orgID == "" {
-		return false, fmt.Errorf("%w: org_id is required", identity.ErrInvalidInput)
-	}
-	allowed, _, err := authzSvc.TestOrganizationPermissions(ctx, orgID, authzSubjectFromIdentity(authIdentity), []string{string(required)}, "")
-	if err != nil {
-		return false, err
-	}
-	return stringSliceContains(allowed, string(required)), nil
-}
-
-func authorizedRoleAssignmentOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, required permission) ([]string, error) {
+func authorizedRoleAssignmentOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, required runtimeiam.Permission) ([]string, error) {
 	if required == "" {
 		return nil, nil
 	}
 	orgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
 	if err != nil {
 		return nil, err
+	}
+	return authorizedOrgIDs(ctx, authzSvc, authIdentity, orgIDs, required)
+}
+
+func authorizedOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, orgIDs []string, required runtimeiam.Permission) ([]string, error) {
+	if required == "" {
+		return nil, nil
 	}
 	authorized := make([]string, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
@@ -304,38 +122,9 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
 }
 
-func requireOperationIdempotency(ctx context.Context, policy runtimeiam.OperationPolicy) error {
-	if policy.Idempotency == runtimeiam.IdempotencyNone {
-		return nil
-	}
-	value := operationRequestInfoFromContext(ctx).IdempotencyKey
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return badRequest(ctx, "idempotency-key-required", "Idempotency-Key is required for this operation", nil)
-	}
-	if len(value) > maxIdempotencyKeyLength {
-		return badRequest(ctx, "idempotency-key-too-long", "Idempotency-Key is too long", nil)
-	}
-	if strings.ContainsAny(value, "\x00\r\n\t") {
-		return badRequest(ctx, "idempotency-key-invalid", "Idempotency-Key contains unsupported characters", nil)
-	}
-	return nil
-}
-
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
 	return info
-}
-
-func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy runtimeiam.OperationPolicy) string {
-	info := operationRequestInfoFromContext(ctx)
-	return strings.Join([]string{
-		string(policy.RateLimitClass),
-		string(policy.Permission),
-		identity.OrgID,
-		identity.Subject,
-		info.ClientIP,
-	}, "\x00")
 }
 
 func clientIPFromHuma(ctx huma.Context) string {
@@ -434,7 +223,7 @@ func compactAuditDetail(values map[string]any) map[string]any {
 
 func targetFromValue(input any) (string, string) {
 	value := reflectValue(input)
-	for _, fieldName := range []string{"CredentialID", "UserID", "OrgID", "ID"} {
+	for _, fieldName := range []string{"MemberID", "CredentialID", "UserID", "OrgID", "ID"} {
 		if text := stringField(value, fieldName); text != "" {
 			return text, text
 		}
@@ -445,7 +234,7 @@ func targetFromValue(input any) (string, string) {
 	body := value.FieldByName("Body")
 	if body.IsValid() {
 		body = reflectValue(body.Interface())
-		for _, fieldName := range []string{"CredentialID", "UserID", "OrgID", "ID"} {
+		for _, fieldName := range []string{"MemberID", "CredentialID", "UserID", "OrgID", "ID"} {
 			if text := stringField(body, fieldName); text != "" {
 				return text, text
 			}
@@ -528,12 +317,8 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]rateLimitRule{
-	rateLimitRead:                       {Limit: 600, Window: time.Minute},
-	rateLimitOrganizationMutation:       {Limit: 30, Window: time.Minute},
-	rateLimitMemberMutation:             {Limit: 60, Window: time.Minute},
-	rateLimitMemberCapabilitiesMutation: {Limit: 30, Window: time.Minute},
-	rateLimitIAMPolicyMutation:          {Limit: 30, Window: time.Minute},
-	rateLimitAPICredentialMutation:      {Limit: 30, Window: time.Minute},
+	rateLimitRead:        {Limit: 600, Window: time.Minute},
+	rateLimitIAMMutation: {Limit: 60, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[runtimeiam.RateLimitClass]rateLimitRule) *fixedWindowOperationRateLimiter {

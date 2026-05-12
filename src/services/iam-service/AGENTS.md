@@ -16,11 +16,12 @@ organization-management UX. This service is the API surface for those Forge
 Verself-owned concerns.
 
 Go product services remain authorization enforcement points. Each service owns
-its operation catalog through Smithy contract metadata under `src/contracts`,
-currently mirrored into Huma/OpenAPI metadata such as `x-verself-iam` during
-cutover, and delegates runtime authorization decisions to `iam-service` over SPIFFE mTLS.
-Public API packages depend on the narrow `service-runtime/iam` interface; service
-entrypoints wire generated `iam-service` internal clients.
+its operation catalog through Smithy contract metadata under `src/smithy`.
+Generated Huma bindings project that contract into route registration and
+OpenAPI metadata, while runtime authorization decisions are delegated to
+`iam-service` over SPIFFE mTLS. Public API packages depend on the narrow
+`service-runtime/iam` interface; service entrypoints wire generated
+`iam-service` internal clients.
 
 ## Product Surface
 
@@ -37,12 +38,10 @@ route.
 
 ## API Shape
 
-This service should follow the hardened contract pattern used by
-`sandbox-rental-service` for customer-facing `/api/*` routes: keep the Smithy
-operation model, Huma method/path registration, and operation policy together
-until generated handler bindings replace the mirrored route declarations. IAM
-metadata, rate limits, idempotency, audit events, body limits, and
-generated-client contracts must not drift.
+Customer-facing `/api/*` routes are registered from the Smithy contract through
+the generated `internal/contractapi` package. The Smithy operation model, Huma
+method/path registration, IAM metadata, rate limits, idempotency, audit events,
+body limits, OpenAPI projection, and generated-client contracts must not drift.
 
 Public route policy metadata uses the shared `service-runtime/iam.OperationPolicy`
 vocabulary. `Permission` is the product permission sent to the Zanzibar-backed
@@ -58,12 +57,11 @@ browser request bodies as evidence of authority. Handlers must still validate
 resource ownership against Zitadel or Verself-owned storage after the
 operation permission check passes.
 
-Use `dto` for request/response DTOs shared across services, generated
-clients, or frontend wrappers, including the member-capability document and
-catalog payloads returned by this service. Smithy operation traits are the
-settled metadata home; Huma route metadata such as `x-verself-iam` is a
-transition mirror because it describes enforcement behavior rather than a wire
-payload.
+Use generated contract DTOs for public request/response payloads. Handwritten
+DTOs remain appropriate for internal-only data structures that do not cross the
+public contract boundary. Smithy operation traits are the settled metadata home;
+Huma route metadata exposes `x-verself-contract` as a projection of the same
+contract for OpenAPI consumers and drift gates.
 
 ## Product IAM Model
 
@@ -149,7 +147,6 @@ redacted internal causes. Audit logs should capture the operation, permission,
 organization scope, subject, outcome, and stable failure code.
 
 Tests and live rehearsal should prove that public operations declare the
-canonical contract metadata, require bearer auth, enforce idempotency where
-applicable, and deny callers whose current organization role assignments do not
-grant the required permission. During the Huma cutover, the same checks should
-also assert the mirrored `x-verself-iam` metadata.
+canonical generated contract metadata, require bearer auth, enforce idempotency
+where applicable, and deny callers whose current organization role assignments
+do not grant the required permission.

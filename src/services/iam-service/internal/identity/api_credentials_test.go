@@ -105,13 +105,21 @@ type apiCredentialTestStore struct {
 }
 
 func (s *apiCredentialTestStore) GetOrganizationProfile(context.Context, string, string) (OrganizationProfile, error) {
-	return OrganizationProfile{}, nil
+	return OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s *apiCredentialTestStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]OrganizationMetadata, error) {
 	out := make([]OrganizationMetadata, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		out = append(out, OrganizationMetadata{OrgID: orgID, DisplayName: "Acme", Slug: "acme"})
+		out = append(out, OrganizationMetadata{OrgID: orgID, IdentityProviderOrgID: orgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
+	}
+	return out, nil
+}
+
+func (s *apiCredentialTestStore) ListOrganizationMetadataByProviderOrgIDs(_ context.Context, providerOrgIDs []string) ([]OrganizationMetadata, error) {
+	out := make([]OrganizationMetadata, 0, len(providerOrgIDs))
+	for _, providerOrgID := range providerOrgIDs {
+		out = append(out, OrganizationMetadata{OrgID: providerOrgID, IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
 	}
 	return out, nil
 }
@@ -121,7 +129,7 @@ func (s *apiCredentialTestStore) UpdateOrganizationProfile(context.Context, Prin
 }
 
 func (s *apiCredentialTestStore) ResolveOrganizationProfile(context.Context, ResolveOrganizationRequest) (OrganizationProfile, error) {
-	return OrganizationProfile{}, nil
+	return OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s *apiCredentialTestStore) GetMemberCapabilities(context.Context, string, string) (MemberCapabilitiesDocument, error) {

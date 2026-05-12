@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+genrule(
+    name = "iam_contract_go",
+    srcs = ["//src/smithy/models/verself:smithy_build"],
+    outs = ["iam_contract.gen.go"],
+    cmd = """
+set -euo pipefail
+$(location //src/smithy/cmd/smithy-huma-go:smithy-huma-go) \
+  -model-tar "$(location //src/smithy/models/verself:smithy_build)" \
+  -service 'verself.iam.v1#Iam' \
+  -mode huma \
+  -package contractapi \
+  -out "$@"
+""",
+    tools = ["//src/smithy/cmd/smithy-huma-go:smithy-huma-go"],
+)
+
+go_library(
+    name = "contractapi",
+    srcs = [":iam_contract_go"],
+    importpath = "github.com/verself/iam-service/internal/contractapi",
+    visibility = ["//src/services/iam-service:__subpackages__"],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":contractapi",
+    visibility = ["//src/services/iam-service:__subpackages__"],
+)

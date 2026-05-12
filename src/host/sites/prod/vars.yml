@@ -186,6 +186,7 @@ wireguard_host_tunnel_groups:
     - worker
 
 platform_org_id: "371564185181576922"
+platform_public_org_id: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y"
 platform_organization_name: guardianintelligence.org
 platform_company_slug: guardian-intelligence
 platform_company_display_name: Guardian Intelligence

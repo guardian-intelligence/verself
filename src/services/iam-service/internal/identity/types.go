@@ -59,16 +59,17 @@ type (
 )
 
 type OrganizationProfile struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          OrganizationProfileState
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 OrganizationProfileState
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	RedirectedFrom        string
 }
 
 type Organization struct {
@@ -83,9 +84,12 @@ type Organization struct {
 }
 
 type OrganizationMetadata struct {
-	OrgID       string
-	DisplayName string
-	Slug        string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	Version               int32
+	OrgACLVersion         int32
 }
 
 type UpdateOrganizationRequest struct {
@@ -95,9 +99,10 @@ type UpdateOrganizationRequest struct {
 }
 
 type ResolveOrganizationRequest struct {
-	OrgID         string
-	Slug          string
-	RequireActive bool
+	OrgID                 string
+	IdentityProviderOrgID string
+	Slug                  string
+	RequireActive         bool
 }
 
 type Member struct {

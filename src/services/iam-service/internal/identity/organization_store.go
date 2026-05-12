@@ -39,7 +39,7 @@ func (s SQLStore) GetOrganizationProfile(ctx context.Context, orgID, actorID str
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return OrganizationProfile{}, fmt.Errorf("%w: get organization profile: %v", ErrStoreUnavailable, err)
 	}
-	return s.createDefaultOrganizationProfile(ctx, orgID, actorID)
+	return OrganizationProfile{}, ErrOrganizationMissing
 }
 
 func (s SQLStore) ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs []string) (organizations []OrganizationMetadata, err error) {
@@ -66,9 +66,47 @@ func (s SQLStore) ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs [
 	organizations = make([]OrganizationMetadata, 0, len(rows))
 	for _, row := range rows {
 		organizations = append(organizations, OrganizationMetadata{
-			OrgID:       row.OrgID,
-			DisplayName: row.DisplayName,
-			Slug:        row.Slug,
+			OrgID:                 row.OrgID,
+			IdentityProviderOrgID: row.IdentityProviderOrgID,
+			DisplayName:           row.DisplayName,
+			Slug:                  row.Slug,
+			Version:               row.Version,
+			OrgACLVersion:         row.OrgAclVersion,
+		})
+	}
+	return organizations, nil
+}
+
+func (s SQLStore) ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, providerOrgIDs []string) (organizations []OrganizationMetadata, err error) {
+	ctx, span := organizationStoreTracer.Start(ctx, "iam.pg.organization_metadata_by_provider.list")
+	defer func() {
+		span.SetAttributes(attribute.Int("iam.organization.count", len(organizations)))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	if s.PG == nil {
+		return nil, ErrStoreUnavailable
+	}
+	providerOrgIDs = normalizeOrganizationIDs(providerOrgIDs)
+	if len(providerOrgIDs) == 0 {
+		return nil, fmt.Errorf("%w: provider_org_ids is required", ErrInvalidInput)
+	}
+	rows, err := s.q().ListOrganizationMetadataByProviderOrgIDs(ctx, identitystore.ListOrganizationMetadataByProviderOrgIDsParams{ProviderOrgIds: providerOrgIDs})
+	if err != nil {
+		return nil, fmt.Errorf("%w: list organization metadata by provider org ids: %v", ErrStoreUnavailable, err)
+	}
+	organizations = make([]OrganizationMetadata, 0, len(rows))
+	for _, row := range rows {
+		organizations = append(organizations, OrganizationMetadata{
+			OrgID:                 row.OrgID,
+			IdentityProviderOrgID: row.IdentityProviderOrgID,
+			DisplayName:           row.DisplayName,
+			Slug:                  row.Slug,
+			Version:               row.Version,
+			OrgACLVersion:         row.OrgAclVersion,
 		})
 	}
 	return organizations, nil
@@ -162,12 +200,22 @@ func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveO
 		return OrganizationProfile{}, ErrStoreUnavailable
 	}
 	input.OrgID = strings.TrimSpace(input.OrgID)
+	input.IdentityProviderOrgID = strings.TrimSpace(input.IdentityProviderOrgID)
 	input.Slug = normalizeSlug(input.Slug)
-	if input.OrgID == "" && input.Slug == "" {
-		return OrganizationProfile{}, fmt.Errorf("%w: org_id or slug is required", ErrInvalidInput)
+	if input.OrgID == "" && input.IdentityProviderOrgID == "" && input.Slug == "" {
+		return OrganizationProfile{}, fmt.Errorf("%w: org_id, identity_provider_org_id, or slug is required", ErrInvalidInput)
 	}
 	if input.OrgID != "" {
 		profile, err = s.GetOrganizationProfile(ctx, input.OrgID, "system:identity-resolve")
+		if err != nil {
+			return OrganizationProfile{}, err
+		}
+	} else if input.IdentityProviderOrgID != "" {
+		row, err := s.q().GetOrganizationProfileByProviderOrgID(ctx, identitystore.GetOrganizationProfileByProviderOrgIDParams{IdentityProviderOrgID: input.IdentityProviderOrgID})
+		if err != nil {
+			return OrganizationProfile{}, organizationProfileLoadError(err)
+		}
+		profile, err = organizationProfileFromProviderOrgIDRow(row)
 		if err != nil {
 			return OrganizationProfile{}, err
 		}
@@ -211,10 +259,11 @@ func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, a
 	for attempt := 0; attempt < 16; attempt++ {
 		slug := slugCandidate(baseSlug, suffix, attempt)
 		row, err := q.CreateOrganizationProfile(ctx, identitystore.CreateOrganizationProfileParams{
-			OrgID:       orgID,
-			DisplayName: displayName,
-			Slug:        slug,
-			ActorID:     actorID,
+			OrgID:                 orgID,
+			IdentityProviderOrgID: orgID,
+			DisplayName:           displayName,
+			Slug:                  slug,
+			ActorID:               actorID,
 		})
 		if err == nil {
 			profile, err := organizationProfileFromCreateRow(row)
@@ -248,30 +297,34 @@ func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, a
 }
 
 func organizationProfileFromGetRow(row identitystore.GetOrganizationProfileRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
 func organizationProfileFromForUpdateRow(row identitystore.GetOrganizationProfileForUpdateRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
 func organizationProfileFromSlugRow(row identitystore.GetOrganizationProfileBySlugRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
+func organizationProfileFromProviderOrgIDRow(row identitystore.GetOrganizationProfileByProviderOrgIDRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
 func organizationProfileFromRedirectRow(row identitystore.GetOrganizationProfileByRedirectSlugRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
 func organizationProfileFromCreateRow(row identitystore.CreateOrganizationProfileRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
 func organizationProfileFromUpdateRow(row identitystore.UpdateOrganizationProfileRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
-func organizationProfileFromFields(orgID, displayName, slug, state string, version int32, createdBy, updatedBy string, createdAt, updatedAt pgtype.Timestamptz, redirectedFrom string) (OrganizationProfile, error) {
+func organizationProfileFromFields(orgID, identityProviderOrgID, displayName, slug, state string, version int32, createdBy, updatedBy string, createdAt, updatedAt pgtype.Timestamptz, redirectedFrom string) (OrganizationProfile, error) {
 	created, err := requiredTime(createdAt, "iam_organizations.created_at")
 	if err != nil {
 		return OrganizationProfile{}, err
@@ -281,16 +334,17 @@ func organizationProfileFromFields(orgID, displayName, slug, state string, versi
 		return OrganizationProfile{}, err
 	}
 	return OrganizationProfile{
-		OrgID:          orgID,
-		DisplayName:    displayName,
-		Slug:           slug,
-		State:          OrganizationProfileState(state),
-		Version:        version,
-		CreatedBy:      createdBy,
-		UpdatedBy:      updatedBy,
-		CreatedAt:      created,
-		UpdatedAt:      updated,
-		RedirectedFrom: redirectedFrom,
+		OrgID:                 orgID,
+		IdentityProviderOrgID: identityProviderOrgID,
+		DisplayName:           displayName,
+		Slug:                  slug,
+		State:                 OrganizationProfileState(state),
+		Version:               version,
+		CreatedBy:             createdBy,
+		UpdatedBy:             updatedBy,
+		CreatedAt:             created,
+		UpdatedAt:             updated,
+		RedirectedFrom:        redirectedFrom,
 	}, nil
 }
 

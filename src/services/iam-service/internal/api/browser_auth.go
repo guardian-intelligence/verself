@@ -535,16 +535,21 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 	if selectedOrgID == "" {
 		return "", errors.New("selected organization is required for resource token exchange")
 	}
+	selectedOrganization, ok := session.User.organization(selectedOrgID)
+	if !ok || strings.TrimSpace(selectedOrganization.IdentityProviderOrgID) == "" {
+		return "", errors.New("selected organization provider id is required for resource token exchange")
+	}
+	providerOrgID := strings.TrimSpace(selectedOrganization.IdentityProviderOrgID)
 	requestedScopes := []string{
 		"openid",
 		"profile",
 		"email",
-		"urn:zitadel:iam:org:id:" + selectedOrgID,
+		"urn:zitadel:iam:org:id:" + providerOrgID,
 		"urn:zitadel:iam:org:project:id:" + audience + ":aud",
 		"urn:zitadel:iam:org:projects:roles",
 	}
 	if roleAssignmentScope == "selected_org" {
-		requestedScopes = append(requestedScopes[:4], append([]string{"urn:zitadel:iam:org:roles:id:" + selectedOrgID}, requestedScopes[4:]...)...)
+		requestedScopes = append(requestedScopes[:4], append([]string{"urn:zitadel:iam:org:roles:id:" + providerOrgID}, requestedScopes[4:]...)...)
 	}
 	requestedScope := strings.Join(requestedScopes, " ")
 	scopeHash := hashToken(requestedScope)
@@ -562,7 +567,7 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		ScopeHash:     scopeHash,
 	})
 	if err == nil && time.Until(requiredTime(cached.ExpiresAt)) > browserAuthRefreshLeeway {
-		if err := a.verifyAccessToken(ctx, cached.AccessToken, audience, selectedOrgID, roleAssignmentScope); err == nil {
+		if err := a.verifyAccessToken(ctx, cached.AccessToken, audience, providerOrgID, roleAssignmentScope); err == nil {
 			span.SetAttributes(attribute.Bool("auth.cache_hit", true))
 			span.SetStatus(codes.Ok, "")
 			return cached.AccessToken, nil
@@ -593,7 +598,7 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
-	expiresAt, claims, err := a.verifyAccessTokenClaims(ctx, tokens.AccessToken, audience, selectedOrgID, roleAssignmentScope)
+	expiresAt, claims, err := a.verifyAccessTokenClaims(ctx, tokens.AccessToken, audience, providerOrgID, roleAssignmentScope)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -682,10 +687,14 @@ func (a *BrowserAuth) userSnapshot(ctx context.Context, tokens tokenResponse, id
 	if name == nil {
 		name = firstString(preferredUsername, email, stringClaim(idClaims, "sub"))
 	}
-	homeOrgID := stringClaim(claims, "urn:zitadel:iam:user:resourceowner:id")
+	providerHomeOrgID := stringClaim(claims, "urn:zitadel:iam:user:resourceowner:id")
 	assignments := extractRoleAssignments(claims)
-	organizations := buildOrganizationContexts(assignments)
-	selectedOrgID := selectInitialOrganizationID(organizations, homeOrgID, previousSelectedOrgID)
+	organizations, err := a.publicOrganizationContexts(ctx, buildOrganizationContexts(assignments))
+	if err != nil {
+		return browserUser{}, err
+	}
+	homeOrgID := publicOrgIDForProviderOrgID(organizations, providerHomeOrgID)
+	selectedOrgID := selectInitialOrganizationID(organizations, providerHomeOrgID, previousSelectedOrgID)
 	roles := rolesForOrganization(organizations, selectedOrgID)
 	if len(roles) == 0 {
 		roles = extractRoles(claims)
@@ -699,7 +708,7 @@ func (a *BrowserAuth) userSnapshot(ctx context.Context, tokens tokenResponse, id
 		SelectedOrgID:          selectedOrgID,
 		OrgID:                  selectedOrgID,
 		Roles:                  roles,
-		RoleAssignments:        assignments,
+		RoleAssignments:        roleAssignmentsFromOrganizationContexts(organizations),
 		AvailableOrganizations: organizations,
 		Claims:                 claims,
 	}, nil
@@ -784,7 +793,7 @@ func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*bro
 		SelectedOrgID:          stringFromText(row.SelectedOrgID),
 		OrgID:                  stringFromText(row.SelectedOrgID),
 		Roles:                  append([]string(nil), row.Roles...),
-		RoleAssignments:        extractRoleAssignments(claims),
+		RoleAssignments:        roleAssignmentsFromOrganizationContexts(organizations),
 		AvailableOrganizations: organizations,
 		Claims:                 claims,
 	}
@@ -1010,9 +1019,10 @@ type authRoleAssignment struct {
 }
 
 type authOrganizationContext struct {
-	OrgID           string               `json:"orgID"`
-	Roles           []string             `json:"roles"`
-	RoleAssignments []authRoleAssignment `json:"roleAssignments"`
+	OrgID                 string               `json:"orgID"`
+	IdentityProviderOrgID string               `json:"identityProviderOrgID"`
+	Roles                 []string             `json:"roles"`
+	RoleAssignments       []authRoleAssignment `json:"roleAssignments"`
 }
 
 type authState struct {
@@ -1177,9 +1187,75 @@ func buildOrganizationContexts(assignments []authRoleAssignment) []authOrganizat
 			}
 			return parts.assignments[i].Role < parts.assignments[j].Role
 		})
-		result = append(result, authOrganizationContext{OrgID: orgID, Roles: sortedKeys(parts.roles), RoleAssignments: parts.assignments})
+		result = append(result, authOrganizationContext{OrgID: orgID, IdentityProviderOrgID: orgID, Roles: sortedKeys(parts.roles), RoleAssignments: parts.assignments})
 	}
 	return result
+}
+
+func (a *BrowserAuth) publicOrganizationContexts(ctx context.Context, contexts []authOrganizationContext) ([]authOrganizationContext, error) {
+	if len(contexts) == 0 {
+		return []authOrganizationContext{}, nil
+	}
+	providerOrgIDs := make([]string, 0, len(contexts))
+	for _, context := range contexts {
+		providerOrgIDs = append(providerOrgIDs, context.IdentityProviderOrgID)
+	}
+	rows, err := a.q.ListOrganizationMetadataByProviderOrgIDs(ctx, identitystore.ListOrganizationMetadataByProviderOrgIDsParams{ProviderOrgIds: compactUniqueStrings(providerOrgIDs)})
+	if err != nil {
+		return nil, fmt.Errorf("map browser organization contexts: %w", err)
+	}
+	publicByProvider := map[string]string{}
+	for _, row := range rows {
+		publicByProvider[row.IdentityProviderOrgID] = row.OrgID
+	}
+	out := make([]authOrganizationContext, 0, len(contexts))
+	for _, context := range contexts {
+		publicOrgID := publicByProvider[context.IdentityProviderOrgID]
+		if publicOrgID == "" {
+			return nil, fmt.Errorf("browser organization context missing IAM mapping for provider org %s", context.IdentityProviderOrgID)
+		}
+		assignments := make([]authRoleAssignment, 0, len(context.RoleAssignments))
+		for _, assignment := range context.RoleAssignments {
+			assignment.OrgID = publicOrgID
+			assignments = append(assignments, assignment)
+		}
+		context.OrgID = publicOrgID
+		context.RoleAssignments = assignments
+		out = append(out, context)
+	}
+	return out, nil
+}
+
+func publicOrgIDForProviderOrgID(contexts []authOrganizationContext, providerOrgID *string) *string {
+	if providerOrgID == nil {
+		return nil
+	}
+	for _, context := range contexts {
+		if context.IdentityProviderOrgID == *providerOrgID {
+			value := context.OrgID
+			return &value
+		}
+	}
+	return nil
+}
+
+func roleAssignmentsFromOrganizationContexts(contexts []authOrganizationContext) []authRoleAssignment {
+	assignments := []authRoleAssignment{}
+	for _, context := range contexts {
+		assignments = append(assignments, context.RoleAssignments...)
+	}
+	sort.Slice(assignments, func(i, j int) bool {
+		leftProject := stringValue(assignments[i].ProjectID)
+		rightProject := stringValue(assignments[j].ProjectID)
+		if leftProject != rightProject {
+			return leftProject < rightProject
+		}
+		if assignments[i].OrgID != assignments[j].OrgID {
+			return assignments[i].OrgID < assignments[j].OrgID
+		}
+		return assignments[i].Role < assignments[j].Role
+	})
+	return assignments
 }
 
 func rolesForOrganization(contexts []authOrganizationContext, selectedOrgID *string) []string {
@@ -1206,7 +1282,7 @@ func roleAssignmentsForOrganization(contexts []authOrganizationContext, selected
 	return []authRoleAssignment{}
 }
 
-func selectInitialOrganizationID(contexts []authOrganizationContext, homeOrgID, previousSelectedOrgID *string) *string {
+func selectInitialOrganizationID(contexts []authOrganizationContext, providerHomeOrgID, previousSelectedOrgID *string) *string {
 	if previousSelectedOrgID != nil {
 		for _, context := range contexts {
 			if context.OrgID == *previousSelectedOrgID {
@@ -1214,10 +1290,11 @@ func selectInitialOrganizationID(contexts []authOrganizationContext, homeOrgID, 
 			}
 		}
 	}
-	if homeOrgID != nil {
+	if providerHomeOrgID != nil {
 		for _, context := range contexts {
-			if context.OrgID == *homeOrgID {
-				return homeOrgID
+			if context.IdentityProviderOrgID == *providerHomeOrgID {
+				selected := context.OrgID
+				return &selected
 			}
 		}
 	}
@@ -1225,7 +1302,7 @@ func selectInitialOrganizationID(contexts []authOrganizationContext, homeOrgID, 
 		selected := contexts[0].OrgID
 		return &selected
 	}
-	return homeOrgID
+	return nil
 }
 
 func decodeJWTPayload(raw string) (map[string]any, error) {

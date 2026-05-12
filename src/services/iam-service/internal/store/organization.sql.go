@@ -12,38 +12,41 @@ import (
 )
 
 const createOrganizationProfile = `-- name: CreateOrganizationProfile :one
-INSERT INTO iam_organizations (org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
-SELECT $1, $2, $3, 'active', 1, $4, $4, now(), now()
+INSERT INTO iam_organizations (org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
+SELECT $1, $2, $3, $4, 'active', 1, $5, $5, now(), now()
 WHERE NOT EXISTS (
-    SELECT 1 FROM iam_organization_slug_redirects WHERE slug = $3
+    SELECT 1 FROM iam_organization_slug_redirects WHERE slug = $4
 )
 ON CONFLICT DO NOTHING
-RETURNING org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
+RETURNING org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
 `
 
 type CreateOrganizationProfileParams struct {
-	OrgID       string
-	DisplayName string
-	Slug        string
-	ActorID     string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	ActorID               string
 }
 
 type CreateOrganizationProfileRow struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          string
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
 }
 
 func (q *Queries) CreateOrganizationProfile(ctx context.Context, arg CreateOrganizationProfileParams) (CreateOrganizationProfileRow, error) {
 	row := q.db.QueryRow(ctx, createOrganizationProfile,
 		arg.OrgID,
+		arg.IdentityProviderOrgID,
 		arg.DisplayName,
 		arg.Slug,
 		arg.ActorID,
@@ -51,6 +54,7 @@ func (q *Queries) CreateOrganizationProfile(ctx context.Context, arg CreateOrgan
 	var i CreateOrganizationProfileRow
 	err := row.Scan(
 		&i.OrgID,
+		&i.IdentityProviderOrgID,
 		&i.DisplayName,
 		&i.Slug,
 		&i.State,
@@ -65,7 +69,7 @@ func (q *Queries) CreateOrganizationProfile(ctx context.Context, arg CreateOrgan
 }
 
 const getOrganizationProfile = `-- name: GetOrganizationProfile :one
-SELECT org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
+SELECT org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
 FROM iam_organizations
 WHERE org_id = $1
 `
@@ -75,16 +79,17 @@ type GetOrganizationProfileParams struct {
 }
 
 type GetOrganizationProfileRow struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          string
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
 }
 
 func (q *Queries) GetOrganizationProfile(ctx context.Context, arg GetOrganizationProfileParams) (GetOrganizationProfileRow, error) {
@@ -92,6 +97,50 @@ func (q *Queries) GetOrganizationProfile(ctx context.Context, arg GetOrganizatio
 	var i GetOrganizationProfileRow
 	err := row.Scan(
 		&i.OrgID,
+		&i.IdentityProviderOrgID,
+		&i.DisplayName,
+		&i.Slug,
+		&i.State,
+		&i.Version,
+		&i.CreatedBy,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RedirectedFrom,
+	)
+	return i, err
+}
+
+const getOrganizationProfileByProviderOrgID = `-- name: GetOrganizationProfileByProviderOrgID :one
+SELECT org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
+FROM iam_organizations
+WHERE identity_provider_org_id = $1
+`
+
+type GetOrganizationProfileByProviderOrgIDParams struct {
+	IdentityProviderOrgID string
+}
+
+type GetOrganizationProfileByProviderOrgIDRow struct {
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
+}
+
+func (q *Queries) GetOrganizationProfileByProviderOrgID(ctx context.Context, arg GetOrganizationProfileByProviderOrgIDParams) (GetOrganizationProfileByProviderOrgIDRow, error) {
+	row := q.db.QueryRow(ctx, getOrganizationProfileByProviderOrgID, arg.IdentityProviderOrgID)
+	var i GetOrganizationProfileByProviderOrgIDRow
+	err := row.Scan(
+		&i.OrgID,
+		&i.IdentityProviderOrgID,
 		&i.DisplayName,
 		&i.Slug,
 		&i.State,
@@ -106,7 +155,7 @@ func (q *Queries) GetOrganizationProfile(ctx context.Context, arg GetOrganizatio
 }
 
 const getOrganizationProfileByRedirectSlug = `-- name: GetOrganizationProfileByRedirectSlug :one
-SELECT o.org_id, o.display_name, o.slug, o.state, o.version, o.created_by, o.updated_by, o.created_at, o.updated_at, r.slug AS redirected_from
+SELECT o.org_id, o.identity_provider_org_id, o.display_name, o.slug, o.state, o.version, o.created_by, o.updated_by, o.created_at, o.updated_at, r.slug AS redirected_from
 FROM iam_organization_slug_redirects r
 JOIN iam_organizations o ON o.org_id = r.org_id
 WHERE r.slug = $1
@@ -117,16 +166,17 @@ type GetOrganizationProfileByRedirectSlugParams struct {
 }
 
 type GetOrganizationProfileByRedirectSlugRow struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          string
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
 }
 
 func (q *Queries) GetOrganizationProfileByRedirectSlug(ctx context.Context, arg GetOrganizationProfileByRedirectSlugParams) (GetOrganizationProfileByRedirectSlugRow, error) {
@@ -134,6 +184,7 @@ func (q *Queries) GetOrganizationProfileByRedirectSlug(ctx context.Context, arg 
 	var i GetOrganizationProfileByRedirectSlugRow
 	err := row.Scan(
 		&i.OrgID,
+		&i.IdentityProviderOrgID,
 		&i.DisplayName,
 		&i.Slug,
 		&i.State,
@@ -148,7 +199,7 @@ func (q *Queries) GetOrganizationProfileByRedirectSlug(ctx context.Context, arg 
 }
 
 const getOrganizationProfileBySlug = `-- name: GetOrganizationProfileBySlug :one
-SELECT org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
+SELECT org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
 FROM iam_organizations
 WHERE slug = $1
 `
@@ -158,16 +209,17 @@ type GetOrganizationProfileBySlugParams struct {
 }
 
 type GetOrganizationProfileBySlugRow struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          string
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
 }
 
 func (q *Queries) GetOrganizationProfileBySlug(ctx context.Context, arg GetOrganizationProfileBySlugParams) (GetOrganizationProfileBySlugRow, error) {
@@ -175,6 +227,7 @@ func (q *Queries) GetOrganizationProfileBySlug(ctx context.Context, arg GetOrgan
 	var i GetOrganizationProfileBySlugRow
 	err := row.Scan(
 		&i.OrgID,
+		&i.IdentityProviderOrgID,
 		&i.DisplayName,
 		&i.Slug,
 		&i.State,
@@ -189,7 +242,7 @@ func (q *Queries) GetOrganizationProfileBySlug(ctx context.Context, arg GetOrgan
 }
 
 const getOrganizationProfileForUpdate = `-- name: GetOrganizationProfileForUpdate :one
-SELECT org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
+SELECT org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
 FROM iam_organizations
 WHERE org_id = $1
 FOR UPDATE
@@ -200,16 +253,17 @@ type GetOrganizationProfileForUpdateParams struct {
 }
 
 type GetOrganizationProfileForUpdateRow struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          string
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
 }
 
 func (q *Queries) GetOrganizationProfileForUpdate(ctx context.Context, arg GetOrganizationProfileForUpdateParams) (GetOrganizationProfileForUpdateRow, error) {
@@ -217,6 +271,7 @@ func (q *Queries) GetOrganizationProfileForUpdate(ctx context.Context, arg GetOr
 	var i GetOrganizationProfileForUpdateRow
 	err := row.Scan(
 		&i.OrgID,
+		&i.IdentityProviderOrgID,
 		&i.DisplayName,
 		&i.Slug,
 		&i.State,
@@ -248,10 +303,11 @@ func (q *Queries) InsertOrganizationSlugRedirect(ctx context.Context, arg Insert
 }
 
 const listOrganizationMetadataByOrgIDs = `-- name: ListOrganizationMetadataByOrgIDs :many
-SELECT org_id, display_name, slug
-FROM iam_organizations
-WHERE org_id = ANY($1::text[])
-ORDER BY display_name, org_id
+SELECT o.org_id, o.identity_provider_org_id, o.display_name, o.slug, o.version, COALESCE(a.version, 1)::integer AS org_acl_version
+FROM iam_organizations o
+LEFT JOIN iam_org_acl_state a ON a.org_id = o.org_id
+WHERE o.org_id = ANY($1::text[])
+ORDER BY o.display_name, o.org_id
 `
 
 type ListOrganizationMetadataByOrgIDsParams struct {
@@ -259,9 +315,12 @@ type ListOrganizationMetadataByOrgIDsParams struct {
 }
 
 type ListOrganizationMetadataByOrgIDsRow struct {
-	OrgID       string
-	DisplayName string
-	Slug        string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	Version               int32
+	OrgAclVersion         int32
 }
 
 func (q *Queries) ListOrganizationMetadataByOrgIDs(ctx context.Context, arg ListOrganizationMetadataByOrgIDsParams) ([]ListOrganizationMetadataByOrgIDsRow, error) {
@@ -273,7 +332,62 @@ func (q *Queries) ListOrganizationMetadataByOrgIDs(ctx context.Context, arg List
 	items := []ListOrganizationMetadataByOrgIDsRow{}
 	for rows.Next() {
 		var i ListOrganizationMetadataByOrgIDsRow
-		if err := rows.Scan(&i.OrgID, &i.DisplayName, &i.Slug); err != nil {
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.IdentityProviderOrgID,
+			&i.DisplayName,
+			&i.Slug,
+			&i.Version,
+			&i.OrgAclVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationMetadataByProviderOrgIDs = `-- name: ListOrganizationMetadataByProviderOrgIDs :many
+SELECT o.org_id, o.identity_provider_org_id, o.display_name, o.slug, o.version, COALESCE(a.version, 1)::integer AS org_acl_version
+FROM iam_organizations o
+LEFT JOIN iam_org_acl_state a ON a.org_id = o.org_id
+WHERE o.identity_provider_org_id = ANY($1::text[])
+ORDER BY o.display_name, o.org_id
+`
+
+type ListOrganizationMetadataByProviderOrgIDsParams struct {
+	ProviderOrgIds []string
+}
+
+type ListOrganizationMetadataByProviderOrgIDsRow struct {
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	Version               int32
+	OrgAclVersion         int32
+}
+
+func (q *Queries) ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, arg ListOrganizationMetadataByProviderOrgIDsParams) ([]ListOrganizationMetadataByProviderOrgIDsRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMetadataByProviderOrgIDs, arg.ProviderOrgIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationMetadataByProviderOrgIDsRow{}
+	for rows.Next() {
+		var i ListOrganizationMetadataByProviderOrgIDsRow
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.IdentityProviderOrgID,
+			&i.DisplayName,
+			&i.Slug,
+			&i.Version,
+			&i.OrgAclVersion,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -323,7 +437,7 @@ SET slug = $1,
     updated_by = $3,
     updated_at = now()
 WHERE org_id = $4 AND version = $5
-RETURNING org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
+RETURNING org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
 `
 
 type UpdateOrganizationProfileParams struct {
@@ -335,16 +449,17 @@ type UpdateOrganizationProfileParams struct {
 }
 
 type UpdateOrganizationProfileRow struct {
-	OrgID          string
-	DisplayName    string
-	Slug           string
-	State          string
-	Version        int32
-	CreatedBy      string
-	UpdatedBy      string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	RedirectedFrom string
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	State                 string
+	Version               int32
+	CreatedBy             string
+	UpdatedBy             string
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	RedirectedFrom        string
 }
 
 func (q *Queries) UpdateOrganizationProfile(ctx context.Context, arg UpdateOrganizationProfileParams) (UpdateOrganizationProfileRow, error) {
@@ -358,6 +473,7 @@ func (q *Queries) UpdateOrganizationProfile(ctx context.Context, arg UpdateOrgan
 	var i UpdateOrganizationProfileRow
 	err := row.Scan(
 		&i.OrgID,
+		&i.IdentityProviderOrgID,
 		&i.DisplayName,
 		&i.Slug,
 		&i.State,

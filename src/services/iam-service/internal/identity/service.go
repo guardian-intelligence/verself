@@ -15,6 +15,7 @@ import (
 type Store interface {
 	GetOrganizationProfile(ctx context.Context, orgID, actorID string) (OrganizationProfile, error)
 	ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs []string) ([]OrganizationMetadata, error)
+	ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, providerOrgIDs []string) ([]OrganizationMetadata, error)
 	UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (OrganizationProfile, error)
 	ResolveOrganizationProfile(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error)
 	GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error)
@@ -59,6 +60,47 @@ type Service struct {
 	AuthorizationGraph AuthorizationGraph
 	ProjectID          string
 	Now                func() time.Time
+}
+
+type providerOrgDirectory struct {
+	next          Directory
+	providerOrgID string
+}
+
+func directoryForProviderOrgID(next Directory, providerOrgID string) Directory {
+	return providerOrgDirectory{next: next, providerOrgID: strings.TrimSpace(providerOrgID)}
+}
+
+func (d providerOrgDirectory) ListMembers(ctx context.Context, _ string, projectID string) ([]Member, error) {
+	return d.next.ListMembers(ctx, d.providerOrgID, projectID)
+}
+
+func (d providerOrgDirectory) InviteMember(ctx context.Context, _ string, projectID string, input InviteMemberRequest) (InviteMemberResult, error) {
+	return d.next.InviteMember(ctx, d.providerOrgID, projectID, input)
+}
+
+func (d providerOrgDirectory) UpdateMemberRoles(ctx context.Context, _ string, projectID, userID string, roleKeys []string) (Member, error) {
+	return d.next.UpdateMemberRoles(ctx, d.providerOrgID, projectID, userID, roleKeys)
+}
+
+func (d providerOrgDirectory) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {
+	return d.next.UpdateHumanProfile(ctx, subjectID, input)
+}
+
+func (d providerOrgDirectory) CreateServiceAccountCredential(ctx context.Context, _ string, input ServiceAccountCredentialInput) (string, APICredentialIssuedMaterial, error) {
+	return d.next.CreateServiceAccountCredential(ctx, d.providerOrgID, input)
+}
+
+func (d providerOrgDirectory) AddServiceAccountCredential(ctx context.Context, input AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error) {
+	return d.next.AddServiceAccountCredential(ctx, input)
+}
+
+func (d providerOrgDirectory) RemoveServiceAccountCredential(ctx context.Context, subjectID string, secret APICredentialSecret) error {
+	return d.next.RemoveServiceAccountCredential(ctx, subjectID, secret)
+}
+
+func (d providerOrgDirectory) DeactivateServiceAccount(ctx context.Context, subjectID string) error {
+	return d.next.DeactivateServiceAccount(ctx, subjectID)
 }
 
 func (s *Service) Organization(ctx context.Context, principal Principal) (Organization, error) {
@@ -127,6 +169,28 @@ func (s *Service) AccessibleOrganizationsBySubject(ctx context.Context, subject 
 	return organizations, nil
 }
 
+func (s *Service) AccessibleOrganizationsByProviderOrgIDs(ctx context.Context, subject string, providerOrgIDs []string) ([]OrganizationMetadata, error) {
+	if strings.TrimSpace(subject) == "" {
+		return nil, fmt.Errorf("%w: subject is required", ErrInvalidInput)
+	}
+	providerOrgIDs = normalizeOrganizationIDs(providerOrgIDs)
+	if len(providerOrgIDs) == 0 {
+		return nil, fmt.Errorf("%w: organization role assignments are required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return nil, err
+	}
+	organizations, err := store.ListOrganizationMetadataByProviderOrgIDs(ctx, providerOrgIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(organizations) != len(providerOrgIDs) {
+		return nil, fmt.Errorf("%w: organization metadata is missing for one or more role assignments", ErrOrganizationMissing)
+	}
+	return organizations, nil
+}
+
 func (s *Service) ReconcileOrganizationAuthorization(ctx context.Context, orgID, actor, operation string) error {
 	orgID = strings.TrimSpace(orgID)
 	actor = strings.TrimSpace(actor)
@@ -162,8 +226,8 @@ func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, i
 }
 
 func (s *Service) ResolveOrganization(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error) {
-	if strings.TrimSpace(input.OrgID) == "" && strings.TrimSpace(input.Slug) == "" {
-		return OrganizationProfile{}, fmt.Errorf("%w: org_id or slug is required", ErrInvalidInput)
+	if strings.TrimSpace(input.OrgID) == "" && strings.TrimSpace(input.IdentityProviderOrgID) == "" && strings.TrimSpace(input.Slug) == "" {
+		return OrganizationProfile{}, fmt.Errorf("%w: org_id, identity_provider_org_id, or slug is required", ErrInvalidInput)
 	}
 	store, err := s.store()
 	if err != nil {
@@ -235,7 +299,11 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err != nil {
 		return InviteMemberResult{}, err
 	}
-	result, err := directory.InviteMember(ctx, principal.OrgID, s.ProjectID, normalizeInvite(input))
+	providerOrgID, err := s.providerOrgID(ctx, principal.OrgID, principal.Subject)
+	if err != nil {
+		return InviteMemberResult{}, err
+	}
+	result, err := directory.InviteMember(ctx, providerOrgID, s.ProjectID, normalizeInvite(input))
 	if err != nil {
 		return InviteMemberResult{}, err
 	}
@@ -288,11 +356,15 @@ func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, co
 	if err != nil {
 		return UpdateMemberRolesResult{}, err
 	}
+	providerOrgID, err := s.providerOrgID(ctx, principal.OrgID, principal.Subject)
+	if err != nil {
+		return UpdateMemberRolesResult{}, err
+	}
 	store, err := s.store()
 	if err != nil {
 		return UpdateMemberRolesResult{}, err
 	}
-	result, err := store.UpdateMemberRolesCommand(ctx, command, directory, s.ProjectID)
+	result, err := store.UpdateMemberRolesCommand(ctx, command, directoryForProviderOrgID(directory, providerOrgID), s.ProjectID)
 	if err != nil {
 		return UpdateMemberRolesResult{}, err
 	}
@@ -509,7 +581,11 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 			CreatedBy:        principal.Subject,
 			UpdatedAt:        now,
 		}
-		subjectID, material, err = directory.CreateServiceAccountCredential(ctx, principal.OrgID, ServiceAccountCredentialInput{
+		providerOrgID, err := s.providerOrgID(ctx, principal.OrgID, principal.Subject)
+		if err != nil {
+			return CreateAPICredentialResult{}, err
+		}
+		subjectID, material, err = directory.CreateServiceAccountCredential(ctx, providerOrgID, ServiceAccountCredentialInput{
 			CredentialID: credentialID,
 			ClientID:     clientID,
 			DisplayName:  input.DisplayName,
@@ -714,7 +790,26 @@ func (s *Service) members(ctx context.Context, orgID string) ([]Member, error) {
 	if err != nil {
 		return nil, err
 	}
-	return directory.ListMembers(ctx, orgID, s.ProjectID)
+	providerOrgID, err := s.providerOrgID(ctx, orgID, "system:directory")
+	if err != nil {
+		return nil, err
+	}
+	return directory.ListMembers(ctx, providerOrgID, s.ProjectID)
+}
+
+func (s *Service) providerOrgID(ctx context.Context, orgID, actor string) (string, error) {
+	store, err := s.store()
+	if err != nil {
+		return "", err
+	}
+	profile, err := store.GetOrganizationProfile(ctx, orgID, actor)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(profile.IdentityProviderOrgID) == "" {
+		return "", fmt.Errorf("%w: identity_provider_org_id is required", ErrInvalidInput)
+	}
+	return strings.TrimSpace(profile.IdentityProviderOrgID), nil
 }
 
 func (s *Service) store() (Store, error) {

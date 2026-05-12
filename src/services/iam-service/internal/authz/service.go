@@ -138,11 +138,13 @@ var capabilityGrantRelations = map[string]string{
 }
 
 var orgPermissionByProductPermission = map[string]string{
+	identity.PermissionOrganizationList:              "read",
 	identity.PermissionOrganizationRead:              "read",
-	identity.PermissionOrganizationWrite:             "manage_iam",
+	identity.PermissionOrganizationUpdate:            "manage_iam",
+	identity.PermissionMemberList:                    "read",
 	identity.PermissionMemberRead:                    "read",
 	identity.PermissionMemberInvite:                  "invite_members",
-	identity.PermissionMemberRolesWrite:              "manage_members",
+	identity.PermissionMemberRoleUpdate:              "manage_members",
 	identity.PermissionMemberCapabilitiesRead:        "read",
 	identity.PermissionMemberCapabilitiesWrite:       "manage_iam",
 	identity.PermissionIAMPolicyRead:                 "manage_iam",

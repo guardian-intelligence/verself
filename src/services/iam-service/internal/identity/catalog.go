@@ -1,11 +1,13 @@
 package identity
 
 const (
+	PermissionOrganizationList              = "iam:organization:list"
 	PermissionOrganizationRead              = "iam:organization:read"
-	PermissionOrganizationWrite             = "iam:organization:write"
+	PermissionOrganizationUpdate            = "iam:organization:update"
+	PermissionMemberList                    = "iam:member:list"
 	PermissionMemberRead                    = "iam:member:read"
 	PermissionMemberInvite                  = "iam:member:invite"
-	PermissionMemberRolesWrite              = "iam:member:roles:write"
+	PermissionMemberRoleUpdate              = "iam:member:update_role"
 	PermissionMemberCapabilitiesRead        = "iam:member_capabilities:read"
 	PermissionMemberCapabilitiesWrite       = "iam:member_capabilities:write"
 	PermissionIAMPolicyRead                 = "iam:policy:read"
@@ -109,30 +111,7 @@ var openBaoRolesByPermission = map[string]string{
 // outside this set leaks into the member resolution path.
 var defaultOperations = Operations{
 	Services: []ServiceOperations{
-		{
-			Service: "iam-service",
-			Operations: []Operation{
-				{OperationID: "get-organization", Permission: PermissionOrganizationRead, Resource: "organization", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-my-organizations", Permission: PermissionOrganizationRead, Resource: "organization", Action: "list", OrgScope: "token_role_assignment_org_ids", MemberEligible: true},
-				{OperationID: "patch-organization", Permission: PermissionOrganizationWrite, Resource: "organization", Action: "update", OrgScope: "token_org_id"},
-				{OperationID: "list-organization-members", Permission: PermissionMemberRead, Resource: "organization_member", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "invite-organization-member", Permission: PermissionMemberInvite, Resource: "organization_member", Action: "invite", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "update-organization-member-roles", Permission: PermissionMemberRolesWrite, Resource: "organization_member_roles", Action: "write", OrgScope: "token_org_id"},
-				{OperationID: "get-organization-member-capabilities", Permission: PermissionMemberCapabilitiesRead, Resource: "organization_member_capabilities", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "put-organization-member-capabilities", Permission: PermissionMemberCapabilitiesWrite, Resource: "organization_member_capabilities", Action: "write", OrgScope: "token_org_id"},
-				{OperationID: "get-organization-iam-policy", Permission: PermissionIAMPolicyRead, Resource: "organization_iam_policy", Action: "read", OrgScope: "token_org_id"},
-				{OperationID: "set-organization-iam-policy", Permission: PermissionIAMPolicySet, Resource: "organization_iam_policy", Action: "write", OrgScope: "token_org_id"},
-				{OperationID: "test-organization-iam-permissions", Permission: PermissionIAMPolicyTest, Resource: "organization_iam_policy", Action: "test", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-service-accounts", Permission: PermissionAPICredentialsRead, Resource: "service_account", Action: "list", OrgScope: "token_org_id"},
-				{OperationID: "get-service-account", Permission: PermissionAPICredentialsRead, Resource: "service_account", Action: "read", OrgScope: "token_org_id"},
-				{OperationID: "disable-service-account", Permission: PermissionAPICredentialsRevoke, Resource: "service_account", Action: "disable", OrgScope: "token_org_id"},
-				{OperationID: "list-api-credentials", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "list", OrgScope: "token_org_id"},
-				{OperationID: "get-api-credential", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "read", OrgScope: "token_org_id"},
-				{OperationID: "create-api-credential", Permission: PermissionAPICredentialsCreate, Resource: "api_credential", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "roll-api-credential", Permission: PermissionAPICredentialsRoll, Resource: "api_credential", Action: "roll", OrgScope: "token_org_id"},
-				{OperationID: "revoke-api-credential", Permission: PermissionAPICredentialsRevoke, Resource: "api_credential", Action: "revoke", OrgScope: "token_org_id"},
-			},
-		},
+		smithyIAMServiceOperations(),
 		{
 			Service: "sandbox-rental-service",
 			Operations: []Operation{
