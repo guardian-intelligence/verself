@@ -277,7 +277,13 @@ func (r *GitHubRunner) Configured() bool {
 		strings.TrimSpace(r.cfg.WebhookSecret) != ""
 }
 
-func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID uint64, actorID string) (GitHubInstallationConnect, error) {
+func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID uint64, actorID string) (out GitHubInstallationConnect, err error) {
+	ctx, span := tracer.Start(ctx, "github.installation.begin")
+	defer func() {
+		recordRunnerError(span, err)
+		span.End()
+	}()
+	span.SetAttributes(traceOrgID(orgID))
 	if !r.Configured() {
 		return GitHubInstallationConnect{}, ErrGitHubRunnerNotConfigured
 	}
@@ -299,6 +305,7 @@ func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID uint64, acto
 		}
 	}
 	webBase := strings.TrimRight(firstNonEmpty(r.cfg.WebBaseURL, "https://github.com"), "/")
+	span.SetAttributes(attribute.String("github.app_slug", r.cfg.AppSlug))
 	return GitHubInstallationConnect{
 		State:     state,
 		SetupURL:  fmt.Sprintf("%s/apps/%s/installations/new?state=%s", webBase, r.cfg.AppSlug, state),
@@ -321,7 +328,13 @@ func (s *Service) ListGitHubInstallations(ctx context.Context, orgID uint64) ([]
 	return out, nil
 }
 
-func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code string, installationID int64) (GitHubInstallationRecord, error) {
+func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code string, installationID int64) (out GitHubInstallationRecord, err error) {
+	ctx, span := tracer.Start(ctx, "github.installation.complete")
+	defer func() {
+		recordRunnerError(span, err)
+		span.End()
+	}()
+	span.SetAttributes(attribute.Int64("github.installation_id", installationID))
 	if !r.Configured() {
 		return GitHubInstallationRecord{}, ErrGitHubRunnerNotConfigured
 	}
@@ -351,6 +364,11 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 	if installation.Account.ID <= 0 || strings.TrimSpace(installation.Account.Login) == "" {
 		return GitHubInstallationRecord{}, ErrGitHubInstallationInvalid
 	}
+	span.SetAttributes(
+		attribute.Int64("github.account_id", installation.Account.ID),
+		attribute.String("github.account_login", installation.Account.Login),
+		attribute.String("github.account_type", installation.Account.Type),
+	)
 	tx, err := r.service.PGX.Begin(ctx)
 	if err != nil {
 		return GitHubInstallationRecord{}, err
@@ -366,6 +384,7 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 	if time.Now().UTC().After(expires) {
 		return GitHubInstallationRecord{}, ErrGitHubInstallationStateInvalid
 	}
+	span.SetAttributes(traceOrgID(orgID))
 	now := time.Now().UTC()
 	if err := qtx.UpsertGitHubAccount(ctx, store.UpsertGitHubAccountParams{
 		AccountID:    installation.Account.ID,
@@ -416,7 +435,13 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 	return githubInstallationRecordFromGetRow(recordRow), nil
 }
 
-func (r *GitHubRunner) SyncInstallationRepositories(ctx context.Context, orgID uint64, installationID int64) ([]GitHubRunnerRepositoryRecord, error) {
+func (r *GitHubRunner) SyncInstallationRepositories(ctx context.Context, orgID uint64, installationID int64) (out []GitHubRunnerRepositoryRecord, err error) {
+	ctx, span := tracer.Start(ctx, "github.installation.repositories.sync")
+	defer func() {
+		recordRunnerError(span, err)
+		span.End()
+	}()
+	span.SetAttributes(traceOrgID(orgID), attribute.Int64("github.installation_id", installationID))
 	if !r.Configured() {
 		return nil, ErrGitHubRunnerNotConfigured
 	}
@@ -440,6 +465,7 @@ func (r *GitHubRunner) SyncInstallationRepositories(ctx context.Context, orgID u
 	if err != nil {
 		return nil, err
 	}
+	span.SetAttributes(attribute.Int("github.repository_count", len(repos)))
 	now := time.Now().UTC()
 	tx, err := r.service.PGX.Begin(ctx)
 	if err != nil {
@@ -563,6 +589,11 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	}
 	ctx, span := tracer.Start(ctx, "github.webhook.workflow_job")
 	defer span.End()
+	span.SetAttributes(
+		attribute.String("github.webhook.delivery_id", deliveryID),
+		attribute.String("github.webhook.event", eventName),
+		attribute.String("verself.correlation_id", CorrelationIDFromContext(ctx)),
+	)
 
 	var event GitHubWorkflowJobWebhook
 	if err := json.Unmarshal(payload, &event); err != nil {
@@ -666,8 +697,11 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 		attribute.Int64("github.installation_id", event.Installation.ID),
 		attribute.Int64("github.repository_id", event.Repository.ID),
 		attribute.Int64("github.job_id", event.WorkflowJob.ID),
+		attribute.Int64("github.workflow_run.id", event.WorkflowJob.RunID),
+		attribute.Int64("github.workflow_run.attempt", event.WorkflowJob.RunAttempt),
 		attribute.String("github.workflow_job.action", event.Action),
 		attribute.String("github.workflow_job.status", status),
+		attribute.String("github.repository_full_name", event.Repository.FullName),
 	)
 	return tx.Commit(ctx)
 }
@@ -1431,7 +1465,17 @@ func (r *GitHubRunner) deleteRunnerByName(ctx context.Context, installationID in
 	return nil
 }
 
-func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer string, body any, out any, expected ...int) error {
+func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer string, body any, out any, expected ...int) (err error) {
+	ctx, span := tracer.Start(ctx, "github.api.request")
+	defer func() {
+		recordRunnerError(span, err)
+		span.End()
+	}()
+	span.SetAttributes(
+		attribute.String("github.api.method", method),
+		attribute.String("github.api.path", path),
+		attribute.String("github.api.expected_statuses", statusListString(expected)),
+	)
 	apiBase := strings.TrimRight(firstNonEmpty(r.cfg.APIBaseURL, "https://api.github.com"), "/")
 	var reader io.Reader
 	if body != nil {
@@ -1457,6 +1501,7 @@ func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer s
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 	for _, status := range expected {
 		if resp.StatusCode == status {
 			if out != nil && resp.Body != nil {
@@ -1467,6 +1512,17 @@ func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer s
 	}
 	detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	return fmt.Errorf("github api %s %s: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(detail)))
+}
+
+func statusListString(statuses []int) string {
+	if len(statuses) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		parts = append(parts, strconv.Itoa(status))
+	}
+	return strings.Join(parts, ",")
 }
 
 func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) string {
