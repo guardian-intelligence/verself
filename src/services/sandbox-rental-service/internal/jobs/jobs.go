@@ -90,6 +90,7 @@ type Runner interface {
 	GetLease(ctx context.Context, leaseID string) (vmorchestrator.LeaseRecord, error)
 	ReleaseLease(ctx context.Context, leaseID, key string) error
 	StartExec(ctx context.Context, leaseID, key string, spec vmorchestrator.ExecSpec) (vmorchestrator.ExecRecord, error)
+	GetExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
 	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
@@ -231,6 +232,8 @@ type executionWorkItem struct {
 	ProductID        string
 	RunCommand       string
 	MaxWallSeconds   uint64
+	AttemptState     string
+	StartedAt        *time.Time
 	LeaseID          string
 	ExecID           string
 	CorrelationID    string
@@ -539,6 +542,15 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return err
 	}
 	ctx = WithCorrelationID(ctx, item.CorrelationID)
+	switch item.AttemptState {
+	case StateQueued:
+	case StateRunning:
+		return s.resumeRunningExecution(ctx, span, item)
+	case StateSucceeded, StateFailed, StateCanceled, StateLost:
+		return nil
+	default:
+		return fmt.Errorf("execution attempt %s cannot advance from state %s", item.AttemptID, item.AttemptState)
+	}
 	billingJobID := billingJobIDForAttempt(item.AttemptID)
 	if err := s.transition(ctx, item, StateQueued, StateReserved, "reserved", map[string]any{"billing_job_id": billingJobID}); err != nil {
 		return err
@@ -602,10 +614,6 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return s.failAttempt(ctx, item, "required_durable_mount_failed", err)
 	}
 
-	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
-	defer stopRenew()
-	go s.renewLeaseLoop(renewCtx, lease.LeaseID, item.AttemptID.String())
-
 	execSpec := vmorchestrator.ExecSpec{
 		Argv:           []string{"sh", "-c", item.RunCommand},
 		WorkingDir:     "/workspace",
@@ -631,30 +639,70 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.markRunning(ctx, item, execRecord.StartedAt); err != nil {
 		return err
 	}
+	item.AttemptState = StateRunning
+	item.StartedAt = &execRecord.StartedAt
+	return s.waitForExecutionAndFinalize(ctx, span, item, lease.LeaseID, execRecord, reservation, durablePlan)
+}
 
+func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, item executionWorkItem) error {
+	if item.LeaseID == "" || item.ExecID == "" {
+		return fmt.Errorf("execution attempt %s is running without lease or exec identity", item.AttemptID)
+	}
+	execRecord, err := s.Orchestrator.GetExec(ctx, item.LeaseID, item.ExecID, false)
+	if err != nil {
+		return fmt.Errorf("resume running execution get exec: %w", err)
+	}
+	if execRecord.StartedAt.IsZero() && item.StartedAt != nil {
+		execRecord.StartedAt = *item.StartedAt
+	}
+	reservation, err := s.latestBillingReservation(ctx, item)
+	if err != nil {
+		return err
+	}
+	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durableVolumePlan{})
+}
+
+func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation dto.BillingWindowReservation, durablePlan durableVolumePlan) error {
+	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
+	defer stopRenew()
+	go s.renewLeaseLoop(renewCtx, leaseID, item.AttemptID.String())
 	waitCtx := ctx
 	if timeout := workloadTimeout(item, s.WorkloadTimeout); timeout > 0 {
 		var cancel context.CancelFunc
 		waitCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	finalExec, waitErr := s.Orchestrator.WaitExec(waitCtx, lease.LeaseID, execRecord.ExecID, true)
+	finalExec, waitErr := s.Orchestrator.WaitExec(waitCtx, leaseID, execRecord.ExecID, true)
 	if waitErr != nil {
 		span.RecordError(waitErr)
 		span.SetStatus(codes.Error, waitErr.Error())
+		if ctx.Err() != nil {
+			if s.Logger != nil {
+				s.Logger.WarnContext(ctx, "execution wait interrupted by worker context",
+					"execution_id", item.ExecutionID,
+					"attempt_id", item.AttemptID,
+					"lease_id", leaseID,
+					"exec_id", execRecord.ExecID,
+					"error", waitErr,
+				)
+			}
+			return fmt.Errorf("execution wait interrupted: %w", waitErr)
+		}
 		terminalCtx := detachedContext(ctx)
-		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
+		_, _ = s.Orchestrator.CancelExec(terminalCtx, leaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
 		s.failDurableVolumes(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
 		failErr := s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
-		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
+		s.cleanupLeaseAndReservation(terminalCtx, leaseID, reservation)
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
 		if failErr != nil {
 			return failErr
 		}
 		return nil
 	}
-	if err := s.transition(ctx, item, StateRunning, StateFinalizing, "exec_finished", nil); err != nil {
-		return err
+	if item.AttemptState == StateRunning {
+		if err := s.transition(ctx, item, StateRunning, StateFinalizing, "exec_finished", nil); err != nil {
+			return err
+		}
 	}
 	outcome, outcomeErr := s.executionTerminalOutcome(ctx, item, finalExec)
 	if outcomeErr != nil {
@@ -663,7 +711,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 			s.Logger.WarnContext(ctx, "execution outcome verification failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", outcomeErr)
 		}
 	}
-	durableErr := s.finalizeDurableVolumes(ctx, item, lease.LeaseID, durablePlan, outcome.SealDecision)
+	durableErr := s.finalizeDurableVolumes(ctx, item, leaseID, durablePlan, outcome.SealDecision)
 	if durableErr != nil {
 		span.RecordError(durableErr)
 		if s.Logger != nil {
@@ -675,17 +723,23 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if completedAt.IsZero() {
 		completedAt = time.Now().UTC()
 	}
-	durationMs := completedAt.Sub(execRecord.StartedAt).Milliseconds()
+	startedAt := execRecord.StartedAt
+	if startedAt.IsZero() {
+		startedAt = finalExec.StartedAt
+	}
+	if startedAt.IsZero() {
+		startedAt = completedAt
+	}
+	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	if durationMs < 1 {
 		durationMs = 1
 	}
 	settleResult, err := s.settleBillingWindow(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec))
 	if err != nil {
 		failErr := s.failAttempt(ctx, item, "billing_settle_failed", err)
-		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release-after-settle-failed"); releaseErr != nil {
-			s.Logger.WarnContext(ctx, "release lease after billing settle failure failed", "lease_id", lease.LeaseID, "error", releaseErr)
+		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release-after-settle-failed"); releaseErr != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "release lease after billing settle failure failed", "lease_id", leaseID, "error", releaseErr)
 		}
-		stopRenew()
 		if failErr != nil {
 			return failErr
 		}
@@ -693,16 +747,14 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs), settleResult)
 	if err := s.completeAttempt(ctx, item, outcome.State, outcome.Reason, finalExec, durationMs, completedAt); err != nil {
-		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release-after-complete-failed"); releaseErr != nil {
-			s.Logger.WarnContext(ctx, "release lease after completion failure failed", "lease_id", lease.LeaseID, "error", releaseErr)
+		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release-after-complete-failed"); releaseErr != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "release lease after completion failure failed", "lease_id", leaseID, "error", releaseErr)
 		}
-		stopRenew()
 		return err
 	}
-	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
-		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", lease.LeaseID, "error", err)
+	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release"); err != nil && s.Logger != nil {
+		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", leaseID, "error", err)
 	}
-	stopRenew()
 	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false)
 	if err == nil {
 		runRecord.Status = outcome.State
@@ -874,6 +926,8 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		ProductID:        row.ProductID,
 		RunCommand:       row.RunCommand,
 		MaxWallSeconds:   uint64FromInt64(row.MaxWallSeconds, "max wall seconds"),
+		AttemptState:     row.AttemptState,
+		StartedAt:        timePtrFromPG(row.StartedAt),
 		LeaseID:          row.LeaseID,
 		ExecID:           row.ExecID,
 		CorrelationID:    row.CorrelationID,
@@ -1249,6 +1303,32 @@ func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) (
 		})
 	}
 	return out, nil
+}
+
+func (s *Service) latestBillingReservation(ctx context.Context, item executionWorkItem) (dto.BillingWindowReservation, error) {
+	windows, err := s.listBillingWindows(ctx, item.AttemptID)
+	if err != nil {
+		return dto.BillingWindowReservation{}, err
+	}
+	if len(windows) == 0 {
+		return dto.BillingWindowReservation{}, fmt.Errorf("execution attempt %s has no billing window", item.AttemptID)
+	}
+	window := windows[len(windows)-1]
+	return dto.BillingWindowReservation{
+		WindowID:            window.BillingWindowID,
+		OrgID:               dto.Uint64(item.OrgID),
+		ProductID:           item.ProductID,
+		ActorID:             item.ActorID,
+		SourceType:          item.SourceKind,
+		SourceRef:           item.ExecutionID.String(),
+		WindowSeq:           uint32(clampUint32(int64(window.WindowSeq))),
+		ReservationShape:    window.ReservationShape,
+		ReservedQuantity:    uint32(clampUint32(int64(window.ReservedQuantity))),
+		ReservedChargeUnits: dto.Uint64(window.ReservedChargeUnits),
+		PricingPhase:        window.PricingPhase,
+		CostPerUnit:         dto.Uint64(window.CostPerUnit),
+		WindowStart:         window.WindowStart,
+	}, nil
 }
 
 func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord, logs string) error {

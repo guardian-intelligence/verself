@@ -138,6 +138,8 @@ SELECT
     e.requested_memory_mib,
     e.requested_root_disk_gib,
     e.requested_kernel_image,
+    a.state AS attempt_state,
+    a.started_at,
     COALESCE(a.lease_id, '')::text AS lease_id,
     COALESCE(a.exec_id, '')::text AS exec_id
 FROM executions e
@@ -171,6 +173,8 @@ type GetExecutionWorkItemRow struct {
 	RequestedMemoryMib   int32
 	RequestedRootDiskGib int32
 	RequestedKernelImage string
+	AttemptState         string
+	StartedAt            pgtype.Timestamptz
 	LeaseID              string
 	ExecID               string
 }
@@ -199,6 +203,8 @@ func (q *Queries) GetExecutionWorkItem(ctx context.Context, arg GetExecutionWork
 		&i.RequestedMemoryMib,
 		&i.RequestedRootDiskGib,
 		&i.RequestedKernelImage,
+		&i.AttemptState,
+		&i.StartedAt,
 		&i.LeaseID,
 		&i.ExecID,
 	)

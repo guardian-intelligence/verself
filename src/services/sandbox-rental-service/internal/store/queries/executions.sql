@@ -69,6 +69,8 @@ SELECT
     e.requested_memory_mib,
     e.requested_root_disk_gib,
     e.requested_kernel_image,
+    a.state AS attempt_state,
+    a.started_at,
     COALESCE(a.lease_id, '')::text AS lease_id,
     COALESCE(a.exec_id, '')::text AS exec_id
 FROM executions e
