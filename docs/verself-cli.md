@@ -51,68 +51,74 @@ stay on checked-in repo tooling such as `aspect deploy` and operator tasks.
 
 ## SDK Shape
 
-The public SDK copies the Vercel constructor shape. Hosted usage requires only a
-bearer token:
+The public SDK is credential-source-first. Hosted automation uses workload
+identity when the runtime can prove its identity, and falls back to a credential
+file when it cannot. Raw access-token construction is reserved for diagnostics
+and tests.
 
 ```ts
 import { Verself } from "@verself/sdk";
 
-const verself = new Verself({
-  bearerToken: process.env.VERSELF_TOKEN!,
+const verself = await Verself.fromWorkloadIdentity({
+  org: "guardian-intelligence",
+  provider: "github-actions",
 });
 ```
 
 Go follows the same semantics:
 
 ```go
-client, err := verself.New(verself.Options{
-	BearerToken: os.Getenv("VERSELF_TOKEN"),
+client, err := verself.FromWorkloadIdentity(ctx, verself.WorkloadIdentityOptions{
+	Org:      "guardian-intelligence",
+	Provider: verself.WorkloadProviderGitHubActions,
 })
 if err != nil {
 	return err
 }
 ```
 
-Projects is the first SDK-backed vertical slice. The TypeScript SDK exposes a
-curated `Verself` constructor and a `projects` resource whose implementation
-uses the generated projects-service OpenAPI client:
+Credential files remain the fallback for runtimes without workload identity:
 
 ```ts
 import { Verself } from "@verself/sdk";
 
-const verself = new Verself({
-  bearerToken: process.env.VERSELF_TOKEN!,
+const verself = await Verself.fromCredentialFile({
+  org: "acme-corp",
+  path: "/run/secrets/verself-credential.json",
 });
+```
 
+The SDK exposes product resource modules. Backing services and generated
+transport clients stay behind the curated facade:
+
+```ts
 const page = await verself.projects.list({ state: "active" });
 const project = await verself.projects.create({
-  display_name: "API",
+  displayName: "API",
   slug: "api",
+}, {
+  idempotencyKey: "project-create-api-2026-05-11",
+});
+
+const created = await verself.credentials.create({
+  name: "e2e-acme",
+  permissions: ["sandbox:execution:read", "sandbox:logs:read"],
+  authMethod: "private_key_jwt",
 });
 ```
 
 The Go SDK is the same boundary for CLI and automation:
 
 ```go
-client, err := verself.New(verself.Options{
-	BearerToken: os.Getenv("VERSELF_TOKEN"),
-})
-if err != nil {
-	return err
-}
-
 page, err := client.Projects.List(ctx, verself.ListProjectsOptions{
 	State: verself.ProjectStateActive,
 	Limit: 100,
 })
 ```
 
-`serverURL` remains the general development override. `projectsURL` is accepted
-by the SDKs and CLI for service-local development, staging tunnels, and
-operator diagnostics.
-
-`serverURL` is an optional development, test, and operator override. Public
-examples should omit it.
+`baseURL` is the installation apex for the common path. Service URL overrides
+remain available for service-local development, staging tunnels, and operator
+diagnostics. Public examples should omit service URL overrides.
 
 ## System Pieces
 
@@ -123,7 +129,7 @@ The CLI boundary has these major pieces:
 | CLI facade | Command grammar, local profile resolution, interactive UX, JSON output, company option capture, and command orchestration. |
 | Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above generated clients. |
 | XDG file store | Non-secret profiles, company records, active context, bootstrap run records, cached discovery documents, and local locks across config, data, state, cache, and runtime directories. |
-| Credential store | OAuth refresh tokens, API credentials, provider tokens, and company option secret values when they are not rendered into SOPS bags. |
+| Credential store | Machine credential bundles, provider tokens, and company option secret values when they are not rendered into SOPS bags. |
 | Company store | Durable local company intent, owner defaults, CLI name, site defaults, provider options, runtime integration options, and secret references. |
 | Bootstrap manifest | Resolved snapshot of company, owner, site, domain, CLI, provider, and runtime integration intent. |
 | Site artifact renderer | `src/host/sites/<site>/` files, provisioning templates, encrypted SOPS bags, README instructions, and generated CLI entrypoints. |
@@ -181,6 +187,58 @@ This keeps customer-facing UX focused on hosted Verself resources. Operator
 bootstrap commands can still materialize site artifacts from company intent, but
 that workflow is documented as an operator surface.
 
+## Resource Identifiers
+
+CLI output for durable product resources includes an immutable `id`, a canonical
+`resourceName`, an optional parent-scoped `slug`, and a mutable `displayName`.
+
+| Field | CLI behavior |
+| --- | --- |
+| `id` | Stable opaque identifier accepted by commands for exact selection. |
+| `resourceName` | Globally unique RFC 8141 URN used in JSON output, audit joins, imports, exports, and cross-resource flags. |
+| `slug` | Human-friendly identifier unique under a parent resource while active. Slugs may change and keep redirect history. |
+| `displayName` | Human label. Commands never use display names for identity resolution. |
+
+Resource names follow the SDK resource identity contract:
+
+```text
+urn:verself:<installation-id>:<collection>/<resource-id>[/<collection>/<resource-id>...]
+```
+
+Initial resource name formats:
+
+| Resource | Format |
+| --- | --- |
+| Organization | `urn:verself:<installation-id>:orgs/<org-id>` |
+| Credential | `urn:verself:<installation-id>:orgs/<org-id>/credentials/<credential-id>` |
+| Workload trust | `urn:verself:<installation-id>:orgs/<org-id>/workloadTrusts/<trust-id>` |
+| Project | `urn:verself:<installation-id>:orgs/<org-id>/projects/<project-id>` |
+| Environment | `urn:verself:<installation-id>:orgs/<org-id>/projects/<project-id>/environments/<environment-id>` |
+| Repository | `urn:verself:<installation-id>:orgs/<org-id>/projects/<project-id>/repositories/<repository-id>` |
+| Run | `urn:verself:<installation-id>:orgs/<org-id>/runs/<run-id>` |
+| Run attempt | `urn:verself:<installation-id>:orgs/<org-id>/runs/<run-id>/attempts/<attempt-id>` |
+| Schedule | `urn:verself:<installation-id>:orgs/<org-id>/schedules/<schedule-id>` |
+| Secret | `urn:verself:<installation-id>:orgs/<org-id>/secrets/<secret-id>` |
+| Transit key | `urn:verself:<installation-id>:orgs/<org-id>/transitKeys/<key-id>` |
+
+The CLI accepts slugs for scoped flags such as `--org guardian-intelligence`
+and `--project api`. Ambiguous, cross-resource, import/export, policy, and audit
+commands should accept and emit resource names. Human-readable tables may show
+slugs; JSON output must include the resource name whenever the resource is
+durable.
+
+Command flags that refer to a resource outside the command's active scope should
+name the resource explicitly, for example `--target-resource-name`,
+`--parent-resource-name`, `--credential-resource-name`, or
+`--repository-resource-name`. Short aliases such as `--org` and `--project` may
+accept IDs, slugs, or resource names because their target type is fixed by the
+flag.
+
+Duplicate active slugs under the same parent and resource type are conflicts.
+Duplicate display names are allowed. If a create command retries with the same
+idempotency key and body, the CLI prints the original resource. If the retry
+changes the body, the CLI surfaces `conflict.idempotency_payload_mismatch`.
+
 ## Command Shape
 
 Commands follow a small global grammar:
@@ -194,8 +252,8 @@ Global flags:
 | Flag | Meaning |
 | --- | --- |
 | `--profile <name>` | Selects the local profile for endpoint and credential resolution. |
-| `--org <id-or-slug>` | Selects the organization for org-scoped operations. |
-| `--project <id-or-slug>` | Selects the project for project-scoped operations. |
+| `--org <id-or-slug-or-resource-name>` | Selects the organization for org-scoped operations. |
+| `--project <id-or-slug-or-resource-name>` | Selects the project for project-scoped operations. |
 | `--json` | Emits structured JSON without progress text. |
 | `--no-color` | Disables ANSI styling. |
 | `--cwd <path>` | Resolves project-local state from another working directory. |
@@ -362,67 +420,52 @@ deployment linkage. User-specific overrides belong in XDG profile config.
 
 ## Auth UX
 
-Interactive auth:
+The v0 auth UX is non-human. A profile names the installation, organization,
+credential source, and output preferences. The SDK exchanges that source for
+short-lived service-audience tokens as needed.
 
 ```text
-verself auth login
-verself auth logout
+verself auth use --profile ci --org guardian-intelligence --credential-file /run/secrets/verself-credential.json
+verself auth exchange --profile ci --org guardian-intelligence --issuer github-actions
 verself auth whoami
-verself auth token --audience iam-service
+verself auth logout
 ```
 
-`auth login` uses OAuth device authorization when the server supports it and
-authorization code with PKCE otherwise. PKCE verifiers, nonce values, and local
-callback listener state live only under the runtime directory. Refresh tokens
-are stored in the credential store. Access tokens are held in process memory
-and refreshed as needed.
+Workload trust is the preferred path for CI, Verself runners, agents, and
+self-hosted runtimes that can present their own identity. Credential files are
+the fallback for runtimes without an identity provider. Credential files must be
+regular files with owner-only permissions; the CLI refuses world-readable files.
 
-Bazel/Vite+ builds read packages from the public `npm.verself.sh` mirror without
-provisioning an npm API key.
+SDK-backed commands read the active auth profile by default. Command-level
+credential-source overrides exist for diagnostics and isolated CI jobs.
 
-Headless auth:
-
-```text
-VERSELF_TOKEN=... verself projects list --profile ci --json
-verself auth login --token-file /run/secrets/verself-token
-```
-
-For headless callers the token file holds an IAM API credential secret minted
-through `verself orgs credentials create`. The service sees a normal
-`Authorization: Bearer` header; the file path exists only so the secret never
-appears in `argv`, shell history, or process listings. Token files must be
-regular files with owner-only permissions and the CLI refuses world-readable
-files.
-
-SDK-backed commands read the active auth profile by default. `VERSELF_TOKEN`,
-`VERSELF_TOKEN_FILE`, and `--token-file` override the profile for headless
-sessions.
+Human CLI login via OAuth device authorization is a later feature. Device flow
+belongs behind an explicit human-login surface and should not be required for
+agent, CI, or SDK e2e testing.
 
 ## Public Command Surface
 
-The CLI borrows command grammar from Vercel — `auth login`, `whoami`, `link`,
-`env pull`, `orgs use` — because the ergonomics are good and operators arrive
-with that vocabulary. The public v0 surface targets hosted Verself APIs and
-sandbox-compute product resources. Verself sells sandbox compute rather than
+The CLI borrows command grammar from Vercel where it fits: `whoami`, `link`,
+`env pull`, and `orgs use`. The public v0 surface targets hosted Verself APIs
+and sandbox-compute product resources. Verself sells sandbox compute rather than
 application hosting, so hosted public commands manage organizations, projects,
 environments, source resources, credentials, billing, logs, and sandbox
 workloads.
 
 ```text
-verself login
-verself whoami
-verself switch
-verself link
-verself pull
-verself env ls|add|get|rm|pull|run
-verself domains ls|add|rm|verify
-verself projects ls|create|inspect|update|rm
-verself orgs ls|create|use|inspect|update
-verself orgs members ls|invite|update|remove
-verself logs
-verself billing status
-verself iam policies get|set|add-binding|remove-binding
-verself iam test-permissions
+verself auth use|exchange|whoami|logout
+verself credentials list|create|inspect|rotate|revoke
+verself credentials trust list|create|inspect|delete
+verself orgs list|create|use|inspect|update
+verself orgs members list|invite|update|remove
+verself projects list|create|inspect|update|archive
+verself repos list|inspect|checkout-grants|workflow-runs
+verself runs list|inspect|logs
+verself schedules list|create|pause|resume|delete
+verself env list|set|get|pull|run
+verself notifications list|summary|dismiss|clear|preferences
+verself audit events|exports
+verself billing entitlements|plans|contracts|statement
 ```
 
 Operator-local commands are available when running from a checkout:

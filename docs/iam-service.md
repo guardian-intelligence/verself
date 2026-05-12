@@ -40,8 +40,8 @@ several SpiceDB processes.
   account; they are not authorization subjects.
 - Public IAM policy APIs follow Google Cloud IAM semantics:
   `getIamPolicy`, `setIamPolicy`, and `testIamPermissions`.
-- Public HTTP routes are OpenAPI-native concrete resource routes. SDKs may
-  expose Google-style resource-name helpers over those routes.
+- Public HTTP routes are OpenAPI-native concrete resource routes. SDKs expose
+  URN resource-name helpers over those routes.
 - Policy replacement requires optimistic concurrency through `etag` after
   bootstrap/default creation.
 - Authorization checks return typed decision evidence, not bare booleans.
@@ -351,18 +351,22 @@ The product surface is organized in four layers:
    contract.
 
 The SDK should make the public API feel Google-IAM-like even when the HTTP
-routes are OpenAPI-native:
+routes are OpenAPI-native. The public target identifier is a Verself URN
+resource name:
 
 ```go
-policy, err := client.IAM.GetIAMPolicy(ctx, "organizations/org_123")
-updated, err := client.IAM.SetIAMPolicy(ctx, "organizations/org_123", policy, iam.WithETag(policy.ETag))
-allowed, err := client.IAM.TestIAMPermissions(ctx, "executions/exec_456", []string{"executions.read", "executions.logs.read"})
+org := "urn:verself:inst_123:orgs/org_123"
+run := "urn:verself:inst_123:orgs/org_123/runs/run_456"
+
+policy, err := client.IAM.GetIAMPolicy(ctx, org)
+updated, err := client.IAM.SetIAMPolicy(ctx, org, policy, iam.WithETag(policy.ETag))
+allowed, err := client.IAM.TestIAMPermissions(ctx, run, []string{"executions.read", "executions.logs.read"})
 ```
 
 ```text
-verself iam policies get organizations/org_123
-verself iam policies add-binding organizations/org_123 --role roles/execution.viewer --member user:usr_123
-verself iam test-permissions executions/exec_456 executions.read executions.logs.read
+verself iam policies get urn:verself:inst_123:orgs/org_123
+verself iam policies add-binding urn:verself:inst_123:orgs/org_123 --role roles/execution.viewer --member user:usr_123
+verself iam test-permissions urn:verself:inst_123:orgs/org_123/runs/run_456 executions.read executions.logs.read
 ```
 
 CLI convenience commands such as `add-binding` are read-modify-write helpers
@@ -1219,9 +1223,10 @@ Initial policy-bearing resource paths are concrete Huma routes:
 /api/v1/secrets/{secret_id}/iamPolicy
 ```
 
-The SDK accepts resource names such as `organizations/org_123` and dispatches
-to the correct generated client method. This keeps OpenAPI generation
-straightforward without forcing callers to learn every route variant.
+The SDK accepts URN resource names such as
+`urn:verself:inst_123:orgs/org_123` and dispatches to the correct generated
+client method. This keeps OpenAPI generation straightforward without forcing
+callers to learn every route variant.
 
 Internal APIs are SPIFFE-only and serve product services:
 

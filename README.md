@@ -19,8 +19,8 @@ The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App wh
 The software offerings are layered as follows:
 
 a. Internal Core -- Infrastructure, bootstrap configuration, integration with 3p APIs, privileged processes
-b. Services -- OpenAPI HTTP, SPIFFE mTLS for cross-service communication over public+internal APIs.
-c. SDK -- Programmatic multi-language wrappers over our services
+b. Services -- Huma/OpenAPI HTTP APIs. Public projections feed SDKs and facades; service projections use SPIFFE mTLS for repo-owned cross-service calls.
+c. SDK -- Customer-facing multi-language resource API. The SDK shape drives public API design and wraps SDK-owned generated OpenAPI transports. See [`docs/architecture/sdk-api-surface.md`](docs/architecture/sdk-api-surface.md).
 d. Clients -- websites, mobile apps, CLI. Call the SDK under the hood. See [`docs/verself-cli.md`](docs/verself-cli.md) for more on the CLI.
 
 (Note on above, the structure is still WIP and we are at maybe 5% parity in terms of having even just a golang SDK over our services.)
@@ -223,7 +223,7 @@ High-signal documents to read directly:
 - Nomad-managed substrate migration: [`docs/architecture/nomad-managed-substrate-migration.md`](docs/architecture/nomad-managed-substrate-migration.md)
 - Public origins: [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md)
 - Onboarding device or VM (operator SSH, Pomerium + Zitadel): [`docs/architecture/onboarding-device-or-vm.md`](docs/architecture/onboarding-device-or-vm.md)
-- Identity and IAM (Zitadel, SCIM, three-role model, API credentials): [`src/platform/docs/identity-and-iam.md`](src/platform/docs/identity-and-iam.md)
+- Identity and IAM (Zitadel, SCIM, three-role model, credentials): [`src/platform/docs/identity-and-iam.md`](src/platform/docs/identity-and-iam.md)
 - Workload identity (SPIFFE/SPIRE, OpenBao): [`docs/architecture/workload-identity.md`](docs/architecture/workload-identity.md)
 - Billing architecture (TigerBeetle ledger, dual-write, Stripe webhooks): [`src/services/billing-service/docs/billing-architecture.md`](src/services/billing-service/docs/billing-architecture.md)
 - VM execution control plane (sandbox-rental-service ↔ vm-orchestrator): [`src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`](src/services/sandbox-rental-service/docs/vm-execution-control-plane.md)
