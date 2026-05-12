@@ -23,6 +23,19 @@ If we ever become slower than either platform, that becomes a top concern as spe
 
 This is a polyglot monorepo structured as a modular monolith.
 
+General Structure:
+
+Smithy source + Verself traits (`src/smithy/models/verself`)
+   -> generated Verself Contract IR via `smithy build` plugin (Java)
+      -> Huma/REST bindings + runtime descriptors
+      -> SDK transport cores
+      -> SDK conformance fixtures
+      -> IAM/Zanzibar catalog
+      -> Audit Trail catalog (governance-service)
+      -> Observability catalog
+      -> OpenAPI projection
+      -> protobuf/Connect/gRPC projection
+
 Layers:
 
 1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
@@ -47,12 +60,11 @@ Invariant patterns:
 
 * Do not add shell scripts. The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure. We control the execution environment and the installed binaries catalog both in the development environment and on the fleet. Choose the right tool for the job (it's never a shell script).
 * Generic CI jobs are secretless. Build/test workflows running under GitHub Actions, Blacksmith, or Verself runners must not inject repository, organization, or environment secrets such as `VERSELF_TOKEN`, npm registry tokens, cloud credentials, SSH keys, database URLs, or deployment API keys. Jobs that need real staging or production authority run in a separate trusted lane gated by protected refs and GitHub Environments, and they acquire short-lived scoped credentials through OIDC/JWT exchange with the owning service.
-* Efficient rebuilding: Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. Bazel cache state is local-only through the invoking user's disk and repository caches; do not add shared remote cache or remote-writer profiles. We rebuild only what we need by teaching Bazel about inputs and outputs. This also means deploys don't need the user to know what to deploy. They just merge to main or run `aspect deploy` and Bazel (sometimes Ansible) and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
+* Efficient rebuilding & Independent deployments through ref-based GitOps -- Every deployable unit must be able to be deployed atomically without worrying about the rest of the topology. Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. Deploys are just `aspect deploy` and Bazel and Nomad take over. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Ansible mutates the host for bootstrapping the machine and installing initial binaries.
-* New server tools such as SpiceDB enter through the host server-tools catalog and artifact admission flow, with policy/evidence recorded before host bootstrap or Nomad jobs consume them; see `docs/architecture/artifact-admission.md`.
-* Deployments and ref-based GitOps is done through Nomad, executed via `aspect`.
 * Canonical API contracts live under `src/contracts` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
-* Why Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
+* Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
+
 * Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through internal projections generated from the same Smithy model that produces public API projections. Internal projections use SPIFFE mTLS and may include repo-only operations; public projections use Zitadel bearer auth.
 * Every modeled operation should declare auth scheme, audience, permission, resource kind, action, org-scope derivation, rate-limit class, idempotency policy, audit event, request body budget, stable error set, SDK behavior, and conformance case coverage. Missing metadata is a contract bug, not a documentation gap.
 * Service-owned generated Go clients are transport clients for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public contract projections, and product services must not import those SDKs.

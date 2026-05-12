@@ -1,6 +1,6 @@
 # Wire Contracts
 
-`src/contracts` owns canonical service contracts. `src/domain-transfer-objects`
+`src/smithy` owns canonical service contracts. `src/domain-transfer-objects`
 owns shared Go DTO primitives and transfer types used at service boundaries,
 generated-client contract types, and app-facing TypeScript wrappers. Service
 domain packages can keep native Go types and service-local aliases. Boundary
@@ -22,8 +22,8 @@ Internal Go domain structs can keep `uint64` and `int64`. Do not return those st
 
 Shared DTO structs live in `src/domain-transfer-objects/go` once their field
 language is shared across services or generated clients. Canonical API shapes
-live in `src/contracts/models`. Shared protobuf schemas live in
-`src/contracts/proto` once binary transport consumers need protobuf as the
+live in `src/smithy/models`. Shared protobuf schemas live in
+`src/smithy/proto` once binary transport consumers need protobuf as the
 primary contract. Service packages keep small converter functions next to the
 HTTP handlers because those functions understand the local domain model and
 authorization context.

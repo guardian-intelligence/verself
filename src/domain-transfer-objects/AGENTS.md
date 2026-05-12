@@ -1,6 +1,6 @@
 # domain-transfer-objects
 
-`src/contracts` owns canonical service contracts. `src/domain-transfer-objects`
+`src/smithy` owns canonical service contracts. `src/domain-transfer-objects`
 owns shared Go DTO primitives and transfer types used at service boundaries:
 decimal wire types, semantic aliases, generated-client contract types, and
 app-facing TypeScript wrapper contracts. Domain packages stay free to use
@@ -11,8 +11,8 @@ another service, generated client, protobuf consumer, or frontend consumes.
 ## Ownership
 
 - Put a DTO here when its field language is shared across services, generated clients, or frontend wrappers.
-- Put canonical API shapes and operation metadata under `src/contracts/models`.
-- Put protobuf contracts under `src/contracts/proto` when protobuf is the primary protocol.
+- Put canonical API shapes and operation metadata under `src/smithy/models`.
+- Put protobuf contracts under `src/smithy/proto` when protobuf is the primary protocol.
 - Keep purely internal domain structs, persistence records, provider webhook payloads, and one-off adapter structs in the owning service package.
 - Keep conversion between domain structs and DTOs next to the HTTP handler or client adapter that knows the local domain model.
 - Do not import service packages from this module; dependencies should stay limited to standard-library encoding/parsing packages plus schema-generation dependencies needed during the Huma cutover.

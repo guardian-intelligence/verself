@@ -20,7 +20,8 @@ genrule(
     srcs = [
         ":smithy_config",
         ":smithy_sources",
-        "//src/contracts/validators:verself_smithy_validators",
+        "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
+        "//src/smithy/validators:verself_smithy_validators",
         "@dev_tool_smithy_cli//file",
     ],
     outs = ["smithy.validate.ok"],
@@ -30,7 +31,7 @@ set -euo pipefail
 	tmp="$$(mktemp -d)"
 	trap 'rm -rf "$$tmp"' EXIT
 	unzip -q "$$root/$(location @dev_tool_smithy_cli//file:file)" -d "$$tmp"
-	smithy_cp="$$tmp/smithy-cli-linux-x86_64/lib/*:$$root/$(location //src/contracts/validators:verself_smithy_validators)"
+	smithy_cp="$$tmp/smithy-cli-linux-x86_64/lib/*:$$root/$(location //src/smithy/validators:verself_smithy_validators):$$root/$(location //src/smithy/plugins/ir:verself_smithy_ir_plugin)"
 	"$$tmp/smithy-cli-linux-x86_64/bin/java" -XX:-UsePerfData -cp "$$smithy_cp" software.amazon.smithy.cli.SmithyCli validate --no-color --severity NOTE --config "$(location :smithy_config)" --output "$$tmp/build"
 	touch "$@"
 	""",
@@ -41,7 +42,8 @@ genrule(
     srcs = [
         ":smithy_config",
         ":smithy_sources",
-        "//src/contracts/validators:verself_smithy_validators",
+        "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
+        "//src/smithy/validators:verself_smithy_validators",
         "@dev_tool_smithy_cli//file",
     ],
     outs = ["smithy-build.tar"],
@@ -51,8 +53,18 @@ set -euo pipefail
 	tmp="$$(mktemp -d)"
 	trap 'rm -rf "$$tmp"' EXIT
 	unzip -q "$$root/$(location @dev_tool_smithy_cli//file:file)" -d "$$tmp"
-	smithy_cp="$$tmp/smithy-cli-linux-x86_64/lib/*:$$root/$(location //src/contracts/validators:verself_smithy_validators)"
+	smithy_cp="$$tmp/smithy-cli-linux-x86_64/lib/*:$$root/$(location //src/smithy/validators:verself_smithy_validators):$$root/$(location //src/smithy/plugins/ir:verself_smithy_ir_plugin)"
 	"$$tmp/smithy-cli-linux-x86_64/bin/java" -XX:-UsePerfData -cp "$$smithy_cp" software.amazon.smithy.cli.SmithyCli build --no-color --severity NOTE --config "$(location :smithy_config)" --output "$$tmp/build"
 	tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/build" .
 	""",
+)
+
+genrule(
+    name = "iam_public_ir",
+    srcs = [":smithy_build"],
+    outs = ["iam-public.ir.json"],
+    cmd = """
+set -euo pipefail
+tar -xOf "$(location :smithy_build)" ./iam-public/verself-ir/ir/verself/iam-public.json > "$@"
+""",
 )

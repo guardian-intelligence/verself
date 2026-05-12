@@ -3,7 +3,7 @@
 Projects uses public and internal projections from one canonical Smithy model.
 
 ```text
-src/contracts/models/verself/projects.smithy
+src/smithy/models/verself/projects.smithy
   -> public projection
      -> SDK-layer generated transports
      -> generated OpenAPI compatibility artifacts
@@ -42,7 +42,7 @@ not the settled contract authority.
 
 ```shell
 rg -n "github.com/verself/projects-service/client" src/sdks src/verself-cli src/websites/packages/sdk src/websites/apps/verself-web
-rg -n "projects.smithy" src/contracts src/services/projects-service src/sdks
+rg -n "projects.smithy" src/smithy src/services/projects-service src/sdks
 rg -n "projects-internal-openapi" src/services/projects-service src/host .aspect
 rg -n "unknown module path version unknown version" src/services/projects-service src/sdks/go/verself
 ```

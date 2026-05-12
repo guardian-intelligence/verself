@@ -14,8 +14,8 @@ The package owns:
 Validation targets:
 
 ```shell
-bazelisk build //src/contracts/models/verself:smithy_validate
-bazelisk build //src/contracts/models/verself:smithy_build
+bazelisk build //src/smithy/models/verself:smithy_validate
+bazelisk build //src/smithy/models/verself:smithy_build
 ```
 
 `smithy_validate` gates the package with Smithy model validation.

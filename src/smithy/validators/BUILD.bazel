@@ -41,7 +41,7 @@ java_import(
 java_library(
     name = "verself_smithy_validators",
     srcs = glob(["java/**/*.java"]),
-    resource_strip_prefix = "src/contracts/validators/resources",
+    resource_strip_prefix = "src/smithy/validators/resources",
     resources = glob(["resources/**"]),
     deps = [
         ":smithy_model",

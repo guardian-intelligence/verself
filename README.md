@@ -19,8 +19,11 @@ The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App wh
 The software offerings are layered as follows:
 
 a. Internal Core -- Infrastructure, bootstrap configuration, integration with 3p APIs, privileged processes
+
 b. Services -- Smithy-modeled HTTP APIs implemented by product services. Public projections feed SDKs and facades; internal projections use SPIFFE mTLS for repo-owned cross-service calls. OpenAPI is generated for documentation and ecosystem tooling.
+
 c. SDK -- Customer-facing multi-language resource API. The SDK shape drives public API design and wraps SDK-owned generated transports derived from the canonical contract model. See [`docs/architecture/sdk-api-surface.md`](docs/architecture/sdk-api-surface.md).
+
 d. Clients -- websites, mobile apps, CLI. Call the SDK under the hood. See [`docs/verself-cli.md`](docs/verself-cli.md) for more on the CLI.
 
 (Note on above, the structure is still WIP and we are at maybe 5% parity in terms of having even just a golang SDK over our services.)
@@ -68,10 +71,4 @@ aspect deploy
 aspect persona assume platform-admin
 ```
 
-`src/tools/dev/bootstrap/bootstrap-linux-amd64` and `src/tools/dev/bootstrap/bootstrap-darwin-arm64` are the only sanctioned shell scripts in the repo. Everything else is done through `aspect` and `bazelisk`. The two scripts just get any fresh developer/agent environment set up and good to at least start authenticating as a user and rocking and rolling.
-
-- **bazelisk** — sha256-pinned download. Installed alongside a bazel → bazelisk symlink on PATH, so tools that invoke bazel directly (Aspect CLI's ctx.bazel.{build,test,run,query}, IDE plugins, rules_* scripts) resolve through bazelisk's version-pinned launcher.
-- **aspect CLI** — sha256-pinned download. Hosts every task surface enumerated below.
-- **vp (Vite+)** — owns `vp` / `vite` / `rolldown` / `vitest` invocation in the JS workspace at `~/.vite-plus/`. Uses `vp upgrade <version>` for catalog pinning.
-
-Idempotent: short-circuits when the existing binary already matches the pinned sha256 / version. Falls back to `~/.local/bin` when the install directory is non-writable and `sudo` is unavailable, with a PATH warning. Set `BOOTSTRAP_INSTALL_DIR` to override the default `/usr/local/bin`.
+`src/tools/dev/bootstrap/bootstrap-linux-amd64` and `src/tools/dev/bootstrap/bootstrap-darwin-arm64` are the only sanctioned shell scripts in the repo. Everything else is done through `aspect` and `bazelisk`. The two scripts just get any fresh developer/agent environment set up.

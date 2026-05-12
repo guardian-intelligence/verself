@@ -3,7 +3,7 @@
 The curated SDK is the public programming contract for Verself. The CLI,
 browser server routes, customer automation, agent workflows, docs examples, and
 future provider-style integrations use the SDK. Product APIs are modeled in
-Smithy under `src/contracts`, and services implement generated or mirrored HTTP
+Smithy under `src/smithy`, and services implement generated or mirrored HTTP
 bindings from that model. Public OpenAPI remains a generated compatibility
 projection for docs and ecosystem tooling.
 

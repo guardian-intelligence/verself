@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "sources": [
+    "common.smithy",
+    "iam.smithy"
+  ],
+  "projections": {
+    "source": {},
+    "iam-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.iam.v1#Iam",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/iam-public.json"
+        }
+      }
+    }
+  }
+}

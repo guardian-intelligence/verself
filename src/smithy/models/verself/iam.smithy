@@ -16,6 +16,7 @@ use smithy.api#notProperty
 use smithy.api#output
 use smithy.api#paginated
 use smithy.api#pattern
+use smithy.api#range
 use smithy.api#readonly
 use smithy.api#required
 use smithy.api#resourceIdentifier
@@ -76,6 +77,12 @@ enum OrganizationRole {
     MEMBER = "member"
 }
 
+@range(min: 1, max: 2147483647)
+integer OrganizationVersion
+
+@range(min: 1, max: 2147483647)
+integer OrgAclVersion
+
 @permission(name: "iam:organization:list")
 string OrganizationListPermission
 
@@ -121,6 +128,8 @@ resource Organization {
         slug: OrgSlug
         displayName: DisplayName
         callerRole: OrganizationRole
+        version: OrganizationVersion
+        orgAclVersion: OrgAclVersion
     }
     list: ListOrganizations
     read: GetOrganization
@@ -164,6 +173,14 @@ structure OrganizationSummary for Organization {
     @required
     @protoField(number: 5)
     $callerRole
+
+    @required
+    @protoField(number: 6)
+    $version
+
+    @required
+    @protoField(number: 7)
+    $orgAclVersion
 }
 
 structure MemberSummary for Member {
@@ -304,6 +321,10 @@ structure UpdateOrganizationInput for Organization {
     $displayName
 
     @required
+    @protoField(number: 4)
+    $version
+
+    @required
     @notProperty
     @httpHeader("Idempotency-Key")
     @idempotencyToken
@@ -441,6 +462,16 @@ structure UpdateMemberRoleInput for Member {
     @required
     @protoField(number: 3)
     $role
+
+    @required
+    @notProperty
+    @protoField(number: 4)
+    expectedRole: OrganizationRole
+
+    @required
+    @notProperty
+    @protoField(number: 5)
+    expectedOrgAclVersion: OrgAclVersion
 
     @required
     @notProperty

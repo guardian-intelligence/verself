@@ -1,0 +1,11 @@
+filegroup(
+    name = "smithy_models",
+    srcs = ["//src/smithy/models/verself:smithy_sources"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "smithy_docs",
+    srcs = glob(["**/*.md"]) + ["//src/smithy/models/verself:docs"],
+    visibility = ["//visibility:public"],
+)

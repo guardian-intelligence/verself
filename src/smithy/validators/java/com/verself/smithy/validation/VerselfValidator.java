@@ -1,4 +1,4 @@
-package com.verself.contracts.validation;
+package com.verself.smithy.validation;
 
 import java.util.ArrayList;
 import java.util.HashMap;

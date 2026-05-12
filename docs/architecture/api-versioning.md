@@ -1,7 +1,7 @@
 # API Versioning Library Specification
 
 Status: superseded as the canonical direction. API evolution should be modeled
-in Smithy under `src/contracts`, then projected into generated transports,
+in Smithy under `src/smithy`, then projected into generated transports,
 OpenAPI compatibility artifacts, and SDK conformance fixtures. This document is
 retained as historical design material for Stripe-style edge migration during
 the cutover from Huma/OpenAPI-owned contracts.

@@ -1,6 +1,6 @@
-# src/contracts
+# src/smithy
 
-`src/contracts` owns the canonical API contract model for product and internal
+`src/smithy` owns the canonical API contract model for product and internal
 service surfaces. Smithy models are the source of truth for resource shapes,
 operation semantics, IAM metadata, audit metadata, SDK behavior, generated
 projections, and conformance cases. OpenAPI artifacts are generated
@@ -10,6 +10,8 @@ interoperability projections, not semantic authority.
 
 - Put customer-facing and repo-owned HTTP/JSON service contracts under
   `models/`.
+- Put generated contract IR artifacts and IR documentation under `ir/`. The IR
+  is generated from Smithy and must not become a hand-authored contract source.
 - Put shared conformance fixtures under `conformance/` once generated cases
   exist.
 - Put generated OpenAPI compatibility artifacts under `openapi/` only after the
@@ -18,6 +20,8 @@ interoperability projections, not semantic authority.
   binary transport surfaces where protobuf is the primary protocol.
 - Do not make product services import curated SDKs. Services consume generated
   transport clients or generated handler bindings from this contract model.
+- Downstream generators should consume the Verself contract IR rather than
+  parsing Smithy traits independently.
 
 ## Modeling Rules
 
@@ -38,9 +42,9 @@ interoperability projections, not semantic authority.
 ## Verification
 
 - Validate the Smithy package with
-  `bazelisk build //src/contracts/models/verself:smithy_validate`.
+  `bazelisk build //src/smithy/models/verself:smithy_validate`.
 - Build Smithy projection artifacts with
-  `bazelisk build //src/contracts/models/verself:smithy_build`.
+  `bazelisk build //src/smithy/models/verself:smithy_build`.
 - Run generated conformance suites for every SDK implementation before treating
   an SDK as supported.
 - Prove deployed behavior through ClickHouse traces/logs for behavior-affecting

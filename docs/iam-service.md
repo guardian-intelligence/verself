@@ -306,7 +306,7 @@ src/services/iam-service/
 ## Wire Contracts
 
 The canonical `iam-service` API contract lives in Smithy under
-`src/contracts/models`. Public and internal projections are generated from that
+`src/smithy/models`. Public and internal projections are generated from that
 model. OpenAPI files are compatibility projections for docs, import tools, and
 transitional generators. There is no repo-owned IAM gRPC service proto in the
 first cut. The service still consumes protobufs through the upstream AuthZed Go
@@ -317,9 +317,9 @@ Wire contract locations:
 
 | Contract | Location | Bazel owner |
 | --- | --- | --- |
-| Canonical IAM API Smithy model | `src/contracts/models/verself/iam.smithy` | `//src/contracts:smithy_models` |
-| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` during cutover; target generated projection under `src/contracts/openapi/` | `//src/services/iam-service/openapi` during cutover |
-| SPIFFE-only internal IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` during cutover; target generated projection under `src/contracts/openapi/` | `//src/services/iam-service/openapi` during cutover |
+| Canonical IAM API Smithy model | `src/smithy/models/verself/iam.smithy` | `//src/smithy:smithy_models` |
+| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` during cutover; target generated projection under `src/smithy/openapi/` | `//src/services/iam-service/openapi` during cutover |
+| SPIFFE-only internal IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` during cutover; target generated projection under `src/smithy/openapi/` | `//src/services/iam-service/openapi` during cutover |
 | Generated service Go transport client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
 | Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
 | Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
@@ -327,14 +327,14 @@ Wire contract locations:
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema validation | `src/services/iam-service/schema/verself.zed`, pinned `zed` CLI from the server-tool catalog | `//src/services/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
-| Future shared protobuf messages | `src/contracts/proto/<area>/v1/*.proto` | `//src/contracts/proto/<area>/v1:<area>_proto` |
+| Future shared protobuf messages | `src/smithy/proto/<area>/v1/*.proto` | `//src/smithy/proto/<area>/v1:<area>_proto` |
 | Future IAM-owned gRPC-only contract | `src/services/iam-service/proto/v1/*.proto` | `//src/services/iam-service/proto/v1:iam_proto` |
 
 Add a service-local protobuf directory only if the operation cannot be cleanly
 represented by the Smithy-modeled HTTP service pattern, for example a binary
 stream that should not become a public HTTP contract. If the message shape is
 consumed by more than `iam-service`, put the protobuf under
-`src/contracts/proto/` instead.
+`src/smithy/proto/` instead.
 
 Generated clients remain the service-to-service and SDK transport surface for
 product services. A missing service shape is fixed by adding or correcting the
@@ -546,7 +546,7 @@ The service should create these targets:
 //src/services/iam-service/cmd/iam-internal-openapi:iam-internal-openapi  # transitional projection
 //src/services/iam-service/cmd/iam-schema-gen:iam-schema-gen
 
-//src/contracts:smithy_models
+//src/smithy:smithy_models
 //src/services/iam-service/openapi:openapi-3.0.yaml
 //src/services/iam-service/openapi:openapi-3.1.yaml
 //src/services/iam-service/openapi:internal-openapi-3.0.yaml

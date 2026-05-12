@@ -95,7 +95,7 @@ PostgreSQL and OTel collector.
   credential bindings, migrations, and reconcilers.
 - `src/services/<name>/` owns product service `nomad.hcl`, PostgreSQL
   migrations, ClickHouse projections, service-to-service clients, and public
-  route metadata. Canonical API contracts live under `src/contracts`.
+  route metadata. Canonical API contracts live under `src/smithy`.
 - `src/websites/apps/<name>/` owns frontend `nomad.hcl`,
   server-function bindings, route metadata, browser canaries, and static/runtime
   assets.

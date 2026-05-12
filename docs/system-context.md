@@ -28,7 +28,7 @@ Nomad.
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
-Product service APIs are modeled in Smithy under `src/contracts`. The Smithy
+Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth
 expectations, Zanzibar permissions, audit metadata, rate-limit classes,
 idempotency, pagination, problem details, SDK behavior, generated clients, and
