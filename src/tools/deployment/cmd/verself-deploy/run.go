@@ -114,6 +114,13 @@ func run(ctx context.Context, opts runOptions) error {
 	startedAt := time.Now()
 	recordDeployStarted(span, snap.RunKey(), opts.Site, resolvedSHA, snap.Get("VERSELF_AUTHOR"), startedAt)
 
+	if err := checkSupplyChainPolicy(runCtx, rt.Tracer, db, opts.RepoRoot, snap.RunKey(), opts.Site); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
+		return err
+	}
+
 	if err := applyHostFirewall(runCtx, rt, db, opts.RepoRoot, opts.Site); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
