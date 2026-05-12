@@ -35,18 +35,17 @@ go_library(
 
 genrule(
     name = "iam_catalog_go",
-    srcs = ["//src/smithy/models/verself:smithy_build"],
+    srcs = ["//src/smithy/models/verself:iam_public_ir"],
     outs = ["iam_catalog.gen.go"],
     cmd = """
 set -euo pipefail
-$(location //src/smithy/cmd/smithy-huma-go:smithy-huma-go) \
-  -model-tar "$(location //src/smithy/models/verself:smithy_build)" \
-  -service 'verself.iam.v1#Iam' \
+$(location //src/smithy/cmd/ir-go:ir-go) \
+  -ir "$(location //src/smithy/models/verself:iam_public_ir)" \
   -mode identity-catalog \
   -package identity \
   -out "$@"
 """,
-    tools = ["//src/smithy/cmd/smithy-huma-go:smithy-huma-go"],
+    tools = ["//src/smithy/cmd/ir-go:ir-go"],
 )
 
 go_test(

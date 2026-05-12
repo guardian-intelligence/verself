@@ -48,6 +48,10 @@ bazelisk build //src/smithy/plugins/ir:verself_smithy_ir_plugin
 bazelisk build //src/smithy/models/verself:smithy_validate
 bazelisk build //src/smithy/models/verself:smithy_build
 bazelisk build //src/smithy/models/verself:iam_public_ir
+bazelisk build //src/smithy/models/verself:iam_audit_catalog
+bazelisk build //src/smithy/models/verself:iam_observability_catalog
+bazelisk build //src/smithy/models/verself:iam_conformance_fixtures
+bazelisk build //src/smithy/models/verself:iam_proto_projection
 tar -tf bazel-bin/src/smithy/models/verself/smithy-build.tar | rg 'ir/verself'
 ```
 

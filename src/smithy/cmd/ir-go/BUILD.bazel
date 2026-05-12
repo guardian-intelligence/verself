@@ -1,14 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
-    name = "smithy-huma-go_lib",
+    name = "ir-go_lib",
     srcs = ["main.go"],
-    importpath = "github.com/verself/smithy/cmd/smithy-huma-go",
+    importpath = "github.com/verself/smithy/cmd/ir-go",
     visibility = ["//visibility:private"],
 )
 
 go_binary(
-    name = "smithy-huma-go",
-    embed = [":smithy-huma-go_lib"],
+    name = "ir-go",
+    embed = [":ir-go_lib"],
     visibility = ["//visibility:public"],
 )

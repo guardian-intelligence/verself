@@ -68,3 +68,61 @@ set -euo pipefail
 tar -xOf "$(location :smithy_build)" ./iam-public/verself-ir/ir/verself/iam-public.json > "$@"
 """,
 )
+
+genrule(
+    name = "iam_audit_catalog",
+    srcs = [":iam_public_ir"],
+    outs = ["iam-audit.catalog.json"],
+    cmd = """
+set -euo pipefail
+$(location //src/smithy/cmd/ir-go:ir-go) \
+  -ir "$(location :iam_public_ir)" \
+  -mode catalog-json \
+  -catalog audit \
+  -out "$@"
+""",
+    tools = ["//src/smithy/cmd/ir-go:ir-go"],
+)
+
+genrule(
+    name = "iam_observability_catalog",
+    srcs = [":iam_public_ir"],
+    outs = ["iam-observability.catalog.json"],
+    cmd = """
+set -euo pipefail
+$(location //src/smithy/cmd/ir-go:ir-go) \
+  -ir "$(location :iam_public_ir)" \
+  -mode catalog-json \
+  -catalog observability \
+  -out "$@"
+""",
+    tools = ["//src/smithy/cmd/ir-go:ir-go"],
+)
+
+genrule(
+    name = "iam_conformance_fixtures",
+    srcs = [":iam_public_ir"],
+    outs = ["iam-conformance.fixtures.json"],
+    cmd = """
+set -euo pipefail
+$(location //src/smithy/cmd/ir-go:ir-go) \
+  -ir "$(location :iam_public_ir)" \
+  -mode conformance-json \
+  -out "$@"
+""",
+    tools = ["//src/smithy/cmd/ir-go:ir-go"],
+)
+
+genrule(
+    name = "iam_proto_projection",
+    srcs = [":iam_public_ir"],
+    outs = ["iam.proto"],
+    cmd = """
+set -euo pipefail
+$(location //src/smithy/cmd/ir-go:ir-go) \
+  -ir "$(location :iam_public_ir)" \
+  -mode proto \
+  -out "$@"
+""",
+    tools = ["//src/smithy/cmd/ir-go:ir-go"],
+)
