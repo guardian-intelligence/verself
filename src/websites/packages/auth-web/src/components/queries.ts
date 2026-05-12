@@ -43,24 +43,17 @@ export const organizationMembersQuery = (auth: AuthenticatedAuth, api: IAMApiCli
     queryFn: () => api.listMembers(),
   });
 
-export const organizationMemberCapabilitiesQuery = (auth: AuthenticatedAuth, api: IAMApiClient) =>
-  queryOptions({
-    queryKey: organizationQueryKey(auth, "member-capabilities"),
-    queryFn: () => api.getMemberCapabilities(),
-  });
-
 export async function loadOrganizationPage(
   queryClient: QueryClient,
   auth: AuthenticatedAuth,
   api: IAMApiClient,
 ) {
-  const [organization, members, memberCapabilities] = await Promise.all([
+  const [organization, members] = await Promise.all([
     queryClient.ensureQueryData(organizationQuery(auth, api)),
     queryClient.ensureQueryData(organizationMembersQuery(auth, api)),
-    queryClient.ensureQueryData(organizationMemberCapabilitiesQuery(auth, api)),
   ]);
 
-  return { members, memberCapabilities, organization };
+  return { members, organization };
 }
 
 export async function invalidateOrganizationQueries(

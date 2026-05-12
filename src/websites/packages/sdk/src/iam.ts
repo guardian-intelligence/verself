@@ -1,50 +1,24 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/iam-api/client/index.js";
 import {
-  createApiCredential as createGeneratedApiCredential,
-  getApiCredential as getGeneratedApiCredential,
   getOrganization as getGeneratedOrganization,
-  getOrganizationMemberCapabilities as getGeneratedOrganizationMemberCapabilities,
-  inviteOrganizationMember as inviteGeneratedOrganizationMember,
-  listApiCredentials as listGeneratedApiCredentials,
-  listMyOrganizations as listGeneratedMyOrganizations,
-  listOrganizationMembers as listGeneratedOrganizationMembers,
-  patchOrganization as patchGeneratedOrganization,
-  putOrganizationMemberCapabilities as putGeneratedOrganizationMemberCapabilities,
-  revokeApiCredential as revokeGeneratedApiCredential,
-  rollApiCredential as rollGeneratedApiCredential,
-  updateOrganizationMemberRoles as updateGeneratedOrganizationMemberRoles,
+  listMembers as listGeneratedMembers,
+  listOrganizations as listGeneratedOrganizations,
+  updateMemberRole as updateGeneratedMemberRole,
+  updateOrganization as updateGeneratedOrganization,
 } from "./__generated/iam-api/index.js";
 import type {
-  IamCreateApiCredentialRequestWritable,
-  IamInviteMemberRequestWritable,
-  IamPutMemberCapabilitiesRequestWritable,
-  IamRollApiCredentialRequestWritable,
-  IamUpdateOrganizationRequestWritable,
+  MemberSummary,
+  UpdateMemberRoleInputBodyWritable,
+  UpdateOrganizationInputBodyWritable,
 } from "./__generated/iam-api/types.gen.js";
 import {
-  vCreateApiCredentialBody,
-  vGetApiCredentialPath,
-  vIamCreateApiCredentialResponse,
-  vIamInviteMemberRequestWritable,
-  vIamInviteMemberResponse,
-  vIamMember,
-  vIamMemberCapabilities,
-  vIamMemberCapabilitiesDocument,
-  vIamMemberCapability,
-  vIamMembers,
-  vIamOrganization,
-  vIamOrganizationMetadata,
-  vIamPutMemberCapabilitiesRequestWritable,
-  vIamRollApiCredentialResponse,
-  vIamRollApiCredentialRequestWritable,
-  vIamUpdateMemberRolesRequestWritable,
-  vIamUpdateOrganizationRequestWritable,
-  vIamapiCredential,
-  vIamapiCredentialIssuedMaterial,
-  vIamapiCredentials,
-  vRevokeApiCredentialPath,
-  vRollApiCredentialPath,
+  vListMembersOutputBody,
+  vListOrganizationsOutputBody,
+  vMemberSummary,
+  vOrganizationSummary,
+  vUpdateMemberRoleInputBodyWritable,
+  vUpdateOrganizationInputBodyWritable,
 } from "./__generated/iam-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -86,27 +60,6 @@ function removeUndefined<T extends Record<string, unknown>>(input: T): Record<st
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
-const roleKeySchema = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(128));
-const roleKeysSchema = v.pipe(
-  v.array(roleKeySchema),
-  v.minLength(1),
-  v.transform((roleKeys) => Array.from(new Set(roleKeys)).sort()),
-);
-
-const capabilityKeySchema = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(64));
-const capabilityKeysSchema = v.pipe(
-  v.array(capabilityKeySchema),
-  v.transform((keys) => Array.from(new Set(keys)).sort()),
-);
-
-const permissionSchema = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(256));
-const permissionsSchema = v.pipe(
-  v.array(permissionSchema),
-  v.minLength(1),
-  v.maxLength(256),
-  v.transform((permissions) => Array.from(new Set(permissions)).sort()),
-);
-
 const organizationSlugSchema = v.pipe(
   v.string(),
   v.trim(),
@@ -115,185 +68,130 @@ const organizationSlugSchema = v.pipe(
   v.maxLength(80),
 );
 
-function omitEmptyText(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
+const organizationRoleSchema = v.picklist(["owner", "admin", "member"]);
+
+function parseRole(value: string): "owner" | "admin" | "member" {
+  return v.parse(organizationRoleSchema, value);
 }
 
-function parseMember(input: unknown) {
-  const { $schema: _schema, role_keys, ...member } = v.parse(vIamMember, input);
+function rolePermissions(role: string): Array<string> {
+  switch (parseRole(role)) {
+    case "owner":
+    case "admin":
+      return [
+        "iam:organization:list",
+        "iam:organization:read",
+        "iam:organization:update",
+        "iam:member:list",
+        "iam:member:read",
+        "iam:member:update_role",
+      ];
+    case "member":
+      return [
+        "iam:organization:list",
+        "iam:organization:read",
+        "iam:member:list",
+        "iam:member:read",
+      ];
+  }
+}
+
+function bigintToNumber(value: number | bigint): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  const out = Number(value);
+  if (!Number.isSafeInteger(out)) {
+    throw new Error(`IAM integer exceeds JavaScript safe range: ${value.toString()}`);
+  }
+  return out;
+}
+
+export interface Member {
+  readonly user_id: string;
+  readonly email: string;
+  readonly display_name: string;
+  readonly state: string;
+  readonly role_keys: ReadonlyArray<OrganizationRoleKey>;
+}
+
+export type OrganizationRoleKey = "owner" | "admin" | "member";
+
+export interface Organization {
+  readonly org_id: string;
+  readonly display_name: string;
+  readonly slug: string;
+  readonly version: number;
+  readonly org_acl_version: number;
+  readonly caller: Member;
+  readonly permissions: ReadonlyArray<string>;
+}
+
+export interface OrganizationMetadata {
+  readonly org_id: string;
+  readonly display_name: string;
+  readonly slug: string;
+}
+
+function parseMember(input: unknown): Member {
+  const member = v.parse(vMemberSummary, input) as MemberSummary;
+  const role = parseRole(member.role);
   return {
-    ...member,
-    role_keys: role_keys ?? [],
+    user_id: member.memberId,
+    email: member.email,
+    display_name: member.displayName,
+    state: "active",
+    role_keys: [role],
   };
 }
 
-export type Member = ReturnType<typeof parseMember>;
-
-function parseMemberCapabilitiesDocument(input: unknown) {
-  const { enabled_keys, ...doc } = v.parse(vIamMemberCapabilitiesDocument, input);
+function parseOrganization(input: unknown): Organization {
+  const organization = v.parse(vOrganizationSummary, input);
+  const callerRole = parseRole(organization.callerRole);
   return {
-    ...doc,
-    enabled_keys: enabled_keys ?? [],
+    org_id: organization.orgId,
+    display_name: organization.displayName,
+    slug: organization.slug ?? "",
+    version: bigintToNumber(organization.version),
+    org_acl_version: bigintToNumber(organization.orgAclVersion),
+    caller: {
+      user_id: "",
+      email: "",
+      display_name: "",
+      state: "active",
+      role_keys: [callerRole],
+    },
+    permissions: rolePermissions(callerRole),
   };
 }
 
-export type MemberCapabilitiesDocument = ReturnType<typeof parseMemberCapabilitiesDocument>;
-
-function parseMemberCapability(input: unknown) {
-  const capability = v.parse(vIamMemberCapability, input);
+function parseOrganizationMetadata(input: unknown): OrganizationMetadata {
+  const organization = parseOrganization(input);
   return {
-    ...capability,
-    permissions: capability.permissions ?? [],
+    org_id: organization.org_id,
+    display_name: organization.display_name,
+    slug: organization.slug,
   };
 }
-
-export type MemberCapability = ReturnType<typeof parseMemberCapability>;
-
-function parseMemberCapabilities(input: unknown) {
-  const { $schema: _schema, document, catalog } = v.parse(vIamMemberCapabilities, input);
-  return {
-    document: parseMemberCapabilitiesDocument(document),
-    catalog: catalog?.map((capability) => parseMemberCapability(capability)) ?? [],
-  };
-}
-
-export type MemberCapabilities = ReturnType<typeof parseMemberCapabilities>;
-
-function parseOrganization(input: unknown) {
-  const {
-    $schema: _schema,
-    caller,
-    permissions,
-    member_capabilities,
-    ...organization
-  } = v.parse(vIamOrganization, input);
-  return {
-    ...organization,
-    caller: parseMember(caller),
-    permissions: permissions ?? [],
-    member_capabilities: parseMemberCapabilitiesDocument(member_capabilities),
-  };
-}
-
-export type Organization = ReturnType<typeof parseOrganization>;
-
-function parseOrganizationMetadata(input: unknown) {
-  return v.parse(vIamOrganizationMetadata, input);
-}
-
-export type OrganizationMetadata = ReturnType<typeof parseOrganizationMetadata>;
-
-function parseMembers(input: unknown): Array<Member> {
-  const { $schema: _schema, members } = v.parse(vIamMembers, input);
-  return members?.map((member) => parseMember(member)) ?? [];
-}
-
-function parseAPICredential(input: unknown) {
-  const { $schema: _schema, permissions, ...credential } = v.parse(vIamapiCredential, input);
-  return {
-    ...credential,
-    permissions: permissions ?? [],
-  };
-}
-
-export type APICredential = ReturnType<typeof parseAPICredential>;
-
-function parseAPICredentials(input: unknown): Array<APICredential> {
-  const { $schema: _schema, credentials } = v.parse(vIamapiCredentials, input);
-  return credentials?.map((credential) => parseAPICredential(credential)) ?? [];
-}
-
-function parseIssuedMaterial(input: unknown) {
-  return v.parse(vIamapiCredentialIssuedMaterial, input);
-}
-
-export type APICredentialIssuedMaterial = ReturnType<typeof parseIssuedMaterial>;
-
-function parseCreateAPICredentialResponse(input: unknown) {
-  const {
-    $schema: _schema,
-    credential,
-    issued_material,
-  } = v.parse(vIamCreateApiCredentialResponse, input);
-  return {
-    credential: parseAPICredential(credential),
-    issued_material: parseIssuedMaterial(issued_material),
-  };
-}
-
-export type CreateAPICredentialResponse = ReturnType<typeof parseCreateAPICredentialResponse>;
-
-function parseRollAPICredentialResponse(input: unknown) {
-  const {
-    $schema: _schema,
-    credential,
-    issued_material,
-  } = v.parse(vIamRollApiCredentialResponse, input);
-  return {
-    credential: parseAPICredential(credential),
-    issued_material: parseIssuedMaterial(issued_material),
-  };
-}
-
-export type RollAPICredentialResponse = ReturnType<typeof parseRollAPICredentialResponse>;
 
 export const updateOrganizationRequestSchema = v.strictObject({
   display_name: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120))),
   slug: v.optional(organizationSlugSchema),
-  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  version: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
 });
 
 export type UpdateOrganizationRequest = v.InferInput<typeof updateOrganizationRequestSchema>;
 
-export const inviteMemberRequestSchema = v.strictObject({
-  email: v.pipe(v.string(), v.trim(), v.email()),
-  familyName: v.optional(v.pipe(v.string(), v.maxLength(100))),
-  givenName: v.optional(v.pipe(v.string(), v.maxLength(100))),
-  roleKeys: roleKeysSchema,
-});
-
-export type InviteMemberRequest = v.InferInput<typeof inviteMemberRequestSchema>;
-export type InviteMemberResponse = v.InferOutput<typeof vIamInviteMemberResponse>;
-
 export const updateMemberRolesRequestSchema = v.pipe(
   v.strictObject({
-    expectedOrgAclVersion: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
-    expectedRoleKeys: roleKeysSchema,
-    roleKeys: roleKeysSchema,
-    userId: v.pipe(v.string(), v.trim(), v.minLength(1)),
+    expectedOrgAclVersion: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
+    expectedRoleKeys: v.pipe(v.array(organizationRoleSchema), v.minLength(1)),
+    roleKeys: v.pipe(v.array(organizationRoleSchema), v.minLength(1)),
+    userId: v.pipe(v.string(), v.trim(), v.regex(/^member_[0-9A-HJKMNP-TV-Z]{26}$/)),
   }),
-  v.transform((input) => ({
-    expectedOrgAclVersion: input.expectedOrgAclVersion,
-    expectedRoleKeys: input.expectedRoleKeys,
-    roleKeys: input.roleKeys,
-    userId: input.userId,
-  })),
 );
 
 export type UpdateMemberRolesRequest = v.InferInput<typeof updateMemberRolesRequestSchema>;
-
-export const putMemberCapabilitiesRequestSchema = v.strictObject({
-  enabled_keys: capabilityKeysSchema,
-  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
-});
-
-export type PutMemberCapabilitiesRequest = v.InferInput<typeof putMemberCapabilitiesRequestSchema>;
-
-export const createAPICredentialRequestSchema = v.strictObject({
-  auth_method: v.optional(v.picklist(["private_key_jwt", "client_secret"])),
-  display_name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(200)),
-  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  permissions: permissionsSchema,
-});
-
-export type CreateAPICredentialRequest = v.InferInput<typeof createAPICredentialRequestSchema>;
-
-export const rollAPICredentialRequestSchema = v.strictObject({
-  auth_method: v.optional(v.picklist(["private_key_jwt", "client_secret"])),
-});
-
-export type RollAPICredentialRequest = v.InferInput<typeof rollAPICredentialRequestSchema>;
 
 export class IAM {
   readonly #options: IAMClientOptions;
@@ -304,9 +202,11 @@ export class IAM {
 
   async getOrganization(): Promise<Organization> {
     const client = createIAMClient(this.#options);
-    const path = "/api/v1/organization";
+    const org = await this.currentOrganization(client);
+    const path = `/api/v1/orgs/${org.org_id}`;
     const result = await getGeneratedOrganization({
       client,
+      path: { orgId: org.org_id },
       responseStyle: "fields",
       throwOnError: false,
     });
@@ -318,8 +218,8 @@ export class IAM {
 
   async listMyOrganizations(): Promise<Array<OrganizationMetadata>> {
     const client = createIAMClient(this.#options);
-    const path = "/api/v1/me/organizations";
-    const result = await listGeneratedMyOrganizations({
+    const path = "/api/v1/orgs";
+    const result = await listGeneratedOrganizations({
       client,
       responseStyle: "fields",
       throwOnError: false,
@@ -327,7 +227,8 @@ export class IAM {
     if (result.error !== undefined) {
       throwIAMError(path, result.response, result.error);
     }
-    return result.data?.map((organization) => parseOrganizationMetadata(organization)) ?? [];
+    const body = v.parse(vListOrganizationsOutputBody, result.data);
+    return body.organizations?.map((organization) => parseOrganizationMetadata(organization)) ?? [];
   }
 
   async updateOrganization(
@@ -335,17 +236,23 @@ export class IAM {
     options: IAMMutationOptions = {},
   ): Promise<Organization> {
     const client = createIAMClient(this.#options);
-    const parsedBody = removeUndefined(
-      v.parse(
-        vIamUpdateOrganizationRequestWritable,
-        v.parse(updateOrganizationRequestSchema, body),
-      ),
-    ) as IamUpdateOrganizationRequestWritable;
-    const path = "/api/v1/organization";
-    const result = await patchGeneratedOrganization({
+    const org = await this.currentOrganization(client);
+    const generatedBody = v.parse(vUpdateOrganizationInputBodyWritable, {
+      displayName: body.display_name,
+      slug: body.slug,
+      version: body.version,
+    });
+    const parsedBody = removeUndefined({
+      displayName: generatedBody.displayName,
+      slug: generatedBody.slug,
+      version: bigintToNumber(generatedBody.version),
+    }) as UpdateOrganizationInputBodyWritable;
+    const path = `/api/v1/orgs/${org.org_id}`;
+    const result = await updateGeneratedOrganization({
       body: parsedBody,
       client,
       headers: idempotencyHeaders("iam-organization", options.idempotencyKey),
+      path: { orgId: org.org_id },
       responseStyle: "fields",
       throwOnError: false,
     });
@@ -357,46 +264,19 @@ export class IAM {
 
   async listMembers(): Promise<Array<Member>> {
     const client = createIAMClient(this.#options);
-    const path = "/api/v1/organization/members";
-    const result = await listGeneratedOrganizationMembers({
+    const org = await this.currentOrganization(client);
+    const path = `/api/v1/orgs/${org.org_id}/members`;
+    const result = await listGeneratedMembers({
       client,
+      path: { orgId: org.org_id },
       responseStyle: "fields",
       throwOnError: false,
     });
     if (result.error !== undefined) {
       throwIAMError(path, result.response, result.error);
     }
-    return parseMembers(result.data);
-  }
-
-  async inviteMember(
-    body: InviteMemberRequest,
-    options: IAMMutationOptions = {},
-  ): Promise<InviteMemberResponse> {
-    const client = createIAMClient(this.#options);
-    const input = v.parse(inviteMemberRequestSchema, body);
-    const bodyInput = removeUndefined({
-      email: input.email,
-      family_name: omitEmptyText(input.familyName),
-      given_name: omitEmptyText(input.givenName),
-      role_keys: input.roleKeys,
-    }) as IamInviteMemberRequestWritable;
-    const parsedBody = v.parse(
-      vIamInviteMemberRequestWritable,
-      bodyInput,
-    ) as IamInviteMemberRequestWritable;
-    const path = "/api/v1/organization/members";
-    const result = await inviteGeneratedOrganizationMember({
-      body: parsedBody,
-      client,
-      headers: idempotencyHeaders("iam-member-invite", options.idempotencyKey),
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return v.parse(vIamInviteMemberResponse, result.data);
+    const body = v.parse(vListMembersOutputBody, result.data);
+    return body.members?.map((member) => parseMember(member)) ?? [];
   }
 
   async updateMemberRoles(
@@ -404,18 +284,24 @@ export class IAM {
     options: IAMMutationOptions = {},
   ): Promise<Member> {
     const client = createIAMClient(this.#options);
+    const org = await this.currentOrganization(client);
     const input = v.parse(updateMemberRolesRequestSchema, body);
-    const parsedBody = v.parse(vIamUpdateMemberRolesRequestWritable, {
-      expected_org_acl_version: input.expectedOrgAclVersion,
-      expected_role_keys: input.expectedRoleKeys,
-      role_keys: input.roleKeys,
+    const generatedBody = v.parse(vUpdateMemberRoleInputBodyWritable, {
+      expectedOrgAclVersion: input.expectedOrgAclVersion,
+      expectedRole: input.expectedRoleKeys[0],
+      role: input.roleKeys[0],
     });
-    const path = `/api/v1/organization/members/${input.userId}/roles`;
-    const result = await updateGeneratedOrganizationMemberRoles({
+    const parsedBody: UpdateMemberRoleInputBodyWritable = {
+      expectedOrgAclVersion: bigintToNumber(generatedBody.expectedOrgAclVersion),
+      expectedRole: generatedBody.expectedRole,
+      role: generatedBody.role,
+    };
+    const path = `/api/v1/orgs/${org.org_id}/members/${input.userId}/role`;
+    const result = await updateGeneratedMemberRole({
       body: parsedBody,
       client,
-      headers: idempotencyHeaders("iam-member-roles", options.idempotencyKey),
-      path: { user_id: input.userId },
+      headers: idempotencyHeaders("iam-member-role", options.idempotencyKey),
+      path: { orgId: org.org_id, memberId: input.userId },
       responseStyle: "fields",
       throwOnError: false,
     });
@@ -425,10 +311,9 @@ export class IAM {
     return parseMember(result.data);
   }
 
-  async getMemberCapabilities(): Promise<MemberCapabilities> {
-    const client = createIAMClient(this.#options);
-    const path = "/api/v1/organization/member-capabilities";
-    const result = await getGeneratedOrganizationMemberCapabilities({
+  async currentOrganization(client = createIAMClient(this.#options)): Promise<Organization> {
+    const path = "/api/v1/orgs";
+    const result = await listGeneratedOrganizations({
       client,
       responseStyle: "fields",
       throwOnError: false,
@@ -436,130 +321,11 @@ export class IAM {
     if (result.error !== undefined) {
       throwIAMError(path, result.response, result.error);
     }
-    return parseMemberCapabilities(result.data);
-  }
-
-  async putMemberCapabilities(
-    body: PutMemberCapabilitiesRequest,
-    options: IAMMutationOptions = {},
-  ): Promise<MemberCapabilities> {
-    const client = createIAMClient(this.#options);
-    const input = v.parse(putMemberCapabilitiesRequestSchema, body);
-    const parsedBody: IamPutMemberCapabilitiesRequestWritable = v.parse(
-      vIamPutMemberCapabilitiesRequestWritable,
-      {
-        enabled_keys: input.enabled_keys,
-        version: input.version,
-      },
-    );
-    const path = "/api/v1/organization/member-capabilities";
-    const result = await putGeneratedOrganizationMemberCapabilities({
-      body: parsedBody,
-      client,
-      headers: idempotencyHeaders("iam-member-capabilities", options.idempotencyKey),
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
+    const body = v.parse(vListOrganizationsOutputBody, result.data);
+    const organizations = body.organizations ?? [];
+    if (organizations.length !== 1) {
+      throw new Error(`IAM selected-organization token returned ${organizations.length} organizations`);
     }
-    return parseMemberCapabilities(result.data);
-  }
-
-  async listAPICredentials(): Promise<Array<APICredential>> {
-    const client = createIAMClient(this.#options);
-    const path = "/api/v1/organization/api-credentials";
-    const result = await listGeneratedApiCredentials({
-      client,
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseAPICredentials(result.data);
-  }
-
-  async createAPICredential(
-    body: CreateAPICredentialRequest,
-    options: IAMMutationOptions = {},
-  ): Promise<CreateAPICredentialResponse> {
-    const client = createIAMClient(this.#options);
-    const parsedBody = removeUndefined(
-      v.parse(vCreateApiCredentialBody, v.parse(createAPICredentialRequestSchema, body)),
-    ) as IamCreateApiCredentialRequestWritable;
-    const path = "/api/v1/organization/api-credentials";
-    const result = await createGeneratedApiCredential({
-      body: parsedBody,
-      client,
-      headers: idempotencyHeaders("iam-api-credential", options.idempotencyKey),
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseCreateAPICredentialResponse(result.data);
-  }
-
-  async getAPICredential(credentialId: string): Promise<APICredential> {
-    const client = createIAMClient(this.#options);
-    const pathParams = v.parse(vGetApiCredentialPath, { credential_id: credentialId });
-    const path = `/api/v1/organization/api-credentials/${credentialId}`;
-    const result = await getGeneratedApiCredential({
-      client,
-      path: pathParams,
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseAPICredential(result.data);
-  }
-
-  async rollAPICredential(
-    credentialId: string,
-    body: RollAPICredentialRequest = {},
-    options: IAMMutationOptions = {},
-  ): Promise<RollAPICredentialResponse> {
-    const client = createIAMClient(this.#options);
-    const pathParams = v.parse(vRollApiCredentialPath, { credential_id: credentialId });
-    const parsedBody = removeUndefined(
-      v.parse(vIamRollApiCredentialRequestWritable, v.parse(rollAPICredentialRequestSchema, body)),
-    ) as IamRollApiCredentialRequestWritable;
-    const path = `/api/v1/organization/api-credentials/${credentialId}/roll`;
-    const result = await rollGeneratedApiCredential({
-      body: parsedBody,
-      client,
-      headers: idempotencyHeaders("iam-api-credential-roll", options.idempotencyKey),
-      path: pathParams,
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseRollAPICredentialResponse(result.data);
-  }
-
-  async revokeAPICredential(
-    credentialId: string,
-    options: IAMMutationOptions = {},
-  ): Promise<APICredential> {
-    const client = createIAMClient(this.#options);
-    const pathParams = v.parse(vRevokeApiCredentialPath, { credential_id: credentialId });
-    const path = `/api/v1/organization/api-credentials/${credentialId}`;
-    const result = await revokeGeneratedApiCredential({
-      client,
-      headers: idempotencyHeaders("iam-api-credential-revoke", options.idempotencyKey),
-      path: pathParams,
-      responseStyle: "fields",
-      throwOnError: false,
-    });
-    if (result.error !== undefined) {
-      throwIAMError(path, result.response, result.error);
-    }
-    return parseAPICredential(result.data);
+    return parseOrganization(organizations[0]);
   }
 }

@@ -1,11 +1,8 @@
 import type { IAMApiClient } from "@verself/auth-web/components";
 import {
   getMembers,
-  getMemberCapabilities,
   getOrganization,
   listMyOrganizations,
-  inviteMember,
-  putMemberCapabilities,
   updateOrganization,
   updateMemberRoles,
 } from "~/server-fns/api";
@@ -19,8 +16,5 @@ export const iamApiClient: IAMApiClient = {
   listMyOrganizations: () => listMyOrganizations(),
   updateOrganization: (data) => updateOrganization({ data }),
   listMembers: () => getMembers(),
-  getMemberCapabilities: () => getMemberCapabilities(),
-  putMemberCapabilities: (data) => putMemberCapabilities({ data }),
-  inviteMember: (data) => inviteMember({ data }),
   updateMemberRoles: (data) => updateMemberRoles({ data }),
 };

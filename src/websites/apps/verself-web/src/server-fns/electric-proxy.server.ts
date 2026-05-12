@@ -54,7 +54,7 @@ const secretCache = new Map<string, Promise<string>>();
 
 export const electricShapeDefinitions = {
   executions: (snapshot: AuthenticatedAuthSnapshot): ElectricShapeDefinition => {
-    const orgID = requireDecimalID(requireSelectedOrgID(snapshot), "org_id");
+    const orgID = requireDecimalID(requireSelectedProviderOrgID(snapshot), "org_id");
     return {
       stream: "sandbox",
       table: "executions",
@@ -64,7 +64,7 @@ export const electricShapeDefinitions = {
     };
   },
   runnerProviderRepositories: (snapshot: AuthenticatedAuthSnapshot): ElectricShapeDefinition => {
-    const orgID = requireDecimalID(requireSelectedOrgID(snapshot), "org_id");
+    const orgID = requireDecimalID(requireSelectedProviderOrgID(snapshot), "org_id");
     return {
       stream: "sandbox",
       table: "runner_provider_repositories",
@@ -84,7 +84,7 @@ export const electricShapeDefinitions = {
     snapshot: AuthenticatedAuthSnapshot,
     attemptID: string,
   ): ElectricShapeDefinition => {
-    const orgID = requireDecimalID(requireSelectedOrgID(snapshot), "org_id");
+    const orgID = requireDecimalID(requireSelectedProviderOrgID(snapshot), "org_id");
     const validatedAttemptID = requireUUID(attemptID, "attempt_id");
     return {
       stream: "sandbox",
@@ -95,7 +95,7 @@ export const electricShapeDefinitions = {
     };
   },
   notificationInboxState: (snapshot: AuthenticatedAuthSnapshot): ElectricShapeDefinition => {
-    const orgID = requireElectricOpaqueID(requireSelectedOrgID(snapshot), "org_id");
+    const orgID = requireElectricOpaqueID(requireSelectedProviderOrgID(snapshot), "org_id");
     const subjectID = requireElectricOpaqueID(snapshot.auth.userId, "recipient_subject_id");
     return {
       stream: "notifications",
@@ -185,6 +185,15 @@ function requireSelectedOrgID(snapshot: AuthenticatedAuthSnapshot): string {
     throw new Error("selected organization is required");
   }
   return orgID;
+}
+
+function requireSelectedProviderOrgID(snapshot: AuthenticatedAuthSnapshot): string {
+  const publicOrgID = requireSelectedOrgID(snapshot);
+  const organization = snapshot.user.availableOrganizations.find((org) => org.orgID === publicOrgID);
+  if (!organization?.identityProviderOrgID) {
+    throw new Error("selected organization is missing identity provider mapping");
+  }
+  return organization.identityProviderOrgID;
 }
 
 function upstreamBaseURL(stream: ElectricStream): string {

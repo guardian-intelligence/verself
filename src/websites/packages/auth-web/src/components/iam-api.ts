@@ -1,12 +1,8 @@
 import { createContext, createElement, type ReactNode, useContext } from "react";
 import type {
-  InviteMemberRequest,
-  InviteMemberResponse,
   Member,
-  MemberCapabilities,
   Organization,
   OrganizationMetadata,
-  PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 } from "./types.ts";
@@ -21,9 +17,6 @@ export interface IAMApiClient {
   listMyOrganizations: () => Promise<ReadonlyArray<OrganizationMetadata>>;
   updateOrganization: (input: UpdateOrganizationRequest) => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
-  getMemberCapabilities: () => Promise<MemberCapabilities>;
-  putMemberCapabilities: (input: PutMemberCapabilitiesRequest) => Promise<MemberCapabilities>;
-  inviteMember: (input: InviteMemberRequest) => Promise<InviteMemberResponse>;
   updateMemberRoles: (input: UpdateMemberRolesRequest) => Promise<Member>;
 }
 

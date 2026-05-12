@@ -11,6 +11,7 @@ export type AuthRoleAssignment = v.InferOutput<typeof authRoleAssignmentSchema>;
 
 export const authOrganizationContextSchema = v.object({
   orgID: v.string(),
+  identityProviderOrgID: v.string(),
   roles: v.array(v.string()),
   roleAssignments: v.array(authRoleAssignmentSchema),
 });

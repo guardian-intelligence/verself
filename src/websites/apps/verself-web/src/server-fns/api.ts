@@ -35,7 +35,6 @@ import {
   executionScheduleRequestSchema,
   governanceAuditEventsQuerySchema as auditEventsQuerySchema,
   governanceCreateExportRequestSchema as createExportRequestSchema,
-  inviteMemberRequestSchema,
   isGovernanceApiError,
   isNotificationsApiError,
   runIdInputSchema,
@@ -47,7 +46,6 @@ import {
   isSourceApiError as isSourceCodeHostingApiError,
   markNotificationReadRequestSchema,
   notificationsListQuerySchema,
-  putMemberCapabilitiesRequestSchema,
   publishTestNotificationRequestSchema,
   putNotificationPreferencesRequestSchema,
   runListQuerySchema,
@@ -81,12 +79,7 @@ import {
   type ExecutionScheduleIdInput,
   type ExecutionScheduleRequest,
   type ExecutionSchedules,
-  type InviteMemberRequest,
-  type InviteMemberResponse,
   type Member,
-  type MemberCapabilities,
-  type MemberCapabilitiesDocument,
-  type MemberCapability,
   type MarkNotificationReadRequest,
   type Notification,
   type NotificationAccepted,
@@ -96,7 +89,6 @@ import {
   type Organization,
   type OrganizationMetadata,
   type PublishTestNotificationRequest,
-  type PutMemberCapabilitiesRequest,
   type PutNotificationPreferencesRequest,
   type Project,
   type ProjectList,
@@ -245,15 +237,9 @@ export type {
   RunnerSizingAnalytics,
 };
 export type {
-  InviteMemberRequest,
-  InviteMemberResponse,
   Member,
-  MemberCapabilities,
-  MemberCapabilitiesDocument,
-  MemberCapability,
   Organization,
   OrganizationMetadata,
-  PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 };
@@ -347,31 +333,11 @@ export const getMembers = createServerFn({ method: "GET" })
     return (await iamSDK(context)).iam.listMembers();
   });
 
-export const inviteMember = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(inviteMemberRequestSchema)
-  .handler(async ({ context, data }) => {
-    return (await iamSDK(context)).iam.inviteMember(data);
-  });
-
 export const updateMemberRoles = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(updateMemberRolesRequestSchema)
   .handler(async ({ context, data }) => {
     return (await iamSDK(context)).iam.updateMemberRoles(data);
-  });
-
-export const getMemberCapabilities = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .handler(async ({ context }) => {
-    return (await iamSDK(context)).iam.getMemberCapabilities();
-  });
-
-export const putMemberCapabilities = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(putMemberCapabilitiesRequestSchema)
-  .handler(async ({ context, data }) => {
-    return (await iamSDK(context)).iam.putMemberCapabilities(data);
   });
 
 export const getProfile = createServerFn({ method: "GET" })
