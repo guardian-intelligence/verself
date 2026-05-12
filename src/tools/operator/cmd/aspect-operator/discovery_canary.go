@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	opch "github.com/verself/operator-runtime/clickhouse"
@@ -25,6 +26,7 @@ type discoveryCanaryOptions struct {
 	timeout     time.Duration
 	slug        string
 	format      string
+	authzOrgID  string
 }
 
 func cmdDiscoveryCanary(args []string) error {
@@ -36,8 +38,9 @@ func cmdDiscoveryCanary(args []string) error {
 	fs.IntVar(&opts.rps, "rps", 10, "Target requests per second.")
 	fs.IntVar(&opts.concurrency, "concurrency", 4, "Number of parallel workers on the host.")
 	fs.DurationVar(&opts.timeout, "timeout", 5*time.Second, "Per-request timeout.")
-	fs.StringVar(&opts.slug, "slug", "platform", "Org slug to resolve through IAM.")
+	fs.StringVar(&opts.slug, "slug", "", "Org slug to resolve through IAM.")
 	fs.StringVar(&opts.format, "format", "json", "Output format on the host: json | table.")
+	fs.StringVar(&opts.authzOrgID, "authz-org-id", "", "Provider organization ID used for the authorization probe.")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -50,13 +53,35 @@ func cmdDiscoveryCanary(args []string) error {
 		totalBudget = 2 * time.Minute
 	}
 	return runOperatorRuntime("canary.service_discovery", opts.operatorRuntimeOptions, totalBudget > operatorCommandBudget, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+		var vars platformMainVars
+		needSiteVars := strings.TrimSpace(opts.authzOrgID) == "" || strings.TrimSpace(opts.slug) == ""
+		if needSiteVars {
+			if err := readYAMLFile(siteVarsPath(rt.RepoRoot, rt.Site), &vars); err != nil {
+				return err
+			}
+		}
+		authzOrgID := strings.TrimSpace(opts.authzOrgID)
+		if authzOrgID == "" {
+			authzOrgID = strings.TrimSpace(firstNonEmpty(vars.PlatformOrgID, vars.SecretsServicePlatformOrgID))
+		}
+		if authzOrgID == "" {
+			return fmt.Errorf("service-discovery canary: platform org id is required")
+		}
+		slug := strings.TrimSpace(opts.slug)
+		if slug == "" {
+			slug = strings.TrimSpace(vars.PlatformCompanySlug)
+		}
+		if slug == "" {
+			return fmt.Errorf("service-discovery canary: platform company slug is required")
+		}
 		canaryArgs := []string{
 			"--duration", opts.duration.String(),
 			"--rps", strconv.Itoa(opts.rps),
 			"--concurrency", strconv.Itoa(opts.concurrency),
 			"--timeout", opts.timeout.String(),
-			"--slug", opts.slug,
+			"--slug", slug,
 			"--format", opts.format,
+			"--authz-org-id", authzOrgID,
 		}
 		fmt.Fprintf(os.Stderr, "service-discovery canary: target=%s peer=%s rps=%d duration=%s\n",
 			discoveryCanaryTarget, "iam-service", opts.rps, opts.duration)

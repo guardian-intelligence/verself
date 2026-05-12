@@ -432,19 +432,35 @@ func printIdentityMetadata(rt *opruntime.Runtime, client *http.Client, personaNa
 	if err := waitForHTTP(rt.Ctx, client, baseURL+"/readyz", http.StatusOK); err != nil {
 		return err
 	}
-	access, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization", token)
+	access, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/orgs", token)
 	if err != nil {
 		return err
 	}
-	operations, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/organization/operations", token)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "WARNING: iam-service operation catalog endpoint unavailable; continuing with empty operations metadata")
-		operations = map[string]any{"services": []any{}}
+	if orgID := firstOrganizationID(access); orgID != "" {
+		org, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/orgs/"+url.PathEscape(orgID), token)
+		if err != nil {
+			return err
+		}
+		access["selected_organization"] = org
 	}
+	operations := map[string]any{"services": []any{}}
 	metadata := identityMetadata(personaName, access, operations)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(metadata)
+}
+
+func firstOrganizationID(payload map[string]any) string {
+	organizations, ok := payload["organizations"].([]any)
+	if !ok || len(organizations) == 0 {
+		return ""
+	}
+	first, ok := organizations[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	orgID, _ := first["orgId"].(string)
+	return strings.TrimSpace(orgID)
 }
 
 func waitForHTTP(ctx context.Context, client *http.Client, endpoint string, expected int) error {

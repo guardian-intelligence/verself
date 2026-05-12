@@ -31,10 +31,12 @@ def _service_discovery_impl(ctx):
         "--timeout",
         ctx.args.timeout or "5s",
         "--slug",
-        ctx.args.slug or "platform",
+        ctx.args.slug or "",
         "--format",
         ctx.args.format or "table",
     ]
+    if ctx.args.authz_org_id:
+        cli_args.extend(["--authz-org-id", ctx.args.authz_org_id])
     return checked_spawn(ctx, bin, cli_args, label = "aspect-operator service-discovery-canary")
 
 service_discovery = task(
@@ -48,7 +50,8 @@ service_discovery = task(
         "rps": args.int(default = 10, description = "Target requests per second."),
         "concurrency": args.int(default = 4, description = "Number of parallel workers on the host."),
         "timeout": args.string(default = "5s", description = "Per-request timeout on the host."),
-        "slug": args.string(default = "platform", description = "Org slug to resolve through IAM."),
+        "slug": args.string(default = "", description = "Org slug to resolve through IAM; defaults to platform_company_slug from site facts."),
         "format": args.string(default = "table", description = "Output format: table | json."),
+        "authz_org_id": args.string(default = "", description = "Provider organization ID used for the authorization probe."),
     },
 )

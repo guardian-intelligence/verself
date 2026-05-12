@@ -39,7 +39,10 @@ const (
 	platformDefaultBranch                          = "main"
 )
 
-var platformSlugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$`)
+var (
+	platformSlugRE        = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$`)
+	platformPublicOrgIDRE = regexp.MustCompile(`^org_[0-9A-HJKMNP-TV-Z]{26}$`)
+)
 
 type platformOptions struct {
 	operatorRuntimeOptions
@@ -58,6 +61,7 @@ type platformOptions struct {
 
 type platformMainVars struct {
 	PlatformOrgID                string   `yaml:"platform_org_id"`
+	PlatformPublicOrgID          string   `yaml:"platform_public_org_id"`
 	SecretsServicePlatformOrgID  string   `yaml:"secrets_service_platform_org_id"`
 	PlatformOrganizationName     string   `yaml:"platform_organization_name"`
 	PlatformCompanySlug          string   `yaml:"platform_company_slug"`
@@ -79,6 +83,7 @@ type platformMainVars struct {
 
 type platformConfig struct {
 	OrgIDText            string   `json:"org_id"`
+	PublicOrgIDText      string   `json:"public_org_id"`
 	OrgID                uint64   `json:"-"`
 	OrgIDPG              int64    `json:"-"`
 	OrganizationName     string   `json:"organization_name"`
@@ -281,6 +286,7 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 	}
 	cfg := platformConfig{
 		OrgIDText:            firstNonEmpty(mainVars.PlatformOrgID, mainVars.SecretsServicePlatformOrgID),
+		PublicOrgIDText:      strings.TrimSpace(mainVars.PlatformPublicOrgID),
 		OrganizationName:     strings.TrimSpace(mainVars.PlatformOrganizationName),
 		CompanySlug:          strings.TrimSpace(mainVars.PlatformCompanySlug),
 		CompanyDisplayName:   strings.TrimSpace(mainVars.PlatformCompanyDisplayName),
@@ -307,6 +313,12 @@ func (cfg *platformConfig) validate() error {
 	cfg.OrgIDText = strings.TrimSpace(cfg.OrgIDText)
 	if cfg.OrgIDText == "" {
 		return fmt.Errorf("platform config: platform_org_id is required")
+	}
+	if cfg.PublicOrgIDText == "" {
+		return fmt.Errorf("platform config: platform_public_org_id is required")
+	}
+	if !platformPublicOrgIDRE.MatchString(cfg.PublicOrgIDText) {
+		return fmt.Errorf("platform config: platform_public_org_id must match %s", platformPublicOrgIDRE.String())
 	}
 	orgID, err := strconv.ParseUint(cfg.OrgIDText, 10, 64)
 	if err != nil || orgID == 0 || orgID > uint64(math.MaxInt64) {
@@ -499,7 +511,8 @@ func (r *platformRunner) ensureIdentityOrganization() error {
 	return r.withSpan("platform.iam.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "iam_service"),
-		attribute.String("verself.org_id", r.cfg.OrgIDText),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+		attribute.String("iam.identity_provider_org_id", r.cfg.OrgIDText),
 		attribute.String("verself.org_slug", r.cfg.CompanySlug),
 		attribute.String("verself.org_name", r.cfg.OrganizationName),
 	}, func(ctx context.Context) error {
@@ -514,12 +527,12 @@ func (r *platformRunner) ensureIdentityOrganization() error {
 		}
 		defer rollbackTx(ctx, tx)
 
-		var displayName, slug, state string
+		var providerOrgID, displayName, slug, state string
 		err = tx.QueryRow(ctx, `
-SELECT display_name, slug, state
+SELECT identity_provider_org_id, display_name, slug, state
 FROM iam_organizations
 WHERE org_id = $1
-FOR UPDATE`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
+FOR UPDATE`, r.cfg.PublicOrgIDText).Scan(&providerOrgID, &displayName, &slug, &state)
 		now := time.Now().UTC()
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
@@ -529,7 +542,7 @@ SELECT org_id
 FROM iam_organizations
 WHERE slug = $1
 FOR UPDATE`, r.cfg.CompanySlug).Scan(&staleOrgID)
-			if staleErr == nil && staleOrgID != r.cfg.OrgIDText {
+			if staleErr == nil && staleOrgID != r.cfg.PublicOrgIDText {
 				if _, err := tx.Exec(ctx, `
 DELETE FROM iam_organizations
 WHERE org_id = $1`, staleOrgID); err != nil {
@@ -540,9 +553,9 @@ WHERE org_id = $1`, staleOrgID); err != nil {
 				return fmt.Errorf("iam organization: query stale slug owner: %w", staleErr)
 			}
 			if _, err := tx.Exec(ctx, `
-INSERT INTO iam_organizations (org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
-VALUES ($1, $2, $3, 'active', 1, $4, $4, $5, $5)`,
-				r.cfg.OrgIDText, r.cfg.OrganizationName, r.cfg.CompanySlug, platformActor, now); err != nil {
+INSERT INTO iam_organizations (org_id, identity_provider_org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, 'active', 1, $5, $5, $6, $6)`,
+				r.cfg.PublicOrgIDText, r.cfg.OrgIDText, r.cfg.OrganizationName, r.cfg.CompanySlug, platformActor, now); err != nil {
 				return fmt.Errorf("iam organization: insert: %w", err)
 			}
 			r.markChanged("iam.organization.created")
@@ -553,21 +566,22 @@ VALUES ($1, $2, $3, 'active', 1, $4, $4, $5, $5)`,
 				if _, err := tx.Exec(ctx, `
 INSERT INTO iam_organization_slug_redirects (slug, org_id, created_at, created_by)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT DO NOTHING`, slug, r.cfg.OrgIDText, now, platformActor); err != nil {
+ON CONFLICT DO NOTHING`, slug, r.cfg.PublicOrgIDText, now, platformActor); err != nil {
 					return fmt.Errorf("iam organization: insert slug redirect: %w", err)
 				}
 			}
-			if displayName != r.cfg.OrganizationName || slug != r.cfg.CompanySlug || state != "active" {
+			if providerOrgID != r.cfg.OrgIDText || displayName != r.cfg.OrganizationName || slug != r.cfg.CompanySlug || state != "active" {
 				if _, err := tx.Exec(ctx, `
 UPDATE iam_organizations
-SET display_name = $2,
-    slug = $3,
+SET identity_provider_org_id = $2,
+    display_name = $3,
+    slug = $4,
     state = 'active',
     version = version + 1,
-    updated_at = $4,
-    updated_by = $5
+    updated_at = $5,
+    updated_by = $6
 WHERE org_id = $1`,
-					r.cfg.OrgIDText, r.cfg.OrganizationName, r.cfg.CompanySlug, now, platformActor); err != nil {
+					r.cfg.PublicOrgIDText, r.cfg.OrgIDText, r.cfg.OrganizationName, r.cfg.CompanySlug, now, platformActor); err != nil {
 					return fmt.Errorf("iam organization: update: %w", err)
 				}
 				r.markChanged("iam.organization.updated")
@@ -1065,18 +1079,19 @@ func (r *platformRunner) checkIdentityOrganization(issues *[]string) platformBou
 	err := r.withSpan("platform.iam.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "iam_service"),
-		attribute.String("verself.org_id", r.cfg.OrgIDText),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+		attribute.String("iam.identity_provider_org_id", r.cfg.OrgIDText),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "iam_service")
 		if err != nil {
 			return err
 		}
 		defer func() { _ = conn.Close(context.Background()) }()
-		var displayName, slug, state string
+		var providerOrgID, displayName, slug, state string
 		err = conn.QueryRow(ctx, `
-SELECT display_name, slug, state
+SELECT identity_provider_org_id, display_name, slug, state
 FROM iam_organizations
-WHERE org_id = $1`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
+WHERE org_id = $1`, r.cfg.PublicOrgIDText).Scan(&providerOrgID, &displayName, &slug, &state)
 		if errors.Is(err, pgx.ErrNoRows) {
 			*issues = append(*issues, "iam organization is missing")
 			row.Status = "missing"
@@ -1086,6 +1101,9 @@ WHERE org_id = $1`, r.cfg.OrgIDText).Scan(&displayName, &slug, &state)
 			return fmt.Errorf("iam organization: query: %w", err)
 		}
 		var mismatches []string
+		if providerOrgID != r.cfg.OrgIDText {
+			mismatches = append(mismatches, fmt.Sprintf("identity_provider_org_id=%q", providerOrgID))
+		}
 		if displayName != r.cfg.OrganizationName {
 			mismatches = append(mismatches, fmt.Sprintf("display_name=%q", displayName))
 		}
@@ -1654,9 +1672,10 @@ func writePlatformReport(w io.Writer, format string, report platformReport) erro
 			changed = strings.Join(report.Changed, ",")
 		}
 		_, err := fmt.Fprintf(w,
-			"platform %s ok: org=%s org_id=%s repo=%s/%s project_id=%s source_repo_id=%s forgejo_repo_id=%s git=%s changed=%s\n",
+			"platform %s ok: org=%s org_id=%s identity_provider_org_id=%s repo=%s/%s project_id=%s source_repo_id=%s forgejo_repo_id=%s git=%s changed=%s\n",
 			report.Action,
 			report.Config.CompanySlug,
+			report.Config.PublicOrgIDText,
 			report.Config.OrgIDText,
 			report.Config.CompanySlug,
 			report.Config.RepoSlug,
