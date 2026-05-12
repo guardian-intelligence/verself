@@ -3,7 +3,7 @@ See @README.md
 See @src/services/iam-service/schema/verself.zed for Zanzibar policies
 See @docs/CODE_STANDARDS.md for engineering opinions.
 
-product: verself.sh
+console: verself.sh
 auth portal: auth.verself.sh
 services: <service>.api.verself.sh
 company website: guardianintelligence.org
@@ -11,7 +11,7 @@ company website: guardianintelligence.org
 * `aspect` contains lots of helpful commands under `.aspect/`. Run `aspect` to get the list of tasks and task groups and `aspect <task> --help` for more details.
 * Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output, filter accordingly)
 
-Current product: Blacksmith.sh clone (GitHub app that runs on bare metal).
+Current product: Blacksmith.sh clone (GitHub app that runs on bare metal) + persisting build artifacts with ZFS.
 
 Benchmarks:
 

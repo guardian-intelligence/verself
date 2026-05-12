@@ -90,8 +90,6 @@ func (c CLI) usage() error {
   %[1]s orgs use <org-id|slug>
   %[1]s orgs inspect [--json]
   %[1]s orgs update --version VERSION [--display-name NAME] [--slug SLUG] [--json]
-  %[1]s orgs credentials list [--json]
-  %[1]s orgs credentials create <display-name> --permission PERMISSION [--auth-method private_key_jwt|client_secret] [--json]
   %[1]s company configure <name> [flags]
   %[1]s company options add <company> <key> [--from-env KEY|--stdin|--from-file PATH|--value VALUE]
   %[1]s company secret generate <company> --all|--key KEY

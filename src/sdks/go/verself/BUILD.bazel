@@ -36,6 +36,7 @@ go_test(
         "billing_test.go",
         "client_test.go",
         "governance_test.go",
+        "iam_test.go",
         "notifications_test.go",
         "projects_test.go",
         "sandbox_test.go",

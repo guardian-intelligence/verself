@@ -400,9 +400,14 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 }
 
 func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
+	client, _, err := c.serviceClientWithProfile(flags)
+	return client, err
+}
+
+func (c CLI) serviceClientWithProfile(flags serviceClientFlags) (*verself.Client, *ProfileRecord, error) {
 	token, profile, err := c.bearerTokenWithProfile(flags.tokenFile)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	iamURL := strings.TrimSpace(flags.iamURL)
 	if iamURL == "" {
@@ -460,7 +465,7 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 	if sourceURL == "" && profile != nil {
 		sourceURL = profile.SourceURL
 	}
-	return verself.New(verself.Options{
+	client, err := verself.New(verself.Options{
 		BearerToken:      token,
 		IAMURL:           iamURL,
 		ProjectsURL:      projectsURL,
@@ -472,6 +477,10 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 		SourceURL:        sourceURL,
 		Traceparent:      flags.traceparent,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return client, profile, nil
 }
 
 func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, error) {

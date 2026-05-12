@@ -129,11 +129,15 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	org, err := sdk.IAM.GetOrganization(ctx)
+	orgs, err := sdk.IAM.ListOrganizations(ctx, verself.ListOrganizationsOptions{PageSize: 1})
 	if err != nil {
 		return err
 	}
-	profile.SelectedOrg = &OrgRef{OrgID: org.OrgID, Slug: org.Slug, DisplayName: org.DisplayName}
+	if len(orgs.Organizations) == 0 {
+		return errors.New("auth login did not find any available organizations")
+	}
+	org := orgs.Organizations[0]
+	profile.SelectedOrg = orgRefFromSDK(org)
 	store, err := newStore(c.getenv)
 	if err != nil {
 		return err
@@ -161,7 +165,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if *jsonOut {
 		return writeJSON(c.out, profile)
 	}
-	return writef(c.out, "logged in as %s for %s\n", org.Caller.DisplayName, org.DisplayName)
+	return writef(c.out, "logged in for %s as %s\n", org.DisplayName, org.CallerRole)
 }
 
 type loginCredentialOptions struct {
@@ -408,18 +412,18 @@ func (c CLI) authWhoami(ctx context.Context, args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("usage: auth whoami [--json]")
 	}
-	client, err := c.serviceClient(*serviceFlags)
+	client, profile, err := c.serviceClientWithProfile(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	org, err := client.IAM.GetOrganization(ctx)
+	org, err := selectedOrganization(ctx, client, profile)
 	if err != nil {
 		return err
 	}
 	if *jsonOut {
 		return writeJSON(c.out, org)
 	}
-	return writef(c.out, "%s\t%s\t%s\t%s\n", org.Caller.UserID, org.Caller.DisplayName, org.OrgID, org.DisplayName)
+	return writef(c.out, "%s\t%s\t%s\n", org.OrgID, org.DisplayName, org.CallerRole)
 }
 
 func (c CLI) authToken(args []string) error {

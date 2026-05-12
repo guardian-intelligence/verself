@@ -950,7 +950,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 }
 
-func TestAuthOrgsAndCredentialsUseIAMSDK(t *testing.T) {
+func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	xdgRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
@@ -961,37 +961,27 @@ func TestAuthOrgsAndCredentialsUseIAMSDK(t *testing.T) {
 	if err := os.WriteFile(tokenPath, []byte("tok_iam_test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	orgJSON := `{"org_id":"370200542594579812","display_name":"Guardian Intelligence","slug":"guardian","version":1,"org_acl_version":1,"caller":{"user_id":"user_1","email":"shovon@example.com","login_name":"shovon","display_name":"Shovon Hasan","state":"active","role_keys":["owner"]},"member_capabilities":{"org_id":"370200542594579812","version":1,"enabled_keys":[],"updated_at":"2026-05-06T00:00:00Z","updated_by":"user_1"},"permissions":["iam:api_credential:write"]}`
-	credentialJSON := func(status string) string {
-		return `{"credential_id":"cred_1","org_id":"370200542594579812","subject_id":"svc_1","client_id":"client_1","display_name":"CI","status":"` + status + `","auth_method":"private_key_jwt","fingerprint":"fp_1","permissions":["projects:project:read"],"policy_version_at_issue":1,"created_at":"2026-05-06T00:00:00Z","created_by":"user_1","updated_at":"2026-05-06T00:00:00Z"}`
+	orgJSON := func(role string, version string) string {
+		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","displayName":"Guardian Intelligence","slug":"guardian","callerRole":"` + role + `","version":` + version + `,"orgAclVersion":1}`
 	}
-	var createKey string
-	var createBody map[string]any
+	var updateKey string
+	var updateBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer tok_iam_test" {
 			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		}
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization":
-			_, _ = w.Write([]byte(orgJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/me/organizations":
-			_, _ = w.Write([]byte(`[{"org_id":"370200542594579812","display_name":"Guardian Intelligence","slug":"guardian"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/organization/api-credentials":
-			createKey = r.Header.Get("Idempotency-Key")
-			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs":
+			_, _ = w.Write([]byte(`{"organizations":[` + orgJSON("owner", "1") + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT":
+			_, _ = w.Write([]byte(orgJSON("owner", "1")))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT":
+			updateKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&updateBody); err != nil {
 				t.Fatal(err)
 			}
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"credential":` + credentialJSON("active") + `,"issued_material":{"auth_method":"private_key_jwt","client_id":"client_1","token_url":"https://auth.example/oauth/v2/token","key_id":"key_1","key_content":"pem_test","fingerprint":"fp_1"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization/api-credentials":
-			_, _ = w.Write([]byte(`{"credentials":[` + credentialJSON("active") + `]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization/api-credentials/cred_1":
-			_, _ = w.Write([]byte(credentialJSON("active")))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/organization/api-credentials/cred_1/roll":
-			_, _ = w.Write([]byte(`{"credential":` + credentialJSON("active") + `,"issued_material":{"auth_method":"private_key_jwt","client_id":"client_1","token_url":"https://auth.example/oauth/v2/token","key_id":"key_2","key_content":"pem_roll","fingerprint":"fp_2"}}`))
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/organization/api-credentials/cred_1":
-			_, _ = w.Write([]byte(credentialJSON("revoked")))
+			_, _ = w.Write([]byte(orgJSON("owner", "2")))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1008,26 +998,23 @@ func TestAuthOrgsAndCredentialsUseIAMSDK(t *testing.T) {
 
 	var whoami bytes.Buffer
 	runCLI(t, &whoami, "auth", "whoami")
-	if !strings.Contains(whoami.String(), "Shovon Hasan") {
+	if !strings.Contains(whoami.String(), "Guardian Intelligence\towner") {
 		t.Fatalf("auth whoami output:\n%s", whoami.String())
 	}
 
 	runCLI(t, nil, "orgs", "use", "guardian")
-	var createOut bytes.Buffer
-	runCLI(t, &createOut, "orgs", "credentials", "create", "CI", "--permission", "projects:project:read", "--idempotency-key", "iam:test")
-	if createKey != "iam:test" {
-		t.Fatalf("create idempotency key = %q", createKey)
+	var orgsOut bytes.Buffer
+	runCLI(t, &orgsOut, "orgs", "list")
+	if !strings.Contains(orgsOut.String(), "guardian\torg_01J8QK0M2A7W4H3P9FQ6G1R8ZT") {
+		t.Fatalf("orgs list output:\n%s", orgsOut.String())
 	}
-	if createBody["display_name"] != "CI" || createBody["auth_method"] != "private_key_jwt" {
-		t.Fatalf("unexpected credential create body: %#v", createBody)
+	runCLI(t, nil, "orgs", "update", "--version", "1", "--display-name", "Guardian Intelligence", "--idempotency-key", "iam:test")
+	if updateKey != "iam:test" {
+		t.Fatalf("update idempotency key = %q", updateKey)
 	}
-	if !strings.Contains(createOut.String(), "key_content\tpem_test") {
-		t.Fatalf("credential create output:\n%s", createOut.String())
+	if updateBody["displayName"] != "Guardian Intelligence" || updateBody["version"] != float64(1) {
+		t.Fatalf("unexpected organization update body: %#v", updateBody)
 	}
-	runCLI(t, nil, "orgs", "credentials", "list")
-	runCLI(t, nil, "orgs", "credentials", "get", "cred_1")
-	runCLI(t, nil, "orgs", "credentials", "roll", "cred_1")
-	runCLI(t, nil, "orgs", "credentials", "revoke", "cred_1")
 }
 
 func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {
