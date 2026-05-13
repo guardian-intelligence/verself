@@ -16,6 +16,7 @@ import (
 
 type contractIR = contract.IR
 type bindingSpec = contract.BoundMember
+type payloadSpec = contract.PayloadBinding
 type shapeSpec = contract.Shape
 type memberSpec = contract.Member
 type operationSpec = contract.Operation
@@ -89,6 +90,8 @@ func (g generator) writeScalarAliases(out *bytes.Buffer) {
 			fmt.Fprintf(out, "export type %s = number;\n\n", shape.Name)
 		case "boolean":
 			fmt.Fprintf(out, "export type %s = boolean;\n\n", shape.Name)
+		case "blob":
+			fmt.Fprintf(out, "export type %s = Uint8Array;\n\n", shape.Name)
 		}
 	}
 }
@@ -121,17 +124,10 @@ func (g generator) writeLists(out *bytes.Buffer) {
 func (g generator) writeStructures(out *bytes.Buffer) {
 	for _, id := range g.sortedShapeIDs() {
 		shape := g.ir.Shapes[id]
-		if shape.Kind != "structure" || shape.Input {
+		if shape.Kind != "structure" || g.isOperationInput(id) || g.isOperationOutput(id) {
 			continue
 		}
-		if shape.Output && g.outputFlattens(id) {
-			continue
-		}
-		typeName := shape.Name
-		if shape.Output {
-			typeName = shape.Name + "Body"
-		}
-		g.writeInterface(out, typeName, shape.Members, nil)
+		g.writeInterface(out, shape.Name, g.documentMembers(shape, nil), nil)
 	}
 }
 
@@ -146,15 +142,28 @@ func (g generator) writeOperationTypes(out *bytes.Buffer) {
 		for _, member := range input.Members {
 			if isDocumentMember(member) {
 				bodyFields = append(bodyFields, member)
-			} else {
+			} else if !isPayloadMember(member) {
 				requestFields = append(requestFields, member)
 			}
 		}
-		if len(bodyFields) > 0 {
+		if op.Bindings.Payload != nil {
+			requestFields = append(requestFields, memberSpec{Name: "body", JSONName: "body", Target: op.Bindings.Payload.Target, Required: op.Bindings.Payload.Required})
+		} else if len(bodyFields) > 0 {
 			g.writeInterface(out, input.Name+"Body", bodyFields, nil)
 			requestFields = append(requestFields, memberSpec{Name: "body", JSONName: "body", Target: input.Name + "Body", Required: true})
 		}
-		g.writeInterface(out, op.Name+"Request", requestFields, map[string]string{"body": input.Name + "Body"})
+		bodyOverrides := map[string]string{}
+		if op.Bindings.Payload != nil {
+			bodyOverrides["body"] = g.payloadTSType(op.Bindings.Payload)
+		} else if len(bodyFields) > 0 {
+			bodyOverrides["body"] = input.Name + "Body"
+		}
+		g.writeInterface(out, op.Name+"Request", requestFields, bodyOverrides)
+		if op.Bindings.ResponsePayload != nil {
+			g.writeResponsePayloadOutput(out, op)
+		} else if output, ok := g.ir.Shapes[op.Output]; ok && !g.outputFlattens(op.Output) {
+			g.writeInterface(out, output.Name+"Body", g.documentMembers(output, op.Bindings.ResponseDocumentMembers), nil)
+		}
 	}
 }
 
@@ -174,6 +183,7 @@ func (g generator) writeTransportTypes(out *bytes.Buffer) {
 	out.WriteString("export interface TransportResult<T> {\n")
 	out.WriteString("  readonly response: Response;\n")
 	out.WriteString("  readonly bodyText: string;\n")
+	out.WriteString("  readonly bodyBytes?: Uint8Array;\n")
 	out.WriteString("  readonly data?: T;\n")
 	out.WriteString("  readonly error?: ErrorModel;\n")
 	out.WriteString("}\n\n")
@@ -196,6 +206,23 @@ func (g generator) writeTransportTypes(out *bytes.Buffer) {
 	out.WriteString("}\n\n")
 }
 
+func (g generator) writeResponsePayloadOutput(out *bytes.Buffer, op operationSpec) {
+	output, ok := g.ir.Shapes[op.Output]
+	if !ok {
+		return
+	}
+	fmt.Fprintf(out, "export interface %s {\n", output.Name)
+	for _, member := range g.responseHeaderMembers(op) {
+		fieldName := member.JSONName
+		if fieldName == "" {
+			fieldName = member.Name
+		}
+		fmt.Fprintf(out, "  readonly %s: %s;\n", fieldName, g.tsType(member.Target, false))
+	}
+	fmt.Fprintf(out, "  readonly body: %s;\n", g.payloadTSType(op.Bindings.ResponsePayload))
+	out.WriteString("}\n\n")
+}
+
 func (g generator) writeTransport(out *bytes.Buffer) {
 	out.WriteString("export function createIAMTransport(options: IAMTransportOptions): IAMTransport {\n")
 	out.WriteString("  const baseUrl = normalizeBaseUrl(options.baseUrl);\n")
@@ -213,8 +240,8 @@ func (g generator) writeTransport(out *bytes.Buffer) {
 	out.WriteString("    if (!headers.has(\"Accept\")) headers.set(\"Accept\", \"application/json\");\n")
 	out.WriteString("    let body: BodyInit | undefined;\n")
 	out.WriteString("    if (spec.body !== undefined) {\n")
-	out.WriteString("      if (!headers.has(\"Content-Type\")) headers.set(\"Content-Type\", \"application/json\");\n")
-	out.WriteString("      body = JSON.stringify(removeUndefined(spec.body));\n")
+	out.WriteString("      if (!headers.has(\"Content-Type\")) headers.set(\"Content-Type\", spec.requestContentType ?? \"application/json\");\n")
+	out.WriteString("      body = spec.requestBodyKind === \"bytes\" || spec.requestBodyKind === \"text\" ? spec.body as BodyInit : JSON.stringify(removeUndefined(spec.body));\n")
 	out.WriteString("    }\n")
 	out.WriteString("    for (const [name, value] of Object.entries(spec.headers ?? {})) {\n")
 	out.WriteString("      if (value !== undefined) headers.set(name, String(value));\n")
@@ -222,11 +249,23 @@ func (g generator) writeTransport(out *bytes.Buffer) {
 	out.WriteString("    const init: RequestInit = { headers, method: spec.method };\n")
 	out.WriteString("    if (body !== undefined) init.body = body;\n")
 	out.WriteString("    const response = await fetchFn(url, init);\n")
+	out.WriteString("    if (response.status === spec.successStatus) {\n")
+	out.WriteString("      if (spec.responseBodyKind === \"bytes\") {\n")
+	out.WriteString("        const bodyBytes = new Uint8Array(await response.arrayBuffer());\n")
+	out.WriteString("        const data = spec.responseFactory === undefined ? bodyBytes as T : spec.responseFactory(response, bodyBytes) as T;\n")
+	out.WriteString("        return { response, bodyText: \"\", bodyBytes, data };\n")
+	out.WriteString("      }\n")
+	out.WriteString("      const bodyText = await response.text();\n")
+	out.WriteString("      if (spec.responseBodyKind === \"text\") {\n")
+	out.WriteString("        const data = spec.responseFactory === undefined ? bodyText as T : spec.responseFactory(response, bodyText) as T;\n")
+	out.WriteString("        return { response, bodyText, data };\n")
+	out.WriteString("      }\n")
+	out.WriteString("      const payload = parseJSON(bodyText);\n")
+	out.WriteString("      const data = spec.responseFactory === undefined ? payload as T : spec.responseFactory(response, payload) as T;\n")
+	out.WriteString("      return { response, bodyText, data };\n")
+	out.WriteString("    }\n")
 	out.WriteString("    const bodyText = await response.text();\n")
 	out.WriteString("    const payload = parseJSON(bodyText);\n")
-	out.WriteString("    if (response.status === spec.successStatus) {\n")
-	out.WriteString("      return { response, bodyText, data: payload as T };\n")
-	out.WriteString("    }\n")
 	out.WriteString("    if (payload === undefined) return { response, bodyText };\n")
 	out.WriteString("    return { response, bodyText, error: payload as ErrorModel };\n")
 	out.WriteString("  }\n\n")
@@ -250,6 +289,10 @@ func (g generator) writeOperationMethod(out *bytes.Buffer, op operationSpec) {
 	fmt.Fprintf(out, "        method: %q,\n", op.HTTP.Method)
 	fmt.Fprintf(out, "        path: %s,\n", g.pathExpression(op))
 	fmt.Fprintf(out, "        successStatus: %d,\n", op.HTTP.SuccessStatus)
+	if op.Bindings.ResponsePayload != nil {
+		fmt.Fprintf(out, "        responseBodyKind: %q,\n", payloadBodyKind(op.Bindings.ResponsePayload))
+		g.writeResponseFactory(out, op)
+	}
 	if len(op.Bindings.Queries) > 0 {
 		out.WriteString("        query: {\n")
 		for _, binding := range sortedBindings(op.Bindings.Queries) {
@@ -266,11 +309,32 @@ func (g generator) writeOperationMethod(out *bytes.Buffer, op operationSpec) {
 		}
 		out.WriteString("        },\n")
 	}
-	if len(op.Bindings.DocumentMembers) > 0 {
+	if op.Bindings.Payload != nil {
+		out.WriteString("        body: input.body,\n")
+		fmt.Fprintf(out, "        requestBodyKind: %q,\n", payloadBodyKind(op.Bindings.Payload))
+		fmt.Fprintf(out, "        requestContentType: %q,\n", payloadMediaType(op.Bindings.Payload))
+	} else if len(op.Bindings.DocumentMembers) > 0 {
 		out.WriteString("        body: input.body,\n")
 	}
 	out.WriteString("      });\n")
 	out.WriteString("    },\n")
+}
+
+func (g generator) writeResponseFactory(out *bytes.Buffer, op operationSpec) {
+	if op.Bindings.ResponsePayload == nil {
+		return
+	}
+	out.WriteString("        responseFactory: (response, body) => ({\n")
+	for _, member := range g.responseHeaderMembers(op) {
+		binding := g.responseHeaderBinding(op, member.Name)
+		fieldName := member.JSONName
+		if fieldName == "" {
+			fieldName = member.Name
+		}
+		fmt.Fprintf(out, "          %s: response.headers.get(%q) ?? \"\",\n", fieldName, binding.Name)
+	}
+	out.WriteString("          body,\n")
+	out.WriteString("        }),\n")
 }
 
 func (g generator) writeHelpers(out *bytes.Buffer) {
@@ -281,6 +345,10 @@ func (g generator) writeHelpers(out *bytes.Buffer) {
 	out.WriteString("  readonly query?: Record<string, string | number | boolean | undefined>;\n")
 	out.WriteString("  readonly headers?: Record<string, string | number | boolean | undefined>;\n")
 	out.WriteString("  readonly body?: unknown;\n")
+	out.WriteString("  readonly requestBodyKind?: \"json\" | \"bytes\" | \"text\";\n")
+	out.WriteString("  readonly requestContentType?: string;\n")
+	out.WriteString("  readonly responseBodyKind?: \"json\" | \"bytes\" | \"text\";\n")
+	out.WriteString("  readonly responseFactory?: (response: Response, body: unknown) => unknown;\n")
 	out.WriteString("}\n\n")
 	out.WriteString("function normalizeBaseUrl(baseUrl: string): string {\n")
 	out.WriteString("  const trimmed = baseUrl.trim();\n")
@@ -354,13 +422,17 @@ func (g generator) tsType(target string, optional bool) string {
 			base = shape.Name
 		case "boolean":
 			base = shape.Name
+		case "blob":
+			base = shape.Name
 		case "enum", "structure", "list":
 			base = shape.Name
 		}
 	} else {
 		switch target {
-		case "smithy.api#String", "smithy.api#Timestamp", "smithy.api#Blob":
+		case "smithy.api#String", "smithy.api#Timestamp":
 			base = "string"
+		case "smithy.api#Blob":
+			base = "Uint8Array"
 		case "smithy.api#Integer", "smithy.api#Long":
 			base = "number"
 		case "smithy.api#Boolean":
@@ -390,6 +462,9 @@ func (g generator) successType(op operationSpec) string {
 	if !ok {
 		return "undefined"
 	}
+	if op.Bindings.ResponsePayload != nil {
+		return output.Name
+	}
 	for _, member := range output.Members {
 		if member.NestedProperties {
 			return g.tsType(member.Target, false)
@@ -398,11 +473,78 @@ func (g generator) successType(op operationSpec) string {
 	return output.Name + "Body"
 }
 
+func (g generator) documentMembers(shape shapeSpec, names []string) []memberSpec {
+	allowed := map[string]bool{}
+	for _, name := range names {
+		allowed[name] = true
+	}
+	out := make([]memberSpec, 0, len(shape.Members))
+	for _, member := range shape.Members {
+		if !isDocumentMember(member) {
+			continue
+		}
+		if len(allowed) > 0 && !allowed[member.Name] {
+			continue
+		}
+		out = append(out, member)
+	}
+	return out
+}
+
+func (g generator) isOperationInput(id string) bool {
+	for _, op := range g.ir.Operations {
+		if op.Input == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (g generator) isOperationOutput(id string) bool {
+	for _, op := range g.ir.Operations {
+		if op.Output == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (g generator) payloadTSType(payload *payloadSpec) string {
+	if payload == nil {
+		return "Uint8Array"
+	}
+	return g.tsType(payload.Target, false)
+}
+
+func (g generator) responseHeaderMembers(op operationSpec) []memberSpec {
+	output, ok := g.ir.Shapes[op.Output]
+	if !ok {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, binding := range op.Bindings.ResponseHeaders {
+		allowed[binding.Member] = true
+	}
+	out := make([]memberSpec, 0, len(allowed))
+	for _, member := range output.Members {
+		if allowed[member.Name] {
+			out = append(out, member)
+		}
+	}
+	return out
+}
+
+func (g generator) responseHeaderBinding(op operationSpec, memberName string) bindingSpec {
+	for _, binding := range op.Bindings.ResponseHeaders {
+		if binding.Member == memberName {
+			return binding
+		}
+	}
+	panic("missing response header binding " + op.Output + "." + memberName)
+}
+
 func (g generator) outputFlattens(id string) bool {
 	shape := g.ir.Shapes[id]
-	if !shape.Output {
-		return false
-	}
 	for _, member := range shape.Members {
 		if member.NestedProperties {
 			return true
@@ -446,6 +588,31 @@ func (g generator) serviceName() string {
 
 func isDocumentMember(member memberSpec) bool {
 	return member.HTTPBinding == nil || member.HTTPBinding.Location == "" || member.HTTPBinding.Location == "document"
+}
+
+func isPayloadMember(member memberSpec) bool {
+	return member.HTTPBinding != nil && member.HTTPBinding.Location == "payload"
+}
+
+func payloadMediaType(payload *payloadSpec) string {
+	if payload == nil || strings.TrimSpace(payload.MediaType) == "" {
+		return "application/octet-stream"
+	}
+	return strings.TrimSpace(payload.MediaType)
+}
+
+func payloadBodyKind(payload *payloadSpec) string {
+	if payload == nil {
+		return "bytes"
+	}
+	switch payload.Kind {
+	case "blob":
+		return "bytes"
+	case "string":
+		return "text"
+	default:
+		return "json"
+	}
 }
 
 func sortedBindings(bindings []bindingSpec) []bindingSpec {

@@ -3,10 +3,12 @@ namespace verself.source.v1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#mediaType
 use smithy.api#pattern
 use smithy.api#range
 use smithy.api#readonly
@@ -118,6 +120,12 @@ string ProviderRepositoryId
 string GitObjectSha
 @range(min: 0, max: 9007199254740991)
 long SafeByteCount
+@length(min: 1, max: 128)
+string MediaType
+@length(min: 1, max: 255)
+string ContentDisposition
+@mediaType("application/gzip")
+blob SourceArchive
 list Repositories {
     member: RepositorySummary
 }
@@ -630,5 +638,12 @@ structure DownloadSourceCheckoutArchiveInput {
 }
 structure DownloadSourceCheckoutArchiveOutput {
     @required
-    body: Blob
+    @httpHeader("Content-Type")
+    contentType: MediaType
+    @required
+    @httpHeader("Content-Disposition")
+    contentDisposition: ContentDisposition
+    @required
+    @httpPayload
+    body: SourceArchive
 }

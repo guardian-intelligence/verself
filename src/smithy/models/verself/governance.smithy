@@ -3,10 +3,12 @@ namespace verself.governance.v1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#mediaType
 use smithy.api#paginated
 use smithy.api#pattern
 use smithy.api#range
@@ -116,6 +118,8 @@ string ExportErrorMessage
 string MediaType
 @length(min: 1, max: 255)
 string ContentDisposition
+@mediaType("application/gzip")
+blob DataExportArchive
 @range(min: 1, max: 200)
 integer AuditEventsLimit
 enum AuditListOrder {
@@ -558,8 +562,9 @@ structure DownloadDataExportOutput {
     @protoField(number: 2)
     contentDisposition: ContentDisposition
     @required
+    @httpPayload
     @protoField(number: 3)
-    body: Blob
+    body: DataExportArchive
 }
 @http(method: "POST", uri: "/internal/v1/audit/events", code: 202)
 @identity(mode: "spiffe_mtls", audience: "governance-service", principals: ["workload"])

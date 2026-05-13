@@ -136,7 +136,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	governanceEditor := governanceRequestEditor(token, options.Traceparent)
-	generatedGovernance, err := governancecore.NewClientWithResponses(
+	generatedGovernance, err := governancecore.NewClient(
 		governanceURL,
 		governancecore.WithHTTPClient(httpClient),
 		governancecore.WithRequestEditorFn(governanceEditor),
@@ -232,7 +232,9 @@ func secretsRequestEditor(token, traceparent string) secretscore.RequestEditorFn
 }
 
 func editBearerRequest(ctx context.Context, req *http.Request, token, traceparent string) error {
-	req.Header.Set("Accept", "application/json")
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json")
+	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	if strings.TrimSpace(traceparent) != "" {

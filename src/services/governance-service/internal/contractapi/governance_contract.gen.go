@@ -19,6 +19,9 @@ type OperationDescriptor struct {
 	Audit               AuditDescriptor
 	RateLimitBucket     string
 	RequestBodyMaxBytes int64
+	RequestPayload      PayloadDescriptor
+	ResponsePayload     PayloadDescriptor
+	ResponseHeaders     []HeaderDescriptor
 	Idempotency         IdempotencyDescriptor
 	SDK                 SDKDescriptor
 	Problems            []ProblemDescriptor
@@ -46,6 +49,21 @@ type IdempotencyDescriptor struct {
 	Policy string
 	Header string
 	Member string
+}
+
+type PayloadDescriptor struct {
+	Member    string
+	Target    string
+	Kind      string
+	MediaType string
+	Streaming bool
+	Sensitive bool
+	Required  bool
+}
+
+type HeaderDescriptor struct {
+	Member string
+	Name   string
 }
 
 type SDKDescriptor struct {
@@ -107,6 +125,8 @@ type AuditTargetID string
 type AuditTargetType string
 
 type ContentDisposition string
+
+type DataExportArchive []byte
 
 type DataExportID string
 
@@ -386,14 +406,10 @@ type GetDataExportOutput struct {
 	Body GetDataExportOutputBody
 }
 
-type DownloadDataExportOutputBody struct {
-	ContentType        MediaType          `json:"contentType" required:"true" minLength:"1" maxLength:"255"`
-	ContentDisposition ContentDisposition `json:"contentDisposition" required:"true" minLength:"1" maxLength:"255"`
-	Body               string             `json:"body" required:"true"`
-}
-
 type DownloadDataExportOutput struct {
-	Body DownloadDataExportOutputBody
+	ContentType        MediaType          `header:"Content-Type" required:"true" minLength:"1" maxLength:"255"`
+	ContentDisposition ContentDisposition `header:"Content-Disposition" required:"true" minLength:"1" maxLength:"255"`
+	Body               []byte
 }
 
 var Operations = []OperationDescriptor{
@@ -418,6 +434,9 @@ var ListAuditEvents = Operation[ListAuditEventsInput, ListAuditEventsOutput]{
 		Audit:               AuditDescriptor{Event: "governance.audit_log.list", Resource: "audit_log", Action: "list"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
 		SDK:                 SDKDescriptor{Module: "governance.audit", Method: "listEvents", Paginated: true, Retryable: true},
 		Problems: []ProblemDescriptor{
@@ -443,6 +462,9 @@ var ListDataExports = Operation[ListDataExportsInput, ListDataExportsOutput]{
 		Audit:               AuditDescriptor{Event: "governance.audit_log.export.list", Resource: "data_export", Action: "list"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
 		SDK:                 SDKDescriptor{Module: "governance.exports", Method: "list", Paginated: false, Retryable: true},
 		Problems: []ProblemDescriptor{
@@ -468,6 +490,9 @@ var CreateDataExport = Operation[CreateDataExportInput, CreateDataExportOutput]{
 		Audit:               AuditDescriptor{Event: "governance.audit_log.export.create", Resource: "data_export", Action: "create"},
 		RateLimitBucket:     "export_create",
 		RequestBodyMaxBytes: 16384,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
 		SDK:                 SDKDescriptor{Module: "governance.exports", Method: "create", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
@@ -496,6 +521,9 @@ var GetDataExport = Operation[GetDataExportInput, GetDataExportOutput]{
 		Audit:               AuditDescriptor{Event: "governance.audit_log.export.read", Resource: "data_export", Action: "read"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
 		SDK:                 SDKDescriptor{Module: "governance.exports", Method: "get", Paginated: false, Retryable: true},
 		Problems: []ProblemDescriptor{
@@ -522,8 +550,14 @@ var DownloadDataExport = Operation[DownloadDataExportInput, DownloadDataExportOu
 		Audit:               AuditDescriptor{Event: "governance.audit_log.export.download", Resource: "data_export", Action: "download"},
 		RateLimitBucket:     "export_download",
 		RequestBodyMaxBytes: 0,
-		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
-		SDK:                 SDKDescriptor{Module: "governance.exports", Method: "download", Paginated: false, Retryable: true},
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{Member: "body", Target: "verself.governance.v1#DataExportArchive", Kind: "blob", MediaType: "application/gzip", Streaming: false, Sensitive: false, Required: true},
+		ResponseHeaders: []HeaderDescriptor{
+			{Member: "contentDisposition", Name: "Content-Disposition"},
+			{Member: "contentType", Name: "Content-Type"},
+		},
+		Idempotency: IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:         SDKDescriptor{Module: "governance.exports", Method: "download", Paginated: false, Retryable: true},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},

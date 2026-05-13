@@ -18,12 +18,14 @@ import static com.verself.smithy.ir.VerselfTraitIds.HTTP;
 import static com.verself.smithy.ir.VerselfTraitIds.HTTP_ERROR;
 import static com.verself.smithy.ir.VerselfTraitIds.HTTP_HEADER;
 import static com.verself.smithy.ir.VerselfTraitIds.HTTP_LABEL;
+import static com.verself.smithy.ir.VerselfTraitIds.HTTP_PAYLOAD;
 import static com.verself.smithy.ir.VerselfTraitIds.HTTP_QUERY;
 import static com.verself.smithy.ir.VerselfTraitIds.IDEMPOTENCY_TOKEN;
 import static com.verself.smithy.ir.VerselfTraitIds.IDEMPOTENT;
 import static com.verself.smithy.ir.VerselfTraitIds.IDENTITY;
 import static com.verself.smithy.ir.VerselfTraitIds.INPUT;
 import static com.verself.smithy.ir.VerselfTraitIds.LENGTH;
+import static com.verself.smithy.ir.VerselfTraitIds.MEDIA_TYPE;
 import static com.verself.smithy.ir.VerselfTraitIds.NESTED_PROPERTIES;
 import static com.verself.smithy.ir.VerselfTraitIds.NOT_RESOURCE_PROPERTY;
 import static com.verself.smithy.ir.VerselfTraitIds.OUTPUT;
@@ -40,6 +42,7 @@ import static com.verself.smithy.ir.VerselfTraitIds.REQUIRED;
 import static com.verself.smithy.ir.VerselfTraitIds.SDK;
 import static com.verself.smithy.ir.VerselfTraitIds.SENSITIVE;
 import static com.verself.smithy.ir.VerselfTraitIds.SERVICE_RUNTIME;
+import static com.verself.smithy.ir.VerselfTraitIds.STREAMING;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -118,6 +121,13 @@ final class VerselfIrJsonEmitter {
     if (!constraints.isEmpty()) {
       builder.withMember("constraints", constraints);
     }
+    String mediaType = stringTrait(shape, MEDIA_TYPE);
+    if (!mediaType.isEmpty()) {
+      builder.withMember("mediaType", mediaType);
+    }
+    if (shape.hasTrait(STREAMING)) {
+      builder.withMember("streaming", true);
+    }
     if (shape.hasTrait(SENSITIVE)) {
       builder.withMember("sensitive", true);
     }
@@ -190,6 +200,13 @@ final class VerselfIrJsonEmitter {
       return Optional.of(
           Node.objectNodeBuilder()
               .withMember("location", "label")
+              .withMember("name", member.getMemberName())
+              .build());
+    }
+    if (member.hasTrait(HTTP_PAYLOAD)) {
+      return Optional.of(
+          Node.objectNodeBuilder()
+              .withMember("location", "payload")
               .withMember("name", member.getMemberName())
               .build());
     }
@@ -270,28 +287,28 @@ final class VerselfIrJsonEmitter {
         .withMember(
             "errors",
             Node.fromStrings(errors.stream().map(ShapeId::toString).collect(Collectors.toList())))
-        .withMember("bindings", bindingsNode(model, input))
+        .withMember("bindings", bindingsNode(model, input, output))
         .withMember("verself", verselfNode(model, operation, input))
         .withMember("problems", problemsForErrors(model, errors))
         .build();
   }
 
-  private static ObjectNode bindingsNode(Model model, ShapeId inputId) {
-    Shape shape =
-        model
-            .getShape(inputId)
-            .orElseThrow(() -> new SmithyBuildException("missing input " + inputId));
-    StructureShape input =
-        shape
-            .asStructureShape()
-            .orElseThrow(() -> new SmithyBuildException(inputId + " is not a structure input"));
+  private static ObjectNode bindingsNode(Model model, ShapeId inputId, ShapeId outputId) {
+    StructureShape input = structureShape(model, inputId, "input");
+    StructureShape output = structureShape(model, outputId, "output");
     List<Node> labels = new ArrayList<>();
     List<Node> headers = new ArrayList<>();
     List<Node> queries = new ArrayList<>();
     List<String> documentMembers = new ArrayList<>();
+    Optional<ObjectNode> payload = Optional.empty();
     for (MemberShape member : orderedMembers(input)) {
       if (member.hasTrait(HTTP_LABEL)) {
         labels.add(bindingMemberNode(member, member.getMemberName()));
+      } else if (member.hasTrait(HTTP_PAYLOAD)) {
+        if (payload.isPresent()) {
+          throw new SmithyBuildException(inputId + " has multiple @httpPayload members");
+        }
+        payload = Optional.of(payloadBindingNode(model, member));
       } else if (!stringTrait(member, HTTP_HEADER).isEmpty()) {
         headers.add(bindingMemberNode(member, stringTrait(member, HTTP_HEADER)));
       } else if (!stringTrait(member, HTTP_QUERY).isEmpty()) {
@@ -300,19 +317,79 @@ final class VerselfIrJsonEmitter {
         documentMembers.add(member.getMemberName());
       }
     }
+    if (payload.isPresent() && !documentMembers.isEmpty()) {
+      throw new SmithyBuildException(inputId + " cannot mix @httpPayload and document members");
+    }
+
+    List<Node> responseHeaders = new ArrayList<>();
+    List<String> responseDocumentMembers = new ArrayList<>();
+    Optional<ObjectNode> responsePayload = Optional.empty();
+    for (MemberShape member : orderedMembers(output)) {
+      if (member.hasTrait(HTTP_PAYLOAD)) {
+        if (responsePayload.isPresent()) {
+          throw new SmithyBuildException(outputId + " has multiple @httpPayload members");
+        }
+        responsePayload = Optional.of(payloadBindingNode(model, member));
+      } else if (!stringTrait(member, HTTP_HEADER).isEmpty()) {
+        responseHeaders.add(bindingMemberNode(member, stringTrait(member, HTTP_HEADER)));
+      } else {
+        responseDocumentMembers.add(member.getMemberName());
+      }
+    }
+    if (responsePayload.isPresent() && !responseDocumentMembers.isEmpty()) {
+      throw new SmithyBuildException(outputId + " cannot mix @httpPayload and document members");
+    }
+
     documentMembers.sort(String::compareTo);
-    return Node.objectNodeBuilder()
-        .withMember("labels", Node.fromNodes(labels))
-        .withMember("headers", Node.fromNodes(headers))
-        .withMember("queries", Node.fromNodes(queries))
-        .withMember("documentMembers", Node.fromStrings(documentMembers))
-        .build();
+    responseDocumentMembers.sort(String::compareTo);
+    ObjectNode.Builder builder =
+        Node.objectNodeBuilder()
+            .withMember("labels", Node.fromNodes(labels))
+            .withMember("headers", Node.fromNodes(headers))
+            .withMember("queries", Node.fromNodes(queries))
+            .withMember("documentMembers", Node.fromStrings(documentMembers))
+            .withMember("responseHeaders", Node.fromNodes(responseHeaders))
+            .withMember("responseDocumentMembers", Node.fromStrings(responseDocumentMembers));
+    payload.ifPresent(value -> builder.withMember("payload", value));
+    responsePayload.ifPresent(value -> builder.withMember("responsePayload", value));
+    return builder.build();
+  }
+
+  private static StructureShape structureShape(Model model, ShapeId id, String role) {
+    Shape shape =
+        model
+            .getShape(id)
+            .orElseThrow(() -> new SmithyBuildException("missing " + role + " " + id));
+    return shape
+        .asStructureShape()
+        .orElseThrow(() -> new SmithyBuildException(id + " is not a structure " + role));
   }
 
   private static ObjectNode bindingMemberNode(MemberShape member, String wireName) {
     return Node.objectNodeBuilder()
         .withMember("member", member.getMemberName())
         .withMember("name", wireName)
+        .build();
+  }
+
+  private static ObjectNode payloadBindingNode(Model model, MemberShape member) {
+    Optional<Shape> target = model.getShape(member.getTarget());
+    String kind =
+        target
+            .map(shape -> shape.getType().toString())
+            .orElseGet(() -> localName(member.getTarget().toString()).toLowerCase());
+    String mediaType = target.map(shape -> stringTrait(shape, MEDIA_TYPE)).orElse("");
+    boolean streaming = target.map(shape -> shape.hasTrait(STREAMING)).orElse(false);
+    boolean sensitive =
+        member.hasTrait(SENSITIVE) || target.map(shape -> shape.hasTrait(SENSITIVE)).orElse(false);
+    return Node.objectNodeBuilder()
+        .withMember("member", member.getMemberName())
+        .withMember("target", member.getTarget().toString())
+        .withMember("kind", kind)
+        .withMember("mediaType", mediaType)
+        .withMember("streaming", streaming)
+        .withMember("sensitive", sensitive)
+        .withMember("required", member.hasTrait(REQUIRED))
         .build();
   }
 

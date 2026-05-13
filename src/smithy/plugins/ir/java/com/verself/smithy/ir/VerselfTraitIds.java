@@ -22,11 +22,13 @@ final class VerselfTraitIds {
   static final String HTTP_ERROR = "smithy.api#httpError";
   static final String HTTP_HEADER = "smithy.api#httpHeader";
   static final String HTTP_LABEL = "smithy.api#httpLabel";
+  static final String HTTP_PAYLOAD = "smithy.api#httpPayload";
   static final String HTTP_QUERY = "smithy.api#httpQuery";
   static final String IDEMPOTENCY_TOKEN = "smithy.api#idempotencyToken";
   static final String IDEMPOTENT = "smithy.api#idempotent";
   static final String INPUT = "smithy.api#input";
   static final String LENGTH = "smithy.api#length";
+  static final String MEDIA_TYPE = "smithy.api#mediaType";
   static final String NESTED_PROPERTIES = "smithy.api#nestedProperties";
   static final String OUTPUT = "smithy.api#output";
   static final String PAGINATED = "smithy.api#paginated";
@@ -35,6 +37,7 @@ final class VerselfTraitIds {
   static final String READONLY = "smithy.api#readonly";
   static final String REQUIRED = "smithy.api#required";
   static final String SENSITIVE = "smithy.api#sensitive";
+  static final String STREAMING = "smithy.api#streaming";
 
   private VerselfTraitIds() {}
 }

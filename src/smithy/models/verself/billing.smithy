@@ -3,10 +3,12 @@ namespace verself.billing.v1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#mediaType
 use smithy.api#pattern
 use smithy.api#readonly
 use smithy.api#required
@@ -88,6 +90,8 @@ string BillingWindowId
 string BillingSourceRef
 @length(min: 1, max: 255)
 string BillingSourceType
+@mediaType("application/json")
+blob StripeWebhookPayload
 @length(min: 1, max: 255)
 string ActorId
 @pattern("^[0-9]+$")
@@ -599,6 +603,7 @@ structure StripeWebhookInput {
     @httpHeader("Stripe-Signature")
     signature: String
     @required
-    body: Blob
+    @httpPayload
+    body: StripeWebhookPayload
 }
 structure StripeWebhookOutput {}

@@ -18,6 +18,7 @@ import (
 type contractIR = contract.IR
 type bindingSpec = contract.BoundMember
 type enumValueSpec = contract.EnumValue
+type payloadSpec = contract.PayloadBinding
 type shapeSpec = contract.Shape
 type memberSpec = contract.Member
 type operationSpec = contract.Operation
@@ -130,6 +131,8 @@ func (g generator) writeScalarAliases(out *bytes.Buffer) {
 			fmt.Fprintf(out, "type %s = int64\n\n", shape.Name)
 		case "boolean":
 			fmt.Fprintf(out, "type %s = bool\n\n", shape.Name)
+		case "blob":
+			fmt.Fprintf(out, "type %s = []byte\n\n", shape.Name)
 		}
 	}
 }
@@ -164,17 +167,10 @@ func (g generator) writeLists(out *bytes.Buffer) {
 func (g generator) writeStructures(out *bytes.Buffer) {
 	for _, id := range g.sortedShapeIDs() {
 		shape := g.ir.Shapes[id]
-		if shape.Kind != "structure" || shape.Input {
+		if shape.Kind != "structure" || g.isOperationInput(id) || g.isOperationOutput(id) {
 			continue
 		}
-		if shape.Output && g.outputFlattens(id) {
-			continue
-		}
-		typeName := shape.Name
-		if shape.Output {
-			typeName = shape.Name + "Body"
-		}
-		g.writeStruct(out, typeName, shape.Members, nil)
+		g.writeStruct(out, shape.Name, g.documentMembers(shape, nil), nil)
 	}
 }
 
@@ -185,21 +181,34 @@ func (g generator) writeOperationTypes(out *bytes.Buffer) {
 		if !ok {
 			continue
 		}
-		requestFields := make([]memberSpec, 0, len(input.Members))
+		requestFields := make([]memberSpec, 0, len(input.Members)+1)
 		bodyFields := make([]memberSpec, 0, len(input.Members))
 		for _, member := range input.Members {
 			if isDocumentMember(member) {
 				bodyFields = append(bodyFields, member)
-			} else {
+			} else if !isPayloadMember(member) {
 				requestFields = append(requestFields, member)
 			}
 		}
-		if len(bodyFields) > 0 {
+		if op.Bindings.Payload != nil {
+			requestFields = append(requestFields, memberSpec{Name: "body", Target: op.Bindings.Payload.Target, JSONName: "body", Required: op.Bindings.Payload.Required})
+		} else if len(bodyFields) > 0 {
 			g.writeStruct(out, input.Name+"Body", bodyFields, nil)
 			bodyMember := memberSpec{Name: "body", Target: input.Name + "Body", JSONName: "body", Required: true}
 			requestFields = append(requestFields, bodyMember)
 		}
-		g.writeStruct(out, op.Name+"Request", requestFields, map[string]string{"body": input.Name + "Body"})
+		bodyOverrides := map[string]string{}
+		if op.Bindings.Payload != nil {
+			bodyOverrides["body"] = g.payloadGoType(op.Bindings.Payload)
+		} else if len(bodyFields) > 0 {
+			bodyOverrides["body"] = input.Name + "Body"
+		}
+		g.writeStruct(out, op.Name+"Request", requestFields, bodyOverrides)
+		if op.Bindings.ResponsePayload != nil {
+			g.writeResponsePayloadOutput(out, op)
+		} else if output, ok := g.ir.Shapes[op.Output]; ok && !g.outputFlattens(op.Output) {
+			g.writeStruct(out, output.Name+"Body", g.documentMembers(output, op.Bindings.ResponseDocumentMembers), nil)
+		}
 		fmt.Fprintf(out, "type %sResponse struct {\n", op.Name)
 		out.WriteString("\tStatusCode int\n")
 		out.WriteString("\tBody []byte\n")
@@ -229,6 +238,19 @@ func (g generator) writeStruct(out *bytes.Buffer, name string, members []memberS
 		}
 		fmt.Fprintf(out, "\t%s %s%s\n", fieldName, fieldType, tag)
 	}
+	out.WriteString("}\n\n")
+}
+
+func (g generator) writeResponsePayloadOutput(out *bytes.Buffer, op operationSpec) {
+	output, ok := g.ir.Shapes[op.Output]
+	if !ok {
+		return
+	}
+	fmt.Fprintf(out, "type %s struct {\n", output.Name)
+	for _, member := range g.responseHeaderMembers(op) {
+		fmt.Fprintf(out, "\t%s %s\n", exportedIdentifier(member.Name), g.goType(member.Target, false))
+	}
+	fmt.Fprintf(out, "\tBody %s\n", g.payloadGoType(op.Bindings.ResponsePayload))
 	out.WriteString("}\n\n")
 }
 
@@ -297,7 +319,19 @@ func (g generator) writeOperationMethods(out *bytes.Buffer) {
 			}
 			out.WriteString("\tendpoint.RawQuery = query.Encode()\n")
 		}
-		if len(op.Bindings.DocumentMembers) > 0 {
+		if op.Bindings.Payload != nil {
+			switch op.Bindings.Payload.Kind {
+			case "blob":
+				out.WriteString("\trequestBody := []byte(request.Body)\n")
+				fmt.Fprintf(out, "\treq, err := http.NewRequestWithContext(ctx, %q, endpoint.String(), bytes.NewReader(requestBody))\n", op.HTTP.Method)
+			case "string":
+				fmt.Fprintf(out, "\treq, err := http.NewRequestWithContext(ctx, %q, endpoint.String(), strings.NewReader(string(request.Body)))\n", op.HTTP.Method)
+			default:
+				out.WriteString("\trequestBody, err := json.Marshal(request.Body)\n")
+				out.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
+				fmt.Fprintf(out, "\treq, err := http.NewRequestWithContext(ctx, %q, endpoint.String(), bytes.NewReader(requestBody))\n", op.HTTP.Method)
+			}
+		} else if len(op.Bindings.DocumentMembers) > 0 {
 			out.WriteString("\trequestBody, err := json.Marshal(request.Body)\n")
 			out.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
 			fmt.Fprintf(out, "\treq, err := http.NewRequestWithContext(ctx, %q, endpoint.String(), bytes.NewReader(requestBody))\n", op.HTTP.Method)
@@ -305,8 +339,10 @@ func (g generator) writeOperationMethods(out *bytes.Buffer) {
 			fmt.Fprintf(out, "\treq, err := http.NewRequestWithContext(ctx, %q, endpoint.String(), nil)\n", op.HTTP.Method)
 		}
 		out.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
-		out.WriteString("\treq.Header.Set(\"Accept\", \"application/json\")\n")
-		if len(op.Bindings.DocumentMembers) > 0 {
+		fmt.Fprintf(out, "\treq.Header.Set(\"Accept\", %q)\n", g.acceptMediaType(op))
+		if op.Bindings.Payload != nil {
+			fmt.Fprintf(out, "\treq.Header.Set(\"Content-Type\", %q)\n", payloadMediaType(op.Bindings.Payload))
+		} else if len(op.Bindings.DocumentMembers) > 0 {
 			out.WriteString("\treq.Header.Set(\"Content-Type\", \"application/json\")\n")
 		}
 		for _, binding := range sortedBindings(op.Bindings.Headers) {
@@ -338,10 +374,14 @@ func (g generator) writeResponseParsers(out *bytes.Buffer) {
 		out.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
 		fmt.Fprintf(out, "\tresult := &%sResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}\n", op.Name)
 		fmt.Fprintf(out, "\tif resp.StatusCode == %d {\n", op.HTTP.SuccessStatus)
-		fmt.Fprintf(out, "\t\tvar decoded %s\n", g.successType(op))
-		out.WriteString("\t\tif len(body) > 0 {\n")
-		out.WriteString("\t\t\tif err := json.Unmarshal(body, &decoded); err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n")
-		out.WriteString("\t\t}\n")
+		if op.Bindings.ResponsePayload != nil {
+			g.writeResponsePayloadDecode(out, op)
+		} else {
+			fmt.Fprintf(out, "\t\tvar decoded %s\n", g.successType(op))
+			out.WriteString("\t\tif len(body) > 0 {\n")
+			out.WriteString("\t\t\tif err := json.Unmarshal(body, &decoded); err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n")
+			out.WriteString("\t\t}\n")
+		}
 		out.WriteString("\t\tresult.Result = &decoded\n")
 		out.WriteString("\t\treturn result, nil\n")
 		out.WriteString("\t}\n")
@@ -376,6 +416,27 @@ func (g generator) writeHelpers(out *bytes.Buffer) {
 	g.imports["encoding/json"] = true
 }
 
+func (g generator) writeResponsePayloadDecode(out *bytes.Buffer, op operationSpec) {
+	fmt.Fprintf(out, "\t\tdecoded := %s{\n", g.successType(op))
+	for _, member := range g.responseHeaderMembers(op) {
+		binding := g.responseHeaderBinding(op, member.Name)
+		fmt.Fprintf(out, "\t\t\t%s: %s(resp.Header.Get(%q)),\n", exportedIdentifier(member.Name), g.goType(member.Target, false), binding.Name)
+	}
+	switch op.Bindings.ResponsePayload.Kind {
+	case "blob":
+		fmt.Fprintf(out, "\t\t\tBody: %s(append([]byte(nil), body...)),\n", g.payloadGoType(op.Bindings.ResponsePayload))
+	case "string":
+		fmt.Fprintf(out, "\t\t\tBody: %s(string(body)),\n", g.payloadGoType(op.Bindings.ResponsePayload))
+	default:
+		out.WriteString("\t\t}\n")
+		out.WriteString("\t\tif len(body) > 0 {\n")
+		out.WriteString("\t\t\tif err := json.Unmarshal(body, &decoded.Body); err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n")
+		out.WriteString("\t\t}\n")
+		return
+	}
+	out.WriteString("\t\t}\n")
+}
+
 func (g generator) sortedShapeIDs() []string {
 	ids := make([]string, 0, len(g.ir.Shapes))
 	for id := range g.ir.Shapes {
@@ -402,7 +463,7 @@ func (g generator) goType(target string, optional bool) string {
 	if strings.Contains(target, "#") {
 		if shape, ok := g.ir.Shapes[target]; ok {
 			switch shape.Kind {
-			case "string", "integer", "long", "boolean", "enum", "structure", "list":
+			case "string", "integer", "long", "boolean", "blob", "enum", "structure", "list":
 				name := shape.Name
 				if optional {
 					return "*" + name
@@ -412,11 +473,13 @@ func (g generator) goType(target string, optional bool) string {
 		}
 	}
 	switch target {
-	case "smithy.api#String", "smithy.api#Timestamp", "smithy.api#Blob":
+	case "smithy.api#String", "smithy.api#Timestamp":
 		if optional {
 			return "*string"
 		}
 		return "string"
+	case "smithy.api#Blob":
+		return "[]byte"
 	case "smithy.api#Integer", "smithy.api#Long":
 		if optional {
 			return "*int64"
@@ -454,6 +517,9 @@ func (g generator) successType(op operationSpec) string {
 	if !ok {
 		return "struct{}"
 	}
+	if op.Bindings.ResponsePayload != nil {
+		return output.Name
+	}
 	for _, member := range output.Members {
 		if member.NestedProperties {
 			return g.goType(member.Target, false)
@@ -462,11 +528,90 @@ func (g generator) successType(op operationSpec) string {
 	return output.Name + "Body"
 }
 
+func (g generator) documentMembers(shape shapeSpec, names []string) []memberSpec {
+	allowed := map[string]bool{}
+	for _, name := range names {
+		allowed[name] = true
+	}
+	out := make([]memberSpec, 0, len(shape.Members))
+	for _, member := range shape.Members {
+		if !isDocumentMember(member) {
+			continue
+		}
+		if len(allowed) > 0 && !allowed[member.Name] {
+			continue
+		}
+		out = append(out, member)
+	}
+	return out
+}
+
+func (g generator) isOperationInput(id string) bool {
+	for _, op := range g.ir.Operations {
+		if op.Input == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (g generator) isOperationOutput(id string) bool {
+	for _, op := range g.ir.Operations {
+		if op.Output == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (g generator) payloadGoType(payload *payloadSpec) string {
+	if payload == nil {
+		return "[]byte"
+	}
+	switch payload.Kind {
+	case "blob", "string":
+		return g.goType(payload.Target, false)
+	default:
+		return g.goType(payload.Target, false)
+	}
+}
+
+func (g generator) acceptMediaType(op operationSpec) string {
+	if op.Bindings.ResponsePayload != nil {
+		return payloadMediaType(op.Bindings.ResponsePayload)
+	}
+	return "application/json"
+}
+
+func (g generator) responseHeaderMembers(op operationSpec) []memberSpec {
+	output, ok := g.ir.Shapes[op.Output]
+	if !ok {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, binding := range op.Bindings.ResponseHeaders {
+		allowed[binding.Member] = true
+	}
+	out := make([]memberSpec, 0, len(allowed))
+	for _, member := range output.Members {
+		if allowed[member.Name] {
+			out = append(out, member)
+		}
+	}
+	return out
+}
+
+func (g generator) responseHeaderBinding(op operationSpec, memberName string) bindingSpec {
+	for _, binding := range op.Bindings.ResponseHeaders {
+		if binding.Member == memberName {
+			return binding
+		}
+	}
+	panic("missing response header binding " + op.Output + "." + memberName)
+}
+
 func (g generator) outputFlattens(id string) bool {
 	shape := g.ir.Shapes[id]
-	if !shape.Output {
-		return false
-	}
 	for _, member := range shape.Members {
 		if member.NestedProperties {
 			return true
@@ -487,6 +632,17 @@ func (g generator) serviceName() string {
 
 func isDocumentMember(member memberSpec) bool {
 	return member.HTTPBinding == nil || member.HTTPBinding.Location == "" || member.HTTPBinding.Location == "document"
+}
+
+func isPayloadMember(member memberSpec) bool {
+	return member.HTTPBinding != nil && member.HTTPBinding.Location == "payload"
+}
+
+func payloadMediaType(payload *payloadSpec) string {
+	if payload == nil || strings.TrimSpace(payload.MediaType) == "" {
+		return "application/octet-stream"
+	}
+	return strings.TrimSpace(payload.MediaType)
 }
 
 func sortedBindings(bindings []bindingSpec) []bindingSpec {

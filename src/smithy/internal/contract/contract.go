@@ -39,6 +39,8 @@ type ServiceRuntime struct {
 type Shape struct {
 	Kind        string      `json:"kind"`
 	Name        string      `json:"name"`
+	MediaType   string      `json:"mediaType"`
+	Streaming   bool        `json:"streaming"`
 	Sensitive   bool        `json:"sensitive"`
 	Input       bool        `json:"input"`
 	Output      bool        `json:"output"`
@@ -114,15 +116,29 @@ type HTTPRoute struct {
 }
 
 type HTTPBindingPlan struct {
-	Labels          []BoundMember `json:"labels"`
-	Headers         []BoundMember `json:"headers"`
-	Queries         []BoundMember `json:"queries"`
-	DocumentMembers []string      `json:"documentMembers"`
+	Labels                  []BoundMember   `json:"labels"`
+	Headers                 []BoundMember   `json:"headers"`
+	Queries                 []BoundMember   `json:"queries"`
+	DocumentMembers         []string        `json:"documentMembers"`
+	Payload                 *PayloadBinding `json:"payload,omitempty"`
+	ResponseHeaders         []BoundMember   `json:"responseHeaders"`
+	ResponseDocumentMembers []string        `json:"responseDocumentMembers"`
+	ResponsePayload         *PayloadBinding `json:"responsePayload,omitempty"`
 }
 
 type BoundMember struct {
 	Member string `json:"member"`
 	Name   string `json:"name"`
+}
+
+type PayloadBinding struct {
+	Member    string `json:"member"`
+	Target    string `json:"target"`
+	Kind      string `json:"kind"`
+	MediaType string `json:"mediaType"`
+	Streaming bool   `json:"streaming"`
+	Sensitive bool   `json:"sensitive"`
+	Required  bool   `json:"required"`
 }
 
 type OperationSemantics struct {

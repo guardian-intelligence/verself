@@ -181,14 +181,8 @@ func getExport(svc *governance.Service) func(context.Context, governance.Princip
 	}
 }
 
-type downloadOutput struct {
-	ContentType        string `header:"Content-Type"`
-	ContentDisposition string `header:"Content-Disposition"`
-	Body               []byte
-}
-
-func downloadExport(svc *governance.Service) func(context.Context, governance.Principal, *exportPathInput) (*downloadOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *exportPathInput) (*downloadOutput, error) {
+func downloadExport(svc *governance.Service) func(context.Context, governance.Principal, *exportPathInput) (*contractapi.DownloadDataExportOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *exportPathInput) (*contractapi.DownloadDataExportOutput, error) {
 		ctx, span := apiTracer.Start(ctx, "governance.export.download")
 		defer span.End()
 		job, err := svc.GetExport(ctx, principal, input.ExportID)
@@ -213,9 +207,9 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 			attribute.String("verself.export_id", job.ExportID.String()),
 			attribute.Int("verself.export_bytes", len(body)),
 		)
-		return &downloadOutput{
-			ContentType:        "application/gzip",
-			ContentDisposition: fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String()),
+		return &contractapi.DownloadDataExportOutput{
+			ContentType:        contractapi.MediaType("application/gzip"),
+			ContentDisposition: contractapi.ContentDisposition(fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String())),
 			Body:               body,
 		}, nil
 	}

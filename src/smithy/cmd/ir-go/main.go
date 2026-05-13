@@ -40,6 +40,8 @@ type serviceRuntimeSpec struct {
 type shapeSpec struct {
 	Kind        string          `json:"kind"`
 	Name        string          `json:"name"`
+	MediaType   string          `json:"mediaType"`
+	Streaming   bool            `json:"streaming"`
 	Constraints constraintsSpec `json:"constraints"`
 	Sensitive   bool            `json:"sensitive"`
 	Input       bool            `json:"input"`
@@ -117,15 +119,29 @@ type httpSpec struct {
 }
 
 type bindingsSpec struct {
-	Labels          []bindingSpec `json:"labels"`
-	Headers         []bindingSpec `json:"headers"`
-	Queries         []bindingSpec `json:"queries"`
-	DocumentMembers []string      `json:"documentMembers"`
+	Labels                  []bindingSpec `json:"labels"`
+	Headers                 []bindingSpec `json:"headers"`
+	Queries                 []bindingSpec `json:"queries"`
+	DocumentMembers         []string      `json:"documentMembers"`
+	Payload                 *payloadSpec  `json:"payload"`
+	ResponseHeaders         []bindingSpec `json:"responseHeaders"`
+	ResponseDocumentMembers []string      `json:"responseDocumentMembers"`
+	ResponsePayload         *payloadSpec  `json:"responsePayload"`
 }
 
 type bindingSpec struct {
 	Member string `json:"member"`
 	Name   string `json:"name"`
+}
+
+type payloadSpec struct {
+	Member    string `json:"member"`
+	Target    string `json:"target"`
+	Kind      string `json:"kind"`
+	MediaType string `json:"mediaType"`
+	Streaming bool   `json:"streaming"`
+	Sensitive bool   `json:"sensitive"`
+	Required  bool   `json:"required"`
 }
 
 type verselfSpec struct {
@@ -534,6 +550,10 @@ func openAPISchemaForShape(ir *contractIR, shape shapeSpec) map[string]any {
 		return schema
 	case "boolean":
 		return map[string]any{"type": "boolean"}
+	case "blob":
+		schema := map[string]any{"type": "string", "format": "byte"}
+		addOpenAPIConstraints(schema, shape.Constraints)
+		return schema
 	case "enum":
 		values := make([]string, 0, len(shape.Enum))
 		for _, value := range shape.Enum {
@@ -581,8 +601,10 @@ func openAPIObjectSchemaForMembers(ir *contractIR, members []memberSpec) map[str
 func openAPISchemaForTarget(ir *contractIR, target string) map[string]any {
 	if strings.HasPrefix(target, "smithy.api#") {
 		switch localName(target) {
-		case "String", "Blob":
+		case "String":
 			return map[string]any{"type": "string"}
+		case "Blob":
+			return map[string]any{"type": "string", "format": "byte"}
 		case "Timestamp":
 			return map[string]any{"type": "string", "format": "date-time"}
 		case "Integer":
@@ -596,6 +618,41 @@ func openAPISchemaForTarget(ir *contractIR, target string) map[string]any {
 		}
 	}
 	return map[string]any{"$ref": "#/components/schemas/" + goName(localName(target))}
+}
+
+func openAPIPayloadSchema(ir *contractIR, payload *payloadSpec) map[string]any {
+	if payload == nil {
+		return map[string]any{}
+	}
+	switch payload.Kind {
+	case "blob":
+		return map[string]any{"type": "string", "format": "binary"}
+	case "string":
+		return map[string]any{"type": "string"}
+	default:
+		return openAPISchemaForTarget(ir, payload.Target)
+	}
+}
+
+func payloadMediaType(payload *payloadSpec) string {
+	if payload == nil || strings.TrimSpace(payload.MediaType) == "" {
+		return "application/octet-stream"
+	}
+	return strings.TrimSpace(payload.MediaType)
+}
+
+func membersByName(shape shapeSpec, names []string) []memberSpec {
+	allowed := map[string]bool{}
+	for _, name := range names {
+		allowed[name] = true
+	}
+	members := make([]memberSpec, 0, len(names))
+	for _, member := range shape.Members {
+		if allowed[member.Name] {
+			members = append(members, member)
+		}
+	}
+	return members
 }
 
 func addOpenAPIConstraints(schema map[string]any, constraints constraintsSpec) {
@@ -695,6 +752,16 @@ func openAPIParameter(ir *contractIR, name string, in string, required bool, mem
 }
 
 func openAPIRequestBody(ir *contractIR, op operationSpec) map[string]any {
+	if op.Bindings.Payload != nil {
+		return map[string]any{
+			"required": op.Bindings.Payload.Required,
+			"content": map[string]any{
+				payloadMediaType(op.Bindings.Payload): map[string]any{
+					"schema": openAPIPayloadSchema(ir, op.Bindings.Payload),
+				},
+			},
+		}
+	}
 	if len(op.Bindings.DocumentMembers) == 0 {
 		return nil
 	}
@@ -722,16 +789,25 @@ func openAPIRequestBody(ir *contractIR, op operationSpec) map[string]any {
 }
 
 func openAPIResponses(ir *contractIR, op operationSpec) map[string]any {
-	out := map[string]any{
-		strconv.Itoa(op.HTTP.SuccessStatus): map[string]any{
-			"description": "Success",
-			"content": map[string]any{
-				"application/json": map[string]any{
-					"schema": openAPIOutputSchema(ir, op),
-				},
-			},
-		},
+	success := map[string]any{"description": "Success"}
+	headers := openAPIResponseHeaders(ir, op)
+	if len(headers) > 0 {
+		success["headers"] = headers
 	}
+	if op.Bindings.ResponsePayload != nil {
+		success["content"] = map[string]any{
+			payloadMediaType(op.Bindings.ResponsePayload): map[string]any{
+				"schema": openAPIPayloadSchema(ir, op.Bindings.ResponsePayload),
+			},
+		}
+	} else {
+		success["content"] = map[string]any{
+			"application/json": map[string]any{
+				"schema": openAPIOutputSchema(ir, op),
+			},
+		}
+	}
+	out := map[string]any{strconv.Itoa(op.HTTP.SuccessStatus): success}
 	for _, problem := range op.Problems {
 		status := strconv.Itoa(problem.Status)
 		if _, ok := out[status]; ok {
@@ -758,7 +834,26 @@ func openAPIOutputSchema(ir *contractIR, op operationSpec) map[string]any {
 	if nested := nestedOutputMember(output); nested != nil {
 		return openAPISchemaForTarget(ir, nested.Target)
 	}
+	if len(op.Bindings.ResponseDocumentMembers) > 0 {
+		return openAPIObjectSchemaForMembers(ir, membersByName(output, op.Bindings.ResponseDocumentMembers))
+	}
 	return openAPIObjectSchemaForMembers(ir, output.Members)
+}
+
+func openAPIResponseHeaders(ir *contractIR, op operationSpec) map[string]any {
+	if len(op.Bindings.ResponseHeaders) == 0 {
+		return nil
+	}
+	output := ir.Shapes[op.Output]
+	headers := map[string]any{}
+	for _, binding := range sortedBindings(op.Bindings.ResponseHeaders) {
+		if member, ok := inputMemberByName(output, binding.Member); ok {
+			headers[binding.Name] = map[string]any{
+				"schema": openAPISchemaForTarget(ir, member.Target),
+			}
+		}
+	}
+	return headers
 }
 
 func openAPIOperationSecurity(op operationSpec) []map[string][]string {
@@ -834,6 +929,9 @@ func writeRuntimeTypes(b *bytes.Buffer) {
 	Audit               AuditDescriptor
 	RateLimitBucket     string
 	RequestBodyMaxBytes int64
+	RequestPayload      PayloadDescriptor
+	ResponsePayload     PayloadDescriptor
+	ResponseHeaders     []HeaderDescriptor
 	Idempotency         IdempotencyDescriptor
 	SDK                 SDKDescriptor
 	Problems            []ProblemDescriptor
@@ -861,6 +959,21 @@ type IdempotencyDescriptor struct {
 	Policy string
 	Header string
 	Member string
+}
+
+type PayloadDescriptor struct {
+	Member    string
+	Target    string
+	Kind      string
+	MediaType string
+	Streaming bool
+	Sensitive bool
+	Required  bool
+}
+
+type HeaderDescriptor struct {
+	Member string
+	Name   string
 }
 
 type SDKDescriptor struct {
@@ -931,6 +1044,7 @@ func writeStructs(b *bytes.Buffer, ir *contractIR, ids []string) {
 			continue
 		}
 		if shape.Input {
+			op := operationForInput(ir, id)
 			transportMembers, bodyMembers := inputMemberSpecs(ir, shape)
 			if len(bodyMembers) > 0 {
 				fmt.Fprintf(b, "type %sBody struct {\n", goName(shape.Name))
@@ -947,7 +1061,9 @@ func writeStructs(b *bytes.Buffer, ir *contractIR, ids []string) {
 				}
 				fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
 			}
-			if len(bodyMembers) > 0 {
+			if op != nil && op.Bindings.Payload != nil {
+				fmt.Fprintf(b, "\tBody %s\n", payloadGoType(ir, op.Bindings.Payload))
+			} else if len(bodyMembers) > 0 {
 				fmt.Fprintf(b, "\tBody %sBody\n", goName(shape.Name))
 			}
 			fmt.Fprintln(b, "}\n")
@@ -966,6 +1082,15 @@ func writeOutputBodies(b *bytes.Buffer, ir *contractIR) {
 	written := map[string]bool{}
 	for _, op := range ir.Operations {
 		output := ir.Shapes[op.Output]
+		if op.Bindings.ResponsePayload != nil {
+			fmt.Fprintf(b, "type %s struct {\n", goName(output.Name))
+			for _, member := range headerMemberSpecs(ir, output, op.Bindings.ResponseHeaders) {
+				fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
+			}
+			fmt.Fprintf(b, "\tBody %s\n", payloadGoType(ir, op.Bindings.ResponsePayload))
+			fmt.Fprintln(b, "}\n")
+			continue
+		}
 		if nested := nestedOutputMember(output); nested != nil {
 			fmt.Fprintf(b, "type %s struct {\n\tBody %s\n}\n\n", goName(output.Name), goTypeForTarget(ir, nested.Target))
 			continue
@@ -974,7 +1099,7 @@ func writeOutputBodies(b *bytes.Buffer, ir *contractIR) {
 		if !written[bodyName] {
 			written[bodyName] = true
 			fmt.Fprintf(b, "type %s struct {\n", bodyName)
-			for _, member := range jsonMemberSpecsForStructure(ir, output) {
+			for _, member := range jsonMemberSpecsForMembers(ir, output, op.Bindings.ResponseDocumentMembers) {
 				fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
 			}
 			fmt.Fprintln(b, "}\n")
@@ -1006,6 +1131,13 @@ func writeDescriptors(b *bytes.Buffer, ir *contractIR) {
 		fmt.Fprintf(b, "\tAudit: AuditDescriptor{Event: %q, Resource: %q, Action: %q},\n", op.Verself.Audit.Event, op.Verself.Audit.Resource, op.Verself.Audit.Action)
 		fmt.Fprintf(b, "\tRateLimitBucket: %q,\n", op.Verself.RateLimit.Bucket)
 		fmt.Fprintf(b, "\tRequestBodyMaxBytes: %d,\n", op.Verself.RequestBudget.MaxBytes)
+		fmt.Fprintf(b, "\tRequestPayload: %s,\n", payloadDescriptorLiteral(op.Bindings.Payload))
+		fmt.Fprintf(b, "\tResponsePayload: %s,\n", payloadDescriptorLiteral(op.Bindings.ResponsePayload))
+		fmt.Fprintln(b, "\tResponseHeaders: []HeaderDescriptor{")
+		for _, header := range sortedBindings(op.Bindings.ResponseHeaders) {
+			fmt.Fprintf(b, "\t\t{Member: %q, Name: %q},\n", header.Member, header.Name)
+		}
+		fmt.Fprintln(b, "\t},")
 		fmt.Fprintf(b, "\tIdempotency: IdempotencyDescriptor{Policy: %q, Header: %q, Member: %q},\n", op.Verself.Idempotency.Policy, op.Verself.Idempotency.Header, op.Verself.Idempotency.Member)
 		fmt.Fprintf(b, "\tSDK: SDKDescriptor{Module: %q, Method: %q, Paginated: %t, Retryable: %t},\n", op.Verself.SDK.Module, op.Verself.SDK.Method, op.Verself.SDK.Paginated, op.Verself.SDK.Retryable)
 		fmt.Fprintln(b, "\tProblems: []ProblemDescriptor{")
@@ -1039,7 +1171,7 @@ func writeHandlerTypes(b *bytes.Buffer, ops []operationSpec, bindingName string)
 func classifyShapes(ir *contractIR) (scalars, enums, structs, lists []string) {
 	for id, shape := range ir.Shapes {
 		switch shape.Kind {
-		case "string", "integer", "long", "boolean":
+		case "string", "integer", "long", "boolean", "blob":
 			scalars = append(scalars, id)
 		case "enum":
 			enums = append(enums, id)
@@ -1057,11 +1189,56 @@ func classifyShapes(ir *contractIR) (scalars, enums, structs, lists []string) {
 }
 
 func jsonMemberSpecsForStructure(ir *contractIR, shape shapeSpec) []memberSpec {
+	names := make([]string, 0, len(shape.Members))
+	for _, member := range shape.Members {
+		if member.HTTPBinding != nil && member.HTTPBinding.Location != "document" {
+			continue
+		}
+		names = append(names, member.Name)
+	}
+	return jsonMemberSpecsForMembers(ir, shape, names)
+}
+
+func jsonMemberSpecsForMembers(ir *contractIR, shape shapeSpec, names []string) []memberSpec {
+	if len(names) == 0 && len(shape.Members) > 0 {
+		for _, member := range shape.Members {
+			if member.HTTPBinding == nil || member.HTTPBinding.Location == "document" {
+				names = append(names, member.Name)
+			}
+		}
+	}
+	allowed := map[string]bool{}
+	for _, name := range names {
+		allowed[name] = true
+	}
 	out := make([]memberSpec, 0, len(shape.Members))
 	for _, member := range shape.Members {
+		if !allowed[member.Name] {
+			continue
+		}
 		member.GoName = goName(member.Name)
 		member.Type = goTypeForMember(ir, member, false)
 		member.Tags = append(member.Tags, jsonTag(member.JSONName, member.Required))
+		member.Tags = append(member.Tags, constraintTags(ir.Shapes[member.Target].Constraints, member.Required)...)
+		out = append(out, member)
+	}
+	return out
+}
+
+func headerMemberSpecs(ir *contractIR, shape shapeSpec, bindings []bindingSpec) []memberSpec {
+	bindingByMember := map[string]bindingSpec{}
+	for _, binding := range bindings {
+		bindingByMember[binding.Member] = binding
+	}
+	out := make([]memberSpec, 0, len(bindings))
+	for _, member := range shape.Members {
+		binding, ok := bindingByMember[member.Name]
+		if !ok {
+			continue
+		}
+		member.GoName = goName(member.Name)
+		member.Type = goTypeForTarget(ir, member.Target)
+		member.Tags = append(member.Tags, fmt.Sprintf("header:%q", binding.Name))
 		member.Tags = append(member.Tags, constraintTags(ir.Shapes[member.Target].Constraints, member.Required)...)
 		out = append(out, member)
 	}
@@ -1080,6 +1257,9 @@ func inputMemberSpecs(ir *contractIR, shape shapeSpec) ([]memberSpec, []memberSp
 			body = append(body, member)
 			continue
 		}
+		if member.HTTPBinding.Location == "payload" {
+			continue
+		}
 		// Huma rejects pointers for path, query, and header parameters.
 		member.Type = goTypeForTarget(ir, member.Target)
 		switch member.HTTPBinding.Location {
@@ -1094,6 +1274,15 @@ func inputMemberSpecs(ir *contractIR, shape shapeSpec) ([]memberSpec, []memberSp
 		transport = append(transport, member)
 	}
 	return transport, body
+}
+
+func operationForInput(ir *contractIR, inputID string) *operationSpec {
+	for i := range ir.Operations {
+		if ir.Operations[i].Input == inputID {
+			return &ir.Operations[i]
+		}
+	}
+	return nil
 }
 
 func nestedOutputMember(shape shapeSpec) *memberSpec {
@@ -1127,11 +1316,43 @@ func goTypeForTarget(ir *contractIR, target string) string {
 			return "int64"
 		case "Boolean":
 			return "bool"
+		case "Blob":
+			return "[]byte"
 		default:
 			return "string"
 		}
 	}
 	return goName(localName(target))
+}
+
+func payloadGoType(ir *contractIR, payload *payloadSpec) string {
+	if payload == nil {
+		return "[]byte"
+	}
+	switch payload.Kind {
+	case "blob":
+		return "[]byte"
+	case "string":
+		return "string"
+	default:
+		return goTypeForTarget(ir, payload.Target)
+	}
+}
+
+func payloadDescriptorLiteral(payload *payloadSpec) string {
+	if payload == nil {
+		return "PayloadDescriptor{}"
+	}
+	return fmt.Sprintf(
+		"PayloadDescriptor{Member: %q, Target: %q, Kind: %q, MediaType: %q, Streaming: %t, Sensitive: %t, Required: %t}",
+		payload.Member,
+		payload.Target,
+		payload.Kind,
+		payload.MediaType,
+		payload.Streaming,
+		payload.Sensitive,
+		payload.Required,
+	)
 }
 
 func scalarGoType(shapeType string) string {
@@ -1144,6 +1365,8 @@ func scalarGoType(shapeType string) string {
 		return "int64"
 	case "boolean":
 		return "bool"
+	case "blob":
+		return "[]byte"
 	default:
 		return ""
 	}
@@ -1210,6 +1433,8 @@ func protoType(ir *contractIR, target string) string {
 			return "int64"
 		case "Boolean":
 			return "bool"
+		case "Blob":
+			return "bytes"
 		default:
 			return "string"
 		}
@@ -1224,6 +1449,8 @@ func protoType(ir *contractIR, target string) string {
 		return "int64"
 	case "boolean":
 		return "bool"
+	case "blob":
+		return "bytes"
 	case "list":
 		if shape.Member == nil {
 			return "repeated string"
