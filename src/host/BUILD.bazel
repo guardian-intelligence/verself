@@ -81,10 +81,11 @@ filegroup(
 
 filegroup(
     name = "ansible_lint_sources",
-    srcs = glob(
+    srcs = [
+        "ansible/.ansible-lint.yml",
+        "ansible/ansible.cfg",
+    ] + glob(
         [
-            "ansible/.ansible-lint.yml",
-            "ansible/ansible.cfg",
             "ansible/group_vars/**",
             "ansible/host-files/**",
             "ansible/playbooks/**",

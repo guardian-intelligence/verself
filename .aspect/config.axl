@@ -17,8 +17,8 @@ load(
 )
 load(
     ".aspect/tasks/bazel.axl",
+    bazel_bzlmod = "bzlmod",
     bazel_gazelle = "gazelle",
-    bazel_tidy = "tidy",
     bazel_update = "update",
 )
 load(
@@ -99,8 +99,8 @@ def config(ctx):
     ctx.tasks.add(actions_publish)
 
     # aspect bazel ...
+    ctx.tasks.add(bazel_bzlmod)
     ctx.tasks.add(bazel_gazelle)
-    ctx.tasks.add(bazel_tidy)
     ctx.tasks.add(bazel_update)
 
     # aspect provision ...

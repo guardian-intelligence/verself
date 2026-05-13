@@ -1,10 +1,10 @@
-"""aspect check --kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|all
+"""aspect check --kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|buildifier|bzlmod|all
 
 Cross-cutting verification gates used during PR review. The task delegates to
 Bazel-owned package targets so source relevance and cache reuse stay in Bazel's graph.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "bazel_tracked_files", "checked_spawn", "ws_path")
 
 def _bazel(ctx, args, label):
     return checked_spawn(
@@ -72,6 +72,21 @@ def _frontend(ctx):
         "bazelisk build frontend Vite+ check",
     )
 
+def _buildifier(ctx):
+    files = bazel_tracked_files(ctx)
+    if files == None:
+        return 1
+    return checked_spawn(
+        ctx,
+        "buildifier",
+        ["-mode=check", "-lint=warn"] + files,
+        cwd = ws_path(ctx),
+        label = "buildifier -mode=check -lint=warn",
+    )
+
+def _bzlmod(ctx):
+    return _bazel(ctx, ["mod", "tidy", "--lockfile_mode=error"], "bazelisk mod tidy --lockfile_mode=error")
+
 def _java(ctx):
     return _bazel(
         ctx,
@@ -119,10 +134,12 @@ _CHECKERS = {
     "conversions": _conversions,
     "ansible": _ansible_lint,
     "frontend": _frontend,
+    "buildifier": _buildifier,
+    "bzlmod": _bzlmod,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["frontend", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "bzlmod", "frontend", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -140,7 +157,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|all).",
+    summary = "Run a verification gate (--kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|buildifier|bzlmod|all).",
     args = {
         "kind": args.string(
             default = "all",

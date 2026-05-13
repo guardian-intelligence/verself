@@ -1,4 +1,4 @@
-"""aspect bazel gazelle|tidy|update — Bazel-graph orchestration shortcuts.
+"""aspect bazel gazelle|bzlmod|update — Bazel-graph orchestration shortcuts.
 
 These are the durable AXL wrappers around the Bazel-graph workflows that an
 operator runs by hand often enough to want shape and help text. Everything
@@ -23,7 +23,7 @@ def _gazelle_impl(ctx):
         label = "bazelisk run //:gazelle -- update",
     )
 
-def _tidy_impl(ctx):
+def _bzlmod_impl(ctx):
     return checked_spawn(
         ctx,
         "bazelisk",
@@ -35,7 +35,7 @@ def _update_impl(ctx):
     rc = _gazelle_impl(ctx)
     if rc != 0:
         return rc
-    return _tidy_impl(ctx)
+    return _bzlmod_impl(ctx)
 
 gazelle = task(
     implementation = _gazelle_impl,
@@ -44,9 +44,9 @@ gazelle = task(
     summary = "Regenerate Bazel Go BUILD files via gazelle update.",
 )
 
-tidy = task(
-    implementation = _tidy_impl,
-    name = "tidy",
+bzlmod = task(
+    implementation = _bzlmod_impl,
+    name = "bzlmod",
     group = ["bazel"],
     summary = "Update Bzlmod repository wiring (`bazelisk mod tidy --lockfile_mode=update`).",
 )
@@ -55,5 +55,5 @@ update = task(
     implementation = _update_impl,
     name = "update",
     group = ["bazel"],
-    summary = "Run `aspect bazel gazelle` then `aspect bazel tidy`.",
+    summary = "Run `aspect bazel gazelle` then `aspect bazel bzlmod`.",
 )

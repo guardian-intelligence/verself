@@ -1,8 +1,9 @@
-"""aspect tidy — mutate authored sources into the repo's canonical shape.
+"""aspect tidy — format authored sources into the repo's canonical shape.
 
-This is the one-stop local hygiene command. It runs ecosystem-native formatters
-and metadata tidiers in a fixed order, regenerates Bazel metadata, then fails
-if tracked sources still differ from the index.
+This is the one-stop local formatting command. It runs ecosystem-native
+formatters in a fixed order, then fails if tracked sources still differ from
+the index. Bazel metadata updates live under `aspect bazel *`; semantic
+verification gates live under `aspect check`.
 """
 
 load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
@@ -24,15 +25,6 @@ def _go(ctx):
             ["-w", "."],
             cwd = ws_path(ctx, d),
             label = "gofumpt -w (" + d + ")",
-        )
-        if rc != 0:
-            return rc
-        rc = checked_spawn(
-            ctx,
-            "go",
-            ["mod", "tidy"],
-            cwd = ws_path(ctx, d),
-            label = "go mod tidy (" + d + ")",
         )
         if rc != 0:
             return rc
@@ -59,34 +51,9 @@ def _buildifier(ctx):
     return checked_spawn(
         ctx,
         "buildifier",
-        ["-mode=fix", "-lint=fix"] + files,
+        ["-mode=fix"] + files,
         cwd = ws_path(ctx),
-        label = "buildifier -mode=fix -lint=fix",
-    )
-
-def _gazelle(ctx):
-    return checked_spawn(
-        ctx,
-        "bazelisk",
-        [
-            "run",
-            "//:gazelle",
-            "--",
-            "update",
-            "-go_naming_convention=import_alias",
-            "-go_naming_convention_external=import_alias",
-        ],
-        cwd = ws_path(ctx),
-        label = "bazelisk run //:gazelle -- update",
-    )
-
-def _bzlmod(ctx):
-    return checked_spawn(
-        ctx,
-        "bazelisk",
-        ["mod", "tidy", "--lockfile_mode=update"],
-        cwd = ws_path(ctx),
-        label = "bazelisk mod tidy",
+        label = "buildifier -mode=fix",
     )
 
 def _tracked_diff(ctx):
@@ -102,9 +69,7 @@ def _tracked_diff(ctx):
     return rc
 
 def _impl(ctx):
-    # gazelle runs after buildifier so newly emitted BUILD files inherit
-    # the canonical format on the same pass.
-    for step in [_viteplus, _go, _java, _buildifier, _gazelle, _bzlmod, _tracked_diff]:
+    for step in [_viteplus, _go, _java, _buildifier, _tracked_diff]:
         rc = step(ctx)
         if rc != 0:
             return rc
@@ -113,5 +78,5 @@ def _impl(ctx):
 tidy = task(
     implementation = _impl,
     name = "tidy",
-    summary = "Run repo-wide source formatting and metadata tidying, then assert a clean tracked diff.",
+    summary = "Run repo-wide source formatters, then assert a clean tracked diff.",
 )

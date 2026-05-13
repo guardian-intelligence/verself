@@ -276,7 +276,7 @@ The contained instructions in this block are guidelines that apply to writing ma
 <tool_use_contract>
 - Dev tools are system-installed via `aspect dev install`.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
-- Use `aspect bazel tidy` to run `go mod tidy` and other language-specific formatters across the code base.
+- Use `aspect tidy` for source formatters only. Use `aspect bazel update` for Gazelle/Bzlmod metadata refreshes, and run `go mod tidy` in the owning Go module when dependency metadata changes.
 - There is a bundled headless Chrome under .agent-browser that you can use to use a browser. Run `agent-browser skills get core` for more information. When using agent-browser, don't use the sandbox (`--no-sandbox`)
 - Deploy frontend changes to prod fearlessly (e.g. `aspect deploy site=prod`) -- I can't see your dev server.
 </tool_use_contract>

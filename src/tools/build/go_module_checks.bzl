@@ -82,7 +82,11 @@ def _check(name, srcs, tag, setup, invocation, tools = []):
     )
 
 def go_module_checks(name = "go_checks"):
-    """Installs vet, lint, and G115 conversion checks for a Go module root."""
+    """Installs vet, lint, and G115 conversion checks for a Go module root.
+
+    Args:
+      name: Filegroup name that aggregates the generated check targets.
+    """
 
     native.filegroup(
         name = name + "_sources",
