@@ -123,10 +123,6 @@ func withOperationPolicy(op huma.Operation, policy runtimeiam.OperationPolicy) h
 	return op
 }
 
-func operationRequiresBodyBudget(op huma.Operation) bool {
-	return runtimeiam.OperationRequiresBodyBudget(op.Method)
-}
-
 func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) (operationPrincipal, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {

@@ -1,3 +1,4 @@
+load("//src/smithy/build:ir_go.bzl", "ir_catalog_json", "ir_proto_projection", "smithy_projection_file")
 load("//src/smithy/build:smithy.bzl", "smithy_build", "smithy_validate")
 
 package(default_visibility = ["//visibility:public"])
@@ -20,89 +21,53 @@ filegroup(
 smithy_validate(
     name = "smithy_validate",
     srcs = [":smithy_sources"],
-    out = "smithy.validate.ok",
+    out = "smithy.validate",
     config = ":smithy_config",
     plugins = [
         "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
-        "//src/smithy/validators:verself_smithy_validators",
     ],
 )
 
 smithy_build(
     name = "smithy_build",
     srcs = [":smithy_sources"],
-    out = "smithy-build.tar",
+    out = "smithy-build",
     config = ":smithy_config",
     plugins = [
         "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
-        "//src/smithy/validators:verself_smithy_validators",
     ],
 )
 
-genrule(
+smithy_projection_file(
     name = "iam_public_ir",
-    srcs = [":smithy_build"],
-    outs = ["iam-public.ir.json"],
-    cmd = """
-set -euo pipefail
-tar -xOf "$(location :smithy_build)" ./iam-public/verself-ir/ir/verself/iam-public.json > "$@"
-""",
+    out = "iam-public.ir.json",
+    build = ":smithy_build",
+    path = "iam-public/verself-ir/ir/verself/iam-public.json",
 )
 
-genrule(
+smithy_projection_file(
+    name = "iam_internal_ir",
+    out = "iam-internal.ir.json",
+    build = ":smithy_build",
+    path = "iam-internal/verself-ir/ir/verself/iam-internal.json",
+)
+
+ir_catalog_json(
     name = "iam_audit_catalog",
-    srcs = [":iam_public_ir"],
-    outs = ["iam-audit.catalog.json"],
-    cmd = """
-set -euo pipefail
-$(location //src/smithy/cmd/ir-go:ir-go) \
-  -ir "$(location :iam_public_ir)" \
-  -mode catalog-json \
-  -catalog audit \
-  -out "$@"
-""",
-    tools = ["//src/smithy/cmd/ir-go"],
+    out = "iam-audit.catalog.json",
+    catalog = "audit",
+    ir = ":iam_public_ir",
 )
 
-genrule(
+ir_catalog_json(
     name = "iam_observability_catalog",
-    srcs = [":iam_public_ir"],
-    outs = ["iam-observability.catalog.json"],
-    cmd = """
-set -euo pipefail
-$(location //src/smithy/cmd/ir-go:ir-go) \
-  -ir "$(location :iam_public_ir)" \
-  -mode catalog-json \
-  -catalog observability \
-  -out "$@"
-""",
-    tools = ["//src/smithy/cmd/ir-go"],
+    out = "iam-observability.catalog.json",
+    catalog = "observability",
+    ir = ":iam_public_ir",
 )
 
-genrule(
-    name = "iam_conformance_fixtures",
-    srcs = [":iam_public_ir"],
-    outs = ["iam-conformance.fixtures.json"],
-    cmd = """
-set -euo pipefail
-$(location //src/smithy/cmd/ir-go:ir-go) \
-  -ir "$(location :iam_public_ir)" \
-  -mode conformance-json \
-  -out "$@"
-""",
-    tools = ["//src/smithy/cmd/ir-go"],
-)
-
-genrule(
+ir_proto_projection(
     name = "iam_proto_projection",
-    srcs = [":iam_public_ir"],
-    outs = ["iam.proto"],
-    cmd = """
-set -euo pipefail
-$(location //src/smithy/cmd/ir-go:ir-go) \
-  -ir "$(location :iam_public_ir)" \
-  -mode proto \
-  -out "$@"
-""",
-    tools = ["//src/smithy/cmd/ir-go"],
+    out = "iam.proto",
+    ir = ":iam_public_ir",
 )

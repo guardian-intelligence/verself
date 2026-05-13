@@ -1,11 +1,5 @@
 $version: "2"
 
-metadata validators = [
-    {
-        name: "Verself"
-    }
-]
-
 namespace verself.common.v1
 
 use smithy.api#error
@@ -258,29 +252,6 @@ structure sdk {
 
     @required
     retryable: Boolean
-}
-
-enum ConformanceCase {
-    HTTP_SERIALIZATION = "http_serialization"
-    RESPONSE_PARSING = "response_parsing"
-    PROBLEM_PARSING = "problem_parsing"
-    PAGINATION = "pagination"
-    IDEMPOTENCY = "idempotency"
-    AUTH = "auth"
-    RETRY = "retry"
-    TRACE_CONTEXT = "trace_context"
-    WRONG_ORG = "wrong_org"
-}
-
-list ConformanceCases {
-    member: ConformanceCase
-}
-
-/// Behavior families that generated SDK conformance suites must cover.
-@trait(selector: "operation")
-structure conformance {
-    @required
-    cases: ConformanceCases
 }
 
 @range(min: 1, max: 536870911)

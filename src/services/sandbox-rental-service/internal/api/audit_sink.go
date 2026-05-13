@@ -3,8 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -79,13 +77,4 @@ func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 		slog.Default().ErrorContext(ctx, "sandbox governance audit rejected", "status", resp.StatusCode())
 	}
-}
-
-func hashTextForAudit(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
 }

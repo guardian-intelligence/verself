@@ -1151,7 +1151,7 @@ func normalizeCachePath(raw string) (string, error) {
 	}
 	for _, segment := range strings.Split(raw, "/") {
 		if segment == ".." {
-			return "", fmt.Errorf("path %q contains ..", raw)
+			return "", fmt.Errorf("path %q contains parent directory reference", raw)
 		}
 	}
 	if !strings.HasPrefix(raw, "/") {

@@ -105,7 +105,7 @@ func finishOperationSpan(span trace.Span, principal source.Principal, policy sou
 }
 
 func withOperationPolicy(op huma.Operation, policy sourceOperationPolicy) huma.Operation {
-	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
 		panic(err)
 	}
 	if policy.BodyLimitBytes > 0 {

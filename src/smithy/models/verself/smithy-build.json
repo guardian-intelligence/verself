@@ -15,6 +15,16 @@
           "filename": "ir/verself/iam-public.json"
         }
       }
+    },
+    "iam-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.iam.v1#IamInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/iam-internal.json"
+        }
+      }
     }
   }
 }

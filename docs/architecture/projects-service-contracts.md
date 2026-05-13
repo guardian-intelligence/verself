@@ -7,7 +7,7 @@ src/smithy/models/verself/projects.smithy
   -> public projection
      -> SDK-layer generated transports
      -> generated OpenAPI compatibility artifacts
-     -> SDK conformance fixtures
+     -> SDK and server runtime descriptors
   -> internal projection
      -> src/services/projects-service/client
      -> generated OpenAPI compatibility artifacts

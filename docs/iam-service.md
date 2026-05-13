@@ -210,8 +210,8 @@ scope epoch and forces affected active streams to recheck.
 `iam-service` is a Go service using the same service contract as the rest of
 the product surface: Smithy-modeled HTTP contracts, generated transport
 clients, SPIFFE mTLS for internal calls, sqlc for PostgreSQL, and OpenTelemetry
-spans that land in ClickHouse. Huma route declarations mirror the contract
-during cutover.
+spans that land in ClickHouse. Public Huma route bindings and the internal
+service client are generated from the Smithy IR.
 
 Repository layout:
 
@@ -220,7 +220,6 @@ src/services/iam-service/
   cmd/
     iam-service/
     iam-openapi/
-    iam-internal-openapi/
     iam-schema-gen/
 
   openapi/
@@ -318,12 +317,12 @@ Wire contract locations:
 | Contract | Location | Bazel owner |
 | --- | --- | --- |
 | Canonical IAM API Smithy model | `src/smithy/models/verself/iam.smithy` | `//src/smithy:smithy_models` |
-| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml` during cutover; target generated projection under `src/smithy/openapi/` | `//src/services/iam-service/openapi` during cutover |
-| SPIFFE-only internal IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/internal-openapi-3.0.yaml`, `src/services/iam-service/openapi/internal-openapi-3.1.yaml` during cutover; target generated projection under `src/smithy/openapi/` | `//src/services/iam-service/openapi` during cutover |
-| Generated service Go transport client | `src/services/iam-service/client/client.gen.go` | `//src/services/iam-service/client:client` |
+| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml`; target generated projection under `src/smithy/openapi/` | `//src/services/iam-service/openapi` |
+| SPIFFE-only internal IAM API IR projection | `//src/smithy/models/verself:iam_internal_ir` | `//src/smithy/models/verself:iam_internal_ir` |
+| Generated service Go transport client | generated from `//src/smithy/models/verself:iam_internal_ir` | `//src/services/iam-service/client:client` |
 | Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
 | Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
-| Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-api/` | `//src/websites/packages/sdk:contract_clients` |
+| Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-transport/` | `//src/websites/packages/sdk:iam_transport_gen` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema validation | `src/services/iam-service/schema/verself.zed`, pinned `zed` CLI from the server-tool catalog | `//src/services/iam-service/schema:schema_tests` |
 | Shared DTOs used by multiple services or frontend wrappers | `src/domain-transfer-objects/go/` | `//src/domain-transfer-objects/go:dto` |
@@ -543,18 +542,17 @@ The service should create these targets:
 //src/services/iam-service/cmd/iam-service:iam-service
 //src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact
 //src/services/iam-service/cmd/iam-openapi:iam-openapi              # transitional projection
-//src/services/iam-service/cmd/iam-internal-openapi:iam-internal-openapi  # transitional projection
 //src/services/iam-service/cmd/iam-schema-gen:iam-schema-gen
 
 //src/smithy:smithy_models
+//src/smithy/models/verself:iam_public_ir
+//src/smithy/models/verself:iam_internal_ir
 //src/services/iam-service/openapi:openapi-3.0.yaml
 //src/services/iam-service/openapi:openapi-3.1.yaml
-//src/services/iam-service/openapi:internal-openapi-3.0.yaml
-//src/services/iam-service/openapi:internal-openapi-3.1.yaml
 
 //src/services/iam-service/client:client
 //src/sdks/go/verself:verself
-//src/websites/packages/sdk:contract_clients
+//src/websites/packages/sdk:iam_transport_gen
 //src/services/iam-service/migrations:migrations
 //src/services/iam-service/schema:schema
 //src/services/iam-service/schema:schema_tests

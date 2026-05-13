@@ -1,23 +1,25 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_go.bzl", "ir_huma_go")
 
-genrule(
+ir_huma_go(
     name = "iam_contract_go",
-    srcs = ["//src/smithy/models/verself:iam_public_ir"],
-    outs = ["iam_contract.gen.go"],
-    cmd = """
-set -euo pipefail
-$(location //src/smithy/cmd/ir-go:ir-go) \
-  -ir "$(location //src/smithy/models/verself:iam_public_ir)" \
-  -mode huma \
-  -package contractapi \
-  -out "$@"
-""",
-    tools = ["//src/smithy/cmd/ir-go"],
+    out = "__generated_sources/iam_contract.gen.go",
+    ir = "//src/smithy/models/verself:iam_public_ir",
+    package = "contractapi",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "iam_contract.gen.go": ":iam_contract_go",
+    },
+    tags = ["manual"],
 )
 
 go_library(
     name = "contractapi",
-    srcs = [":iam_contract_go"],
+    srcs = ["iam_contract.gen.go"],
     importpath = "github.com/verself/iam-service/internal/contractapi",
     visibility = ["//src/services/iam-service:__subpackages__"],
     deps = ["@com_github_danielgtaylor_huma_v2//:huma"],

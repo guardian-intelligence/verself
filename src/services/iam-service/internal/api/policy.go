@@ -66,17 +66,6 @@ func authorizationActor(authIdentity *auth.Identity) string {
 	return strings.TrimSpace(authIdentity.Subject)
 }
 
-func authorizedRoleAssignmentOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, required runtimeiam.Permission) ([]string, error) {
-	if required == "" {
-		return nil, nil
-	}
-	orgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
-	if err != nil {
-		return nil, err
-	}
-	return authorizedOrgIDs(ctx, authzSvc, authIdentity, orgIDs, required)
-}
-
 func authorizedOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, orgIDs []string, required runtimeiam.Permission) ([]string, error) {
 	if required == "" {
 		return nil, nil

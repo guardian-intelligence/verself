@@ -2,8 +2,8 @@
 
 This package is the contract-authoring slice for Verself product APIs. Smithy
 source is validated and projected into the generated Verself Contract IR; IAM's
-public vertical also emits the first IR-derived catalogs, conformance fixture
-bundle, and protobuf projection artifact.
+public vertical also emits the first IR-derived catalogs and protobuf projection
+artifact.
 
 The package owns:
 

@@ -100,7 +100,6 @@ def _java(ctx):
         [
             "build",
             "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
-            "//src/smithy/validators:verself_smithy_validators",
             "//src/smithy/models/verself:smithy_validate",
             "//src/smithy/models/verself:iam_public_ir",
         ],
@@ -115,7 +114,6 @@ def _contracts(ctx):
         [
             "build",
             "//src/smithy/models/verself:iam_public_ir",
-            "//src/smithy/models/verself:iam_conformance_fixtures",
             "//src/smithy/models/verself:iam_audit_catalog",
             "//src/smithy/models/verself:iam_observability_catalog",
             "//src/smithy/models/verself:iam_proto_projection",
@@ -136,7 +134,7 @@ def _contracts(ctx):
             "//src/sdks/go/verself:verself_test",
         ],
         cwd = ws_path(ctx),
-        label = "bazelisk test IAM SDK conformance",
+        label = "bazelisk test SDK facade",
     )
 
 def _legacy_topology_api(ctx):

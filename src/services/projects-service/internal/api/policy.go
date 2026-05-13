@@ -116,7 +116,7 @@ func finishOperationSpan(span trace.Span, principal projects.Principal, policy p
 }
 
 func withOperationPolicy(op huma.Operation, policy projectsOperationPolicy) huma.Operation {
-	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
 		panic(err)
 	}
 	if policy.Service && len(policy.ServicePeers) == 0 {
@@ -148,10 +148,6 @@ func withOperationPolicy(op huma.Operation, policy projectsOperationPolicy) huma
 		op.Security = []map[string][]string{{"bearerAuth": {}}}
 	}
 	return op
-}
-
-func operationRequiresBodyBudget(op huma.Operation) bool {
-	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {

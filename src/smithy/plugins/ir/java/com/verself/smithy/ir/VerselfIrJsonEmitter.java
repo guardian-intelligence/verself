@@ -13,7 +13,6 @@ import static com.verself.smithy.ir.SmithyNodes.stringTrait;
 import static com.verself.smithy.ir.VerselfTraitIds.AUDIT;
 import static com.verself.smithy.ir.VerselfTraitIds.AUDIT_EVENT;
 import static com.verself.smithy.ir.VerselfTraitIds.AUTHZ;
-import static com.verself.smithy.ir.VerselfTraitIds.CONFORMANCE;
 import static com.verself.smithy.ir.VerselfTraitIds.ENUM_VALUE;
 import static com.verself.smithy.ir.VerselfTraitIds.HTTP;
 import static com.verself.smithy.ir.VerselfTraitIds.HTTP_ERROR;
@@ -324,7 +323,6 @@ final class VerselfIrJsonEmitter {
     ObjectNode rateLimit = requiredObjectTrait(operation, RATE_LIMIT);
     ObjectNode requestBudget = requiredObjectTrait(operation, REQUEST_BUDGET);
     ObjectNode sdk = requiredObjectTrait(operation, SDK);
-    ObjectNode conformance = requiredObjectTrait(operation, CONFORMANCE);
 
     String permissionShapeId = requiredString(authz, "permission", operation);
     String auditEventShapeId = requiredString(audit, "event", operation);
@@ -359,8 +357,7 @@ final class VerselfIrJsonEmitter {
                     .build())
             .withMember("rateLimit", rateLimit)
             .withMember("requestBudget", requestBudget)
-            .withMember("sdk", sdk)
-            .withMember("conformance", requiredArray(conformance, "cases", operation));
+            .withMember("sdk", sdk);
     idempotency.ifPresent(value -> builder.withMember("idempotency", value));
     return builder.build();
   }
@@ -509,7 +506,6 @@ final class VerselfIrJsonEmitter {
               .withMember(
                   "bodyBudgetBytes",
                   numberMember(verself.expectObjectMember("requestBudget"), "maxBytes").orElse(0))
-              .withMember("conformance", verself.expectArrayMember("conformance"))
               .build());
     }
     return Node.objectNodeBuilder()

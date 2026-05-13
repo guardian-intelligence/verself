@@ -6,7 +6,6 @@ final class VerselfTraitIds {
   static final ShapeId AUDIT = ShapeId.from("verself.common.v1#audit");
   static final ShapeId AUDIT_EVENT = ShapeId.from("verself.common.v1#auditEvent");
   static final ShapeId AUTHZ = ShapeId.from("verself.common.v1#authz");
-  static final ShapeId CONFORMANCE = ShapeId.from("verself.common.v1#conformance");
   static final ShapeId IDENTITY = ShapeId.from("verself.common.v1#identity");
   static final ShapeId NOT_RESOURCE_PROPERTY =
       ShapeId.from("verself.common.v1#notResourceProperty");

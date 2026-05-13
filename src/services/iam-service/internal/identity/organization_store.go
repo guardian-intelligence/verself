@@ -2,8 +2,6 @@ package identity
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -242,60 +240,6 @@ func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveO
 	return profile, nil
 }
 
-func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, actorID string) (OrganizationProfile, error) {
-	actorID = firstNonEmpty(actorID, "system:identity")
-	displayName := "Organization " + orgID
-	baseSlug := normalizeSlug(displayName)
-	if baseSlug == "" {
-		baseSlug = "organization"
-	}
-	suffix := shortStableSuffix(orgID)
-	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
-	if err != nil {
-		return OrganizationProfile{}, fmt.Errorf("%w: begin organization profile create: %v", ErrStoreUnavailable, err)
-	}
-	defer rollback(ctx, tx)
-	q := identitystore.New(tx)
-	for attempt := 0; attempt < 16; attempt++ {
-		slug := slugCandidate(baseSlug, suffix, attempt)
-		row, err := q.CreateOrganizationProfile(ctx, identitystore.CreateOrganizationProfileParams{
-			OrgID:                 orgID,
-			IdentityProviderOrgID: orgID,
-			DisplayName:           displayName,
-			Slug:                  slug,
-			ActorID:               actorID,
-		})
-		if err == nil {
-			profile, err := organizationProfileFromCreateRow(row)
-			if err != nil {
-				return OrganizationProfile{}, err
-			}
-			if err := tx.Commit(ctx); err != nil {
-				return OrganizationProfile{}, fmt.Errorf("%w: commit organization profile create: %v", ErrStoreUnavailable, err)
-			}
-			return profile, nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return OrganizationProfile{}, organizationProfileLoadError(err)
-		}
-		existingRow, loadErr := q.GetOrganizationProfile(ctx, identitystore.GetOrganizationProfileParams{OrgID: orgID})
-		if loadErr == nil {
-			existing, err := organizationProfileFromGetRow(existingRow)
-			if err != nil {
-				return OrganizationProfile{}, err
-			}
-			if err := tx.Commit(ctx); err != nil {
-				return OrganizationProfile{}, fmt.Errorf("%w: commit existing organization profile: %v", ErrStoreUnavailable, err)
-			}
-			return existing, nil
-		}
-		if !errors.Is(loadErr, pgx.ErrNoRows) {
-			return OrganizationProfile{}, organizationProfileLoadError(loadErr)
-		}
-	}
-	return OrganizationProfile{}, fmt.Errorf("%w: unable to allocate organization slug", ErrOrganizationConflict)
-}
-
 func organizationProfileFromGetRow(row identitystore.GetOrganizationProfileRow) (OrganizationProfile, error) {
 	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
@@ -313,10 +257,6 @@ func organizationProfileFromProviderOrgIDRow(row identitystore.GetOrganizationPr
 }
 
 func organizationProfileFromRedirectRow(row identitystore.GetOrganizationProfileByRedirectSlugRow) (OrganizationProfile, error) {
-	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
-}
-
-func organizationProfileFromCreateRow(row identitystore.CreateOrganizationProfileRow) (OrganizationProfile, error) {
 	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
@@ -442,33 +382,6 @@ func organizationSlugAvailable(ctx context.Context, q *identitystore.Queries, cu
 		return false, fmt.Errorf("%w: check organization slug: %v", ErrStoreUnavailable, err)
 	}
 	return !unavailable.Bool, nil
-}
-
-func slugCandidate(baseSlug, suffix string, attempt int) string {
-	baseSlug = strings.Trim(baseSlug, "-")
-	if attempt == 0 {
-		if len(baseSlug) <= 80 {
-			return baseSlug
-		}
-		return strings.Trim(baseSlug[:80], "-")
-	}
-	tail := "-" + suffix
-	if attempt > 1 {
-		tail = fmt.Sprintf("-%s-%d", suffix, attempt)
-	}
-	maxBase := 80 - len(tail)
-	if maxBase < 1 {
-		maxBase = 1
-	}
-	if len(baseSlug) > maxBase {
-		baseSlug = strings.Trim(baseSlug[:maxBase], "-")
-	}
-	return baseSlug + tail
-}
-
-func shortStableSuffix(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])[:8]
 }
 
 func uniqueViolation(err error) bool {

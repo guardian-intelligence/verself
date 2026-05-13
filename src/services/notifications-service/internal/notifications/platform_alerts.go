@@ -72,7 +72,7 @@ func normalizeCrossServiceFailureAlertConfig(cfg CrossServiceFailureAlertConfig)
 	return cfg, nil
 }
 
-func (s *Service) queryCrossServiceFailures(ctx context.Context, cfg CrossServiceFailureAlertConfig) ([]crossServiceFailure, error) {
+func (s *Service) queryCrossServiceFailures(ctx context.Context, cfg CrossServiceFailureAlertConfig) (_ []crossServiceFailure, err error) {
 	if s.CH == nil {
 		return nil, fmt.Errorf("%w: clickhouse unavailable", ErrStoreUnavailable)
 	}
@@ -103,7 +103,11 @@ LIMIT $2`, uint32(cfg.Lookback.Round(time.Second).Seconds()), cfg.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("%w: query cross-service failure spans: %v", ErrStoreUnavailable, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("%w: close cross-service failure rows: %v", ErrStoreUnavailable, closeErr)
+		}
+	}()
 	failures := make([]crossServiceFailure, 0)
 	for rows.Next() {
 		var failure crossServiceFailure

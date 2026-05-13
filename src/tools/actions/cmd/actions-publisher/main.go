@@ -65,7 +65,11 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tempRoot)
+	defer func() {
+		if err := os.RemoveAll(tempRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "actions-publisher: remove temp dir %s: %v\n", tempRoot, err)
+		}
+	}()
 
 	distDir := filepath.Join(tempRoot, "dist")
 	if err := os.MkdirAll(distDir, 0o755); err != nil {
@@ -192,7 +196,11 @@ func publishBranch(ctx context.Context, cfg config, distDir, sourceSHA string) e
 	if err != nil {
 		return fmt.Errorf("create checkout dir: %w", err)
 	}
-	defer os.RemoveAll(checkoutDir)
+	defer func() {
+		if err := os.RemoveAll(checkoutDir); err != nil {
+			fmt.Fprintf(os.Stderr, "actions-publisher: remove checkout dir %s: %v\n", checkoutDir, err)
+		}
+	}()
 
 	remote := "https://github.com/" + cfg.repo + ".git"
 	commands := [][]string{
@@ -246,7 +254,11 @@ func extractTar(tarPath, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open Bazel action tar: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "actions-publisher: close action tar %s: %v\n", tarPath, err)
+		}
+	}()
 
 	tr := tar.NewReader(f)
 	for {
@@ -266,7 +278,7 @@ func extractTar(tarPath, dst string) error {
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return fmt.Errorf("extract dir %s: %w", hdr.Name, err)
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return fmt.Errorf("extract parent %s: %w", hdr.Name, err)
 			}
@@ -349,15 +361,21 @@ func copyDir(src, dst string) error {
 		if err != nil {
 			return fmt.Errorf("open %s: %w", path, err)
 		}
-		defer in.Close()
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
 		if err != nil {
+			if closeErr := in.Close(); closeErr != nil {
+				return fmt.Errorf("create %s: %w; close %s: %v", target, err, path, closeErr)
+			}
 			return fmt.Errorf("create %s: %w", target, err)
 		}
 		_, copyErr := io.Copy(out, in)
+		inCloseErr := in.Close()
 		closeErr := out.Close()
 		if copyErr != nil {
 			return fmt.Errorf("copy %s: %w", path, copyErr)
+		}
+		if inCloseErr != nil {
+			return fmt.Errorf("close %s: %w", path, inCloseErr)
 		}
 		if closeErr != nil {
 			return fmt.Errorf("close %s: %w", target, closeErr)

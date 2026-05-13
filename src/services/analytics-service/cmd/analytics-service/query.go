@@ -235,7 +235,7 @@ func accessSubject(identity *auth.Identity) (string, string) {
 	if err != nil {
 		return "unknown", ""
 	}
-	return strings.TrimSpace(string(subject.Type)), strings.TrimSpace(subject.Id)
+	return strings.TrimSpace(string(subject.Type)), strings.TrimSpace(string(subject.ID))
 }
 
 func recordAccessEvent(ctx context.Context, svc *analytics.Service, row analytics.AccessEventRow, logger *slog.Logger) {

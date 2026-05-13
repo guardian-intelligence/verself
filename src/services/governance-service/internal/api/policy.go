@@ -103,10 +103,6 @@ func withOperationPolicy(op huma.Operation, policy runtimeiam.OperationPolicy) h
 	return op
 }
 
-func operationRequiresBodyBudget(op huma.Operation) bool {
-	return runtimeiam.OperationRequiresBodyBudget(op.Method)
-}
-
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
 	for _, param := range parameters {
 		if param != nil && strings.EqualFold(param.Name, "Idempotency-Key") && param.In == "header" {

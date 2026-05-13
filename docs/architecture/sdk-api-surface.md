@@ -340,7 +340,7 @@ Public service APIs should be designed from the SDK method outward:
 2. Define stable Smithy shapes, typed errors, and operation traits for that
    method.
 3. Generate or mirror the service HTTP binding and public/internal projections.
-4. Regenerate SDK-owned transports and conformance fixtures.
+4. Regenerate SDK-owned transports and runtime descriptors.
 5. Wrap the generated operation in the curated SDK.
 6. Use the SDK method from the CLI, browser server route, docs example, or agent.
 
@@ -429,7 +429,7 @@ bearer token material.
 SDK releases pin default API versions. The API version header remains available
 for staged rollouts, canaries, and compatibility testing. Contract evolution is
 modeled in Smithy and projected into generated transports, OpenAPI artifacts,
-and conformance fixtures. Curated SDK methods define the public compatibility
+and runtime descriptors. Curated SDK methods define the public compatibility
 surface.
 
 TypeScript and Go are the first curated SDKs. Python, Rust, and Terraform

@@ -11,7 +11,7 @@ import (
 )
 
 type IAMInternalClient struct {
-	Client *iamclient.ClientWithResponses
+	Client *iamclient.Client
 }
 
 func (c IAMInternalClient) UpdateHumanProfile(ctx context.Context, subjectID string, input UpdateIdentityRequest, bearerToken string) (IdentitySummary, error) {
@@ -19,30 +19,33 @@ func (c IAMInternalClient) UpdateHumanProfile(ctx context.Context, subjectID str
 		return IdentitySummary{}, ErrIdentityUnavailable
 	}
 	displayName := strings.TrimSpace(input.DisplayName)
-	req := iamclient.IAMUpdateHumanProfileRequest{
-		GivenName:   input.GivenName,
-		FamilyName:  input.FamilyName,
-		DisplayName: &displayName,
+	req := iamclient.UpdateHumanProfileRequest{
+		SubjectID: iamclient.SubjectId(subjectID),
+		Body: iamclient.UpdateHumanProfileInputBody{
+			GivenName:   iamclient.GivenName(input.GivenName),
+			FamilyName:  iamclient.FamilyName(input.FamilyName),
+			DisplayName: (*iamclient.DisplayName)(&displayName),
+		},
 	}
-	resp, err := c.Client.UpdateHumanProfileWithResponse(ctx, subjectID, req, func(_ context.Context, request *http.Request) error {
+	resp, err := c.Client.UpdateHumanProfile(ctx, req, func(_ context.Context, request *http.Request) error {
 		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 		return nil
 	})
 	if err != nil {
 		return IdentitySummary{}, fmt.Errorf("%w: %v", ErrIdentityUnavailable, err)
 	}
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 || resp.JSON200 == nil {
-		return IdentitySummary{}, fmt.Errorf("%w: status %d", ErrIdentityUnavailable, resp.StatusCode())
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || resp.Result == nil {
+		return IdentitySummary{}, fmt.Errorf("%w: status %d", ErrIdentityUnavailable, resp.StatusCode)
 	}
-	syncedAt := resp.JSON200.SyncedAt.UTC()
+	syncedAt, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(resp.Result.SyncedAt))
 	if syncedAt.IsZero() {
 		syncedAt = time.Now().UTC()
 	}
 	return IdentitySummary{
-		Email:       resp.JSON200.Email,
-		GivenName:   resp.JSON200.GivenName,
-		FamilyName:  resp.JSON200.FamilyName,
-		DisplayName: resp.JSON200.DisplayName,
+		Email:       string(resp.Result.Email),
+		GivenName:   string(resp.Result.GivenName),
+		FamilyName:  string(resp.Result.FamilyName),
+		DisplayName: string(resp.Result.DisplayName),
 		SyncedAt:    &syncedAt,
 	}, nil
 }

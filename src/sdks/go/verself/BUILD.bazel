@@ -37,13 +37,11 @@ go_test(
         "client_test.go",
         "governance_test.go",
         "iam_test.go",
-        "iam_transport_conformance_test.go",
         "notifications_test.go",
         "projects_test.go",
         "sandbox_test.go",
         "secrets_test.go",
         "source_test.go",
     ],
-    data = ["//src/smithy/models/verself:iam_conformance_fixtures"],
     embed = [":verself"],
 )

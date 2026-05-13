@@ -438,7 +438,11 @@ func lineForJSONKey(text, key string) uint32 {
 	if idx < 0 {
 		return 1
 	}
-	return uint32(strings.Count(text[:idx], "\n") + 1)
+	line := strings.Count(text[:idx], "\n") + 1
+	if line > int(^uint32(0)) {
+		return ^uint32(0)
+	}
+	return uint32(line) // #nosec G115 -- line is clamped to uint32 range above.
 }
 
 func mavenJarURL(coord, version string) string {

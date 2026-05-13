@@ -1,4 +1,6 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//src/smithy/build:ir_go.bzl", "ir_identity_catalog_go")
 
 go_library(
     name = "identity",
@@ -7,12 +9,12 @@ go_library(
         "catalog.go",
         "command_store.go",
         "errors.go",
+        "iam_catalog.gen.go",
         "organization_store.go",
         "safeconv.go",
         "service.go",
         "store.go",
         "types.go",
-        ":iam_catalog_go",
     ],
     importpath = "github.com/verself/iam-service/internal/identity",
     visibility = ["//src/services/iam-service:__subpackages__"],
@@ -33,19 +35,19 @@ go_library(
     ],
 )
 
-genrule(
+ir_identity_catalog_go(
     name = "iam_catalog_go",
-    srcs = ["//src/smithy/models/verself:iam_public_ir"],
-    outs = ["iam_catalog.gen.go"],
-    cmd = """
-set -euo pipefail
-$(location //src/smithy/cmd/ir-go:ir-go) \
-  -ir "$(location //src/smithy/models/verself:iam_public_ir)" \
-  -mode identity-catalog \
-  -package identity \
-  -out "$@"
-""",
-    tools = ["//src/smithy/cmd/ir-go"],
+    out = "__generated_sources/iam_catalog.gen.go",
+    ir = "//src/smithy/models/verself:iam_public_ir",
+    package = "identity",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "iam_catalog.gen.go": ":iam_catalog_go",
+    },
+    tags = ["manual"],
 )
 
 go_test(

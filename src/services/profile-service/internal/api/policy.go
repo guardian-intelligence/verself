@@ -117,7 +117,7 @@ func finishOperationSpan(span trace.Span, identity *auth.Identity, policy profil
 }
 
 func withOperationPolicy(op huma.Operation, policy profileOperationPolicy) huma.Operation {
-	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
 		panic(err)
 	}
 	if policy.BodyLimitBytes > 0 {
@@ -137,10 +137,6 @@ func withOperationPolicy(op huma.Operation, policy profileOperationPolicy) huma.
 		op.Security = []map[string][]string{{"bearerAuth": {}}}
 	}
 	return op
-}
-
-func operationRequiresBodyBudget(op huma.Operation) bool {
-	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -398,40 +394,6 @@ func targetIDFromInput(input any, identity *auth.Identity) string {
 		return typed.RequestID
 	}
 	return ""
-}
-
-func routeTemplateFromOperationID(operationID string) string {
-	switch operationID {
-	case "get-profile":
-		return "/api/v1/profile"
-	case "patch-profile-identity":
-		return "/api/v1/profile/identity"
-	case "put-profile-preferences":
-		return "/api/v1/profile/preferences"
-	case "profile-org-export":
-		return "/internal/v1/data-rights/org-export"
-	case "profile-subject-export":
-		return "/internal/v1/data-rights/subject-export"
-	case "profile-subject-erasure":
-		return "/internal/v1/data-rights/subject-erasure"
-	case "profile-data-rights-status":
-		return "/internal/v1/data-rights/requests/{request_id}"
-	default:
-		return ""
-	}
-}
-
-func methodFromOperationID(operationID string) string {
-	if strings.Contains(operationID, "get-") || strings.Contains(operationID, "status") {
-		return http.MethodGet
-	}
-	if strings.Contains(operationID, "patch-") {
-		return http.MethodPatch
-	}
-	if strings.Contains(operationID, "put-") {
-		return http.MethodPut
-	}
-	return http.MethodPost
 }
 
 func sortedChangedFields(values []string) []string {

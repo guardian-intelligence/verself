@@ -2,11 +2,12 @@ package api
 
 import "fmt"
 
-const maxUint16AsInt = 1<<16 - 1
+const maxInt32AsInt64 = 1<<31 - 1
+const minInt32AsInt64 = -1 << 31
 
-func uint16FromInt(value int, field string) uint16 {
-	if value < 0 || value > maxUint16AsInt {
-		panic(fmt.Sprintf("%s exceeds uint16 range: %d", field, value))
+func int32FromInt64(value int64, field string) (int32, error) {
+	if value < minInt32AsInt64 || value > maxInt32AsInt64 {
+		return 0, fmt.Errorf("%s exceeds int32 range: %d", field, value)
 	}
-	return uint16(value) // #nosec G115 -- value is checked against the uint16 range above.
+	return int32(value), nil // #nosec G115 -- value is checked against the int32 range above.
 }

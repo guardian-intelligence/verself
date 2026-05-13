@@ -1,3 +1,5 @@
+"""Rules for generating SDK transport sources from Verself contract IR."""
+
 def _ir_sdk_go_impl(ctx):
     args = ctx.actions.args()
     args.add("-ir", ctx.file.ir)

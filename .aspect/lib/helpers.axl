@@ -218,14 +218,38 @@ def bazel_tracked_files(ctx):
     if r.status.code != 0:
         ctx.std.io.stderr.write("ERROR: git ls-files failed\n")
         return None
+    deleted = git_deleted_files(ctx)
+    if deleted == None:
+        return None
     files = []
     for path in r.stdout.split("\x00"):
         if path == "":
+            continue
+        if path in deleted:
             continue
         basename = path.rsplit("/", 1)[-1]
         if basename in _BAZEL_FILE_BASENAMES or basename.endswith(".bzl"):
             files.append(path)
     return files
+
+def git_deleted_files(ctx, pathspec = None):
+    """Return a dict-like set of deleted tracked files."""
+    args = ["ls-files", "-z", "--deleted"]
+    if pathspec != None:
+        args.append(pathspec)
+    r = (ctx.std.process.command("git")
+        .args(args)
+        .current_dir(ws_path(ctx))
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: git ls-files --deleted failed\n")
+        return None
+    deleted = {}
+    for path in r.stdout.split("\x00"):
+        if path != "":
+            deleted[path] = True
+    return deleted
 
 def java_tracked_files(ctx):
     """Return authored Java files under repo-owned Java source roots."""
@@ -237,9 +261,12 @@ def java_tracked_files(ctx):
     if r.status.code != 0:
         ctx.std.io.stderr.write("ERROR: git ls-files for Java sources failed\n")
         return None
+    deleted = git_deleted_files(ctx, "src/smithy/**/*.java")
+    if deleted == None:
+        return None
     files = []
     for path in r.stdout.split("\x00"):
-        if path != "":
+        if path != "" and not path in deleted:
             files.append(ws_path(ctx, path))
     return files
 

@@ -58,9 +58,9 @@ type Resolver struct {
 	httpClient *http.Client
 	now        func() time.Time
 
-	mu       sync.Mutex
-	cache    map[string]cachedSet
-	evicted  map[string]map[string]time.Time
+	mu      sync.Mutex
+	cache   map[string]cachedSet
+	evicted map[string]map[string]time.Time
 }
 
 type cachedSet struct {
@@ -345,7 +345,7 @@ func (r *Resolver) fetch(ctx context.Context, catalogName string) ([]Endpoint, e
 		if e.Address == "" || e.Port == 0 {
 			continue
 		}
-		out = append(out, Endpoint{Address: e.Address, Port: e.Port, Tags: e.Tags})
+		out = append(out, Endpoint(e))
 	}
 	return out, nil
 }

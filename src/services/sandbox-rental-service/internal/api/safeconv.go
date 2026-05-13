@@ -15,13 +15,6 @@ func int32FromInt(value int, field string) int32 {
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
-func uint64FromInt64(value int64, field string) uint64 {
-	if value < 0 {
-		panic(fmt.Sprintf("%s is negative: %d", field, value))
-	}
-	return uint64(value) // #nosec G115 -- value is checked as non-negative above.
-}
-
 func int64FromUint64(value uint64, field string) int64 {
 	if value > maxInt64AsUint64 {
 		panic(fmt.Sprintf("%s exceeds int64 range: %d", field, value))

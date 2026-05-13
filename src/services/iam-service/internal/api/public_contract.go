@@ -380,8 +380,12 @@ func (h publicHandlers) UpdateOrganization(ctx context.Context, input *contracta
 			slug = current.Slug
 		}
 	}
+	version, err := int32FromInt64(int64(input.Body.Version), "organization version")
+	if err != nil {
+		return nil, badRequest(ctx, "organization-version-out-of-range", "organization version is outside the supported range", err)
+	}
 	org, err := h.service.UpdateOrganization(ctx, principal, identity.UpdateOrganizationRequest{
-		Version:     int32(input.Body.Version),
+		Version:     version,
 		DisplayName: displayName,
 		Slug:        slug,
 	})
@@ -420,11 +424,15 @@ func (h publicHandlers) UpdateMemberRole(ctx context.Context, input *contractapi
 	if err != nil {
 		return nil, err
 	}
+	expectedOrgACLVersion, err := int32FromInt64(int64(input.Body.ExpectedOrgAclVersion), "expected organization ACL version")
+	if err != nil {
+		return nil, badRequest(ctx, "organization-acl-version-out-of-range", "organization ACL version is outside the supported range", err)
+	}
 	result, err := h.service.UpdateMemberRoles(ctx, principal, identity.UpdateMemberRolesCommand{
 		UserID:                member.UserID,
 		RoleKeys:              []string{string(input.Body.Role)},
 		ExpectedRoleKeys:      []string{string(input.Body.ExpectedRole)},
-		ExpectedOrgACLVersion: int32(input.Body.ExpectedOrgAclVersion),
+		ExpectedOrgACLVersion: expectedOrgACLVersion,
 		OperationID:           contractapi.UpdateMemberRoleOperation.OperationID,
 		IdempotencyKey:        string(input.IdempotencyKey),
 	})

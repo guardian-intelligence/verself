@@ -4,10 +4,10 @@
 into the repository-internal Verself contract IR.
 
 The plugin is intentionally the only place that interprets Smithy semantics for
-downstream generators. Huma bindings, SDK transports, conformance fixtures,
-IAM/Zanzibar catalogs, audit catalogs, observability catalogs, OpenAPI
-projections, and future protobuf projections should consume generated IR rather
-than re-reading Smithy traits independently.
+downstream generators. Huma bindings, SDK transports, IAM/Zanzibar catalogs,
+audit catalogs, observability catalogs, OpenAPI projections, and future
+protobuf projections should consume generated IR rather than re-reading Smithy
+traits independently.
 
 ## Build Shape
 
@@ -15,7 +15,6 @@ than re-reading Smithy traits independently.
 .smithy files
   -> Smithy model assembly
   -> Smithy core validation
-  -> Verself Smithy validators
   -> Smithy projection
   -> verself-ir Smithy-Build plugin
   -> deterministic JSON IR
@@ -64,19 +63,18 @@ bazelisk build //src/smithy/models/verself:smithy_build
 bazelisk build //src/smithy/models/verself:iam_public_ir
 bazelisk build //src/smithy/models/verself:iam_audit_catalog
 bazelisk build //src/smithy/models/verself:iam_observability_catalog
-bazelisk build //src/smithy/models/verself:iam_conformance_fixtures
 bazelisk build //src/smithy/models/verself:iam_proto_projection
 ```
 
 `smithy_validate` and `smithy_build` are repo-owned Bazel rules under
 `//src/smithy/build`. They run Smithy through Bazel-managed Java tooling and
 keep model sources, validator/plugin jars, generated projection trees, and
-archived outputs explicit in the action graph.
+declared downstream outputs explicit in the action graph.
 
 ## Engineering Rules
 
 - Fail closed. Missing security or runtime metadata should fail IR generation.
-- Keep IR redundant where redundancy lets validators catch drift.
+- Keep IR redundant where redundancy prevents downstream inference.
 - Use Smithy indexes and resolved model APIs rather than raw IDL or raw JSON
   AST traversal.
 - Keep downstream generators simple. If a generator needs to know Smithy

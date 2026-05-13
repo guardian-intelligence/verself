@@ -32,7 +32,7 @@ Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth
 expectations, Zanzibar permissions, audit metadata, rate-limit classes,
 idempotency, pagination, problem details, SDK behavior, generated clients, and
-conformance fixtures. OpenAPI is generated from the model for documentation,
+runtime descriptors. OpenAPI is generated from the model for documentation,
 API explorers, and ecosystem importers. Go services may continue to serve those
 HTTP APIs with Huma v2 during cutover, but Huma/OpenAPI output is not the source
 of truth. Do not write custom clients for repo-owned service calls; generate

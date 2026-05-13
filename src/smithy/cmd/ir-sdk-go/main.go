@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,109 +11,16 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/verself/verself/src/smithy/internal/contract"
 )
 
-type contractIR struct {
-	IRVersion  string               `json:"irVersion"`
-	Package    string               `json:"package"`
-	Projection string               `json:"projection"`
-	Service    serviceSpec          `json:"service"`
-	Shapes     map[string]shapeSpec `json:"shapes"`
-	Operations []operationSpec      `json:"operations"`
-	Problems   []problemSpec        `json:"problems"`
-}
-
-type serviceSpec struct {
-	Name    string             `json:"name"`
-	Runtime serviceRuntimeSpec `json:"runtime"`
-}
-
-type serviceRuntimeSpec struct {
-	ServiceName string `json:"serviceName"`
-}
-
-type shapeSpec struct {
-	Kind        string          `json:"kind"`
-	Name        string          `json:"name"`
-	Sensitive   bool            `json:"sensitive"`
-	Input       bool            `json:"input"`
-	Output      bool            `json:"output"`
-	Members     []memberSpec    `json:"members"`
-	Member      *listMemberSpec `json:"member"`
-	Enum        []enumValueSpec `json:"enum"`
-	Constraints constraintsSpec `json:"constraints"`
-}
-
-type constraintsSpec struct {
-	Length  boundSpec `json:"length"`
-	Range   boundSpec `json:"range"`
-	Pattern string    `json:"pattern"`
-}
-
-type boundSpec struct {
-	Min *int `json:"min"`
-	Max *int `json:"max"`
-}
-
-type memberSpec struct {
-	Name             string           `json:"name"`
-	Target           string           `json:"target"`
-	JSONName         string           `json:"jsonName"`
-	Required         bool             `json:"required"`
-	HTTPBinding      *httpBindingSpec `json:"httpBinding"`
-	NestedProperties bool             `json:"nestedProperties"`
-	IdempotencyToken bool             `json:"idempotencyToken"`
-}
-
-type listMemberSpec struct {
-	Target string `json:"target"`
-}
-
-type enumValueSpec struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-type httpBindingSpec struct {
-	Location string `json:"location"`
-	Name     string `json:"name"`
-}
-
-type operationSpec struct {
-	Name        string       `json:"name"`
-	OperationID string       `json:"operationId"`
-	HTTP        httpSpec     `json:"http"`
-	Input       string       `json:"input"`
-	Output      string       `json:"output"`
-	Errors      []string     `json:"errors"`
-	Bindings    bindingsSpec `json:"bindings"`
-}
-
-type httpSpec struct {
-	Method        string `json:"method"`
-	Path          string `json:"path"`
-	SuccessStatus int    `json:"successStatus"`
-}
-
-type bindingsSpec struct {
-	Labels          []bindingSpec `json:"labels"`
-	Headers         []bindingSpec `json:"headers"`
-	Queries         []bindingSpec `json:"queries"`
-	DocumentMembers []string      `json:"documentMembers"`
-}
-
-type bindingSpec struct {
-	Member string `json:"member"`
-	Name   string `json:"name"`
-}
-
-type problemSpec struct {
-	ShapeID string `json:"shapeId"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Code    string `json:"code"`
-	Status  int    `json:"status"`
-}
+type contractIR = contract.IR
+type bindingSpec = contract.BoundMember
+type enumValueSpec = contract.EnumValue
+type shapeSpec = contract.Shape
+type memberSpec = contract.Member
+type operationSpec = contract.Operation
 
 type generator struct {
 	ir      contractIR
@@ -152,12 +58,8 @@ func main() {
 }
 
 func readIR(path string) (contractIR, error) {
-	data, err := os.ReadFile(path)
+	ir, err := contract.ReadFile(path)
 	if err != nil {
-		return contractIR{}, err
-	}
-	var ir contractIR
-	if err := json.Unmarshal(data, &ir); err != nil {
 		return contractIR{}, err
 	}
 	for id, shape := range ir.Shapes {
@@ -361,13 +263,14 @@ func (g generator) writeClient(out *bytes.Buffer) {
 
 func (g generator) writeOperationMethods(out *bytes.Buffer) {
 	for _, op := range g.sortedOperations() {
-		fmt.Fprintf(out, "func (c *Client) %s(ctx context.Context, request %sRequest) (*%sResponse, error) {\n", op.Name, op.Name, op.Name)
+		fmt.Fprintf(out, "func (c *Client) %s(ctx context.Context, request %sRequest, reqEditors ...RequestEditorFn) (*%sResponse, error) {\n", op.Name, op.Name, op.Name)
 		out.WriteString("\tif c == nil || c.client == nil {\n")
 		out.WriteString("\t\treturn nil, fmt.Errorf(\"%s SDK transport: client is not initialized\", ServiceName)\n")
 		out.WriteString("\t}\n")
 		fmt.Fprintf(out, "\treq, err := c.new%sRequest(ctx, request)\n", op.Name)
 		out.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
 		out.WriteString("\tfor _, editor := range c.requestEditors {\n\t\tif err := editor(ctx, req); err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t}\n")
+		out.WriteString("\tfor _, editor := range reqEditors {\n\t\tif editor != nil {\n\t\t\tif err := editor(ctx, req); err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n\t\t}\n\t}\n")
 		out.WriteString("\tresp, err := c.client.Do(req)\n")
 		out.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
 		fmt.Fprintf(out, "\treturn parse%sResponse(resp)\n", op.Name)
@@ -631,6 +534,9 @@ func exportedIdentifier(name string) string {
 	value = strings.ReplaceAll(value, "Acl", "ACL")
 	value = strings.ReplaceAll(value, "Api", "API")
 	value = strings.ReplaceAll(value, "Url", "URL")
+	if strings.HasSuffix(value, "Id") {
+		value = strings.TrimSuffix(value, "Id") + "ID"
+	}
 	if first := []rune(value)[0]; unicode.IsDigit(first) {
 		return "N" + value
 	}

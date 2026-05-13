@@ -28,16 +28,6 @@ func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity
 	return api
 }
 
-func InternalOpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, "https://"+listenAddr, nil)
-	return api.OpenAPI().DowngradeYAML()
-}
-
-func InternalOpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, "https://"+listenAddr, nil)
-	return api.OpenAPI().YAML()
-}
-
 func applyInternalAPISecuritySchemes(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {

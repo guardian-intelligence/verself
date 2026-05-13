@@ -161,7 +161,7 @@ func runAdmin(
 	if err != nil {
 		return fmt.Errorf("object-storage iam mtls: %w", err)
 	}
-	iamClient, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
+	iamClient, err := iamclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("object-storage iam client: %w", err)
 	}

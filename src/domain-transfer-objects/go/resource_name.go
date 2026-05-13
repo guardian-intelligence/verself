@@ -60,7 +60,7 @@ func FormatResourceName(installationID string, segments ...ResourcePathSegment) 
 func ParseResourceName(value string) (ParsedResourceName, error) {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, ResourceNamePrefix) {
-		return ParsedResourceName{}, errors.New("resource name must start with urn:verself:")
+		return ParsedResourceName{}, errors.New("resource name must start with urn:verself")
 	}
 	rest := strings.TrimPrefix(value, ResourceNamePrefix)
 	installationID, path, ok := strings.Cut(rest, ":")

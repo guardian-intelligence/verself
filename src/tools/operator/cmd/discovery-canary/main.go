@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,12 +97,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("iam mtls client: %w", err)
 	}
-	iam, err := iamclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(httpClient))
+	iam, err := iamclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return fmt.Errorf("iam client: %w", err)
 	}
 	authorizer := iamclient.NewAuthorizer(iam)
-	slug := slugFlag
+	slug := strings.TrimSpace(*slugFlag)
 
 	startedAt := time.Now()
 	deadline := startedAt.Add(*duration)
@@ -134,7 +135,11 @@ func run() error {
 			for range work {
 				perReqCtx, perReqCancel := context.WithTimeout(ctx, *timeout)
 				start := time.Now()
-				resp, err := iam.ResolveOrganizationWithResponse(perReqCtx, iamclient.ResolveOrganizationJSONRequestBody{Slug: slug})
+				resolveSlug := iamclient.OrgSlug(slug)
+				resolveRequest := iamclient.ResolveOrganizationRequest{
+					Body: iamclient.ResolveOrganizationInputBody{Slug: &resolveSlug},
+				}
+				resp, err := iam.ResolveOrganization(perReqCtx, resolveRequest)
 				elapsed := time.Since(start)
 				perReqCancel()
 				latencies.add(elapsed)
@@ -145,10 +150,10 @@ func run() error {
 					firstErr.CompareAndSwap(nil, "request: "+err.Error())
 					continue
 				}
-				statuses.add(resp.HTTPResponse.StatusCode)
-				if resp.HTTPResponse.StatusCode >= 500 {
+				statuses.add(resp.StatusCode)
+				if resp.StatusCode >= 500 {
 					failure.Add(1)
-					firstErr.CompareAndSwap(nil, fmt.Sprintf("HTTP %d", resp.HTTPResponse.StatusCode))
+					firstErr.CompareAndSwap(nil, fmt.Sprintf("HTTP %d", resp.StatusCode))
 					continue
 				}
 				success.Add(1)
@@ -227,7 +232,9 @@ loop:
 
 	switch *format {
 	case "table":
-		printTable(r)
+		if err := printTable(r); err != nil {
+			return err
+		}
 	default:
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -241,37 +248,68 @@ loop:
 	return nil
 }
 
-func printTable(r result) {
+func printTable(r result) error {
 	w := os.Stdout
-	fmt.Fprintln(w, "discovery-canary")
-	fmt.Fprintf(w, "  duration        %s\n", r.Duration)
-	fmt.Fprintf(w, "  target rps      %d\n", r.TargetRPS)
-	fmt.Fprintf(w, "  total           %d\n", r.TotalRequests)
-	fmt.Fprintf(w, "  success         %d\n", r.SuccessRequests)
-	fmt.Fprintf(w, "  failure (5xx)   %d\n", r.FailureRequests-r.NetworkErrors)
-	fmt.Fprintf(w, "  network errors  %d\n", r.NetworkErrors)
-	fmt.Fprintf(w, "  authz checks    %d allowed=%d denied=%d errors=%d\n", r.AuthzChecks, r.AuthzAllowed, r.AuthzDenied, r.AuthzErrors)
-	fmt.Fprintf(w, "  zero-downtime   %v\n", r.ZeroDowntime)
-	fmt.Fprintf(w, "  latency p50/p95/p99/max  %dms / %dms / %dms / %dms\n",
-		r.LatencyP50Millis, r.LatencyP95Millis, r.LatencyP99Millis, r.LatencyMaxMillis)
+	if _, err := fmt.Fprintln(w, "discovery-canary"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  duration        %s\n", r.Duration); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  target rps      %d\n", r.TargetRPS); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  total           %d\n", r.TotalRequests); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  success         %d\n", r.SuccessRequests); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  failure (5xx)   %d\n", r.FailureRequests-r.NetworkErrors); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  network errors  %d\n", r.NetworkErrors); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  authz checks    %d allowed=%d denied=%d errors=%d\n", r.AuthzChecks, r.AuthzAllowed, r.AuthzDenied, r.AuthzErrors); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  zero-downtime   %v\n", r.ZeroDowntime); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  latency p50/p95/p99/max  %dms / %dms / %dms / %dms\n",
+		r.LatencyP50Millis, r.LatencyP95Millis, r.LatencyP99Millis, r.LatencyMaxMillis); err != nil {
+		return err
+	}
 	if len(r.StatusCounts) > 0 {
 		codes := make([]int, 0, len(r.StatusCounts))
 		for c := range r.StatusCounts {
 			codes = append(codes, c)
 		}
 		sort.Ints(codes)
-		fmt.Fprintf(w, "  status counts   ")
+		if _, err := fmt.Fprintf(w, "  status counts   "); err != nil {
+			return err
+		}
 		for i, c := range codes {
 			if i > 0 {
-				fmt.Fprint(w, " ")
+				if _, err := fmt.Fprint(w, " "); err != nil {
+					return err
+				}
 			}
-			fmt.Fprintf(w, "%d=%d", c, r.StatusCounts[c])
+			if _, err := fmt.Fprintf(w, "%d=%d", c, r.StatusCounts[c]); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintln(w)
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
 	}
 	if r.FirstError != "" {
-		fmt.Fprintf(w, "  first error     %s\n", r.FirstError)
+		if _, err := fmt.Fprintf(w, "  first error     %s\n", r.FirstError); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 type latencyRecorder struct {

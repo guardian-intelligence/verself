@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,83 +10,15 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/verself/verself/src/smithy/internal/contract"
 )
 
-type contractIR struct {
-	Projection string               `json:"projection"`
-	Service    serviceSpec          `json:"service"`
-	Shapes     map[string]shapeSpec `json:"shapes"`
-	Operations []operationSpec      `json:"operations"`
-}
-
-type serviceSpec struct {
-	Name    string             `json:"name"`
-	Runtime serviceRuntimeSpec `json:"runtime"`
-}
-
-type serviceRuntimeSpec struct {
-	ServiceName string `json:"serviceName"`
-}
-
-type shapeSpec struct {
-	Kind    string          `json:"kind"`
-	Name    string          `json:"name"`
-	Input   bool            `json:"input"`
-	Output  bool            `json:"output"`
-	Members []memberSpec    `json:"members"`
-	Member  *listMemberSpec `json:"member"`
-	Enum    []enumValueSpec `json:"enum"`
-}
-
-type memberSpec struct {
-	Name             string           `json:"name"`
-	Target           string           `json:"target"`
-	JSONName         string           `json:"jsonName"`
-	Required         bool             `json:"required"`
-	HTTPBinding      *httpBindingSpec `json:"httpBinding"`
-	NestedProperties bool             `json:"nestedProperties"`
-}
-
-type listMemberSpec struct {
-	Target string `json:"target"`
-}
-
-type enumValueSpec struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-type httpBindingSpec struct {
-	Location string `json:"location"`
-	Name     string `json:"name"`
-}
-
-type operationSpec struct {
-	Name        string       `json:"name"`
-	OperationID string       `json:"operationId"`
-	HTTP        httpSpec     `json:"http"`
-	Input       string       `json:"input"`
-	Output      string       `json:"output"`
-	Bindings    bindingsSpec `json:"bindings"`
-}
-
-type httpSpec struct {
-	Method        string `json:"method"`
-	Path          string `json:"path"`
-	SuccessStatus int    `json:"successStatus"`
-}
-
-type bindingsSpec struct {
-	Labels          []bindingSpec `json:"labels"`
-	Headers         []bindingSpec `json:"headers"`
-	Queries         []bindingSpec `json:"queries"`
-	DocumentMembers []string      `json:"documentMembers"`
-}
-
-type bindingSpec struct {
-	Member string `json:"member"`
-	Name   string `json:"name"`
-}
+type contractIR = contract.IR
+type bindingSpec = contract.BoundMember
+type shapeSpec = contract.Shape
+type memberSpec = contract.Member
+type operationSpec = contract.Operation
 
 type generator struct {
 	ir contractIR
@@ -120,12 +51,8 @@ func main() {
 }
 
 func readIR(path string) (contractIR, error) {
-	data, err := os.ReadFile(path)
+	ir, err := contract.ReadFile(path)
 	if err != nil {
-		return contractIR{}, err
-	}
-	var ir contractIR
-	if err := json.Unmarshal(data, &ir); err != nil {
 		return contractIR{}, err
 	}
 	for id, shape := range ir.Shapes {

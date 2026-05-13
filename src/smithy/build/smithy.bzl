@@ -9,50 +9,42 @@ def _smithy_source_inputs(ctx):
     )
 
 def _smithy_validate_impl(ctx):
-    marker = ctx.actions.declare_file(ctx.attr.out)
-    build_dir = ctx.actions.declare_directory(ctx.label.name + ".build")
+    build_dir = ctx.actions.declare_directory(ctx.attr.out)
     args = ctx.actions.args()
-    args.add(ctx.executable._smithy_cli)
-    args.add(ctx.file.config)
-    args.add(build_dir.path)
-    args.add(marker)
-    ctx.actions.run_shell(
-        command = """
-set -euo pipefail
-"$1" validate --no-color --severity NOTE --config "$2" --output "$3"
-touch "$4"
-""",
+    args.add("validate")
+    args.add("--no-color")
+    args.add("--severity", "NOTE")
+    args.add("--config", ctx.file.config)
+    args.add("--output", build_dir.path)
+    ctx.actions.run(
+        executable = ctx.executable._smithy_cli,
         arguments = [args],
         inputs = _smithy_source_inputs(ctx),
         mnemonic = "SmithyValidate",
-        outputs = [build_dir, marker],
+        outputs = [build_dir],
         progress_message = "Validating Smithy model %{label}",
         tools = [ctx.executable._smithy_cli],
     )
-    return DefaultInfo(files = depset([marker]))
+    return DefaultInfo(files = depset([build_dir]))
 
 def _smithy_build_impl(ctx):
-    tar = ctx.actions.declare_file(ctx.attr.out)
-    build_dir = ctx.actions.declare_directory(ctx.label.name + ".build")
+    build_dir = ctx.actions.declare_directory(ctx.attr.out)
     args = ctx.actions.args()
-    args.add(ctx.executable._smithy_cli)
-    args.add(ctx.file.config)
-    args.add(build_dir.path)
-    args.add(tar)
-    ctx.actions.run_shell(
-        command = """
-set -euo pipefail
-"$1" build --no-color --severity NOTE --config "$2" --output "$3"
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$4" -C "$3" .
-""",
+    args.add("build")
+    args.add("--no-color")
+    args.add("--severity", "NOTE")
+    args.add("--config", ctx.file.config)
+    args.add("--output", build_dir.path)
+    ctx.actions.run(
+        executable = ctx.executable._smithy_cli,
         arguments = [args],
         inputs = _smithy_source_inputs(ctx),
         mnemonic = "SmithyBuild",
-        outputs = [build_dir, tar],
+        outputs = [build_dir],
         progress_message = "Building Smithy projection %{label}",
         tools = [ctx.executable._smithy_cli],
     )
-    return DefaultInfo(files = depset([tar]))
+    return DefaultInfo(files = depset([build_dir]))
 
 _COMMON_ATTRS = {
     "config": attr.label(allow_single_file = True, mandatory = True),

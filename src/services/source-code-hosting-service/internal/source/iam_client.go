@@ -16,11 +16,11 @@ import (
 var identityTracer = otel.Tracer("source-code-hosting-service/identity")
 
 type IAMClient struct {
-	Client *iamclient.ClientWithResponses
+	Client *iamclient.Client
 }
 
-func NewIAMClient(baseURL string, httpClient iamclient.HttpRequestDoer) (IAMClient, error) {
-	client, err := iamclient.NewClientWithResponses(strings.TrimRight(baseURL, "/"), iamclient.WithHTTPClient(httpClient))
+func NewIAMClient(baseURL string, httpClient iamclient.HTTPRequestDoer) (IAMClient, error) {
+	client, err := iamclient.NewClient(strings.TrimRight(baseURL, "/"), iamclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return IAMClient{}, err
 	}
@@ -52,24 +52,25 @@ func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ Or
 		return OrganizationReference{}, ErrInvalid
 	}
 	span.SetAttributes(attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")), attribute.String("source.org_slug.requested", slug))
-	body := iamclient.ResolveOrganizationJSONRequestBody{
+	body := iamclient.ResolveOrganizationInputBody{
 		RequireActive: true,
 	}
 	if orgID != 0 {
-		body.OrgId = stringPtr(strconv.FormatUint(orgID, 10))
+		value := iamclient.ProviderOrgId(strconv.FormatUint(orgID, 10))
+		body.OrgID = &value
 	}
 	if slug != "" {
-		body.Slug = stringPtr(slug)
+		value := iamclient.OrgSlug(slug)
+		body.Slug = &value
 	}
-	resp, err := c.Client.ResolveOrganizationWithResponse(ctx, body)
+	resp, err := c.Client.ResolveOrganization(ctx, iamclient.ResolveOrganizationRequest{Body: body})
 	if err != nil {
 		return OrganizationReference{}, fmt.Errorf("%w: resolve organization: %v", ErrStoreUnavailable, err)
 	}
-	if resp.JSON200 == nil {
-		status := 0
+	if resp.Result == nil {
+		status := resp.StatusCode
 		body := ""
 		if resp.HTTPResponse != nil {
-			status = resp.HTTPResponse.StatusCode
 			body = strings.TrimSpace(string(resp.Body))
 		}
 		switch status {
@@ -81,15 +82,15 @@ func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ Or
 			return OrganizationReference{}, fmt.Errorf("%w: resolve organization unexpected status %d: %s", ErrStoreUnavailable, status, body)
 		}
 	}
-	org := resp.JSON200.Organization
-	resolvedOrgID, err := strconv.ParseUint(strings.TrimSpace(org.OrgId), 10, 64)
+	org := resp.Result.Organization
+	resolvedOrgID, err := strconv.ParseUint(strings.TrimSpace(string(org.OrgID)), 10, 64)
 	if err != nil || resolvedOrgID == 0 {
 		return OrganizationReference{}, fmt.Errorf("%w: parse organization id: %v", ErrStoreUnavailable, err)
 	}
 	ref := OrganizationReference{
 		OrgID:          resolvedOrgID,
-		Slug:           strings.TrimSpace(org.Slug),
-		DisplayName:    strings.TrimSpace(org.DisplayName),
+		Slug:           strings.TrimSpace(string(org.Slug)),
+		DisplayName:    strings.TrimSpace(string(org.DisplayName)),
 		RedirectedFrom: trimOptionalString(org.RedirectedFrom),
 	}
 	if ref.OrgID == 0 || ref.Slug == "" {
@@ -103,13 +104,9 @@ func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ Or
 	return ref, nil
 }
 
-func stringPtr(value string) *string {
-	return &value
-}
-
-func trimOptionalString(value *string) string {
+func trimOptionalString(value *iamclient.OrgSlug) string {
 	if value == nil {
 		return ""
 	}
-	return strings.TrimSpace(*value)
+	return strings.TrimSpace(string(*value))
 }

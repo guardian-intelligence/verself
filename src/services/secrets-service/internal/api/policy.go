@@ -124,7 +124,7 @@ func registerSecured[I, O any](api huma.API, svc *secrets.Service, authorizer ru
 }
 
 func withOperationPolicy(op huma.Operation, policy secretsOperationPolicy) huma.Operation {
-	if err := policy.OperationPolicy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
+	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
 		panic(err)
 	}
 	if policy.OpenBaoRole == "" {
@@ -151,10 +151,6 @@ func withOperationPolicy(op huma.Operation, policy secretsOperationPolicy) huma.
 	op.Extensions["x-verself-iam"] = iam
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
-}
-
-func operationRequiresBodyBudget(op huma.Operation) bool {
-	return runtimeiam.OperationRequiresBodyBudget(op.Method)
 }
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
