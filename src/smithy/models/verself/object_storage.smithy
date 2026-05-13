@@ -3,9 +3,11 @@ namespace verself.objectstorage.v1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#nestedProperties
 use smithy.api#pattern
 use smithy.api#readonly
 use smithy.api#required
@@ -71,8 +73,6 @@ string BucketName
 string BucketAliasName
 @length(max: 1024)
 string ObjectPrefix
-@length(max: 65536)
-string LifecycleJSON
 @pattern("^[0-9]+$")
 string DecimalUint64
 @length(min: 1, max: 255)
@@ -98,6 +98,9 @@ list BucketAliases {
 }
 list ObjectStorageCredentials {
     member: ObjectStorageCredentialView
+}
+list ObjectStorageLifecycleRules {
+    member: Document
 }
 @permission(name: "object-storage:bucket:read")
 string BucketReadPermission
@@ -153,14 +156,13 @@ structure BucketView {
     @required
     @protoField(number: 4)
     bucket_name: BucketName
-    @required
     @protoField(number: 5)
     quota_bytes: DecimalUint64
-    @required
     @protoField(number: 6)
     quota_objects: DecimalUint64
+    @required
     @protoField(number: 7)
-    lifecycle: LifecycleJSON
+    lifecycle_rules: ObjectStorageLifecycleRules
     @required
     @protoField(number: 8)
     created_at: Timestamp
@@ -222,7 +224,7 @@ structure ObjectStorageAccessKeySecret {
     secret_access_key: SecretAccessKey
     @required
     @protoField(number: 3)
-    fingerprint: CredentialFingerprint
+    credential_fingerprint: CredentialFingerprint
     @required
     @protoField(number: 4)
     credential: ObjectStorageCredentialView
@@ -244,6 +246,8 @@ structure BucketIdempotentInput {
 }
 structure BucketOutput {
     @required
+    @nestedProperties
+    @protoField(number: 1)
     bucket: BucketView
 }
 structure EmptyOutput {}
@@ -262,6 +266,8 @@ operation ListObjectStorageBuckets {
 }
 structure ListObjectStorageBucketsOutput {
     @required
+    @httpPayload
+    @protoField(number: 1)
     buckets: Buckets
 }
 @idempotent
@@ -284,11 +290,9 @@ structure CreateObjectStorageBucketInput {
     idempotencyKey: IdempotencyKey
     @required
     bucket_name: BucketName
-    @required
     quota_bytes: DecimalUint64
-    @required
     quota_objects: DecimalUint64
-    lifecycle: LifecycleJSON
+    lifecycle_rules: ObjectStorageLifecycleRules
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/buckets/{bucket_id}")
@@ -324,11 +328,9 @@ structure UpdateObjectStorageBucketInput {
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
-    @required
     quota_bytes: DecimalUint64
-    @required
     quota_objects: DecimalUint64
-    lifecycle: LifecycleJSON
+    lifecycle_rules: ObjectStorageLifecycleRules
 }
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/buckets/{bucket_id}")
@@ -371,6 +373,8 @@ structure CreateObjectStorageBucketAliasInput {
 }
 structure BucketAliasOutput {
     @required
+    @nestedProperties
+    @protoField(number: 1)
     alias: BucketAliasView
 }
 @readonly
@@ -388,6 +392,8 @@ operation ListObjectStorageBucketAliases {
 }
 structure ListObjectStorageBucketAliasesOutput {
     @required
+    @httpPayload
+    @protoField(number: 1)
     aliases: BucketAliases
 }
 @idempotent
@@ -430,6 +436,8 @@ operation ListObjectStorageCredentials {
 }
 structure ListObjectStorageCredentialsOutput {
     @required
+    @httpPayload
+    @protoField(number: 1)
     credentials: ObjectStorageCredentials
 }
 @idempotent
@@ -459,6 +467,8 @@ structure CreateObjectStorageAccessKeyInput {
 }
 structure ObjectStorageAccessKeySecretOutput {
     @required
+    @nestedProperties
+    @protoField(number: 1)
     access_key: ObjectStorageAccessKeySecret
 }
 @idempotent

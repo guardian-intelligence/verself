@@ -15,45 +15,11 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission = runtimeiam.Permission
-
-const (
-	permissionBucketRead     permission = "object-storage:bucket:read"
-	permissionBucketWrite    permission = "object-storage:bucket:write"
-	permissionAccessKeyRead  permission = "object-storage:access-key:read"
-	permissionAccessKeyWrite permission = "object-storage:access-key:write"
-
-	bodyLimitSmallJSON = 64 << 10
-)
-
 var apiTracer = otel.Tracer("object-storage-service/internal/api")
 
 type operationPrincipal struct {
 	OrgID string
 	Actor string
-}
-
-func readPolicy(resource runtimeiam.ResourceKind, action runtimeiam.Action, auditEvent runtimeiam.AuditEvent, permission permission) runtimeiam.OperationPolicy {
-	return runtimeiam.OperationPolicy{
-		Permission:     permission,
-		Resource:       resource,
-		Action:         action,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     auditEvent,
-	}
-}
-
-func writePolicy(resource runtimeiam.ResourceKind, action runtimeiam.Action, auditEvent runtimeiam.AuditEvent, permission permission) runtimeiam.OperationPolicy {
-	return runtimeiam.OperationPolicy{
-		Permission:     permission,
-		Resource:       resource,
-		Action:         action,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "object_storage_mutation",
-		AuditEvent:     auditEvent,
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}
 }
 
 func registerAdminRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy runtimeiam.OperationPolicy, handler func(context.Context, operationPrincipal, *I) (*O, error)) {

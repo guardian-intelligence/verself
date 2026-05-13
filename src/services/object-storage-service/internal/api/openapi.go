@@ -33,13 +33,3 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
-
-func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr})
-	return api.OpenAPI().YAML()
-}
-
-func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr})
-	return api.OpenAPI().DowngradeYAML()
-}

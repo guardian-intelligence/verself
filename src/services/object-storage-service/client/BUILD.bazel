@@ -1,11 +1,27 @@
-load("//src/tools/build:openapi_codegen.bzl", "verself_oapi_go_client")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_go")
 
-verself_oapi_go_client(
-    name = "client",
-    importpath = "github.com/verself/object-storage-service/client",
+ir_sdk_go(
+    name = "public_transport_go",
+    out = "__generated_sources/client.gen.go",
+    ir = "//src/smithy/models/verself:object_storage_public_ir",
     package = "objectstorageclient",
-    spec = "//src/services/object-storage-service/openapi:openapi-3.0.yaml",
-    deps = ["@com_github_oapi_codegen_runtime//:runtime"],
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "client.gen.go": ":public_transport_go",
+    },
+    tags = ["manual"],
+)
+
+go_library(
+    name = "client",
+    srcs = ["client.gen.go"],
+    importpath = "github.com/verself/object-storage-service/client",
+    visibility = ["//visibility:public"],
 )
 
 alias(

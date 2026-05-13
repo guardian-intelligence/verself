@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,161 +14,27 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/object-storage-service/internal/contractapi"
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type bucketListOutput struct {
-	Body []bucketView
-}
-
-type bucketOutput struct {
-	Body bucketView
-}
-
-type createBucketInput struct {
-	Body struct {
-		BucketName   string             `json:"bucket_name"`
-		QuotaBytes   *dto.DecimalUint64 `json:"quota_bytes,omitempty"`
-		QuotaObjects *dto.DecimalUint64 `json:"quota_objects,omitempty"`
-		Lifecycle    json.RawMessage    `json:"lifecycle_rules,omitempty"`
-	}
-}
-
-type bucketPath struct {
-	BucketID string `path:"bucket_id"`
-}
-
-type updateBucketInput struct {
-	BucketID string `path:"bucket_id"`
-	Body     struct {
-		QuotaBytes   *dto.DecimalUint64 `json:"quota_bytes,omitempty"`
-		QuotaObjects *dto.DecimalUint64 `json:"quota_objects,omitempty"`
-		Lifecycle    json.RawMessage    `json:"lifecycle_rules,omitempty"`
-	}
-}
-
-type createAliasInput struct {
-	BucketID string `path:"bucket_id"`
-	Body     struct {
-		Alias      string `json:"alias"`
-		Prefix     string `json:"prefix,omitempty"`
-		ServiceTag string `json:"service_tag,omitempty"`
-	}
-}
-
-type aliasPath struct {
-	BucketID string `path:"bucket_id"`
-	Alias    string `path:"alias"`
-}
-
-type aliasOutput struct {
-	Body aliasView
-}
-
-type aliasListOutput struct {
-	Body []aliasView
-}
-
-type credentialsOutput struct {
-	Body []credentialView
-}
-
-type createStaticCredentialInput struct {
-	BucketID string `path:"bucket_id"`
-	Body     struct {
-		DisplayName string  `json:"display_name"`
-		ExpiresAt   *string `json:"expires_at,omitempty"`
-	}
-}
-
-type createStaticCredentialOutput struct {
-	Body credentialSecretView
-}
-
-type createMTLSCredentialInput struct {
-	BucketID string `path:"bucket_id"`
-	Body     struct {
-		DisplayName   string `json:"display_name"`
-		SPIFFESubject string `json:"spiffe_subject"`
-	}
-}
-
-type mtlsCredentialPath struct {
-	BucketID     string `path:"bucket_id"`
-	CredentialID string `path:"credential_id"`
-}
-
-type accessKeyPath struct {
-	AccessKeyID string `path:"access_key_id"`
-}
-
-type credentialSecretView struct {
-	AccessKeyID     string         `json:"access_key_id"`
-	SecretAccessKey string         `json:"secret_access_key"`
-	Fingerprint     string         `json:"credential_fingerprint"`
-	Credential      credentialView `json:"credential"`
-}
-
-type bucketView struct {
-	BucketID       string             `json:"bucket_id"`
-	OrgID          string             `json:"org_id"`
-	BucketName     string             `json:"bucket_name"`
-	GarageBucketID string             `json:"garage_bucket_id"`
-	QuotaBytes     *dto.DecimalUint64 `json:"quota_bytes,omitempty"`
-	QuotaObjects   *dto.DecimalUint64 `json:"quota_objects,omitempty"`
-	Lifecycle      json.RawMessage    `json:"lifecycle_rules"`
-	CreatedAt      string             `json:"created_at"`
-	UpdatedAt      string             `json:"updated_at"`
-}
-
-type aliasView struct {
-	Alias      string `json:"alias"`
-	BucketID   string `json:"bucket_id"`
-	Prefix     string `json:"prefix"`
-	ServiceTag string `json:"service_tag"`
-	CreatedAt  string `json:"created_at"`
-}
-
-type credentialView struct {
-	CredentialID          string  `json:"credential_id"`
-	BucketID              string  `json:"bucket_id"`
-	AuthMode              string  `json:"auth_mode"`
-	DisplayName           string  `json:"display_name"`
-	AccessKeyID           string  `json:"access_key_id,omitempty"`
-	SPIFFESubject         string  `json:"spiffe_subject,omitempty"`
-	CredentialFingerprint string  `json:"credential_fingerprint,omitempty"`
-	Status                string  `json:"status"`
-	ExpiresAt             *string `json:"expires_at,omitempty"`
-	CreatedAt             string  `json:"created_at"`
-	RevokedAt             *string `json:"revoked_at,omitempty"`
-}
-
 func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer runtimeiam.OperationAuthorizer) {
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "list-object-storage-buckets",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/buckets",
-		Summary:     "List object storage buckets",
-	}, readPolicy("bucket", "list", "object_storage.bucket.list", permissionBucketRead), func(ctx context.Context, principal operationPrincipal, _ *struct{}) (*bucketListOutput, error) {
+	op, policy := objectStorageContract(contractapi.ListObjectStorageBuckets.Descriptor, "List object storage buckets")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, _ *contractapi.EmptyInput) (*contractapi.ListObjectStorageBucketsOutput, error) {
 		buckets, err := svc.Store.ListBucketsByOrg(ctx, principal.OrgID)
 		if err != nil {
 			return nil, problem(ctx, http.StatusInternalServerError, "list-buckets-failed", "list buckets failed", err)
 		}
-		out := make([]bucketView, 0, len(buckets))
-		for _, bucket := range buckets {
-			out = append(out, toBucketView(bucket))
+		out, err := bucketViewsFromDomain(buckets)
+		if err != nil {
+			return nil, problem(ctx, http.StatusInternalServerError, "invalid-lifecycle-rules", "stored lifecycle_rules were invalid", err)
 		}
-		return &bucketListOutput{Body: out}, nil
+		return &contractapi.ListObjectStorageBucketsOutput{Body: out}, nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "create-object-storage-bucket",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/buckets",
-		Summary:     "Create object storage bucket",
-	}, writePolicy("bucket", "create", "object_storage.bucket.create", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *createBucketInput) (*bucketOutput, error) {
+	op, policy = objectStorageContract(contractapi.CreateObjectStorageBucket.Descriptor, "Create object storage bucket")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.CreateObjectStorageBucketInput) (*contractapi.BucketOutput, error) {
 		quotaBytes, err := quotaFromWire(input.Body.QuotaBytes)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-quota-bytes", err.Error())
@@ -176,27 +43,27 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-quota-objects", err.Error())
 		}
+		lifecycleRules, err := lifecycleRulesFromContract(input.Body.LifecycleRules)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-lifecycle-rules", "lifecycle_rules must be JSON lifecycle rule objects")
+		}
 		bucket, err := svc.CreateBucket(ctx, objectstorage.CreateBucketInput{
 			OrgID:         principal.OrgID,
-			BucketName:    input.Body.BucketName,
+			BucketName:    string(input.Body.BucketName),
 			QuotaBytes:    quotaBytes,
 			QuotaObjects:  quotaObjects,
-			LifecycleJSON: input.Body.Lifecycle,
+			LifecycleJSON: lifecycleRules,
 			Actor:         principal.Actor,
 		})
 		if err != nil {
 			return nil, toHumaError(ctx, "create bucket failed", err)
 		}
-		return &bucketOutput{Body: toBucketView(bucket)}, nil
+		return bucketOutputFromDomain(ctx, bucket)
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "get-object-storage-bucket",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/buckets/{bucket_id}",
-		Summary:     "Get object storage bucket",
-	}, readPolicy("bucket", "read", "object_storage.bucket.read", permissionBucketRead), func(ctx context.Context, principal operationPrincipal, input *bucketPath) (*bucketOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.GetObjectStorageBucket.Descriptor, "Get object storage bucket")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.BucketPathInput) (*contractapi.BucketOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -204,16 +71,12 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, err
 		}
-		return &bucketOutput{Body: toBucketView(bucket)}, nil
+		return bucketOutputFromDomain(ctx, bucket)
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "update-object-storage-bucket",
-		Method:      http.MethodPut,
-		Path:        "/api/v1/buckets/{bucket_id}",
-		Summary:     "Update object storage bucket",
-	}, writePolicy("bucket", "update", "object_storage.bucket.update", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *updateBucketInput) (*bucketOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.UpdateObjectStorageBucket.Descriptor, "Update object storage bucket")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.UpdateObjectStorageBucketInput) (*contractapi.BucketOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -225,23 +88,23 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-quota-objects", err.Error())
 		}
+		lifecycleRules, err := lifecycleRulesFromContract(input.Body.LifecycleRules)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-lifecycle-rules", "lifecycle_rules must be JSON lifecycle rule objects")
+		}
 		if _, err := requireBucketInOrg(ctx, svc, bucketID, principal.OrgID); err != nil {
 			return nil, err
 		}
-		bucket, err := svc.UpdateBucket(ctx, bucketID, quotaBytes, quotaObjects, input.Body.Lifecycle, principal.Actor)
+		bucket, err := svc.UpdateBucket(ctx, bucketID, quotaBytes, quotaObjects, lifecycleRules, principal.Actor)
 		if err != nil {
 			return nil, toHumaError(ctx, "update bucket failed", err)
 		}
-		return &bucketOutput{Body: toBucketView(bucket)}, nil
+		return bucketOutputFromDomain(ctx, bucket)
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "create-object-storage-bucket-alias",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/buckets/{bucket_id}/aliases",
-		Summary:     "Create object storage bucket alias",
-	}, writePolicy("bucket_alias", "create", "object_storage.bucket_alias.create", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *createAliasInput) (*aliasOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.CreateObjectStorageBucketAlias.Descriptor, "Create object storage bucket alias")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.CreateObjectStorageBucketAliasInput) (*contractapi.BucketAliasOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -250,24 +113,20 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		}
 		alias, err := svc.CreateAlias(ctx, objectstorage.CreateAliasInput{
 			BucketID:   bucketID,
-			Alias:      input.Body.Alias,
-			Prefix:     input.Body.Prefix,
-			ServiceTag: input.Body.ServiceTag,
+			Alias:      string(input.Body.Alias),
+			Prefix:     objectPrefixToString(input.Body.Prefix),
+			ServiceTag: serviceTagToString(input.Body.ServiceTag),
 			Actor:      principal.Actor,
 		})
 		if err != nil {
 			return nil, toHumaError(ctx, "create alias failed", err)
 		}
-		return &aliasOutput{Body: toAliasView(alias)}, nil
+		return &contractapi.BucketAliasOutput{Body: toAliasView(alias)}, nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "list-object-storage-bucket-aliases",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/buckets/{bucket_id}/aliases",
-		Summary:     "List object storage bucket aliases",
-	}, readPolicy("bucket_alias", "list", "object_storage.bucket_alias.list", permissionBucketRead), func(ctx context.Context, principal operationPrincipal, input *bucketPath) (*aliasListOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.ListObjectStorageBucketAliases.Descriptor, "List object storage bucket aliases")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.BucketPathInput) (*contractapi.ListObjectStorageBucketAliasesOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -278,39 +137,31 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, problem(ctx, http.StatusInternalServerError, "list-aliases-failed", "list aliases failed", err)
 		}
-		out := make([]aliasView, 0, len(aliases))
+		out := make(contractapi.BucketAliases, 0, len(aliases))
 		for _, alias := range aliases {
 			out = append(out, toAliasView(alias))
 		}
-		return &aliasListOutput{Body: out}, nil
+		return &contractapi.ListObjectStorageBucketAliasesOutput{Body: out}, nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "delete-object-storage-bucket-alias",
-		Method:      http.MethodDelete,
-		Path:        "/api/v1/buckets/{bucket_id}/aliases/{alias}",
-		Summary:     "Delete object storage bucket alias",
-	}, writePolicy("bucket_alias", "delete", "object_storage.bucket_alias.delete", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *aliasPath) (*struct{}, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.DeleteObjectStorageBucketAlias.Descriptor, "Delete object storage bucket alias")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.DeleteObjectStorageBucketAliasInput) (*contractapi.EmptyOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
 		if _, err := requireBucketInOrg(ctx, svc, bucketID, principal.OrgID); err != nil {
 			return nil, err
 		}
-		if err := svc.DeleteAlias(ctx, bucketID, input.Alias, principal.Actor); err != nil {
+		if err := svc.DeleteAlias(ctx, bucketID, string(input.Alias), principal.Actor); err != nil {
 			return nil, toHumaError(ctx, "delete alias failed", err)
 		}
-		return &struct{}{}, nil
+		return emptyOutput(), nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "list-object-storage-credentials",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/buckets/{bucket_id}/credentials",
-		Summary:     "List object storage credentials",
-	}, readPolicy("object_storage_credential", "list", "object_storage.credential.list", permissionAccessKeyRead), func(ctx context.Context, principal operationPrincipal, input *bucketPath) (*credentialsOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.ListObjectStorageCredentials.Descriptor, "List object storage credentials")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.BucketPathInput) (*contractapi.ListObjectStorageCredentialsOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -321,58 +172,41 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, problem(ctx, http.StatusInternalServerError, "list-credentials-failed", "list credentials failed", err)
 		}
-		out := make([]credentialView, 0, len(credentials))
+		out := make(contractapi.ObjectStorageCredentials, 0, len(credentials))
 		for _, credential := range credentials {
 			out = append(out, toCredentialView(credential))
 		}
-		return &credentialsOutput{Body: out}, nil
+		return &contractapi.ListObjectStorageCredentialsOutput{Body: out}, nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "create-object-storage-access-key",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/buckets/{bucket_id}/access-keys",
-		Summary:     "Create object storage access key",
-	}, writePolicy("object_storage_access_key", "create", "object_storage.access_key.create", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *createStaticCredentialInput) (*createStaticCredentialOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.CreateObjectStorageAccessKey.Descriptor, "Create object storage access key")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.CreateObjectStorageAccessKeyInput) (*contractapi.ObjectStorageAccessKeySecretOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
 		if _, err := requireBucketInOrg(ctx, svc, bucketID, principal.OrgID); err != nil {
 			return nil, err
 		}
-		var expiresAt *time.Time
-		if input.Body.ExpiresAt != nil && strings.TrimSpace(*input.Body.ExpiresAt) != "" {
-			parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(*input.Body.ExpiresAt))
-			if err != nil {
-				return nil, badRequest(ctx, "invalid-expires-at", "expires_at must be RFC3339")
-			}
-			expiresAt = &parsed
+		expiresAt, err := parseOptionalRFC3339(input.Body.ExpiresAt)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-expires-at", "expires_at must be RFC3339")
 		}
 		credential, secret, err := svc.CreateStaticCredential(ctx, objectstorage.CreateStaticCredentialInput{
 			BucketID:    bucketID,
-			DisplayName: input.Body.DisplayName,
+			DisplayName: string(input.Body.DisplayName),
 			ExpiresAt:   expiresAt,
 			Actor:       principal.Actor,
 		})
 		if err != nil {
 			return nil, toHumaError(ctx, "create access key failed", err)
 		}
-		return &createStaticCredentialOutput{Body: credentialSecretView{
-			AccessKeyID:     secret.AccessKeyID,
-			SecretAccessKey: secret.SecretAccessKey,
-			Fingerprint:     secret.Fingerprint,
-			Credential:      toCredentialView(credential),
-		}}, nil
+		return credentialSecretOutput(credential, secret), nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "create-object-storage-mtls-principal",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/buckets/{bucket_id}/mtls-principals",
-		Summary:     "Create object storage mTLS principal",
-	}, writePolicy("object_storage_mtls_principal", "create", "object_storage.mtls_principal.create", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *createMTLSCredentialInput) (*bucketOutput, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.CreateObjectStorageMTLSPrincipal.Descriptor, "Create object storage mTLS principal")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.CreateObjectStorageMTLSPrincipalInput) (*contractapi.BucketOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -381,8 +215,8 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		}
 		if _, err := svc.CreateSPIFFECredential(ctx, objectstorage.CreateSPIFFECredentialInput{
 			BucketID:      bucketID,
-			DisplayName:   input.Body.DisplayName,
-			SPIFFESubject: input.Body.SPIFFESubject,
+			DisplayName:   string(input.Body.DisplayName),
+			SPIFFESubject: string(input.Body.SpiffeSubject),
 			Actor:         principal.Actor,
 		}); err != nil {
 			return nil, toHumaError(ctx, "create mTLS principal failed", err)
@@ -391,20 +225,16 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, problem(ctx, http.StatusInternalServerError, "bucket-reload-failed", "reload bucket failed", err)
 		}
-		return &bucketOutput{Body: toBucketView(bucket)}, nil
+		return bucketOutputFromDomain(ctx, bucket)
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "delete-object-storage-mtls-principal",
-		Method:      http.MethodDelete,
-		Path:        "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}",
-		Summary:     "Delete object storage mTLS principal",
-	}, writePolicy("object_storage_mtls_principal", "delete", "object_storage.mtls_principal.delete", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *mtlsCredentialPath) (*struct{}, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.DeleteObjectStorageMTLSPrincipal.Descriptor, "Delete object storage mTLS principal")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.DeleteObjectStorageMTLSPrincipalInput) (*contractapi.EmptyOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
-		credentialID, err := uuid.Parse(strings.TrimSpace(input.CredentialID))
+		credentialID, err := credentialIDFromContract(input.CredentialID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-credential-id", "credential_id must be a UUID")
 		}
@@ -421,52 +251,35 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err := svc.RevokeSPIFFECredential(ctx, credentialID, principal.Actor); err != nil {
 			return nil, toHumaError(ctx, "revoke mTLS principal failed", err)
 		}
-		return &struct{}{}, nil
+		return emptyOutput(), nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "roll-object-storage-access-key",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/access-keys/{access_key_id}/roll",
-		Summary:     "Roll object storage access key",
-	}, writePolicy("object_storage_access_key", "roll", "object_storage.access_key.roll", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *accessKeyPath) (*createStaticCredentialOutput, error) {
-		if err := requireAccessKeyInOrg(ctx, svc, input.AccessKeyID, principal.OrgID); err != nil {
+	op, policy = objectStorageContract(contractapi.RollObjectStorageAccessKey.Descriptor, "Roll object storage access key")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.AccessKeyIdempotentInput) (*contractapi.ObjectStorageAccessKeySecretOutput, error) {
+		if err := requireAccessKeyInOrg(ctx, svc, string(input.AccessKeyID), principal.OrgID); err != nil {
 			return nil, err
 		}
-		credential, secret, err := svc.RollStaticCredential(ctx, input.AccessKeyID, principal.Actor)
+		credential, secret, err := svc.RollStaticCredential(ctx, string(input.AccessKeyID), principal.Actor)
 		if err != nil {
 			return nil, toHumaError(ctx, "roll access key failed", err)
 		}
-		return &createStaticCredentialOutput{Body: credentialSecretView{
-			AccessKeyID:     secret.AccessKeyID,
-			SecretAccessKey: secret.SecretAccessKey,
-			Fingerprint:     secret.Fingerprint,
-			Credential:      toCredentialView(credential),
-		}}, nil
+		return credentialSecretOutput(credential, secret), nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "delete-object-storage-access-key",
-		Method:      http.MethodDelete,
-		Path:        "/api/v1/access-keys/{access_key_id}",
-		Summary:     "Delete object storage access key",
-	}, writePolicy("object_storage_access_key", "delete", "object_storage.access_key.delete", permissionAccessKeyWrite), func(ctx context.Context, principal operationPrincipal, input *accessKeyPath) (*struct{}, error) {
-		if err := requireAccessKeyInOrg(ctx, svc, input.AccessKeyID, principal.OrgID); err != nil {
+	op, policy = objectStorageContract(contractapi.DeleteObjectStorageAccessKey.Descriptor, "Delete object storage access key")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.AccessKeyIdempotentInput) (*contractapi.EmptyOutput, error) {
+		if err := requireAccessKeyInOrg(ctx, svc, string(input.AccessKeyID), principal.OrgID); err != nil {
 			return nil, err
 		}
-		if err := svc.RevokeStaticCredential(ctx, input.AccessKeyID, principal.Actor); err != nil {
+		if err := svc.RevokeStaticCredential(ctx, string(input.AccessKeyID), principal.Actor); err != nil {
 			return nil, toHumaError(ctx, "revoke access key failed", err)
 		}
-		return &struct{}{}, nil
+		return emptyOutput(), nil
 	})
 
-	registerAdminRoute(api, authorizer, huma.Operation{
-		OperationID: "delete-object-storage-bucket",
-		Method:      http.MethodDelete,
-		Path:        "/api/v1/buckets/{bucket_id}",
-		Summary:     "Delete object storage bucket",
-	}, writePolicy("bucket", "delete", "object_storage.bucket.delete", permissionBucketWrite), func(ctx context.Context, principal operationPrincipal, input *bucketPath) (*struct{}, error) {
-		bucketID, err := uuid.Parse(strings.TrimSpace(input.BucketID))
+	op, policy = objectStorageContract(contractapi.DeleteObjectStorageBucket.Descriptor, "Delete object storage bucket")
+	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.BucketIdempotentInput) (*contractapi.EmptyOutput, error) {
+		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-bucket-id", "bucket_id must be a UUID")
 		}
@@ -476,7 +289,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err := svc.DeleteBucket(ctx, bucketID, principal.Actor); err != nil {
 			return nil, toHumaError(ctx, "delete bucket failed", err)
 		}
-		return &struct{}{}, nil
+		return emptyOutput(), nil
 	})
 }
 
@@ -515,40 +328,64 @@ func requireAccessKeyInOrg(ctx context.Context, svc *objectstorage.Service, acce
 	return err
 }
 
-func toBucketView(bucket objectstorage.Bucket) bucketView {
-	return bucketView{
-		BucketID:       bucket.BucketID.String(),
-		OrgID:          bucket.OrgID,
-		BucketName:     bucket.BucketName,
-		GarageBucketID: bucket.GarageBucketID,
-		QuotaBytes:     quotaToWire(bucket.QuotaBytes),
-		QuotaObjects:   quotaToWire(bucket.QuotaObjects),
-		Lifecycle:      json.RawMessage(append([]byte(nil), bucket.LifecycleJSON...)),
-		CreatedAt:      bucket.CreatedAt.UTC().Format(time.RFC3339Nano),
-		UpdatedAt:      bucket.UpdatedAt.UTC().Format(time.RFC3339Nano),
+func bucketOutputFromDomain(ctx context.Context, bucket objectstorage.Bucket) (*contractapi.BucketOutput, error) {
+	view, err := toBucketView(bucket)
+	if err != nil {
+		return nil, problem(ctx, http.StatusInternalServerError, "invalid-lifecycle-rules", "stored lifecycle_rules were invalid", err)
 	}
+	return &contractapi.BucketOutput{Body: view}, nil
 }
 
-func toAliasView(alias objectstorage.BucketAlias) aliasView {
-	return aliasView{
-		Alias:      alias.Alias,
-		BucketID:   alias.BucketID.String(),
-		Prefix:     alias.Prefix,
-		ServiceTag: alias.ServiceTag,
+func bucketViewsFromDomain(buckets []objectstorage.Bucket) (contractapi.Buckets, error) {
+	out := make(contractapi.Buckets, 0, len(buckets))
+	for _, bucket := range buckets {
+		view, err := toBucketView(bucket)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, view)
+	}
+	return out, nil
+}
+
+func toBucketView(bucket objectstorage.Bucket) (contractapi.BucketView, error) {
+	lifecycleRules, err := lifecycleRulesToContract(bucket.LifecycleJSON)
+	if err != nil {
+		return contractapi.BucketView{}, err
+	}
+	return contractapi.BucketView{
+		BucketID:       contractapi.BucketID(bucket.BucketID.String()),
+		ResourceName:   bucketResourceName(bucket.BucketID),
+		OrgID:          contractapi.OrgID(bucket.OrgID),
+		BucketName:     contractapi.BucketName(bucket.BucketName),
+		QuotaBytes:     quotaToWire(bucket.QuotaBytes),
+		QuotaObjects:   quotaToWire(bucket.QuotaObjects),
+		LifecycleRules: lifecycleRules,
+		CreatedAt:      bucket.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt:      bucket.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}, nil
+}
+
+func toAliasView(alias objectstorage.BucketAlias) contractapi.BucketAliasView {
+	return contractapi.BucketAliasView{
+		Alias:      contractapi.BucketAliasName(alias.Alias),
+		BucketID:   contractapi.BucketID(alias.BucketID.String()),
+		Prefix:     objectPrefixPtr(alias.Prefix),
+		ServiceTag: serviceTagPtr(alias.ServiceTag),
 		CreatedAt:  alias.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
-func toCredentialView(credential objectstorage.Credential) credentialView {
-	out := credentialView{
-		CredentialID:          credential.CredentialID.String(),
-		BucketID:              credential.BucketID.String(),
-		AuthMode:              credential.AuthMode,
-		DisplayName:           credential.DisplayName,
-		AccessKeyID:           credential.AccessKeyID,
-		SPIFFESubject:         credential.SPIFFESubject,
-		CredentialFingerprint: credential.SecretFingerprint,
-		Status:                credential.Status,
+func toCredentialView(credential objectstorage.Credential) contractapi.ObjectStorageCredentialView {
+	out := contractapi.ObjectStorageCredentialView{
+		CredentialID:          contractapi.CredentialID(credential.CredentialID.String()),
+		BucketID:              contractapi.BucketID(credential.BucketID.String()),
+		AuthMode:              contractapi.AuthMode(credential.AuthMode),
+		DisplayName:           contractapi.DisplayName(credential.DisplayName),
+		AccessKeyID:           accessKeyIDPtr(credential.AccessKeyID),
+		SpiffeSubject:         spiffeSubjectPtr(credential.SPIFFESubject),
+		CredentialFingerprint: credentialFingerprintPtr(credential.SecretFingerprint),
+		Status:                contractapi.CredentialStatus(credential.Status),
 		CreatedAt:             credential.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if credential.ExpiresAt != nil {
@@ -562,23 +399,142 @@ func toCredentialView(credential objectstorage.Credential) credentialView {
 	return out
 }
 
-func quotaFromWire(value *dto.DecimalUint64) (*int64, error) {
+func credentialSecretOutput(credential objectstorage.Credential, secret objectstorage.StaticCredentialSecret) *contractapi.ObjectStorageAccessKeySecretOutput {
+	return &contractapi.ObjectStorageAccessKeySecretOutput{Body: contractapi.ObjectStorageAccessKeySecret{
+		AccessKeyID:           contractapi.AccessKeyID(secret.AccessKeyID),
+		SecretAccessKey:       contractapi.SecretAccessKey(secret.SecretAccessKey),
+		CredentialFingerprint: contractapi.CredentialFingerprint(secret.Fingerprint),
+		Credential:            toCredentialView(credential),
+	}}
+}
+
+func quotaFromWire(value *contractapi.DecimalUint64) (*int64, error) {
 	if value == nil {
 		return nil, nil
 	}
-	if value.Uint64() > math.MaxInt64 {
+	parsed, err := strconv.ParseUint(strings.TrimSpace(string(*value)), 10, 64)
+	if err != nil {
+		return nil, errors.New("quota must be an unsigned decimal integer")
+	}
+	if parsed > math.MaxInt64 {
 		return nil, errors.New("quota exceeds int64 storage range")
 	}
-	parsed := int64FromUint64(value.Uint64(), "quota")
-	return &parsed, nil
+	out := int64FromUint64(parsed, "quota")
+	return &out, nil
 }
 
-func quotaToWire(value *int64) *dto.DecimalUint64 {
+func quotaToWire(value *int64) *contractapi.DecimalUint64 {
 	if value == nil {
 		return nil
 	}
-	wire := dto.Uint64(uint64FromInt64(*value, "quota"))
+	wire := contractapi.DecimalUint64(strconv.FormatUint(uint64FromInt64(*value, "quota"), 10))
 	return &wire
+}
+
+func lifecycleRulesFromContract(value *contractapi.ObjectStorageLifecycleRules) (json.RawMessage, error) {
+	if value == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(*value)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(data), nil
+}
+
+func lifecycleRulesToContract(raw json.RawMessage) (contractapi.ObjectStorageLifecycleRules, error) {
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return contractapi.ObjectStorageLifecycleRules{}, nil
+	}
+	var rules contractapi.ObjectStorageLifecycleRules
+	if err := json.Unmarshal(raw, &rules); err != nil {
+		return nil, err
+	}
+	if rules == nil {
+		return contractapi.ObjectStorageLifecycleRules{}, nil
+	}
+	return rules, nil
+}
+
+func bucketIDFromContract(value contractapi.BucketID) (uuid.UUID, error) {
+	return uuid.Parse(strings.TrimSpace(string(value)))
+}
+
+func credentialIDFromContract(value contractapi.CredentialID) (uuid.UUID, error) {
+	return uuid.Parse(strings.TrimSpace(string(value)))
+}
+
+func bucketResourceName(bucketID uuid.UUID) contractapi.ResourceName {
+	return contractapi.ResourceName("urn:verself:object-storage:bucket:" + bucketID.String())
+}
+
+func parseOptionalRFC3339(value *string) (*time.Time, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(*value))
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+func emptyOutput() *contractapi.EmptyOutput {
+	return &contractapi.EmptyOutput{Body: contractapi.EmptyOutputBody{}}
+}
+
+func objectPrefixToString(value *contractapi.ObjectPrefix) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func serviceTagToString(value *contractapi.ServiceTag) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func objectPrefixPtr(value string) *contractapi.ObjectPrefix {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	out := contractapi.ObjectPrefix(value)
+	return &out
+}
+
+func serviceTagPtr(value string) *contractapi.ServiceTag {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	out := contractapi.ServiceTag(value)
+	return &out
+}
+
+func accessKeyIDPtr(value string) *contractapi.AccessKeyID {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	out := contractapi.AccessKeyID(value)
+	return &out
+}
+
+func spiffeSubjectPtr(value string) *contractapi.SPIFFESubject {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	out := contractapi.SPIFFESubject(value)
+	return &out
+}
+
+func credentialFingerprintPtr(value string) *contractapi.CredentialFingerprint {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	out := contractapi.CredentialFingerprint(value)
+	return &out
 }
 
 func problem(ctx context.Context, status int, code, detail string, cause error) error {
