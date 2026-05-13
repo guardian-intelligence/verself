@@ -49,15 +49,15 @@ service ObjectStorage {
         CreateObjectStorageAccessKey,
         RollObjectStorageAccessKey,
         DeleteObjectStorageAccessKey,
-        CreateObjectStorageMTLSPrincipal,
-        DeleteObjectStorageMTLSPrincipal
+        CreateObjectStorageMtlsPrincipal,
+        DeleteObjectStorageMtlsPrincipal
     ]
     resources: [
         Bucket,
         BucketAlias,
         ObjectStorageCredential,
         ObjectStorageAccessKey,
-        ObjectStorageMTLSPrincipal
+        ObjectStorageMtlsPrincipal
     ]
 }
 @pattern("^[0-9a-fA-F-]{36}$")
@@ -142,7 +142,7 @@ resource Bucket {}
 resource BucketAlias {}
 resource ObjectStorageCredential {}
 resource ObjectStorageAccessKey {}
-resource ObjectStorageMTLSPrincipal {}
+resource ObjectStorageMtlsPrincipal {}
 structure BucketView {
     @required
     @protoField(number: 1)
@@ -510,11 +510,11 @@ structure AccessKeyIdempotentInput {
 @http(method: "POST", uri: "/api/v1/buckets/{bucket_id}/mtls-principals")
 @identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
-@audit(event: MTLSPrincipalCreateAuditEvent, resource: ObjectStorageMTLSPrincipal, action: "create")
+@audit(event: MTLSPrincipalCreateAuditEvent, resource: ObjectStorageMtlsPrincipal, action: "create")
 @rateLimit(bucket: "object_storage_mutation")
 @requestBudget(maxBytes: 65536)
 @sdk(module: "objectStorage.mtlsPrincipals", method: "create", paginated: false, retryable: false)
-operation CreateObjectStorageMTLSPrincipal {
+operation CreateObjectStorageMtlsPrincipal {
     input: CreateObjectStorageMTLSPrincipalInput
     output: BucketOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
@@ -536,11 +536,11 @@ structure CreateObjectStorageMTLSPrincipalInput {
 @http(method: "DELETE", uri: "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}")
 @identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
-@audit(event: MTLSPrincipalDeleteAuditEvent, resource: ObjectStorageMTLSPrincipal, action: "delete")
+@audit(event: MTLSPrincipalDeleteAuditEvent, resource: ObjectStorageMtlsPrincipal, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
 @requestBudget(maxBytes: 1)
 @sdk(module: "objectStorage.mtlsPrincipals", method: "delete", paginated: false, retryable: false)
-operation DeleteObjectStorageMTLSPrincipal {
+operation DeleteObjectStorageMtlsPrincipal {
     input: DeleteObjectStorageMTLSPrincipalInput
     output: EmptyOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]

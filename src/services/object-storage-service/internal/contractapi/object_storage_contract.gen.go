@@ -396,8 +396,8 @@ var Operations = []OperationDescriptor{
 	CreateObjectStorageBucketAlias.Descriptor,
 	DeleteObjectStorageBucketAlias.Descriptor,
 	ListObjectStorageCredentials.Descriptor,
-	CreateObjectStorageMTLSPrincipal.Descriptor,
-	DeleteObjectStorageMTLSPrincipal.Descriptor,
+	CreateObjectStorageMtlsPrincipal.Descriptor,
+	DeleteObjectStorageMtlsPrincipal.Descriptor,
 }
 
 var DeleteObjectStorageAccessKey = Operation[AccessKeyIdempotentInput, EmptyOutput]{
@@ -763,10 +763,10 @@ var ListObjectStorageCredentials = Operation[BucketPathInput, ListObjectStorageC
 	},
 }
 
-var CreateObjectStorageMTLSPrincipal = Operation[CreateObjectStorageMTLSPrincipalInput, BucketOutput]{
+var CreateObjectStorageMtlsPrincipal = Operation[CreateObjectStorageMTLSPrincipalInput, BucketOutput]{
 	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.objectstorage.v1#CreateObjectStorageMTLSPrincipal",
-		OperationID:         "create-object-storage-mtlsprincipal",
+		ShapeID:             "verself.objectstorage.v1#CreateObjectStorageMtlsPrincipal",
+		OperationID:         "create-object-storage-mtls-principal",
 		Method:              "POST",
 		Path:                "/api/v1/buckets/{bucket_id}/mtls-principals",
 		DefaultStatus:       200,
@@ -774,7 +774,7 @@ var CreateObjectStorageMTLSPrincipal = Operation[CreateObjectStorageMTLSPrincipa
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "object-storage-service", Principals: []string{"browser", "cli", "workload"}},
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:access-key:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "object_storage.mtls_principal.create", Resource: "object_storage_mtlsprincipal", Action: "create"},
+		Audit:               AuditDescriptor{Event: "object_storage.mtls_principal.create", Resource: "object_storage_mtls_principal", Action: "create"},
 		RateLimitBucket:     "object_storage_mutation",
 		RequestBodyMaxBytes: 65536,
 		RequestPayload:      PayloadDescriptor{},
@@ -795,10 +795,10 @@ var CreateObjectStorageMTLSPrincipal = Operation[CreateObjectStorageMTLSPrincipa
 	},
 }
 
-var DeleteObjectStorageMTLSPrincipal = Operation[DeleteObjectStorageMTLSPrincipalInput, EmptyOutput]{
+var DeleteObjectStorageMtlsPrincipal = Operation[DeleteObjectStorageMTLSPrincipalInput, EmptyOutput]{
 	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.objectstorage.v1#DeleteObjectStorageMTLSPrincipal",
-		OperationID:         "delete-object-storage-mtlsprincipal",
+		ShapeID:             "verself.objectstorage.v1#DeleteObjectStorageMtlsPrincipal",
+		OperationID:         "delete-object-storage-mtls-principal",
 		Method:              "DELETE",
 		Path:                "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}",
 		DefaultStatus:       200,
@@ -806,7 +806,7 @@ var DeleteObjectStorageMTLSPrincipal = Operation[DeleteObjectStorageMTLSPrincipa
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "object-storage-service", Principals: []string{"browser", "cli", "workload"}},
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:access-key:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "object_storage.mtls_principal.delete", Resource: "object_storage_mtlsprincipal", Action: "delete"},
+		Audit:               AuditDescriptor{Event: "object_storage.mtls_principal.delete", Resource: "object_storage_mtls_principal", Action: "delete"},
 		RateLimitBucket:     "object_storage_mutation",
 		RequestBodyMaxBytes: 1,
 		RequestPayload:      PayloadDescriptor{},
@@ -840,8 +840,8 @@ type PublicHandlers interface {
 	CreateObjectStorageBucketAlias(context.Context, *CreateObjectStorageBucketAliasInput) (*BucketAliasOutput, error)
 	DeleteObjectStorageBucketAlias(context.Context, *DeleteObjectStorageBucketAliasInput) (*EmptyOutput, error)
 	ListObjectStorageCredentials(context.Context, *BucketPathInput) (*ListObjectStorageCredentialsOutput, error)
-	CreateObjectStorageMTLSPrincipal(context.Context, *CreateObjectStorageMTLSPrincipalInput) (*BucketOutput, error)
-	DeleteObjectStorageMTLSPrincipal(context.Context, *DeleteObjectStorageMTLSPrincipalInput) (*EmptyOutput, error)
+	CreateObjectStorageMtlsPrincipal(context.Context, *CreateObjectStorageMTLSPrincipalInput) (*BucketOutput, error)
+	DeleteObjectStorageMtlsPrincipal(context.Context, *DeleteObjectStorageMTLSPrincipalInput) (*EmptyOutput, error)
 }
 
 type DeleteObjectStorageAccessKeyHandler = Handler[AccessKeyIdempotentInput, EmptyOutput]
@@ -868,6 +868,6 @@ type DeleteObjectStorageBucketAliasHandler = Handler[DeleteObjectStorageBucketAl
 
 type ListObjectStorageCredentialsHandler = Handler[BucketPathInput, ListObjectStorageCredentialsOutput]
 
-type CreateObjectStorageMTLSPrincipalHandler = Handler[CreateObjectStorageMTLSPrincipalInput, BucketOutput]
+type CreateObjectStorageMtlsPrincipalHandler = Handler[CreateObjectStorageMTLSPrincipalInput, BucketOutput]
 
-type DeleteObjectStorageMTLSPrincipalHandler = Handler[DeleteObjectStorageMTLSPrincipalInput, EmptyOutput]
+type DeleteObjectStorageMtlsPrincipalHandler = Handler[DeleteObjectStorageMTLSPrincipalInput, EmptyOutput]

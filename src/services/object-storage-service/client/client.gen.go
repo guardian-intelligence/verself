@@ -260,13 +260,13 @@ type CreateObjectStorageMTLSPrincipalInputBody struct {
 	SpiffeSubject SPIFFESubject `json:"spiffe_subject"`
 }
 
-type CreateObjectStorageMTLSPrincipalRequest struct {
+type CreateObjectStorageMtlsPrincipalRequest struct {
 	BucketID       BucketId
 	IdempotencyKey IdempotencyKey
 	Body           CreateObjectStorageMTLSPrincipalInputBody `json:"body"`
 }
 
-type CreateObjectStorageMTLSPrincipalResponse struct {
+type CreateObjectStorageMtlsPrincipalResponse struct {
 	StatusCode   int
 	Body         []byte
 	Result       *BucketView
@@ -317,13 +317,13 @@ type DeleteObjectStorageBucketAliasResponse struct {
 	HTTPResponse *http.Response
 }
 
-type DeleteObjectStorageMTLSPrincipalRequest struct {
+type DeleteObjectStorageMtlsPrincipalRequest struct {
 	BucketID       BucketId
 	CredentialID   CredentialId
 	IdempotencyKey IdempotencyKey
 }
 
-type DeleteObjectStorageMTLSPrincipalResponse struct {
+type DeleteObjectStorageMtlsPrincipalResponse struct {
 	StatusCode   int
 	Body         []byte
 	Result       *EmptyOutputBody
@@ -607,11 +607,11 @@ func (c *Client) newCreateObjectStorageBucketAliasRequest(ctx context.Context, r
 	return req, nil
 }
 
-func (c *Client) CreateObjectStorageMTLSPrincipal(ctx context.Context, request CreateObjectStorageMTLSPrincipalRequest, reqEditors ...RequestEditorFn) (*CreateObjectStorageMTLSPrincipalResponse, error) {
+func (c *Client) CreateObjectStorageMtlsPrincipal(ctx context.Context, request CreateObjectStorageMtlsPrincipalRequest, reqEditors ...RequestEditorFn) (*CreateObjectStorageMtlsPrincipalResponse, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
 	}
-	req, err := c.newCreateObjectStorageMTLSPrincipalRequest(ctx, request)
+	req, err := c.newCreateObjectStorageMtlsPrincipalRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -631,10 +631,10 @@ func (c *Client) CreateObjectStorageMTLSPrincipal(ctx context.Context, request C
 	if err != nil {
 		return nil, err
 	}
-	return parseCreateObjectStorageMTLSPrincipalResponse(resp)
+	return parseCreateObjectStorageMtlsPrincipalResponse(resp)
 }
 
-func (c *Client) newCreateObjectStorageMTLSPrincipalRequest(ctx context.Context, request CreateObjectStorageMTLSPrincipalRequest) (*http.Request, error) {
+func (c *Client) newCreateObjectStorageMtlsPrincipalRequest(ctx context.Context, request CreateObjectStorageMtlsPrincipalRequest) (*http.Request, error) {
 	path := "/api/v1/buckets/{bucket_id}/mtls-principals"
 	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
 	endpoint, err := url.Parse(c.server + path)
@@ -785,11 +785,11 @@ func (c *Client) newDeleteObjectStorageBucketAliasRequest(ctx context.Context, r
 	return req, nil
 }
 
-func (c *Client) DeleteObjectStorageMTLSPrincipal(ctx context.Context, request DeleteObjectStorageMTLSPrincipalRequest, reqEditors ...RequestEditorFn) (*DeleteObjectStorageMTLSPrincipalResponse, error) {
+func (c *Client) DeleteObjectStorageMtlsPrincipal(ctx context.Context, request DeleteObjectStorageMtlsPrincipalRequest, reqEditors ...RequestEditorFn) (*DeleteObjectStorageMtlsPrincipalResponse, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
 	}
-	req, err := c.newDeleteObjectStorageMTLSPrincipalRequest(ctx, request)
+	req, err := c.newDeleteObjectStorageMtlsPrincipalRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -809,10 +809,10 @@ func (c *Client) DeleteObjectStorageMTLSPrincipal(ctx context.Context, request D
 	if err != nil {
 		return nil, err
 	}
-	return parseDeleteObjectStorageMTLSPrincipalResponse(resp)
+	return parseDeleteObjectStorageMtlsPrincipalResponse(resp)
 }
 
-func (c *Client) newDeleteObjectStorageMTLSPrincipalRequest(ctx context.Context, request DeleteObjectStorageMTLSPrincipalRequest) (*http.Request, error) {
+func (c *Client) newDeleteObjectStorageMtlsPrincipalRequest(ctx context.Context, request DeleteObjectStorageMtlsPrincipalRequest) (*http.Request, error) {
 	path := "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}"
 	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
 	path = strings.ReplaceAll(path, "{credential_id}", url.PathEscape(fmt.Sprint(request.CredentialID)))
@@ -1150,13 +1150,13 @@ func parseCreateObjectStorageBucketAliasResponse(resp *http.Response) (*CreateOb
 	return result, nil
 }
 
-func parseCreateObjectStorageMTLSPrincipalResponse(resp *http.Response) (*CreateObjectStorageMTLSPrincipalResponse, error) {
+func parseCreateObjectStorageMtlsPrincipalResponse(resp *http.Response) (*CreateObjectStorageMtlsPrincipalResponse, error) {
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	result := &CreateObjectStorageMTLSPrincipalResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	result := &CreateObjectStorageMtlsPrincipalResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
 		var decoded BucketView
 		if len(body) > 0 {
@@ -1234,13 +1234,13 @@ func parseDeleteObjectStorageBucketAliasResponse(resp *http.Response) (*DeleteOb
 	return result, nil
 }
 
-func parseDeleteObjectStorageMTLSPrincipalResponse(resp *http.Response) (*DeleteObjectStorageMTLSPrincipalResponse, error) {
+func parseDeleteObjectStorageMtlsPrincipalResponse(resp *http.Response) (*DeleteObjectStorageMtlsPrincipalResponse, error) {
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	result := &DeleteObjectStorageMTLSPrincipalResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	result := &DeleteObjectStorageMtlsPrincipalResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
 		var decoded EmptyOutputBody
 		if len(body) > 0 {

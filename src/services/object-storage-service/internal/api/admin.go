@@ -204,7 +204,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		return credentialSecretOutput(credential, secret), nil
 	})
 
-	op, policy = objectStorageContract(contractapi.CreateObjectStorageMTLSPrincipal.Descriptor, "Create object storage mTLS principal")
+	op, policy = objectStorageContract(contractapi.CreateObjectStorageMtlsPrincipal.Descriptor, "Create object storage mTLS principal")
 	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.CreateObjectStorageMTLSPrincipalInput) (*contractapi.BucketOutput, error) {
 		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
@@ -228,7 +228,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		return bucketOutputFromDomain(ctx, bucket)
 	})
 
-	op, policy = objectStorageContract(contractapi.DeleteObjectStorageMTLSPrincipal.Descriptor, "Delete object storage mTLS principal")
+	op, policy = objectStorageContract(contractapi.DeleteObjectStorageMtlsPrincipal.Descriptor, "Delete object storage mTLS principal")
 	registerAdminRoute(api, authorizer, op, policy, func(ctx context.Context, principal operationPrincipal, input *contractapi.DeleteObjectStorageMTLSPrincipalInput) (*contractapi.EmptyOutput, error) {
 		bucketID, err := bucketIDFromContract(input.BucketID)
 		if err != nil {
