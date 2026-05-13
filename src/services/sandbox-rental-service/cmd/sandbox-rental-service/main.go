@@ -24,7 +24,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	billingclient "github.com/verself/billing-service/client"
-	"github.com/verself/domain-transfer-objects"
 	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
@@ -196,7 +195,7 @@ func run() error {
 
 	// Probe the host pool ceilings once at startup. The pool ceiling is the
 	// default VMResourceBounds applied to intake when an org has no explicit
-	// row — dto.DefaultBounds clamped to what the host can actually
+	// row, clamped to what the host can actually
 	// schedule. Org-specific overrides live in the vm_resource_bounds table.
 	capacityCtx, cancelCapacity := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelCapacity()
@@ -204,7 +203,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("query vm-orchestrator capacity: %w", err)
 	}
-	hostBounds := dto.DefaultBounds
+	hostBounds := jobs.DefaultBounds
 	if capacity.MaxVCPUsPerLease > 0 {
 		hostBounds.MaxVCPUs = capacity.MaxVCPUsPerLease
 	}

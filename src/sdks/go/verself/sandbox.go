@@ -336,53 +336,54 @@ type CreateSandboxExecutionScheduleInput struct {
 }
 
 type SandboxClient struct {
-	client *sandboxcore.ClientWithResponses
+	client *sandboxcore.Client
 }
 
 func (c *SandboxClient) ListRuns(ctx context.Context, options ListSandboxRunsOptions) (SandboxRunsPage, error) {
 	if c == nil || c.client == nil {
 		return SandboxRunsPage{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	params := &sandboxcore.ListRunsParams{}
+	request := sandboxcore.ListRunsRequest{}
 	if options.Limit > 0 {
-		params.Limit = &options.Limit
+		limit := sandboxcore.RunListPageSize(options.Limit)
+		request.Limit = &limit
 	}
 	if strings.TrimSpace(options.Cursor) != "" {
-		cursor := strings.TrimSpace(options.Cursor)
-		params.Cursor = &cursor
+		cursor := sandboxcore.RunListCursor(strings.TrimSpace(options.Cursor))
+		request.Cursor = &cursor
 	}
 	if strings.TrimSpace(options.SourceKind) != "" {
-		sourceKind := strings.TrimSpace(options.SourceKind)
-		params.SourceKind = &sourceKind
+		sourceKind := sandboxcore.SourceKind(strings.TrimSpace(options.SourceKind))
+		request.SourceKind = &sourceKind
 	}
 	if strings.TrimSpace(options.Status) != "" {
-		status := strings.TrimSpace(options.Status)
-		params.Status = &status
+		status := sandboxcore.ExecutionStatus(strings.TrimSpace(options.Status))
+		request.Status = &status
 	}
 	if strings.TrimSpace(options.Repository) != "" {
-		repository := strings.TrimSpace(options.Repository)
-		params.Repository = &repository
+		repository := sandboxcore.RepositoryFullName(strings.TrimSpace(options.Repository))
+		request.Repository = &repository
 	}
 	if strings.TrimSpace(options.Workflow) != "" {
-		workflow := strings.TrimSpace(options.Workflow)
-		params.Workflow = &workflow
+		workflow := sandboxcore.WorkflowName(strings.TrimSpace(options.Workflow))
+		request.Workflow = &workflow
 	}
 	if strings.TrimSpace(options.Branch) != "" {
-		branch := strings.TrimSpace(options.Branch)
-		params.Branch = &branch
+		branch := sandboxcore.GitRef(strings.TrimSpace(options.Branch))
+		request.Branch = &branch
 	}
 	if strings.TrimSpace(options.RunnerClass) != "" {
-		runnerClass := strings.TrimSpace(options.RunnerClass)
-		params.RunnerClass = &runnerClass
+		runnerClass := sandboxcore.RunnerClass(strings.TrimSpace(options.RunnerClass))
+		request.RunnerClass = &runnerClass
 	}
-	response, err := c.client.ListRunsWithResponse(ctx, params)
+	response, err := c.client.ListRuns(ctx, request)
 	if err != nil {
 		return SandboxRunsPage{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxRunsPage{}, sandboxAPIError("list runs", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxRunsPage{}, sandboxAPIError("list runs", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxRunsPage](*response.JSON200)
+	return sandboxFromGenerated[SandboxRunsPage](*response.Result)
 }
 
 func (c *SandboxClient) GetExecution(ctx context.Context, executionID string) (SandboxExecution, error) {
@@ -393,14 +394,14 @@ func (c *SandboxClient) GetExecution(ctx context.Context, executionID string) (S
 	if err != nil {
 		return SandboxExecution{}, err
 	}
-	response, err := c.client.GetExecutionWithResponse(ctx, id.String())
+	response, err := c.client.GetExecution(ctx, sandboxcore.GetExecutionRequest{ExecutionID: sandboxcore.ExecutionId(id.String())})
 	if err != nil {
 		return SandboxExecution{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxExecution{}, sandboxAPIError("get execution", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecution{}, sandboxAPIError("get execution", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecution](*response.JSON200)
+	return sandboxFromGenerated[SandboxExecution](*response.Result)
 }
 
 func (c *SandboxClient) GetExecutionLogs(ctx context.Context, executionID string) (SandboxExecutionLogs, error) {
@@ -411,14 +412,14 @@ func (c *SandboxClient) GetExecutionLogs(ctx context.Context, executionID string
 	if err != nil {
 		return SandboxExecutionLogs{}, err
 	}
-	response, err := c.client.GetExecutionLogsWithResponse(ctx, id.String())
+	response, err := c.client.GetExecutionLogs(ctx, sandboxcore.GetExecutionLogsRequest{ExecutionID: sandboxcore.ExecutionId(id.String())})
 	if err != nil {
 		return SandboxExecutionLogs{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxExecutionLogs{}, sandboxAPIError("get execution logs", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecutionLogs{}, sandboxAPIError("get execution logs", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecutionLogs](*response.JSON200)
+	return sandboxFromGenerated[SandboxExecutionLogs](*response.Result)
 }
 
 func (c *SandboxClient) GetRun(ctx context.Context, runID string) (SandboxExecution, error) {
@@ -429,111 +430,112 @@ func (c *SandboxClient) GetRun(ctx context.Context, runID string) (SandboxExecut
 	if err != nil {
 		return SandboxExecution{}, err
 	}
-	response, err := c.client.GetRunWithResponse(ctx, id.String())
+	response, err := c.client.GetRun(ctx, sandboxcore.GetRunRequest{RunID: sandboxcore.RunId(id.String())})
 	if err != nil {
 		return SandboxExecution{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxExecution{}, sandboxAPIError("get run", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecution{}, sandboxAPIError("get run", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecution](*response.JSON200)
+	return sandboxFromGenerated[SandboxExecution](*response.Result)
 }
 
 func (c *SandboxClient) SearchRunLogs(ctx context.Context, options SearchSandboxRunLogsOptions) (SandboxRunLogSearchPage, error) {
 	if c == nil || c.client == nil {
 		return SandboxRunLogSearchPage{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	params := &sandboxcore.SearchRunLogsParams{}
+	request := sandboxcore.SearchRunLogsRequest{}
 	if options.Limit > 0 {
-		params.Limit = &options.Limit
+		limit := sandboxcore.RunLogSearchPageSize(options.Limit)
+		request.Limit = &limit
 	}
-	setStringParam(strings.TrimSpace(options.Cursor), &params.Cursor)
-	setStringParam(strings.TrimSpace(options.Query), &params.Query)
+	setRunLogCursorParam(strings.TrimSpace(options.Cursor), &request.Cursor)
+	setLogQueryParam(strings.TrimSpace(options.Query), &request.Query)
 	if strings.TrimSpace(options.RunID) != "" {
 		id, err := parseUUIDInput(options.RunID, "run id")
 		if err != nil {
 			return SandboxRunLogSearchPage{}, err
 		}
-		runID := id.String()
-		params.RunId = &runID
+		runID := sandboxcore.RunId(id.String())
+		request.RunID = &runID
 	}
 	if strings.TrimSpace(options.AttemptID) != "" {
 		id, err := parseUUIDInput(options.AttemptID, "attempt id")
 		if err != nil {
 			return SandboxRunLogSearchPage{}, err
 		}
-		attemptID := id.String()
-		params.AttemptId = &attemptID
+		attemptID := sandboxcore.AttemptId(id.String())
+		request.AttemptID = &attemptID
 	}
-	setStringParam(strings.TrimSpace(options.SourceKind), &params.SourceKind)
-	setStringParam(strings.TrimSpace(options.Repository), &params.Repository)
-	setStringParam(strings.TrimSpace(options.Workflow), &params.Workflow)
-	setStringParam(strings.TrimSpace(options.Branch), &params.Branch)
-	setStringParam(strings.TrimSpace(options.RunnerClass), &params.RunnerClass)
-	response, err := c.client.SearchRunLogsWithResponse(ctx, params)
+	setSourceKindParam(strings.TrimSpace(options.SourceKind), &request.SourceKind)
+	setRepositoryParam(strings.TrimSpace(options.Repository), &request.Repository)
+	setWorkflowParam(strings.TrimSpace(options.Workflow), &request.Workflow)
+	setGitRefParam(strings.TrimSpace(options.Branch), &request.Branch)
+	setRunnerClassParam(strings.TrimSpace(options.RunnerClass), &request.RunnerClass)
+	response, err := c.client.SearchRunLogs(ctx, request)
 	if err != nil {
 		return SandboxRunLogSearchPage{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxRunLogSearchPage{}, sandboxAPIError("search run logs", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxRunLogSearchPage{}, sandboxAPIError("search run logs", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxRunLogSearchPage](*response.JSON200)
+	return sandboxFromGenerated[SandboxRunLogSearchPage](*response.Result)
 }
 
 func (c *SandboxClient) GetJobsAnalytics(ctx context.Context, options SandboxAnalyticsOptions) (SandboxJobsAnalytics, error) {
 	if c == nil || c.client == nil {
 		return SandboxJobsAnalytics{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	response, err := c.client.GetJobsAnalyticsWithResponse(ctx, jobsAnalyticsParams(options))
+	response, err := c.client.GetJobsAnalytics(ctx, jobsAnalyticsRequest(options))
 	if err != nil {
 		return SandboxJobsAnalytics{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxJobsAnalytics{}, sandboxAPIError("get jobs analytics", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxJobsAnalytics{}, sandboxAPIError("get jobs analytics", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxJobsAnalytics](*response.JSON200)
+	return sandboxFromGenerated[SandboxJobsAnalytics](*response.Result)
 }
 
 func (c *SandboxClient) GetCostsAnalytics(ctx context.Context, options SandboxAnalyticsOptions) (SandboxCostsAnalytics, error) {
 	if c == nil || c.client == nil {
 		return SandboxCostsAnalytics{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	response, err := c.client.GetCostsAnalyticsWithResponse(ctx, costsAnalyticsParams(options))
+	response, err := c.client.GetCostsAnalytics(ctx, costsAnalyticsRequest(options))
 	if err != nil {
 		return SandboxCostsAnalytics{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxCostsAnalytics{}, sandboxAPIError("get costs analytics", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxCostsAnalytics{}, sandboxAPIError("get costs analytics", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxCostsAnalytics](*response.JSON200)
+	return sandboxFromGenerated[SandboxCostsAnalytics](*response.Result)
 }
 
 func (c *SandboxClient) GetRunnerSizingAnalytics(ctx context.Context, options SandboxAnalyticsOptions) (SandboxRunnerSizingAnalytics, error) {
 	if c == nil || c.client == nil {
 		return SandboxRunnerSizingAnalytics{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	response, err := c.client.GetRunnerSizingAnalyticsWithResponse(ctx, runnerSizingAnalyticsParams(options))
+	response, err := c.client.GetRunnerSizingAnalytics(ctx, runnerSizingAnalyticsRequest(options))
 	if err != nil {
 		return SandboxRunnerSizingAnalytics{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxRunnerSizingAnalytics{}, sandboxAPIError("get runner sizing analytics", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxRunnerSizingAnalytics{}, sandboxAPIError("get runner sizing analytics", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxRunnerSizingAnalytics](*response.JSON200)
+	return sandboxFromGenerated[SandboxRunnerSizingAnalytics](*response.Result)
 }
 
 func (c *SandboxClient) ListGitHubInstallations(ctx context.Context) ([]SandboxGitHubInstallation, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	response, err := c.client.ListGithubInstallationsWithResponse(ctx)
+	response, err := c.client.ListGithubInstallations(ctx, sandboxcore.ListGithubInstallationsRequest{})
 	if err != nil {
 		return nil, err
 	}
-	if response.JSON200 == nil {
-		return nil, sandboxAPIError("list GitHub installations", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return nil, sandboxAPIError("list GitHub installations", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[[]SandboxGitHubInstallation](*response.JSON200)
+	return sandboxFromGenerated[[]SandboxGitHubInstallation](response.Result.Body)
 }
 
 func (c *SandboxClient) BeginGitHubInstallation(ctx context.Context, options SandboxMutationOptions) (SandboxGitHubInstallationConnect, error) {
@@ -544,28 +546,28 @@ func (c *SandboxClient) BeginGitHubInstallation(ctx context.Context, options San
 	if err != nil {
 		return SandboxGitHubInstallationConnect{}, err
 	}
-	response, err := c.client.BeginGithubInstallationWithResponse(ctx, &sandboxcore.BeginGithubInstallationParams{IdempotencyKey: key})
+	response, err := c.client.BeginGithubInstallation(ctx, sandboxcore.BeginGithubInstallationRequest{IdempotencyKey: sandboxcore.IdempotencyKey(key)})
 	if err != nil {
 		return SandboxGitHubInstallationConnect{}, err
 	}
-	if response.JSON201 == nil {
-		return SandboxGitHubInstallationConnect{}, sandboxAPIError("begin GitHub installation", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxGitHubInstallationConnect{}, sandboxAPIError("begin GitHub installation", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxGitHubInstallationConnect](*response.JSON201)
+	return sandboxFromGenerated[SandboxGitHubInstallationConnect](*response.Result)
 }
 
 func (c *SandboxClient) ListSchedules(ctx context.Context) (SandboxExecutionSchedules, error) {
 	if c == nil || c.client == nil {
 		return SandboxExecutionSchedules{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	response, err := c.client.ListExecutionSchedulesWithResponse(ctx)
+	response, err := c.client.ListExecutionSchedules(ctx, sandboxcore.ListExecutionSchedulesRequest{})
 	if err != nil {
 		return SandboxExecutionSchedules{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxExecutionSchedules{}, sandboxAPIError("list schedules", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecutionSchedules{}, sandboxAPIError("list schedules", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecutionSchedules](map[string]any{"schedules": response.JSON200})
+	return sandboxFromGenerated[SandboxExecutionSchedules](map[string]any{"schedules": response.Result.Body})
 }
 
 func (c *SandboxClient) CreateSchedule(ctx context.Context, input CreateSandboxExecutionScheduleInput) (SandboxExecutionSchedule, error) {
@@ -591,37 +593,37 @@ func (c *SandboxClient) CreateSchedule(ctx context.Context, input CreateSandboxE
 	if err != nil {
 		return SandboxExecutionSchedule{}, err
 	}
-	body := sandboxcore.SandboxExecutionScheduleCreateRequest{
-		ProjectId:          projectID.String(),
-		SourceRepositoryId: repoID.String(),
-		WorkflowPath:       workflowPath,
-		IntervalSeconds:    input.IntervalSeconds,
-		IdempotencyKey:     key,
+	body := sandboxcore.CreateExecutionScheduleInputBody{
+		ProjectID:          sandboxcore.ProjectId(projectID.String()),
+		SourceRepositoryID: sandboxcore.SourceRepositoryId(repoID.String()),
+		WorkflowPath:       sandboxcore.WorkflowPath(workflowPath),
+		IntervalSeconds:    sandboxcore.IntervalSeconds(input.IntervalSeconds),
+		IdempotencyKey:     sandboxcore.IdempotencyKey(key),
 	}
 	if strings.TrimSpace(input.DisplayName) != "" {
-		displayName := strings.TrimSpace(input.DisplayName)
+		displayName := sandboxcore.DisplayName(strings.TrimSpace(input.DisplayName))
 		body.DisplayName = &displayName
 	}
 	if strings.TrimSpace(input.Ref) != "" {
-		ref := strings.TrimSpace(input.Ref)
+		ref := sandboxcore.GitRef(strings.TrimSpace(input.Ref))
 		body.Ref = &ref
 	}
 	if input.Inputs != nil {
-		inputs := copyStringMap(input.Inputs)
+		inputs := sandboxcore.ScheduleInputs(copyStringMap(input.Inputs))
 		body.Inputs = &inputs
 	}
 	if input.Paused {
 		paused := true
 		body.Paused = &paused
 	}
-	response, err := c.client.CreateExecutionScheduleWithResponse(ctx, body)
+	response, err := c.client.CreateExecutionSchedule(ctx, sandboxcore.CreateExecutionScheduleRequest{Body: body})
 	if err != nil {
 		return SandboxExecutionSchedule{}, err
 	}
-	if response.JSON201 == nil {
-		return SandboxExecutionSchedule{}, sandboxAPIError("create schedule", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecutionSchedule{}, sandboxAPIError("create schedule", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecutionSchedule](*response.JSON201)
+	return sandboxFromGenerated[SandboxExecutionSchedule](*response.Result)
 }
 
 func (c *SandboxClient) GetSchedule(ctx context.Context, scheduleID string) (SandboxExecutionSchedule, error) {
@@ -632,14 +634,14 @@ func (c *SandboxClient) GetSchedule(ctx context.Context, scheduleID string) (San
 	if err != nil {
 		return SandboxExecutionSchedule{}, err
 	}
-	response, err := c.client.GetExecutionScheduleWithResponse(ctx, id.String())
+	response, err := c.client.GetExecutionSchedule(ctx, sandboxcore.GetExecutionScheduleRequest{ScheduleID: sandboxcore.ScheduleId(id.String())})
 	if err != nil {
 		return SandboxExecutionSchedule{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxExecutionSchedule{}, sandboxAPIError("get schedule", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecutionSchedule{}, sandboxAPIError("get schedule", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecutionSchedule](*response.JSON200)
+	return sandboxFromGenerated[SandboxExecutionSchedule](*response.Result)
 }
 
 func (c *SandboxClient) PauseSchedule(ctx context.Context, scheduleID string, options SandboxMutationOptions) (SandboxExecutionSchedule, error) {
@@ -663,23 +665,29 @@ func (c *SandboxClient) scheduleLifecycle(ctx context.Context, operation, namesp
 		return SandboxExecutionSchedule{}, err
 	}
 	if pause {
-		response, err := c.client.PauseExecutionScheduleWithResponse(ctx, id.String(), &sandboxcore.PauseExecutionScheduleParams{IdempotencyKey: key})
+		response, err := c.client.PauseExecutionSchedule(ctx, sandboxcore.PauseExecutionScheduleRequest{
+			ScheduleID:     sandboxcore.ScheduleId(id.String()),
+			IdempotencyKey: sandboxcore.IdempotencyKey(key),
+		})
 		if err != nil {
 			return SandboxExecutionSchedule{}, err
 		}
-		if response.JSON200 == nil {
-			return SandboxExecutionSchedule{}, sandboxAPIError(operation, response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+		if response.Result == nil {
+			return SandboxExecutionSchedule{}, sandboxAPIError(operation, response.StatusCode, response.Problem, response.Body)
 		}
-		return sandboxFromGenerated[SandboxExecutionSchedule](*response.JSON200)
+		return sandboxFromGenerated[SandboxExecutionSchedule](*response.Result)
 	}
-	response, err := c.client.ResumeExecutionScheduleWithResponse(ctx, id.String(), &sandboxcore.ResumeExecutionScheduleParams{IdempotencyKey: key})
+	response, err := c.client.ResumeExecutionSchedule(ctx, sandboxcore.ResumeExecutionScheduleRequest{
+		ScheduleID:     sandboxcore.ScheduleId(id.String()),
+		IdempotencyKey: sandboxcore.IdempotencyKey(key),
+	})
 	if err != nil {
 		return SandboxExecutionSchedule{}, err
 	}
-	if response.JSON200 == nil {
-		return SandboxExecutionSchedule{}, sandboxAPIError(operation, response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SandboxExecutionSchedule{}, sandboxAPIError(operation, response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecutionSchedule](*response.JSON200)
+	return sandboxFromGenerated[SandboxExecutionSchedule](*response.Result)
 }
 
 func sandboxAPIError(operation string, statusCode int, model *sandboxcore.ErrorModel, body []byte) error {
@@ -704,38 +712,87 @@ func sandboxFromGenerated[T any](input any) (T, error) {
 	return out, nil
 }
 
-func setStringParam(value string, target **string) {
+func setRunLogCursorParam(value string, target **sandboxcore.RunLogSearchCursor) {
 	if value == "" {
 		return
 	}
-	*target = &value
+	typed := sandboxcore.RunLogSearchCursor(value)
+	*target = &typed
 }
 
-func analyticsWindow(options SandboxAnalyticsOptions) (*time.Time, *time.Time) {
-	var start *time.Time
-	var end *time.Time
+func setLogQueryParam(value string, target **sandboxcore.LogQuery) {
+	if value == "" {
+		return
+	}
+	typed := sandboxcore.LogQuery(value)
+	*target = &typed
+}
+
+func setSourceKindParam(value string, target **sandboxcore.SourceKind) {
+	if value == "" {
+		return
+	}
+	typed := sandboxcore.SourceKind(value)
+	*target = &typed
+}
+
+func setRepositoryParam(value string, target **sandboxcore.RepositoryFullName) {
+	if value == "" {
+		return
+	}
+	typed := sandboxcore.RepositoryFullName(value)
+	*target = &typed
+}
+
+func setWorkflowParam(value string, target **sandboxcore.WorkflowName) {
+	if value == "" {
+		return
+	}
+	typed := sandboxcore.WorkflowName(value)
+	*target = &typed
+}
+
+func setGitRefParam(value string, target **sandboxcore.GitRef) {
+	if value == "" {
+		return
+	}
+	typed := sandboxcore.GitRef(value)
+	*target = &typed
+}
+
+func setRunnerClassParam(value string, target **sandboxcore.RunnerClass) {
+	if value == "" {
+		return
+	}
+	typed := sandboxcore.RunnerClass(value)
+	*target = &typed
+}
+
+func analyticsWindow(options SandboxAnalyticsOptions) (*string, *string) {
+	var start *string
+	var end *string
 	if !options.Start.IsZero() {
-		value := options.Start
+		value := options.Start.UTC().Format(time.RFC3339Nano)
 		start = &value
 	}
 	if !options.End.IsZero() {
-		value := options.End
+		value := options.End.UTC().Format(time.RFC3339Nano)
 		end = &value
 	}
 	return start, end
 }
 
-func jobsAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetJobsAnalyticsParams {
+func jobsAnalyticsRequest(options SandboxAnalyticsOptions) sandboxcore.GetJobsAnalyticsRequest {
 	start, end := analyticsWindow(options)
-	return &sandboxcore.GetJobsAnalyticsParams{Start: start, End: end}
+	return sandboxcore.GetJobsAnalyticsRequest{Start: start, End: end}
 }
 
-func costsAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetCostsAnalyticsParams {
+func costsAnalyticsRequest(options SandboxAnalyticsOptions) sandboxcore.GetCostsAnalyticsRequest {
 	start, end := analyticsWindow(options)
-	return &sandboxcore.GetCostsAnalyticsParams{Start: start, End: end}
+	return sandboxcore.GetCostsAnalyticsRequest{Start: start, End: end}
 }
 
-func runnerSizingAnalyticsParams(options SandboxAnalyticsOptions) *sandboxcore.GetRunnerSizingAnalyticsParams {
+func runnerSizingAnalyticsRequest(options SandboxAnalyticsOptions) sandboxcore.GetRunnerSizingAnalyticsRequest {
 	start, end := analyticsWindow(options)
-	return &sandboxcore.GetRunnerSizingAnalyticsParams{Start: start, End: end}
+	return sandboxcore.GetRunnerSizingAnalyticsRequest{Start: start, End: end}
 }

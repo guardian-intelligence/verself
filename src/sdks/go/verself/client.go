@@ -154,7 +154,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	sandboxEditor := sandboxRequestEditor(token, options.Traceparent)
-	generatedSandbox, err := sandboxcore.NewClientWithResponses(
+	generatedSandbox, err := sandboxcore.NewClient(
 		sandboxURL,
 		sandboxcore.WithHTTPClient(httpClient),
 		sandboxcore.WithRequestEditorFn(sandboxEditor),

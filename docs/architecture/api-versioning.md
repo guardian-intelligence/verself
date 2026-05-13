@@ -25,7 +25,7 @@ Service handlers, DB queries, business logic — all of these only ever know the
 This is Cadwyn's mental model verbatim. Go semantics force one major divergence: **we do not generate per-version Go structs.** Cadwyn produces a fresh Pydantic model per version via runtime metaclass; Go has no equivalent and codegen would explode the package graph. Instead:
 
 - Per-version *OpenAPI specs* are generated mechanically from the HEAD spec + change chain.
-- Per-version *typed clients* (TS, Python, Swift, Go-external) are generated from those specs via `oapi-codegen`/`@hey-api/openapi-ts` per version.
+- Per-version *typed clients* (TS, Python, Swift, Go-external) are generated from Smithy IR SDK transports or language-specific OpenAPI projections per version.
 - Per-version *server-side validation* is JSON Schema against the requested version's spec, performed on raw bytes before unmarshalling. Once migrated, the handler's HEAD struct receives a payload Huma already knows how to validate.
 
 The Go server therefore deals in three representations: raw bytes (wire), `map[string]any` (during migration), and HEAD typed structs (handler). It never holds an old-version typed struct.
@@ -360,7 +360,7 @@ The service owns its own `Bundle` (e.g. `src/services/billing-service/internal/b
 
 ## 14. Generated Client Implications
 
-`oapi-codegen` and `@hey-api/openapi-ts` already run against committed OpenAPI specs. Per-version specs check in alongside:
+Smithy IR SDK transports and OpenAPI projections already run against committed contract artifacts. Per-version specs check in alongside:
 
 ```
 src/services/billing-service/openapi/

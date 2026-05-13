@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/verself/sandbox-rental-service/internal/contractapi"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -164,7 +165,7 @@ func TestEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 
 	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionGitHubWrite): true}, runtimeiam.OperationPolicy{
 		Permission: permissionGitHubWrite,
-	}, &EmptyInput{})
+	}, &contractapi.EmptyInput{})
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
@@ -200,7 +201,7 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 
 	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, runtimeiam.OperationPolicy{
 		Permission: permissionGitHubWrite,
-	}, &EmptyInput{})
+	}, &contractapi.EmptyInput{})
 	if identity == nil || identity.Subject != "user-123" {
 		t.Fatalf("expected denied operation to retain identity, got %#v", identity)
 	}
@@ -234,13 +235,13 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 		{
 			name:   "schedule body key",
 			policy: runtimeiam.OperationPolicy{Idempotency: idempotencyRequestBodyKey},
-			input:  &CreateExecutionScheduleInput{},
+			input:  &contractapi.CreateExecutionScheduleInput{},
 			ctx:    context.Background(),
 		},
 		{
 			name:   "github install header key",
 			policy: runtimeiam.OperationPolicy{Idempotency: idempotencyHeaderKey},
-			input:  &EmptyInput{},
+			input:  &contractapi.EmptyInput{},
 			ctx:    context.Background(),
 		},
 	}

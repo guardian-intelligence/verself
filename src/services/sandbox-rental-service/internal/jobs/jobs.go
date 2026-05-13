@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	billingclient "github.com/verself/billing-service/client"
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel"
@@ -122,7 +122,7 @@ type SubmitRequest struct {
 	ExternalTaskID         string                           `json:"external_task_id,omitempty"`
 	RunCommand             string                           `json:"run_command,omitempty"`
 	MaxWallSeconds         uint64                           `json:"max_wall_seconds,omitempty"`
-	Resources              dto.VMResources                  `json:"resources"`
+	Resources              VMResources                      `json:"resources"`
 	FilesystemMounts       []vmorchestrator.FilesystemMount `json:"-"`
 	AttemptID              uuid.UUID                        `json:"-"`
 	RunnerAllocationID     uuid.UUID                        `json:"-"`
@@ -208,7 +208,7 @@ type Service struct {
 	CHDatabase             string
 	Orchestrator           Runner
 	Billing                *billingclient.Client
-	Bounds                 dto.VMResourceBounds
+	Bounds                 VMResourceBounds
 	GitHubRunner           *GitHubRunner
 	ForgejoRunner          *ForgejoRunner
 	Scheduler              SchedulerRuntime
@@ -238,7 +238,7 @@ type executionWorkItem struct {
 	LeaseID          string
 	ExecID           string
 	CorrelationID    string
-	Resources        dto.VMResources
+	Resources        VMResources
 	FilesystemMounts []vmorchestrator.FilesystemMount
 }
 
@@ -470,7 +470,7 @@ func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempote
 }
 
 type runnerClassRecord struct {
-	Resources dto.VMResources
+	Resources VMResources
 	ProductID string
 }
 
@@ -483,11 +483,11 @@ func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) 
 		return runnerClassRecord{}, false, fmt.Errorf("load runner class resources: %w", err)
 	}
 	return runnerClassRecord{
-		Resources: dto.VMResources{
+		Resources: VMResources{
 			VCPUs:       uint32FromInt32(row.Vcpus, "runner class vcpus"),
 			MemoryMiB:   uint32FromInt32(row.MemoryMib, "runner class memory mib"),
 			RootDiskGiB: uint32FromInt32(row.RootfsGib, "runner class root disk gib"),
-			KernelImage: dto.KernelImageDefault,
+			KernelImage: KernelImageDefault,
 		},
 		ProductID: row.ProductID,
 	}, true, nil
@@ -572,7 +572,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
-		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
 		return s.failAttempt(ctx, item, "durable_volume_prepare_failed", err)
 	}
 	if durablePlan.Enabled {
@@ -590,7 +590,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
-		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
 		s.failDurableVolumes(ctx, durablePlan, "lease_acquire_failed", err)
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
@@ -663,7 +663,7 @@ func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, i
 	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durableVolumePlan{})
 }
 
-func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation dto.BillingWindowReservation, durablePlan durableVolumePlan) error {
+func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation billingclient.BillingWindowReservation, durablePlan durableVolumePlan) error {
 	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
 	defer stopRenew()
 	go s.renewLeaseLoop(renewCtx, leaseID, item.AttemptID.String())
@@ -694,7 +694,7 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		s.failDurableVolumes(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
 		failErr := s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 		s.cleanupLeaseAndReservation(terminalCtx, leaseID, reservation)
-		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, dto.BillingSettleResult{})
+		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
 		if failErr != nil {
 			return failErr
 		}
@@ -932,11 +932,11 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		LeaseID:          row.LeaseID,
 		ExecID:           row.ExecID,
 		CorrelationID:    row.CorrelationID,
-		Resources: dto.VMResources{
+		Resources: VMResources{
 			VCPUs:       uint32FromInt32(row.RequestedVcpus, "requested vcpus"),
 			MemoryMiB:   uint32FromInt32(row.RequestedMemoryMib, "requested memory mib"),
 			RootDiskGiB: uint32FromInt32(row.RequestedRootDiskGib, "requested root disk gib"),
-			KernelImage: dto.KernelImageRef(row.RequestedKernelImage),
+			KernelImage: KernelImageRef(row.RequestedKernelImage),
 		},
 	}
 	mounts, err := s.loadExecutionFilesystemMounts(ctx, executionID)
@@ -978,7 +978,7 @@ func billingJobIDForAttempt(attemptID uuid.UUID) int64 {
 	return int64(raw)
 }
 
-func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (dto.BillingWindowReservation, error) {
+func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (billingclient.BillingWindowReservation, error) {
 	// Billing rates are SKU-ms rates; the customer's requested shape is
 	// what we charge for — not the host capacity headroom. Each SKU's
 	// advertised unit translates directly from VMResources: vCPUs into
@@ -991,33 +991,64 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 		billingSKUMemoryGiBMs:               float64(res.MemoryMiB) / billingMiBPerGiB,
 		billingSKUExecutionRootStorageGiBMs: float64(res.RootDiskGiB),
 	}
-	return s.reserveBillingWindow(ctx, dto.BillingReserveWindowRequest{
-		OrgID:            dto.Uint64(item.OrgID),
-		ProductID:        item.ProductID,
-		ActorID:          item.ActorID,
-		ConcurrentCount:  1,
-		SourceType:       item.SourceKind,
-		SourceRef:        item.ExecutionID.String(),
-		WindowSeq:        1,
-		ReservationShape: "time",
-		ReservedQuantity: 0,
-		BillingJobID:     billingJobID,
-		Allocation:       allocation,
+	jobID := billingclient.SafeInt64(billingJobID)
+	resp, err := s.Billing.ReserveWindow(ctx, billingclient.ReserveWindowRequest{
+		Body: billingclient.ReserveWindowInputBody{
+			ActorID:          billingclient.ActorId(item.ActorID),
+			Allocation:       billingclient.BillingAllocation(allocation),
+			BillingJobID:     &jobID,
+			ConcurrentCount:  1,
+			OrgID:            billingclient.OrgId(strconv.FormatUint(item.OrgID, 10)),
+			ProductID:        billingclient.ProductId(item.ProductID),
+			ReservationShape: billingclient.ReservationShape("time"),
+			ReservedQuantity: 0,
+			SourceRef:        billingclient.BillingSourceRef(item.ExecutionID.String()),
+			SourceType:       billingclient.BillingSourceType(item.SourceKind),
+			WindowSeq:        1,
+		},
 	})
+	if err != nil {
+		return billingclient.BillingWindowReservation{}, fmt.Errorf("reserve billing window: %w", err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if resp.Result == nil {
+			return billingclient.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, nil)
+		}
+		return resp.Result.Reservation, nil
+	case http.StatusPaymentRequired:
+		return billingclient.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, ErrBillingPaymentRequired)
+	case http.StatusForbidden:
+		return billingclient.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, ErrBillingForbidden)
+	default:
+		return billingclient.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, nil)
+	}
 }
 
-func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation dto.BillingWindowReservation) error {
+func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation billingclient.BillingWindowReservation) error {
 	payload, _ := json.Marshal(reservation)
+	reservedChargeUnits, err := billingDecimalUint64(reservation.ReservedChargeUnits, "reserved charge units")
+	if err != nil {
+		return err
+	}
+	costPerUnit, err := billingDecimalUint64(reservation.CostPerUnit, "cost per unit")
+	if err != nil {
+		return err
+	}
+	windowStart, err := billingTime(reservation.WindowStart, "window start")
+	if err != nil {
+		return err
+	}
 	if err := s.storeQueries().InsertExecutionBillingWindow(ctx, store.InsertExecutionBillingWindowParams{
 		AttemptID:           attemptID,
-		WindowSeq:           int32FromUint32(reservation.WindowSeq, "billing window seq"),
+		WindowSeq:           int32FromInt64(int64(reservation.WindowSeq), "billing window seq"),
 		BillingWindowID:     reservation.WindowID,
 		ReservationShape:    reservation.ReservationShape,
-		ReservedQuantity:    int32FromUint32(reservation.ReservedQuantity, "reserved quantity"),
-		ReservedChargeUnits: mustInt64FromUint64(reservation.ReservedChargeUnits.Uint64(), "reserved charge units"),
-		CostPerUnit:         mustInt64FromUint64(reservation.CostPerUnit.Uint64(), "cost per unit"),
-		PricingPhase:        reservation.PricingPhase,
-		WindowStart:         pgTime(reservation.WindowStart),
+		ReservedQuantity:    int32FromInt64(int64(reservation.ReservedQuantity), "reserved quantity"),
+		ReservedChargeUnits: mustInt64FromUint64(reservedChargeUnits, "reserved charge units"),
+		CostPerUnit:         mustInt64FromUint64(costPerUnit, "cost per unit"),
+		PricingPhase:        string(reservation.PricingPhase),
+		WindowStart:         pgTime(windowStart),
 		CreatedAt:           pgTime(time.Now().UTC()),
 		ReservationJsonb:    payload,
 	}); err != nil {
@@ -1026,12 +1057,20 @@ func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, 
 	return nil
 }
 
-func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int, settled dto.BillingSettleResult) error {
+func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int, settled billingclient.BillingSettleResult) error {
+	billedChargeUnits, err := billingDecimalUint64(settled.BilledChargeUnits, "billed charge units")
+	if err != nil {
+		return err
+	}
+	writeoffChargeUnits, err := billingDecimalUint64(settled.WriteoffChargeUnits, "writeoff charge units")
+	if err != nil {
+		return err
+	}
 	return s.storeQueries().MarkExecutionBillingWindow(ctx, store.MarkExecutionBillingWindowParams{
 		State:               state,
 		ActualQuantity:      int32FromInt(actual, "actual quantity"),
-		BilledChargeUnits:   mustInt64FromUint64(settled.BilledChargeUnits.Uint64(), "billed charge units"),
-		WriteoffChargeUnits: mustInt64FromUint64(settled.WriteoffChargeUnits.Uint64(), "writeoff charge units"),
+		BilledChargeUnits:   mustInt64FromUint64(billedChargeUnits, "billed charge units"),
+		WriteoffChargeUnits: mustInt64FromUint64(writeoffChargeUnits, "writeoff charge units"),
 		SettledAt:           pgTime(time.Now().UTC()),
 		AttemptID:           attemptID,
 		BillingWindowID:     windowID,
@@ -1224,7 +1263,7 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 	return err
 }
 
-func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation dto.BillingWindowReservation) {
+func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation billingclient.BillingWindowReservation) {
 	cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 	defer cancel()
 	if leaseID != "" {
@@ -1305,29 +1344,29 @@ func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) (
 	return out, nil
 }
 
-func (s *Service) latestBillingReservation(ctx context.Context, item executionWorkItem) (dto.BillingWindowReservation, error) {
+func (s *Service) latestBillingReservation(ctx context.Context, item executionWorkItem) (billingclient.BillingWindowReservation, error) {
 	windows, err := s.listBillingWindows(ctx, item.AttemptID)
 	if err != nil {
-		return dto.BillingWindowReservation{}, err
+		return billingclient.BillingWindowReservation{}, err
 	}
 	if len(windows) == 0 {
-		return dto.BillingWindowReservation{}, fmt.Errorf("execution attempt %s has no billing window", item.AttemptID)
+		return billingclient.BillingWindowReservation{}, fmt.Errorf("execution attempt %s has no billing window", item.AttemptID)
 	}
 	window := windows[len(windows)-1]
-	return dto.BillingWindowReservation{
+	return billingclient.BillingWindowReservation{
 		WindowID:            window.BillingWindowID,
-		OrgID:               dto.Uint64(item.OrgID),
-		ProductID:           item.ProductID,
-		ActorID:             item.ActorID,
-		SourceType:          item.SourceKind,
-		SourceRef:           item.ExecutionID.String(),
-		WindowSeq:           uint32(clampUint32(int64(window.WindowSeq))),
-		ReservationShape:    window.ReservationShape,
-		ReservedQuantity:    uint32(clampUint32(int64(window.ReservedQuantity))),
-		ReservedChargeUnits: dto.Uint64(window.ReservedChargeUnits),
-		PricingPhase:        window.PricingPhase,
-		CostPerUnit:         dto.Uint64(window.CostPerUnit),
-		WindowStart:         window.WindowStart,
+		OrgID:               billingclient.OrgId(strconv.FormatUint(item.OrgID, 10)),
+		ProductID:           billingclient.ProductId(item.ProductID),
+		ActorID:             billingclient.ActorId(item.ActorID),
+		SourceType:          billingclient.BillingSourceType(item.SourceKind),
+		SourceRef:           billingclient.BillingSourceRef(item.ExecutionID.String()),
+		WindowSeq:           billingclient.WindowSequence(window.WindowSeq),
+		ReservationShape:    billingclient.ReservationShape(window.ReservationShape),
+		ReservedQuantity:    billingclient.WindowQuantity(window.ReservedQuantity),
+		ReservedChargeUnits: billingclient.DecimalUint64(strconv.FormatUint(window.ReservedChargeUnits, 10)),
+		PricingPhase:        billingclient.PricingPhase(window.PricingPhase),
+		CostPerUnit:         billingclient.DecimalUint64(strconv.FormatUint(window.CostPerUnit, 10)),
+		WindowStart:         window.WindowStart.UTC().Format(time.RFC3339Nano),
 	}, nil
 }
 
@@ -1514,8 +1553,8 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	// before bounds validation so billing, traces, and VM admission agree.
 	req.Resources = vmResourcesWithDefaults(req.Resources, classRec.Resources)
 	bounds := s.Bounds
-	if bounds == (dto.VMResourceBounds{}) {
-		bounds = dto.DefaultBounds
+	if bounds == (VMResourceBounds{}) {
+		bounds = DefaultBounds
 	}
 	if err := req.Resources.Validate(bounds); err != nil {
 		return SubmitRequest{}, err
@@ -1523,7 +1562,7 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	return req, nil
 }
 
-func vmResourcesWithDefaults(resources, defaults dto.VMResources) dto.VMResources {
+func vmResourcesWithDefaults(resources, defaults VMResources) VMResources {
 	if resources.VCPUs == 0 {
 		resources.VCPUs = defaults.VCPUs
 	}
@@ -1626,55 +1665,7 @@ func detachedContext(ctx context.Context) context.Context {
 	return trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
 }
 
-func (s *Service) reserveBillingWindow(ctx context.Context, request dto.BillingReserveWindowRequest) (dto.BillingWindowReservation, error) {
-	windowSeq, err := billingWireInt64("window_seq", request.WindowSeq)
-	if err != nil {
-		return dto.BillingWindowReservation{}, err
-	}
-	reservedQuantity, err := billingWireInt64("reserved_quantity", request.ReservedQuantity)
-	if err != nil {
-		return dto.BillingWindowReservation{}, err
-	}
-	concurrentCount, err := int64FromUint64("concurrent_count", request.ConcurrentCount)
-	if err != nil {
-		return dto.BillingWindowReservation{}, err
-	}
-	billingJobID := billingclient.SafeInt64(request.BillingJobID)
-	resp, err := s.Billing.ReserveWindow(ctx, billingclient.ReserveWindowRequest{
-		Body: billingclient.ReserveWindowInputBody{
-			ActorID:          request.ActorID,
-			Allocation:       request.Allocation,
-			BillingJobID:     &billingJobID,
-			ConcurrentCount:  billingclient.SafeUint64(concurrentCount),
-			OrgID:            request.OrgID.String(),
-			ProductID:        request.ProductID,
-			ReservationShape: billingclient.ReservationShape(request.ReservationShape),
-			ReservedQuantity: billingclient.WindowQuantity(reservedQuantity),
-			SourceRef:        request.SourceRef,
-			SourceType:       request.SourceType,
-			WindowSeq:        billingclient.WindowSequence(windowSeq),
-		},
-	})
-	if err != nil {
-		return dto.BillingWindowReservation{}, fmt.Errorf("reserve billing window: %w", err)
-	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-		out, err := decodeBillingResponseBody[dto.BillingReserveWindowResult]("decode reserve billing window response", resp.Body)
-		if err != nil {
-			return dto.BillingWindowReservation{}, err
-		}
-		return out.Reservation, nil
-	case http.StatusPaymentRequired:
-		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, ErrBillingPaymentRequired)
-	case http.StatusForbidden:
-		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, ErrBillingForbidden)
-	default:
-		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, nil)
-	}
-}
-
-func (s *Service) activateBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation, activatedAt time.Time) (dto.BillingWindowReservation, error) {
+func (s *Service) activateBillingWindow(ctx context.Context, reservation billingclient.BillingWindowReservation, activatedAt time.Time) (billingclient.BillingWindowReservation, error) {
 	resp, err := s.Billing.ActivateWindow(ctx, billingclient.ActivateWindowRequest{
 		Body: billingclient.ActivateWindowInputBody{
 			ActivatedAt: activatedAt.UTC().Format(time.RFC3339Nano),
@@ -1682,24 +1673,23 @@ func (s *Service) activateBillingWindow(ctx context.Context, reservation dto.Bil
 		},
 	})
 	if err != nil {
-		return dto.BillingWindowReservation{}, fmt.Errorf("activate billing window: %w", err)
+		return billingclient.BillingWindowReservation{}, fmt.Errorf("activate billing window: %w", err)
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
-		out, err := decodeBillingResponseBody[dto.BillingActivateWindowResult]("decode activate billing window response", resp.Body)
-		if err != nil {
-			return dto.BillingWindowReservation{}, err
+		if resp.Result == nil {
+			return billingclient.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode, resp.Problem, nil)
 		}
-		return out.Reservation, nil
+		return resp.Result.Reservation, nil
 	default:
-		return dto.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode, resp.Problem, nil)
+		return billingclient.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode, resp.Problem, nil)
 	}
 }
 
-func (s *Service) settleBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation, actualQuantity uint32, usageSummary map[string]any) (dto.BillingSettleResult, error) {
+func (s *Service) settleBillingWindow(ctx context.Context, reservation billingclient.BillingWindowReservation, actualQuantity uint32, usageSummary map[string]any) (billingclient.BillingSettleResult, error) {
 	actualQuantityInt, err := billingWireInt64("actual_quantity", actualQuantity)
 	if err != nil {
-		return dto.BillingSettleResult{}, err
+		return billingclient.BillingSettleResult{}, err
 	}
 	req := billingclient.SettleWindowRequest{Body: billingclient.SettleWindowInputBody{
 		ActualQuantity: billingclient.WindowQuantity(actualQuantityInt),
@@ -1710,17 +1700,20 @@ func (s *Service) settleBillingWindow(ctx context.Context, reservation dto.Billi
 	}
 	resp, err := s.Billing.SettleWindow(ctx, req)
 	if err != nil {
-		return dto.BillingSettleResult{}, fmt.Errorf("settle billing window: %w", err)
+		return billingclient.BillingSettleResult{}, fmt.Errorf("settle billing window: %w", err)
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return decodeBillingResponseBody[dto.BillingSettleResult]("decode settle billing window response", resp.Body)
+		if resp.Result == nil {
+			return billingclient.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode, resp.Problem, nil)
+		}
+		return *resp.Result, nil
 	default:
-		return dto.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode, resp.Problem, nil)
+		return billingclient.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode, resp.Problem, nil)
 	}
 }
 
-func (s *Service) voidBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation) error {
+func (s *Service) voidBillingWindow(ctx context.Context, reservation billingclient.BillingWindowReservation) error {
 	resp, err := s.Billing.VoidWindow(ctx, billingclient.VoidWindowRequest{
 		Body: billingclient.VoidWindowInputBody{
 			WindowID: billingclient.BillingWindowId(reservation.WindowID),
@@ -1735,14 +1728,6 @@ func (s *Service) voidBillingWindow(ctx context.Context, reservation dto.Billing
 	default:
 		return newBillingStatusError("void billing window", resp.StatusCode, resp.Problem, nil)
 	}
-}
-
-func decodeBillingResponseBody[T any](operation string, body []byte) (T, error) {
-	var out T
-	if err := json.Unmarshal(body, &out); err != nil {
-		return out, fmt.Errorf("%s: %w", operation, err)
-	}
-	return out, nil
 }
 
 func newBillingStatusError(operation string, statusCode int, problem *billingclient.ErrorModel, cause error) error {
@@ -1763,6 +1748,29 @@ func billingWireInt64(field string, value uint32) (int64, error) {
 		return 0, fmt.Errorf("%s exceeds billing wire range", field)
 	}
 	return int64(value), nil
+}
+
+func billingDecimalUint64(value billingclient.DecimalUint64, field string) (uint64, error) {
+	raw := strings.TrimSpace(string(value))
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s is not an unsigned decimal: %w", field, err)
+	}
+	return parsed, nil
+}
+
+func billingTime(value string, field string) (time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return time.Time{}, fmt.Errorf("%s is required", field)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s is not RFC3339: %w", field, err)
+	}
+	return parsed.UTC(), nil
 }
 
 func int64FromUint64(field string, value uint64) (int64, error) {

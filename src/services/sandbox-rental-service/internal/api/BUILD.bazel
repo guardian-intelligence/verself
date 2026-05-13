@@ -4,7 +4,7 @@ go_library(
     name = "api",
     srcs = [
         "audit_sink.go",
-        "dto.go",
+        "contract.go",
         "errors.go",
         "github_webhook.go",
         "internal_routes.go",
@@ -12,12 +12,14 @@ go_library(
         "policy.go",
         "routes.go",
         "safeconv.go",
+        "views.go",
     ],
     importpath = "github.com/verself/sandbox-rental-service/internal/api",
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internalclient",
+        "//src/services/sandbox-rental-service/internal/contractapi",
+        "//src/services/sandbox-rental-service/internal/internalcontractapi",
         "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/sandbox-rental-service/internal/recurring",
         "//src/services/service-runtime/go/auth",
@@ -41,6 +43,7 @@ go_test(
     srcs = ["security_test.go"],
     embed = [":api"],
     deps = [
+        "//src/services/sandbox-rental-service/internal/contractapi",
         "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",

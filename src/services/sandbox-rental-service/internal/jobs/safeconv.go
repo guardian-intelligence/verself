@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/vm-orchestrator"
 )
 
@@ -50,6 +49,13 @@ func int32FromInt(value int, field string) int32 {
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
 }
 
+func int32FromInt64(value int64, field string) int32 {
+	if value < minInt32AsInt64 || value > maxInt32AsInt64 {
+		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
+	}
+	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
+}
+
 func durationFromSeconds(value uint64, field string) time.Duration {
 	if value > maxDurationSeconds {
 		panic(fmt.Sprintf("%s exceeds max duration seconds %d: %d", field, maxDurationSeconds, value))
@@ -57,16 +63,16 @@ func durationFromSeconds(value uint64, field string) time.Duration {
 	return time.Duration(value) * time.Second // #nosec G115 -- value is checked against the duration range above.
 }
 
-func vmResourcesFromDB(vcpus, memoryMiB, rootDiskGiB int32) dto.VMResources {
-	return dto.VMResources{
+func vmResourcesFromDB(vcpus, memoryMiB, rootDiskGiB int32) VMResources {
+	return VMResources{
 		VCPUs:       uint32FromInt32(vcpus, "vcpus"),
 		MemoryMiB:   uint32FromInt32(memoryMiB, "memory mib"),
 		RootDiskGiB: uint32FromInt32(rootDiskGiB, "root disk gib"),
-		KernelImage: dto.KernelImageDefault,
+		KernelImage: KernelImageDefault,
 	}
 }
 
-func vmResourcesForLease(resources dto.VMResources) vmorchestrator.VMResources {
+func vmResourcesForLease(resources VMResources) vmorchestrator.VMResources {
 	return vmorchestrator.VMResources{
 		VCPUs:       resources.VCPUs,
 		MemoryMiB:   resources.MemoryMiB,

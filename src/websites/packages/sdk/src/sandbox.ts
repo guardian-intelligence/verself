@@ -168,14 +168,23 @@ export function isSandboxRentalNotFound(error: unknown): error is SandboxRentalA
   return error instanceof SandboxRentalApiError && error.status === 404;
 }
 
-function toSafeNumber(value: bigint, label: string): number {
+function toSafeNumber(value: bigint | number, label: string): number {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(`${label} exceeds Number.MAX_SAFE_INTEGER`);
+    }
+    return value;
+  }
   if (value > maxSafeInteger || value < -maxSafeInteger) {
     throw new RangeError(`${label} exceeds Number.MAX_SAFE_INTEGER`);
   }
   return Number(value);
 }
 
-function toOptionalSafeNumber(value: bigint | undefined, label: string): number | undefined {
+function toOptionalSafeNumber(
+  value: bigint | number | undefined,
+  label: string,
+): number | undefined {
   return value === undefined ? undefined : toSafeNumber(value, label);
 }
 

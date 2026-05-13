@@ -28,7 +28,6 @@ GO_DIRS = [
     "src/tools/dev",
     "src/tools/operator",
     "src/verself-cli",
-    "src/domain-transfer-objects/go",
     "src/services/governance-service",
     "src/services/iam-service",
     "src/services/mailbox-service",

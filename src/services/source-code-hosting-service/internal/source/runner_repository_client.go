@@ -16,11 +16,11 @@ import (
 var runnerTracer = otel.Tracer("source-code-hosting-service/runner")
 
 type RunnerRepositoryClient struct {
-	Client *sandboxclient.ClientWithResponses
+	Client *sandboxclient.Client
 }
 
-func NewRunnerRepositoryClient(baseURL string, httpClient sandboxclient.HttpRequestDoer) (RunnerRepositoryClient, error) {
-	client, err := sandboxclient.NewClientWithResponses(strings.TrimRight(baseURL, "/"), sandboxclient.WithHTTPClient(httpClient))
+func NewRunnerRepositoryClient(baseURL string, httpClient sandboxclient.HTTPRequestDoer) (RunnerRepositoryClient, error) {
+	client, err := sandboxclient.NewClient(strings.TrimRight(baseURL, "/"), sandboxclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return RunnerRepositoryClient{}, err
 	}
@@ -54,30 +54,29 @@ func (c RunnerRepositoryClient) RegisterRunnerRepository(ctx context.Context, re
 		attribute.String("runner.provider", BackendForgejo),
 	)
 	sourceRepositoryID := repo.RepoID.String()
-	resp, err := c.Client.InternalRegisterRunnerRepositoryWithResponse(ctx, sandboxclient.InternalRegisterRunnerRepositoryJSONRequestBody{
-		Provider:             BackendForgejo,
-		OrgId:                fmt.Sprintf("%d", repo.OrgID),
-		ProjectId:            repo.ProjectID.String(),
-		SourceRepositoryId:   &sourceRepositoryID,
-		ProviderOwner:        repo.Backend.BackendOwner,
-		ProviderRepo:         repo.Backend.BackendRepo,
-		ProviderRepositoryId: strconv.FormatInt(providerRepoID, 10),
-		RepositoryFullName:   &repositoryFullName,
+	fullName := sandboxclient.RepositoryFullName(repositoryFullName)
+	sourceRepoID := sandboxclient.SourceRepositoryId(sourceRepositoryID)
+	resp, err := c.Client.InternalRegisterRunnerRepository(ctx, sandboxclient.InternalRegisterRunnerRepositoryRequest{
+		Body: sandboxclient.InternalRegisterRunnerRepositoryInputBody{
+			Provider:             sandboxclient.Provider(BackendForgejo),
+			OrgID:                sandboxclient.OrgId(fmt.Sprintf("%d", repo.OrgID)),
+			ProjectID:            sandboxclient.ProjectId(repo.ProjectID.String()),
+			SourceRepositoryID:   &sourceRepoID,
+			ProviderOwner:        sandboxclient.ProviderOwner(repo.Backend.BackendOwner),
+			ProviderRepo:         sandboxclient.ProviderRepo(repo.Backend.BackendRepo),
+			ProviderRepositoryID: sandboxclient.ProviderRepositoryId(strconv.FormatInt(providerRepoID, 10)),
+			RepositoryFullName:   &fullName,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("%w: register runner repository: %v", ErrRunner, err)
 	}
-	if resp.JSON201 == nil {
-		status := 0
-		body := ""
-		if resp.HTTPResponse != nil {
-			status = resp.HTTPResponse.StatusCode
-			body = strings.TrimSpace(string(resp.Body))
-		}
-		if status == http.StatusConflict {
-			return fmt.Errorf("%w: runner repository conflict: %s", ErrRunner, body)
-		}
-		return fmt.Errorf("%w: runner repository unexpected status %d: %s", ErrRunner, status, body)
+	if resp.Result != nil {
+		return nil
 	}
-	return nil
+	body := strings.TrimSpace(string(resp.Body))
+	if resp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("%w: runner repository conflict: %s", ErrRunner, body)
+	}
+	return fmt.Errorf("%w: runner repository unexpected status %d: %s", ErrRunner, resp.StatusCode, body)
 }

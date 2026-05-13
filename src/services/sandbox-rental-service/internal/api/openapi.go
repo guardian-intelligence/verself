@@ -45,23 +45,3 @@ func serverURL(addr string) string {
 	}
 	return "http://" + addr
 }
-
-func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{InstallationID: "inst_openapi"})
-	return api.OpenAPI().DowngradeYAML()
-}
-
-func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{InstallationID: "inst_openapi"})
-	return api.OpenAPI().YAML()
-}
-
-func InternalOpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, &jobs.Service{})
-	return api.OpenAPI().DowngradeYAML()
-}
-
-func InternalOpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, &jobs.Service{})
-	return api.OpenAPI().YAML()
-}

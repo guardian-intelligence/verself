@@ -19,7 +19,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
@@ -90,7 +89,7 @@ type forgejoAllocation struct {
 	ProviderOwner        string
 	ProviderRepo         string
 	RepositoryFullName   string
-	Resources            dto.VMResources
+	Resources            VMResources
 	ProductID            string
 }
 
@@ -673,7 +672,7 @@ func (r *ForgejoRunner) loadQueuedJob(ctx context.Context, providerJobID int64) 
 	return job, nil
 }
 
-func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []string) (string, dto.VMResources, string, error) {
+func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []string) (string, VMResources, string, error) {
 	for _, label := range labels {
 		label = strings.TrimSpace(label)
 		if label == "" {
@@ -681,13 +680,13 @@ func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []strin
 		}
 		classRec, ok, err := r.service.runnerClassResources(ctx, label)
 		if err != nil {
-			return "", dto.VMResources{}, "", err
+			return "", VMResources{}, "", err
 		}
 		if ok {
 			return label, classRec.Resources, classRec.ProductID, nil
 		}
 	}
-	return "", dto.VMResources{}, "", nil
+	return "", VMResources{}, "", nil
 }
 
 func (r *ForgejoRunner) activeAllocationForJob(ctx context.Context, providerJobID int64) (uuid.UUID, error) {

@@ -1,12 +1,15 @@
 $version: "2"
 namespace verself.sandbox.v1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#nestedProperties
 use smithy.api#paginated
 use smithy.api#pattern
 use smithy.api#range
@@ -16,8 +19,6 @@ use verself.common.v1#ConflictError
 use verself.common.v1#DisplayName
 use verself.common.v1#IdempotencyKey
 use verself.common.v1#IdempotencyPayloadMismatchError
-use verself.common.v1#PageSize
-use verself.common.v1#PageToken
 use verself.common.v1#PermissionDeniedError
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceName
@@ -30,11 +31,11 @@ use verself.common.v1#auditEvent
 use verself.common.v1#authz
 use verself.common.v1#identity
 use verself.common.v1#permission
-use verself.common.v1#protoField
 use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+
 @serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "sandbox-rental-service", internalAudience: "sandbox-rental-service")
 service SandboxRental {
     version: "2026-05-13"
@@ -58,272 +59,882 @@ service SandboxRental {
     ]
     resources: [
         GitHubInstallation,
+        GitHubInstallationRepositoryResource,
         Execution,
+        ExecutionLogsResource,
         Run,
+        RunLogsResource,
+        RunAnalyticsJobsResource,
+        RunAnalyticsCostsResource,
+        RunAnalyticsRunnerSizingResource,
         ExecutionSchedule
     ]
 }
+
 @serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "sandbox-rental-service", internalAudience: "sandbox-rental-service")
 service SandboxRentalInternal {
     version: "2026-05-13"
     operations: [InternalRegisterRunnerRepository]
     resources: [RunnerRepository]
 }
-@pattern("^[0-9a-fA-F-]{36}$")
-string ExecutionId
+
 @pattern("^[0-9a-fA-F-]{36}$")
 string AttemptId
+
 @pattern("^[0-9a-fA-F-]{36}$")
-string RunId
+string DispatchId
+
 @pattern("^[0-9a-fA-F-]{36}$")
-string ScheduleId
+string ExecutionId
+
 @pattern("^[0-9a-fA-F-]{36}$")
 string ProjectId
+
+@pattern("^[0-9a-fA-F-]{36}$")
+string RunId
+
+@pattern("^[0-9a-fA-F-]{36}$")
+string ScheduleId
+
 @pattern("^[0-9a-fA-F-]{36}$")
 string SourceRepositoryId
+
+@pattern("^[0-9a-fA-F-]{36}$")
+string SourceWorkflowRunId
+
 @length(min: 1, max: 128)
-string OrgId
-@length(min: 1, max: 512)
 string ActorId
-@length(min: 1, max: 64)
-string Provider
-@length(min: 1, max: 64)
-string ExecutionStatus
-@length(min: 1, max: 64)
-string SourceKind
-@length(min: 1, max: 64)
-string WorkloadKind
-@length(min: 1, max: 255)
-string RepositoryFullName
-@length(min: 1, max: 255)
-string RunnerClass
+
 @length(min: 1, max: 512)
-string WorkflowPath
-@length(min: 1, max: 255)
-string GitRef
-@length(max: 2048)
-string LogQuery
-@length(min: 1, max: 4096)
-string LogChunk
+string BillingWindowId
+
 @length(min: 1, max: 512)
-string SetupURL
-@length(min: 1, max: 512)
-string ProviderRepositoryId
-@length(min: 1, max: 255)
-string ProviderOwner
-@length(min: 1, max: 255)
-string ProviderRepo
-@length(min: 1, max: 512)
-string ScheduleWorkflowId
-@range(min: 15, max: 4294967295)
-integer IntervalSeconds
+string CorrelationId
+
 @pattern("^[0-9]+$")
 string DecimalUint64
-list GitHubInstallations {
-    member: GitHubInstallationRecord
+
+@length(min: 1, max: 255)
+string ExternalProvider
+
+@length(min: 1, max: 255)
+string ExternalTaskId
+
+@length(min: 1, max: 255)
+string GitRef
+
+@length(min: 1, max: 4096)
+string LogChunk
+
+@length(max: 2048)
+string LogQuery
+
+@length(min: 1, max: 128)
+string OrgId
+
+@length(min: 1, max: 128)
+string PricingPhase
+
+@length(min: 1, max: 64)
+string ProductId
+
+@length(min: 1, max: 64)
+string Provider
+
+@length(min: 1, max: 255)
+string ProviderOwner
+
+@length(min: 1, max: 255)
+string ProviderRepo
+
+@length(min: 1, max: 512)
+string ProviderRepositoryId
+
+@length(min: 1, max: 1024)
+string ReservationShape
+
+@length(max: 160)
+string RunLogSearchCursor
+
+@range(min: 1, max: 500)
+integer RunLogSearchPageSize
+
+@length(max: 128)
+string RunListCursor
+
+@range(min: 1, max: 200)
+integer RunListPageSize
+
+@length(min: 1, max: 512)
+string RunCommand
+
+@length(min: 1, max: 255)
+string RunnerClass
+
+@range(min: 0, max: 9007199254740991)
+long SafeNonNegativeLong
+
+@range(min: 0, max: 255)
+integer SafeExitCode
+
+@length(min: 1, max: 512)
+string SetupURL
+
+@length(min: 1, max: 64)
+string SourceKind
+
+@length(min: 1, max: 512)
+string SourceRef
+
+@length(min: 1, max: 64)
+string StreamName
+
+@length(min: 1, max: 64)
+string WorkloadKind
+
+@length(min: 1, max: 64)
+string ExecutionKind
+
+@length(min: 1, max: 64)
+string ExecutionStatus
+
+@length(min: 1, max: 64)
+string AttemptState
+
+@length(min: 1, max: 2048)
+string FailureReason
+
+@length(min: 1, max: 512)
+string LeaseId
+
+@length(min: 1, max: 512)
+string ExecId
+
+@length(min: 1, max: 128)
+string BillingJobId
+
+@length(min: 1, max: 512)
+string TraceId
+
+@length(min: 1, max: 255)
+string RepositoryFullName
+
+@length(min: 1, max: 255)
+string WorkflowName
+
+@length(min: 1, max: 512)
+string WorkflowPath
+
+@length(min: 1, max: 255)
+string JobName
+
+@length(min: 1, max: 255)
+string HeadBranch
+
+@length(min: 1, max: 128)
+string HeadSHA
+
+@length(min: 1, max: 512)
+string TemporalId
+
+@length(min: 1, max: 255)
+string TaskQueue
+
+@length(min: 1, max: 255)
+string TemporalNamespace
+
+@length(min: 1, max: 64)
+string ScheduleState
+
+@length(min: 1, max: 64)
+string WorkflowState
+
+@range(min: 15, max: 4294967295)
+integer IntervalSeconds
+
+map ScheduleInputs {
+    key: String
+    value: String
 }
+
+list GitHubInstallations {
+    member: SandboxGitHubInstallationRecord
+}
+
 list InstallationRepositories {
     member: GitHubInstallationRepository
 }
+
 list Runs {
-    member: RunSummary
+    member: SandboxExecutionRecord
 }
-list RunLogResults {
-    member: RunLogSearchResult
+
+list SandboxBillingWindows {
+    member: SandboxBillingWindow
 }
-list ExecutionSchedules {
-    member: ExecutionScheduleRecord
+
+list SandboxExecutionScheduleDispatches {
+    member: SandboxExecutionScheduleDispatchRecord
 }
-list AnalyticsBuckets {
-    member: AnalyticsBucket
+
+list SandboxExecutionSchedules {
+    member: SandboxExecutionScheduleRecord
 }
+
+list SandboxRunLogSearchResults {
+    member: SandboxRunLogSearchResult
+}
+
+list SandboxAnalyticsBuckets {
+    member: SandboxAnalyticsBucket
+}
+
+list SandboxRunDurationSamples {
+    member: SandboxRunDurationSample
+}
+
+list SandboxRunnerSizingSamples {
+    member: SandboxRunnerSizingSample
+}
+
 @permission(name: "sandbox:github_installation:read")
 string GitHubInstallationReadPermission
+
 @permission(name: "sandbox:github_installation:write")
 string GitHubInstallationWritePermission
+
 @permission(name: "sandbox:execution:read")
 string ExecutionReadPermission
+
 @permission(name: "sandbox:execution_schedule:read")
 string ScheduleReadPermission
+
 @permission(name: "sandbox:execution_schedule:write")
 string ScheduleWritePermission
+
 @permission(name: "sandbox:logs:read")
 string LogsReadPermission
+
 @permission(name: "sandbox:analytics:read")
 string AnalyticsReadPermission
+
 @permission(name: "sandbox:runner_repository:register")
 string RunnerRepositoryRegisterPermission
+
 @auditEvent(name: "sandbox.github_installation.connect")
 string GitHubInstallationConnectAuditEvent
+
 @auditEvent(name: "sandbox.github_installation.list")
 string GitHubInstallationListAuditEvent
+
 @auditEvent(name: "sandbox.github_installation.repositories.sync")
 string GitHubRepositoriesSyncAuditEvent
+
 @auditEvent(name: "sandbox.execution.read")
 string ExecutionReadAuditEvent
+
 @auditEvent(name: "sandbox.execution.logs.read")
 string ExecutionLogsReadAuditEvent
+
 @auditEvent(name: "sandbox.run.list")
 string RunListAuditEvent
+
 @auditEvent(name: "sandbox.run.read")
 string RunReadAuditEvent
+
 @auditEvent(name: "sandbox.run_logs.search")
 string RunLogsSearchAuditEvent
+
 @auditEvent(name: "sandbox.run_analytics.jobs.read")
 string JobsAnalyticsReadAuditEvent
+
 @auditEvent(name: "sandbox.run_analytics.costs.read")
 string CostsAnalyticsReadAuditEvent
+
 @auditEvent(name: "sandbox.run_analytics.runner_sizing.read")
 string RunnerSizingAnalyticsReadAuditEvent
+
 @auditEvent(name: "sandbox.execution_schedule.create")
 string ScheduleCreateAuditEvent
+
 @auditEvent(name: "sandbox.execution_schedule.list")
 string ScheduleListAuditEvent
+
 @auditEvent(name: "sandbox.execution_schedule.read")
 string ScheduleReadAuditEvent
+
 @auditEvent(name: "sandbox.execution_schedule.pause")
 string SchedulePauseAuditEvent
+
 @auditEvent(name: "sandbox.execution_schedule.resume")
 string ScheduleResumeAuditEvent
+
 @auditEvent(name: "sandbox.runner_repository.register")
 string RunnerRepositoryRegisterAuditEvent
+
 resource GitHubInstallation {}
+resource GitHubInstallationRepositoryResource {}
 resource Execution {}
+resource ExecutionLogsResource {}
 resource Run {}
+resource RunLogsResource {}
+resource RunAnalyticsJobsResource {}
+resource RunAnalyticsCostsResource {}
+resource RunAnalyticsRunnerSizingResource {}
 resource ExecutionSchedule {}
 resource RunnerRepository {}
-structure GitHubInstallationConnectResponse {
+
+structure SandboxGitHubInstallationConnectResponse {
     @required
     state: String
+
     @required
     setup_url: SetupURL
+
     @required
     expires_at: Timestamp
 }
-structure GitHubInstallationRecord {
+
+structure SandboxGitHubInstallationRecord {
     @required
     installation_id: DecimalUint64
+
     @required
     resourceName: ResourceName
+
     @required
     org_id: OrgId
+
     @required
     account_login: String
+
     @required
     account_type: String
+
     @required
     active: Boolean
+
     @required
     created_at: Timestamp
+
     @required
     updated_at: Timestamp
 }
+
 structure GitHubInstallationRepository {
     @required
     provider_repository_id: ProviderRepositoryId
+
     @required
     provider_owner: ProviderOwner
+
     @required
     provider_repo: ProviderRepo
+
     @required
     repository_full_name: RepositoryFullName
+
     @required
     private: Boolean
+
     @required
     active: Boolean
+
     @required
     synced_at: Timestamp
 }
-structure RunSummary {
+
+structure SandboxExecutionRecord {
     @required
     run_id: RunId
+
     @required
     resourceName: ResourceName
+
     @required
     execution_id: ExecutionId
+
     @required
     org_id: OrgId
+
     @required
     actor_id: ActorId
+
+    @required
+    kind: ExecutionKind
+
+    source_kind: SourceKind
+    workload_kind: WorkloadKind
+    source_ref: SourceRef
+    runner_class: RunnerClass
+    external_provider: ExternalProvider
+    external_task_id: ExternalTaskId
+    provider: Provider
+
+    @required
+    product_id: ProductId
+
+    @required
+    status: ExecutionStatus
+
+    correlation_id: CorrelationId
+    idempotency_key: IdempotencyKey
+    run_command: RunCommand
+
+    @required
+    latest_attempt: SandboxAttemptRecord
+
+    @required
+    created_at: Timestamp
+
+    @required
+    updated_at: Timestamp
+
+    billing_windows: SandboxBillingWindows
+    billing_summary: SandboxRunBillingSummary
+    runner: SandboxRunnerRunMetadata
+    schedule: SandboxScheduleRunMetadata
+}
+
+structure SandboxAttemptRecord {
+    @required
+    attempt_id: AttemptId
+
+    resourceName: ResourceName
+
+    @required
+    attempt_seq: SafeNonNegativeLong
+
+    @required
+    state: AttemptState
+
+    lease_id: LeaseId
+    exec_id: ExecId
+    billing_job_id: SafeNonNegativeLong
+    failure_reason: FailureReason
+    exit_code: SafeExitCode
+    duration_ms: SafeNonNegativeLong
+    stdout_bytes: SafeNonNegativeLong
+    stderr_bytes: SafeNonNegativeLong
+    rootfs_provisioned_bytes: SafeNonNegativeLong
+    boot_time_us: SafeNonNegativeLong
+    block_read_bytes: SafeNonNegativeLong
+    block_write_bytes: SafeNonNegativeLong
+    net_rx_bytes: SafeNonNegativeLong
+    net_tx_bytes: SafeNonNegativeLong
+    vcpu_exit_count: SafeNonNegativeLong
+    trace_id: TraceId
+    started_at: Timestamp
+    completed_at: Timestamp
+
+    @required
+    created_at: Timestamp
+
+    @required
+    updated_at: Timestamp
+}
+
+structure SandboxBillingWindow {
+    @required
+    attempt_id: AttemptId
+
+    @required
+    billing_window_id: BillingWindowId
+
+    @required
+    window_seq: SafeNonNegativeLong
+
+    @required
+    reservation_shape: ReservationShape
+
+    @required
+    reserved_quantity: SafeNonNegativeLong
+
+    actual_quantity: SafeNonNegativeLong
+
+    @required
+    reserved_charge_units: DecimalUint64
+
+    @required
+    billed_charge_units: DecimalUint64
+
+    @required
+    writeoff_charge_units: DecimalUint64
+
+    @required
+    cost_per_unit: DecimalUint64
+
+    pricing_phase: PricingPhase
+
+    @required
+    state: String
+
+    @required
+    window_start: Timestamp
+
+    @required
+    created_at: Timestamp
+
+    settled_at: Timestamp
+}
+
+structure SandboxRunBillingSummary {
+    @required
+    window_count: SafeNonNegativeLong
+
+    @required
+    reserved_charge_units: DecimalUint64
+
+    @required
+    billed_charge_units: DecimalUint64
+
+    @required
+    writeoff_charge_units: DecimalUint64
+
+    @required
+    cost_per_unit: DecimalUint64
+
+    pricing_phase: PricingPhase
+}
+
+structure SandboxRunnerRunMetadata {
+    provider_installation_id: DecimalUint64
+    provider_run_id: DecimalUint64
+    provider_job_id: DecimalUint64
+    repository_full_name: RepositoryFullName
+    workflow_name: WorkflowName
+    job_name: JobName
+    head_branch: HeadBranch
+    head_sha: HeadSHA
+}
+
+structure SandboxScheduleRunMetadata {
+    schedule_id: ScheduleId
+    scheduleResourceName: ResourceName
+    display_name: DisplayName
+    temporal_workflow_id: TemporalId
+    temporal_run_id: TemporalId
+}
+
+structure SandboxExecutionLogs {
+    @required
+    execution_id: ExecutionId
+
+    @required
+    attempt_id: AttemptId
+
+    @required
+    logs: String
+}
+
+structure SandboxRunsFilters {
+    source_kind: SourceKind
+    status: ExecutionStatus
+    repository: RepositoryFullName
+    workflow: WorkflowName
+    branch: GitRef
+    runner_class: RunnerClass
+}
+
+structure SandboxRunsPage {
+    @required
+    runs: Runs
+
+    next_cursor: RunListCursor
+
+    @required
+    limit: RunListPageSize
+
+    @required
+    filters: SandboxRunsFilters
+}
+
+structure SandboxRunLogSearchResult {
+    @required
+    execution_id: ExecutionId
+
+    @required
+    attempt_id: AttemptId
+
     source_kind: SourceKind
     workload_kind: WorkloadKind
     runner_class: RunnerClass
     repository_full_name: RepositoryFullName
+    workflow_name: WorkflowName
+    job_name: JobName
+    head_branch: HeadBranch
+    schedule_id: ScheduleId
+
     @required
-    status: ExecutionStatus
+    seq: SafeNonNegativeLong
+
     @required
-    created_at: Timestamp
-    @required
-    updated_at: Timestamp
-}
-structure ExecutionLogs {
-    @required
-    execution_id: ExecutionId
-    @required
-    attempt_id: AttemptId
-    @required
-    logs: String
-}
-structure RunLogSearchResult {
-    @required
-    execution_id: ExecutionId
-    @required
-    attempt_id: AttemptId
+    stream: StreamName
+
     @required
     chunk: LogChunk
+
     @required
     created_at: Timestamp
 }
-structure AnalyticsBucket {
+
+structure SandboxRunLogSearchFilters {
+    query: LogQuery
+    run_id: RunId
+    attempt_id: AttemptId
+    source_kind: SourceKind
+    repository: RepositoryFullName
+    workflow: WorkflowName
+    branch: GitRef
+    runner_class: RunnerClass
+}
+
+structure SandboxRunLogSearchPage {
+    @required
+    results: SandboxRunLogSearchResults
+
+    next_cursor: RunLogSearchCursor
+
+    @required
+    limit: RunLogSearchPageSize
+
+    @required
+    filters: SandboxRunLogSearchFilters
+}
+
+structure SandboxAnalyticsBucket {
     @required
     key: String
+
     @required
     count: DecimalUint64
+
+    reserved_charge_units: DecimalUint64
+    billed_charge_units: DecimalUint64
+    writeoff_charge_units: DecimalUint64
 }
-structure AnalyticsWindow {
+
+structure SandboxRunDurationSample {
+    @required
+    execution_id: ExecutionId
+
+    @required
+    status: ExecutionStatus
+
+    runner_class: RunnerClass
+    repository_full_name: RepositoryFullName
+    workflow_name: WorkflowName
+    job_name: JobName
+
+    @required
+    duration_ms: SafeNonNegativeLong
+
+    @required
+    completed_at: Timestamp
+}
+
+structure SandboxJobsAnalytics {
     @required
     window_start: Timestamp
+
     @required
     window_end: Timestamp
+
     @required
-    by_source: AnalyticsBuckets
+    total_runs: DecimalUint64
+
     @required
-    by_runner_class: AnalyticsBuckets
+    succeeded_runs: DecimalUint64
+
+    @required
+    failed_runs: DecimalUint64
+
+    @required
+    p50_duration_ms: DecimalUint64
+
+    @required
+    p95_duration_ms: DecimalUint64
+
+    @required
+    p99_duration_ms: DecimalUint64
+
+    @required
+    by_source: SandboxAnalyticsBuckets
+
+    @required
+    by_runner_class: SandboxAnalyticsBuckets
+
+    @required
+    slowest_runs: SandboxRunDurationSamples
 }
-structure ExecutionScheduleRecord {
+
+structure SandboxCostsAnalytics {
+    @required
+    window_start: Timestamp
+
+    @required
+    window_end: Timestamp
+
+    @required
+    reserved_charge_units: DecimalUint64
+
+    @required
+    billed_charge_units: DecimalUint64
+
+    @required
+    writeoff_charge_units: DecimalUint64
+
+    @required
+    by_source: SandboxAnalyticsBuckets
+
+    @required
+    by_runner_class: SandboxAnalyticsBuckets
+
+    @required
+    by_repository: SandboxAnalyticsBuckets
+}
+
+structure SandboxRunnerSizingSample {
+    @required
+    runner_class: RunnerClass
+
+    @required
+    run_count: DecimalUint64
+
+    @required
+    p95_duration_ms: DecimalUint64
+
+    @required
+    avg_rootfs_provisioned_bytes: DecimalUint64
+
+    @required
+    avg_boot_time_us: DecimalUint64
+
+    @required
+    avg_block_write_bytes: DecimalUint64
+
+    @required
+    avg_net_tx_bytes: DecimalUint64
+}
+
+structure SandboxRunnerSizingAnalytics {
+    @required
+    window_start: Timestamp
+
+    @required
+    window_end: Timestamp
+
+    @required
+    by_runner_class: SandboxRunnerSizingSamples
+}
+
+structure SandboxExecutionScheduleRecord {
     @required
     schedule_id: ScheduleId
+
     @required
     resourceName: ResourceName
+
     @required
     org_id: OrgId
+
+    @required
+    actor_id: ActorId
+
+    display_name: DisplayName
+    idempotency_key: IdempotencyKey
+
+    @required
+    temporal_schedule_id: TemporalId
+
+    @required
+    temporal_namespace: TemporalNamespace
+
+    @required
+    task_queue: TaskQueue
+
+    @required
+    state: ScheduleState
+
     @required
     project_id: ProjectId
+
+    @required
+    projectResourceName: ResourceName
+
     @required
     source_repository_id: SourceRepositoryId
+
+    @required
+    sourceRepositoryResourceName: ResourceName
+
     @required
     workflow_path: WorkflowPath
+
     ref: GitRef
+    inputs: ScheduleInputs
+
     @required
     interval_seconds: IntervalSeconds
-    @required
-    state: String
+
     @required
     created_at: Timestamp
+
+    @required
+    updated_at: Timestamp
+
+    dispatches: SandboxExecutionScheduleDispatches
+}
+
+structure SandboxExecutionScheduleDispatchRecord {
+    @required
+    dispatch_id: DispatchId
+
+    @required
+    schedule_id: ScheduleId
+
+    @required
+    temporal_workflow_id: TemporalId
+
+    @required
+    temporal_run_id: TemporalId
+
+    source_workflow_run_id: SourceWorkflowRunId
+    workflow_state: WorkflowState
+
+    @required
+    state: ScheduleState
+
+    failure_reason: FailureReason
+
+    @required
+    scheduled_at: Timestamp
+
+    submitted_at: Timestamp
+
+    @required
+    created_at: Timestamp
+
     @required
     updated_at: Timestamp
 }
+
 structure RunnerRepositoryRegistration {
     @required
     provider: Provider
+
     @required
     provider_repository_id: ProviderRepositoryId
+
     @required
     project_id: ProjectId
+
     source_repository_id: SourceRepositoryId
+
     @required
     state: String
 }
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/github/installations/connect", code: 201)
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -333,15 +944,24 @@ structure RunnerRepositoryRegistration {
 @requestBudget(maxBytes: 1024)
 @sdk(module: "sandbox.githubInstallations", method: "beginConnect", paginated: false, retryable: false)
 operation BeginGithubInstallation {
-    input: EmptyInput
+    input: BeginGithubInstallationInput
     output: BeginGithubInstallationOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
-structure EmptyInput {}
+
+structure BeginGithubInstallationInput {
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+}
+
 structure BeginGithubInstallationOutput {
     @required
-    connect: GitHubInstallationConnectResponse
+    @nestedProperties
+    connect: SandboxGitHubInstallationConnectResponse
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/github/installations")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -355,15 +975,20 @@ operation ListGithubInstallations {
     output: ListGithubInstallationsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
+structure EmptyInput {}
+
 structure ListGithubInstallationsOutput {
     @required
+    @httpPayload
     installations: GitHubInstallations
 }
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/github/installations/{installation_id}/repositories/sync")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
 @authz(permission: GitHubInstallationWritePermission, organization: {source: "token_org_id"})
-@audit(event: GitHubRepositoriesSyncAuditEvent, resource: GitHubInstallation, action: "sync")
+@audit(event: GitHubRepositoriesSyncAuditEvent, resource: GitHubInstallationRepositoryResource, action: "sync")
 @rateLimit(bucket: "github_installation_mutation")
 @requestBudget(maxBytes: 1024)
 @sdk(module: "sandbox.githubInstallations", method: "syncRepositories", paginated: false, retryable: false)
@@ -372,23 +997,29 @@ operation SyncGithubInstallationRepositories {
     output: SyncGithubInstallationRepositoriesOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure SyncGithubInstallationRepositoriesInput {
     @required
     @httpLabel
     installation_id: DecimalUint64
+
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
 }
+
 structure SyncGithubInstallationRepositoriesOutput {
     @required
     installation_id: DecimalUint64
+
     @required
     synced_at: Timestamp
+
     @required
     repositories: InstallationRepositories
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/executions/{execution_id}")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
@@ -399,31 +1030,42 @@ structure SyncGithubInstallationRepositoriesOutput {
 @sdk(module: "sandbox.executions", method: "get", paginated: false, retryable: true)
 operation GetExecution {
     input: ExecutionPathInput
-    output: RunOutput
+    output: SandboxExecutionOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure ExecutionPathInput {
     @required
     @httpLabel
     execution_id: ExecutionId
 }
+
+structure SandboxExecutionOutput {
+    @required
+    @nestedProperties
+    execution: SandboxExecutionRecord
+}
+
 @readonly
 @http(method: "GET", uri: "/api/v1/executions/{execution_id}/logs")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
 @authz(permission: LogsReadPermission, organization: {source: "token_org_id"})
-@audit(event: ExecutionLogsReadAuditEvent, resource: Execution, action: "read")
+@audit(event: ExecutionLogsReadAuditEvent, resource: ExecutionLogsResource, action: "read")
 @rateLimit(bucket: "logs_read")
 @requestBudget(maxBytes: 0)
 @sdk(module: "sandbox.executions", method: "getLogs", paginated: false, retryable: true)
 operation GetExecutionLogs {
     input: ExecutionPathInput
-    output: GetExecutionLogsOutput
+    output: SandboxExecutionLogsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
-structure GetExecutionLogsOutput {
+
+structure SandboxExecutionLogsOutput {
     @required
-    logs: ExecutionLogs
+    @nestedProperties
+    logs: SandboxExecutionLogs
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/runs")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "runs")
@@ -435,30 +1077,36 @@ structure GetExecutionLogsOutput {
 @sdk(module: "sandbox.runs", method: "list", paginated: true, retryable: true)
 operation ListRuns {
     input: ListRunsInput
-    output: ListRunsOutput
+    output: SandboxRunsPage
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure ListRunsInput {
     @httpQuery("limit")
-    limit: PageSize
+    limit: RunListPageSize
+
     @httpQuery("cursor")
-    cursor: PageToken
+    cursor: RunListCursor
+
     @httpQuery("source_kind")
     source_kind: SourceKind
+
     @httpQuery("status")
     status: ExecutionStatus
+
     @httpQuery("repository")
     repository: RepositoryFullName
+
+    @httpQuery("workflow")
+    workflow: WorkflowName
+
+    @httpQuery("branch")
+    branch: GitRef
+
     @httpQuery("runner_class")
     runner_class: RunnerClass
 }
-structure ListRunsOutput {
-    @required
-    runs: Runs
-    next_cursor: PageToken
-    @required
-    limit: PageSize
-}
+
 @readonly
 @http(method: "GET", uri: "/api/v1/runs/{run_id}")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
@@ -469,100 +1117,131 @@ structure ListRunsOutput {
 @sdk(module: "sandbox.runs", method: "get", paginated: false, retryable: true)
 operation GetRun {
     input: RunPathInput
-    output: RunOutput
+    output: SandboxExecutionOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure RunPathInput {
     @required
     @httpLabel
     run_id: RunId
 }
-structure RunOutput {
-    @required
-    run: RunSummary
-}
+
 @readonly
 @http(method: "GET", uri: "/api/v1/run-logs/search")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "results")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
 @authz(permission: LogsReadPermission, organization: {source: "token_org_id"})
-@audit(event: RunLogsSearchAuditEvent, resource: Run, action: "search")
+@audit(event: RunLogsSearchAuditEvent, resource: RunLogsResource, action: "search")
 @rateLimit(bucket: "logs_read")
 @requestBudget(maxBytes: 0)
 @sdk(module: "sandbox.runLogs", method: "search", paginated: true, retryable: true)
 operation SearchRunLogs {
     input: SearchRunLogsInput
-    output: SearchRunLogsOutput
+    output: SandboxRunLogSearchPage
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure SearchRunLogsInput {
     @httpQuery("limit")
-    limit: PageSize
+    limit: RunLogSearchPageSize
+
     @httpQuery("cursor")
-    cursor: PageToken
+    cursor: RunLogSearchCursor
+
     @httpQuery("query")
     query: LogQuery
+
     @httpQuery("run_id")
     run_id: RunId
+
     @httpQuery("attempt_id")
     attempt_id: AttemptId
+
+    @httpQuery("source_kind")
+    source_kind: SourceKind
+
+    @httpQuery("repository")
+    repository: RepositoryFullName
+
+    @httpQuery("workflow")
+    workflow: WorkflowName
+
+    @httpQuery("branch")
+    branch: GitRef
+
+    @httpQuery("runner_class")
+    runner_class: RunnerClass
 }
-structure SearchRunLogsOutput {
-    @required
-    results: RunLogResults
-    next_cursor: PageToken
-    @required
-    limit: PageSize
-}
+
 @readonly
 @http(method: "GET", uri: "/api/v1/run-analytics/jobs")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
 @authz(permission: AnalyticsReadPermission, organization: {source: "token_org_id"})
-@audit(event: JobsAnalyticsReadAuditEvent, resource: Run, action: "read")
+@audit(event: JobsAnalyticsReadAuditEvent, resource: RunAnalyticsJobsResource, action: "read")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
 @sdk(module: "sandbox.analytics", method: "jobs", paginated: false, retryable: true)
 operation GetJobsAnalytics {
     input: AnalyticsWindowInput
-    output: AnalyticsOutput
+    output: SandboxJobsAnalyticsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/run-analytics/costs")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
 @authz(permission: AnalyticsReadPermission, organization: {source: "token_org_id"})
-@audit(event: CostsAnalyticsReadAuditEvent, resource: Run, action: "read")
+@audit(event: CostsAnalyticsReadAuditEvent, resource: RunAnalyticsCostsResource, action: "read")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
 @sdk(module: "sandbox.analytics", method: "costs", paginated: false, retryable: true)
 operation GetCostsAnalytics {
     input: AnalyticsWindowInput
-    output: AnalyticsOutput
+    output: SandboxCostsAnalyticsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/run-analytics/runner-sizing")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
 @authz(permission: AnalyticsReadPermission, organization: {source: "token_org_id"})
-@audit(event: RunnerSizingAnalyticsReadAuditEvent, resource: Run, action: "read")
+@audit(event: RunnerSizingAnalyticsReadAuditEvent, resource: RunAnalyticsRunnerSizingResource, action: "read")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
 @sdk(module: "sandbox.analytics", method: "runnerSizing", paginated: false, retryable: true)
 operation GetRunnerSizingAnalytics {
     input: AnalyticsWindowInput
-    output: AnalyticsOutput
+    output: SandboxRunnerSizingAnalyticsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure AnalyticsWindowInput {
     @httpQuery("start")
     start: Timestamp
+
     @httpQuery("end")
     end: Timestamp
 }
-structure AnalyticsOutput {
+
+structure SandboxJobsAnalyticsOutput {
     @required
-    analytics: AnalyticsWindow
+    @nestedProperties
+    analytics: SandboxJobsAnalytics
 }
+
+structure SandboxCostsAnalyticsOutput {
+    @required
+    @nestedProperties
+    analytics: SandboxCostsAnalytics
+}
+
+structure SandboxRunnerSizingAnalyticsOutput {
+    @required
+    @nestedProperties
+    analytics: SandboxRunnerSizingAnalytics
+}
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/execution-schedules", code: 201)
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -573,25 +1252,35 @@ structure AnalyticsOutput {
 @sdk(module: "sandbox.schedules", method: "create", paginated: false, retryable: false)
 operation CreateExecutionSchedule {
     input: CreateExecutionScheduleInput
-    output: ExecutionScheduleOutput
+    output: SandboxExecutionScheduleOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ConflictError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure CreateExecutionScheduleInput {
     @required
     @idempotencyToken
     idempotency_key: IdempotencyKey
+
     display_name: DisplayName
+
     @required
     project_id: ProjectId
+
     @required
     source_repository_id: SourceRepositoryId
+
     @required
     workflow_path: WorkflowPath
+
     ref: GitRef
+    inputs: ScheduleInputs
+
     @required
     interval_seconds: IntervalSeconds
+
     paused: Boolean
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/execution-schedules")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -605,10 +1294,13 @@ operation ListExecutionSchedules {
     output: ListExecutionSchedulesOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure ListExecutionSchedulesOutput {
     @required
-    schedules: ExecutionSchedules
+    @httpPayload
+    schedules: SandboxExecutionSchedules
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/execution-schedules/{schedule_id}")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -619,18 +1311,22 @@ structure ListExecutionSchedulesOutput {
 @sdk(module: "sandbox.schedules", method: "get", paginated: false, retryable: true)
 operation GetExecutionSchedule {
     input: ExecutionSchedulePathInput
-    output: ExecutionScheduleOutput
+    output: SandboxExecutionScheduleOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure ExecutionSchedulePathInput {
     @required
     @httpLabel
     schedule_id: ScheduleId
 }
-structure ExecutionScheduleOutput {
+
+structure SandboxExecutionScheduleOutput {
     @required
-    schedule: ExecutionScheduleRecord
+    @nestedProperties
+    schedule: SandboxExecutionScheduleRecord
 }
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/execution-schedules/{schedule_id}/pause")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -641,9 +1337,10 @@ structure ExecutionScheduleOutput {
 @sdk(module: "sandbox.schedules", method: "pause", paginated: false, retryable: false)
 operation PauseExecutionSchedule {
     input: ExecutionScheduleMutationInput
-    output: ExecutionScheduleOutput
+    output: SandboxExecutionScheduleOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/execution-schedules/{schedule_id}/resume")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
@@ -654,18 +1351,21 @@ operation PauseExecutionSchedule {
 @sdk(module: "sandbox.schedules", method: "resume", paginated: false, retryable: false)
 operation ResumeExecutionSchedule {
     input: ExecutionScheduleMutationInput
-    output: ExecutionScheduleOutput
+    output: SandboxExecutionScheduleOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
+
 structure ExecutionScheduleMutationInput {
     @required
     @httpLabel
     schedule_id: ScheduleId
+
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
 }
+
 @http(method: "POST", uri: "/internal/v1/runner/repositories", code: 201)
 @identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
 @authz(permission: RunnerRepositoryRegisterPermission, organization: {source: "body_org_id", member: "org_id"})
@@ -678,22 +1378,31 @@ operation InternalRegisterRunnerRepository {
     output: InternalRegisterRunnerRepositoryOutput
     errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
 }
+
 structure InternalRegisterRunnerRepositoryInput {
     @required
     provider: Provider
+
     @required
     org_id: OrgId
+
     @required
     project_id: ProjectId
+
     source_repository_id: SourceRepositoryId
+
     @required
     provider_owner: ProviderOwner
+
     @required
     provider_repo: ProviderRepo
+
     @required
     provider_repository_id: ProviderRepositoryId
+
     repository_full_name: RepositoryFullName
 }
+
 structure InternalRegisterRunnerRepositoryOutput {
     @required
     registration: RunnerRepositoryRegistration

@@ -1,7 +1,6 @@
 go 1.25.8
 
 use (
-	./src/domain-transfer-objects/go
 	./src/services/analytics-service
 	./src/services/billing-service
 	./src/tools/deployment

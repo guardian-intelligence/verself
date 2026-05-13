@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/verself/domain-transfer-objects"
+	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"google.golang.org/grpc/codes"
@@ -64,7 +64,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			return err
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, billingclient.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_reserved_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale reserved attempt %s: %w", item.AttemptID, err)
@@ -91,7 +91,7 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-release")
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, billingclient.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_launch_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale launching attempt %s: %w", item.AttemptID, err)
@@ -121,7 +121,7 @@ func (s *Service) reconcileLeasedAttempts(ctx context.Context) error {
 				return fmt.Errorf("get lease %s for attempt %s: %w", item.LeaseID, item.AttemptID, err)
 			}
 			if item.windowID != "" {
-				_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+				_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, billingclient.BillingSettleResult{})
 			}
 			if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_missing_lease", err); err != nil {
 				return fmt.Errorf("fail missing-lease attempt %s: %w", item.AttemptID, err)
@@ -132,7 +132,7 @@ func (s *Service) reconcileLeasedAttempts(ctx context.Context) error {
 			continue
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, billingclient.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_terminal_lease_"+leaseStateName(lease.State), nil); err != nil {
 			return fmt.Errorf("fail terminal-lease attempt %s: %w", item.AttemptID, err)
@@ -190,7 +190,7 @@ func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
 			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-cleaned-release")
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, dto.BillingSettleResult{})
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, billingclient.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_cleaned_runner", nil); err != nil {
 			return fmt.Errorf("fail cleaned runner attempt %s: %w", item.AttemptID, err)

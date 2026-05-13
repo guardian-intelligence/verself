@@ -44,6 +44,8 @@ go_test(
     srcs = ["contract_test.go"],
     embed = [":api"],
     deps = [
+        "//src/services/projects-service/internal/contractapi",
+        "//src/services/projects-service/internal/internalcontractapi",
         "//src/services/projects-service/internal/projects",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],

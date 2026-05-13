@@ -17,7 +17,8 @@ Code pointers:
   lineage.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
-- `../../dto/sandbox.go` - shared wire DTOs.
+- `../../smithy/models/verself/sandbox.smithy` - public and internal service
+  contracts.
 - `../openapi/` - generated OpenAPI contracts.
 
 State model:

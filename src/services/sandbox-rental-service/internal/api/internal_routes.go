@@ -3,15 +3,13 @@ package api
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/sandbox-rental-service/internal/internalcontractapi"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
-	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -20,62 +18,12 @@ import (
 
 var internalAPITracer = otel.Tracer("sandbox-rental-service/internal/api")
 
-type InternalRegisterRunnerRepositoryInput struct {
-	Body InternalRegisterRunnerRepositoryRequest
-}
-
-type InternalRegisterRunnerRepositoryRequest struct {
-	Provider             string    `json:"provider" required:"true" enum:"forgejo,github"`
-	OrgID                string    `json:"org_id" required:"true"`
-	ProjectID            uuid.UUID `json:"project_id" required:"true"`
-	SourceRepositoryID   uuid.UUID `json:"source_repository_id,omitempty"`
-	ProviderOwner        string    `json:"provider_owner" required:"true" minLength:"1" maxLength:"255"`
-	ProviderRepo         string    `json:"provider_repo" required:"true" minLength:"1" maxLength:"255"`
-	ProviderRepositoryID string    `json:"provider_repository_id" required:"true"`
-	RepositoryFullName   string    `json:"repository_full_name,omitempty" maxLength:"512"`
-}
-
-type InternalRegisterRunnerRepositoryOutput struct {
-	Body InternalRunnerRepositoryRegistration
-}
-
-type InternalRunnerRepositoryRegistration struct {
-	Provider             string    `json:"provider"`
-	ProviderRepositoryID string    `json:"provider_repository_id"`
-	ProjectID            uuid.UUID `json:"project_id"`
-	SourceRepositoryID   uuid.UUID `json:"source_repository_id,omitempty"`
-	State                string    `json:"state"`
-}
-
 func RegisterInternalRoutes(api huma.API, svc *jobs.Service) {
-	policy := runtimeiam.OperationPolicy{
-		Permission:     "sandbox:runner_repository:register",
-		Resource:       "runner_repository",
-		Action:         runtimeiam.ActionRegister,
-		OrgScope:       runtimeiam.OrgScopeBodyOrgID,
-		RateLimitClass: "internal_mutation",
-		AuditEvent:     "sandbox.runner_repository.register",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}
-	if err := policy.ValidateHTTPOperation(http.MethodPost, "internal-register-runner-repository"); err != nil {
-		panic(err)
-	}
-	huma.Register(api, huma.Operation{
-		OperationID:   "internal-register-runner-repository",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/runner/repositories",
-		Summary:       "Register a repository with the runner product",
-		DefaultStatus: http.StatusCreated,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-		Extensions: map[string]any{
-			"x-verself-iam": policy.OpenAPIExtension(),
-		},
-	}, internalRegisterRunnerRepository(svc))
+	registerInternalSandboxContractRoute(api, internalcontractapi.InternalRegisterRunnerRepository, "Register a repository with the runner product", internalRegisterRunnerRepository(svc))
 }
 
-func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *InternalRegisterRunnerRepositoryInput) (*InternalRegisterRunnerRepositoryOutput, error) {
-	return func(ctx context.Context, input *InternalRegisterRunnerRepositoryInput) (_ *InternalRegisterRunnerRepositoryOutput, err error) {
+func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *internalcontractapi.InternalRegisterRunnerRepositoryInput) (*internalcontractapi.InternalRegisterRunnerRepositoryOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.InternalRegisterRunnerRepositoryInput) (_ *internalcontractapi.InternalRegisterRunnerRepositoryOutput, err error) {
 		ctx, span := internalAPITracer.Start(ctx, "sandbox-rental.runner_repository.register")
 		defer func() {
 			if err != nil {
@@ -92,40 +40,58 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 			return nil, serviceUnavailable(ctx, "sandbox-service-unavailable", "sandbox job service is unavailable", jobs.ErrRunnerUnavailable)
 		}
 		req := input.Body
-		orgID, err := dto.ParseUint64(strings.TrimSpace(req.OrgID))
+		orgID, err := parseUnsignedDecimal(strings.TrimSpace(string(req.OrgID)))
 		if err != nil || orgID == 0 {
 			return nil, badRequest(ctx, "invalid-org-id", "org_id must be a positive decimal uint64 string", err)
 		}
-		providerRepoID, err := strconv.ParseInt(strings.TrimSpace(req.ProviderRepositoryID), 10, 64)
+		providerRepoID, err := strconv.ParseInt(strings.TrimSpace(string(req.ProviderRepositoryID)), 10, 64)
 		if err != nil || providerRepoID <= 0 {
 			return nil, badRequest(ctx, "invalid-provider-repository-id", "provider_repository_id must be a positive decimal int64 string", err)
 		}
+		projectID, err := uuid.Parse(string(req.ProjectID))
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-project-id", "project_id must be a UUID", err)
+		}
+		var sourceRepositoryID uuid.UUID
+		if req.SourceRepositoryID != nil {
+			sourceRepositoryID, err = uuid.Parse(string(*req.SourceRepositoryID))
+			if err != nil {
+				return nil, badRequest(ctx, "invalid-source-repository-id", "source_repository_id must be a UUID", err)
+			}
+		}
 		registration := jobs.RunnerRepositoryRegistration{
-			Provider:             strings.TrimSpace(req.Provider),
+			Provider:             strings.TrimSpace(string(req.Provider)),
 			OrgID:                orgID,
-			ProjectID:            req.ProjectID,
-			SourceRepositoryID:   req.SourceRepositoryID,
-			ProviderOwner:        strings.TrimSpace(req.ProviderOwner),
-			ProviderRepo:         strings.TrimSpace(req.ProviderRepo),
+			ProjectID:            projectID,
+			SourceRepositoryID:   sourceRepositoryID,
+			ProviderOwner:        strings.TrimSpace(string(req.ProviderOwner)),
+			ProviderRepo:         strings.TrimSpace(string(req.ProviderRepo)),
 			ProviderRepositoryID: providerRepoID,
-			RepositoryFullName:   strings.TrimSpace(req.RepositoryFullName),
+			RepositoryFullName:   strings.TrimSpace(stringFromPtr(req.RepositoryFullName)),
 		}
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
-			attribute.String("verself.project_id", req.ProjectID.String()),
+			attribute.String("verself.project_id", projectID.String()),
 			attribute.String("runner.provider", registration.Provider),
 			attribute.Int64("runner.provider_repository_id", providerRepoID),
 		)
 		if err := svc.RegisterRunnerRepository(ctx, registration); err != nil {
 			return nil, runnerRepositoryRegistrationError(ctx, err)
 		}
-		return &InternalRegisterRunnerRepositoryOutput{Body: InternalRunnerRepositoryRegistration{
-			Provider:             registration.Provider,
-			ProviderRepositoryID: strconv.FormatInt(providerRepoID, 10),
-			ProjectID:            registration.ProjectID,
-			SourceRepositoryID:   registration.SourceRepositoryID,
-			State:                "registered",
+		var sourceRepositoryIDOut *internalcontractapi.SourceRepositoryID
+		if registration.SourceRepositoryID != uuid.Nil {
+			value := internalcontractapi.SourceRepositoryID(registration.SourceRepositoryID.String())
+			sourceRepositoryIDOut = &value
+		}
+		return &internalcontractapi.InternalRegisterRunnerRepositoryOutput{Body: internalcontractapi.InternalRegisterRunnerRepositoryOutputBody{
+			Registration: internalcontractapi.RunnerRepositoryRegistration{
+				Provider:             internalcontractapi.Provider(registration.Provider),
+				ProviderRepositoryID: internalcontractapi.ProviderRepositoryID(strconv.FormatInt(providerRepoID, 10)),
+				ProjectID:            internalcontractapi.ProjectID(registration.ProjectID.String()),
+				SourceRepositoryID:   sourceRepositoryIDOut,
+				State:                "registered",
+			},
 		}}, nil
 	}
 }

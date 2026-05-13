@@ -34,9 +34,6 @@ const (
 	idempotencyHeaderKey        = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
-
-	bodyLimitNoBody    int64 = 1024
-	bodyLimitSmallJSON int64 = 8 << 10
 )
 
 type securedOperation struct {
