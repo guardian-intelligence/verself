@@ -8,7 +8,7 @@ import {
   listDataExports as listGeneratedDataExports,
 } from "./__generated/governance-api/index.js";
 import type {
-  GovernanceCreateExportRequestWritable,
+  GovernanceCreateExportRequest as GovernanceCreateExportRequestBody,
   ListAuditEventsData,
 } from "./__generated/governance-api/types.gen.js";
 import {
@@ -209,7 +209,7 @@ export class Governance {
   ): Promise<GovernanceExportJob> {
     const client = createGovernanceClient(this.#options);
     const parsedInput = v.parse(governanceCreateExportRequestSchema, input);
-    const body: GovernanceCreateExportRequestWritable = {
+    const body: GovernanceCreateExportRequestBody = {
       include_logs: parsedInput.include_logs,
       scopes: [...parsedInput.scopes],
     };

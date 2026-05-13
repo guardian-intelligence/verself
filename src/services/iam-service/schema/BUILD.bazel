@@ -42,3 +42,9 @@ alias(
     actual = ":schema",
     visibility = ["//src/services/iam-service:__subpackages__"],
 )
+
+go_test(
+    name = "schema_test",
+    srcs = ["schema_test.go"],
+    embed = [":schema"],
+)

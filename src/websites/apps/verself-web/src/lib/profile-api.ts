@@ -71,8 +71,7 @@ export const putProfilePreferencesRequestSchema = v.strictObject({
 export type PutProfilePreferencesRequest = v.InferInput<typeof putProfilePreferencesRequestSchema>;
 
 function parseProfileSnapshot(input: unknown) {
-  const { $schema: _schema, ...snapshot } = v.parse(vProfileSnapshot, input);
-  return snapshot;
+  return v.parse(vProfileSnapshot, input);
 }
 
 export type ProfileSnapshot = ReturnType<typeof parseProfileSnapshot>;

@@ -4,6 +4,7 @@ go_library(
     name = "projects-internal-openapi_lib",
     srcs = ["main.go"],
     importpath = "github.com/verself/projects-service/cmd/projects-internal-openapi",
+    visibility = ["//visibility:private"],
     deps = ["//src/services/projects-service/internal/api"],
 )
 

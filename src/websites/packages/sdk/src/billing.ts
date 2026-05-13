@@ -236,7 +236,7 @@ function parseGrant(input: unknown) {
 export type Grant = ReturnType<typeof parseGrant>;
 
 function parseGrantsResponse(input: unknown) {
-  const { $schema: _schema, grants } = v.parse(vListBillingGrantsResponse, input);
+  const { grants } = v.parse(vListBillingGrantsResponse, input);
   return {
     grants: grants?.map((grant) => parseGrant(grant)) ?? [],
   };
@@ -258,7 +258,7 @@ function parseDocument(input: unknown) {
 export type BillingDocument = ReturnType<typeof parseDocument>;
 
 function parseDocumentsResponse(input: unknown) {
-  const { $schema: _schema, documents } = v.parse(vListBillingDocumentsResponse, input);
+  const { documents } = v.parse(vListBillingDocumentsResponse, input);
   return {
     documents: documents?.map((document) => parseDocument(document)) ?? [],
   };
@@ -273,7 +273,7 @@ function parseContract(input: unknown) {
 export type Contract = ReturnType<typeof parseContract>;
 
 function parseContractsResponse(input: unknown) {
-  const { $schema: _schema, contracts } = v.parse(vListBillingContractsResponse, input);
+  const { contracts } = v.parse(vListBillingContractsResponse, input);
   return {
     contracts: contracts?.map((contract) => parseContract(contract)) ?? [],
   };
@@ -296,7 +296,7 @@ function parsePlan(input: unknown) {
 export type BillingPlan = ReturnType<typeof parsePlan>;
 
 function parsePlansResponse(input: unknown) {
-  const { $schema: _schema, plans } = v.parse(vListBillingPlansResponse, input);
+  const { plans } = v.parse(vListBillingPlansResponse, input);
   return {
     plans: plans?.map((plan) => parsePlan(plan)) ?? [],
   };
@@ -349,13 +349,7 @@ function parseStatementTotals(input: RawStatement["totals"]) {
 }
 
 function parseStatement(input: unknown) {
-  const {
-    $schema: _schema,
-    grant_summaries,
-    line_items,
-    totals,
-    ...statement
-  } = v.parse(vBillingStatement, input);
+  const { grant_summaries, line_items, totals, ...statement } = v.parse(vBillingStatement, input);
   return {
     ...statement,
     grant_summaries: grant_summaries?.map((grant) => parseStatementGrantSummary(grant)) ?? [],

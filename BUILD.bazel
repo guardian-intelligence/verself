@@ -8,6 +8,22 @@ exports_files(["bazel.go.work"])
 # gazelle:exclude docs/references
 # gazelle:exclude src/websites
 # gazelle:exclude src/substrate/vm-guest-telemetry
+# gazelle:resolve go github.com/verself/billing-service/client //src/services/billing-service/client
+# gazelle:resolve go github.com/verself/governance-service/internalclient //src/services/governance-service/internalclient
+# gazelle:resolve go github.com/verself/projects-service/client //src/services/projects-service/client
+# gazelle:resolve go github.com/verself/sandbox-rental-service/client //src/services/sandbox-rental-service/client
+# gazelle:resolve go github.com/verself/secrets-service/client //src/services/secrets-service/client
+# gazelle:resolve go github.com/verself/secrets-service/internalclient //src/services/secrets-service/internalclient
+# gazelle:resolve go github.com/verself/source-code-hosting-service/client //src/services/source-code-hosting-service/client
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/billing //src/sdks/go/verself/internal/generated/billing
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/governance //src/sdks/go/verself/internal/generated/governance
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/iam //src/sdks/go/verself/internal/generated/iam
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/notifications //src/sdks/go/verself/internal/generated/notifications
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/projects //src/sdks/go/verself/internal/generated/projects
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/sandbox //src/sdks/go/verself/internal/generated/sandbox
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/secrets //src/sdks/go/verself/internal/generated/secrets
+# gazelle:resolve go github.com/verself/verself-go/internal/generated/source //src/sdks/go/verself/internal/generated/source
+# gazelle:resolve go github.com/verself/verself/src/smithy/internal/contract //src/smithy/internal/contract
 
 gazelle(
     name = "gazelle",

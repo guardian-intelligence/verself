@@ -2,8 +2,10 @@ package api
 
 import "fmt"
 
-const maxInt32AsInt64 = 1<<31 - 1
-const minInt32AsInt64 = -1 << 31
+const (
+	maxInt32AsInt64 = 1<<31 - 1
+	minInt32AsInt64 = -1 << 31
+)
 
 func int32FromInt64(value int64, field string) (int32, error) {
 	if value < minInt32AsInt64 || value > maxInt32AsInt64 {

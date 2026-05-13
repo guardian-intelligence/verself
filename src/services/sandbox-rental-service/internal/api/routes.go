@@ -259,7 +259,6 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.execution_schedule.resume",
 		BodyLimitBytes: bodyLimitNoBody,
 	}), resumeExecutionSchedule(recurringSvc, publicConfig.InstallationID))
-
 }
 
 type GitHubInstallationConnectOutput struct {

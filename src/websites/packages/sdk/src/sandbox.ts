@@ -226,12 +226,7 @@ function normalizeBillingWindow(input: v.InferOutput<typeof vSandboxBillingWindo
 export type BillingWindow = ReturnType<typeof normalizeBillingWindow>;
 
 function parseExecution(input: unknown) {
-  const {
-    $schema: _schema,
-    billing_windows,
-    latest_attempt,
-    ...execution
-  } = v.parse(vSandboxExecutionRecord, input);
+  const { billing_windows, latest_attempt, ...execution } = v.parse(vSandboxExecutionRecord, input);
   return {
     ...execution,
     billing_windows:
@@ -323,7 +318,7 @@ function parseRunsFilters(input: RawRunsPage["filters"]) {
 }
 
 function parseRunsPage(input: unknown) {
-  const { $schema: _schema, filters, limit, runs, next_cursor } = v.parse(vListRunsResponse, input);
+  const { filters, limit, runs, next_cursor } = v.parse(vListRunsResponse, input);
   return {
     filters: parseRunsFilters(filters),
     limit,

@@ -1,6 +1,6 @@
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@npm//:defs.bzl", "npm_link_all_packages")
-load("//src/websites:viteplus_rules.bzl", "viteplus_input_sbom", "viteplus_node_runtime_artifact", "viteplus_workspace_install")
+load("//src/websites:viteplus_rules.bzl", "viteplus_input_sbom", "viteplus_node_runtime_artifact", "viteplus_workspace_check", "viteplus_workspace_install")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -65,6 +65,29 @@ filegroup(
 )
 
 filegroup(
+    name = "workspace_check_sources",
+    srcs = [
+        ":workspace_config",
+        "//src/websites/apps/company:sources",
+        "//src/websites/apps/verself-web:sources",
+        "//src/websites/packages/auth-web:sources",
+        "//src/websites/packages/brand:sources",
+        "//src/websites/packages/nitro-plugins:sources",
+        "//src/websites/packages/sdk:sources",
+        "//src/websites/packages/ui:sources",
+        "//src/websites/packages/web-env:sources",
+    ] + glob(
+        [
+            "apps/**/src/__generated/**",
+            "apps/**/src/routeTree.gen.ts",
+            "packages/**/src/__generated/**",
+            "scripts/**/*.ts",
+        ],
+        allow_empty = True,
+    ),
+)
+
+filegroup(
     name = "workspace_sbom_sources",
     srcs = [
         ".npmrc",
@@ -89,6 +112,10 @@ filegroup(
 
 viteplus_workspace_install(
     name = "workspace_install",
+)
+
+viteplus_workspace_check(
+    name = "workspace_check",
 )
 
 viteplus_input_sbom(

@@ -39,4 +39,5 @@ go_test(
     name = "api_test",
     srcs = ["security_test.go"],
     embed = [":api"],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
 )

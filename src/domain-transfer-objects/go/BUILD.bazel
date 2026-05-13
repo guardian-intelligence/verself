@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+# gazelle:ignore
 # gazelle:prefix github.com/verself/domain-transfer-objects
 
 go_library(

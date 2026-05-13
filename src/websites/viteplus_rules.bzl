@@ -62,6 +62,38 @@ printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_finge
         ],
     )
 
+def viteplus_workspace_check(name):
+    """Run Vite+ format, lint, and type checks as an explicit Bazel target."""
+    native.genrule(
+        name = name,
+        srcs = [
+            ":workspace_check_sources",
+            ":workspace_install",
+        ],
+        outs = [name + ".stamp"],
+        cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+home="$${HOME:-}"
+if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
+  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
+fi
+test -n "$$home"
+vp="$$home/.vite-plus/bin/vp"
+test -x "$$vp"
+cd "src/websites"
+"$$vp" check .
+printf 'viteplus check ok\\n' > "$$out"
+""",
+        local = True,
+        tags = [
+            "local",
+            "no-remote",
+            "no-sandbox",
+        ],
+    )
+
 def viteplus_source_package(npm_name, srcs, name = "pkg"):
     """Source-only workspace package linked into the rules_js npm graph.
 

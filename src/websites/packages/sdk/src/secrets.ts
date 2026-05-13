@@ -3,13 +3,15 @@ import { createClient, type Client } from "./__generated/secrets-api/client/inde
 import {
   type DeleteSecretData,
   type ListSecretsData,
-  type PutSecretBodyWritable,
-  type ResolveSecretsBodyWritable,
   deleteSecret,
   listSecrets,
   putSecret,
   resolveSecrets,
 } from "./__generated/secrets-api/index.js";
+import type {
+  PutSecretBody as PutSecretRequestBody,
+  ResolveSecretsBody as ResolveSecretsRequestBody,
+} from "./__generated/secrets-api/types.gen.js";
 import {
   vDeleteSecretPath,
   vDeleteSecretQuery,
@@ -137,7 +139,7 @@ export class Secrets {
   ): Promise<Secret> {
     const client = createSecretsClient(this.#options);
     const pathParams = v.parse(vPutSecretPath, { name });
-    const parsedBody = removeUndefined(v.parse(vPutSecretBody2, body)) as PutSecretBodyWritable;
+    const parsedBody = removeUndefined(v.parse(vPutSecretBody2, body)) as PutSecretRequestBody;
     const path = `/api/v1/secrets/${encodeURIComponent(name)}`;
     const result = await putSecret({
       client,
@@ -159,7 +161,7 @@ export class Secrets {
     if (typeof parsed.limit === "bigint") {
       parsed.limit = Number(parsed.limit);
     }
-    const parsedBody = parsed as ResolveSecretsBodyWritable;
+    const parsedBody = parsed as ResolveSecretsRequestBody;
     const path = "/api/v1/secrets:resolve";
     const result = await resolveSecrets({
       client,

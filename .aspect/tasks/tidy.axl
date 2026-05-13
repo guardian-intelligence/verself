@@ -11,9 +11,9 @@ def _viteplus(ctx):
     return checked_spawn(
         ctx,
         "vp",
-        ["check", "--fix"],
+        ["fmt", ".", "--write"],
         cwd = ws_path(ctx, "src/websites"),
-        label = "vp check --fix",
+        label = "vp fmt . --write",
     )
 
 def _go(ctx):

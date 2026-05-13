@@ -3,7 +3,6 @@ module github.com/verself/vm-orchestrator
 go 1.25.8
 
 require (
-	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/vishvananda/netlink v1.3.1
@@ -15,6 +14,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.48.2
 )
+
+require github.com/google/uuid v1.6.0 // indirect
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect

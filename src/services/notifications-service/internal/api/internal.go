@@ -17,8 +17,10 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-const bodyLimitWorkflowJSON = 64 << 10
-const bodyLimitGrafanaWebhookJSON = 256 << 10
+const (
+	bodyLimitWorkflowJSON       = 64 << 10
+	bodyLimitGrafanaWebhookJSON = 256 << 10
+)
 
 type InternalConfig struct {
 	Service            *notifications.Service

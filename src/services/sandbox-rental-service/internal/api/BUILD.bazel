@@ -40,6 +40,7 @@ go_test(
     srcs = ["security_test.go"],
     embed = [":api"],
     deps = [
+        "//src/services/sandbox-rental-service/internal/jobs",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
         "@com_github_danielgtaylor_huma_v2//:huma",

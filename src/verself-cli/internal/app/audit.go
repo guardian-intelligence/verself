@@ -210,7 +210,7 @@ func (c CLI) auditExportsDownload(ctx context.Context, args []string) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("audit exports download destination is empty")
 	}
-	if err := os.WriteFile(path, artifact.Body, 0600); err != nil {
+	if err := os.WriteFile(path, artifact.Body, 0o600); err != nil {
 		return err
 	}
 	metadata := struct {
@@ -234,7 +234,8 @@ func (c CLI) auditExportsDownload(ctx context.Context, args []string) error {
 
 func writeAuditEvent(w interface {
 	Write([]byte) (int, error)
-}, event verself.GovernanceAuditEvent) error {
+}, event verself.GovernanceAuditEvent,
+) error {
 	return writef(
 		w,
 		"event\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
@@ -252,7 +253,8 @@ func writeAuditEvent(w interface {
 
 func writeGovernanceExport(w interface {
 	Write([]byte) (int, error)
-}, export verself.GovernanceExportJob) error {
+}, export verself.GovernanceExportJob,
+) error {
 	return writef(
 		w,
 		"export\t%s\t%s\t%s\t%d\t%s\n",

@@ -1,3 +1,5 @@
+# gazelle:prefix github.com/verself/infrastructure-components/zot
+
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 filegroup(

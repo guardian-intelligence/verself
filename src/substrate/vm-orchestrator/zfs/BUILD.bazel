@@ -16,7 +16,10 @@ go_library(
 
 go_test(
     name = "zfs_test",
-    srcs = ["refs_test.go"],
+    srcs = [
+        "lifecycle_test.go",
+        "refs_test.go",
+    ],
     embed = [":zfs"],
 )
 

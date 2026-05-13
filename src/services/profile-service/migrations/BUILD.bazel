@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "migrations",
     srcs = ["embed.go"],
-    embedsrcs = glob(["*.up.sql"]),
+    embedsrcs = glob(["*.up.sql"]),  # keep
     importpath = "github.com/verself/profile-service/migrations",
     visibility = ["//src/services/profile-service:__subpackages__"],
     deps = [

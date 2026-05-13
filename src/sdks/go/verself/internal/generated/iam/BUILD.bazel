@@ -2,6 +2,8 @@ load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_go")
 
+# gazelle:ignore
+
 ir_sdk_go(
     name = "iam_client_src",
     out = "__generated_sources/client.gen.go",

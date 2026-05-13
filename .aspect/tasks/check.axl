@@ -1,7 +1,7 @@
-"""aspect check --kind=go-test|go-vet|go-lint|java|contracts|conversions|ansible|topology|buildifier|all
+"""aspect check --kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|topology|buildifier|all
 
 Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: buildifier → topology → java → contracts → ansible → conversions → vet → lint → test.
+fast-failure order: buildifier → frontend → topology → java → contracts → ansible → conversions → vet → lint → test.
 """
 
 load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
@@ -78,6 +78,18 @@ def _buildifier(ctx):
         ["-mode=check", "-lint=warn"] + files,
         cwd = ws_path(ctx),
         label = "buildifier -mode=check -lint=warn",
+    )
+
+def _frontend(ctx):
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        [
+            "build",
+            "//src/websites:workspace_check",
+        ],
+        cwd = ws_path(ctx),
+        label = "bazelisk build frontend Vite+ check",
     )
 
 def _java(ctx):
@@ -159,10 +171,11 @@ _CHECKERS = {
     "ansible": _ansible_lint,
     "topology": _legacy_topology_api,
     "buildifier": _buildifier,
+    "frontend": _frontend,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "topology", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["buildifier", "frontend", "topology", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -180,7 +193,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|java|contracts|conversions|ansible|topology|buildifier|all).",
+    summary = "Run a verification gate (--kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|topology|buildifier|all).",
     args = {
         "kind": args.string(
             default = "all",

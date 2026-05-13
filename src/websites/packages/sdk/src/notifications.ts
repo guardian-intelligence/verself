@@ -106,7 +106,7 @@ function removeUndefined<T extends Record<string, unknown>>(input: T): Record<st
 }
 
 function parseNotificationList(input: unknown) {
-  const { $schema: _schema, ...list } = v.parse(vNotificationList, input);
+  const list = v.parse(vNotificationList, input);
   return {
     ...list,
     notifications: list.notifications ?? [],
@@ -114,13 +114,11 @@ function parseNotificationList(input: unknown) {
 }
 
 function parseNotificationSummary(input: unknown) {
-  const { $schema: _schema, ...summary } = v.parse(vNotificationSummary, input);
-  return summary;
+  return v.parse(vNotificationSummary, input);
 }
 
 function parseNotificationAccepted(input: unknown) {
-  const { $schema: _schema, ...accepted } = v.parse(vNotificationAccepted, input);
-  return accepted;
+  return v.parse(vNotificationAccepted, input);
 }
 
 export type NotificationList = ReturnType<typeof parseNotificationList>;
@@ -278,10 +276,7 @@ export class Notifications {
     ) as unknown as NotificationTestRequestBody;
     const path = "/api/v1/notifications/test";
     const result = await publishGeneratedTestNotification({
-      body: v.parse(
-        vNotificationTestRequest,
-        parsedBody,
-      ) as NotificationTestRequestBody,
+      body: v.parse(vNotificationTestRequest, parsedBody) as NotificationTestRequestBody,
       client,
       headers: idempotencyHeaders("notification-test", options.idempotencyKey),
       responseStyle: "fields",

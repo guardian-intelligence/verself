@@ -37,7 +37,6 @@ go_library(
         "//src/substrate/vm-orchestrator/proto/v1:proto",
         "//src/substrate/vm-orchestrator/vmproto",
         "//src/substrate/vm-orchestrator/zfs",
-        "@com_github_google_uuid//:uuid",
         "@com_github_oklog_ulid_v2//:ulid",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@io_opentelemetry_go_otel//:otel",
@@ -128,6 +127,7 @@ go_test(
     srcs = [
         "filesystem_mounts_test.go",
         "privops_direct_test.go",
+        "rpc_convert_test.go",
         "state_store_test.go",
         "telemetry_stream_test.go",
     ],

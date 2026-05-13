@@ -213,4 +213,3 @@ func newFakeNomadFromMap(t *testing.T, services map[string][]nomadServiceEntry) 
 		}
 	}))
 }
-

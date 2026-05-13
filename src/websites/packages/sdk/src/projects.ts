@@ -1,12 +1,7 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/projects-api/client/index.js";
 import {
-  type CreateProjectEnvironmentRequestWritable,
-  type CreateProjectRequestWritable,
   type ListProjectsData,
-  type ProjectLifecycleRequestWritable,
-  type UpdateProjectEnvironmentRequestWritable,
-  type UpdateProjectRequestWritable,
   archiveProject,
   archiveProjectEnvironment,
   createProject,
@@ -18,6 +13,13 @@ import {
   patchProjectEnvironment,
   restoreProject,
 } from "./__generated/projects-api/index.js";
+import type {
+  CreateProjectEnvironmentRequest as CreateProjectEnvironmentRequestBody,
+  CreateProjectRequest as CreateProjectRequestBody,
+  ProjectLifecycleRequest as ProjectLifecycleRequestBody,
+  UpdateProjectEnvironmentRequest as UpdateProjectEnvironmentRequestBody,
+  UpdateProjectRequest as UpdateProjectRequestBody,
+} from "./__generated/projects-api/types.gen.js";
 import {
   vArchiveProjectBody,
   vArchiveProjectEnvironmentBody,
@@ -180,7 +182,7 @@ export class Projects {
     const client = createProjectsClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(vCreateProjectBody, body),
-    ) as CreateProjectRequestWritable;
+    ) as CreateProjectRequestBody;
     const path = "/api/v1/projects";
     const result = await createProject({
       client,
@@ -220,7 +222,7 @@ export class Projects {
     const pathParams = v.parse(vPatchProjectPath, { project_id: projectId });
     const parsedBody = removeUndefined(
       v.parse(vPatchProjectBody, body),
-    ) as UpdateProjectRequestWritable;
+    ) as UpdateProjectRequestBody;
     const path = `/api/v1/projects/${projectId}`;
     const result = await patchProject({
       client,
@@ -243,7 +245,7 @@ export class Projects {
   ): Promise<Project> {
     const client = createProjectsClient(this.#options);
     const pathParams = v.parse(vArchiveProjectPath, { project_id: projectId });
-    const parsedBody = v.parse(vArchiveProjectBody, body) as ProjectLifecycleRequestWritable;
+    const parsedBody = v.parse(vArchiveProjectBody, body) as ProjectLifecycleRequestBody;
     const path = `/api/v1/projects/${projectId}/archive`;
     const result = await archiveProject({
       client,
@@ -266,7 +268,7 @@ export class Projects {
   ): Promise<Project> {
     const client = createProjectsClient(this.#options);
     const pathParams = v.parse(vRestoreProjectPath, { project_id: projectId });
-    const parsedBody = v.parse(vRestoreProjectBody, body) as ProjectLifecycleRequestWritable;
+    const parsedBody = v.parse(vRestoreProjectBody, body) as ProjectLifecycleRequestBody;
     const path = `/api/v1/projects/${projectId}/restore`;
     const result = await restoreProject({
       client,
@@ -307,7 +309,7 @@ export class Projects {
     const pathParams = v.parse(vCreateProjectEnvironmentPath, { project_id: projectId });
     const parsedBody = removeUndefined(
       v.parse(vCreateProjectEnvironmentBody, body),
-    ) as CreateProjectEnvironmentRequestWritable;
+    ) as CreateProjectEnvironmentRequestBody;
     const path = `/api/v1/projects/${projectId}/environments`;
     const result = await createProjectEnvironment({
       client,
@@ -336,7 +338,7 @@ export class Projects {
     });
     const parsedBody = removeUndefined(
       v.parse(vPatchProjectEnvironmentBody, body),
-    ) as UpdateProjectEnvironmentRequestWritable;
+    ) as UpdateProjectEnvironmentRequestBody;
     const path = `/api/v1/projects/${projectId}/environments/${environmentId}`;
     const result = await patchProjectEnvironment({
       client,
@@ -363,10 +365,7 @@ export class Projects {
       project_id: projectId,
       environment_id: environmentId,
     });
-    const parsedBody = v.parse(
-      vArchiveProjectEnvironmentBody,
-      body,
-    ) as ProjectLifecycleRequestWritable;
+    const parsedBody = v.parse(vArchiveProjectEnvironmentBody, body) as ProjectLifecycleRequestBody;
     const path = `/api/v1/projects/${projectId}/environments/${environmentId}/archive`;
     const result = await archiveProjectEnvironment({
       client,

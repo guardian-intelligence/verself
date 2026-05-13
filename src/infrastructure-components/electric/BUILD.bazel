@@ -1,3 +1,5 @@
+# gazelle:prefix github.com/verself/infrastructure-components/electric
+
 load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 

@@ -1,11 +1,7 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/source-api/client/index.js";
 import {
-  type CreateCheckoutGrantRequestWritable,
-  type CreateGitCredentialRequestWritable,
-  type CreateRepositoryRequestWritable,
   type CreateSourceWorkflowRunData,
-  type CreateWorkflowRunRequestWritable,
   type GetSourceBlobData,
   type GetSourceTreeData,
   type ListSourceRepositoriesData,
@@ -22,6 +18,12 @@ import {
   listSourceRepositories,
   listSourceWorkflowRuns,
 } from "./__generated/source-api/index.js";
+import type {
+  CreateCheckoutGrantRequest as CreateCheckoutGrantRequestBody,
+  CreateGitCredentialRequest as CreateGitCredentialRequestBody,
+  CreateRepositoryRequest as CreateRepositoryRequestBody,
+  CreateWorkflowRunRequest as CreateWorkflowRunRequestBody,
+} from "./__generated/source-api/types.gen.js";
 import {
   vBlob,
   vCheckoutGrant,
@@ -214,7 +216,7 @@ export class Source {
     const client = createSourceClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(vCreateRepositoryRequest, body),
-    ) as CreateRepositoryRequestWritable;
+    ) as CreateRepositoryRequestBody;
     const path = "/api/v1/repos";
     const result = await createSourceRepository({
       client,
@@ -236,7 +238,7 @@ export class Source {
     const client = createSourceClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(vCreateGitCredentialRequest, body),
-    ) as CreateGitCredentialRequestWritable;
+    ) as CreateGitCredentialRequestBody;
     const path = "/api/v1/git-credentials";
     const result = await createSourceGitCredential({
       client,
@@ -332,7 +334,7 @@ export class Source {
     const pathParams = v.parse(vCreateSourceCheckoutGrantPath, { repo_id: repoId });
     const parsedBody = removeUndefined(
       v.parse(vCreateCheckoutGrantRequest, body),
-    ) as CreateCheckoutGrantRequestWritable;
+    ) as CreateCheckoutGrantRequestBody;
     const path = `/api/v1/repos/${repoId}/checkout-grants`;
     const result = await createSourceCheckoutGrant({
       client,
@@ -373,7 +375,7 @@ export class Source {
     const pathParams = v.parse(vCreateSourceWorkflowRunPath, { repo_id: repoId });
     const parsedBody = removeUndefined(
       v.parse(vCreateWorkflowRunRequest, body),
-    ) as CreateWorkflowRunRequestWritable;
+    ) as CreateWorkflowRunRequestBody;
     const path = `/api/v1/repos/${repoId}/workflow-runs`;
     const result = await createSourceWorkflowRun({
       client,
