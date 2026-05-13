@@ -62,30 +62,86 @@ printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_finge
         ],
     )
 
-def viteplus_workspace_check(name):
+def _generated_source_sync_cmds(generated_srcs, package_dir):
+    if not generated_srcs:
+        return ""
+    generated_locations = " ".join(["$(locations %s)" % src for src in generated_srcs])
+    return """
+for generated in {generated_locations}; do
+  case "$$generated" in
+    /*) generated_abs="$$generated" ;;
+    *) generated_abs="$$execroot/$$generated" ;;
+  esac
+  generated_workspace_rel="$${{generated_abs#$$execroot/}}"
+  case "$$generated_workspace_rel" in
+    bazel-out/*/bin/*) generated_workspace_rel="$${{generated_workspace_rel#bazel-out/*/bin/}}" ;;
+  esac
+  case "$$generated_workspace_rel" in
+    */__generated_sources/*)
+      generated_pkg="$${{generated_workspace_rel%%/__generated_sources/*}}"
+      generated_rel="$${{generated_workspace_rel#*/__generated_sources/}}"
+      generated_dest="$$execroot/$$generated_pkg/$$generated_rel"
+      ;;
+    {package_dir}/*)
+      generated_dest="$$execroot/$$generated_workspace_rel"
+      ;;
+    *)
+      echo "generated source $$generated is not under a source package" >&2
+      exit 1
+      ;;
+  esac
+  if [ -e "$$generated_dest" ]; then
+    if [ -d "$$generated_abs" ] || [ -d "$$generated_dest" ]; then
+      if diff -qr "$$generated_abs" "$$generated_dest" >/dev/null; then
+        continue
+      fi
+    elif cmp -s "$$generated_abs" "$$generated_dest"; then
+      continue
+    fi
+    # Bazel refuses to cache actions that rewrite declared inputs mid-build.
+    chmod -R u+w "$$generated_dest"
+  fi
+  rm -rf "$$generated_dest"
+  mkdir -p "$$(dirname "$$generated_dest")"
+  cp -a "$$generated_abs" "$$generated_dest"
+done
+""".format(
+        generated_locations = generated_locations,
+        package_dir = package_dir,
+    )
+
+def viteplus_workspace_check(name, generated_srcs = None):
     """Run Vite+ format, lint, and type checks as an explicit Bazel target."""
+    if generated_srcs == None:
+        generated_srcs = []
     native.genrule(
         name = name,
         srcs = [
             ":workspace_check_sources",
             ":workspace_install",
-        ],
+        ] + generated_srcs,
         outs = [name + ".stamp"],
         cmd = """
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-home="$${HOME:-}"
+home="$${{HOME:-}}"
 if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
   home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
 fi
 test -n "$$home"
 vp="$$home/.vite-plus/bin/vp"
 test -x "$$vp"
+{generated_sync_cmds}
 cd "src/websites"
 "$$vp" check .
 printf 'viteplus check ok\\n' > "$$out"
-""",
+""".format(
+            generated_sync_cmds = _generated_source_sync_cmds(
+                generated_srcs,
+                "src/websites",
+            ),
+        ),
         local = True,
         tags = [
             "local",
@@ -347,52 +403,7 @@ chmod 0755 "$$tmp/bin/{output}-migrate"
             migration_data_copies = "\n".join(migration_data_copies),
             output = output,
         )
-    generated_sync_cmds = ""
-    if generated_srcs:
-        generated_locations = " ".join(["$(locations %s)" % src for src in generated_srcs])
-        generated_sync_cmds = """
-for generated in {generated_locations}; do
-  case "$$generated" in
-    /*) generated_abs="$$generated" ;;
-    *) generated_abs="$$execroot/$$generated" ;;
-  esac
-  generated_workspace_rel="$${{generated_abs#$$execroot/}}"
-  case "$$generated_workspace_rel" in
-    bazel-out/*/bin/*) generated_workspace_rel="$${{generated_workspace_rel#bazel-out/*/bin/}}" ;;
-  esac
-  case "$$generated_workspace_rel" in
-    */__generated_sources/*)
-      generated_pkg="$${{generated_workspace_rel%%/__generated_sources/*}}"
-      generated_rel="$${{generated_workspace_rel#*/__generated_sources/}}"
-      generated_dest="$$execroot/$$generated_pkg/$$generated_rel"
-      ;;
-    {package_dir}/*)
-      generated_dest="$$execroot/$$generated_workspace_rel"
-      ;;
-    *)
-      echo "generated source $$generated is not under a source package" >&2
-      exit 1
-      ;;
-  esac
-  if [ -e "$$generated_dest" ]; then
-    if [ -d "$$generated_abs" ] || [ -d "$$generated_dest" ]; then
-      if diff -qr "$$generated_abs" "$$generated_dest" >/dev/null; then
-        continue
-      fi
-    elif cmp -s "$$generated_abs" "$$generated_dest"; then
-      continue
-    fi
-    # Bazel refuses to cache actions that rewrite declared inputs mid-build.
-    chmod -R u+w "$$generated_dest"
-  fi
-  rm -rf "$$generated_dest"
-  mkdir -p "$$(dirname "$$generated_dest")"
-  cp -a "$$generated_abs" "$$generated_dest"
-done
-""".format(
-            generated_locations = generated_locations,
-            package_dir = package_dir,
-        )
+    generated_sync_cmds = _generated_source_sync_cmds(generated_srcs, package_dir)
     native.genrule(
         name = name,
         srcs = srcs,
