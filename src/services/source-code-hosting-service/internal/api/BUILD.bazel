@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "api",
     srcs = [
-        "dto.go",
+        "contract.go",
         "errors.go",
         "format.go",
         "git_http.go",
@@ -11,15 +11,17 @@ go_library(
         "policy.go",
         "routes.go",
         "safeconv.go",
+        "views.go",
     ],
     importpath = "github.com/verself/source-code-hosting-service/internal/api",
     visibility = ["//src/services/source-code-hosting-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/humaapi",
         "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
+        "//src/services/source-code-hosting-service/internal/contractapi",
+        "//src/services/source-code-hosting-service/internal/internalcontractapi",
         "//src/services/source-code-hosting-service/internal/source",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
@@ -44,6 +46,7 @@ go_test(
     deps = [
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
+        "//src/services/source-code-hosting-service/internal/contractapi",
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

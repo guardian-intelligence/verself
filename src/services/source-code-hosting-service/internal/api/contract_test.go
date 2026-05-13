@@ -11,6 +11,7 @@ import (
 
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	"github.com/verself/source-code-hosting-service/internal/contractapi"
 )
 
 func TestSourceOpenAPIContract(t *testing.T) {
@@ -85,9 +86,10 @@ func TestSourceCheckoutGrantPublicRequestDoesNotExposeUnimplementedPathPrefix(t 
 
 func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
+	ctx = context.WithValue(ctx, operationRequestInfoKey{}, operationRequestInfo{IdempotencyKey: "test-key"})
 
-	policy := sourceOperationPolicy{OperationPolicy: runtimeiam.OperationPolicy{Permission: permissionRepoWrite}}
-	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionRepoWrite): true}, policy)
+	policy := sourceOperationPolicy{OperationPolicy: operationPolicyFromContract(contractapi.CreateSourceRepository.Descriptor)}
+	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{contractapi.CreateSourceRepository.Descriptor.Authorization.Permission: true}, policy)
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
@@ -99,7 +101,7 @@ func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 func TestSourceEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
 
-	policy := sourceOperationPolicy{OperationPolicy: runtimeiam.OperationPolicy{Permission: permissionRepoWrite}}
+	policy := sourceOperationPolicy{OperationPolicy: operationPolicyFromContract(contractapi.CreateSourceRepository.Descriptor)}
 	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, policy)
 	if principal.OrgID != 42 {
 		t.Fatalf("expected denied operation to retain org id, got %d", principal.OrgID)

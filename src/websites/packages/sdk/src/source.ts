@@ -1,6 +1,9 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/source-api/client/index.js";
 import {
+  type CreateSourceCheckoutGrantData,
+  type CreateSourceGitCredentialData,
+  type CreateSourceRepositoryData,
   type CreateSourceWorkflowRunData,
   type GetSourceBlobData,
   type GetSourceTreeData,
@@ -19,36 +22,44 @@ import {
   listSourceWorkflowRuns,
 } from "./__generated/source-api/index.js";
 import type {
-  CreateCheckoutGrantRequest as CreateCheckoutGrantRequestBody,
-  CreateGitCredentialRequest as CreateGitCredentialRequestBody,
-  CreateRepositoryRequest as CreateRepositoryRequestBody,
-  CreateWorkflowRunRequest as CreateWorkflowRunRequestBody,
+  CheckoutGrantSummary,
+  GitCredentialSummary,
+  ListSourceRefsResponse,
+  ListSourceRepositoriesResponse,
+  ListSourceWorkflowRunsResponse,
+  RepositorySummary,
+  SourceBlobView,
+  TreeEntry,
+  WorkflowRunSummary,
 } from "./__generated/source-api/types.gen.js";
 import {
-  vBlob,
-  vCheckoutGrant,
-  vCreateCheckoutGrantRequest,
-  vCreateGitCredentialRequest,
-  vCreateRepositoryRequest,
+  vCheckoutGrantSummary,
+  vCreateSourceCheckoutGrantBody,
   vCreateSourceCheckoutGrantPath,
+  vCreateSourceRepositoryBody,
   vCreateSourceWorkflowRunPath,
-  vCreateWorkflowRunRequest,
+  vGetSourceBlobResponse,
   vGetSourceBlobPath,
   vGetSourceBlobQuery,
   vGetSourceRepositoryPath,
   vGetSourceTreePath,
   vGetSourceTreeQuery,
   vGetSourceWorkflowRunPath,
-  vGitCredential,
+  vGetSourceTreeResponse,
+  vGitCredentialLabel,
+  vGitCredentialSummary,
+  vGitRef,
+  vGitScope,
+  vListSourceRefsResponse,
   vListSourceRefsPath,
   vListSourceRepositoriesQuery,
+  vListSourceRepositoriesResponse,
+  vListSourceWorkflowRunsResponse,
   vListSourceWorkflowRunsPath,
-  vRefList,
-  vRepository,
-  vRepositoryList,
-  vTree,
-  vWorkflowRun,
-  vWorkflowRunList,
+  vProjectId,
+  vRepositorySummary,
+  vWorkflowPath,
+  vWorkflowRunSummary,
 } from "./__generated/source-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -91,14 +102,22 @@ function removeUndefined<T extends Record<string, unknown>>(input: T): Record<st
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
-function parseRepository(input: unknown) {
-  return v.parse(vRepository, input);
+function safeInteger(value: bigint | number | string): number {
+  const out = Number(value);
+  if (!Number.isSafeInteger(out)) {
+    throw new TypeError("Source API returned an integer outside JavaScript's safe range");
+  }
+  return out;
 }
 
-export type SourceRepository = ReturnType<typeof parseRepository>;
+function parseRepository(input: unknown) {
+  return v.parse(vRepositorySummary, input) as RepositorySummary;
+}
+
+export type SourceRepository = RepositorySummary;
 
 function parseRepositoryList(input: unknown) {
-  const parsed = v.parse(vRepositoryList, input);
+  const parsed = v.parse(vListSourceRepositoriesResponse, input) as ListSourceRepositoriesResponse;
   return {
     repositories: parsed.repositories?.map((repo) => parseRepository(repo)) ?? [],
   };
@@ -107,7 +126,7 @@ function parseRepositoryList(input: unknown) {
 export type SourceRepositoryList = ReturnType<typeof parseRepositoryList>;
 
 function parseRefs(input: unknown) {
-  const parsed = v.parse(vRefList, input);
+  const parsed = v.parse(vListSourceRefsResponse, input) as ListSourceRefsResponse;
   return {
     refs: parsed.refs ?? [],
   };
@@ -116,13 +135,13 @@ function parseRefs(input: unknown) {
 export type SourceRefs = ReturnType<typeof parseRefs>;
 
 function parseWorkflowRun(input: unknown) {
-  return v.parse(vWorkflowRun, input);
+  return v.parse(vWorkflowRunSummary, input) as WorkflowRunSummary;
 }
 
-export type SourceWorkflowRun = ReturnType<typeof parseWorkflowRun>;
+export type SourceWorkflowRun = WorkflowRunSummary;
 
 function parseWorkflowRunList(input: unknown) {
-  const parsed = v.parse(vWorkflowRunList, input);
+  const parsed = v.parse(vListSourceWorkflowRunsResponse, input) as ListSourceWorkflowRunsResponse;
   return {
     workflow_runs: parsed.workflow_runs?.map((run) => parseWorkflowRun(run)) ?? [],
   };
@@ -131,36 +150,60 @@ function parseWorkflowRunList(input: unknown) {
 export type SourceWorkflowRunList = ReturnType<typeof parseWorkflowRunList>;
 
 function parseTree(input: unknown) {
-  const parsed = v.parse(vTree, input);
+  const parsed = v.parse(vGetSourceTreeResponse, input) as unknown as {
+    entries?: Array<Omit<TreeEntry, "size"> & { size: bigint | number | string }>;
+  };
   return {
-    entries: parsed.entries ?? [],
+    entries: parsed.entries?.map((entry) => ({ ...entry, size: safeInteger(entry.size) })) ?? [],
   };
 }
 
 export type SourceTree = ReturnType<typeof parseTree>;
 
 function parseBlob(input: unknown) {
-  return v.parse(vBlob, input);
+  const parsed = v.parse(vGetSourceBlobResponse, input) as unknown as Omit<
+    SourceBlobView,
+    "size"
+  > & {
+    size: bigint | number | string;
+  };
+  return { ...parsed, size: safeInteger(parsed.size) };
 }
 
-export type SourceBlob = ReturnType<typeof parseBlob>;
+export type SourceBlob = SourceBlobView;
 
 function parseCheckoutGrant(input: unknown) {
-  return v.parse(vCheckoutGrant, input);
+  return v.parse(vCheckoutGrantSummary, input) as CheckoutGrantSummary;
 }
 
-export type SourceCheckoutGrant = ReturnType<typeof parseCheckoutGrant>;
+export type SourceCheckoutGrant = CheckoutGrantSummary;
 
 function parseGitCredential(input: unknown) {
-  return v.parse(vGitCredential, input);
+  return v.parse(vGitCredentialSummary, input) as GitCredentialSummary;
 }
 
-export type SourceGitCredential = ReturnType<typeof parseGitCredential>;
+export type SourceGitCredential = GitCredentialSummary;
 
-export const createRepositoryRequestSchema = vCreateRepositoryRequest;
-export const createCheckoutGrantRequestSchema = vCreateCheckoutGrantRequest;
-export const createGitCredentialRequestSchema = vCreateGitCredentialRequest;
-export const createWorkflowRunRequestSchema = vCreateWorkflowRunRequest;
+const workflowInputsSchema = v.record(
+  v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+  v.pipe(v.string(), v.maxLength(4096)),
+);
+
+export const createRepositoryRequestSchema = vCreateSourceRepositoryBody;
+export const createCheckoutGrantRequestSchema = vCreateSourceCheckoutGrantBody;
+export const createGitCredentialRequestSchema = v.object({
+  label: v.optional(vGitCredentialLabel),
+  expires_in_seconds: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(60), v.maxValue(7776000)),
+  ),
+  scopes: v.array(vGitScope),
+});
+export const createWorkflowRunRequestSchema = v.object({
+  project_id: vProjectId,
+  workflow_path: vWorkflowPath,
+  ref: v.optional(vGitRef),
+  inputs: v.optional(workflowInputsSchema),
+});
 
 export type CreateRepositoryRequest = v.InferOutput<typeof createRepositoryRequestSchema>;
 export type CreateCheckoutGrantRequest = v.InferOutput<typeof createCheckoutGrantRequestSchema>;
@@ -215,8 +258,8 @@ export class Source {
   ): Promise<SourceRepository> {
     const client = createSourceClient(this.#options);
     const parsedBody = removeUndefined(
-      v.parse(vCreateRepositoryRequest, body),
-    ) as CreateRepositoryRequestBody;
+      v.parse(createRepositoryRequestSchema, body),
+    ) as CreateSourceRepositoryData["body"];
     const path = "/api/v1/repos";
     const result = await createSourceRepository({
       client,
@@ -237,8 +280,8 @@ export class Source {
   ): Promise<SourceGitCredential> {
     const client = createSourceClient(this.#options);
     const parsedBody = removeUndefined(
-      v.parse(vCreateGitCredentialRequest, body),
-    ) as CreateGitCredentialRequestBody;
+      v.parse(createGitCredentialRequestSchema, body),
+    ) as CreateSourceGitCredentialData["body"];
     const path = "/api/v1/git-credentials";
     const result = await createSourceGitCredential({
       client,
@@ -333,8 +376,8 @@ export class Source {
     const client = createSourceClient(this.#options);
     const pathParams = v.parse(vCreateSourceCheckoutGrantPath, { repo_id: repoId });
     const parsedBody = removeUndefined(
-      v.parse(vCreateCheckoutGrantRequest, body),
-    ) as CreateCheckoutGrantRequestBody;
+      v.parse(createCheckoutGrantRequestSchema, body),
+    ) as NonNullable<CreateSourceCheckoutGrantData["body"]>;
     const path = `/api/v1/repos/${repoId}/checkout-grants`;
     const result = await createSourceCheckoutGrant({
       client,
@@ -374,8 +417,8 @@ export class Source {
     const client = createSourceClient(this.#options);
     const pathParams = v.parse(vCreateSourceWorkflowRunPath, { repo_id: repoId });
     const parsedBody = removeUndefined(
-      v.parse(vCreateWorkflowRunRequest, body),
-    ) as CreateWorkflowRunRequestBody;
+      v.parse(createWorkflowRunRequestSchema, body),
+    ) as CreateSourceWorkflowRunData["body"];
     const path = `/api/v1/repos/${repoId}/workflow-runs`;
     const result = await createSourceWorkflowRun({
       client,

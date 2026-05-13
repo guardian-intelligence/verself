@@ -2,6 +2,7 @@ package verself
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -166,29 +167,30 @@ type CreateSourceWorkflowRunInput struct {
 }
 
 type SourceClient struct {
-	client *sourcecore.ClientWithResponses
+	client *sourcecore.Client
 }
 
 func (c *SourceClient) ListRepositories(ctx context.Context, options ListSourceRepositoriesOptions) (SourceRepositoryList, error) {
 	if c == nil || c.client == nil {
 		return SourceRepositoryList{}, fmt.Errorf("verself sdk: source client is not initialized")
 	}
-	params := &sourcecore.ListSourceRepositoriesParams{}
+	request := sourcecore.ListSourceRepositoriesRequest{}
 	if strings.TrimSpace(options.ProjectID) != "" {
 		projectID, err := parseUUIDInput(options.ProjectID, "project id")
 		if err != nil {
 			return SourceRepositoryList{}, err
 		}
-		params.ProjectId = &projectID
+		id := sourcecore.ProjectId(projectID.String())
+		request.ProjectID = &id
 	}
-	response, err := c.client.ListSourceRepositoriesWithResponse(ctx, params)
+	response, err := c.client.ListSourceRepositories(ctx, request)
 	if err != nil {
 		return SourceRepositoryList{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceRepositoryList{}, sourceAPIError("list repositories", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceRepositoryList{}, sourceAPIError("list repositories", response.StatusCode, response.Body)
 	}
-	return sourceRepositoryListFromGenerated(*response.JSON200), nil
+	return sourceRepositoryListFromGenerated(response.Result.Repositories)
 }
 
 func (c *SourceClient) CreateRepository(ctx context.Context, input CreateSourceRepositoryInput) (SourceRepository, error) {
@@ -203,23 +205,26 @@ func (c *SourceClient) CreateRepository(ctx context.Context, input CreateSourceR
 	if err != nil {
 		return SourceRepository{}, err
 	}
-	body := sourcecore.CreateSourceRepositoryJSONRequestBody{ProjectId: projectID.String()}
+	body := sourcecore.CreateSourceRepositoryInputBody{ProjectID: sourcecore.ProjectId(projectID.String())}
 	if strings.TrimSpace(input.Description) != "" {
-		description := strings.TrimSpace(input.Description)
+		description := sourcecore.RepositoryDescription(strings.TrimSpace(input.Description))
 		body.Description = &description
 	}
 	if strings.TrimSpace(input.DefaultBranch) != "" {
-		defaultBranch := strings.TrimSpace(input.DefaultBranch)
+		defaultBranch := sourcecore.BranchName(strings.TrimSpace(input.DefaultBranch))
 		body.DefaultBranch = &defaultBranch
 	}
-	response, err := c.client.CreateSourceRepositoryWithResponse(ctx, &sourcecore.CreateSourceRepositoryParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateSourceRepository(ctx, sourcecore.CreateSourceRepositoryRequest{
+		IdempotencyKey: sourcecore.IdempotencyKey(key),
+		Body:           body,
+	})
 	if err != nil {
 		return SourceRepository{}, err
 	}
-	if response.JSON201 == nil {
-		return SourceRepository{}, sourceAPIError("create repository", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceRepository{}, sourceAPIError("create repository", response.StatusCode, response.Body)
 	}
-	return sourceRepositoryFromGenerated(*response.JSON201), nil
+	return sourceRepositoryFromGenerated(*response.Result)
 }
 
 func (c *SourceClient) GetRepository(ctx context.Context, repoID string) (SourceRepository, error) {
@@ -230,14 +235,14 @@ func (c *SourceClient) GetRepository(ctx context.Context, repoID string) (Source
 	if err != nil {
 		return SourceRepository{}, err
 	}
-	response, err := c.client.GetSourceRepositoryWithResponse(ctx, id)
+	response, err := c.client.GetSourceRepository(ctx, sourcecore.GetSourceRepositoryRequest{RepoID: sourcecore.RepositoryId(id.String())})
 	if err != nil {
 		return SourceRepository{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceRepository{}, sourceAPIError("get repository", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceRepository{}, sourceAPIError("get repository", response.StatusCode, response.Body)
 	}
-	return sourceRepositoryFromGenerated(*response.JSON200), nil
+	return sourceRepositoryFromGenerated(*response.Result)
 }
 
 func (c *SourceClient) CreateGitCredential(ctx context.Context, input CreateSourceGitCredentialInput) (SourceGitCredential, error) {
@@ -252,22 +257,26 @@ func (c *SourceClient) CreateGitCredential(ctx context.Context, input CreateSour
 	if len(scopes) == 0 {
 		return SourceGitCredential{}, fmt.Errorf("verself sdk: source git credential requires at least one scope")
 	}
-	body := sourcecore.CreateSourceGitCredentialJSONRequestBody{Scopes: &scopes}
+	body := sourcecore.CreateSourceGitCredentialInputBody{Scopes: sourceGitScopes(scopes)}
 	if strings.TrimSpace(input.Label) != "" {
-		label := strings.TrimSpace(input.Label)
+		label := sourcecore.GitCredentialLabel(strings.TrimSpace(input.Label))
 		body.Label = &label
 	}
 	if input.ExpiresInSeconds > 0 {
-		body.ExpiresInSeconds = &input.ExpiresInSeconds
+		expiresInSeconds := sourcecore.CredentialExpirySeconds(input.ExpiresInSeconds)
+		body.ExpiresInSeconds = &expiresInSeconds
 	}
-	response, err := c.client.CreateSourceGitCredentialWithResponse(ctx, &sourcecore.CreateSourceGitCredentialParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateSourceGitCredential(ctx, sourcecore.CreateSourceGitCredentialRequest{
+		IdempotencyKey: sourcecore.IdempotencyKey(key),
+		Body:           body,
+	})
 	if err != nil {
 		return SourceGitCredential{}, err
 	}
-	if response.JSON201 == nil {
-		return SourceGitCredential{}, sourceAPIError("create git credential", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceGitCredential{}, sourceAPIError("create git credential", response.StatusCode, response.Body)
 	}
-	return sourceGitCredentialFromGenerated(*response.JSON201), nil
+	return sourceGitCredentialFromGenerated(*response.Result)
 }
 
 func (c *SourceClient) ListRefs(ctx context.Context, repoID string) (SourceRefs, error) {
@@ -278,14 +287,14 @@ func (c *SourceClient) ListRefs(ctx context.Context, repoID string) (SourceRefs,
 	if err != nil {
 		return SourceRefs{}, err
 	}
-	response, err := c.client.ListSourceRefsWithResponse(ctx, id)
+	response, err := c.client.ListSourceRefs(ctx, sourcecore.ListSourceRefsRequest{RepoID: sourcecore.RepositoryId(id.String())})
 	if err != nil {
 		return SourceRefs{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceRefs{}, sourceAPIError("list refs", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceRefs{}, sourceAPIError("list refs", response.StatusCode, response.Body)
 	}
-	return sourceRefsFromGenerated(*response.JSON200), nil
+	return sourceRefsFromGenerated(response.Result.Refs), nil
 }
 
 func (c *SourceClient) GetTree(ctx context.Context, options GetSourceTreeOptions) (SourceTree, error) {
@@ -296,23 +305,23 @@ func (c *SourceClient) GetTree(ctx context.Context, options GetSourceTreeOptions
 	if err != nil {
 		return SourceTree{}, err
 	}
-	params := &sourcecore.GetSourceTreeParams{}
+	request := sourcecore.GetSourceTreeRequest{RepoID: sourcecore.RepositoryId(repoID.String())}
 	if strings.TrimSpace(options.Ref) != "" {
-		ref := strings.TrimSpace(options.Ref)
-		params.Ref = &ref
+		value := sourcecore.GitRef(strings.TrimSpace(options.Ref))
+		request.Ref = &value
 	}
 	if strings.TrimSpace(options.Path) != "" {
-		path := strings.TrimSpace(options.Path)
-		params.Path = &path
+		value := sourcecore.RepositoryPath(strings.TrimSpace(options.Path))
+		request.Path = &value
 	}
-	response, err := c.client.GetSourceTreeWithResponse(ctx, repoID, params)
+	response, err := c.client.GetSourceTree(ctx, request)
 	if err != nil {
 		return SourceTree{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceTree{}, sourceAPIError("get tree", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceTree{}, sourceAPIError("get tree", response.StatusCode, response.Body)
 	}
-	return sourceTreeFromGenerated(*response.JSON200), nil
+	return sourceTreeFromGenerated(response.Result.Entries), nil
 }
 
 func (c *SourceClient) GetBlob(ctx context.Context, options GetSourceBlobOptions) (SourceBlob, error) {
@@ -327,19 +336,22 @@ func (c *SourceClient) GetBlob(ctx context.Context, options GetSourceBlobOptions
 	if path == "" {
 		return SourceBlob{}, fmt.Errorf("verself sdk: source blob path is required")
 	}
-	params := &sourcecore.GetSourceBlobParams{Path: path}
-	if strings.TrimSpace(options.Ref) != "" {
-		ref := strings.TrimSpace(options.Ref)
-		params.Ref = &ref
+	request := sourcecore.GetSourceBlobRequest{
+		RepoID: sourcecore.RepositoryId(repoID.String()),
+		Path:   sourcecore.RepositoryPath(path),
 	}
-	response, err := c.client.GetSourceBlobWithResponse(ctx, repoID, params)
+	if strings.TrimSpace(options.Ref) != "" {
+		value := sourcecore.GitRef(strings.TrimSpace(options.Ref))
+		request.Ref = &value
+	}
+	response, err := c.client.GetSourceBlob(ctx, request)
 	if err != nil {
 		return SourceBlob{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceBlob{}, sourceAPIError("get blob", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceBlob{}, sourceAPIError("get blob", response.StatusCode, response.Body)
 	}
-	return sourceBlobFromGenerated(*response.JSON200), nil
+	return sourceBlobFromGenerated(*response.Result), nil
 }
 
 func (c *SourceClient) CreateCheckoutGrant(ctx context.Context, input CreateSourceCheckoutGrantInput) (SourceCheckoutGrant, error) {
@@ -354,19 +366,23 @@ func (c *SourceClient) CreateCheckoutGrant(ctx context.Context, input CreateSour
 	if err != nil {
 		return SourceCheckoutGrant{}, err
 	}
-	body := sourcecore.CreateSourceCheckoutGrantJSONRequestBody{}
+	body := sourcecore.CreateSourceCheckoutGrantInputBody{}
 	if strings.TrimSpace(input.Ref) != "" {
-		ref := strings.TrimSpace(input.Ref)
-		body.Ref = &ref
+		value := sourcecore.GitRef(strings.TrimSpace(input.Ref))
+		body.Ref = &value
 	}
-	response, err := c.client.CreateSourceCheckoutGrantWithResponse(ctx, repoID, &sourcecore.CreateSourceCheckoutGrantParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateSourceCheckoutGrant(ctx, sourcecore.CreateSourceCheckoutGrantRequest{
+		IdempotencyKey: sourcecore.IdempotencyKey(key),
+		RepoID:         sourcecore.RepositoryId(repoID.String()),
+		Body:           body,
+	})
 	if err != nil {
 		return SourceCheckoutGrant{}, err
 	}
-	if response.JSON201 == nil {
-		return SourceCheckoutGrant{}, sourceAPIError("create checkout grant", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceCheckoutGrant{}, sourceAPIError("create checkout grant", response.StatusCode, response.Body)
 	}
-	return sourceCheckoutGrantFromGenerated(*response.JSON201), nil
+	return sourceCheckoutGrantFromGenerated(*response.Result)
 }
 
 func (c *SourceClient) CreateWorkflowRun(ctx context.Context, input CreateSourceWorkflowRunInput) (SourceWorkflowRun, error) {
@@ -389,26 +405,30 @@ func (c *SourceClient) CreateWorkflowRun(ctx context.Context, input CreateSource
 	if workflowPath == "" {
 		return SourceWorkflowRun{}, fmt.Errorf("verself sdk: source workflow path is required")
 	}
-	body := sourcecore.CreateSourceWorkflowRunJSONRequestBody{
-		ProjectId:    projectID.String(),
-		WorkflowPath: workflowPath,
+	body := sourcecore.CreateSourceWorkflowRunInputBody{
+		ProjectID:    sourcecore.ProjectId(projectID.String()),
+		WorkflowPath: sourcecore.WorkflowPath(workflowPath),
 	}
 	if strings.TrimSpace(input.Ref) != "" {
-		ref := strings.TrimSpace(input.Ref)
-		body.Ref = &ref
+		value := sourcecore.GitRef(strings.TrimSpace(input.Ref))
+		body.Ref = &value
 	}
 	if input.Inputs != nil {
-		inputs := copyStringMap(input.Inputs)
+		inputs := sourceWorkflowInputs(input.Inputs)
 		body.Inputs = &inputs
 	}
-	response, err := c.client.CreateSourceWorkflowRunWithResponse(ctx, repoID, &sourcecore.CreateSourceWorkflowRunParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateSourceWorkflowRun(ctx, sourcecore.CreateSourceWorkflowRunRequest{
+		IdempotencyKey: sourcecore.IdempotencyKey(key),
+		RepoID:         sourcecore.RepositoryId(repoID.String()),
+		Body:           body,
+	})
 	if err != nil {
 		return SourceWorkflowRun{}, err
 	}
-	if response.JSON201 == nil {
-		return SourceWorkflowRun{}, sourceAPIError("create workflow run", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceWorkflowRun{}, sourceAPIError("create workflow run", response.StatusCode, response.Body)
 	}
-	return sourceWorkflowRunFromGenerated(*response.JSON201), nil
+	return sourceWorkflowRunFromGenerated(*response.Result)
 }
 
 func (c *SourceClient) ListWorkflowRuns(ctx context.Context, repoID string) (SourceWorkflowRunList, error) {
@@ -419,14 +439,14 @@ func (c *SourceClient) ListWorkflowRuns(ctx context.Context, repoID string) (Sou
 	if err != nil {
 		return SourceWorkflowRunList{}, err
 	}
-	response, err := c.client.ListSourceWorkflowRunsWithResponse(ctx, id)
+	response, err := c.client.ListSourceWorkflowRuns(ctx, sourcecore.ListSourceWorkflowRunsRequest{RepoID: sourcecore.RepositoryId(id.String())})
 	if err != nil {
 		return SourceWorkflowRunList{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceWorkflowRunList{}, sourceAPIError("list workflow runs", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceWorkflowRunList{}, sourceAPIError("list workflow runs", response.StatusCode, response.Body)
 	}
-	return sourceWorkflowRunListFromGenerated(*response.JSON200), nil
+	return sourceWorkflowRunListFromGenerated(response.Result.WorkflowRuns)
 }
 
 func (c *SourceClient) GetWorkflowRun(ctx context.Context, workflowRunID string) (SourceWorkflowRun, error) {
@@ -437,34 +457,51 @@ func (c *SourceClient) GetWorkflowRun(ctx context.Context, workflowRunID string)
 	if err != nil {
 		return SourceWorkflowRun{}, err
 	}
-	response, err := c.client.GetSourceWorkflowRunWithResponse(ctx, id)
+	response, err := c.client.GetSourceWorkflowRun(ctx, sourcecore.GetSourceWorkflowRunRequest{WorkflowRunID: sourcecore.WorkflowRunId(id.String())})
 	if err != nil {
 		return SourceWorkflowRun{}, err
 	}
-	if response.JSON200 == nil {
-		return SourceWorkflowRun{}, sourceAPIError("get workflow run", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SourceWorkflowRun{}, sourceAPIError("get workflow run", response.StatusCode, response.Body)
 	}
-	return sourceWorkflowRunFromGenerated(*response.JSON200), nil
+	return sourceWorkflowRunFromGenerated(*response.Result)
 }
 
-func sourceRepositoryListFromGenerated(input sourcecore.RepositoryList) SourceRepositoryList {
-	out := SourceRepositoryList{}
-	if input.Repositories != nil {
-		out.Repositories = make([]SourceRepository, 0, len(*input.Repositories))
-		for _, repo := range *input.Repositories {
-			out.Repositories = append(out.Repositories, sourceRepositoryFromGenerated(repo))
+func sourceRepositoryListFromGenerated(input sourcecore.Repositories) (SourceRepositoryList, error) {
+	out := SourceRepositoryList{Repositories: make([]SourceRepository, 0, len(input))}
+	for _, repo := range input {
+		converted, err := sourceRepositoryFromGenerated(repo)
+		if err != nil {
+			return SourceRepositoryList{}, err
 		}
+		out.Repositories = append(out.Repositories, converted)
 	}
-	return out
+	return out, nil
 }
 
-func sourceRepositoryFromGenerated(input sourcecore.Repository) SourceRepository {
+func sourceRepositoryFromGenerated(input sourcecore.RepositorySummary) (SourceRepository, error) {
+	version, err := sourceRepositoryVersion(input.Version)
+	if err != nil {
+		return SourceRepository{}, err
+	}
+	lastPushedAt, err := parseGeneratedOptionalTime(input.LastPushedAt, "source repository last_pushed_at")
+	if err != nil {
+		return SourceRepository{}, err
+	}
+	createdAt, err := parseGeneratedTime(input.CreatedAt, "source repository created_at")
+	if err != nil {
+		return SourceRepository{}, err
+	}
+	updatedAt, err := parseGeneratedTime(input.UpdatedAt, "source repository updated_at")
+	if err != nil {
+		return SourceRepository{}, err
+	}
 	return SourceRepository{
-		RepoID:              input.RepoId,
+		RepoID:              input.RepoID,
 		ResourceName:        input.ResourceName,
-		OrgID:               input.OrgId,
+		OrgID:               input.OrgID,
 		OrgSlug:             input.OrgSlug,
-		ProjectID:           input.ProjectId,
+		ProjectID:           input.ProjectID,
 		ProjectResourceName: input.ProjectResourceName,
 		ProjectSlug:         input.ProjectSlug,
 		Name:                input.Name,
@@ -472,43 +509,37 @@ func sourceRepositoryFromGenerated(input sourcecore.Repository) SourceRepository
 		DefaultBranch:       input.DefaultBranch,
 		Visibility:          input.Visibility,
 		State:               input.State,
-		Version:             input.Version,
+		Version:             version,
 		Backend:             input.Backend,
-		GitHTTPURL:          input.GitHttpUrl,
-		LastPushedAt:        input.LastPushedAt,
-		CreatedAt:           input.CreatedAt,
-		UpdatedAt:           input.UpdatedAt,
-	}
+		GitHTTPURL:          input.GitHttpURL,
+		LastPushedAt:        lastPushedAt,
+		CreatedAt:           createdAt,
+		UpdatedAt:           updatedAt,
+	}, nil
 }
 
-func sourceRefsFromGenerated(input sourcecore.RefList) SourceRefs {
-	out := SourceRefs{}
-	if input.Refs != nil {
-		out.Refs = make([]SourceRef, 0, len(*input.Refs))
-		for _, ref := range *input.Refs {
-			out.Refs = append(out.Refs, SourceRef{Name: ref.Name, Commit: ref.Commit})
-		}
+func sourceRefsFromGenerated(input sourcecore.Refs) SourceRefs {
+	out := SourceRefs{Refs: make([]SourceRef, 0, len(input))}
+	for _, ref := range input {
+		out.Refs = append(out.Refs, SourceRef{Name: ref.Name, Commit: ref.Commit})
 	}
 	return out
 }
 
-func sourceTreeFromGenerated(input sourcecore.Tree) SourceTree {
-	out := SourceTree{}
-	if input.Entries != nil {
-		out.Entries = make([]SourceTreeEntry, 0, len(*input.Entries))
-		for _, entry := range *input.Entries {
-			out.Entries = append(out.Entries, SourceTreeEntry{
-				Path: entry.Path,
-				Type: entry.Type,
-				Sha:  entry.Sha,
-				Size: entry.Size,
-			})
-		}
+func sourceTreeFromGenerated(input sourcecore.TreeEntries) SourceTree {
+	out := SourceTree{Entries: make([]SourceTreeEntry, 0, len(input))}
+	for _, entry := range input {
+		out.Entries = append(out.Entries, SourceTreeEntry{
+			Path: entry.Path,
+			Type: entry.Type,
+			Sha:  entry.Sha,
+			Size: entry.Size,
+		})
 	}
 	return out
 }
 
-func sourceBlobFromGenerated(input sourcecore.Blob) SourceBlob {
+func sourceBlobFromGenerated(input sourcecore.SourceBlobView) SourceBlob {
 	out := SourceBlob{
 		Name:     input.Name,
 		Path:     input.Path,
@@ -517,105 +548,151 @@ func sourceBlobFromGenerated(input sourcecore.Blob) SourceBlob {
 		Encoding: input.Encoding,
 		Content:  input.Content,
 	}
-	if input.DownloadUrl != nil {
-		out.DownloadURL = *input.DownloadUrl
+	if input.DownloadURL != nil {
+		out.DownloadURL = *input.DownloadURL
 	}
 	return out
 }
 
-func sourceCheckoutGrantFromGenerated(input sourcecore.CheckoutGrant) SourceCheckoutGrant {
+func sourceCheckoutGrantFromGenerated(input sourcecore.CheckoutGrantSummary) (SourceCheckoutGrant, error) {
+	expiresAt, err := parseGeneratedTime(input.ExpiresAt, "source checkout grant expires_at")
+	if err != nil {
+		return SourceCheckoutGrant{}, err
+	}
 	return SourceCheckoutGrant{
-		GrantID:      input.GrantId,
+		GrantID:      input.GrantID,
 		ResourceName: input.ResourceName,
-		RepoID:       input.RepoId,
+		RepoID:       input.RepoID,
 		Ref:          input.Ref,
 		Token:        input.Token,
-		ExpiresAt:    input.ExpiresAt,
-	}
+		ExpiresAt:    expiresAt,
+	}, nil
 }
 
-func sourceGitCredentialFromGenerated(input sourcecore.GitCredential) SourceGitCredential {
+func sourceGitCredentialFromGenerated(input sourcecore.GitCredentialSummary) (SourceGitCredential, error) {
+	expiresAt, err := parseGeneratedTime(input.ExpiresAt, "source git credential expires_at")
+	if err != nil {
+		return SourceGitCredential{}, err
+	}
+	createdAt, err := parseGeneratedTime(input.CreatedAt, "source git credential created_at")
+	if err != nil {
+		return SourceGitCredential{}, err
+	}
 	out := SourceGitCredential{
-		CredentialID: input.CredentialId,
+		CredentialID: input.CredentialID,
 		ResourceName: input.ResourceName,
-		OrgID:        input.OrgId,
+		OrgID:        input.OrgID,
 		Username:     input.Username,
 		Token:        input.Token,
 		TokenPrefix:  input.TokenPrefix,
-		ExpiresAt:    input.ExpiresAt,
-		CreatedAt:    input.CreatedAt,
+		ExpiresAt:    expiresAt,
+		CreatedAt:    createdAt,
 	}
 	if input.Scopes != nil {
-		out.Scopes = append([]string(nil), (*input.Scopes)...)
-	}
-	return out
-}
-
-func sourceWorkflowRunListFromGenerated(input sourcecore.WorkflowRunList) SourceWorkflowRunList {
-	out := SourceWorkflowRunList{}
-	if input.WorkflowRuns != nil {
-		out.WorkflowRuns = make([]SourceWorkflowRun, 0, len(*input.WorkflowRuns))
-		for _, run := range *input.WorkflowRuns {
-			out.WorkflowRuns = append(out.WorkflowRuns, sourceWorkflowRunFromGenerated(run))
+		out.Scopes = make([]string, 0, len(input.Scopes))
+		for _, scope := range input.Scopes {
+			out.Scopes = append(out.Scopes, string(scope))
 		}
 	}
-	return out
+	return out, nil
 }
 
-func sourceWorkflowRunFromGenerated(input sourcecore.WorkflowRun) SourceWorkflowRun {
+func sourceWorkflowRunListFromGenerated(input sourcecore.WorkflowRuns) (SourceWorkflowRunList, error) {
+	out := SourceWorkflowRunList{WorkflowRuns: make([]SourceWorkflowRun, 0, len(input))}
+	for _, run := range input {
+		converted, err := sourceWorkflowRunFromGenerated(run)
+		if err != nil {
+			return SourceWorkflowRunList{}, err
+		}
+		out.WorkflowRuns = append(out.WorkflowRuns, converted)
+	}
+	return out, nil
+}
+
+func sourceWorkflowRunFromGenerated(input sourcecore.WorkflowRunSummary) (SourceWorkflowRun, error) {
+	dispatchedAt, err := parseGeneratedOptionalTime(input.DispatchedAt, "source workflow run dispatched_at")
+	if err != nil {
+		return SourceWorkflowRun{}, err
+	}
+	createdAt, err := parseGeneratedTime(input.CreatedAt, "source workflow run created_at")
+	if err != nil {
+		return SourceWorkflowRun{}, err
+	}
+	updatedAt, err := parseGeneratedTime(input.UpdatedAt, "source workflow run updated_at")
+	if err != nil {
+		return SourceWorkflowRun{}, err
+	}
 	out := SourceWorkflowRun{
-		WorkflowRunID:          input.WorkflowRunId,
+		WorkflowRunID:          input.WorkflowRunID,
 		ResourceName:           input.ResourceName,
-		OrgID:                  input.OrgId,
-		ProjectID:              input.ProjectId,
+		OrgID:                  input.OrgID,
+		ProjectID:              input.ProjectID,
 		ProjectResourceName:    input.ProjectResourceName,
-		RepoID:                 input.RepoId,
+		RepoID:                 input.RepoID,
 		RepositoryResourceName: input.RepositoryResourceName,
-		ActorID:                input.ActorId,
+		ActorID:                input.ActorID,
 		Backend:                input.Backend,
 		WorkflowPath:           input.WorkflowPath,
 		Ref:                    input.Ref,
-		Inputs:                 copyStringMap(input.Inputs),
+		Inputs:                 sourceWorkflowInputsFromGenerated(input.Inputs),
 		State:                  input.State,
-		DispatchedAt:           input.DispatchedAt,
-		CreatedAt:              input.CreatedAt,
-		UpdatedAt:              input.UpdatedAt,
+		DispatchedAt:           dispatchedAt,
+		CreatedAt:              createdAt,
+		UpdatedAt:              updatedAt,
 	}
-	if input.BackendDispatchId != nil {
-		out.BackendDispatchID = *input.BackendDispatchId
+	if input.BackendDispatchID != nil {
+		out.BackendDispatchID = *input.BackendDispatchID
 	}
 	if input.FailureReason != nil {
 		out.FailureReason = *input.FailureReason
 	}
-	if input.TraceId != nil {
-		out.TraceID = *input.TraceId
+	if input.TraceID != nil {
+		out.TraceID = *input.TraceID
+	}
+	return out, nil
+}
+
+func sourceAPIError(operation string, statusCode int, body []byte) error {
+	var problem struct {
+		Title  *string `json:"title"`
+		Detail *string `json:"detail"`
+	}
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &problem)
+	}
+	return apiErrorFields("Source API", operation, statusCode, problem.Title, problem.Detail, body)
+}
+
+func sourceGitScopes(input []string) sourcecore.GitScopes {
+	out := make(sourcecore.GitScopes, 0, len(input))
+	for _, scope := range input {
+		out = append(out, sourcecore.GitScope(scope))
 	}
 	return out
 }
 
-func sourceAPIError(operation string, statusCode int, model *sourcecore.ErrorModel, body []byte) error {
-	var title *string
-	var detail *string
-	if model != nil {
-		title = model.Title
-		detail = model.Detail
-	}
-	return apiErrorFields("Source API", operation, statusCode, title, detail, body)
-}
-
-func compactStrings(input []string) []string {
-	out := make([]string, 0, len(input))
-	seen := map[string]struct{}{}
-	for _, value := range input {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		out = append(out, trimmed)
+func sourceWorkflowInputs(input map[string]string) sourcecore.WorkflowInputs {
+	out := make(sourcecore.WorkflowInputs, len(input))
+	for key, value := range input {
+		out[key] = sourcecore.WorkflowInputValue(value)
 	}
 	return out
+}
+
+func sourceWorkflowInputsFromGenerated(input sourcecore.WorkflowInputs) map[string]string {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = string(value)
+	}
+	return out
+}
+
+func sourceRepositoryVersion(input sourcecore.RepositoryVersion) (int32, error) {
+	if input < -2147483648 || input > 2147483647 {
+		return 0, fmt.Errorf("verself sdk: source repository version %d is outside int32 bounds", input)
+	}
+	return int32(input), nil // #nosec G115 -- value is checked against the int32 range above.
 }

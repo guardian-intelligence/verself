@@ -18,20 +18,9 @@ import (
 	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
-type permission = runtimeiam.Permission
-
 const (
-	permissionRepoRead           permission = "source:repo:read"
-	permissionRepoWrite          permission = "source:repo:write"
-	permissionCheckoutWrite      permission = "source:checkout:write"
-	permissionGitCredentialWrite permission = "source:git_credential:write"
-	permissionWorkflowRead       permission = "source:workflow:read"
-	permissionWorkflowWrite      permission = "source:workflow:write"
-
 	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
-	bodyLimitSmallJSON      = 64 << 10
-	bodyLimitNoBody         = 1
 )
 
 var apiTracer = otel.Tracer("source-code-hosting-service/internal/api")

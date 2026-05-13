@@ -22,10 +22,10 @@ import (
 var tracer = otel.Tracer("sandbox-rental-service/sourceworkflow")
 
 type Dispatcher struct {
-	client *sourceclient.ClientWithResponses
+	client *sourceclient.Client
 }
 
-func NewDispatcher(baseURL string, httpClient sourceclient.HttpRequestDoer) (*Dispatcher, error) {
+func NewDispatcher(baseURL string, httpClient sourceclient.HTTPRequestDoer) (*Dispatcher, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		return nil, errors.New("source internal base URL is required")
@@ -33,7 +33,7 @@ func NewDispatcher(baseURL string, httpClient sourceclient.HttpRequestDoer) (*Di
 	if httpClient == nil {
 		return nil, errors.New("source internal HTTP client is required")
 	}
-	client, err := sourceclient.NewClientWithResponses(baseURL, sourceclient.WithHTTPClient(httpClient))
+	client, err := sourceclient.NewClient(baseURL, sourceclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("create source internal client: %w", err)
 	}
@@ -58,11 +58,11 @@ func (d *Dispatcher) DispatchWorkflow(ctx context.Context, req recurring.Workflo
 		attribute.String("source.workflow_path", req.WorkflowPath),
 		attribute.String("source.ref", req.Ref),
 	)
-	body := sourceclient.InternalCreateSourceWorkflowRunJSONRequestBody{
-		OrgId:          strconv.FormatUint(req.OrgID, 10),
-		ActorId:        strings.TrimSpace(req.ActorID),
-		ProjectId:      req.ProjectID.String(),
-		RepoId:         req.SourceRepositoryID.String(),
+	body := sourceclient.InternalCreateSourceWorkflowRunInputBody{
+		OrgID:          strconv.FormatUint(req.OrgID, 10),
+		ActorID:        strings.TrimSpace(req.ActorID),
+		ProjectID:      req.ProjectID.String(),
+		RepoID:         req.SourceRepositoryID.String(),
 		WorkflowPath:   strings.TrimSpace(req.WorkflowPath),
 		IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),
 	}
@@ -71,36 +71,36 @@ func (d *Dispatcher) DispatchWorkflow(ctx context.Context, req recurring.Workflo
 		body.Ref = &ref
 	}
 	if req.Inputs != nil {
-		inputs := make(map[string]string, len(req.Inputs))
+		inputs := make(sourceclient.WorkflowInputs, len(req.Inputs))
 		for key, value := range req.Inputs {
-			inputs[key] = value
+			inputs[key] = sourceclient.WorkflowInputValue(value)
 		}
 		body.Inputs = &inputs
 	}
-	resp, err := d.client.InternalCreateSourceWorkflowRunWithResponse(ctx, body)
+	resp, err := d.client.InternalCreateSourceWorkflowRun(ctx, sourceclient.InternalCreateSourceWorkflowRunRequest{Body: body})
 	if err != nil {
 		return recurring.WorkflowDispatchResult{}, fmt.Errorf("dispatch source workflow: %w", err)
 	}
 	if resp == nil || resp.HTTPResponse == nil {
 		return recurring.WorkflowDispatchResult{}, errors.New("dispatch source workflow: missing response")
 	}
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode()))
-	if resp.StatusCode() != http.StatusCreated || resp.JSON201 == nil {
-		return recurring.WorkflowDispatchResult{}, fmt.Errorf("dispatch source workflow status %d: %s", resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	if resp.StatusCode != http.StatusCreated || resp.Result == nil {
+		return recurring.WorkflowDispatchResult{}, fmt.Errorf("dispatch source workflow status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
 	}
-	if resp.JSON201.State != "dispatched" {
-		return recurring.WorkflowDispatchResult{}, fmt.Errorf("dispatch source workflow returned state %q", resp.JSON201.State)
+	if resp.Result.State != "dispatched" {
+		return recurring.WorkflowDispatchResult{}, fmt.Errorf("dispatch source workflow returned state %q", resp.Result.State)
 	}
-	workflowRunID, err := uuid.Parse(resp.JSON201.WorkflowRunId)
+	workflowRunID, err := uuid.Parse(resp.Result.WorkflowRunID)
 	if err != nil {
 		return recurring.WorkflowDispatchResult{}, fmt.Errorf("parse source workflow run id: %w", err)
 	}
 	span.SetAttributes(
 		attribute.String("source.workflow_run_id", workflowRunID.String()),
-		attribute.String("source.workflow_state", resp.JSON201.State),
+		attribute.String("source.workflow_state", resp.Result.State),
 	)
 	return recurring.WorkflowDispatchResult{
 		WorkflowRunID: workflowRunID,
-		State:         resp.JSON201.State,
+		State:         resp.Result.State,
 	}, nil
 }

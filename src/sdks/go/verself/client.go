@@ -145,7 +145,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	sourceEditor := sourceRequestEditor(token, options.Traceparent)
-	generatedSource, err := sourcecore.NewClientWithResponses(
+	generatedSource, err := sourcecore.NewClient(
 		sourceURL,
 		sourcecore.WithHTTPClient(httpClient),
 		sourcecore.WithRequestEditorFn(sourceEditor),

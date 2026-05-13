@@ -8,8 +8,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
-	github.com/oapi-codegen/runtime v1.4.0
-	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/projects-service v0.0.0
 	github.com/verself/sandbox-rental-service v0.0.0
@@ -64,8 +62,6 @@ replace (
 	github.com/verself/sandbox-rental-service => ../sandbox-rental-service
 	github.com/verself/secrets-service => ../secrets-service
 )
-
-replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

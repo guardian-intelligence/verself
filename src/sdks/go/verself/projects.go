@@ -650,6 +650,17 @@ func copyStringMap(input map[string]string) map[string]string {
 	return out
 }
 
+func compactStrings(input []string) []string {
+	out := make([]string, 0, len(input))
+	for _, value := range input {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 func generateIdempotencyKey(namespace string) (string, error) {
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
