@@ -6,13 +6,13 @@ import {
   putProfilePreferences as putGeneratedProfilePreferences,
 } from "../__generated/profile-api/index.js";
 import type {
-  ProfilePutPreferencesRequestWritable,
-  ProfileUpdateIdentityRequestWritable,
+  ProfilePutPreferencesRequest as ProfilePutPreferencesRequestBody,
+  ProfileUpdateIdentityRequest as ProfileUpdateIdentityRequestBody,
 } from "../__generated/profile-api/types.gen.js";
 import {
-  vProfilePutPreferencesRequestWritable,
+  vProfilePutPreferencesRequest,
   vProfileSnapshot,
-  vProfileUpdateIdentityRequestWritable,
+  vProfileUpdateIdentityRequest,
 } from "../__generated/profile-api/valibot.gen.js";
 import {
   type BearerClientOptions,
@@ -107,9 +107,9 @@ export async function updateProfileIdentity(
     bodySource.display_name = input.display_name;
   }
   const body = v.parse(
-    vProfileUpdateIdentityRequestWritable,
+    vProfileUpdateIdentityRequest,
     bodySource,
-  ) as ProfileUpdateIdentityRequestWritable;
+  ) as ProfileUpdateIdentityRequestBody;
   const path = "/api/v1/profile/identity";
   const result = await patchGeneratedProfileIdentity({
     body,
@@ -142,9 +142,9 @@ export async function putProfilePreferences(
     bodySource.default_surface = input.default_surface;
   }
   const body = v.parse(
-    vProfilePutPreferencesRequestWritable,
+    vProfilePutPreferencesRequest,
     bodySource,
-  ) as ProfilePutPreferencesRequestWritable;
+  ) as ProfilePutPreferencesRequestBody;
   const path = "/api/v1/profile/preferences";
   const result = await putGeneratedProfilePreferences({
     body,

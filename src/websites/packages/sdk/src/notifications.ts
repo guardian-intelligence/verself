@@ -11,17 +11,17 @@ import {
   putNotificationPreferences as putGeneratedNotificationPreferences,
 } from "./__generated/notifications-api/index.js";
 import type {
-  NotificationMarkReadRequestWritable,
-  NotificationPutPreferencesRequestWritable,
-  NotificationTestRequestWritable,
+  NotificationMarkReadRequest as NotificationMarkReadRequestBody,
+  NotificationPutPreferencesRequest as NotificationPutPreferencesRequestBody,
+  NotificationTestRequest as NotificationTestRequestBody,
 } from "./__generated/notifications-api/types.gen.js";
 import {
   vNotificationAccepted,
   vNotificationList,
-  vNotificationMarkReadRequestWritable,
-  vNotificationPutPreferencesRequestWritable,
+  vNotificationMarkReadRequest,
+  vNotificationPutPreferencesRequest,
   vNotificationSummary,
-  vNotificationTestRequestWritable,
+  vNotificationTestRequest,
 } from "./__generated/notifications-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -172,13 +172,13 @@ export class Notifications {
     const client = createNotificationsClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(putNotificationPreferencesRequestSchema, body),
-    ) as unknown as NotificationPutPreferencesRequestWritable;
+    ) as unknown as NotificationPutPreferencesRequestBody;
     const path = "/api/v1/notifications/preferences";
     const result = await putGeneratedNotificationPreferences({
       body: v.parse(
-        vNotificationPutPreferencesRequestWritable,
+        vNotificationPutPreferencesRequest,
         parsedBody,
-      ) as NotificationPutPreferencesRequestWritable,
+      ) as NotificationPutPreferencesRequestBody,
       client,
       headers: idempotencyHeaders("notification-preferences", options.idempotencyKey),
       responseStyle: "fields",
@@ -196,9 +196,9 @@ export class Notifications {
   ): Promise<NotificationSummary> {
     const client = createNotificationsClient(this.#options);
     const parsedBody = v.parse(
-      vNotificationMarkReadRequestWritable,
+      vNotificationMarkReadRequest,
       v.parse(markNotificationReadRequestSchema, body),
-    ) as NotificationMarkReadRequestWritable;
+    ) as NotificationMarkReadRequestBody;
     const path = "/api/v1/notifications/read-cursor";
     const result = await advanceGeneratedNotificationReadCursor({
       body: parsedBody,
@@ -275,13 +275,13 @@ export class Notifications {
     const client = createNotificationsClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(publishTestNotificationRequestSchema, body),
-    ) as unknown as NotificationTestRequestWritable;
+    ) as unknown as NotificationTestRequestBody;
     const path = "/api/v1/notifications/test";
     const result = await publishGeneratedTestNotification({
       body: v.parse(
-        vNotificationTestRequestWritable,
+        vNotificationTestRequest,
         parsedBody,
-      ) as NotificationTestRequestWritable,
+      ) as NotificationTestRequestBody,
       client,
       headers: idempotencyHeaders("notification-test", options.idempotencyKey),
       responseStyle: "fields",
