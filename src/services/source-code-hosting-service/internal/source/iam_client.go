@@ -104,7 +104,7 @@ func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ Or
 	return ref, nil
 }
 
-func trimOptionalString(value *iamclient.OrgSlug) string {
+func trimOptionalString[T ~string](value *T) string {
 	if value == nil {
 		return ""
 	}

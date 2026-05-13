@@ -2,285 +2,104 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/projects-service/internal/contractapi"
 	"github.com/verself/projects-service/internal/projects"
-	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type projectPath struct {
-	ProjectID string `path:"project_id" format:"uuid"`
-}
+type (
+	projectPath               = contractapi.ProjectPathInput
+	listProjectsInput         = contractapi.ListProjectsInput
+	createProjectInput        = contractapi.CreateProjectInput
+	updateProjectInput        = contractapi.PatchProjectInput
+	projectLifecycleInput     = contractapi.ProjectLifecycleInput
+	listEnvironmentsInput     = contractapi.ListProjectEnvironmentsInput
+	createEnvironmentInput    = contractapi.CreateProjectEnvironmentInput
+	updateEnvironmentInput    = contractapi.PatchProjectEnvironmentInput
+	environmentLifecycleInput = contractapi.ProjectEnvironmentLifecycleInput
+)
 
-type listProjectsInput struct {
-	State  string `query:"state,omitempty" enum:"active,archived"`
-	Limit  int    `query:"limit,omitempty" minimum:"1" maximum:"100"`
-	Cursor string `query:"cursor,omitempty" maxLength:"256"`
-}
-
-type createProjectInput struct {
-	Body dto.CreateProjectRequest
-}
-
-type updateProjectInput struct {
-	ProjectID string `path:"project_id" format:"uuid"`
-	Body      dto.UpdateProjectRequest
-}
-
-type projectLifecycleInput struct {
-	ProjectID string `path:"project_id" format:"uuid"`
-	Body      dto.ProjectLifecycleRequest
-}
-
-type listEnvironmentsInput struct {
-	ProjectID string `path:"project_id" format:"uuid"`
-}
-
-type createEnvironmentInput struct {
-	ProjectID string `path:"project_id" format:"uuid"`
-	Body      dto.CreateProjectEnvironmentRequest
-}
-
-type updateEnvironmentInput struct {
-	ProjectID     string `path:"project_id" format:"uuid"`
-	EnvironmentID string `path:"environment_id" format:"uuid"`
-	Body          dto.UpdateProjectEnvironmentRequest
-}
-
-type environmentLifecycleInput struct {
-	ProjectID     string `path:"project_id" format:"uuid"`
-	EnvironmentID string `path:"environment_id" format:"uuid"`
-	Body          dto.ProjectLifecycleRequest
-}
-
-type projectOutput struct {
-	Body dto.Project
-}
-
-type projectListOutput struct {
-	Body dto.ProjectList
-}
-
-type environmentOutput struct {
-	Body dto.ProjectEnvironment
-}
-
-type environmentListOutput struct {
-	Body dto.ProjectEnvironmentList
-}
+type (
+	projectOutput         = contractapi.ProjectOutput
+	projectListOutput     = contractapi.ListProjectsOutput
+	environmentOutput     = contractapi.ProjectEnvironmentOutput
+	environmentListOutput = contractapi.ListProjectEnvironmentsOutput
+)
 
 func createProjectOperation() projectOperation {
-	return publicProjectOperation[createProjectInput, projectOutput](huma.Operation{
-		OperationID:   "create-project",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/projects",
-		Summary:       "Create a project",
-		DefaultStatus: http.StatusCreated,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectWrite,
-			Resource:       "project",
-			Action:         runtimeiam.ActionCreate,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.project.create",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, createProject)
+	op, policy := projectContract(contractapi.CreateProject.Descriptor, "Create a project")
+	return publicProjectOperation[createProjectInput, projectOutput](op, policy, createProject)
 }
 
 func listProjectsOperation() projectOperation {
-	return publicProjectOperation[listProjectsInput, projectListOutput](huma.Operation{
-		OperationID: "list-projects",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/projects",
-		Summary:     "List projects",
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectRead,
-			Resource:       "project",
-			Action:         runtimeiam.ActionList,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "read",
-			AuditEvent:     "projects.project.list",
-		},
-	}, listProjects)
+	op, policy := projectContract(contractapi.ListProjects.Descriptor, "List projects")
+	return publicProjectOperation[listProjectsInput, projectListOutput](op, policy, listProjects)
 }
 
 func getProjectOperation() projectOperation {
-	return publicProjectOperation[projectPath, projectOutput](huma.Operation{
-		OperationID: "get-project",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/projects/{project_id}",
-		Summary:     "Get a project",
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectRead,
-			Resource:       "project",
-			Action:         runtimeiam.ActionRead,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "read",
-			AuditEvent:     "projects.project.read",
-		},
-	}, getProject)
+	op, policy := projectContract(contractapi.GetProject.Descriptor, "Get a project")
+	return publicProjectOperation[projectPath, projectOutput](op, policy, getProject)
 }
 
 func updateProjectOperation() projectOperation {
-	return publicProjectOperation[updateProjectInput, projectOutput](huma.Operation{
-		OperationID:   "patch-project",
-		Method:        http.MethodPatch,
-		Path:          "/api/v1/projects/{project_id}",
-		Summary:       "Update a project",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectWrite,
-			Resource:       "project",
-			Action:         runtimeiam.ActionUpdate,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.project.update",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, updateProject)
+	op, policy := projectContract(contractapi.PatchProject.Descriptor, "Update a project")
+	return publicProjectOperation[updateProjectInput, projectOutput](op, policy, updateProject)
 }
 
 func archiveProjectOperation() projectOperation {
-	return publicProjectOperation[projectLifecycleInput, projectOutput](huma.Operation{
-		OperationID:   "archive-project",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/projects/{project_id}/archive",
-		Summary:       "Archive a project",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectWrite,
-			Resource:       "project",
-			Action:         runtimeiam.ActionArchive,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.project.archive",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, archiveProject)
+	op, policy := projectContract(contractapi.ArchiveProject.Descriptor, "Archive a project")
+	return publicProjectOperation[projectLifecycleInput, projectOutput](op, policy, archiveProject)
 }
 
 func restoreProjectOperation() projectOperation {
-	return publicProjectOperation[projectLifecycleInput, projectOutput](huma.Operation{
-		OperationID:   "restore-project",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/projects/{project_id}/restore",
-		Summary:       "Restore a project",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectWrite,
-			Resource:       "project",
-			Action:         runtimeiam.ActionRestore,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.project.restore",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, restoreProject)
+	op, policy := projectContract(contractapi.RestoreProject.Descriptor, "Restore a project")
+	return publicProjectOperation[projectLifecycleInput, projectOutput](op, policy, restoreProject)
 }
 
 func listProjectEnvironmentsOperation() projectOperation {
-	return publicProjectOperation[listEnvironmentsInput, environmentListOutput](huma.Operation{
-		OperationID: "list-project-environments",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/projects/{project_id}/environments",
-		Summary:     "List project environments",
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionEnvironmentRead,
-			Resource:       "project_environment",
-			Action:         runtimeiam.ActionList,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "read",
-			AuditEvent:     "projects.environment.list",
-		},
-	}, listEnvironments)
+	op, policy := projectContract(contractapi.ListProjectEnvironments.Descriptor, "List project environments")
+	return publicProjectOperation[listEnvironmentsInput, environmentListOutput](op, policy, listEnvironments)
 }
 
 func createProjectEnvironmentOperation() projectOperation {
-	return publicProjectOperation[createEnvironmentInput, environmentOutput](huma.Operation{
-		OperationID:   "create-project-environment",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/projects/{project_id}/environments",
-		Summary:       "Create a project environment",
-		DefaultStatus: http.StatusCreated,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionEnvironmentWrite,
-			Resource:       "project_environment",
-			Action:         runtimeiam.ActionCreate,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.environment.create",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, createEnvironment)
+	op, policy := projectContract(contractapi.CreateProjectEnvironment.Descriptor, "Create a project environment")
+	return publicProjectOperation[createEnvironmentInput, environmentOutput](op, policy, createEnvironment)
 }
 
 func updateProjectEnvironmentOperation() projectOperation {
-	return publicProjectOperation[updateEnvironmentInput, environmentOutput](huma.Operation{
-		OperationID:   "patch-project-environment",
-		Method:        http.MethodPatch,
-		Path:          "/api/v1/projects/{project_id}/environments/{environment_id}",
-		Summary:       "Update a project environment",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionEnvironmentWrite,
-			Resource:       "project_environment",
-			Action:         runtimeiam.ActionUpdate,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.environment.update",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, updateEnvironment)
+	op, policy := projectContract(contractapi.PatchProjectEnvironment.Descriptor, "Update a project environment")
+	return publicProjectOperation[updateEnvironmentInput, environmentOutput](op, policy, updateEnvironment)
 }
 
 func archiveProjectEnvironmentOperation() projectOperation {
-	return publicProjectOperation[environmentLifecycleInput, environmentOutput](huma.Operation{
-		OperationID:   "archive-project-environment",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/projects/{project_id}/environments/{environment_id}/archive",
-		Summary:       "Archive a project environment",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionEnvironmentWrite,
-			Resource:       "project_environment",
-			Action:         runtimeiam.ActionArchive,
-			OrgScope:       orgScopeTokenOrgID,
-			RateLimitClass: "projects_mutation",
-			Idempotency:    idempotencyHeaderKey,
-			AuditEvent:     "projects.environment.archive",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-	}, archiveEnvironment)
+	op, policy := projectContract(contractapi.ArchiveProjectEnvironment.Descriptor, "Archive a project environment")
+	return publicProjectOperation[environmentLifecycleInput, environmentOutput](op, policy, archiveEnvironment)
+}
+
+func projectContract(desc contractapi.OperationDescriptor, summary string) (huma.Operation, projectsOperationPolicy) {
+	op := huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+		Errors:        contractProblemStatuses(desc.Problems),
+		Extensions:    map[string]any{"x-verself-contract": contractExtension(desc)},
+	}
+	return op, projectsOperationPolicy{OperationPolicy: operationPolicyFromContract(desc)}
 }
 
 func createProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *createProjectInput) (*projectOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *createProjectInput) (*projectOutput, error) {
 		project, err := svc.CreateProject(ctx, principal, projects.CreateProjectRequest{
-			Slug:           input.Body.Slug,
-			DisplayName:    input.Body.DisplayName,
-			Description:    input.Body.Description,
+			Slug:           stringFromContractPtr(input.Body.Slug),
+			DisplayName:    string(input.Body.DisplayName),
+			Description:    stringFromContractPtr(input.Body.Description),
 			IdempotencyKey: operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -293,14 +112,14 @@ func createProject(svc *projects.Service, installationID string) func(context.Co
 func listProjects(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *listProjectsInput) (*projectListOutput, error) {
 	return func(ctx context.Context, principal projects.Principal, input *listProjectsInput) (*projectListOutput, error) {
 		records, nextCursor, err := svc.ListProjects(ctx, principal, projects.ListProjectsRequest{
-			State:  input.State,
-			Limit:  input.Limit,
-			Cursor: input.Cursor,
+			State:  string(input.State),
+			Limit:  int(input.Limit),
+			Cursor: string(input.Cursor),
 		})
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectListOutput{Body: dto.ProjectList{Projects: projectDTOs(records, installationID), NextCursor: nextCursor}}, nil
+		return &projectListOutput{Body: contractapi.ListProjectsOutputBody{Projects: projectDTOs(records, installationID), NextCursor: optionalContractString[contractapi.PageToken](nextCursor)}}, nil
 	}
 }
 
@@ -324,12 +143,16 @@ func updateProject(svc *projects.Service, installationID string) func(context.Co
 		if err != nil {
 			return nil, err
 		}
+		version, err := int64FromDecimal(ctx, string(input.Body.Version), "version")
+		if err != nil {
+			return nil, err
+		}
 		project, err := svc.UpdateProject(ctx, principal, projects.UpdateProjectRequest{
 			ProjectID:      projectID,
-			Version:        input.Body.Version.Int64(),
-			Slug:           input.Body.Slug,
-			DisplayName:    input.Body.DisplayName,
-			Description:    input.Body.Description,
+			Version:        version,
+			Slug:           optionalStringFromContract(input.Body.Slug),
+			DisplayName:    optionalStringFromContract(input.Body.DisplayName),
+			Description:    optionalStringFromContract(input.Body.Description),
 			IdempotencyKey: operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -345,9 +168,13 @@ func archiveProject(svc *projects.Service, installationID string) func(context.C
 		if err != nil {
 			return nil, err
 		}
+		version, err := int64FromDecimal(ctx, string(input.Body.Version), "version")
+		if err != nil {
+			return nil, err
+		}
 		project, err := svc.ArchiveProject(ctx, principal, projects.ProjectLifecycleRequest{
 			ProjectID:      projectID,
-			Version:        input.Body.Version.Int64(),
+			Version:        version,
 			IdempotencyKey: operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -363,9 +190,13 @@ func restoreProject(svc *projects.Service, installationID string) func(context.C
 		if err != nil {
 			return nil, err
 		}
+		version, err := int64FromDecimal(ctx, string(input.Body.Version), "version")
+		if err != nil {
+			return nil, err
+		}
 		project, err := svc.RestoreProject(ctx, principal, projects.ProjectLifecycleRequest{
 			ProjectID:      projectID,
-			Version:        input.Body.Version.Int64(),
+			Version:        version,
 			IdempotencyKey: operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -385,7 +216,7 @@ func listEnvironments(svc *projects.Service, installationID string) func(context
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &environmentListOutput{Body: dto.ProjectEnvironmentList{Environments: environmentDTOs(envs, installationID)}}, nil
+		return &environmentListOutput{Body: contractapi.ListProjectEnvironmentsOutputBody{Environments: environmentDTOs(envs, installationID)}}, nil
 	}
 }
 
@@ -397,10 +228,10 @@ func createEnvironment(svc *projects.Service, installationID string) func(contex
 		}
 		env, err := svc.CreateEnvironment(ctx, principal, projects.CreateEnvironmentRequest{
 			ProjectID:        projectID,
-			Slug:             input.Body.Slug,
-			DisplayName:      input.Body.DisplayName,
+			Slug:             string(input.Body.Slug),
+			DisplayName:      string(input.Body.DisplayName),
 			Kind:             string(input.Body.Kind),
-			ProtectionPolicy: input.Body.ProtectionPolicy,
+			ProtectionPolicy: stringMapFromContractPtr(input.Body.ProtectionPolicy),
 			IdempotencyKey:   operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -420,12 +251,16 @@ func updateEnvironment(svc *projects.Service, installationID string) func(contex
 		if err != nil {
 			return nil, err
 		}
+		version, err := int64FromDecimal(ctx, string(input.Body.Version), "version")
+		if err != nil {
+			return nil, err
+		}
 		env, err := svc.UpdateEnvironment(ctx, principal, projects.UpdateEnvironmentRequest{
 			ProjectID:        projectID,
 			EnvironmentID:    environmentID,
-			Version:          input.Body.Version.Int64(),
-			DisplayName:      input.Body.DisplayName,
-			ProtectionPolicy: input.Body.ProtectionPolicy,
+			Version:          version,
+			DisplayName:      stringFromContractPtr(input.Body.DisplayName),
+			ProtectionPolicy: stringMapFromContractPtr(input.Body.ProtectionPolicy),
 			IdempotencyKey:   operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -445,10 +280,14 @@ func archiveEnvironment(svc *projects.Service, installationID string) func(conte
 		if err != nil {
 			return nil, err
 		}
+		version, err := int64FromDecimal(ctx, string(input.Body.Version), "version")
+		if err != nil {
+			return nil, err
+		}
 		env, err := svc.ArchiveEnvironment(ctx, principal, projects.EnvironmentLifecycleRequest{
 			ProjectID:      projectID,
 			EnvironmentID:  environmentID,
-			Version:        input.Body.Version.Int64(),
+			Version:        version,
 			IdempotencyKey: operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
@@ -458,67 +297,141 @@ func archiveEnvironment(svc *projects.Service, installationID string) func(conte
 	}
 }
 
-func parseUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
-	id, err := uuid.Parse(value)
+func parseUUID[T ~string](ctx context.Context, value T, field string) (uuid.UUID, error) {
+	id, err := uuid.Parse(string(value))
 	if err != nil {
 		return uuid.Nil, badRequest(ctx, "invalid-"+field, field+" must be a UUID", err)
 	}
 	return id, nil
 }
 
-func projectDTO(project projects.Project, installationID string) dto.Project {
+func int64FromDecimal(ctx context.Context, value, field string) (int64, error) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, badRequest(ctx, "invalid-"+field, field+" must be a decimal int64", err)
+	}
+	return parsed, nil
+}
+
+func stringFromContractPtr[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func optionalStringFromContract[T ~string](value *T) *string {
+	if value == nil {
+		return nil
+	}
+	converted := string(*value)
+	return &converted
+}
+
+func optionalContractString[T ~string](value string) *T {
+	if value == "" {
+		return nil
+	}
+	converted := T(value)
+	return &converted
+}
+
+func optionalContractTime(value *time.Time) *string {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	out := formatContractTime(*value)
+	return &out
+}
+
+func formatContractTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func stringMapFromContractPtr[T ~map[string]string](value *T) map[string]string {
+	if value == nil || len(*value) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(*value))
+	for key, item := range *value {
+		out[key] = item
+	}
+	return out
+}
+
+func optionalContractMap[T ~map[string]string](value map[string]string) *T {
+	if len(value) == 0 {
+		return nil
+	}
+	converted := T(value)
+	return &converted
+}
+
+func projectResourceName(installationID, orgID, projectID string) string {
+	return "urn:verself:" + installationID + ":orgs/" + orgID + "/projects/" + projectID
+}
+
+func environmentResourceName(installationID, orgID, projectID, environmentID string) string {
+	return projectResourceName(installationID, orgID, projectID) + "/environments/" + environmentID
+}
+
+func projectDTO(project projects.Project, installationID string) contractapi.ProjectSummary {
 	orgID := strconv.FormatUint(project.OrgID, 10)
-	return dto.Project{
-		ProjectID:          project.ID.String(),
-		ResourceName:       dto.ResourceNameProject(installationID, orgID, project.ID.String()),
-		OrgID:              dto.Uint64(project.OrgID),
-		Slug:               project.Slug,
-		RedirectedFromSlug: project.RedirectedFromSlug,
-		DisplayName:        project.DisplayName,
-		Description:        project.Description,
-		State:              dto.ProjectState(project.State),
-		Version:            dto.Int64(project.Version),
-		CreatedBy:          project.CreatedBy,
-		UpdatedBy:          project.UpdatedBy,
-		CreatedAt:          project.CreatedAt,
-		UpdatedAt:          project.UpdatedAt,
-		ArchivedAt:         project.ArchivedAt,
+	projectID := project.ID.String()
+	return contractapi.ProjectSummary{
+		ProjectID:          contractapi.ProjectID(projectID),
+		ResourceName:       contractapi.ResourceName(projectResourceName(installationID, orgID, projectID)),
+		OrgID:              contractapi.OrgID(orgID),
+		Slug:               contractapi.ProjectSlug(project.Slug),
+		RedirectedFromSlug: optionalContractString[contractapi.ProjectSlug](project.RedirectedFromSlug),
+		DisplayName:        contractapi.DisplayName(project.DisplayName),
+		Description:        optionalContractString[contractapi.ProjectDescription](project.Description),
+		State:              contractapi.ProjectState(project.State),
+		Version:            contractapi.DecimalInt64(strconv.FormatInt(project.Version, 10)),
+		CreatedBy:          contractapi.ActorID(project.CreatedBy),
+		UpdatedBy:          contractapi.ActorID(project.UpdatedBy),
+		CreatedAt:          formatContractTime(project.CreatedAt),
+		UpdatedAt:          formatContractTime(project.UpdatedAt),
+		ArchivedAt:         optionalContractTime(project.ArchivedAt),
 	}
 }
 
-func projectDTOs(records []projects.Project, installationID string) []dto.Project {
-	out := make([]dto.Project, 0, len(records))
+func projectDTOs(records []projects.Project, installationID string) contractapi.ProjectsList {
+	out := make(contractapi.ProjectsList, 0, len(records))
 	for _, record := range records {
 		out = append(out, projectDTO(record, installationID))
 	}
 	return out
 }
 
-func environmentDTO(env projects.Environment, installationID string) dto.ProjectEnvironment {
+func environmentDTO(env projects.Environment, installationID string) contractapi.ProjectEnvironmentSummary {
 	orgID := strconv.FormatUint(env.OrgID, 10)
 	projectID := env.ProjectID.String()
-	return dto.ProjectEnvironment{
-		EnvironmentID:       env.ID.String(),
-		ResourceName:        dto.ResourceNameEnvironment(installationID, orgID, projectID, env.ID.String()),
-		ProjectID:           projectID,
-		ProjectResourceName: dto.ResourceNameProject(installationID, orgID, projectID),
-		OrgID:               dto.Uint64(env.OrgID),
-		Slug:                env.Slug,
-		DisplayName:         env.DisplayName,
-		Kind:                dto.ProjectEnvironmentKind(env.Kind),
-		State:               dto.ProjectEnvironmentState(env.State),
-		ProtectionPolicy:    env.ProtectionPolicy,
-		Version:             dto.Int64(env.Version),
-		CreatedBy:           env.CreatedBy,
-		UpdatedBy:           env.UpdatedBy,
-		CreatedAt:           env.CreatedAt,
-		UpdatedAt:           env.UpdatedAt,
-		ArchivedAt:          env.ArchivedAt,
+	return contractapi.ProjectEnvironmentSummary{
+		EnvironmentID:       contractapi.EnvironmentID(env.ID.String()),
+		ResourceName:        contractapi.ResourceName(environmentResourceName(installationID, orgID, projectID, env.ID.String())),
+		ProjectID:           contractapi.ProjectID(projectID),
+		ProjectResourceName: contractapi.ResourceName(projectResourceName(installationID, orgID, projectID)),
+		OrgID:               contractapi.OrgID(orgID),
+		Slug:                contractapi.ProjectSlug(env.Slug),
+		DisplayName:         contractapi.DisplayName(env.DisplayName),
+		Kind:                contractapi.ProjectEnvironmentKind(env.Kind),
+		State:               contractapi.ProjectEnvironmentState(env.State),
+		ProtectionPolicy:    optionalContractMap[contractapi.ProjectProtectionPolicy](env.ProtectionPolicy),
+		Version:             contractapi.DecimalInt64(strconv.FormatInt(env.Version, 10)),
+		CreatedBy:           contractapi.ActorID(env.CreatedBy),
+		UpdatedBy:           contractapi.ActorID(env.UpdatedBy),
+		CreatedAt:           formatContractTime(env.CreatedAt),
+		UpdatedAt:           formatContractTime(env.UpdatedAt),
+		ArchivedAt:          optionalContractTime(env.ArchivedAt),
 	}
 }
 
-func environmentDTOs(records []projects.Environment, installationID string) []dto.ProjectEnvironment {
-	out := make([]dto.ProjectEnvironment, 0, len(records))
+func environmentDTOs(records []projects.Environment, installationID string) contractapi.ProjectEnvironments {
+	out := make(contractapi.ProjectEnvironments, 0, len(records))
 	for _, record := range records {
 		out = append(out, environmentDTO(record, installationID))
 	}

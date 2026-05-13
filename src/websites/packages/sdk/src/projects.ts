@@ -1,7 +1,14 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/projects-api/client/index.js";
 import {
+  type ArchiveProjectData,
+  type ArchiveProjectEnvironmentData,
+  type CreateProjectData,
+  type CreateProjectEnvironmentData,
   type ListProjectsData,
+  type PatchProjectData,
+  type PatchProjectEnvironmentData,
+  type RestoreProjectData,
   archiveProject,
   archiveProjectEnvironment,
   createProject,
@@ -13,13 +20,6 @@ import {
   patchProjectEnvironment,
   restoreProject,
 } from "./__generated/projects-api/index.js";
-import type {
-  CreateProjectEnvironmentRequest as CreateProjectEnvironmentRequestBody,
-  CreateProjectRequest as CreateProjectRequestBody,
-  ProjectLifecycleRequest as ProjectLifecycleRequestBody,
-  UpdateProjectEnvironmentRequest as UpdateProjectEnvironmentRequestBody,
-  UpdateProjectRequest as UpdateProjectRequestBody,
-} from "./__generated/projects-api/types.gen.js";
 import {
   vArchiveProjectBody,
   vArchiveProjectEnvironmentBody,
@@ -28,24 +28,19 @@ import {
   vCreateProjectEnvironmentBody,
   vCreateProjectEnvironmentPath,
   vCreateProjectBody,
-  vCreateProjectEnvironmentRequest,
-  vCreateProjectRequest,
   vGetProjectPath,
-  vListProjectsQuery,
   vListProjectEnvironmentsPath,
+  vListProjectEnvironmentsResponse,
+  vListProjectsQuery,
+  vListProjectsResponse,
   vPatchProjectBody,
   vPatchProjectEnvironmentBody,
   vPatchProjectEnvironmentPath,
   vPatchProjectPath,
-  vProject,
-  vProjectEnvironment,
-  vProjectEnvironmentList,
-  vProjectLifecycleRequest,
-  vProjectList,
+  vProjectEnvironmentSummary,
+  vProjectSummary,
   vRestoreProjectBody,
   vRestoreProjectPath,
-  vUpdateProjectEnvironmentRequest,
-  vUpdateProjectRequest,
 } from "./__generated/projects-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -89,43 +84,42 @@ function removeUndefined<T extends Record<string, unknown>>(input: T): Record<st
 }
 
 function parseProject(input: unknown) {
-  return v.parse(vProject, input);
+  return v.parse(vProjectSummary, input);
 }
 
 export type Project = ReturnType<typeof parseProject>;
 
 function parseProjectEnvironment(input: unknown) {
-  return v.parse(vProjectEnvironment, input);
+  return v.parse(vProjectEnvironmentSummary, input);
 }
 
 export type ProjectEnvironment = ReturnType<typeof parseProjectEnvironment>;
 
 function parseProjectList(input: unknown) {
-  const parsed = v.parse(vProjectList, input);
+  const parsed = v.parse(vListProjectsResponse, input);
   return {
     next_cursor: parsed.next_cursor ?? "",
-    projects: parsed.projects?.map((project) => parseProject(project)) ?? [],
+    projects: parsed.projects.map((project) => parseProject(project)),
   };
 }
 
 export type ProjectList = ReturnType<typeof parseProjectList>;
 
 function parseProjectEnvironmentList(input: unknown) {
-  const parsed = v.parse(vProjectEnvironmentList, input);
+  const parsed = v.parse(vListProjectEnvironmentsResponse, input);
   return {
-    next_cursor: parsed.next_cursor ?? "",
-    environments:
-      parsed.environments?.map((environment) => parseProjectEnvironment(environment)) ?? [],
+    next_cursor: "",
+    environments: parsed.environments.map((environment) => parseProjectEnvironment(environment)),
   };
 }
 
 export type ProjectEnvironmentList = ReturnType<typeof parseProjectEnvironmentList>;
 
-export const createProjectRequestSchema = vCreateProjectRequest;
-export const createProjectEnvironmentRequestSchema = vCreateProjectEnvironmentRequest;
-export const updateProjectRequestSchema = vUpdateProjectRequest;
-export const updateProjectEnvironmentRequestSchema = vUpdateProjectEnvironmentRequest;
-export const projectLifecycleRequestSchema = vProjectLifecycleRequest;
+export const createProjectRequestSchema = vCreateProjectBody;
+export const createProjectEnvironmentRequestSchema = vCreateProjectEnvironmentBody;
+export const updateProjectRequestSchema = vPatchProjectBody;
+export const updateProjectEnvironmentRequestSchema = vPatchProjectEnvironmentBody;
+export const projectLifecycleRequestSchema = vArchiveProjectBody;
 
 export type CreateProjectRequest = v.InferOutput<typeof createProjectRequestSchema>;
 export type CreateProjectEnvironmentRequest = v.InferOutput<
@@ -182,7 +176,7 @@ export class Projects {
     const client = createProjectsClient(this.#options);
     const parsedBody = removeUndefined(
       v.parse(vCreateProjectBody, body),
-    ) as CreateProjectRequestBody;
+    ) as CreateProjectData["body"];
     const path = "/api/v1/projects";
     const result = await createProject({
       client,
@@ -222,7 +216,7 @@ export class Projects {
     const pathParams = v.parse(vPatchProjectPath, { project_id: projectId });
     const parsedBody = removeUndefined(
       v.parse(vPatchProjectBody, body),
-    ) as UpdateProjectRequestBody;
+    ) as PatchProjectData["body"];
     const path = `/api/v1/projects/${projectId}`;
     const result = await patchProject({
       client,
@@ -245,7 +239,7 @@ export class Projects {
   ): Promise<Project> {
     const client = createProjectsClient(this.#options);
     const pathParams = v.parse(vArchiveProjectPath, { project_id: projectId });
-    const parsedBody = v.parse(vArchiveProjectBody, body) as ProjectLifecycleRequestBody;
+    const parsedBody = v.parse(vArchiveProjectBody, body) as ArchiveProjectData["body"];
     const path = `/api/v1/projects/${projectId}/archive`;
     const result = await archiveProject({
       client,
@@ -268,7 +262,7 @@ export class Projects {
   ): Promise<Project> {
     const client = createProjectsClient(this.#options);
     const pathParams = v.parse(vRestoreProjectPath, { project_id: projectId });
-    const parsedBody = v.parse(vRestoreProjectBody, body) as ProjectLifecycleRequestBody;
+    const parsedBody = v.parse(vRestoreProjectBody, body) as RestoreProjectData["body"];
     const path = `/api/v1/projects/${projectId}/restore`;
     const result = await restoreProject({
       client,
@@ -309,7 +303,7 @@ export class Projects {
     const pathParams = v.parse(vCreateProjectEnvironmentPath, { project_id: projectId });
     const parsedBody = removeUndefined(
       v.parse(vCreateProjectEnvironmentBody, body),
-    ) as CreateProjectEnvironmentRequestBody;
+    ) as CreateProjectEnvironmentData["body"];
     const path = `/api/v1/projects/${projectId}/environments`;
     const result = await createProjectEnvironment({
       client,
@@ -338,7 +332,7 @@ export class Projects {
     });
     const parsedBody = removeUndefined(
       v.parse(vPatchProjectEnvironmentBody, body),
-    ) as UpdateProjectEnvironmentRequestBody;
+    ) as PatchProjectEnvironmentData["body"];
     const path = `/api/v1/projects/${projectId}/environments/${environmentId}`;
     const result = await patchProjectEnvironment({
       client,
@@ -365,7 +359,10 @@ export class Projects {
       project_id: projectId,
       environment_id: environmentId,
     });
-    const parsedBody = v.parse(vArchiveProjectEnvironmentBody, body) as ProjectLifecycleRequestBody;
+    const parsedBody = v.parse(
+      vArchiveProjectEnvironmentBody,
+      body,
+    ) as ArchiveProjectEnvironmentData["body"];
     const path = `/api/v1/projects/${projectId}/environments/${environmentId}/archive`;
     const result = await archiveProjectEnvironment({
       client,

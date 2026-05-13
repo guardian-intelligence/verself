@@ -17,11 +17,11 @@ import (
 var projectsTracer = otel.Tracer("source-code-hosting-service/projects")
 
 type ProjectsClient struct {
-	Client *projectsclient.ClientWithResponses
+	Client *projectsclient.Client
 }
 
-func NewProjectsClient(baseURL string, httpClient projectsclient.HttpRequestDoer) (ProjectsClient, error) {
-	client, err := projectsclient.NewClientWithResponses(strings.TrimRight(baseURL, "/"), projectsclient.WithHTTPClient(httpClient))
+func NewProjectsClient(baseURL string, httpClient projectsclient.HTTPRequestDoer) (ProjectsClient, error) {
+	client, err := projectsclient.NewClient(strings.TrimRight(baseURL, "/"), projectsclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return ProjectsClient{}, err
 	}
@@ -57,24 +57,26 @@ func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uui
 		attribute.String("verself.project_id", projectID.String()),
 		attribute.String("source.project_slug", slug),
 	)
-	var projectIDValue *uuid.UUID
+	var projectIDValue *projectsclient.ProjectId
 	if projectID != uuid.Nil {
-		projectIDValue = &projectID
+		converted := projectsclient.ProjectId(projectID.String())
+		projectIDValue = &converted
 	}
-	var slugValue *string
+	var slugValue *projectsclient.ProjectSlug
 	if slug != "" {
-		slugValue = &slug
+		converted := projectsclient.ProjectSlug(slug)
+		slugValue = &converted
 	}
-	resp, err := c.Client.ResolveProjectWithResponse(ctx, projectsclient.ResolveProjectJSONRequestBody{
-		OrgId:         strconv.FormatUint(orgID, 10),
-		ProjectId:     projectIDValue,
+	resp, err := c.Client.ResolveProject(ctx, projectsclient.ResolveProjectRequest{Body: projectsclient.ResolveProjectInputBody{
+		OrgID:         projectsclient.OrgId(strconv.FormatUint(orgID, 10)),
+		ProjectID:     projectIDValue,
 		RequireActive: true,
 		Slug:          slugValue,
-	})
+	}})
 	if err != nil {
 		return ProjectReference{}, fmt.Errorf("%w: resolve project: %v", ErrStoreUnavailable, err)
 	}
-	if resp.JSON200 == nil {
+	if resp.Result == nil {
 		status := 0
 		body := ""
 		if resp.HTTPResponse != nil {
@@ -90,21 +92,24 @@ func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uui
 			return ProjectReference{}, fmt.Errorf("%w: resolve project unexpected status %d: %s", ErrStoreUnavailable, status, body)
 		}
 	}
-	project := resp.JSON200.Project
-	parsedID := uuid.UUID(project.ProjectId)
+	project := resp.Result.Project
+	parsedID, err := uuid.Parse(string(project.ProjectID))
+	if err != nil {
+		return ProjectReference{}, fmt.Errorf("%w: parse project id: %v", ErrStoreUnavailable, err)
+	}
 	if parsedID == uuid.Nil {
 		return ProjectReference{}, fmt.Errorf("%w: project resolver returned empty project id", ErrStoreUnavailable)
 	}
-	projectOrgID, err := strconv.ParseUint(strings.TrimSpace(project.OrgId), 10, 64)
+	projectOrgID, err := strconv.ParseUint(strings.TrimSpace(string(project.OrgID)), 10, 64)
 	if err != nil || projectOrgID == 0 {
 		return ProjectReference{}, fmt.Errorf("%w: parse project org id: %v", ErrStoreUnavailable, err)
 	}
 	ref := ProjectReference{
 		ProjectID:          parsedID,
 		OrgID:              projectOrgID,
-		Slug:               strings.TrimSpace(project.Slug),
+		Slug:               strings.TrimSpace(string(project.Slug)),
 		RedirectedFromSlug: trimOptionalString(project.RedirectedFromSlug),
-		DisplayName:        strings.TrimSpace(project.DisplayName),
+		DisplayName:        strings.TrimSpace(string(project.DisplayName)),
 	}
 	span.SetAttributes(
 		attribute.String("verself.project_id", ref.ProjectID.String()),

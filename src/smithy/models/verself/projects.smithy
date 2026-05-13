@@ -7,6 +7,7 @@ use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#nestedProperties
 use smithy.api#paginated
 use smithy.api#pattern
 use smithy.api#readonly
@@ -83,6 +84,16 @@ string DecimalInt64
 string ActorId
 @length(max: 128)
 string EventType
+@length(max: 255)
+string TraceId
+map ProjectProtectionPolicy {
+    key: String
+    value: String
+}
+map ProjectEventPayload {
+    key: String
+    value: String
+}
 enum ProjectState {
     ACTIVE = "active"
     ARCHIVED = "archived"
@@ -175,11 +186,17 @@ structure ProjectSummary {
     version: DecimalInt64
     @required
     @protoField(number: 10)
-    created_at: Timestamp
+    created_by: ActorId
     @required
     @protoField(number: 11)
-    updated_at: Timestamp
+    updated_by: ActorId
+    @required
     @protoField(number: 12)
+    created_at: Timestamp
+    @required
+    @protoField(number: 13)
+    updated_at: Timestamp
+    @protoField(number: 14)
     archived_at: Timestamp
 }
 structure ProjectEnvironmentSummary {
@@ -213,13 +230,21 @@ structure ProjectEnvironmentSummary {
     @required
     @protoField(number: 10)
     version: DecimalInt64
-    @required
     @protoField(number: 11)
-    created_at: Timestamp
+    protection_policy: ProjectProtectionPolicy
     @required
     @protoField(number: 12)
-    updated_at: Timestamp
+    created_by: ActorId
+    @required
     @protoField(number: 13)
+    updated_by: ActorId
+    @required
+    @protoField(number: 14)
+    created_at: Timestamp
+    @required
+    @protoField(number: 15)
+    updated_at: Timestamp
+    @protoField(number: 16)
     archived_at: Timestamp
 }
 structure ProjectEventSummary {
@@ -248,6 +273,10 @@ structure ProjectEventSummary {
     @required
     @protoField(number: 9)
     created_at: Timestamp
+    @protoField(number: 10)
+    payload: ProjectEventPayload
+    @protoField(number: 11)
+    trace_id: TraceId
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects", code: 201)
@@ -338,7 +367,8 @@ structure PatchProjectInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId    @required
+    project_id: ProjectId
+    @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     @protoField(number: 100)
@@ -383,12 +413,14 @@ structure ProjectPathInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId}
+    project_id: ProjectId
+}
 structure ProjectLifecycleInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId    @required
+    project_id: ProjectId
+    @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     @protoField(number: 100)
@@ -399,18 +431,18 @@ structure ProjectLifecycleInput {
 }
 structure ProjectOutput {
     @required
+    @nestedProperties
     @protoField(number: 1)
     project: ProjectSummary
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/projects/{project_id}/environments")
-@paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "environments")
 @identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
 @authz(permission: EnvironmentReadPermission, organization: {source: "token_org_id"})
 @audit(event: EnvironmentListAuditEvent, resource: ProjectEnvironment, action: "list")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
-@sdk(module: "projectEnvironments", method: "list", paginated: true, retryable: true)
+@sdk(module: "projectEnvironments", method: "list", paginated: false, retryable: true)
 operation ListProjectEnvironments {
     input: ListProjectEnvironmentsInput
     output: ListProjectEnvironmentsOutput
@@ -420,19 +452,12 @@ structure ListProjectEnvironmentsInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId    @httpQuery("limit")
-    @protoField(number: 2)
-    limit: PageSize
-    @httpQuery("cursor")
-    @protoField(number: 3)
-    cursor: PageToken
+    project_id: ProjectId
 }
 structure ListProjectEnvironmentsOutput {
     @required
     @protoField(number: 1)
     environments: ProjectEnvironments
-    @protoField(number: 2)
-    next_cursor: PageToken
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects/{project_id}/environments", code: 201)
@@ -451,7 +476,8 @@ structure CreateProjectEnvironmentInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId    @required
+    project_id: ProjectId
+    @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     @protoField(number: 100)
@@ -465,6 +491,8 @@ structure CreateProjectEnvironmentInput {
     @required
     @protoField(number: 4)
     kind: ProjectEnvironmentKind
+    @protoField(number: 5)
+    protection_policy: ProjectProtectionPolicy
 }
 @idempotent
 @http(method: "PATCH", uri: "/api/v1/projects/{project_id}/environments/{environment_id}")
@@ -483,10 +511,12 @@ structure PatchProjectEnvironmentInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId    @required
+    project_id: ProjectId
+    @required
     @httpLabel
     @protoField(number: 2)
-    environment_id: EnvironmentId    @required
+    environment_id: EnvironmentId
+    @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     @protoField(number: 100)
@@ -496,6 +526,8 @@ structure PatchProjectEnvironmentInput {
     version: DecimalInt64
     @protoField(number: 4)
     display_name: DisplayName
+    @protoField(number: 5)
+    protection_policy: ProjectProtectionPolicy
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects/{project_id}/environments/{environment_id}/archive")
@@ -514,10 +546,12 @@ structure ProjectEnvironmentLifecycleInput {
     @required
     @httpLabel
     @protoField(number: 1)
-    project_id: ProjectId    @required
+    project_id: ProjectId
+    @required
     @httpLabel
     @protoField(number: 2)
-    environment_id: EnvironmentId    @required
+    environment_id: EnvironmentId
+    @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     @protoField(number: 100)
@@ -528,6 +562,7 @@ structure ProjectEnvironmentLifecycleInput {
 }
 structure ProjectEnvironmentOutput {
     @required
+    @nestedProperties
     @protoField(number: 1)
     environment: ProjectEnvironmentSummary
 }
@@ -611,14 +646,11 @@ structure ListProjectEventsServiceInput {
     @httpQuery("org_id")
     @protoField(number: 1)
     org_id: OrgId
-    @httpQuery("project_id")
-    @protoField(number: 2)
-    project_id: ProjectId
     @httpQuery("limit")
-    @protoField(number: 3)
+    @protoField(number: 2)
     limit: PageSize
     @httpQuery("cursor")
-    @protoField(number: 4)
+    @protoField(number: 3)
     cursor: PageToken
 }
 structure ListProjectEventsServiceOutput {

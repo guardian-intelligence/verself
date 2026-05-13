@@ -7,7 +7,6 @@ import (
 
 	"github.com/verself/projects-service/internal/projects"
 	runtimeiam "github.com/verself/service-runtime/iam"
-	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type apiProjection uint8
@@ -16,11 +15,6 @@ const (
 	apiProjectionPublic apiProjection = 1 << iota
 	apiProjectionInternal
 )
-
-var publicServicePeers = []string{
-	workloadauth.ServiceSourceCodeHosting,
-	workloadauth.ServiceSandboxRental,
-}
 
 type projectOperation interface {
 	id() string
@@ -32,7 +26,6 @@ type projectOperationDef[I, O any] struct {
 	op                 huma.Operation
 	policy             projectsOperationPolicy
 	enabledProjections apiProjection
-	serviceMirrorPeers []string
 	handler            func(*projects.Service, string) func(context.Context, projects.Principal, *I) (*O, error)
 }
 
@@ -46,10 +39,6 @@ func (o projectOperationDef[I, O]) projections() apiProjection {
 
 func (o projectOperationDef[I, O]) register(api huma.API, svc *projects.Service, projection apiProjection, authorizer runtimeiam.OperationAuthorizer, installationID string) {
 	policy := o.policy
-	if projection == apiProjectionInternal && !policy.Service {
-		policy.Service = true
-		policy.ServicePeers = append([]string(nil), o.serviceMirrorPeers...)
-	}
 	registerProjectsRoute(api, authorizer, o.op, policy, o.handler(svc, installationID))
 }
 
@@ -70,8 +59,7 @@ func publicProjectOperation[I, O any](
 	return projectOperationDef[I, O]{
 		op:                 op,
 		policy:             policy,
-		enabledProjections: apiProjectionPublic | apiProjectionInternal,
-		serviceMirrorPeers: publicServicePeers,
+		enabledProjections: apiProjectionPublic,
 		handler:            handler,
 	}
 }

@@ -20,16 +20,6 @@ func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects
 	return api
 }
 
-func InternalOpenAPIYAML(version, serverURL string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{}, "inst_openapi")
-	return api.OpenAPI().YAML()
-}
-
-func InternalOpenAPIDowngradeYAML(version, serverURL string) ([]byte, error) {
-	api := NewInternalAPI(http.NewServeMux(), version, serverURL, &projects.Service{}, "inst_openapi")
-	return api.OpenAPI().DowngradeYAML()
-}
-
 func applyInternalSecurityScheme(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {

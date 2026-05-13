@@ -2,62 +2,32 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/projects-service/internal/internalcontractapi"
 	"github.com/verself/projects-service/internal/projects"
-	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type resolveProjectInput struct {
-	Body dto.ResolveProjectRequest
-}
+type (
+	resolveProjectInput     = internalcontractapi.ResolveProjectInput
+	resolveEnvironmentInput = internalcontractapi.ResolveProjectEnvironmentInput
+	projectEventsInput      = internalcontractapi.ListProjectEventsServiceInput
+)
 
-type resolveEnvironmentInput struct {
-	Body dto.ResolveProjectEnvironmentRequest
-}
-
-type projectEventsInput struct {
-	OrgID  dto.OrgID `query:"org_id" required:"true"`
-	Cursor string    `query:"cursor,omitempty" maxLength:"256"`
-	Limit  int       `query:"limit,omitempty" minimum:"1" maximum:"100"`
-}
-
-type resolveProjectOutput struct {
-	Body dto.ResolveProjectResponse
-}
-
-type resolveEnvironmentOutput struct {
-	Body dto.ResolveProjectEnvironmentResponse
-}
-
-type projectEventsOutput struct {
-	Body dto.ProjectEventList
-}
+type (
+	resolveProjectOutput     = internalcontractapi.ResolveProjectOutput
+	resolveEnvironmentOutput = internalcontractapi.ResolveProjectEnvironmentOutput
+	projectEventsOutput      = internalcontractapi.ListProjectEventsServiceOutput
+)
 
 func resolveProjectOperation() projectOperation {
-	return serviceOnlyProjectOperation[resolveProjectInput, resolveProjectOutput](huma.Operation{
-		OperationID:   "resolve-project",
-		Method:        http.MethodPost,
-		Path:          "/service/v1/projects/resolve",
-		Summary:       "Resolve a project for a repo-owned service",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectResolve,
-			Resource:       "project",
-			Action:         runtimeiam.ActionResolve,
-			OrgScope:       orgScopeRequestOrgID,
-			RateLimitClass: "service_read",
-			AuditEvent:     "projects.project.resolve",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-		Service: true,
+	return serviceOnlyProjectOperation[resolveProjectInput, resolveProjectOutput](internalProjectContract(internalcontractapi.ResolveProject.Descriptor, "Resolve a project for a repo-owned service"), projectsOperationPolicy{
+		OperationPolicy: operationPolicyFromInternalContract(internalcontractapi.ResolveProject.Descriptor),
+		Service:         true,
 		ServicePeers: []string{
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
@@ -66,23 +36,9 @@ func resolveProjectOperation() projectOperation {
 }
 
 func resolveProjectEnvironmentOperation() projectOperation {
-	return serviceOnlyProjectOperation[resolveEnvironmentInput, resolveEnvironmentOutput](huma.Operation{
-		OperationID:   "resolve-project-environment",
-		Method:        http.MethodPost,
-		Path:          "/service/v1/project-environments/resolve",
-		Summary:       "Resolve a project environment for a repo-owned service",
-		DefaultStatus: http.StatusOK,
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectResolve,
-			Resource:       "project_environment",
-			Action:         runtimeiam.ActionResolve,
-			OrgScope:       orgScopeRequestOrgID,
-			RateLimitClass: "service_read",
-			AuditEvent:     "projects.environment.resolve",
-			BodyLimitBytes: bodyLimitSmallJSON,
-		},
-		Service: true,
+	return serviceOnlyProjectOperation[resolveEnvironmentInput, resolveEnvironmentOutput](internalProjectContract(internalcontractapi.ResolveProjectEnvironment.Descriptor, "Resolve a project environment for a repo-owned service"), projectsOperationPolicy{
+		OperationPolicy: operationPolicyFromInternalContract(internalcontractapi.ResolveProjectEnvironment.Descriptor),
+		Service:         true,
 		ServicePeers: []string{
 			workloadauth.ServiceSourceCodeHosting,
 			workloadauth.ServiceSandboxRental,
@@ -91,23 +47,23 @@ func resolveProjectEnvironmentOperation() projectOperation {
 }
 
 func listProjectEventsOperation() projectOperation {
-	return serviceOnlyProjectOperation[projectEventsInput, projectEventsOutput](huma.Operation{
-		OperationID: "list-project-events-service",
-		Method:      http.MethodGet,
-		Path:        "/service/v1/project-events",
-		Summary:     "List project domain events",
-	}, projectsOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProjectEventRead,
-			Resource:       "project_event",
-			Action:         runtimeiam.ActionList,
-			OrgScope:       orgScopeRequestOrgID,
-			RateLimitClass: "service_read",
-			AuditEvent:     "projects.event.list",
-		},
-		Service:      true,
-		ServicePeers: []string{workloadauth.ServiceGovernance},
+	return serviceOnlyProjectOperation[projectEventsInput, projectEventsOutput](internalProjectContract(internalcontractapi.ListProjectEventsService.Descriptor, "List project domain events"), projectsOperationPolicy{
+		OperationPolicy: operationPolicyFromInternalContract(internalcontractapi.ListProjectEventsService.Descriptor),
+		Service:         true,
+		ServicePeers:    []string{workloadauth.ServiceGovernance},
 	}, listEvents)
+}
+
+func internalProjectContract(desc internalcontractapi.OperationDescriptor, summary string) huma.Operation {
+	return huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+		Errors:        internalContractProblemStatuses(desc.Problems),
+		Extensions:    map[string]any{"x-verself-contract": internalContractExtension(desc)},
+	}
 }
 
 func resolveProject(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *resolveProjectInput) (*resolveProjectOutput, error) {
@@ -116,16 +72,20 @@ func resolveProject(svc *projects.Service, installationID string) func(context.C
 		if err != nil {
 			return nil, err
 		}
+		orgID, err := uint64FromContract(ctx, string(input.Body.OrgID), "org_id")
+		if err != nil {
+			return nil, err
+		}
 		project, err := svc.ResolveProject(ctx, projects.ResolveProjectRequest{
-			OrgID:         input.Body.OrgID.Uint64(),
+			OrgID:         orgID,
 			ProjectID:     projectID,
-			Slug:          input.Body.Slug,
+			Slug:          stringFromContractPtr(input.Body.Slug),
 			RequireActive: input.Body.RequireActive,
 		})
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &resolveProjectOutput{Body: dto.ResolveProjectResponse{Project: projectDTO(project, installationID)}}, nil
+		return &resolveProjectOutput{Body: internalcontractapi.ResolveProjectOutputBody{Project: internalProjectDTO(project, installationID)}}, nil
 	}
 }
 
@@ -139,61 +99,124 @@ func resolveEnvironment(svc *projects.Service, installationID string) func(conte
 		if err != nil {
 			return nil, err
 		}
+		orgID, err := uint64FromContract(ctx, string(input.Body.OrgID), "org_id")
+		if err != nil {
+			return nil, err
+		}
 		env, err := svc.ResolveEnvironment(ctx, projects.ResolveEnvironmentRequest{
-			OrgID:         input.Body.OrgID.Uint64(),
+			OrgID:         orgID,
 			ProjectID:     projectID,
 			EnvironmentID: environmentID,
-			Slug:          input.Body.Slug,
+			Slug:          stringFromContractPtr(input.Body.Slug),
 			RequireActive: input.Body.RequireActive,
 		})
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &resolveEnvironmentOutput{Body: dto.ResolveProjectEnvironmentResponse{Environment: environmentDTO(env, installationID)}}, nil
+		return &resolveEnvironmentOutput{Body: internalcontractapi.ResolveProjectEnvironmentOutputBody{Environment: internalEnvironmentDTO(env, installationID)}}, nil
 	}
 }
 
 func listEvents(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *projectEventsInput) (*projectEventsOutput, error) {
 	return func(ctx context.Context, _ projects.Principal, input *projectEventsInput) (*projectEventsOutput, error) {
-		events, nextCursor, err := svc.ListEvents(ctx, input.OrgID.Uint64(), input.Cursor, input.Limit)
+		orgID, err := uint64FromContract(ctx, string(input.OrgID), "org_id")
+		if err != nil {
+			return nil, err
+		}
+		events, nextCursor, err := svc.ListEvents(ctx, orgID, string(input.Cursor), int(input.Limit))
 		if err != nil {
 			return nil, projectsError(ctx, err)
 		}
-		return &projectEventsOutput{Body: dto.ProjectEventList{Events: eventDTOs(events, installationID), NextCursor: nextCursor}}, nil
+		return &projectEventsOutput{Body: internalcontractapi.ListProjectEventsServiceOutputBody{Events: eventDTOs(events, installationID), NextCursor: optionalContractString[internalcontractapi.PageToken](nextCursor)}}, nil
 	}
 }
 
-func optionalUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
-	if value == "" {
+func optionalUUID[T ~string](ctx context.Context, value *T, field string) (uuid.UUID, error) {
+	if value == nil || string(*value) == "" {
 		return uuid.Nil, nil
 	}
-	return parseUUID(ctx, value, field)
+	return parseUUID(ctx, *value, field)
 }
 
-func eventDTO(event projects.Event, installationID string) dto.ProjectEvent {
-	environmentID := ""
-	environmentResourceName := dto.ResourceName("")
+func uint64FromContract(ctx context.Context, value, field string) (uint64, error) {
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || parsed == 0 {
+		return 0, badRequest(ctx, "invalid-"+field, field+" must be a positive decimal uint64", err)
+	}
+	return parsed, nil
+}
+
+func internalProjectDTO(project projects.Project, installationID string) internalcontractapi.ProjectSummary {
+	orgID := strconv.FormatUint(project.OrgID, 10)
+	projectID := project.ID.String()
+	return internalcontractapi.ProjectSummary{
+		ProjectID:          internalcontractapi.ProjectID(projectID),
+		ResourceName:       internalcontractapi.ResourceName(projectResourceName(installationID, orgID, projectID)),
+		OrgID:              internalcontractapi.OrgID(orgID),
+		Slug:               internalcontractapi.ProjectSlug(project.Slug),
+		RedirectedFromSlug: optionalContractString[internalcontractapi.ProjectSlug](project.RedirectedFromSlug),
+		DisplayName:        internalcontractapi.DisplayName(project.DisplayName),
+		Description:        optionalContractString[internalcontractapi.ProjectDescription](project.Description),
+		State:              internalcontractapi.ProjectState(project.State),
+		Version:            internalcontractapi.DecimalInt64(strconv.FormatInt(project.Version, 10)),
+		CreatedBy:          internalcontractapi.ActorID(project.CreatedBy),
+		UpdatedBy:          internalcontractapi.ActorID(project.UpdatedBy),
+		CreatedAt:          formatContractTime(project.CreatedAt),
+		UpdatedAt:          formatContractTime(project.UpdatedAt),
+		ArchivedAt:         optionalContractTime(project.ArchivedAt),
+	}
+}
+
+func internalEnvironmentDTO(env projects.Environment, installationID string) internalcontractapi.ProjectEnvironmentSummary {
+	orgID := strconv.FormatUint(env.OrgID, 10)
+	projectID := env.ProjectID.String()
+	return internalcontractapi.ProjectEnvironmentSummary{
+		EnvironmentID:       internalcontractapi.EnvironmentID(env.ID.String()),
+		ResourceName:        internalcontractapi.ResourceName(environmentResourceName(installationID, orgID, projectID, env.ID.String())),
+		ProjectID:           internalcontractapi.ProjectID(projectID),
+		ProjectResourceName: internalcontractapi.ResourceName(projectResourceName(installationID, orgID, projectID)),
+		OrgID:               internalcontractapi.OrgID(orgID),
+		Slug:                internalcontractapi.ProjectSlug(env.Slug),
+		DisplayName:         internalcontractapi.DisplayName(env.DisplayName),
+		Kind:                internalcontractapi.ProjectEnvironmentKind(env.Kind),
+		State:               internalcontractapi.ProjectEnvironmentState(env.State),
+		ProtectionPolicy:    optionalContractMap[internalcontractapi.ProjectProtectionPolicy](env.ProtectionPolicy),
+		Version:             internalcontractapi.DecimalInt64(strconv.FormatInt(env.Version, 10)),
+		CreatedBy:           internalcontractapi.ActorID(env.CreatedBy),
+		UpdatedBy:           internalcontractapi.ActorID(env.UpdatedBy),
+		CreatedAt:           formatContractTime(env.CreatedAt),
+		UpdatedAt:           formatContractTime(env.UpdatedAt),
+		ArchivedAt:          optionalContractTime(env.ArchivedAt),
+	}
+}
+
+func eventDTO(event projects.Event, installationID string) internalcontractapi.ProjectEventSummary {
+	var environmentID *internalcontractapi.EnvironmentID
+	var envResourceName *internalcontractapi.ResourceName
 	if event.EnvironmentID != uuid.Nil {
-		environmentID = event.EnvironmentID.String()
-		environmentResourceName = dto.ResourceNameEnvironment(installationID, strconv.FormatUint(event.OrgID, 10), event.ProjectID.String(), environmentID)
+		environmentID = optionalContractString[internalcontractapi.EnvironmentID](event.EnvironmentID.String())
+		orgID := strconv.FormatUint(event.OrgID, 10)
+		envResourceName = optionalContractString[internalcontractapi.ResourceName](environmentResourceName(installationID, orgID, event.ProjectID.String(), event.EnvironmentID.String()))
 	}
-	return dto.ProjectEvent{
-		EventID:                 event.ID.String(),
-		OrgID:                   dto.Uint64(event.OrgID),
-		ProjectID:               event.ProjectID.String(),
-		ProjectResourceName:     dto.ResourceNameProject(installationID, strconv.FormatUint(event.OrgID, 10), event.ProjectID.String()),
+	orgID := strconv.FormatUint(event.OrgID, 10)
+	projectID := event.ProjectID.String()
+	return internalcontractapi.ProjectEventSummary{
+		EventID:                 internalcontractapi.ProjectEventID(event.ID.String()),
+		OrgID:                   internalcontractapi.OrgID(orgID),
+		ProjectID:               internalcontractapi.ProjectID(projectID),
+		ProjectResourceName:     internalcontractapi.ResourceName(projectResourceName(installationID, orgID, projectID)),
 		EnvironmentID:           environmentID,
-		EnvironmentResourceName: environmentResourceName,
-		EventType:               event.EventType,
-		ActorID:                 event.ActorID,
-		Payload:                 event.Payload,
-		TraceID:                 event.TraceID,
-		CreatedAt:               event.CreatedAt,
+		EnvironmentResourceName: envResourceName,
+		EventType:               internalcontractapi.EventType(event.EventType),
+		ActorID:                 internalcontractapi.ActorID(event.ActorID),
+		Payload:                 optionalContractMap[internalcontractapi.ProjectEventPayload](event.Payload),
+		TraceID:                 optionalContractString[internalcontractapi.TraceID](event.TraceID),
+		CreatedAt:               formatContractTime(event.CreatedAt),
 	}
 }
 
-func eventDTOs(records []projects.Event, installationID string) []dto.ProjectEvent {
-	out := make([]dto.ProjectEvent, 0, len(records))
+func eventDTOs(records []projects.Event, installationID string) internalcontractapi.ProjectEvents {
+	out := make(internalcontractapi.ProjectEvents, 0, len(records))
 	for _, record := range records {
 		out = append(out, eventDTO(record, installationID))
 	}

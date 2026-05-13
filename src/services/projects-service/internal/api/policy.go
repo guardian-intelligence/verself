@@ -18,16 +18,7 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type permission = runtimeiam.Permission
-
 const (
-	permissionProjectRead      permission = "projects:project:read"
-	permissionProjectWrite     permission = "projects:project:write"
-	permissionEnvironmentRead  permission = "projects:environment:read"
-	permissionEnvironmentWrite permission = "projects:environment:write"
-	permissionProjectEventRead permission = "projects:event:read"
-	permissionProjectResolve   permission = "projects:resolve"
-
 	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	orgScopeTokenOrgID      = runtimeiam.OrgScopeTokenOrgID
 	orgScopeRequestOrgID    = runtimeiam.OrgScopeRequestOrgID

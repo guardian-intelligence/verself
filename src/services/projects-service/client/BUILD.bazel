@@ -1,16 +1,27 @@
-load("//src/tools/build:openapi_codegen.bzl", "verself_oapi_go_client")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_go")
 
-verself_oapi_go_client(
-    name = "client",
-    importpath = "github.com/verself/projects-service/client",
+ir_sdk_go(
+    name = "internal_transport_go",
+    out = "__generated_sources/client.gen.go",
+    ir = "//src/smithy/models/verself:projects_internal_ir",
     package = "projectsclient",
-    response_type_suffix = "HTTPResponse",
-    spec = "//src/services/projects-service/openapi:internal-openapi-3.0.yaml",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "client.gen.go": ":internal_transport_go",
+    },
+    tags = ["manual"],
+)
+
+go_library(
+    name = "client",
+    srcs = ["client.gen.go"],
+    importpath = "github.com/verself/projects-service/client",
     visibility = ["//src/services:__subpackages__"],
-    deps = [
-        "@com_github_oapi_codegen_runtime//:runtime",
-        "@com_github_oapi_codegen_runtime//types",
-    ],
 )
 
 alias(

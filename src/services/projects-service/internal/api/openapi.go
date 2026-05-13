@@ -43,16 +43,6 @@ func serverURL(addr string) string {
 	return "http://" + addr
 }
 
-func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr})
-	return api.OpenAPI().YAML()
-}
-
-func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: version, ListenAddr: listenAddr})
-	return api.OpenAPI().DowngradeYAML()
-}
-
 func applyPublicSecurityScheme(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {

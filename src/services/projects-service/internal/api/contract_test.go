@@ -2,67 +2,86 @@ package api
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/verself/projects-service/internal/contractapi"
+	"github.com/verself/projects-service/internal/internalcontractapi"
 	"github.com/verself/projects-service/internal/projects"
 )
 
-func TestProjectsInternalProjectionContainsPublicOperations(t *testing.T) {
+func TestProjectsPublicProjectionMatchesGeneratedDescriptors(t *testing.T) {
 	publicAPI := NewAPI(http.NewServeMux(), Config{Version: "1.0.0", ListenAddr: "127.0.0.1:0", Service: &projects.Service{}})
-	internalAPI := NewInternalAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{}, "inst_test")
-
 	publicSpec := publicAPI.OpenAPI()
-	internalSpec := internalAPI.OpenAPI()
 
 	assertOnlySecuritySchemes(t, publicSpec.Components.SecuritySchemes, "bearerAuth")
-	assertOnlySecuritySchemes(t, internalSpec.Components.SecuritySchemes, "mutualTLS")
 
-	var checked int
-	for path, publicPath := range publicSpec.Paths {
-		if !strings.HasPrefix(path, "/api/") {
-			continue
+	expected := []contractapi.OperationDescriptor{
+		contractapi.CreateProject.Descriptor,
+		contractapi.ListProjects.Descriptor,
+		contractapi.GetProject.Descriptor,
+		contractapi.PatchProject.Descriptor,
+		contractapi.ArchiveProject.Descriptor,
+		contractapi.RestoreProject.Descriptor,
+		contractapi.ListProjectEnvironments.Descriptor,
+		contractapi.CreateProjectEnvironment.Descriptor,
+		contractapi.PatchProjectEnvironment.Descriptor,
+		contractapi.ArchiveProjectEnvironment.Descriptor,
+	}
+	if operationCount(publicSpec) != len(expected) {
+		t.Fatalf("public Projects operation count drift: got %d want %d", operationCount(publicSpec), len(expected))
+	}
+	for _, desc := range expected {
+		op := requireOperation(t, publicSpec, desc.Path, desc.Method)
+		if op.OperationID != desc.OperationID {
+			t.Fatalf("%s %s operation ID drift: got %s want %s", desc.Method, desc.Path, op.OperationID, desc.OperationID)
 		}
-		internalPath := internalSpec.Paths[path]
-		if internalPath == nil {
-			t.Fatalf("internal OpenAPI projection is missing public path %s", path)
+		if op.DefaultStatus != desc.DefaultStatus {
+			t.Fatalf("%s %s status drift: got %d want %d", desc.Method, desc.Path, op.DefaultStatus, desc.DefaultStatus)
 		}
-		for _, publicOp := range operationsForPath(publicPath) {
-			if publicOp == nil {
-				continue
-			}
-			checked++
-			internalOp := operationByMethod(internalPath, publicOp.Method)
-			if internalOp == nil {
-				t.Fatalf("internal OpenAPI projection is missing %s %s", publicOp.Method, path)
-			}
-			if internalOp.OperationID != publicOp.OperationID {
-				t.Fatalf("%s %s operation ID drift: public=%s internal=%s", publicOp.Method, path, publicOp.OperationID, internalOp.OperationID)
-			}
-			assertOnlySecurity(t, publicOp, path, "bearerAuth")
-			assertOnlySecurity(t, internalOp, path, "mutualTLS")
-			for _, header := range []string{originOrgIDHeader, originSubjectHeader, originEmailHeader} {
-				if operationHasParameter(publicOp, "header", header) {
-					t.Fatalf("%s %s public projection must not expose %s", publicOp.Method, path, header)
-				}
-			}
-			if _, ok := publicOp.Extensions["x-verself-origin"]; ok {
-				t.Fatalf("%s %s public projection must not expose x-verself-origin extension", publicOp.Method, path)
-			}
-			for _, header := range []string{originOrgIDHeader, originSubjectHeader} {
-				if !operationHasRequiredParameter(internalOp, "header", header) {
-					t.Fatalf("%s %s internal projection must require %s", publicOp.Method, path, header)
-				}
-			}
-			if _, ok := internalOp.Extensions["x-verself-origin"].(map[string]any); !ok {
-				t.Fatalf("%s %s internal projection missing x-verself-origin extension", publicOp.Method, path)
-			}
+		assertOnlySecurity(t, op, desc.Path, "bearerAuth")
+		if _, ok := op.Extensions["x-verself-contract"].(map[string]any); !ok {
+			t.Fatalf("%s %s missing x-verself-contract extension", desc.Method, desc.Path)
+		}
+		if _, ok := op.Extensions["x-verself-iam"].(map[string]any); !ok {
+			t.Fatalf("%s %s missing x-verself-iam extension", desc.Method, desc.Path)
+		}
+		if desc.Idempotency.Header != "" && !operationHasRequiredParameter(op, "header", desc.Idempotency.Header) {
+			t.Fatalf("%s %s missing required idempotency header", desc.Method, desc.Path)
 		}
 	}
-	if checked == 0 {
-		t.Fatal("checked no public Projects operations")
+}
+
+func TestProjectsInternalProjectionMatchesGeneratedDescriptors(t *testing.T) {
+	internalAPI := NewInternalAPI(http.NewServeMux(), "1.0.0", "https://127.0.0.1:4265", &projects.Service{}, "inst_test")
+	internalSpec := internalAPI.OpenAPI()
+
+	assertOnlySecuritySchemes(t, internalSpec.Components.SecuritySchemes, "mutualTLS")
+
+	expected := []internalcontractapi.OperationDescriptor{
+		internalcontractapi.ResolveProject.Descriptor,
+		internalcontractapi.ResolveProjectEnvironment.Descriptor,
+		internalcontractapi.ListProjectEventsService.Descriptor,
+	}
+	if operationCount(internalSpec) != len(expected) {
+		t.Fatalf("internal Projects operation count drift: got %d want %d", operationCount(internalSpec), len(expected))
+	}
+	for _, desc := range expected {
+		op := requireOperation(t, internalSpec, desc.Path, desc.Method)
+		if op.OperationID != desc.OperationID {
+			t.Fatalf("%s %s operation ID drift: got %s want %s", desc.Method, desc.Path, op.OperationID, desc.OperationID)
+		}
+		if op.DefaultStatus != desc.DefaultStatus {
+			t.Fatalf("%s %s status drift: got %d want %d", desc.Method, desc.Path, op.DefaultStatus, desc.DefaultStatus)
+		}
+		assertOnlySecurity(t, op, desc.Path, "mutualTLS")
+		if _, ok := op.Extensions["x-verself-contract"].(map[string]any); !ok {
+			t.Fatalf("%s %s missing x-verself-contract extension", desc.Method, desc.Path)
+		}
+		if _, ok := op.Extensions["x-verself-iam"].(map[string]any); !ok {
+			t.Fatalf("%s %s missing x-verself-iam extension", desc.Method, desc.Path)
+		}
 	}
 }
 
@@ -80,6 +99,31 @@ func TestProjectsOperationCatalogHasCompletePolicy(t *testing.T) {
 	if len(seen) != 13 {
 		t.Fatalf("unexpected Projects operation count: got %d", len(seen))
 	}
+}
+
+func operationCount(spec *huma.OpenAPI) int {
+	var count int
+	for _, pathItem := range spec.Paths {
+		for _, op := range operationsForPath(pathItem) {
+			if op != nil {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func requireOperation(t *testing.T, spec *huma.OpenAPI, path, method string) *huma.Operation {
+	t.Helper()
+	pathItem := spec.Paths[path]
+	if pathItem == nil {
+		t.Fatalf("OpenAPI projection is missing path %s", path)
+	}
+	op := operationByMethod(pathItem, method)
+	if op == nil {
+		t.Fatalf("OpenAPI projection is missing %s %s", method, path)
+	}
+	return op
 }
 
 func operationsForPath(pathItem *huma.PathItem) []*huma.Operation {
@@ -127,15 +171,6 @@ func assertOnlySecuritySchemes(t *testing.T, schemes map[string]*huma.SecuritySc
 func operationHasRequiredParameter(op *huma.Operation, in, name string) bool {
 	for _, param := range op.Parameters {
 		if param != nil && param.In == in && param.Name == name && param.Required {
-			return true
-		}
-	}
-	return false
-}
-
-func operationHasParameter(op *huma.Operation, in, name string) bool {
-	for _, param := range op.Parameters {
-		if param != nil && param.In == in && param.Name == name {
 			return true
 		}
 	}

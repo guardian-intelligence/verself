@@ -211,7 +211,7 @@ func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 func requestMayHaveBody(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/service/")
+		return strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/internal/")
 	default:
 		return false
 	}

@@ -109,7 +109,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	projectsEditor := projectsRequestEditor(token, options.Traceparent)
-	generatedProjects, err := projectscore.NewClientWithResponses(
+	generatedProjects, err := projectscore.NewClient(
 		projectsURL,
 		projectscore.WithHTTPClient(httpClient),
 		projectscore.WithRequestEditorFn(projectsEditor),
