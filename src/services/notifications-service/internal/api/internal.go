@@ -9,17 +9,12 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/verself/domain-transfer-objects"
+
+	"github.com/verself/notifications-service/internal/internalcontractapi"
 	"github.com/verself/notifications-service/internal/notifications"
 	workloadauth "github.com/verself/service-runtime/workload"
-)
-
-const (
-	bodyLimitWorkflowJSON       = 64 << 10
-	bodyLimitGrafanaWebhookJSON = 256 << 10
 )
 
 type InternalConfig struct {
@@ -28,71 +23,30 @@ type InternalConfig struct {
 	PlatformAlertEmail string
 }
 
-type triggerWorkflowInput struct {
-	WorkflowKey    string `path:"workflow_key" maxLength:"128"`
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           dto.NotificationWorkflowTriggerRequest
-}
-
-type triggerWorkflowOutput struct {
-	Body dto.NotificationWorkflowTriggerResponse
-}
-
-type grafanaWebhookInput struct {
-	Body grafanaWebhookPayload
-}
-
-type grafanaWebhookPayload struct {
-	Receiver          string            `json:"receiver,omitempty"`
-	Status            string            `json:"status,omitempty"`
-	OrgID             string            `json:"orgId,omitempty"`
-	GroupKey          string            `json:"groupKey,omitempty"`
-	ExternalURL       string            `json:"externalURL,omitempty"`
-	Title             string            `json:"title,omitempty"`
-	Message           string            `json:"message,omitempty"`
-	CommonLabels      map[string]string `json:"commonLabels,omitempty"`
-	CommonAnnotations map[string]string `json:"commonAnnotations,omitempty"`
-	Alerts            []grafanaAlert    `json:"alerts,omitempty"`
-}
-
-type grafanaAlert struct {
-	Status       string            `json:"status,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Annotations  map[string]string `json:"annotations,omitempty"`
-	StartsAt     time.Time         `json:"startsAt,omitempty"`
-	EndsAt       time.Time         `json:"endsAt,omitempty"`
-	GeneratorURL string            `json:"generatorURL,omitempty"`
-	DashboardURL string            `json:"dashboardURL,omitempty"`
-	PanelURL     string            `json:"panelURL,omitempty"`
-	SilenceURL   string            `json:"silenceURL,omitempty"`
-	Fingerprint  string            `json:"fingerprint,omitempty"`
-}
-
 func RegisterInternalRoutes(api huma.API, cfg InternalConfig) {
-	huma.Register(api, huma.Operation{
-		OperationID:   "trigger-notification-workflow",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/workflows/{workflow_key}/trigger",
-		Summary:       "Trigger a notification workflow",
-		DefaultStatus: http.StatusAccepted,
-		MaxBodyBytes:  bodyLimitWorkflowJSON,
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-	}, triggerWorkflow(cfg.Service))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "receive-grafana-alert-webhook",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/integrations/grafana/alerts",
-		Summary:       "Receive a Grafana alert webhook",
-		DefaultStatus: http.StatusAccepted,
-		MaxBodyBytes:  bodyLimitGrafanaWebhookJSON,
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-	}, grafanaAlertWebhook(cfg))
+	op := internalNotificationContract(internalcontractapi.TriggerNotificationWorkflow.Descriptor, "Trigger a notification workflow")
+	huma.Register(api, op, triggerWorkflow(cfg.Service))
+	op = internalNotificationContract(internalcontractapi.ReceiveGrafanaAlertWebhook.Descriptor, "Receive a Grafana alert webhook")
+	huma.Register(api, op, grafanaAlertWebhook(cfg))
 }
 
-func triggerWorkflow(svc *notifications.Service) func(context.Context, *triggerWorkflowInput) (*triggerWorkflowOutput, error) {
-	return func(ctx context.Context, input *triggerWorkflowInput) (*triggerWorkflowOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func internalNotificationContract(desc internalcontractapi.OperationDescriptor, summary string) huma.Operation {
+	return huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+		MaxBodyBytes:  desc.RequestBodyMaxBytes,
+		Errors:        internalContractProblemStatuses(desc.Problems),
+		Security:      []map[string][]string{{"mutualTLS": {}}},
+		Extensions:    map[string]any{"x-verself-contract": internalContractExtension(desc), "x-verself-iam": operationPolicyFromInternalContract(desc).OpenAPIExtension()},
+	}
+}
+
+func triggerWorkflow(svc *notifications.Service) func(context.Context, *internalcontractapi.TriggerNotificationWorkflowInput) (*internalcontractapi.NotificationWorkflowTriggerOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.TriggerNotificationWorkflowInput) (*internalcontractapi.NotificationWorkflowTriggerOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
@@ -102,51 +56,53 @@ func triggerWorkflow(svc *notifications.Service) func(context.Context, *triggerW
 		recipients := make([]notifications.WorkflowRecipient, 0, len(input.Body.Recipients))
 		for _, recipient := range input.Body.Recipients {
 			recipients = append(recipients, notifications.WorkflowRecipient{
-				SubjectID: recipient.SubjectID,
-				Email:     recipient.Email,
+				SubjectID: contractString(recipient.SubjectID),
+				Email:     contractString(recipient.Email),
 			})
 		}
+		data, err := contractDocument(input.Body.Data)
+		if err != nil {
+			return nil, badRequest(ctx, "workflow-data-invalid", "workflow data is invalid", err)
+		}
+		targetResourceName := contractString(input.Body.TargetResourceName)
 		result, err := svc.TriggerWorkflow(ctx, notifications.WorkflowTriggerRequest{
-			WorkflowKey:    input.WorkflowKey,
-			OrgID:          input.Body.OrgID,
+			WorkflowKey:    string(input.WorkflowKey),
+			OrgID:          string(input.Body.OrgID),
 			TriggeredBy:    peerID.String(),
-			IdempotencyKey: input.IdempotencyKey,
+			IdempotencyKey: string(input.IdempotencyKey),
 			Recipients:     recipients,
-			Title:          input.Body.Title,
-			Body:           input.Body.Body,
-			ActionURL:      input.Body.ActionURL,
-			Priority:       input.Body.Priority,
-			ResourceKind:   notificationResourceKind(input.Body.TargetResourceName),
-			ResourceID:     input.Body.TargetResourceName.String(),
-			Data:           input.Body.Data,
-			Traceparent:    input.Body.Traceparent,
+			Title:          contractString(input.Body.Title),
+			Body:           string(input.Body.Body),
+			ActionURL:      contractString(input.Body.ActionURL),
+			Priority:       contractString(input.Body.Priority),
+			ResourceKind:   notificationResourceKind(targetResourceName),
+			ResourceID:     targetResourceName,
+			Data:           data,
+			Traceparent:    contractString(input.Body.Traceparent),
 		})
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &triggerWorkflowOutput{Body: dto.NotificationWorkflowTriggerResponse{
-			WorkflowRunID:            result.WorkflowRunID.String(),
-			WorkflowKey:              result.WorkflowKey,
-			OrgID:                    result.OrgID,
-			AcceptedAt:               result.AcceptedAt,
-			RecipientCount:           result.RecipientCount,
-			WebNotificationsAccepted: result.WebNotificationsAccepted,
-			EmailDeliveriesQueued:    result.EmailDeliveriesQueued,
-			SuppressedCount:          result.SuppressedCount,
-			Traceparent:              result.Traceparent,
-		}}, nil
+		return workflowTriggerOutput(result), nil
 	}
 }
 
-func notificationResourceKind(name dto.ResourceName) string {
-	if strings.TrimSpace(name.String()) == "" {
+func contractDocument(value *map[string]any) (json.RawMessage, error) {
+	if value == nil {
+		return nil, nil
+	}
+	return json.Marshal(*value)
+}
+
+func notificationResourceKind(name string) string {
+	if strings.TrimSpace(name) == "" {
 		return ""
 	}
 	return "resource_name"
 }
 
-func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *grafanaWebhookInput) (*triggerWorkflowOutput, error) {
-	return func(ctx context.Context, input *grafanaWebhookInput) (*triggerWorkflowOutput, error) {
+func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *internalcontractapi.ReceiveGrafanaAlertWebhookInput) (*internalcontractapi.NotificationWorkflowTriggerOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.ReceiveGrafanaAlertWebhookInput) (*internalcontractapi.NotificationWorkflowTriggerOutput, error) {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
 			return nil, unauthorized(ctx)
@@ -157,7 +113,7 @@ func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *grafanaWebho
 			return nil, problem(ctx, http.StatusInternalServerError, "grafana-alert-recipient-not-configured", "Grafana alert recipient is not configured", nil)
 		}
 		payload := input.Body
-		status := strings.ToLower(strings.TrimSpace(payload.Status))
+		status := strings.ToLower(strings.TrimSpace(contractString(payload.Status)))
 		switch status {
 		case "resolved":
 		case "firing", "":
@@ -189,27 +145,32 @@ func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *grafanaWebho
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &triggerWorkflowOutput{Body: dto.NotificationWorkflowTriggerResponse{
-			WorkflowRunID:            result.WorkflowRunID.String(),
-			WorkflowKey:              result.WorkflowKey,
-			OrgID:                    result.OrgID,
-			AcceptedAt:               result.AcceptedAt,
-			RecipientCount:           result.RecipientCount,
-			WebNotificationsAccepted: result.WebNotificationsAccepted,
-			EmailDeliveriesQueued:    result.EmailDeliveriesQueued,
-			SuppressedCount:          result.SuppressedCount,
-			Traceparent:              result.Traceparent,
-		}}, nil
+		return workflowTriggerOutput(result), nil
 	}
 }
 
-func grafanaTitle(payload grafanaWebhookPayload, status string) string {
-	if title := strings.TrimSpace(payload.Title); title != "" {
+func workflowTriggerOutput(result notifications.WorkflowTriggerResult) *internalcontractapi.NotificationWorkflowTriggerOutput {
+	return &internalcontractapi.NotificationWorkflowTriggerOutput{Body: internalcontractapi.NotificationWorkflowTriggerResult{
+		WorkflowRunID:            internalcontractapi.WorkflowRunID(result.WorkflowRunID.String()),
+		WorkflowKey:              internalcontractapi.WorkflowKey(result.WorkflowKey),
+		OrgID:                    internalcontractapi.OrgID(result.OrgID),
+		AcceptedAt:               formatContractTime(result.AcceptedAt),
+		RecipientCount:           internalcontractapi.NotificationSmallCount(result.RecipientCount),
+		WebNotificationsAccepted: internalcontractapi.NotificationSmallCount(result.WebNotificationsAccepted),
+		EmailDeliveriesQueued:    internalcontractapi.NotificationSmallCount(result.EmailDeliveriesQueued),
+		SuppressedCount:          internalcontractapi.NotificationSmallCount(result.SuppressedCount),
+		Traceparent:              optionalContractString[internalcontractapi.TraceParent](result.Traceparent),
+	}}
+}
+
+func grafanaTitle(payload internalcontractapi.GrafanaWebhookPayload, status string) string {
+	if title := strings.TrimSpace(contractString(payload.Title)); title != "" {
 		return title
 	}
-	alertname := firstMapValue(payload.CommonLabels, "alertname", "rule", "name")
-	if alertname == "" && len(payload.Alerts) > 0 {
-		alertname = firstMapValue(payload.Alerts[0].Labels, "alertname", "rule", "name")
+	alertname := firstMapValue(grafanaLabelMap(payload.CommonLabels), "alertname", "rule", "name")
+	alerts := grafanaAlerts(payload)
+	if alertname == "" && len(alerts) > 0 {
+		alertname = firstMapValue(grafanaLabelMap(alerts[0].Labels), "alertname", "rule", "name")
 	}
 	if alertname == "" {
 		alertname = "Grafana alert"
@@ -217,44 +178,46 @@ func grafanaTitle(payload grafanaWebhookPayload, status string) string {
 	return fmt.Sprintf("%s: %s", strings.ToUpper(status), alertname)
 }
 
-func grafanaBody(payload grafanaWebhookPayload, status string) string {
-	if message := strings.TrimSpace(payload.Message); message != "" {
+func grafanaBody(payload internalcontractapi.GrafanaWebhookPayload, status string) string {
+	if message := strings.TrimSpace(contractString(payload.Message)); message != "" {
 		return message
 	}
-	summary := firstMapValue(payload.CommonAnnotations, "summary", "description")
+	summary := firstMapValue(grafanaLabelMap(payload.CommonAnnotations), "summary", "description")
 	if summary != "" {
 		return summary
 	}
-	if len(payload.Alerts) > 0 {
-		alert := payload.Alerts[0]
-		summary = firstMapValue(alert.Annotations, "summary", "description")
+	alerts := grafanaAlerts(payload)
+	if len(alerts) > 0 {
+		alert := alerts[0]
+		summary = firstMapValue(grafanaLabelMap(alert.Annotations), "summary", "description")
 		if summary != "" {
 			return summary
 		}
-		return fmt.Sprintf("%s alert from Grafana: %s", status, formatLabels(alert.Labels))
+		return fmt.Sprintf("%s alert from Grafana: %s", status, formatLabels(grafanaLabelMap(alert.Labels)))
 	}
 	return fmt.Sprintf("%s alert group from Grafana", status)
 }
 
-func grafanaActionURL(payload grafanaWebhookPayload) string {
-	for _, alert := range payload.Alerts {
-		if alert.DashboardURL != "" {
-			return alert.DashboardURL
+func grafanaActionURL(payload internalcontractapi.GrafanaWebhookPayload) string {
+	for _, alert := range grafanaAlerts(payload) {
+		if value := strings.TrimSpace(contractString(alert.DashboardURL)); value != "" {
+			return value
 		}
-		if alert.PanelURL != "" {
-			return alert.PanelURL
+		if value := strings.TrimSpace(contractString(alert.PanelURL)); value != "" {
+			return value
 		}
-		if alert.GeneratorURL != "" {
-			return alert.GeneratorURL
+		if value := strings.TrimSpace(contractString(alert.GeneratorURL)); value != "" {
+			return value
 		}
 	}
-	return strings.TrimSpace(payload.ExternalURL)
+	return strings.TrimSpace(contractString(payload.ExternalURL))
 }
 
-func grafanaPriority(payload grafanaWebhookPayload) string {
-	severity := strings.ToLower(firstMapValue(payload.CommonLabels, "severity", "priority"))
-	if severity == "" && len(payload.Alerts) > 0 {
-		severity = strings.ToLower(firstMapValue(payload.Alerts[0].Labels, "severity", "priority"))
+func grafanaPriority(payload internalcontractapi.GrafanaWebhookPayload) string {
+	severity := strings.ToLower(firstMapValue(grafanaLabelMap(payload.CommonLabels), "severity", "priority"))
+	alerts := grafanaAlerts(payload)
+	if severity == "" && len(alerts) > 0 {
+		severity = strings.ToLower(firstMapValue(grafanaLabelMap(alerts[0].Labels), "severity", "priority"))
 	}
 	switch severity {
 	case "critical", "page", "high":
@@ -266,27 +229,46 @@ func grafanaPriority(payload grafanaWebhookPayload) string {
 	}
 }
 
-func grafanaIdempotencyKey(payload grafanaWebhookPayload) string {
+func grafanaIdempotencyKey(payload internalcontractapi.GrafanaWebhookPayload) string {
 	seed := strings.Join([]string{
-		payload.Status,
-		payload.GroupKey,
-		payload.ExternalURL,
+		contractString(payload.Status),
+		contractString(payload.GroupKey),
+		contractString(payload.ExternalURL),
 		grafanaResourceID(payload),
 	}, "|")
 	sum := sha256.Sum256([]byte(seed))
 	return "grafana:" + hex.EncodeToString(sum[:])
 }
 
-func grafanaResourceID(payload grafanaWebhookPayload) string {
-	if groupKey := strings.TrimSpace(payload.GroupKey); groupKey != "" {
+func grafanaResourceID(payload internalcontractapi.GrafanaWebhookPayload) string {
+	if groupKey := strings.TrimSpace(contractString(payload.GroupKey)); groupKey != "" {
 		sum := sha256.Sum256([]byte(groupKey))
 		return hex.EncodeToString(sum[:])
 	}
-	if len(payload.Alerts) > 0 && strings.TrimSpace(payload.Alerts[0].Fingerprint) != "" {
-		return strings.TrimSpace(payload.Alerts[0].Fingerprint)
+	alerts := grafanaAlerts(payload)
+	if len(alerts) > 0 && strings.TrimSpace(contractString(alerts[0].Fingerprint)) != "" {
+		return strings.TrimSpace(contractString(alerts[0].Fingerprint))
 	}
-	sum := sha256.Sum256([]byte(strings.TrimSpace(payload.Title) + "|" + strings.TrimSpace(payload.Message)))
+	sum := sha256.Sum256([]byte(strings.TrimSpace(contractString(payload.Title)) + "|" + strings.TrimSpace(contractString(payload.Message))))
 	return hex.EncodeToString(sum[:])
+}
+
+func grafanaAlerts(payload internalcontractapi.GrafanaWebhookPayload) internalcontractapi.GrafanaAlerts {
+	if payload.Alerts == nil {
+		return nil
+	}
+	return *payload.Alerts
+}
+
+func grafanaLabelMap(values *internalcontractapi.GrafanaLabelMap) map[string]string {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]string, len(*values))
+	for key, value := range *values {
+		out[key] = string(value)
+	}
+	return out
 }
 
 func firstMapValue(values map[string]string, keys ...string) string {

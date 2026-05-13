@@ -47,6 +47,8 @@ type Shape struct {
 	Output      bool        `json:"output"`
 	Members     []Member    `json:"members"`
 	Member      *ListMember `json:"member"`
+	Key         *ListMember `json:"key"`
+	Value       *ListMember `json:"value"`
 	Enum        []EnumValue `json:"enum"`
 	Constraints Constraints `json:"constraints"`
 }

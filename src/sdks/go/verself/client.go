@@ -118,7 +118,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	notificationsEditor := notificationsRequestEditor(token, options.Traceparent)
-	generatedNotifications, err := notificationscore.NewClientWithResponses(
+	generatedNotifications, err := notificationscore.NewClient(
 		notificationsURL,
 		notificationscore.WithHTTPClient(httpClient),
 		notificationscore.WithRequestEditorFn(notificationsEditor),

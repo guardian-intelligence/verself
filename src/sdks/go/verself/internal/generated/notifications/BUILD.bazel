@@ -1,15 +1,27 @@
-load("//src/tools/build:openapi_codegen.bzl", "verself_oapi_go_client")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_go")
 
 # gazelle:ignore
 
-verself_oapi_go_client(
-    name = "notifications",
-    importpath = "github.com/verself/verself-go/internal/generated/notifications",
+ir_sdk_go(
+    name = "notifications_transport_go",
+    out = "__generated_sources/client.gen.go",
+    ir = "//src/smithy/models/verself:notifications_public_ir",
     package = "notifications",
-    spec = "//src/services/notifications-service/openapi:openapi-3.0.yaml",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "client.gen.go": ":notifications_transport_go",
+    },
+    tags = ["manual"],
+)
+
+go_library(
+    name = "notifications",
+    srcs = ["client.gen.go"],
+    importpath = "github.com/verself/verself-go/internal/generated/notifications",
     visibility = ["//src/sdks/go/verself:__pkg__"],
-    deps = [
-        "@com_github_oapi_codegen_runtime//:runtime",
-        "@com_github_oapi_codegen_runtime//types",
-    ],
 )

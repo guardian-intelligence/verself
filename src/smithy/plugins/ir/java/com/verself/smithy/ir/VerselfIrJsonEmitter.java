@@ -57,6 +57,7 @@ import software.amazon.smithy.model.SourceLocation;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.ListShape;
+import software.amazon.smithy.model.shapes.MapShape;
 import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ResourceShape;
@@ -143,6 +144,12 @@ final class VerselfIrJsonEmitter {
     if (shape.isListShape()) {
       ListShape list = shape.asListShape().get();
       builder.withMember("member", memberTargetNode(list.getMember()));
+    }
+    if (shape.isMapShape()) {
+      MapShape map = shape.asMapShape().get();
+      builder
+          .withMember("key", memberTargetNode(map.getKey()))
+          .withMember("value", memberTargetNode(map.getValue()));
     }
     if (shape.isEnumShape()) {
       builder.withMember("enum", enumArrayNode(shape));

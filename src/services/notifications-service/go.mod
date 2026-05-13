@@ -10,13 +10,11 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
 	github.com/nats-io/nats.go v1.51.0
-	github.com/oapi-codegen/runtime v1.4.0
 	github.com/riverqueue/river v0.34.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -24,7 +22,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 )
 
-require go.yaml.in/yaml/v3 v3.0.4 // indirect
+require (
+	github.com/oapi-codegen/runtime v1.4.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
+)
 
 require (
 	github.com/ClickHouse/ch-go v0.68.0 // indirect
@@ -86,8 +87,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/secrets-service => ../secrets-service
 

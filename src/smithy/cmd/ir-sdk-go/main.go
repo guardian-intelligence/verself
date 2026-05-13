@@ -77,6 +77,7 @@ func (g generator) generate() ([]byte, error) {
 	g.writeScalarAliases(&body)
 	g.writeEnums(&body)
 	g.writeLists(&body)
+	g.writeMaps(&body)
 	g.writeStructures(&body)
 	g.writeOperationTypes(&body)
 	g.writeClient(&body)
@@ -161,6 +162,16 @@ func (g generator) writeLists(out *bytes.Buffer) {
 			continue
 		}
 		fmt.Fprintf(out, "type %s []%s\n\n", shape.Name, g.goType(shape.Member.Target, false))
+	}
+}
+
+func (g generator) writeMaps(out *bytes.Buffer) {
+	for _, id := range g.sortedShapeIDs() {
+		shape := g.ir.Shapes[id]
+		if shape.Kind != "map" || shape.Value == nil {
+			continue
+		}
+		fmt.Fprintf(out, "type %s map[string]%s\n\n", shape.Name, g.goType(shape.Value.Target, false))
 	}
 }
 
@@ -474,7 +485,7 @@ func (g generator) goType(target string, optional bool) string {
 	if strings.Contains(target, "#") {
 		if shape, ok := g.ir.Shapes[target]; ok {
 			switch shape.Kind {
-			case "string", "integer", "long", "boolean", "blob", "enum", "structure", "list":
+			case "string", "integer", "long", "boolean", "blob", "enum", "structure", "list", "map":
 				name := shape.Name
 				if optional {
 					return "*" + name

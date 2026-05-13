@@ -72,6 +72,7 @@ func (g generator) generate() ([]byte, error) {
 	g.writeScalarAliases(&b)
 	g.writeEnums(&b)
 	g.writeLists(&b)
+	g.writeMaps(&b)
 	g.writeStructures(&b)
 	g.writeOperationTypes(&b)
 	g.writeTransportTypes(&b)
@@ -118,6 +119,16 @@ func (g generator) writeLists(out *bytes.Buffer) {
 			continue
 		}
 		fmt.Fprintf(out, "export type %s = ReadonlyArray<%s>;\n\n", shape.Name, g.tsType(shape.Member.Target, false))
+	}
+}
+
+func (g generator) writeMaps(out *bytes.Buffer) {
+	for _, id := range g.sortedShapeIDs() {
+		shape := g.ir.Shapes[id]
+		if shape.Kind != "map" || shape.Value == nil {
+			continue
+		}
+		fmt.Fprintf(out, "export type %s = Readonly<Record<string, %s>>;\n\n", shape.Name, g.tsType(shape.Value.Target, false))
 	}
 }
 
@@ -425,7 +436,7 @@ func (g generator) tsType(target string, optional bool) string {
 			base = shape.Name
 		case "blob":
 			base = shape.Name
-		case "enum", "structure", "list":
+		case "enum", "structure", "list", "map":
 			base = shape.Name
 		}
 	} else {

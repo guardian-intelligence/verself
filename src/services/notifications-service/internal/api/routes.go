@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -12,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/notifications-service/internal/contractapi"
 	"github.com/verself/notifications-service/internal/notifications"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -20,195 +22,43 @@ import (
 
 const (
 	maxIdempotencyKeyLength = 128
-	bodyLimitNoBody         = 1024
-	bodyLimitSmallJSON      = 16 << 10
 )
 
 var apiTracer = otel.Tracer("notifications-service/internal/api")
 
-type emptyInput struct{}
-
-type listInput struct {
-	Limit int `query:"limit" minimum:"1" maximum:"100" default:"20"`
-}
-
-type summaryOutput struct {
-	Body dto.NotificationSummary
-}
-
-type listOutput struct {
-	Body dto.NotificationList
-}
-
-type putPreferencesInput struct {
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           dto.NotificationPutPreferencesRequest
-}
-
-type markReadInput struct {
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           dto.NotificationMarkReadRequest
-}
-
-type dismissInput struct {
-	NotificationID string `path:"notification_id" format:"uuid"`
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-}
-
-type markNotificationInput struct {
-	NotificationID string `path:"notification_id" format:"uuid"`
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-}
-
-type clearInput struct {
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-}
-
-type testInput struct {
-	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
-	Body           dto.NotificationTestRequest
-}
-
-type acceptedOutput struct {
-	Body dto.NotificationAccepted
-}
-
 func RegisterRoutes(api huma.API, svc *notifications.Service, authorizer runtimeiam.OperationAuthorizer, installationID string) {
-	register(api, huma.Operation{
-		OperationID: "list-notifications",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/notifications",
-		Summary:     "List current human notifications",
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:read",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionList,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "read",
-		AuditEvent:     "notifications.list",
-	}, listNotifications(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID: "get-notification-summary",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/notifications/summary",
-		Summary:     "Get current human notification summary",
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:read",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionRead,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "read",
-		AuditEvent:     "notifications.summary.read",
-	}, getSummary(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID:   "put-notification-preferences",
-		Method:        http.MethodPut,
-		Path:          "/api/v1/notifications/preferences",
-		Summary:       "Replace current human notification preferences",
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:preferences:write",
-		Resource:       "notification_preferences",
-		Action:         runtimeiam.ActionWrite,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "notification_mutation",
-		Idempotency:    runtimeiam.IdempotencyHeaderKey,
-		AuditEvent:     "notifications.preferences.write",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}, putPreferences(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID:   "advance-notification-read-cursor",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/notifications/read-cursor",
-		Summary:       "Advance current human notification read cursor",
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:write",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionWrite,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "notification_mutation",
-		Idempotency:    runtimeiam.IdempotencyHeaderKey,
-		AuditEvent:     "notifications.read_cursor.advance",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}, markRead(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID:   "dismiss-notification",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/notifications/{notification_id}/dismiss",
-		Summary:       "Dismiss a current human notification",
-		DefaultStatus: http.StatusOK,
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:write",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionWrite,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "notification_mutation",
-		Idempotency:    runtimeiam.IdempotencyHeaderKey,
-		AuditEvent:     "notifications.dismiss",
-		BodyLimitBytes: bodyLimitNoBody,
-	}, dismissNotification(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID:   "mark-notification-read",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/notifications/{notification_id}/read",
-		Summary:       "Mark one current human notification read",
-		DefaultStatus: http.StatusOK,
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:write",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionWrite,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "notification_mutation",
-		Idempotency:    runtimeiam.IdempotencyHeaderKey,
-		AuditEvent:     "notifications.mark_read",
-		BodyLimitBytes: bodyLimitNoBody,
-	}, markNotificationRead(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID:   "clear-notifications",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/notifications/clear",
-		Summary:       "Dismiss all current human notifications",
-		DefaultStatus: http.StatusOK,
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:write",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionWrite,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "notification_mutation",
-		Idempotency:    runtimeiam.IdempotencyHeaderKey,
-		AuditEvent:     "notifications.clear",
-		BodyLimitBytes: bodyLimitNoBody,
-	}, clearNotifications(svc, installationID))
-
-	register(api, huma.Operation{
-		OperationID:   "publish-test-notification",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/notifications/test",
-		Summary:       "Publish a synthetic notification to the current human",
-		DefaultStatus: http.StatusAccepted,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}, authorizer, runtimeiam.OperationPolicy{
-		Permission:     "notifications:self:test",
-		Resource:       "notification_subject",
-		Action:         runtimeiam.ActionTest,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "notification_mutation",
-		Idempotency:    runtimeiam.IdempotencyHeaderKey,
-		AuditEvent:     "notifications.test.publish",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}, publishTestNotification(svc))
+	op, policy := notificationOperation(contractapi.ListNotifications.Descriptor, "List current human notifications")
+	register(api, authorizer, op, policy, listNotifications(svc, installationID))
+	op, policy = notificationOperation(contractapi.GetNotificationSummary.Descriptor, "Get current human notification summary")
+	register(api, authorizer, op, policy, getSummary(svc, installationID))
+	op, policy = notificationOperation(contractapi.PutNotificationPreferences.Descriptor, "Replace current human notification preferences")
+	register(api, authorizer, op, policy, putPreferences(svc, installationID))
+	op, policy = notificationOperation(contractapi.AdvanceNotificationReadCursor.Descriptor, "Advance current human notification read cursor")
+	register(api, authorizer, op, policy, markRead(svc, installationID))
+	op, policy = notificationOperation(contractapi.DismissNotification.Descriptor, "Dismiss a current human notification")
+	register(api, authorizer, op, policy, dismissNotification(svc, installationID))
+	op, policy = notificationOperation(contractapi.MarkNotificationRead.Descriptor, "Mark one current human notification read")
+	register(api, authorizer, op, policy, markNotificationRead(svc, installationID))
+	op, policy = notificationOperation(contractapi.ClearNotifications.Descriptor, "Dismiss all current human notifications")
+	register(api, authorizer, op, policy, clearNotifications(svc, installationID))
+	op, policy = notificationOperation(contractapi.PublishTestNotification.Descriptor, "Publish a synthetic notification to the current human")
+	register(api, authorizer, op, policy, publishTestNotification(svc))
 }
 
-func register[I, O any](api huma.API, op huma.Operation, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy, handler func(context.Context, *I) (*O, error)) {
+func notificationOperation(desc contractapi.OperationDescriptor, summary string) (huma.Operation, runtimeiam.OperationPolicy) {
+	op := huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+		Errors:        contractProblemStatuses(desc.Problems),
+		Extensions:    map[string]any{"x-verself-contract": contractExtension(desc)},
+	}
+	return op, operationPolicyFromContract(desc)
+}
+
+func register[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy runtimeiam.OperationPolicy, handler func(context.Context, *I) (*O, error)) {
 	if err := policy.ValidateHTTPOperation(op.Method, op.OperationID); err != nil {
 		panic(err)
 	}
@@ -273,22 +123,22 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	return identity, nil
 }
 
-func listNotifications(svc *notifications.Service, installationID string) func(context.Context, *listInput) (*listOutput, error) {
-	return func(ctx context.Context, input *listInput) (*listOutput, error) {
+func listNotifications(svc *notifications.Service, installationID string) func(context.Context, *contractapi.ListNotificationsInput) (*contractapi.ListNotificationsOutput, error) {
+	return func(ctx context.Context, input *contractapi.ListNotificationsInput) (*contractapi.ListNotificationsOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		result, err := svc.List(ctx, principal, notifications.ListRequest{Limit: input.Limit})
+		result, err := svc.List(ctx, principal, notifications.ListRequest{Limit: int(input.Limit)})
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &listOutput{Body: listDTO(result, installationID)}, nil
+		return &contractapi.ListNotificationsOutput{Body: listContract(result, installationID)}, nil
 	}
 }
 
-func getSummary(svc *notifications.Service, installationID string) func(context.Context, *emptyInput) (*summaryOutput, error) {
-	return func(ctx context.Context, _ *emptyInput) (*summaryOutput, error) {
+func getSummary(svc *notifications.Service, installationID string) func(context.Context, *contractapi.EmptyInput) (*contractapi.NotificationSummaryOutput, error) {
+	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.NotificationSummaryOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
@@ -297,44 +147,48 @@ func getSummary(svc *notifications.Service, installationID string) func(context.
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
+		return summaryOutput(summary, installationID), nil
 	}
 }
 
-func putPreferences(svc *notifications.Service, installationID string) func(context.Context, *putPreferencesInput) (*summaryOutput, error) {
-	return func(ctx context.Context, input *putPreferencesInput) (*summaryOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func putPreferences(svc *notifications.Service, installationID string) func(context.Context, *contractapi.PutNotificationPreferencesInput) (*contractapi.NotificationSummaryOutput, error) {
+	return func(ctx context.Context, input *contractapi.PutNotificationPreferencesInput) (*contractapi.NotificationSummaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
+		version, err := int32FromContractInt(int64(input.Body.Version), "preferences version")
+		if err != nil {
+			return nil, badRequest(ctx, "preferences-version-out-of-range", "preferences version is outside the supported range", err)
+		}
 		summary, err := svc.PutPreferences(ctx, principal, notifications.PutPreferencesRequest{
-			Version:      input.Body.Version,
+			Version:      version,
 			Enabled:      input.Body.Enabled,
 			WebEnabled:   input.Body.WebEnabled,
 			EmailEnabled: input.Body.EmailEnabled,
 			PushEnabled:  input.Body.PushEnabled,
-			SMSEnabled:   input.Body.SMSEnabled,
+			SMSEnabled:   input.Body.SmsEnabled,
 		})
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
+		return summaryOutput(summary, installationID), nil
 	}
 }
 
-func markRead(svc *notifications.Service, installationID string) func(context.Context, *markReadInput) (*summaryOutput, error) {
-	return func(ctx context.Context, input *markReadInput) (*summaryOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func markRead(svc *notifications.Service, installationID string) func(context.Context, *contractapi.AdvanceNotificationReadCursorInput) (*contractapi.NotificationSummaryOutput, error) {
+	return func(ctx context.Context, input *contractapi.AdvanceNotificationReadCursorInput) (*contractapi.NotificationSummaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		readUpTo, err := dto.ParseInt64(input.Body.ReadUpToSequence)
+		readUpTo, err := strconv.ParseInt(strings.TrimSpace(string(input.Body.ReadUpToSequence)), 10, 64)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-read-cursor", "read cursor must be a decimal int64", err)
 		}
@@ -342,20 +196,20 @@ func markRead(svc *notifications.Service, installationID string) func(context.Co
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
+		return summaryOutput(summary, installationID), nil
 	}
 }
 
-func dismissNotification(svc *notifications.Service, installationID string) func(context.Context, *dismissInput) (*summaryOutput, error) {
-	return func(ctx context.Context, input *dismissInput) (*summaryOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func dismissNotification(svc *notifications.Service, installationID string) func(context.Context, *contractapi.NotificationPathIdempotentInput) (*contractapi.NotificationSummaryOutput, error) {
+	return func(ctx context.Context, input *contractapi.NotificationPathIdempotentInput) (*contractapi.NotificationSummaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		notificationID, err := uuid.Parse(strings.TrimSpace(input.NotificationID))
+		notificationID, err := uuid.Parse(strings.TrimSpace(string(input.NotificationID)))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-notification-id", "notification_id must be a UUID", err)
 		}
@@ -363,20 +217,20 @@ func dismissNotification(svc *notifications.Service, installationID string) func
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
+		return summaryOutput(summary, installationID), nil
 	}
 }
 
-func markNotificationRead(svc *notifications.Service, installationID string) func(context.Context, *markNotificationInput) (*summaryOutput, error) {
-	return func(ctx context.Context, input *markNotificationInput) (*summaryOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func markNotificationRead(svc *notifications.Service, installationID string) func(context.Context, *contractapi.NotificationPathIdempotentInput) (*contractapi.NotificationSummaryOutput, error) {
+	return func(ctx context.Context, input *contractapi.NotificationPathIdempotentInput) (*contractapi.NotificationSummaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		notificationID, err := uuid.Parse(strings.TrimSpace(input.NotificationID))
+		notificationID, err := uuid.Parse(strings.TrimSpace(string(input.NotificationID)))
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-notification-id", "notification_id must be a UUID", err)
 		}
@@ -384,13 +238,13 @@ func markNotificationRead(svc *notifications.Service, installationID string) fun
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
+		return summaryOutput(summary, installationID), nil
 	}
 }
 
-func clearNotifications(svc *notifications.Service, installationID string) func(context.Context, *clearInput) (*summaryOutput, error) {
-	return func(ctx context.Context, input *clearInput) (*summaryOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func clearNotifications(svc *notifications.Service, installationID string) func(context.Context, *contractapi.NotificationIdempotentInput) (*contractapi.NotificationSummaryOutput, error) {
+	return func(ctx context.Context, input *contractapi.NotificationIdempotentInput) (*contractapi.NotificationSummaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		principal, err := principalFromContext(ctx)
@@ -401,13 +255,13 @@ func clearNotifications(svc *notifications.Service, installationID string) func(
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &summaryOutput{Body: summaryDTO(summary, installationID)}, nil
+		return summaryOutput(summary, installationID), nil
 	}
 }
 
-func publishTestNotification(svc *notifications.Service) func(context.Context, *testInput) (*acceptedOutput, error) {
-	return func(ctx context.Context, input *testInput) (*acceptedOutput, error) {
-		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+func publishTestNotification(svc *notifications.Service) func(context.Context, *contractapi.PublishTestNotificationInput) (*contractapi.NotificationAcceptedOutput, error) {
+	return func(ctx context.Context, input *contractapi.PublishTestNotificationInput) (*contractapi.NotificationAcceptedOutput, error) {
+		if err := validateIdempotencyKey(ctx, string(input.IdempotencyKey)); err != nil {
 			return nil, err
 		}
 		principal, err := principalFromContext(ctx)
@@ -415,16 +269,16 @@ func publishTestNotification(svc *notifications.Service) func(context.Context, *
 			return nil, err
 		}
 		accepted, err := svc.PublishSyntheticTest(ctx, principal, notifications.TestRequest{
-			Title:     input.Body.Title,
-			Body:      input.Body.Body,
-			ActionURL: input.Body.ActionURL,
+			Title:     contractString(input.Body.Title),
+			Body:      contractString(input.Body.Body),
+			ActionURL: contractString(input.Body.ActionURL),
 		})
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
-		return &acceptedOutput{Body: dto.NotificationAccepted{
-			EventID:     accepted.EventID.String(),
-			Traceparent: accepted.Traceparent,
+		return &contractapi.NotificationAcceptedOutput{Body: contractapi.NotificationAccepted{
+			EventID:     contractapi.NotificationID(accepted.EventID.String()),
+			Traceparent: optionalContractString[contractapi.TraceParent](accepted.Traceparent),
 		}}, nil
 	}
 }
@@ -455,75 +309,121 @@ func validateIdempotencyKey(ctx context.Context, value string) error {
 	return nil
 }
 
-func listDTO(result notifications.ListResult, installationID string) dto.NotificationList {
-	out := dto.NotificationList{
-		Summary:       summaryDTO(result.Summary, installationID),
-		Notifications: make([]dto.Notification, 0, len(result.Notifications)),
+func listContract(result notifications.ListResult, installationID string) contractapi.ListNotificationsOutputBody {
+	out := contractapi.ListNotificationsOutputBody{
+		Summary:       summaryContract(result.Summary, installationID),
+		Notifications: make(contractapi.NotificationsList, 0, len(result.Notifications)),
 	}
 	for _, notification := range result.Notifications {
-		out.Notifications = append(out.Notifications, notificationDTO(notification, installationID))
+		out.Notifications = append(out.Notifications, notificationContract(notification, installationID))
 	}
 	return out
 }
 
-func summaryDTO(summary notifications.Summary, installationID string) dto.NotificationSummary {
-	return dto.NotificationSummary{
-		OrgID:              summary.OrgID,
-		SubjectID:          summary.SubjectID,
-		UnreadCount:        summary.UnreadCount,
-		LatestSequence:     strconv.FormatInt(summary.LatestSequence, 10),
-		ReadUpToSequence:   strconv.FormatInt(summary.ReadUpToSequence, 10),
-		Preferences:        preferencesDTO(summary.Preferences),
-		LatestNotification: notificationPtrDTO(summary.LatestNotification, installationID),
+func summaryOutput(summary notifications.Summary, installationID string) *contractapi.NotificationSummaryOutput {
+	return &contractapi.NotificationSummaryOutput{Body: summaryContract(summary, installationID)}
+}
+
+func summaryContract(summary notifications.Summary, installationID string) contractapi.NotificationSummary {
+	return contractapi.NotificationSummary{
+		OrgID:              contractapi.OrgID(summary.OrgID),
+		SubjectID:          contractapi.SubjectID(summary.SubjectID),
+		UnreadCount:        contractapi.UnreadCount(summary.UnreadCount),
+		LatestSequence:     contractapi.DecimalInt64(strconv.FormatInt(summary.LatestSequence, 10)),
+		ReadUpToSequence:   contractapi.DecimalInt64(strconv.FormatInt(summary.ReadUpToSequence, 10)),
+		Preferences:        preferencesContract(summary.Preferences),
+		LatestNotification: notificationPtrContract(summary.LatestNotification, installationID),
 	}
 }
 
-func preferencesDTO(preferences notifications.Preferences) dto.NotificationPreferences {
-	return dto.NotificationPreferences{
+func preferencesContract(preferences notifications.Preferences) contractapi.NotificationPreferencesView {
+	return contractapi.NotificationPreferencesView{
 		Enabled:      preferences.Enabled,
 		WebEnabled:   preferences.WebEnabled,
 		EmailEnabled: preferences.EmailEnabled,
 		PushEnabled:  preferences.PushEnabled,
-		SMSEnabled:   preferences.SMSEnabled,
-		Version:      preferences.Version,
-		UpdatedAt:    preferences.UpdatedAt,
-		UpdatedBy:    preferences.UpdatedBy,
+		SmsEnabled:   preferences.SMSEnabled,
+		Version:      contractapi.PreferenceVersion(preferences.Version),
+		UpdatedAt:    formatContractTime(preferences.UpdatedAt),
+		UpdatedBy:    contractapi.SubjectID(preferences.UpdatedBy),
 	}
 }
 
-func notificationPtrDTO(notification *notifications.Notification, installationID string) *dto.Notification {
+func notificationPtrContract(notification *notifications.Notification, installationID string) *contractapi.NotificationRecord {
 	if notification == nil {
 		return nil
 	}
-	out := notificationDTO(*notification, installationID)
+	out := notificationContract(*notification, installationID)
 	return &out
 }
 
-func notificationDTO(notification notifications.Notification, installationID string) dto.Notification {
-	return dto.Notification{
-		NotificationID:     notification.NotificationID.String(),
-		ResourceName:       dto.ResourceNameNotification(installationID, notification.OrgID, notification.NotificationID.String()),
-		OrgID:              notification.OrgID,
-		RecipientSubjectID: notification.RecipientSubjectID,
-		RecipientSequence:  strconv.FormatInt(notification.RecipientSequence, 10),
-		Kind:               notification.Kind,
-		Priority:           notification.Priority,
-		Title:              notification.Title,
-		Body:               notification.Body,
-		ActionURL:          notification.ActionURL,
+func notificationContract(notification notifications.Notification, installationID string) contractapi.NotificationRecord {
+	return contractapi.NotificationRecord{
+		NotificationID:     contractapi.NotificationID(notification.NotificationID.String()),
+		ResourceName:       notificationResourceName(installationID, notification.OrgID, notification.NotificationID.String()),
+		OrgID:              contractapi.OrgID(notification.OrgID),
+		RecipientSubjectID: contractapi.SubjectID(notification.RecipientSubjectID),
+		RecipientSequence:  contractapi.DecimalInt64(strconv.FormatInt(notification.RecipientSequence, 10)),
+		Kind:               contractapi.NotificationKind(notification.Kind),
+		Priority:           contractapi.NotificationPriority(notification.Priority),
+		Title:              contractapi.NotificationTitle(notification.Title),
+		Body:               contractapi.RequiredNotificationBody(notification.Body),
+		ActionURL:          optionalContractString[contractapi.ActionURL](notification.ActionURL),
 		TargetResourceName: notificationTargetResourceName(notification),
-		CreatedAt:          notification.CreatedAt,
-		ExpiresAt:          notification.ExpiresAt,
-		ReadAt:             notification.ReadAt,
-		DismissedAt:        notification.DismissedAt,
+		CreatedAt:          formatContractTime(notification.CreatedAt),
+		ExpiresAt:          optionalContractTime(notification.ExpiresAt),
+		ReadAt:             optionalContractTime(notification.ReadAt),
+		DismissedAt:        optionalContractTime(notification.DismissedAt),
 	}
 }
 
-func notificationTargetResourceName(notification notifications.Notification) dto.ResourceName {
+func notificationResourceName(installationID string, orgID string, notificationID string) contractapi.ResourceName {
+	return contractapi.ResourceName(fmt.Sprintf("urn:verself:%s:orgs/%s/notifications/%s", strings.TrimSpace(installationID), strings.TrimSpace(orgID), strings.TrimSpace(notificationID)))
+}
+
+func notificationTargetResourceName(notification notifications.Notification) *contractapi.ResourceName {
 	switch strings.TrimSpace(notification.ResourceKind) {
 	case "resource_name", "target_resource_name":
-		return dto.ResourceName(strings.TrimSpace(notification.ResourceID))
+		return optionalContractString[contractapi.ResourceName](notification.ResourceID)
 	default:
+		return nil
+	}
+}
+
+func contractString[T ~string](value *T) string {
+	if value == nil {
 		return ""
 	}
+	return string(*value)
+}
+
+func optionalContractString[T ~string](value string) *T {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	out := T(value)
+	return &out
+}
+
+func optionalContractTime(value *time.Time) *string {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	out := formatContractTime(*value)
+	return &out
+}
+
+func formatContractTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func int32FromContractInt(value int64, field string) (int32, error) {
+	const maxInt32 = int64(1<<31 - 1)
+	if value < 0 || value > maxInt32 {
+		return 0, fmt.Errorf("%s is outside int32 range", field)
+	}
+	return int32(value), nil
 }

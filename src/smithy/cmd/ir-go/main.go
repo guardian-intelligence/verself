@@ -137,7 +137,7 @@ func generateContract(ir *contractIR, packageName string, bindingName string) ([
 	if bindingName == "" {
 		return nil, errors.New("contract binding name is required")
 	}
-	scalars, enums, structs, lists := classifyShapes(ir)
+	scalars, enums, structs, lists, maps := classifyShapes(ir)
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "package %s\n\n", packageName)
 	fmt.Fprintf(&b, "import (\n")
@@ -148,6 +148,7 @@ func generateContract(ir *contractIR, packageName string, bindingName string) ([
 	writeScalars(&b, ir, scalars)
 	writeEnums(&b, ir, enums)
 	writeLists(&b, ir, lists)
+	writeMaps(&b, ir, maps)
 	writeStructs(&b, ir, structs)
 	writeOutputBodies(&b, ir)
 	writeDescriptors(&b, ir)
@@ -352,6 +353,12 @@ func openAPISchemaForShape(ir *contractIR, shape shapeSpec) map[string]any {
 			items = openAPISchemaForTarget(ir, shape.Member.Target)
 		}
 		return map[string]any{"type": "array", "items": items}
+	case "map":
+		additionalProperties := any(true)
+		if shape.Value != nil {
+			additionalProperties = openAPISchemaForTarget(ir, shape.Value.Target)
+		}
+		return map[string]any{"type": "object", "additionalProperties": additionalProperties}
 	case "structure":
 		return openAPIObjectSchemaForMembers(ir, shape.Members)
 	default:
@@ -834,6 +841,16 @@ func writeLists(b *bytes.Buffer, ir *contractIR, ids []string) {
 	}
 }
 
+func writeMaps(b *bytes.Buffer, ir *contractIR, ids []string) {
+	for _, id := range ids {
+		shape := ir.Shapes[id]
+		if shape.Value == nil {
+			continue
+		}
+		fmt.Fprintf(b, "type %s map[string]%s\n\n", goName(shape.Name), goTypeForTarget(ir, shape.Value.Target))
+	}
+}
+
 func writeStructs(b *bytes.Buffer, ir *contractIR, ids []string) {
 	for _, id := range ids {
 		shape := ir.Shapes[id]
@@ -850,29 +867,51 @@ func writeStructs(b *bytes.Buffer, ir *contractIR, ids []string) {
 				}
 				fmt.Fprintln(b, "}\n")
 			}
-			fmt.Fprintf(b, "type %s struct {\n", goName(shape.Name))
-			for _, member := range transportMembers {
-				if len(member.Tags) == 0 {
-					fmt.Fprintf(b, "\t%s %s\n", member.GoName, member.Type)
-					continue
-				}
-				fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
-			}
 			if op != nil && op.Bindings.Payload != nil {
+				fmt.Fprintf(b, "type %s struct {\n", goName(shape.Name))
+				for _, member := range transportMembers {
+					writeGoMember(b, member)
+				}
 				fmt.Fprintf(b, "\tBody %s\n", payloadGoType(ir, op.Bindings.Payload))
+				fmt.Fprintln(b, "}\n")
 			} else if len(bodyMembers) > 0 {
+				fmt.Fprintf(b, "type %s struct {\n", goName(shape.Name))
+				for _, member := range transportMembers {
+					writeGoMember(b, member)
+				}
 				fmt.Fprintf(b, "\tBody %sBody\n", goName(shape.Name))
+				fmt.Fprintln(b, "}\n")
+			} else if len(transportMembers) > 0 {
+				fmt.Fprintf(b, "type %s struct {\n", goName(shape.Name))
+				for _, member := range transportMembers {
+					writeGoMember(b, member)
+				}
+				fmt.Fprintln(b, "}\n")
+			} else {
+				fmt.Fprintf(b, "type %s struct{}\n", goName(shape.Name))
 			}
-			fmt.Fprintln(b, "}\n")
+			fmt.Fprintln(b)
 			continue
 		}
 		members := jsonMemberSpecsForStructure(ir, shape)
+		if len(members) == 0 {
+			fmt.Fprintf(b, "type %s struct{}\n\n", goName(shape.Name))
+			continue
+		}
 		fmt.Fprintf(b, "type %s struct {\n", goName(shape.Name))
 		for _, member := range members {
 			fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
 		}
 		fmt.Fprintln(b, "}\n")
 	}
+}
+
+func writeGoMember(b *bytes.Buffer, member memberSpec) {
+	if len(member.Tags) == 0 {
+		fmt.Fprintf(b, "\t%s %s\n", member.GoName, member.Type)
+		return
+	}
+	fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
 }
 
 func writeOutputBodies(b *bytes.Buffer, ir *contractIR) {
@@ -971,7 +1010,7 @@ func writeHandlerTypes(b *bytes.Buffer, ops []operationSpec, bindingName string)
 	}
 }
 
-func classifyShapes(ir *contractIR) (scalars, enums, structs, lists []string) {
+func classifyShapes(ir *contractIR) (scalars, enums, structs, lists, maps []string) {
 	for id, shape := range ir.Shapes {
 		switch shape.Kind {
 		case "string", "integer", "long", "boolean", "blob":
@@ -982,13 +1021,16 @@ func classifyShapes(ir *contractIR) (scalars, enums, structs, lists []string) {
 			structs = append(structs, id)
 		case "list":
 			lists = append(lists, id)
+		case "map":
+			maps = append(maps, id)
 		}
 	}
 	sort.Strings(scalars)
 	sort.Strings(enums)
 	sort.Strings(structs)
 	sort.Strings(lists)
-	return scalars, enums, structs, lists
+	sort.Strings(maps)
+	return scalars, enums, structs, lists, maps
 }
 
 func jsonMemberSpecsForStructure(ir *contractIR, shape shapeSpec) []memberSpec {
@@ -1263,6 +1305,11 @@ func protoType(ir *contractIR, target string) string {
 			return "repeated string"
 		}
 		return "repeated " + protoType(ir, shape.Member.Target)
+	case "map":
+		if shape.Value == nil {
+			return "map<string, string>"
+		}
+		return "map<string, " + protoType(ir, shape.Value.Target) + ">"
 	default:
 		return goName(localName(target))
 	}
@@ -1308,6 +1355,9 @@ func protoUsesStruct(ir *contractIR) bool {
 			}
 		}
 		if shape.Member != nil && shape.Member.Target == "smithy.api#Document" {
+			return true
+		}
+		if shape.Value != nil && shape.Value.Target == "smithy.api#Document" {
 			return true
 		}
 	}

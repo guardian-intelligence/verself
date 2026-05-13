@@ -130,6 +130,9 @@ final class SmithyModelIndex {
       }
     } else if (shape.isListShape()) {
       visitShape(model, shape.asListShape().get().getMember().getTarget(), seen);
+    } else if (shape.isMapShape()) {
+      visitShape(model, shape.asMapShape().get().getKey().getTarget(), seen);
+      visitShape(model, shape.asMapShape().get().getValue().getTarget(), seen);
     }
   }
 }
