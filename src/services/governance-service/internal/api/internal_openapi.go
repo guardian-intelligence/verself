@@ -7,17 +7,17 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"gopkg.in/yaml.v3"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/governance"
+	"github.com/verself/service-runtime/humaapi"
 )
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service) huma.API {
-	config := dto.DefaultHumaConfig("Verself Governance Service Internal API", version)
+	config := humaapi.DefaultConfig("Verself Governance Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)
 	RegisterInternalRoutes(api, svc)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

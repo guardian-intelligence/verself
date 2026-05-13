@@ -6,8 +6,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/object-storage-service/internal/objectstorage"
+	"github.com/verself/service-runtime/humaapi"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
@@ -23,14 +23,14 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := dto.DefaultHumaConfig("Object Storage Service", version)
+	config := humaapi.DefaultConfig("Object Storage Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
 	applyPublicSecurityScheme(api)
 	RegisterAdminRoutes(api, cfg.Service, cfg.Authorizer)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

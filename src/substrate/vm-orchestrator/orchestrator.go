@@ -20,7 +20,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/vm-orchestrator/vmproto"
 	"github.com/verself/vm-orchestrator/zfs"
 )
@@ -59,7 +58,7 @@ type Config struct {
 	JailerRoot          string
 	JailerUID           int
 	JailerGID           int
-	Bounds              dto.VMResourceBounds
+	Bounds              VMResourceBounds
 	HostInterface       string
 	GuestPoolCIDR       string
 	StateDBPath         string
@@ -84,7 +83,7 @@ func DefaultConfig() Config {
 		JailerRoot:          "/srv/jailer",
 		JailerUID:           10000,
 		JailerGID:           10000,
-		Bounds:              dto.DefaultBounds,
+		Bounds:              DefaultBounds,
 		GuestPoolCIDR:       defaultGuestPoolCIDR,
 		StateDBPath:         defaultStateDBPath,
 		HostServiceIP:       defaultHostServiceIP,
@@ -145,7 +144,7 @@ const (
 )
 
 type LeaseSpec struct {
-	Resources        dto.VMResources
+	Resources        VMResources
 	TTLSeconds       uint64
 	TrustClass       string
 	NetworkMode      string
@@ -258,8 +257,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if base.WorkloadDataset == "" {
 		base.WorkloadDataset = "workloads"
 	}
-	if base.Bounds == (dto.VMResourceBounds{}) {
-		base.Bounds = dto.DefaultBounds
+	if base.Bounds == (VMResourceBounds{}) {
+		base.Bounds = DefaultBounds
 	}
 	if base.HostServiceIP == "" {
 		base.HostServiceIP = defaultHostServiceIP
@@ -301,8 +300,8 @@ func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 	}
 	spec.Resources = spec.Resources.Normalize()
 	bounds := cfg.Bounds
-	if bounds == (dto.VMResourceBounds{}) {
-		bounds = dto.DefaultBounds
+	if bounds == (VMResourceBounds{}) {
+		bounds = DefaultBounds
 	}
 	if err := spec.Resources.Validate(bounds); err != nil {
 		return LeaseSpec{}, err
@@ -793,10 +792,8 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	endAPISocketSpan(nil)
 
 	client := newAPIClient(apiSockHost)
-	// Kernel cmdline rendered from the canonical dto flag list plus any
-	// lease-specific overrides. See src/domain-transfer-objects/go/vmresources.go for why each
-	// flag is on the base list (or deliberately off).
-	bootArgs := dto.RenderCmdline(dto.DefaultKernelCmdlineBase)
+	// Kernel cmdline flags live with the privileged Firecracker adapter.
+	bootArgs := RenderCmdline(DefaultKernelCmdlineBase)
 	apiSteps := []firecrackerStep{
 		{name: "metrics", fn: func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
 		{name: "boot-source", fn: func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},

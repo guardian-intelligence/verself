@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/vm-orchestrator"
 )
 
 const (
@@ -62,5 +63,14 @@ func vmResourcesFromDB(vcpus, memoryMiB, rootDiskGiB int32) dto.VMResources {
 		MemoryMiB:   uint32FromInt32(memoryMiB, "memory mib"),
 		RootDiskGiB: uint32FromInt32(rootDiskGiB, "root disk gib"),
 		KernelImage: dto.KernelImageDefault,
+	}
+}
+
+func vmResourcesForLease(resources dto.VMResources) vmorchestrator.VMResources {
+	return vmorchestrator.VMResources{
+		VCPUs:       resources.VCPUs,
+		MemoryMiB:   resources.MemoryMiB,
+		RootDiskGiB: resources.RootDiskGiB,
+		KernelImage: vmorchestrator.KernelImageRef(resources.KernelImage),
 	}
 }

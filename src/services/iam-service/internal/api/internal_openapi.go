@@ -6,9 +6,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
+	"github.com/verself/service-runtime/humaapi"
 )
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity.Service, authzServices ...*authz.Service) huma.API {
@@ -19,12 +19,12 @@ func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity
 	if len(authzServices) > 0 {
 		authzSvc = authzServices[0]
 	}
-	config := dto.DefaultHumaConfig("Verself IAM Service Internal API", version)
+	config := humaapi.DefaultConfig("Verself IAM Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecuritySchemes(api)
 	RegisterInternalRoutes(api, svc, authzSvc)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

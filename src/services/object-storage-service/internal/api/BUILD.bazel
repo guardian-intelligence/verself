@@ -16,6 +16,7 @@ go_library(
         "//src/services/governance-service/internalclient",
         "//src/services/object-storage-service/internal/objectstorage",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/humaapi",
         "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/verself/domain-transfer-objects"
 	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 )
 
@@ -109,19 +108,19 @@ func filesystemMountResultsToProto(results []FilesystemMountResult) []*vmrpc.Fil
 	return out
 }
 
-func vmResourcesFromProto(r *vmrpc.VMResources) dto.VMResources {
+func vmResourcesFromProto(r *vmrpc.VMResources) VMResources {
 	if r == nil {
-		return dto.VMResources{}
+		return VMResources{}
 	}
-	return dto.VMResources{
+	return VMResources{
 		VCPUs:       r.GetVcpus(),
 		MemoryMiB:   r.GetMemoryMib(),
 		RootDiskGiB: r.GetRootDiskGib(),
-		KernelImage: dto.KernelImageRef(r.GetKernelImage()),
+		KernelImage: KernelImageRef(r.GetKernelImage()),
 	}
 }
 
-func vmResourcesToProto(r dto.VMResources) *vmrpc.VMResources {
+func vmResourcesToProto(r VMResources) *vmrpc.VMResources {
 	return &vmrpc.VMResources{
 		Vcpus:       r.VCPUs,
 		MemoryMib:   r.MemoryMiB,

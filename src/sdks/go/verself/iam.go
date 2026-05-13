@@ -301,9 +301,9 @@ func iamAPIError(operation string, statusCode int, model *iamcore.ErrorModel, bo
 	return apiErrorFields("IAM API", operation, statusCode, title, detail, body)
 }
 
-func stringValue(input *string) string {
+func stringValue[T ~string](input *T) string {
 	if input == nil {
 		return ""
 	}
-	return *input
+	return string(*input)
 }

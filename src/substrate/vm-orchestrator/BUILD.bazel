@@ -31,12 +31,12 @@ go_library(
         "telemetry_decode.go",
         "telemetry_stream.go",
         "tracing.go",
+        "vmresources.go",
         "zvol.go",
     ],
     importpath = "github.com/verself/vm-orchestrator",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/substrate/vm-orchestrator/proto/v1:proto",
         "//src/substrate/vm-orchestrator/vmproto",
         "//src/substrate/vm-orchestrator/zfs",

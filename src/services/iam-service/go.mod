@@ -12,7 +12,6 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
 	github.com/spiffe/go-spiffe/v2 v2.6.0
-	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -80,8 +79,6 @@ require (
 )
 
 replace github.com/verself/governance-service => ../governance-service
-
-replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

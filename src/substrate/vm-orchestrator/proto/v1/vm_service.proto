@@ -85,8 +85,7 @@ message NetworkAttach {
   NetworkAttachMode mode = 1;
 }
 
-// VMResources is the customer-requested VM shape. Canonical wire type;
-// see src/domain-transfer-objects/go/vmresources.go for the Go-side mirror and validation.
+// VMResources is the customer-requested VM shape validated by vm-orchestrator.
 message VMResources {
   uint32 vcpus = 1;
   uint32 memory_mib = 2;

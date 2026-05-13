@@ -2,13 +2,13 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/verself/governance-service/internal/governance"
+	"github.com/verself/governance-service/internal/internalcontractapi"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -27,13 +27,15 @@ type appendAuditEventAccepted struct {
 }
 
 func RegisterInternalRoutes(api huma.API, svc *governance.Service) {
+	desc := internalcontractapi.AppendAuditEvent.Descriptor
 	huma.Register(api, huma.Operation{
-		OperationID: "append-audit-event",
-		Method:      http.MethodPost,
-		Path:        "/internal/v1/audit/events",
-		Summary:     "Append governance audit event",
-		Description: "SPIFFE-mTLS internal endpoint for repo-owned services to append governance audit events.",
-		Security:    []map[string][]string{{"mutualTLS": {}}},
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       "Append governance audit event",
+		Description:   "SPIFFE-mTLS internal endpoint for repo-owned services to append governance audit events.",
+		DefaultStatus: desc.DefaultStatus,
+		Security:      []map[string][]string{{"mutualTLS": {}}},
 	}, appendAuditEvent(svc))
 }
 

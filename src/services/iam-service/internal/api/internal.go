@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel"
@@ -13,157 +14,194 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
+	"github.com/verself/iam-service/internal/internalcontractapi"
 	auth "github.com/verself/service-runtime/auth"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 var internalAPITracer = otel.Tracer("iam-service/internal/api/internal")
 
-type updateHumanProfileInput struct {
-	SubjectID string `path:"subject_id" doc:"Zitadel human subject ID"`
-	Body      dto.IAMUpdateHumanProfileRequest
-}
-
-type updateHumanProfileOutput struct {
-	Body dto.IAMUpdateHumanProfileResponse
-}
-
-type resolveOrganizationInput struct {
-	Body dto.IAMResolveOrganizationRequest
-}
-
-type resolveOrganizationOutput struct {
-	Body dto.IAMResolveOrganizationResponse
-}
-
-type authorizeOperationInput struct {
-	Body dto.IAMAuthorizeRequest
-}
-
-type authorizeOperationOutput struct {
-	Body dto.IAMAuthorizeResponse
-}
-
-type authorizeResourceInput struct {
-	Body dto.IAMAuthorizeResourceRequest
-}
-
-type authorizeResourceOutput struct {
-	Body dto.IAMAuthorizeResourceResponse
-}
-
-type writeResourceParentEdgeInput struct {
-	Body dto.IAMWriteResourceParentEdgeRequest
-}
-
-type writeResourceParentEdgeOutput struct {
-	Body dto.IAMWriteResourceParentEdgeResponse
-}
-
 func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
-	op := huma.Operation{
-		OperationID:   "update-human-profile",
-		Method:        http.MethodPatch,
-		Path:          "/internal/v1/subjects/{subject_id}/human-profile",
-		Summary:       "Update a human profile",
-		Description:   "SPIFFE-mTLS internal endpoint for profile-service to update the forwarded human subject's Zitadel profile fields.",
-		Security:      []map[string][]string{{"mutualTLS": {}, "bearerAuth": {}}},
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
+	runtime := internalRuntime{}
+	handlers := internalHandlers{service: svc, authz: authzSvc}
+	registerInternalOperation(api, runtime, internalcontractapi.AuthorizeOperation, handlers.AuthorizeOperation, "Authorize operation")
+	registerInternalOperation(api, runtime, internalcontractapi.AuthorizeResource, handlers.AuthorizeResource, "Authorize resource")
+	registerInternalOperation(api, runtime, internalcontractapi.WriteResourceParentEdge, handlers.WriteResourceParentEdge, "Write resource parent edge")
+	registerInternalOperation(api, runtime, internalcontractapi.ResolveOrganization, handlers.ResolveOrganization, "Resolve organization")
+	registerInternalOperation(api, runtime, internalcontractapi.UpdateHumanProfile, handlers.UpdateHumanProfile, "Update human profile")
+}
+
+func registerInternalOperation[Input any, Output any](
+	api huma.API,
+	runtime internalRuntime,
+	operation internalcontractapi.Operation[Input, Output],
+	handler internalcontractapi.Handler[Input, Output],
+	summary string,
+) {
+	desc := operation.Descriptor
+	op := runtime.PrepareOperation(desc, huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+	})
+	huma.Register(api, op, func(ctx context.Context, input *Input) (*Output, error) {
+		identity, err := runtime.BeforeOperation(ctx, desc, input)
+		if err != nil {
+			runtime.AfterOperation(ctx, desc, identity, input, nil, err)
+			return nil, err
+		}
+		output, err := handler(ctx, input)
+		runtime.AfterOperation(ctx, desc, identity, input, output, err)
+		return output, err
+	})
+}
+
+type internalRuntime struct{}
+
+type internalHandlers struct {
+	service *identity.Service
+	authz   *authz.Service
+}
+
+func (r internalRuntime) PrepareOperation(desc internalcontractapi.OperationDescriptor, op huma.Operation) huma.Operation {
+	if err := validateGeneratedInternalOperation(desc); err != nil {
+		panic(err)
+	}
+	if desc.RequestBodyMaxBytes > 0 {
+		op.MaxBodyBytes = desc.RequestBodyMaxBytes
+	}
+	op.Errors = internalContractProblemStatuses(desc.Problems)
+	if op.Extensions == nil {
+		op.Extensions = map[string]any{}
+	}
+	op.Extensions["x-verself-contract"] = internalContractExtension(desc)
+	switch desc.Identity.Mode {
+	case "spiffe_mtls_bearer":
+		op.Security = []map[string][]string{{"mutualTLS": {}, "bearerAuth": {}}}
+	case "spiffe_mtls":
+		op.Security = []map[string][]string{{"mutualTLS": {}}}
+	default:
+		panic(fmt.Errorf("%s: unsupported internal identity mode %q", desc.OperationID, desc.Identity.Mode))
 	}
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
-	huma.Register(api, op, updateHumanProfile(svc))
-
-	resolveOp := huma.Operation{
-		OperationID:   "resolve-organization",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/organizations/resolve",
-		Summary:       "Resolve an organization profile",
-		Description:   "SPIFFE-mTLS internal endpoint for repo-owned services to resolve canonical and redirected organization slugs.",
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}
-	resolveOp.Middlewares = append(resolveOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, resolveOp, resolveOrganization(svc))
-
-	authorizeOp := huma.Operation{
-		OperationID:   "authorize-operation",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/authorization/authorize",
-		Summary:       "Authorize a product operation",
-		Description:   "SPIFFE-mTLS internal endpoint for product services to check an authenticated user, service account, or workload against IAM.",
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}
-	authorizeOp.Middlewares = append(authorizeOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, authorizeOp, authorizeOperation(svc, authzSvc))
-
-	authorizeResourceOp := huma.Operation{
-		OperationID:   "authorize-resource",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/authorization/resources/authorize",
-		Summary:       "Authorize a product operation against a Zanzibar resource",
-		Description:   "SPIFFE-mTLS internal endpoint for product services to check a user, service account, or workload against a concrete IAM resource.",
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}
-	authorizeResourceOp.Middlewares = append(authorizeResourceOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, authorizeResourceOp, authorizeResource(svc, authzSvc))
-
-	parentEdgeOp := huma.Operation{
-		OperationID:   "write-resource-parent-edge",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/authorization/resources/parent-edge",
-		Summary:       "Write an IAM resource parent edge",
-		Description:   "SPIFFE-mTLS internal endpoint for product services to materialize idempotent Zanzibar parent edges for IAM-owned resources.",
-		Security:      []map[string][]string{{"mutualTLS": {}}},
-		DefaultStatus: http.StatusOK,
-		MaxBodyBytes:  bodyLimitSmallJSON,
-	}
-	parentEdgeOp.Middlewares = append(parentEdgeOp.Middlewares, operationRequestMiddleware)
-	huma.Register(api, parentEdgeOp, writeResourceParentEdge(svc, authzSvc))
+	return op
 }
 
-func updateHumanProfile(svc *identity.Service) func(context.Context, *updateHumanProfileInput) (*updateHumanProfileOutput, error) {
-	return func(ctx context.Context, input *updateHumanProfileInput) (*updateHumanProfileOutput, error) {
+func (r internalRuntime) BeforeOperation(context.Context, internalcontractapi.OperationDescriptor, any) (any, error) {
+	return nil, nil
+}
+
+func (r internalRuntime) AfterOperation(context.Context, internalcontractapi.OperationDescriptor, any, any, any, error) {
+}
+
+func validateGeneratedInternalOperation(desc internalcontractapi.OperationDescriptor) error {
+	if strings.TrimSpace(desc.OperationID) == "" || strings.TrimSpace(desc.Method) == "" || strings.TrimSpace(desc.Path) == "" {
+		return fmt.Errorf("generated internal operation missing id, method, or path: %#v", desc)
+	}
+	switch desc.Identity.Mode {
+	case "spiffe_mtls", "spiffe_mtls_bearer":
+	default:
+		return fmt.Errorf("%s: unsupported internal identity mode %q", desc.OperationID, desc.Identity.Mode)
+	}
+	if desc.Identity.Audience != "iam-service" {
+		return fmt.Errorf("%s: unexpected audience %q", desc.OperationID, desc.Identity.Audience)
+	}
+	if desc.Authorization.Permission == "" || desc.Audit.Event == "" || desc.Audit.Resource == "" || desc.Audit.Action == "" {
+		return fmt.Errorf("%s: incomplete generated IAM metadata", desc.OperationID)
+	}
+	if desc.RequestBodyMaxBytes <= 0 {
+		return fmt.Errorf("%s: internal operation missing request body budget", desc.OperationID)
+	}
+	return nil
+}
+
+func internalContractExtension(desc internalcontractapi.OperationDescriptor) map[string]any {
+	return map[string]any{
+		"shape_id":               desc.ShapeID,
+		"operation_id":           desc.OperationID,
+		"identity":               desc.Identity.Mode,
+		"audience":               desc.Identity.Audience,
+		"permission":             desc.Authorization.Permission,
+		"organization_source":    desc.Authorization.OrganizationSource,
+		"organization_member":    desc.Authorization.OrganizationMember,
+		"audit_event":            desc.Audit.Event,
+		"resource":               desc.Audit.Resource,
+		"action":                 desc.Audit.Action,
+		"rate_limit_bucket":      desc.RateLimitBucket,
+		"request_body_max_bytes": desc.RequestBodyMaxBytes,
+		"idempotency":            desc.Idempotency.Policy,
+	}
+}
+
+func internalContractProblemStatuses(problems []internalcontractapi.ProblemDescriptor) []int {
+	statuses := make([]int, 0, len(problems))
+	for _, problem := range problems {
+		if problem.Status > 0 {
+			statuses = append(statuses, problem.Status)
+		}
+	}
+	return uniqueSortedStatusCodes(statuses)
+}
+
+func (h internalHandlers) UpdateHumanProfile(ctx context.Context, input *internalcontractapi.UpdateHumanProfileInput) (*internalcontractapi.UpdateHumanProfileOutput, error) {
+	return updateHumanProfile(h.service)(ctx, input)
+}
+
+func (h internalHandlers) ResolveOrganization(ctx context.Context, input *internalcontractapi.ResolveOrganizationInput) (*internalcontractapi.ResolveOrganizationOutput, error) {
+	return resolveOrganization(h.service)(ctx, input)
+}
+
+func (h internalHandlers) AuthorizeOperation(ctx context.Context, input *internalcontractapi.AuthorizeOperationInput) (*internalcontractapi.AuthorizeOperationOutput, error) {
+	return authorizeOperation(h.service, h.authz)(ctx, input)
+}
+
+func (h internalHandlers) AuthorizeResource(ctx context.Context, input *internalcontractapi.AuthorizeResourceInput) (*internalcontractapi.AuthorizeResourceOutput, error) {
+	return authorizeResource(h.service, h.authz)(ctx, input)
+}
+
+func (h internalHandlers) WriteResourceParentEdge(ctx context.Context, input *internalcontractapi.WriteResourceParentEdgeInput) (*internalcontractapi.WriteResourceParentEdgeOutput, error) {
+	return writeResourceParentEdge(h.service, h.authz)(ctx, input)
+}
+
+func updateHumanProfile(svc *identity.Service) func(context.Context, *internalcontractapi.UpdateHumanProfileInput) (*internalcontractapi.UpdateHumanProfileOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.UpdateHumanProfileInput) (*internalcontractapi.UpdateHumanProfileOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.human_profile.write")
 		defer span.End()
+		subjectID := string(input.SubjectID)
 		span.SetAttributes(
 			attribute.String("iam.operation_id", "update-human-profile"),
-			attribute.String("iam.subject_id", strings.TrimSpace(input.SubjectID)),
+			attribute.String("iam.subject_id", strings.TrimSpace(subjectID)),
 		)
-		authIdentity, err := requireInternalHumanIAM(ctx, input.SubjectID)
+		authIdentity, err := requireInternalHumanIAM(ctx, subjectID)
 		if err != nil {
 			finishInternalProfileSpan(span, authIdentity, "denied", err)
-			auditInternalProfileUpdate(ctx, input.SubjectID, authIdentity, "denied", err)
+			auditInternalProfileUpdate(ctx, subjectID, authIdentity, "denied", err)
 			return nil, err
 		}
 		setInternalProfileIAMAttributes(span, authIdentity)
-		profile, err := svc.UpdateHumanProfile(ctx, input.SubjectID, identity.HumanProfileUpdate{
-			GivenName:   input.Body.GivenName,
-			FamilyName:  input.Body.FamilyName,
-			DisplayName: input.Body.DisplayName,
+		profile, err := svc.UpdateHumanProfile(ctx, subjectID, identity.HumanProfileUpdate{
+			GivenName:   string(input.Body.GivenName),
+			FamilyName:  string(input.Body.FamilyName),
+			DisplayName: optionalStringPointer(input.Body.DisplayName),
 		})
 		if err != nil {
 			mapped := identityError(ctx, err)
 			finishInternalProfileSpan(span, authIdentity, "error", mapped)
-			auditInternalProfileUpdate(ctx, input.SubjectID, authIdentity, "error", mapped)
+			auditInternalProfileUpdate(ctx, subjectID, authIdentity, "error", mapped)
 			return nil, mapped
 		}
 		finishInternalProfileSpan(span, authIdentity, "allowed", nil)
-		auditInternalProfileUpdate(ctx, input.SubjectID, authIdentity, "allowed", nil)
-		return &updateHumanProfileOutput{Body: humanProfileDTO(profile)}, nil
+		auditInternalProfileUpdate(ctx, subjectID, authIdentity, "allowed", nil)
+		return &internalcontractapi.UpdateHumanProfileOutput{Body: humanProfileSummary(profile)}, nil
 	}
 }
 
-func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOrganizationInput) (*resolveOrganizationOutput, error) {
-	return func(ctx context.Context, input *resolveOrganizationInput) (*resolveOrganizationOutput, error) {
+func resolveOrganization(svc *identity.Service) func(context.Context, *internalcontractapi.ResolveOrganizationInput) (*internalcontractapi.ResolveOrganizationOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.ResolveOrganizationInput) (*internalcontractapi.ResolveOrganizationOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.organization.resolve")
 		defer span.End()
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
@@ -173,18 +211,16 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOr
 			span.SetStatus(codes.Error, "missing SPIFFE peer identity")
 			return nil, err
 		}
-		orgID := ""
-		if input.Body.OrgID.Uint64() != 0 {
-			orgID = input.Body.OrgID.String()
-		}
+		orgID := contractString(input.Body.OrgID)
+		slug := contractString(input.Body.Slug)
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.String("verself.org_id", orgID),
-			attribute.String("iam.org_slug.requested", strings.TrimSpace(input.Body.Slug)),
+			attribute.String("iam.org_slug.requested", strings.TrimSpace(slug)),
 		)
 		profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
 			IdentityProviderOrgID: orgID,
-			Slug:                  input.Body.Slug,
+			Slug:                  slug,
 			RequireActive:         input.Body.RequireActive,
 		})
 		if err != nil {
@@ -198,12 +234,14 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOr
 			attribute.String("iam.org_slug", profile.Slug),
 			attribute.String("iam.org_slug.redirected_from", profile.RedirectedFrom),
 		)
-		return &resolveOrganizationOutput{Body: dto.IAMResolveOrganizationResponse{Organization: organizationProfileDTO(profile)}}, nil
+		return &internalcontractapi.ResolveOrganizationOutput{
+			Body: internalcontractapi.ResolveOrganizationOutputBody{Organization: organizationProfile(profile)},
+		}, nil
 	}
 }
 
-func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *authorizeOperationInput) (*authorizeOperationOutput, error) {
-	return func(ctx context.Context, input *authorizeOperationInput) (*authorizeOperationOutput, error) {
+func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *internalcontractapi.AuthorizeOperationInput) (*internalcontractapi.AuthorizeOperationOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.AuthorizeOperationInput) (*internalcontractapi.AuthorizeOperationOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.check")
 		defer span.End()
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
@@ -219,22 +257,23 @@ func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(con
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID, err := publicOrgIDForProviderDTO(ctx, svc, input.Body.OrgID)
+		orgID, err := publicOrgIDForProvider(ctx, svc, string(input.Body.OrgID))
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		subject, err := authorizationSubjectFromDTO(input.Body.Subject)
+		subject, err := authorizationSubjectFromContract(input.Body.Subject)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
 		}
+		permissions := permissionStrings(input.Body.Permissions)
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.String("verself.org_id", orgID),
 			attribute.String("iam.subject_type", string(subject.Kind)),
 			attribute.String("iam.subject_id", subject.ID),
-			attribute.StringSlice("iam.permissions.requested", compactStrings(input.Body.Permissions)),
+			attribute.StringSlice("iam.permissions.requested", compactStrings(permissions)),
 		)
-		allowed, zedToken, err := authzSvc.TestOrganizationPermissions(ctx, orgID, subject, input.Body.Permissions, strings.TrimSpace(input.Body.MinZedToken))
+		allowed, zedToken, err := authzSvc.TestOrganizationPermissions(ctx, orgID, subject, permissions, contractString(input.Body.MinZedToken))
 		if err != nil {
 			mapped := authzError(ctx, err)
 			span.RecordError(mapped)
@@ -245,17 +284,17 @@ func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(con
 			attribute.StringSlice("iam.permissions.allowed", allowed),
 			attribute.String("iam.zed_token", zedToken),
 		)
-		return &authorizeOperationOutput{Body: dto.IAMAuthorizeResponse{
+		return &internalcontractapi.AuthorizeOperationOutput{Body: internalcontractapi.AuthorizeOperationResult{
 			OrgID:       input.Body.OrgID,
 			Subject:     input.Body.Subject,
-			Permissions: allowed,
-			ZedToken:    zedToken,
+			Permissions: contractPermissions(allowed),
+			ZedToken:    optionalZedToken(zedToken),
 		}}, nil
 	}
 }
 
-func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *authorizeResourceInput) (*authorizeResourceOutput, error) {
-	return func(ctx context.Context, input *authorizeResourceInput) (*authorizeResourceOutput, error) {
+func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *internalcontractapi.AuthorizeResourceInput) (*internalcontractapi.AuthorizeResourceOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.AuthorizeResourceInput) (*internalcontractapi.AuthorizeResourceOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.resource_check")
 		defer span.End()
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
@@ -271,26 +310,28 @@ func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(cont
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID, err := publicOrgIDForProviderDTO(ctx, svc, input.Body.OrgID)
+		orgID, err := publicOrgIDForProvider(ctx, svc, string(input.Body.OrgID))
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		subject, err := authorizationSubjectFromDTO(input.Body.Subject)
+		subject, err := authorizationSubjectFromContract(input.Body.Subject)
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
 		}
-		resource := resourceRefFromDTO(input.Body.Resource)
+		resource := resourceRefFromContract(input.Body.Resource)
+		operationPermission := contractString(input.Body.OperationPermission)
+		minZedToken := contractString(input.Body.MinZedToken)
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.String("verself.org_id", orgID),
 			attribute.String("iam.subject_type", string(subject.Kind)),
 			attribute.String("iam.subject_id", subject.ID),
-			attribute.String("iam.operation_permission", strings.TrimSpace(input.Body.OperationPermission)),
+			attribute.String("iam.operation_permission", operationPermission),
 			attribute.String("iam.resource_type", resource.Type),
 			attribute.String("iam.resource_id", resource.ID),
-			attribute.String("iam.resource_permission", strings.TrimSpace(input.Body.ResourcePermission)),
+			attribute.String("iam.resource_permission", strings.TrimSpace(string(input.Body.ResourcePermission))),
 		)
-		decision, err := authzSvc.CheckResourcePermission(ctx, orgID, subject, resource, input.Body.ResourcePermission, input.Body.OperationPermission, input.Body.MinZedToken)
+		decision, err := authzSvc.CheckResourcePermission(ctx, orgID, subject, resource, string(input.Body.ResourcePermission), operationPermission, minZedToken)
 		if err != nil {
 			mapped := authzError(ctx, err)
 			span.RecordError(mapped)
@@ -301,20 +342,20 @@ func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(cont
 			attribute.Bool("iam.allowed", decision.Allowed),
 			attribute.String("iam.zed_token", decision.ZedToken),
 		)
-		return &authorizeResourceOutput{Body: dto.IAMAuthorizeResourceResponse{
+		return &internalcontractapi.AuthorizeResourceOutput{Body: internalcontractapi.AuthorizeResourceResult{
 			OrgID:               input.Body.OrgID,
-			Subject:             authorizationSubjectDTO(decision.Subject),
-			OperationPermission: decision.OperationPermission,
-			Resource:            resourceRefDTO(decision.Resource),
-			ResourcePermission:  decision.ResourcePermission,
+			Subject:             authorizationSubjectContract(decision.Subject),
+			OperationPermission: optionalPermissionName(decision.OperationPermission),
+			Resource:            resourceRefContract(decision.Resource),
+			ResourcePermission:  internalcontractapi.ResourcePermissionName(decision.ResourcePermission),
 			Allowed:             decision.Allowed,
-			ZedToken:            decision.ZedToken,
+			ZedToken:            optionalZedToken(decision.ZedToken),
 		}}, nil
 	}
 }
 
-func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
-	return func(ctx context.Context, input *writeResourceParentEdgeInput) (*writeResourceParentEdgeOutput, error) {
+func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) func(context.Context, *internalcontractapi.WriteResourceParentEdgeInput) (*internalcontractapi.WriteResourceParentEdgeOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.WriteResourceParentEdgeInput) (*internalcontractapi.WriteResourceParentEdgeOutput, error) {
 		ctx, span := internalAPITracer.Start(ctx, "iam.authorization.resource_parent_edge.write")
 		defer span.End()
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
@@ -330,13 +371,13 @@ func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) fun
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID, err := publicOrgIDForProviderDTO(ctx, svc, input.Body.OrgID)
+		orgID, err := publicOrgIDForProvider(ctx, svc, string(input.Body.OrgID))
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		resource := resourceRefFromDTO(input.Body.Resource)
-		parent := resourceRefFromDTO(input.Body.Parent)
-		if parent.Type == "org" && parent.ID == input.Body.OrgID.String() {
+		resource := resourceRefFromContract(input.Body.Resource)
+		parent := resourceRefFromContract(input.Body.Parent)
+		if parent.Type == "org" && parent.ID == string(input.Body.OrgID) {
 			parent.ID = orgID
 		}
 		span.SetAttributes(
@@ -344,11 +385,11 @@ func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) fun
 			attribute.String("verself.org_id", orgID),
 			attribute.String("iam.resource_type", resource.Type),
 			attribute.String("iam.resource_id", resource.ID),
-			attribute.String("iam.parent_relation", strings.TrimSpace(input.Body.Relation)),
+			attribute.String("iam.parent_relation", strings.TrimSpace(string(input.Body.Relation))),
 			attribute.String("iam.parent_type", parent.Type),
 			attribute.String("iam.parent_id", parent.ID),
 		)
-		edge, err := authzSvc.WriteResourceParentEdge(ctx, orgID, resource, input.Body.Relation, parent, input.Body.Operation)
+		edge, err := authzSvc.WriteResourceParentEdge(ctx, orgID, resource, string(input.Body.Relation), parent, contractString(input.Body.Operation))
 		if err != nil {
 			mapped := authzError(ctx, err)
 			span.RecordError(mapped)
@@ -356,19 +397,19 @@ func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) fun
 			return nil, mapped
 		}
 		span.SetAttributes(attribute.String("iam.zed_token", edge.ZedToken))
-		return &writeResourceParentEdgeOutput{Body: dto.IAMWriteResourceParentEdgeResponse{
-			Resource:  resourceRefDTO(edge.Resource),
-			Relation:  edge.Relation,
-			Parent:    resourceRefDTO(edge.Parent),
-			ZedToken:  edge.ZedToken,
-			Operation: edge.Operation,
+		return &internalcontractapi.WriteResourceParentEdgeOutput{Body: internalcontractapi.WriteResourceParentEdgeResult{
+			Resource:  resourceRefContract(edge.Resource),
+			Relation:  internalcontractapi.AuthorizationRelation(edge.Relation),
+			Parent:    resourceRefContract(edge.Parent),
+			ZedToken:  optionalZedToken(edge.ZedToken),
+			Operation: optionalPermissionName(edge.Operation),
 		}}, nil
 	}
 }
 
-func authorizationSubjectFromDTO(subject dto.IAMAuthorizationSubject) (identity.AuthorizationSubject, error) {
-	out := identity.AuthorizationSubject{ID: strings.TrimSpace(subject.ID)}
-	switch strings.TrimSpace(subject.Type) {
+func authorizationSubjectFromContract(subject internalcontractapi.IAMAuthorizationSubject) (identity.AuthorizationSubject, error) {
+	out := identity.AuthorizationSubject{ID: strings.TrimSpace(string(subject.ID))}
+	switch strings.TrimSpace(string(subject.Type)) {
 	case string(identity.AuthorizationSubjectKindUser):
 		out.Kind = identity.AuthorizationSubjectKindUser
 	case string(identity.AuthorizationSubjectKindServiceAccount):
@@ -384,36 +425,37 @@ func authorizationSubjectFromDTO(subject dto.IAMAuthorizationSubject) (identity.
 	return out, nil
 }
 
-func authorizationSubjectDTO(subject authz.Subject) dto.IAMAuthorizationSubject {
-	return dto.IAMAuthorizationSubject{
-		Type: string(subject.Kind),
-		ID:   subject.ID,
+func authorizationSubjectContract(subject authz.Subject) internalcontractapi.IAMAuthorizationSubject {
+	return internalcontractapi.IAMAuthorizationSubject{
+		Type: internalcontractapi.IAMAuthorizationSubjectType(subject.Kind),
+		ID:   internalcontractapi.SubjectID(subject.ID),
 	}
 }
 
-func resourceRefFromDTO(resource dto.IAMResourceRef) authz.ResourceRef {
+func resourceRefFromContract(resource internalcontractapi.IAMResourceRef) authz.ResourceRef {
 	return authz.ResourceRef{
-		Type: strings.TrimSpace(resource.Type),
-		ID:   strings.TrimSpace(resource.ID),
+		Type: strings.TrimSpace(string(resource.Type)),
+		ID:   strings.TrimSpace(string(resource.ID)),
 	}
 }
 
-func resourceRefDTO(resource authz.ResourceRef) dto.IAMResourceRef {
-	return dto.IAMResourceRef{
-		Type: strings.TrimSpace(resource.Type),
-		ID:   strings.TrimSpace(resource.ID),
+func resourceRefContract(resource authz.ResourceRef) internalcontractapi.IAMResourceRef {
+	return internalcontractapi.IAMResourceRef{
+		Type: internalcontractapi.AuthorizationResourceType(strings.TrimSpace(resource.Type)),
+		ID:   internalcontractapi.AuthorizationResourceID(strings.TrimSpace(resource.ID)),
 	}
 }
 
-func publicOrgIDForProviderDTO(ctx context.Context, svc *identity.Service, providerOrgID dto.OrgID) (string, error) {
+func publicOrgIDForProvider(ctx context.Context, svc *identity.Service, providerOrgID string) (string, error) {
 	if svc == nil {
 		return "", identity.ErrStoreUnavailable
 	}
-	if providerOrgID.Uint64() == 0 {
+	providerOrgID = strings.TrimSpace(providerOrgID)
+	if providerOrgID == "" || providerOrgID == "0" {
 		return "", fmt.Errorf("%w: org_id is required", identity.ErrInvalidInput)
 	}
 	profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
-		IdentityProviderOrgID: providerOrgID.String(),
+		IdentityProviderOrgID: providerOrgID,
 		RequireActive:         true,
 	})
 	if err != nil {
@@ -477,15 +519,91 @@ func hasHumanTokenMarker(claims map[string]any) bool {
 	return ok && len(roles) > 0
 }
 
-func humanProfileDTO(profile identity.HumanProfile) dto.IAMUpdateHumanProfileResponse {
-	return dto.IAMUpdateHumanProfileResponse{
-		SubjectID:   profile.SubjectID,
-		Email:       profile.Email,
-		GivenName:   profile.GivenName,
-		FamilyName:  profile.FamilyName,
-		DisplayName: profile.DisplayName,
-		SyncedAt:    profile.SyncedAt,
+func organizationProfile(profile identity.OrganizationProfile) internalcontractapi.OrganizationProfile {
+	return internalcontractapi.OrganizationProfile{
+		OrgID:          internalcontractapi.ProviderOrgID(profile.IdentityProviderOrgID),
+		DisplayName:    internalcontractapi.DisplayName(profile.DisplayName),
+		Slug:           internalcontractapi.OrgSlug(profile.Slug),
+		State:          string(profile.State),
+		Version:        internalcontractapi.OrganizationVersion(profile.Version),
+		UpdatedAt:      profile.UpdatedAt.Format(time.RFC3339Nano),
+		RedirectedFrom: optionalOrgSlug(profile.RedirectedFrom),
 	}
+}
+
+func humanProfileSummary(profile identity.HumanProfile) internalcontractapi.HumanProfileSummary {
+	return internalcontractapi.HumanProfileSummary{
+		SubjectID:   internalcontractapi.SubjectID(profile.SubjectID),
+		Email:       internalcontractapi.EmailAddress(profile.Email),
+		GivenName:   internalcontractapi.GivenName(profile.GivenName),
+		FamilyName:  internalcontractapi.FamilyName(profile.FamilyName),
+		DisplayName: internalcontractapi.DisplayName(profile.DisplayName),
+		SyncedAt:    profile.SyncedAt.Format(time.RFC3339Nano),
+	}
+}
+
+func contractString[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(*value))
+}
+
+func optionalStringPointer[T ~string](value *T) *string {
+	if value == nil {
+		return nil
+	}
+	valueString := strings.TrimSpace(string(*value))
+	if valueString == "" {
+		return nil
+	}
+	return &valueString
+}
+
+func optionalZedToken(value string) *internalcontractapi.ZedToken {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	out := internalcontractapi.ZedToken(value)
+	return &out
+}
+
+func optionalPermissionName(value string) *internalcontractapi.PermissionName {
+	return optionalContractValue[internalcontractapi.PermissionName](value)
+}
+
+func optionalOrgSlug(value string) *internalcontractapi.OrgSlug {
+	return optionalContractValue[internalcontractapi.OrgSlug](value)
+}
+
+func optionalContractValue[T ~string](value string) *T {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	out := T(value)
+	return &out
+}
+
+func permissionStrings(values internalcontractapi.Permissions) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = internalcontractapi.PermissionName(strings.TrimSpace(string(value))); value != "" {
+			out = append(out, string(value))
+		}
+	}
+	return out
+}
+
+func contractPermissions(values []string) internalcontractapi.Permissions {
+	out := make(internalcontractapi.Permissions, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, internalcontractapi.PermissionName(value))
+		}
+	}
+	return out
 }
 
 func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdentity *auth.Identity, outcome string, err error) {

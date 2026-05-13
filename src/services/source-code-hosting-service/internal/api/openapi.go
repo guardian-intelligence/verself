@@ -7,18 +7,18 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/service-runtime/humaapi"
 )
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) huma.API {
-	config := dto.DefaultHumaConfig("Source Code Hosting Service", version)
+	config := humaapi.DefaultConfig("Source Code Hosting Service", version)
 	if listenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applySecuritySchemes(api, "bearerAuth")
 	RegisterRoutes(api, cfg)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
@@ -40,14 +40,14 @@ func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 }
 
 func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) huma.API {
-	config := dto.DefaultHumaConfig("Source Code Hosting Service Internal API", version)
+	config := humaapi.DefaultConfig("Source Code Hosting Service Internal API", version)
 	if listenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applySecuritySchemes(api, "mutualTLS")
 	RegisterInternalRoutes(api, cfg)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

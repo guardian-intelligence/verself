@@ -7,8 +7,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
+	"github.com/verself/service-runtime/humaapi"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
@@ -24,14 +24,14 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := dto.DefaultHumaConfig("Profile Service", version)
+	config := humaapi.DefaultConfig("Profile Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
 	RegisterRoutes(api, cfg.Service, cfg.Authorizer)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

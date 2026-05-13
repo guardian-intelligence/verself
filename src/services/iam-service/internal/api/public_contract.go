@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ func (r publicRuntime) PrepareOperation(desc contractapi.OperationDescriptor, op
 	if desc.RequestBodyMaxBytes > 0 {
 		op.MaxBodyBytes = desc.RequestBodyMaxBytes
 	}
+	op.Errors = contractProblemStatuses(desc.Problems)
 	if desc.Idempotency.Policy == string(runtimeiam.IdempotencyHeaderKey) {
 		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
 	}
@@ -311,6 +313,30 @@ func operationPolicyFromContract(desc contractapi.OperationDescriptor) runtimeia
 	}
 }
 
+func contractProblemStatuses(problems []contractapi.ProblemDescriptor) []int {
+	statuses := make([]int, 0, len(problems))
+	for _, problem := range problems {
+		if problem.Status > 0 {
+			statuses = append(statuses, problem.Status)
+		}
+	}
+	return uniqueSortedStatusCodes(statuses)
+}
+
+func uniqueSortedStatusCodes(statuses []int) []int {
+	sort.Ints(statuses)
+	out := statuses[:0]
+	previous := 0
+	for _, status := range statuses {
+		if status == previous {
+			continue
+		}
+		out = append(out, status)
+		previous = status
+	}
+	return out
+}
+
 func runtimeOrgScopeFromContract(source string) string {
 	switch source {
 	case "token_role_assignments":
@@ -341,7 +367,7 @@ func (h publicHandlers) ListOrganizations(ctx context.Context, _ *contractapi.Li
 	if err != nil {
 		return nil, identityError(ctx, err)
 	}
-	authorizedPublicOrgIDs, err := authorizedOrgIDs(ctx, h.authz, authIdentity, organizationMetadataOrgIDs(organizations), runtimeiam.Permission(contractapi.ListOrganizationsOperation.Authorization.Permission))
+	authorizedPublicOrgIDs, err := authorizedOrgIDs(ctx, h.authz, authIdentity, organizationMetadataOrgIDs(organizations), runtimeiam.Permission(contractapi.ListOrganizations.Descriptor.Authorization.Permission))
 	if err != nil {
 		return nil, authzError(ctx, err)
 	}
@@ -366,8 +392,8 @@ func (h publicHandlers) UpdateOrganization(ctx context.Context, input *contracta
 	if err != nil {
 		return nil, err
 	}
-	displayName := string(input.Body.DisplayName)
-	slug := string(input.Body.Slug)
+	displayName := contractString(input.Body.DisplayName)
+	slug := contractString(input.Body.Slug)
 	if strings.TrimSpace(displayName) == "" || strings.TrimSpace(slug) == "" {
 		current, err := h.service.Organization(ctx, principal)
 		if err != nil {
@@ -433,7 +459,7 @@ func (h publicHandlers) UpdateMemberRole(ctx context.Context, input *contractapi
 		RoleKeys:              []string{string(input.Body.Role)},
 		ExpectedRoleKeys:      []string{string(input.Body.ExpectedRole)},
 		ExpectedOrgACLVersion: expectedOrgACLVersion,
-		OperationID:           contractapi.UpdateMemberRoleOperation.OperationID,
+		OperationID:           contractapi.UpdateMemberRole.Descriptor.OperationID,
 		IdempotencyKey:        string(input.IdempotencyKey),
 	})
 	if err != nil {
@@ -508,7 +534,7 @@ func (h publicHandlers) organizationSummariesFromMetadata(organizations []identi
 		out = append(out, contractapi.OrganizationSummary{
 			OrgID:         publicOrgID,
 			ResourceName:  publicOrganizationResourceName(h.installationID, publicOrgID),
-			Slug:          contractapi.OrgSlug(organization.Slug),
+			Slug:          optionalContractValue[contractapi.OrgSlug](organization.Slug),
 			DisplayName:   contractapi.DisplayName(organization.DisplayName),
 			CallerRole:    callerRole,
 			Version:       contractapi.OrganizationVersion(organization.Version),
@@ -547,7 +573,7 @@ func (h publicHandlers) organizationSummary(org identity.Organization) contracta
 	return contractapi.OrganizationSummary{
 		OrgID:         publicOrgID,
 		ResourceName:  publicOrganizationResourceName(h.installationID, publicOrgID),
-		Slug:          contractapi.OrgSlug(org.Slug),
+		Slug:          optionalContractValue[contractapi.OrgSlug](org.Slug),
 		DisplayName:   contractapi.DisplayName(org.DisplayName),
 		CallerRole:    contractapi.OrganizationRole(roleFromKeys(org.Caller.RoleKeys)),
 		Version:       contractapi.OrganizationVersion(org.Version),

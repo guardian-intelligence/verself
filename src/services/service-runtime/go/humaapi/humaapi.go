@@ -1,8 +1,8 @@
-package dto
+package humaapi
 
 import "github.com/danielgtaylor/huma/v2"
 
-func DefaultHumaConfig(title, version string) huma.Config {
+func DefaultConfig(title, version string) huma.Config {
 	config := huma.DefaultConfig(title, version)
 	// Huma's default create hook injects a `$schema` member into response bodies.
 	config.CreateHooks = nil

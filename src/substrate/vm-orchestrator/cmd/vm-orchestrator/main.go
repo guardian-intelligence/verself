@@ -52,7 +52,7 @@ func run() error {
 	flag.StringVar(&cfg.JailerRoot, "jailer-root", cfg.JailerRoot, "Jailer chroot root directory")
 	flag.IntVar(&cfg.JailerUID, "jailer-uid", cfg.JailerUID, "UID used for the jailer process")
 	flag.IntVar(&cfg.JailerGID, "jailer-gid", cfg.JailerGID, "GID used for the jailer process")
-	// Per-VM shape is now a request-time parameter via dto.VMResources;
+	// Per-VM shape is now a request-time LeaseSpec parameter;
 	// flag-level --vcpus / --memory-mib have been removed. Operators tune
 	// per-org ceilings via the VMResourceBounds table in sandbox-rental-service.
 	flag.StringVar(&cfg.HostInterface, "host-interface", cfg.HostInterface, "Default uplink interface for guest egress")

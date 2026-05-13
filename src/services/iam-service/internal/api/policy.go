@@ -24,8 +24,6 @@ const (
 	idempotencyHeaderKey        = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
-
-	bodyLimitSmallJSON int64 = 16 << 10
 )
 
 const (

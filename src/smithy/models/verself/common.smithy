@@ -57,6 +57,11 @@ string PermissionName
 @pattern("^[a-z][a-z0-9_]*$")
 string ResourceKind
 
+/// Globally unique Verself resource name.
+@length(min: 1, max: 1024)
+@pattern("^urn:verself:.+$")
+string ResourceName
+
 /// Stable dotted audit event name.
 @pattern("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$")
 string AuditEventName
@@ -135,7 +140,9 @@ structure serviceRuntime {
 enum AuthMode {
     BEARER = "bearer"
     SPIFFE_MTLS = "spiffe_mtls"
+    SPIFFE_MTLS_BEARER = "spiffe_mtls_bearer"
     CHECKOUT_GRANT = "checkout_grant"
+    PROVIDER_WEBHOOK = "provider_webhook"
     PUBLIC = "public"
 }
 
@@ -144,6 +151,7 @@ enum PrincipalKind {
     CLI = "cli"
     WORKLOAD = "workload"
     GITHUB_ACTION = "github_action"
+    PROVIDER = "provider"
 }
 
 list PrincipalKinds {
@@ -168,6 +176,10 @@ enum OrganizationScopeSource {
     TOKEN_ROLE_ASSIGNMENTS = "token_role_assignments"
     INPUT_MEMBER = "input_member"
     REQUEST_SUBJECT = "request_subject"
+    BODY_ORG_ID = "body_org_id"
+    REQUEST_ORG_ID = "request_org_id"
+    REQUEST_SUBJECT_ID = "request_subject_id"
+    REQUEST_ID = "request_id"
     CHECKOUT_GRANT = "checkout_grant"
 }
 
@@ -195,19 +207,34 @@ enum Action {
     CANCEL = "cancel"
     CONNECT = "connect"
     CREATE = "create"
+    DECRYPT = "decrypt"
     DELETE = "delete"
     DISABLE = "disable"
+    DOWNLOAD = "download"
     ERASE = "erase"
+    ENCRYPT = "encrypt"
     EXPORT = "export"
+    INGEST = "ingest"
     INVITE = "invite"
     LIST = "list"
+    MANAGE = "manage"
+    PAUSE = "pause"
+    QUERY = "query"
     READ = "read"
+    REGISTER = "register"
+    RESOLVE = "resolve"
+    RESUME = "resume"
     RESTORE = "restore"
     REVOKE = "revoke"
     ROLL = "roll"
+    ROTATE = "rotate"
+    SEARCH = "search"
     SET = "set"
+    SIGN = "sign"
+    SYNC = "sync"
     TEST = "test"
     UPDATE = "update"
+    VERIFY = "verify"
     WRITE = "write"
 }
 
@@ -357,6 +384,11 @@ structure ConflictError with [ProblemDetails] {}
 @httpError(409)
 @problem(type: "urn:verself:problem:conflict:idempotency_payload_mismatch", code: "conflict.idempotency_payload_mismatch")
 structure IdempotencyPayloadMismatchError with [ProblemDetails] {}
+
+@error("client")
+@httpError(402)
+@problem(type: "urn:verself:problem:billing:payment_required", code: "billing.payment_required")
+structure PaymentRequiredError with [ProblemDetails] {}
 
 @error("client")
 @httpError(429)

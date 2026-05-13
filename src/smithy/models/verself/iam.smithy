@@ -761,7 +761,7 @@ structure ResolveOrganizationOutput {
 }
 
 @http(method: "PATCH", uri: "/internal/v1/subjects/{subject_id}/human-profile")
-@identity(mode: "spiffe_mtls", audience: "iam-service", principals: ["workload"])
+@identity(mode: "spiffe_mtls_bearer", audience: "iam-service", principals: ["workload"])
 @authz(permission: HumanProfileWritePermission, organization: {source: "request_subject"})
 @audit(event: HumanProfileWriteAuditEvent, resource: HumanProfile, action: "write")
 @rateLimit(bucket: "internal_mutation")

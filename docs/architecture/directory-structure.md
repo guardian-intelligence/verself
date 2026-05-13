@@ -22,9 +22,6 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `smithy/` — canonical Smithy API models, generated IR projections,
   generated OpenAPI compatibility projections, and Connect/protobuf contracts
   for RPC-shaped surfaces.
-- `domain-transfer-objects/` — shared data-transfer contracts for service
-  boundaries, Go DTO primitives, numeric wire primitives, and generated-client
-  contract rules used by the canonical models.
 - `websites/` — browser applications and shared web packages.
 - `sdks/` — generated and curated client layers, transport cores, and package-local
   SDK adapters.

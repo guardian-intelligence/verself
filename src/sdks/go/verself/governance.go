@@ -2,6 +2,7 @@ package verself
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"mime"
 	"net/http"
@@ -148,51 +149,54 @@ func (c *GovernanceClient) ListAuditEvents(ctx context.Context, options ListGove
 	}
 	params := &governancecore.ListAuditEventsParams{}
 	if options.Limit > 0 {
-		limit := int64(options.Limit)
+		limit, err := governanceAuditEventsLimit(options.Limit)
+		if err != nil {
+			return GovernanceAuditEvents{}, err
+		}
 		params.Limit = &limit
 	}
 	if strings.TrimSpace(options.Cursor) != "" {
-		cursor := strings.TrimSpace(options.Cursor)
+		cursor := governancecore.AuditCursor(strings.TrimSpace(options.Cursor))
 		params.Cursor = &cursor
 	}
 	if options.Order != "" {
-		order := governancecore.ListAuditEventsParamsOrder(options.Order)
+		order := governancecore.AuditListOrder(options.Order)
 		params.Order = &order
 	}
 	if strings.TrimSpace(options.ActorID) != "" {
-		actorID := strings.TrimSpace(options.ActorID)
+		actorID := governancecore.AuditActorID(strings.TrimSpace(options.ActorID))
 		params.ActorId = &actorID
 	}
 	if strings.TrimSpace(options.AuditEvent) != "" {
-		auditEvent := strings.TrimSpace(options.AuditEvent)
+		auditEvent := governancecore.GovernanceAuditEventName(strings.TrimSpace(options.AuditEvent))
 		params.AuditEvent = &auditEvent
 	}
 	if strings.TrimSpace(options.CredentialID) != "" {
-		credentialID := strings.TrimSpace(options.CredentialID)
+		credentialID := governancecore.AuditCredentialID(strings.TrimSpace(options.CredentialID))
 		params.CredentialId = &credentialID
 	}
 	if strings.TrimSpace(options.EventName) != "" {
-		eventName := strings.TrimSpace(options.EventName)
+		eventName := governancecore.AuditEventOperationName(strings.TrimSpace(options.EventName))
 		params.EventName = &eventName
 	}
 	if strings.TrimSpace(options.EventSource) != "" {
-		eventSource := strings.TrimSpace(options.EventSource)
+		eventSource := governancecore.AuditEventSource(strings.TrimSpace(options.EventSource))
 		params.EventSource = &eventSource
 	}
 	if options.Outcome != "" {
-		outcome := governancecore.ListAuditEventsParamsOutcome(options.Outcome)
+		outcome := governancecore.AuditOutcome(options.Outcome)
 		params.Outcome = &outcome
 	}
 	if strings.TrimSpace(options.TargetID) != "" {
-		targetID := strings.TrimSpace(options.TargetID)
+		targetID := governancecore.AuditTargetID(strings.TrimSpace(options.TargetID))
 		params.TargetId = &targetID
 	}
 	if strings.TrimSpace(options.TargetType) != "" {
-		targetType := strings.TrimSpace(options.TargetType)
+		targetType := governancecore.AuditTargetType(strings.TrimSpace(options.TargetType))
 		params.TargetType = &targetType
 	}
 	if strings.TrimSpace(options.TargetResourceName) != "" {
-		targetResourceName := strings.TrimSpace(options.TargetResourceName)
+		targetResourceName := governancecore.ResourceName(strings.TrimSpace(options.TargetResourceName))
 		params.TargetResourceName = &targetResourceName
 	}
 
@@ -201,9 +205,9 @@ func (c *GovernanceClient) ListAuditEvents(ctx context.Context, options ListGove
 		return GovernanceAuditEvents{}, err
 	}
 	if response.JSON200 == nil {
-		return GovernanceAuditEvents{}, governanceAPIError("list audit events", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+		return GovernanceAuditEvents{}, governanceAPIError("list audit events", response.StatusCode(), response.Body)
 	}
-	return governanceAuditEventsFromGenerated(*response.JSON200), nil
+	return governanceAuditEventsFromGenerated(response.JSON200.Events, response.JSON200.Filters, response.JSON200.Limit, response.JSON200.NextCursor), nil
 }
 
 func (c *GovernanceClient) ListDataExports(ctx context.Context) ([]GovernanceExportJob, error) {
@@ -215,7 +219,7 @@ func (c *GovernanceClient) ListDataExports(ctx context.Context) ([]GovernanceExp
 		return nil, err
 	}
 	if response.JSON200 == nil {
-		return nil, governanceAPIError("list data exports", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+		return nil, governanceAPIError("list data exports", response.StatusCode(), response.Body)
 	}
 	out := make([]GovernanceExportJob, 0, len(response.JSON200.Exports))
 	for _, export := range response.JSON200.Exports {
@@ -236,10 +240,10 @@ func (c *GovernanceClient) CreateDataExport(ctx context.Context, input CreateGov
 	if err != nil {
 		return GovernanceExportJob{}, err
 	}
-	scopes := make([]string, 0, len(input.Scopes))
+	scopes := make(governancecore.ExportScopes, 0, len(input.Scopes))
 	for _, scope := range input.Scopes {
 		if strings.TrimSpace(string(scope)) != "" {
-			scopes = append(scopes, strings.TrimSpace(string(scope)))
+			scopes = append(scopes, governancecore.ExportScope(strings.TrimSpace(string(scope))))
 		}
 	}
 	body := governancecore.CreateDataExportJSONRequestBody{
@@ -249,15 +253,15 @@ func (c *GovernanceClient) CreateDataExport(ctx context.Context, input CreateGov
 		body.Scopes = &scopes
 	}
 	response, err := c.client.CreateDataExportWithResponse(ctx, &governancecore.CreateDataExportParams{
-		IdempotencyKey: key,
+		IdempotencyKey: governancecore.IdempotencyKey(key),
 	}, body)
 	if err != nil {
 		return GovernanceExportJob{}, err
 	}
 	if response.JSON201 == nil {
-		return GovernanceExportJob{}, governanceAPIError("create data export", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+		return GovernanceExportJob{}, governanceAPIError("create data export", response.StatusCode(), response.Body)
 	}
-	return governanceExportJobFromGenerated(*response.JSON201)
+	return governanceExportJobFromGenerated(response.JSON201.Export)
 }
 
 func (c *GovernanceClient) GetDataExport(ctx context.Context, exportID string) (GovernanceExportJob, error) {
@@ -268,14 +272,14 @@ func (c *GovernanceClient) GetDataExport(ctx context.Context, exportID string) (
 	if err != nil {
 		return GovernanceExportJob{}, err
 	}
-	response, err := c.client.GetDataExportWithResponse(ctx, id)
+	response, err := c.client.GetDataExportWithResponse(ctx, governancecore.DataExportID(id.String()))
 	if err != nil {
 		return GovernanceExportJob{}, err
 	}
 	if response.JSON200 == nil {
-		return GovernanceExportJob{}, governanceAPIError("get data export", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+		return GovernanceExportJob{}, governanceAPIError("get data export", response.StatusCode(), response.Body)
 	}
-	return governanceExportJobFromGenerated(*response.JSON200)
+	return governanceExportJobFromGenerated(response.JSON200.Export)
 }
 
 func (c *GovernanceClient) DownloadDataExport(ctx context.Context, exportID string) (GovernanceExportArtifact, error) {
@@ -286,12 +290,12 @@ func (c *GovernanceClient) DownloadDataExport(ctx context.Context, exportID stri
 	if err != nil {
 		return GovernanceExportArtifact{}, err
 	}
-	response, err := c.client.DownloadDataExportWithResponse(ctx, id, acceptGzipRequest)
+	response, err := c.client.DownloadDataExportWithResponse(ctx, governancecore.DataExportID(id.String()), acceptGzipRequest)
 	if err != nil {
 		return GovernanceExportArtifact{}, err
 	}
 	if response.StatusCode() != http.StatusOK {
-		return GovernanceExportArtifact{}, governanceAPIError("download data export", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+		return GovernanceExportArtifact{}, governanceAPIError("download data export", response.StatusCode(), response.Body)
 	}
 	contentType := response.HTTPResponse.Header.Get("Content-Type")
 	if strings.TrimSpace(contentType) == "" {
@@ -324,22 +328,29 @@ func governanceArtifactFileName(contentDisposition string, exportID uuid.UUID) s
 	return fmt.Sprintf("verself-export-%s.tar.gz", exportID.String())
 }
 
-func governanceAuditEventsFromGenerated(input governancecore.GovernanceAuditEvents) GovernanceAuditEvents {
+func governanceAuditEventsFromGenerated(events governancecore.AuditEvents, filters governancecore.AuditFilters, limit governancecore.AuditEventsLimit, nextCursor *governancecore.AuditCursor) GovernanceAuditEvents {
 	out := GovernanceAuditEvents{
-		Events:  make([]GovernanceAuditEvent, 0, len(input.Events)),
-		Filters: governanceAuditFiltersFromGenerated(input.Filters),
-		Limit:   input.Limit,
+		Events:  make([]GovernanceAuditEvent, 0, len(events)),
+		Filters: governanceAuditFiltersFromGenerated(filters),
+		Limit:   int32(limit),
 	}
-	if input.NextCursor != nil {
-		out.NextCursor = *input.NextCursor
+	if nextCursor != nil {
+		out.NextCursor = string(*nextCursor)
 	}
-	for _, event := range input.Events {
+	for _, event := range events {
 		out.Events = append(out.Events, governanceAuditEventFromGenerated(event))
 	}
 	return out
 }
 
-func governanceAuditFiltersFromGenerated(input governancecore.GovernanceAuditFilters) GovernanceAuditFilters {
+func governanceAuditEventsLimit(value int) (governancecore.AuditEventsLimit, error) {
+	if value < 1 || value > 200 {
+		return 0, fmt.Errorf("verself sdk: governance audit limit must be between 1 and 200")
+	}
+	return governancecore.AuditEventsLimit(value), nil // #nosec G115 -- Smithy bounds audit event pages to 200.
+}
+
+func governanceAuditFiltersFromGenerated(input governancecore.AuditFilters) GovernanceAuditFilters {
 	return GovernanceAuditFilters{
 		ActorID:            stringValue(input.ActorId),
 		AuditEvent:         stringValue(input.AuditEvent),
@@ -353,33 +364,33 @@ func governanceAuditFiltersFromGenerated(input governancecore.GovernanceAuditFil
 	}
 }
 
-func governanceAuditEventFromGenerated(input governancecore.GovernanceAuditEvent) GovernanceAuditEvent {
+func governanceAuditEventFromGenerated(input governancecore.AuditEvent) GovernanceAuditEvent {
 	return GovernanceAuditEvent{
-		ActorID:            input.ActorId,
-		ActorType:          input.ActorType,
-		AuditEvent:         input.AuditEvent,
+		ActorID:            string(input.ActorId),
+		ActorType:          string(input.ActorType),
+		AuditEvent:         string(input.AuditEvent),
 		CredentialID:       stringValue(input.CredentialId),
-		DetailSHA256:       input.DetailSha256,
+		DetailSHA256:       string(input.DetailSha256),
 		ErrorCode:          stringValue(input.ErrorCode),
-		EventID:            input.EventId,
-		EventName:          input.EventName,
-		EventSource:        input.EventSource,
+		EventID:            string(input.EventId),
+		EventName:          string(input.EventName),
+		EventSource:        string(input.EventSource),
 		HMACKeyID:          stringValue(input.HmacKeyId),
-		OrgID:              input.OrgId,
-		Outcome:            input.Outcome,
-		Permission:         input.Permission,
-		PrevHMAC:           input.PrevHmac,
+		OrgID:              string(input.OrgId),
+		Outcome:            string(input.Outcome),
+		Permission:         string(input.Permission),
+		PrevHMAC:           string(input.PrevHmac),
 		RecordedAt:         input.RecordedAt,
-		RowHMAC:            input.RowHmac,
-		Sequence:           input.Sequence,
+		RowHMAC:            string(input.RowHmac),
+		Sequence:           string(input.Sequence),
 		TargetID:           stringValue(input.TargetId),
-		TargetType:         input.TargetType,
+		TargetType:         string(input.TargetType),
 		TargetResourceName: stringValue(input.TargetResourceName),
 		TraceID:            stringValue(input.TraceId),
 	}
 }
 
-func governanceExportJobFromGenerated(input governancecore.GovernanceExportJob) (GovernanceExportJob, error) {
+func governanceExportJobFromGenerated(input governancecore.DataExportJob) (GovernanceExportJob, error) {
 	artifactBytes, err := parseDecimalInt64(input.ArtifactBytes, "governance export artifact bytes")
 	if err != nil {
 		return GovernanceExportJob{}, err
@@ -393,14 +404,14 @@ func governanceExportJobFromGenerated(input governancecore.GovernanceExportJob) 
 		files = append(files, converted)
 	}
 	return GovernanceExportJob{
-		ExportID:       input.ExportId,
-		ResourceName:   input.ResourceName,
-		OrgID:          input.OrgId,
-		RequestedBy:    input.RequestedBy,
-		Scopes:         append([]string(nil), input.Scopes...),
+		ExportID:       string(input.ExportId),
+		ResourceName:   string(input.ResourceName),
+		OrgID:          string(input.OrgId),
+		RequestedBy:    string(input.RequestedBy),
+		Scopes:         governanceExportScopesFromGenerated(input.Scopes),
 		IncludeLogs:    input.IncludeLogs,
-		Format:         input.Format,
-		State:          input.State,
+		Format:         string(input.Format),
+		State:          string(input.State),
 		ArtifactSHA256: stringValue(input.ArtifactSha256),
 		ArtifactBytes:  artifactBytes,
 		DownloadURL:    stringValue(input.DownloadUrl),
@@ -414,7 +425,7 @@ func governanceExportJobFromGenerated(input governancecore.GovernanceExportJob) 
 	}, nil
 }
 
-func governanceExportFileFromGenerated(input governancecore.GovernanceExportFile) (GovernanceExportFile, error) {
+func governanceExportFileFromGenerated(input governancecore.DataExportFile) (GovernanceExportFile, error) {
 	rows, err := parseDecimalInt64(input.Rows, "governance export file rows")
 	if err != nil {
 		return GovernanceExportFile{}, err
@@ -424,18 +435,30 @@ func governanceExportFileFromGenerated(input governancecore.GovernanceExportFile
 		return GovernanceExportFile{}, err
 	}
 	return GovernanceExportFile{
-		Path:        input.Path,
-		ContentType: input.ContentType,
+		Path:        string(input.Path),
+		ContentType: string(input.ContentType),
 		Rows:        rows,
 		Bytes:       bytes,
-		SHA256:      input.Sha256,
+		SHA256:      string(input.Sha256),
 	}, nil
 }
 
-func governanceAPIError(operation string, statusCode int, model *governancecore.ErrorModel, body []byte) error {
+func governanceExportScopesFromGenerated(input governancecore.ExportScopes) []string {
+	out := make([]string, 0, len(input))
+	for _, scope := range input {
+		out = append(out, string(scope))
+	}
+	return out
+}
+
+func governanceAPIError(operation string, statusCode int, body []byte) error {
 	var title *string
 	var detail *string
-	if model != nil {
+	var model struct {
+		Title  *string `json:"title"`
+		Detail *string `json:"detail"`
+	}
+	if len(body) > 0 && json.Unmarshal(body, &model) == nil {
 		title = model.Title
 		detail = model.Detail
 	}

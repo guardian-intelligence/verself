@@ -43,10 +43,9 @@ and globally unique URN resource names; see
 Services with repo-owned operations expose internal projections that use SPIFFE
 mTLS and may include repo-only routes. Repo-owned service callers pass a
 `workloadauth.MTLSClientForService` HTTP client into the generated service
-client so trace propagation and peer authorization stay centralized. Shared Go
-DTO primitives live in `src/domain-transfer-objects`; use them for boundary
-types and generated-client contracts instead of service-local 64-bit JSON
-encodings.
+client so trace propagation and peer authorization stay centralized. Smithy
+models under `src/smithy/models/verself` own boundary types, generated-client
+contracts, and numeric wire encodings.
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):

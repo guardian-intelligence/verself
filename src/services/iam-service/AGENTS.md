@@ -17,8 +17,9 @@ Verself-owned concerns.
 
 Go product services remain authorization enforcement points. Each service owns
 its operation catalog through Smithy contract metadata under `src/smithy`.
-Generated Huma bindings project that contract into route registration and
-OpenAPI metadata, while runtime authorization decisions are delegated to
+Generated contract packages expose DTOs, operation descriptors, and handler
+types; handwritten Huma route registration consumes those types and projects the
+same metadata into OpenAPI. Runtime authorization decisions are delegated to
 `iam-service` over SPIFFE mTLS. Public API packages depend on the narrow
 `service-runtime/iam` interface; service entrypoints wire generated
 `iam-service` internal clients.
@@ -38,10 +39,11 @@ route.
 
 ## API Shape
 
-Customer-facing `/api/*` routes are registered from the Smithy contract through
-the generated `internal/contractapi` package. The Smithy operation model, Huma
-method/path registration, IAM metadata, rate limits, idempotency, audit events,
-body limits, OpenAPI projection, and generated-client contracts must not drift.
+Customer-facing `/api/*` routes use the generated `internal/contractapi` DTOs,
+operation descriptors, and handler types. Handwritten route registration owns
+the Huma wiring. The Smithy operation model, Huma method/path registration, IAM
+metadata, rate limits, idempotency, audit events, body limits, OpenAPI
+projection, and generated-client contracts must not drift.
 
 Public route policy metadata uses the shared `service-runtime/iam.OperationPolicy`
 vocabulary. `Permission` is the product permission sent to the Zanzibar-backed

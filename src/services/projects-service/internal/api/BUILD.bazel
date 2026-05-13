@@ -18,6 +18,7 @@ go_library(
         "//src/domain-transfer-objects/go:dto",
         "//src/services/projects-service/internal/projects",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/humaapi",
         "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",

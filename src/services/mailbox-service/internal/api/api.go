@@ -8,9 +8,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/mailbox-service/internal/app"
 	"github.com/verself/mailbox-service/internal/mailstore"
+	"github.com/verself/service-runtime/humaapi"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
@@ -34,40 +34,40 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider, author
 	if len(authorizers) > 0 {
 		authorizer = authorizers[0]
 	}
-	publicConfig := dto.DefaultHumaConfig("Mailbox Service", version)
+	publicConfig := humaapi.DefaultConfig("Mailbox Service", version)
 	publicConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	publicAPI := humago.New(mux, publicConfig)
 	registerPublicRoutes(publicAPI, svc)
-	dto.ApplyOpenAPIWireDefaults(publicAPI)
+	humaapi.ApplyOpenAPIWireDefaults(publicAPI)
 
 	privateMux := http.NewServeMux()
-	privateConfig := dto.DefaultHumaConfig("Mailbox Service", version)
+	privateConfig := humaapi.DefaultConfig("Mailbox Service", version)
 	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(privateMux, privateConfig)
 	applyPublicAPISecurityScheme(privateAPI)
 	registerMailRoutes(privateAPI, svc, authorizer)
-	dto.ApplyOpenAPIWireDefaults(privateAPI)
+	humaapi.ApplyOpenAPIWireDefaults(privateAPI)
 
 	return publicAPI, privateMux
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	privateConfig := dto.DefaultHumaConfig("Mailbox Service", version)
+	privateConfig := humaapi.DefaultConfig("Mailbox Service", version)
 	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	applyPublicAPISecurityScheme(privateAPI)
 	registerMailRoutes(privateAPI, nil, nil)
-	dto.ApplyOpenAPIWireDefaults(privateAPI)
+	humaapi.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	privateConfig := dto.DefaultHumaConfig("Mailbox Service", version)
+	privateConfig := humaapi.DefaultConfig("Mailbox Service", version)
 	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	applyPublicAPISecurityScheme(privateAPI)
 	registerMailRoutes(privateAPI, nil, nil)
-	dto.ApplyOpenAPIWireDefaults(privateAPI)
+	humaapi.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().YAML()
 }
 

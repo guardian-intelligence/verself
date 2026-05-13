@@ -16,8 +16,11 @@ go_library(
     visibility = ["//src/services/governance-service:__subpackages__"],
     deps = [
         "//src/domain-transfer-objects/go:dto",
+        "//src/services/governance-service/internal/contractapi",
         "//src/services/governance-service/internal/governance",
+        "//src/services/governance-service/internal/internalcontractapi",
         "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/humaapi",
         "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/workload",
         "@com_github_danielgtaylor_huma_v2//:huma",

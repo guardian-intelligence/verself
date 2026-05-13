@@ -10,9 +10,8 @@ import (
 // the scheduler, into vm-orchestrator's LeaseSpec, and onto every billing
 // window and trace span attached to the lease.
 //
-// Numeric fields are uint32 (not DecimalUint64) because the bounds enforced
-// by VMResourceBounds keep them well inside JavaScript-safe range. See
-// src/domain-transfer-objects/docs/wire-contracts.md for the numeric-safety rubric.
+// Numeric fields are uint32 because VMResourceBounds keep them well inside
+// JavaScript-safe range.
 type VMResources struct {
 	VCPUs       uint32         `json:"vcpus" minimum:"1" maximum:"128" doc:"Number of vCPUs exposed to the guest."`
 	MemoryMiB   uint32         `json:"memory_mib" minimum:"128" maximum:"524288" doc:"Guest RAM in MiB."`

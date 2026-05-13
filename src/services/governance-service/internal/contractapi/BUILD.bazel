@@ -1,0 +1,31 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_go.bzl", "ir_contract_go")
+
+ir_contract_go(
+    name = "governance_contract_go",
+    out = "__generated_sources/governance_contract.gen.go",
+    ir = "//src/smithy/models/verself:governance_public_ir",
+    package = "contractapi",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "governance_contract.gen.go": ":governance_contract_go",
+    },
+    tags = ["manual"],
+)
+
+go_library(
+    name = "contractapi",
+    srcs = ["governance_contract.gen.go"],
+    importpath = "github.com/verself/governance-service/internal/contractapi",
+    visibility = ["//src/services/governance-service:__subpackages__"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":contractapi",
+    visibility = ["//src/services/governance-service:__subpackages__"],
+)

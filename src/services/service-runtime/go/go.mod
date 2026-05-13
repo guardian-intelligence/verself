@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
+	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -26,5 +27,5 @@ require (
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
 	google.golang.org/grpc v1.75.0 // indirect
-	google.golang.org/protobuf v1.36.7 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )

@@ -8,14 +8,16 @@ import {
   listDataExports as listGeneratedDataExports,
 } from "./__generated/governance-api/index.js";
 import type {
-  GovernanceCreateExportRequest as GovernanceCreateExportRequestBody,
+  CreateDataExportData,
   ListAuditEventsData,
 } from "./__generated/governance-api/types.gen.js";
 import {
-  vGovernanceAuditEvent,
-  vGovernanceAuditEvents,
-  vGovernanceExportJob,
-  vGovernanceExportJobs,
+  vAuditEvent,
+  vCreateDataExportOutput,
+  vDataExportJob,
+  vGetDataExportOutput,
+  vListAuditEventsOutput,
+  vListDataExportsOutput,
 } from "./__generated/governance-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -89,13 +91,13 @@ function removeUndefined<T extends Record<string, unknown>>(input: T): Record<st
 }
 
 function parseAuditEvent(input: unknown) {
-  return v.parse(vGovernanceAuditEvent, input);
+  return v.parse(vAuditEvent, input);
 }
 
 export type GovernanceAuditEvent = ReturnType<typeof parseAuditEvent>;
 
 function parseAuditEvents(input: unknown) {
-  const parsed = v.parse(vGovernanceAuditEvents, input);
+  const parsed = v.parse(vListAuditEventsOutput, input);
   return {
     events: parsed.events.map((event) => parseAuditEvent(event)),
     filters: parsed.filters,
@@ -107,7 +109,7 @@ function parseAuditEvents(input: unknown) {
 export type GovernanceAuditEvents = ReturnType<typeof parseAuditEvents>;
 
 function parseExportJob(input: unknown) {
-  const parsed = v.parse(vGovernanceExportJob, input);
+  const parsed = v.parse(vDataExportJob, input);
   return {
     ...parsed,
     files: parsed.files ?? [],
@@ -118,7 +120,7 @@ function parseExportJob(input: unknown) {
 export type GovernanceExportJob = ReturnType<typeof parseExportJob>;
 
 function parseExportJobs(input: unknown): Array<GovernanceExportJob> {
-  const parsed = v.parse(vGovernanceExportJobs, input);
+  const parsed = v.parse(vListDataExportsOutput, input);
   return parsed.exports.map((job) => parseExportJob(job));
 }
 
@@ -209,7 +211,7 @@ export class Governance {
   ): Promise<GovernanceExportJob> {
     const client = createGovernanceClient(this.#options);
     const parsedInput = v.parse(governanceCreateExportRequestSchema, input);
-    const body: GovernanceCreateExportRequestBody = {
+    const body: NonNullable<CreateDataExportData["body"]> = {
       include_logs: parsedInput.include_logs,
       scopes: [...parsedInput.scopes],
     };
@@ -226,7 +228,7 @@ export class Governance {
       throwGovernanceError(path, result.response, result.error);
     }
 
-    return parseExportJob(result.data);
+    return parseExportJob(v.parse(vCreateDataExportOutput, result.data).export);
   }
 
   async getDataExport(exportId: string): Promise<GovernanceExportJob> {
@@ -244,7 +246,7 @@ export class Governance {
       throwGovernanceError(path, result.response, result.error);
     }
 
-    return parseExportJob(result.data);
+    return parseExportJob(v.parse(vGetDataExportOutput, result.data).export);
   }
 
   async downloadDataExport(exportId: string): Promise<GovernanceExportArtifact> {
@@ -266,7 +268,7 @@ export class Governance {
 
     return {
       content_type: result.response.headers.get("content-type") ?? "application/gzip",
-      data: await artifactData(result.data as Blob | ArrayBuffer | Uint8Array),
+      data: await artifactData(result.data as unknown as Blob | ArrayBuffer | Uint8Array),
       file_name: fileNameFromContentDisposition(
         result.response.headers.get("content-disposition"),
         parsedExportId,

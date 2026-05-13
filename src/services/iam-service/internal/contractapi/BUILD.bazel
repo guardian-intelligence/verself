@@ -1,8 +1,8 @@
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//src/smithy/build:ir_go.bzl", "ir_huma_go")
+load("//src/smithy/build:ir_go.bzl", "ir_contract_go")
 
-ir_huma_go(
+ir_contract_go(
     name = "iam_contract_go",
     out = "__generated_sources/iam_contract.gen.go",
     ir = "//src/smithy/models/verself:iam_public_ir",
@@ -22,7 +22,6 @@ go_library(
     srcs = ["iam_contract.gen.go"],
     importpath = "github.com/verself/iam-service/internal/contractapi",
     visibility = ["//src/services/iam-service:__subpackages__"],
-    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
 )
 
 alias(

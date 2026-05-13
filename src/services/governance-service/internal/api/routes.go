@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/governance-service/internal/contractapi"
 	"github.com/verself/governance-service/internal/governance"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
@@ -20,86 +20,53 @@ import (
 var apiTracer = otel.Tracer("governance-service/internal/api")
 
 func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam.ResourceAuthorizer) {
-	registerSecured(api, svc, authorizer, secured(huma.Operation{
-		OperationID: "list-audit-events",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/governance/audit/events",
-		Summary:     "List organization audit events",
-	}, runtimeiam.OperationPolicy{
-		Permission:     permissionAuditLogRead,
-		Resource:       "audit_log",
-		Action:         runtimeiam.ActionList,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     "governance.audit_log.list",
-	}), listAuditEvents(svc))
-
-	registerSecured(api, svc, authorizer, secured(huma.Operation{
-		OperationID: "list-data-exports",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/governance/exports",
-		Summary:     "List organization data exports",
-	}, runtimeiam.OperationPolicy{
-		Permission:     permissionAuditLogExport,
-		Resource:       "audit_log",
-		Action:         runtimeiam.ActionList,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     "governance.audit_log.export.list",
-	}), listExports(svc))
-
-	registerSecured(api, svc, authorizer, secured(huma.Operation{
-		OperationID:   "create-data-export",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/governance/exports",
-		Summary:       "Create an organization data export",
-		DefaultStatus: 201,
-	}, runtimeiam.OperationPolicy{
-		Permission:     permissionAuditLogExport,
-		Resource:       "audit_log",
-		Action:         runtimeiam.ActionCreate,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "export_create",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "governance.audit_log.export.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createExport(svc))
-
-	registerSecured(api, svc, authorizer, secured(huma.Operation{
-		OperationID: "get-data-export",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/governance/exports/{export_id}",
-		Summary:     "Get an organization data export",
-	}, runtimeiam.OperationPolicy{
-		Permission:     permissionAuditLogExport,
-		Resource:       "audit_log",
-		Action:         runtimeiam.ActionRead,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     "governance.audit_log.export.read",
-	}), getExport(svc))
-
-	registerSecured(api, svc, authorizer, secured(huma.Operation{
-		OperationID: "download-data-export",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/governance/exports/{export_id}/download",
-		Summary:     "Download an organization data export artifact",
-		Responses: map[string]*huma.Response{
+	registerSecured(api, svc, authorizer, securedContract(contractapi.ListAuditEvents.Descriptor, "List organization audit events"), listAuditEvents(svc))
+	registerSecured(api, svc, authorizer, securedContract(contractapi.ListDataExports.Descriptor, "List organization data exports"), listExports(svc))
+	registerSecured(api, svc, authorizer, securedContract(contractapi.CreateDataExport.Descriptor, "Create an organization data export"), createExport(svc))
+	registerSecured(api, svc, authorizer, securedContract(contractapi.GetDataExport.Descriptor, "Get an organization data export"), getExport(svc))
+	registerSecured(api, svc, authorizer, securedContract(contractapi.DownloadDataExport.Descriptor, "Download an organization data export artifact", func(op *huma.Operation) {
+		op.Responses = map[string]*huma.Response{
 			"200": {
 				Description: "tar.gz export artifact",
 				Content: map[string]*huma.MediaType{
 					"application/gzip": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
 				},
 			},
-		},
-	}, runtimeiam.OperationPolicy{
-		Permission:     permissionAuditLogExport,
-		Resource:       "audit_log",
-		Action:         runtimeiam.ActionDownload,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "export_download",
-		AuditEvent:     "governance.audit_log.export.download",
+		}
 	}), downloadExport(svc))
+}
+
+func securedContract(desc contractapi.OperationDescriptor, summary string, options ...func(*huma.Operation)) securedOperation {
+	op := huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+	}
+	for _, option := range options {
+		option(&op)
+	}
+	return secured(op, operationPolicyFromContract(desc))
+}
+
+func operationPolicyFromContract(desc contractapi.OperationDescriptor) runtimeiam.OperationPolicy {
+	idempotency := runtimeiam.IdempotencyPolicy(desc.Idempotency.Policy)
+	switch idempotency {
+	case runtimeiam.IdempotencyNone, runtimeiam.IdempotencyHeaderKey:
+	default:
+		panic("unsupported idempotency policy for operation " + desc.OperationID + ": " + desc.Idempotency.Policy)
+	}
+	return runtimeiam.OperationPolicy{
+		Permission:     runtimeiam.Permission(desc.Authorization.Permission),
+		Resource:       runtimeiam.ResourceKind(desc.Audit.Resource),
+		Action:         runtimeiam.Action(desc.Audit.Action),
+		OrgScope:       runtimeiam.OrgScope(desc.Authorization.OrganizationSource),
+		RateLimitClass: runtimeiam.RateLimitClass(desc.RateLimitBucket),
+		Idempotency:    idempotency,
+		AuditEvent:     runtimeiam.AuditEvent(desc.Audit.Event),
+		BodyLimitBytes: desc.RequestBodyMaxBytes,
+	}
 }
 
 type listAuditEventsInput struct {

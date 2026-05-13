@@ -7,8 +7,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/notifications-service/internal/notifications"
+	"github.com/verself/service-runtime/humaapi"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
@@ -25,14 +25,14 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := dto.DefaultHumaConfig("Notifications Service", version)
+	config := humaapi.DefaultConfig("Notifications Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
 	RegisterRoutes(api, cfg.Service, cfg.Authorizer, cfg.InstallationID)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
@@ -40,14 +40,14 @@ func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Internal
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := dto.DefaultHumaConfig("Notifications Service Internal API", version)
+	config := humaapi.DefaultConfig("Notifications Service Internal API", version)
 	if listenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)
 	RegisterInternalRoutes(api, cfg)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

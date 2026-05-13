@@ -1,11 +1,82 @@
 {
   "version": "1.0",
   "sources": [
+    "analytics.smithy",
+    "billing.smithy",
     "common.smithy",
-    "iam.smithy"
+    "governance.smithy",
+    "iam.smithy",
+    "mailbox.smithy",
+    "notifications.smithy",
+    "object_storage.smithy",
+    "profile.smithy",
+    "projects.smithy",
+    "sandbox.smithy",
+    "secrets.smithy",
+    "source.smithy"
   ],
   "projections": {
     "source": {},
+    "analytics-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.analytics.v1#Analytics",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/analytics-public.json"
+        }
+      }
+    },
+    "billing-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.billing.v1#Billing",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/billing-public.json"
+        }
+      }
+    },
+    "billing-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.billing.v1#BillingInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/billing-internal.json"
+        }
+      }
+    },
+    "billing-ingress": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.billing.v1#BillingIngress",
+          "package": "verself",
+          "visibility": "ingress",
+          "filename": "ir/verself/billing-ingress.json"
+        }
+      }
+    },
+    "governance-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.governance.v1#Governance",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/governance-public.json"
+        }
+      }
+    },
+    "governance-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.governance.v1#GovernanceInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/governance-internal.json"
+        }
+      }
+    },
     "iam-public": {
       "plugins": {
         "verself-ir": {
@@ -23,6 +94,146 @@
           "package": "verself",
           "visibility": "internal",
           "filename": "ir/verself/iam-internal.json"
+        }
+      }
+    },
+    "mailbox-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.mailbox.v1#Mailbox",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/mailbox-public.json"
+        }
+      }
+    },
+    "notifications-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.notifications.v1#Notifications",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/notifications-public.json"
+        }
+      }
+    },
+    "notifications-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.notifications.v1#NotificationsInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/notifications-internal.json"
+        }
+      }
+    },
+    "object-storage-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.objectstorage.v1#ObjectStorage",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/object-storage-public.json"
+        }
+      }
+    },
+    "profile-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.profile.v1#Profile",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/profile-public.json"
+        }
+      }
+    },
+    "profile-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.profile.v1#ProfileInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/profile-internal.json"
+        }
+      }
+    },
+    "projects-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.projects.v1#Projects",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/projects-public.json"
+        }
+      }
+    },
+    "projects-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.projects.v1#ProjectsInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/projects-internal.json"
+        }
+      }
+    },
+    "sandbox-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.sandbox.v1#SandboxRental",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/sandbox-public.json"
+        }
+      }
+    },
+    "sandbox-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.sandbox.v1#SandboxRentalInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/sandbox-internal.json"
+        }
+      }
+    },
+    "secrets-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.secrets.v1#Secrets",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/secrets-public.json"
+        }
+      }
+    },
+    "secrets-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.secrets.v1#SecretsInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/secrets-internal.json"
+        }
+      }
+    },
+    "source-public": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.source.v1#SourceHosting",
+          "package": "verself",
+          "visibility": "public",
+          "filename": "ir/verself/source-public.json"
+        }
+      }
+    },
+    "source-internal": {
+      "plugins": {
+        "verself-ir": {
+          "service": "verself.source.v1#SourceHostingInternal",
+          "package": "verself",
+          "visibility": "internal",
+          "filename": "ir/verself/source-internal.json"
         }
       }
     }

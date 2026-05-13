@@ -6,17 +6,17 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/profile-service/internal/profile"
+	"github.com/verself/service-runtime/humaapi"
 )
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *profile.Service) huma.API {
-	config := dto.DefaultHumaConfig("Profile Service Internal API", version)
+	config := humaapi.DefaultConfig("Profile Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)
 	RegisterInternalRoutes(api, svc)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

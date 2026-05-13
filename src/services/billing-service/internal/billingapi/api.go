@@ -15,6 +15,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/service-runtime/humaapi"
 	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
@@ -85,14 +86,14 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "2.0.0"
 	}
-	config := dto.DefaultHumaConfig("Billing Service", version)
+	config := humaapi.DefaultConfig("Billing Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
 	applyPublicSecurityScheme(api)
 	RegisterPublicRoutes(api, cfg)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
@@ -113,14 +114,14 @@ func NewInternalAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "2.0.0"
 	}
-	config := dto.DefaultHumaConfig("Billing Internal API", version)
+	config := humaapi.DefaultConfig("Billing Internal API", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applyInternalSecurityScheme(api)
 	RegisterInternalRoutes(api, cfg)
-	dto.ApplyOpenAPIWireDefaults(api)
+	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

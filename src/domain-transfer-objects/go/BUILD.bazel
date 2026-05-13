@@ -16,7 +16,6 @@ go_library(
         "iam.go",
         "mailbox.go",
         "notifications.go",
-        "openapi.go",
         "profile.go",
         "projects.go",
         "resource_name.go",
@@ -35,14 +34,10 @@ go_test(
     name = "dto_test",
     srcs = [
         "decimal_test.go",
-        "openapi_test.go",
         "resource_name_test.go",
     ],
     embed = [":dto"],
-    deps = [
-        "@com_github_danielgtaylor_huma_v2//:huma",
-        "@com_github_danielgtaylor_huma_v2//adapters/humago",
-    ],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
 )
 
 alias(

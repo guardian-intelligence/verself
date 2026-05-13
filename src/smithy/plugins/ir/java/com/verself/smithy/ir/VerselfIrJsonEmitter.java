@@ -376,14 +376,21 @@ final class VerselfIrJsonEmitter {
         continue;
       }
       String header = stringTrait(member, HTTP_HEADER);
-      if (header.isEmpty()) {
+      if (!header.isEmpty()) {
+        return Optional.of(
+            Node.objectNodeBuilder()
+                .withMember("policy", "idempotency_key_header")
+                .withMember("header", header)
+                .withMember("member", member.getMemberName())
+                .build());
+      }
+      if (member.hasTrait(HTTP_LABEL) || !stringTrait(member, HTTP_QUERY).isEmpty()) {
         throw new SmithyBuildException(
-            member.getId() + " has @idempotencyToken but no @httpHeader");
+            member.getId() + " has @idempotencyToken outside request document or header");
       }
       return Optional.of(
           Node.objectNodeBuilder()
-              .withMember("policy", "idempotency_key_header")
-              .withMember("header", header)
+              .withMember("policy", "request_body_idempotency_key")
               .withMember("member", member.getMemberName())
               .build());
     }

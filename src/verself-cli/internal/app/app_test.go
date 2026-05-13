@@ -299,7 +299,7 @@ func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
 	const traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
 	var createKey string
 	var createBody map[string]any
-	exportJSON := `{"export_id":"` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["audit"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"audit/audit_events.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
+	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["audit"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"audit/audit_events.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
 	auditEventJSON := `{"actor_id":"user_1","actor_type":"user","audit_event":"governance.data_export.create","detail_sha256":"hash","event_id":"22222222-2222-2222-2222-222222222222","event_name":"create-data-export","event_source":"governance-service","org_id":"370200542594579812","outcome":"allowed","permission":"governance.exports.write","prev_hmac":"prev","recorded_at":"2026-05-07T00:00:01Z","row_hmac":"row","sequence":"1","target_id":"` + exportID + `","target_type":"data_export","trace_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok_governance" {
@@ -323,9 +323,9 @@ func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(exportJSON))
+			_, _ = w.Write([]byte(`{"export":` + exportJSON + `}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports/"+exportID:
-			_, _ = w.Write([]byte(exportJSON))
+			_, _ = w.Write([]byte(`{"export":` + exportJSON + `}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports/"+exportID+"/download":
 			if !strings.Contains(r.Header.Get("Accept"), "application/gzip") {
 				t.Fatalf("download Accept = %q", r.Header.Get("Accept"))

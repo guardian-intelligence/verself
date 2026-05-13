@@ -579,7 +579,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		Resources:        item.Resources,
+		Resources:        vmResourcesForLease(item.Resources),
 		TTLSeconds:       leaseTTLSeconds(item, s.WorkloadTimeout),
 		TrustClass:       "trusted",
 		NetworkMode:      "nat",

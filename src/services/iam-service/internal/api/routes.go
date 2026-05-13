@@ -7,7 +7,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/contractapi"
 	"github.com/verself/iam-service/internal/identity"
@@ -15,10 +14,44 @@ import (
 )
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string) {
-	contractapi.RegisterPublic(api, publicRuntime{service: svc, authz: authzSvc}, publicHandlers{
+	runtime := publicRuntime{service: svc, authz: authzSvc}
+	handlers := publicHandlers{
 		service:        svc,
 		authz:          authzSvc,
 		installationID: installationID,
+	}
+	registerPublicOperation(api, runtime, contractapi.ListOrganizations, handlers.ListOrganizations, "List organizations")
+	registerPublicOperation(api, runtime, contractapi.GetOrganization, handlers.GetOrganization, "Get organization")
+	registerPublicOperation(api, runtime, contractapi.UpdateOrganization, handlers.UpdateOrganization, "Update organization")
+	registerPublicOperation(api, runtime, contractapi.ListMembers, handlers.ListMembers, "List members")
+	registerPublicOperation(api, runtime, contractapi.GetMember, handlers.GetMember, "Get member")
+	registerPublicOperation(api, runtime, contractapi.UpdateMemberRole, handlers.UpdateMemberRole, "Update member role")
+}
+
+func registerPublicOperation[Input any, Output any](
+	api huma.API,
+	runtime publicRuntime,
+	operation contractapi.Operation[Input, Output],
+	handler contractapi.Handler[Input, Output],
+	summary string,
+) {
+	desc := operation.Descriptor
+	op := runtime.PrepareOperation(desc, huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+	})
+	huma.Register(api, op, func(ctx context.Context, input *Input) (*Output, error) {
+		identity, err := runtime.BeforeOperation(ctx, desc, input)
+		if err != nil {
+			runtime.AfterOperation(ctx, desc, identity, input, nil, err)
+			return nil, err
+		}
+		output, err := handler(ctx, input)
+		runtime.AfterOperation(ctx, desc, identity, input, output, err)
+		return output, err
 	})
 }
 
@@ -66,26 +99,6 @@ func principalForAuthIdentityOrg(ctx context.Context, authIdentity *auth.Identit
 		Roles:       identityRolesForCurrentOrg(authIdentity),
 		Email:       authIdentity.Email,
 	}, nil
-}
-
-func organizationProfileDTO(profile identity.OrganizationProfile) dto.IAMOrganizationProfile {
-	return dto.IAMOrganizationProfile{
-		OrgID:          orgID(profile.IdentityProviderOrgID),
-		DisplayName:    profile.DisplayName,
-		Slug:           profile.Slug,
-		State:          string(profile.State),
-		Version:        profile.Version,
-		UpdatedAt:      profile.UpdatedAt,
-		RedirectedFrom: profile.RedirectedFrom,
-	}
-}
-
-func orgID(value string) dto.OrgID {
-	parsed, err := dto.ParseUint64(value)
-	if err != nil {
-		return dto.Uint64(0)
-	}
-	return dto.Uint64(parsed)
 }
 
 func authzSubjectFromIdentity(authIdentity *auth.Identity) identity.AuthorizationSubject {
