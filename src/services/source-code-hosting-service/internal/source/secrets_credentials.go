@@ -18,11 +18,11 @@ import (
 var secretsCredentialTracer = otel.Tracer("source-code-hosting-service/secrets")
 
 type SecretsCredentialClient struct {
-	Client *secretsinternalclient.ClientWithResponses
+	Client *secretsinternalclient.Client
 }
 
-func NewSecretsCredentialClient(baseURL string, httpClient secretsinternalclient.HttpRequestDoer) (SecretsCredentialClient, error) {
-	client, err := secretsinternalclient.NewClientWithResponses(strings.TrimRight(baseURL, "/"), secretsinternalclient.WithHTTPClient(httpClient))
+func NewSecretsCredentialClient(baseURL string, httpClient secretsinternalclient.HTTPRequestDoer) (SecretsCredentialClient, error) {
+	client, err := secretsinternalclient.NewClient(strings.TrimRight(baseURL, "/"), secretsinternalclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return SecretsCredentialClient{}, err
 	}
@@ -48,31 +48,31 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 	if err != nil {
 		return GitCredential{}, err
 	}
-	scopes := append([]string(nil), input.Scopes...)
+	scopes := credentialScopes(input.Scopes)
 	expiresAt := time.Now().UTC().Add(time.Duration(input.ExpiresInSeconds) * time.Second)
 	orgID := strconv.FormatUint(principal.OrgID, 10)
-	metadata := map[string]string{
+	metadata := secretsinternalclient.CredentialMetadata{
 		"source": "source-code-hosting-service",
 		"label":  input.Label,
 	}
-	displayName := input.Label
+	displayName := secretsinternalclient.CredentialDisplayName(input.Label)
 	expiresAtText := expiresAt.Format(time.RFC3339Nano)
-	resp, err := c.Client.CreateInternalOpaqueCredentialWithResponse(ctx, secretsinternalclient.CreateInternalOpaqueCredentialJSONRequestBody{
-		ActorId:     principal.Subject,
+	resp, err := c.Client.CreateInternalOpaqueCredential(ctx, secretsinternalclient.CreateInternalOpaqueCredentialRequest{Body: secretsinternalclient.InternalOpaqueCredentialInputBody{
+		ActorID:     secretsinternalclient.SubjectId(principal.Subject),
 		DisplayName: &displayName,
 		ExpiresAt:   &expiresAtText,
-		Kind:        GitCredentialKind,
+		Kind:        secretsinternalclient.CredentialKind(GitCredentialKind),
 		Metadata:    &metadata,
-		OrgId:       orgID,
+		OrgID:       secretsinternalclient.OrgId(orgID),
 		Scopes:      scopes,
-	})
+	}})
 	if err != nil {
 		return GitCredential{}, fmt.Errorf("%w: create secrets credential: %v", ErrStoreUnavailable, err)
 	}
-	if resp.JSON201 == nil {
+	if resp.Result == nil {
 		return GitCredential{}, unexpectedSecretsStatus("create credential", resp.HTTPResponse, resp.Body)
 	}
-	credential, err := gitCredentialFromSecrets(principal, input.Label, resp.JSON201.Credential, resp.JSON201.Token)
+	credential, err := gitCredentialFromSecrets(principal, input.Label, resp.Result.Credential, resp.Result.Token)
 	if err != nil {
 		return GitCredential{}, err
 	}
@@ -98,29 +98,31 @@ func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, 
 	}
 	orgText := strconv.FormatUint(orgID, 10)
 	actorID = strings.TrimSpace(actorID)
-	body := secretsinternalclient.VerifyInternalOpaqueCredentialJSONRequestBody{
-		Kind:  GitCredentialKind,
-		OrgId: orgText,
-		Token: strings.TrimSpace(token),
+	body := secretsinternalclient.VerifyInternalOpaqueCredentialInputBody{
+		Kind:  secretsinternalclient.CredentialKind(GitCredentialKind),
+		OrgID: secretsinternalclient.OrgId(orgText),
+		Token: secretsinternalclient.SecretValue(strings.TrimSpace(token)),
 	}
 	if actorID != "" {
-		body.ActorId = &actorID
+		converted := secretsinternalclient.SubjectId(actorID)
+		body.ActorID = &converted
 	}
 	if len(requiredScopes) > 0 {
-		body.RequiredScopes = &requiredScopes
+		scopes := credentialScopes(requiredScopes)
+		body.RequiredScopes = &scopes
 	}
-	resp, err := c.Client.VerifyInternalOpaqueCredentialWithResponse(ctx, body)
+	resp, err := c.Client.VerifyInternalOpaqueCredential(ctx, secretsinternalclient.VerifyInternalOpaqueCredentialRequest{Body: body})
 	if err != nil {
 		return GitCredential{}, false, fmt.Errorf("%w: verify secrets credential: %v", ErrStoreUnavailable, err)
 	}
-	if resp.JSON200 == nil {
+	if resp.Result == nil {
 		return GitCredential{}, false, unexpectedSecretsStatus("verify credential", resp.HTTPResponse, resp.Body)
 	}
-	if !resp.JSON200.Active || resp.JSON200.Credential == nil {
+	if !resp.Result.Active || resp.Result.Credential == nil {
 		span.SetAttributes(attribute.Bool("secrets.credential_active", false))
 		return GitCredential{}, false, nil
 	}
-	credential, err := gitCredentialFromSecrets(Principal{OrgID: orgID}, "", *resp.JSON200.Credential, "")
+	credential, err := gitCredentialFromSecrets(Principal{OrgID: orgID}, "", *resp.Result.Credential, secretsinternalclient.SecretValue(""))
 	if err != nil {
 		return GitCredential{}, false, err
 	}
@@ -132,14 +134,14 @@ func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, 
 	return credential, true, nil
 }
 
-func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire secretsinternalclient.OpaqueCredentialWire, token string) (GitCredential, error) {
-	credentialID, err := parseWireUUID(wire.CredentialId, "credential_id")
+func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire secretsinternalclient.OpaqueCredentialDTO, token secretsinternalclient.SecretValue) (GitCredential, error) {
+	credentialID, err := parseWireUUID(string(wire.CredentialID), "credential_id")
 	if err != nil {
 		return GitCredential{}, err
 	}
 	orgID := principal.OrgID
-	if wire.OrgId != nil && strings.TrimSpace(*wire.OrgId) != "" {
-		parsed, err := strconv.ParseUint(strings.TrimSpace(*wire.OrgId), 10, 64)
+	if strings.TrimSpace(string(wire.OrgID)) != "" {
+		parsed, err := strconv.ParseUint(strings.TrimSpace(string(wire.OrgID)), 10, 64)
 		if err != nil || parsed == 0 {
 			return GitCredential{}, ErrStoreUnavailable
 		}
@@ -148,11 +150,11 @@ func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire se
 	if orgID == 0 {
 		return GitCredential{}, ErrStoreUnavailable
 	}
-	metadata := map[string]string{}
-	if wire.Metadata != nil {
-		metadata = *wire.Metadata
+	metadata := map[string]string(wire.Metadata)
+	if metadata == nil {
+		metadata = map[string]string{}
 	}
-	label := firstNonEmpty(metadata["label"], stringPtrValue(wire.DisplayName), fallbackLabel, "git push")
+	label := firstNonEmpty(metadata["label"], strings.TrimSpace(wire.DisplayName), fallbackLabel, "git push")
 	expiresAt, err := parseWireTime(wire.ExpiresAt, "expires_at")
 	if err != nil {
 		return GitCredential{}, err
@@ -161,46 +163,62 @@ func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire se
 	if err != nil {
 		return GitCredential{}, err
 	}
-	if wire.Scopes == nil || len(*wire.Scopes) == 0 {
+	if len(wire.Scopes) == 0 {
 		return GitCredential{}, ErrStoreUnavailable
 	}
-	scopes, err := NormalizeGitCredentialScopes(*wire.Scopes)
+	scopes, err := NormalizeGitCredentialScopes(stringsFromCredentialScopes(wire.Scopes))
 	if err != nil {
 		return GitCredential{}, err
 	}
 	return GitCredential{
 		CredentialID: credentialID,
 		OrgID:        orgID,
-		ActorID:      firstNonEmpty(stringPtrValue(wire.Subject), principal.Subject),
+		ActorID:      firstNonEmpty(strings.TrimSpace(wire.Subject), principal.Subject),
 		Label:        label,
 		Username:     GitCredentialUsername,
-		Token:        token,
-		TokenPrefix:  stringPtrValue(wire.TokenPrefix),
+		Token:        string(token),
+		TokenPrefix:  strings.TrimSpace(wire.TokenPrefix),
 		Scopes:       scopes,
-		State:        firstNonEmpty(stringPtrValue(wire.Status), "active"),
+		State:        firstNonEmpty(string(wire.Status), "active"),
 		ExpiresAt:    expiresAt,
 		CreatedAt:    createdAt,
 	}, nil
 }
 
-func parseWireUUID(value *string, field string) (uuid.UUID, error) {
-	if value == nil || strings.TrimSpace(*value) == "" {
+func credentialScopes(values []string) secretsinternalclient.CredentialScopes {
+	out := make(secretsinternalclient.CredentialScopes, 0, len(values))
+	for _, value := range values {
+		out = append(out, secretsinternalclient.CredentialScope(value))
+	}
+	return out
+}
+
+func stringsFromCredentialScopes(values secretsinternalclient.CredentialScopes) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return out
+}
+
+func parseWireUUID(value string, field string) (uuid.UUID, error) {
+	if strings.TrimSpace(value) == "" {
 		return uuid.Nil, fmt.Errorf("%w: secrets credential missing %s", ErrStoreUnavailable, field)
 	}
-	parsed, err := uuid.Parse(strings.TrimSpace(*value))
+	parsed, err := uuid.Parse(strings.TrimSpace(value))
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("%w: secrets credential invalid %s", ErrStoreUnavailable, field)
 	}
 	return parsed, nil
 }
 
-func parseWireTime(value *string, field string) (time.Time, error) {
-	if value == nil || strings.TrimSpace(*value) == "" {
+func parseWireTime(value string, field string) (time.Time, error) {
+	if strings.TrimSpace(value) == "" {
 		return time.Time{}, fmt.Errorf("%w: secrets credential missing %s", ErrStoreUnavailable, field)
 	}
-	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(*value))
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
 	if err != nil {
-		parsed, err = time.Parse(time.RFC3339, strings.TrimSpace(*value))
+		parsed, err = time.Parse(time.RFC3339, strings.TrimSpace(value))
 	}
 	if err != nil {
 		return time.Time{}, fmt.Errorf("%w: secrets credential invalid %s", ErrStoreUnavailable, field)
@@ -214,11 +232,4 @@ func unexpectedSecretsStatus(operation string, response *http.Response, body []b
 		status = response.StatusCode
 	}
 	return fmt.Errorf("%w: secrets %s returned status %d: %s", ErrStoreUnavailable, operation, status, strings.TrimSpace(string(body)))
-}
-
-func stringPtrValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return strings.TrimSpace(*value)
 }

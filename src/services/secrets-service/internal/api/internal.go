@@ -288,10 +288,9 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 				}
 				return
 			}
-			secret := secretDTO(value.Record, "")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(SecretValueDTO{SecretDTO: secret, Value: value.Value})
+			_ = json.NewEncoder(w).Encode(secretValueDTO(value, ""))
 		case http.MethodPut:
 			if _, ok := workloadauth.PeerIDFromContext(r.Context()); !ok {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -309,7 +308,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 				http.Error(w, "invalid runtime secret upsert request", http.StatusBadRequest)
 				return
 			}
-			record, err := writeRuntimeSecret(r.Context(), svc, cfg.PlatformOrgID, writePolicies, secretName, body.Value)
+			record, err := writeRuntimeSecret(r.Context(), svc, cfg.PlatformOrgID, writePolicies, secretName, string(body.Value))
 			if err != nil {
 				switch {
 				case errors.Is(err, secrets.ErrInvalidArgument):
@@ -382,10 +381,10 @@ func validateRuntimeSecretWriteRequest(r *http.Request, body putSecretBody) erro
 	if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
 		return fmt.Errorf("%w: idempotency key is required", secrets.ErrInvalidArgument)
 	}
-	if body.ScopeLevel != "" && body.ScopeLevel != secrets.ScopeOrg {
+	if body.ScopeLevel != nil && string(*body.ScopeLevel) != secrets.ScopeOrg {
 		return fmt.Errorf("%w: runtime secrets only support scope_level=org", secrets.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(body.SourceID) != "" || strings.TrimSpace(body.EnvID) != "" || strings.TrimSpace(body.Branch) != "" {
+	if stringFromContractPtr(body.SourceID) != "" || stringFromContractPtr(body.EnvID) != "" || stringFromContractPtr(body.Branch) != "" {
 		return fmt.Errorf("%w: runtime secrets only support org-scoped writes", secrets.ErrInvalidArgument)
 	}
 	return nil

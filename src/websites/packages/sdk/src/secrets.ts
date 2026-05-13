@@ -3,22 +3,20 @@ import { createClient, type Client } from "./__generated/secrets-api/client/inde
 import {
   type DeleteSecretData,
   type ListSecretsData,
+  type PutSecretData,
+  type ResolveSecretsData,
   deleteSecret,
   listSecrets,
   putSecret,
   resolveSecrets,
 } from "./__generated/secrets-api/index.js";
-import type {
-  PutSecretBody as PutSecretRequestBody,
-  ResolveSecretsBody as ResolveSecretsRequestBody,
-} from "./__generated/secrets-api/types.gen.js";
 import {
   vDeleteSecretPath,
   vDeleteSecretQuery,
   vListSecretsQuery,
-  vPutSecretBody2,
+  vPutSecretBody,
   vPutSecretPath,
-  vResolveSecretsBody2,
+  vResolveSecretsBody,
   vResolvedSecretsDto,
   vSecretDto,
   vSecretValueDto,
@@ -95,13 +93,15 @@ function parseResolvedSecrets(input: unknown) {
 
 export type ResolvedSecrets = ReturnType<typeof parseResolvedSecrets>;
 
-export const putSecretRequestSchema = vPutSecretBody2;
-export const resolveSecretsRequestSchema = vResolveSecretsBody2;
+export const putSecretRequestSchema = vPutSecretBody;
+export const resolveSecretsRequestSchema = vResolveSecretsBody;
 
 export type PutSecretRequest = v.InferOutput<typeof putSecretRequestSchema>;
 export type ResolveSecretsRequest = v.InferOutput<typeof resolveSecretsRequestSchema>;
 
 export type DeleteSecretScope = NonNullable<DeleteSecretData["query"]>;
+type PutSecretRequestBody = PutSecretData["body"];
+type ResolveSecretsRequestBody = NonNullable<ResolveSecretsData["body"]>;
 
 export type ListSecretsInput = {
   limit?: number | undefined;
@@ -139,7 +139,7 @@ export class Secrets {
   ): Promise<Secret> {
     const client = createSecretsClient(this.#options);
     const pathParams = v.parse(vPutSecretPath, { name });
-    const parsedBody = removeUndefined(v.parse(vPutSecretBody2, body)) as PutSecretRequestBody;
+    const parsedBody = removeUndefined(v.parse(vPutSecretBody, body)) as PutSecretRequestBody;
     const path = `/api/v1/secrets/${encodeURIComponent(name)}`;
     const result = await putSecret({
       client,
@@ -157,7 +157,7 @@ export class Secrets {
 
   async resolve(body: ResolveSecretsRequest = {}): Promise<ResolvedSecrets> {
     const client = createSecretsClient(this.#options);
-    const parsed = removeUndefined(v.parse(vResolveSecretsBody2, body));
+    const parsed = removeUndefined(v.parse(vResolveSecretsBody, body));
     if (typeof parsed.limit === "bigint") {
       parsed.limit = Number(parsed.limit);
     }
@@ -188,7 +188,6 @@ export class Secrets {
       client,
       path: pathParams,
       query,
-      body: {},
       headers: idempotencyHeaders("secret", options.idempotencyKey),
       responseStyle: "fields",
       throwOnError: false,

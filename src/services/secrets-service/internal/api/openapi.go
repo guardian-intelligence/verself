@@ -5,7 +5,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"gopkg.in/yaml.v3"
 
 	"github.com/verself/secrets-service/internal/secrets"
 	"github.com/verself/service-runtime/humaapi"
@@ -24,22 +23,4 @@ func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service,
 	RegisterRoutes(api, svc, authorizer, installationID)
 	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
-}
-
-func OpenAPIYAML(format string) ([]byte, error) {
-	mux := http.NewServeMux()
-	svc := &secrets.Service{}
-	api := NewAPI(mux, "dev", "https://secrets.api.verself.sh", svc, "inst_openapi")
-	switch format {
-	case "3.0":
-		return OpenAPIDowngradeYAML(api.OpenAPI())
-	default:
-		return yaml.Marshal(api.OpenAPI())
-	}
-}
-
-func OpenAPIDowngradeYAML(openapi *huma.OpenAPI) ([]byte, error) {
-	clone := *openapi
-	clone.OpenAPI = "3.0.3"
-	return yaml.Marshal(&clone)
 }

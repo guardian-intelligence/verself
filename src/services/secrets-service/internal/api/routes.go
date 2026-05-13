@@ -10,7 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	dto "github.com/verself/domain-transfer-objects"
+	"github.com/verself/secrets-service/internal/contractapi"
 	"github.com/verself/secrets-service/internal/secrets"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
@@ -424,219 +424,122 @@ func RegisterRoutes(api huma.API, svc *secrets.Service, authorizer runtimeiam.Op
 	}), verifyTransit(svc))
 }
 
-type putSecretInput struct {
-	Name string `path:"name" minLength:"1" maxLength:"255"`
-	Body putSecretBody
+type (
+	putSecretInput      = contractapi.SecretMutationInput
+	putSecretBody       = contractapi.SecretMutationInputBody
+	readSecretInput     = contractapi.SecretPathInput
+	listSecretsInput    = contractapi.SecretListInput
+	resolveSecretsInput = contractapi.ResolveSecretsInput
+	deleteSecretInput   = contractapi.SecretDeleteInput
+)
+
+type (
+	secretOutput          = contractapi.SecretOutput
+	secretValueOutput     = contractapi.SecretValueOutput
+	secretsOutput         = contractapi.SecretsOutput
+	resolvedSecretsOutput = contractapi.ResolvedSecretsOutput
+	variableOutput        = contractapi.VariableOutput
+	variableValueOutput   = contractapi.VariableValueOutput
+	variablesOutput       = contractapi.VariablesOutput
+)
+
+type (
+	createOpaqueCredentialInput = contractapi.CreateOpaqueCredentialInput
+	opaqueCredentialPathInput   = contractapi.OpaqueCredentialPathInput
+	listOpaqueCredentialsInput  = contractapi.ListOpaqueCredentialsInput
+	rollOpaqueCredentialInput   = contractapi.RollOpaqueCredentialInput
+	revokeOpaqueCredentialInput = contractapi.RevokeOpaqueCredentialInput
+)
+
+type (
+	opaqueCredentialOutput         = contractapi.OpaqueCredentialOutput
+	opaqueCredentialMaterialOutput = contractapi.OpaqueCredentialMaterialOutput
+	opaqueCredentialsOutput        = contractapi.OpaqueCredentialsOutput
+)
+
+type (
+	SecretDTO                   = contractapi.SecretDTO
+	SecretValueDTO              = contractapi.SecretValueDTO
+	SecretsDTO                  = contractapi.SecretsDTO
+	ResolvedSecretsDTO          = contractapi.ResolvedSecretsDTO
+	VariableDTO                 = contractapi.VariableDTO
+	VariableValueDTO            = contractapi.VariableValueDTO
+	VariablesDTO                = contractapi.VariablesDTO
+	OpaqueCredentialDTO         = contractapi.OpaqueCredentialDTO
+	OpaqueCredentialMaterialDTO = contractapi.OpaqueCredentialMaterialDTO
+	OpaqueCredentialsDTO        = contractapi.OpaqueCredentialsDTO
+)
+
+func stringFromContractPtr[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }
 
-type putSecretBody struct {
-	ScopeLevel string `json:"scope_level,omitempty" enum:"org,source,environment,branch"`
-	SourceID   string `json:"source_id,omitempty" maxLength:"255"`
-	EnvID      string `json:"env_id,omitempty" maxLength:"255"`
-	Branch     string `json:"branch,omitempty" maxLength:"255"`
-	Value      string `json:"value" maxLength:"65536"`
+func contractStringPtr[T ~string](value string) *T {
+	if value == "" {
+		return nil
+	}
+	converted := T(value)
+	return &converted
 }
 
-type readSecretInput struct {
-	Name       string `path:"name" minLength:"1" maxLength:"255"`
-	ScopeLevel string `query:"scope_level,omitempty" enum:"org,source,environment,branch"`
-	SourceID   string `query:"source_id,omitempty" maxLength:"255"`
-	EnvID      string `query:"env_id,omitempty" maxLength:"255"`
-	Branch     string `query:"branch,omitempty" maxLength:"255"`
+func stringSliceFromContract[T ~string](values []T) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return out
 }
 
-type listSecretsInput struct {
-	Limit int `query:"limit,omitempty" minimum:"1" maximum:"200"`
+func stringSliceFromContractPtr[T ~[]E, E ~string](values *T) []string {
+	if values == nil {
+		return nil
+	}
+	return stringSliceFromContract([]E(*values))
 }
 
-type resolveSecretsInput struct {
-	Body resolveSecretsBody
+func intFromContractPtr[T ~int](value *T) int {
+	if value == nil {
+		return 0
+	}
+	return int(*value)
 }
 
-type resolveSecretsBody struct {
-	ScopeLevel string   `json:"scope_level,omitempty" enum:"org,source,environment,branch"`
-	SourceID   string   `json:"source_id,omitempty" maxLength:"255"`
-	EnvID      string   `json:"env_id,omitempty" maxLength:"255"`
-	Branch     string   `json:"branch,omitempty" maxLength:"255"`
-	Names      []string `json:"names,omitempty" maxItems:"200"`
-	Limit      int      `json:"limit,omitempty" minimum:"1" maximum:"200"`
+func stringMapFromContractPtr[T ~map[string]string](value *T) map[string]string {
+	if value == nil || len(*value) == 0 {
+		return nil
+	}
+	return copyStringMap(map[string]string(*value))
 }
 
-type deleteSecretInput struct {
-	Name       string    `path:"name" minLength:"1" maxLength:"255"`
-	ScopeLevel string    `query:"scope_level,omitempty" enum:"org,source,environment,branch"`
-	SourceID   string    `query:"source_id,omitempty" maxLength:"255"`
-	EnvID      string    `query:"env_id,omitempty" maxLength:"255"`
-	Branch     string    `query:"branch,omitempty" maxLength:"255"`
-	Body       *struct{} `json:"-"`
-}
-
-type secretOutput struct {
-	Body SecretDTO
-}
-
-type secretValueOutput struct {
-	Body SecretValueDTO
-}
-
-type secretsOutput struct {
-	Body SecretsDTO
-}
-
-type resolvedSecretsOutput struct {
-	Body ResolvedSecretsDTO
-}
-
-type variableOutput struct {
-	Body VariableDTO
-}
-
-type variableValueOutput struct {
-	Body VariableValueDTO
-}
-
-type variablesOutput struct {
-	Body VariablesDTO
-}
-
-type createOpaqueCredentialInput struct {
-	Body CreateOpaqueCredentialBody
-}
-
-type opaqueCredentialPathInput struct {
-	CredentialID string `path:"credential_id" format:"uuid"`
-}
-
-type listOpaqueCredentialsInput struct {
-	Kind  string `query:"kind,omitempty" maxLength:"128"`
-	Limit int    `query:"limit,omitempty" minimum:"1" maximum:"200"`
-}
-
-type rollOpaqueCredentialInput struct {
-	CredentialID string `path:"credential_id" format:"uuid"`
-	Body         RollOpaqueCredentialBody
-}
-
-type revokeOpaqueCredentialInput struct {
-	CredentialID string    `path:"credential_id" format:"uuid"`
-	Body         *struct{} `json:"-"`
-}
-
-type opaqueCredentialOutput struct {
-	Body OpaqueCredentialDTO
-}
-
-type opaqueCredentialMaterialOutput struct {
-	Body OpaqueCredentialMaterialDTO
-}
-
-type opaqueCredentialsOutput struct {
-	Body OpaqueCredentialsDTO
-}
-
-type SecretDTO struct {
-	SecretID       string           `json:"secret_id"`
-	ResourceName   dto.ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this secret."`
-	Kind           string           `json:"kind"`
-	Name           string           `json:"name"`
-	ScopeLevel     string           `json:"scope_level"`
-	SourceID       string           `json:"source_id,omitempty"`
-	EnvID          string           `json:"env_id,omitempty"`
-	Branch         string           `json:"branch,omitempty"`
-	CurrentVersion string           `json:"current_version"`
-	CreatedAt      string           `json:"created_at" format:"date-time"`
-	UpdatedAt      string           `json:"updated_at" format:"date-time"`
-}
-
-type SecretValueDTO struct {
-	SecretDTO
-	Value string `json:"value"`
-}
-
-type SecretsDTO struct {
-	Secrets []SecretDTO `json:"secrets"`
-}
-
-type ResolvedSecretsDTO struct {
-	Values []SecretValueDTO `json:"values"`
-}
-
-type VariableDTO struct {
-	VariableID     string           `json:"variable_id"`
-	ResourceName   dto.ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this variable."`
-	Kind           string           `json:"kind"`
-	Name           string           `json:"name"`
-	ScopeLevel     string           `json:"scope_level"`
-	SourceID       string           `json:"source_id,omitempty"`
-	EnvID          string           `json:"env_id,omitempty"`
-	Branch         string           `json:"branch,omitempty"`
-	CurrentVersion string           `json:"current_version"`
-	CreatedAt      string           `json:"created_at" format:"date-time"`
-	UpdatedAt      string           `json:"updated_at" format:"date-time"`
-}
-
-type VariableValueDTO struct {
-	VariableDTO
-	Value string `json:"value"`
-}
-
-type VariablesDTO struct {
-	Variables []VariableDTO `json:"variables"`
-}
-
-type CreateOpaqueCredentialBody struct {
-	Kind             string            `json:"kind" required:"true" minLength:"1" maxLength:"128"`
-	DisplayName      string            `json:"display_name,omitempty" maxLength:"128"`
-	Subject          string            `json:"subject,omitempty" maxLength:"255"`
-	Scopes           []string          `json:"scopes" minItems:"1" maxItems:"64"`
-	Metadata         map[string]string `json:"metadata,omitempty"`
-	ExpiresInSeconds int64             `json:"expires_in_seconds,omitempty" minimum:"60" maximum:"7776000"`
-}
-
-type RollOpaqueCredentialBody struct {
-	ExpiresInSeconds int64 `json:"expires_in_seconds,omitempty" minimum:"60" maximum:"7776000"`
-}
-
-type OpaqueCredentialDTO struct {
-	CredentialID   string            `json:"credential_id" format:"uuid"`
-	ResourceName   dto.ResourceName  `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this opaque credential."`
-	OrgID          string            `json:"org_id"`
-	Kind           string            `json:"kind"`
-	Subject        string            `json:"subject"`
-	DisplayName    string            `json:"display_name"`
-	Status         string            `json:"status"`
-	TokenPrefix    string            `json:"token_prefix"`
-	Scopes         []string          `json:"scopes"`
-	Metadata       map[string]string `json:"metadata"`
-	CurrentVersion string            `json:"current_version"`
-	ExpiresAt      string            `json:"expires_at" format:"date-time"`
-	LastUsedAt     string            `json:"last_used_at,omitempty" format:"date-time"`
-	CreatedAt      string            `json:"created_at" format:"date-time"`
-	UpdatedAt      string            `json:"updated_at" format:"date-time"`
-	RevokedAt      string            `json:"revoked_at,omitempty" format:"date-time"`
-}
-
-type OpaqueCredentialMaterialDTO struct {
-	Credential OpaqueCredentialDTO `json:"credential"`
-	Token      string              `json:"token"`
-}
-
-type OpaqueCredentialsDTO struct {
-	Credentials []OpaqueCredentialDTO `json:"credentials"`
+func contractScopes(values []string) contractapi.CredentialScopes {
+	if len(values) == 0 {
+		return contractapi.CredentialScopes{}
+	}
+	out := make(contractapi.CredentialScopes, 0, len(values))
+	for _, value := range values {
+		out = append(out, contractapi.CredentialScope(value))
+	}
+	return out
 }
 
 func putSecret(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *putSecretInput) (*secretOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *putSecretInput) (*secretOutput, error) {
 		record, err := svc.PutSecret(ctx, principal, secrets.PutSecretRequest{
 			Kind: kind,
-			Name: input.Name,
+			Name: string(input.Name),
 			Scope: secrets.Scope{
-				Level:    input.Body.ScopeLevel,
-				SourceID: input.Body.SourceID,
-				EnvID:    input.Body.EnvID,
-				Branch:   input.Body.Branch,
+				Level:    stringFromContractPtr(input.Body.ScopeLevel),
+				SourceID: stringFromContractPtr(input.Body.SourceID),
+				EnvID:    stringFromContractPtr(input.Body.EnvID),
+				Branch:   stringFromContractPtr(input.Body.Branch),
 			},
-			Value: input.Body.Value,
+			Value: string(input.Body.Value),
 		})
 		if err != nil {
 			return nil, err
@@ -647,23 +550,22 @@ func putSecret(svc *secrets.Service, kind string, installationID string) func(co
 
 func readSecret(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *readSecretInput) (*secretValueOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *readSecretInput) (*secretValueOutput, error) {
-		value, err := svc.ReadSecret(ctx, principal, kind, input.Name, secrets.Scope{
-			Level:    input.ScopeLevel,
-			SourceID: input.SourceID,
-			EnvID:    input.EnvID,
-			Branch:   input.Branch,
+		value, err := svc.ReadSecret(ctx, principal, kind, string(input.Name), secrets.Scope{
+			Level:    string(input.ScopeLevel),
+			SourceID: string(input.SourceID),
+			EnvID:    string(input.EnvID),
+			Branch:   string(input.Branch),
 		})
 		if err != nil {
 			return nil, err
 		}
-		secret := secretDTO(value.Record, installationID)
-		return &secretValueOutput{Body: SecretValueDTO{SecretDTO: secret, Value: value.Value}}, nil
+		return &secretValueOutput{Body: secretValueDTO(value, installationID)}, nil
 	}
 }
 
 func listSecrets(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *listSecretsInput) (*secretsOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *listSecretsInput) (*secretsOutput, error) {
-		records, err := svc.ListSecrets(ctx, principal, kind, input.Limit)
+		records, err := svc.ListSecrets(ctx, principal, kind, int(input.Limit))
 		if err != nil {
 			return nil, err
 		}
@@ -678,18 +580,17 @@ func listSecrets(svc *secrets.Service, kind string, installationID string) func(
 func resolveSecrets(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *resolveSecretsInput) (*resolvedSecretsOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *resolveSecretsInput) (*resolvedSecretsOutput, error) {
 		values, err := svc.ResolveSecrets(ctx, principal, kind, secrets.Scope{
-			Level:    input.Body.ScopeLevel,
-			SourceID: input.Body.SourceID,
-			EnvID:    input.Body.EnvID,
-			Branch:   input.Body.Branch,
-		}, input.Body.Names, input.Body.Limit)
+			Level:    stringFromContractPtr(input.Body.ScopeLevel),
+			SourceID: stringFromContractPtr(input.Body.SourceID),
+			EnvID:    stringFromContractPtr(input.Body.EnvID),
+			Branch:   stringFromContractPtr(input.Body.Branch),
+		}, stringSliceFromContractPtr(input.Body.Names), intFromContractPtr(input.Body.Limit))
 		if err != nil {
 			return nil, err
 		}
 		out := ResolvedSecretsDTO{Values: make([]SecretValueDTO, 0, len(values))}
 		for _, value := range values {
-			secret := secretDTO(value.Record, installationID)
-			out.Values = append(out.Values, SecretValueDTO{SecretDTO: secret, Value: value.Value})
+			out.Values = append(out.Values, secretValueDTO(value, installationID))
 		}
 		sort.Slice(out.Values, func(i, j int) bool {
 			return out.Values[i].Name < out.Values[j].Name
@@ -700,11 +601,11 @@ func resolveSecrets(svc *secrets.Service, kind string, installationID string) fu
 
 func deleteSecret(svc *secrets.Service, kind string, installationID string) func(context.Context, secrets.Principal, *deleteSecretInput) (*secretOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *deleteSecretInput) (*secretOutput, error) {
-		record, err := svc.DeleteSecret(ctx, principal, kind, input.Name, secrets.Scope{
-			Level:    input.ScopeLevel,
-			SourceID: input.SourceID,
-			EnvID:    input.EnvID,
-			Branch:   input.Branch,
+		record, err := svc.DeleteSecret(ctx, principal, kind, string(input.Name), secrets.Scope{
+			Level:    string(input.ScopeLevel),
+			SourceID: string(input.SourceID),
+			EnvID:    string(input.EnvID),
+			Branch:   string(input.Branch),
 		})
 		if err != nil {
 			return nil, err
@@ -717,14 +618,14 @@ func putVariable(svc *secrets.Service, installationID string) func(context.Conte
 	return func(ctx context.Context, principal secrets.Principal, input *putSecretInput) (*variableOutput, error) {
 		record, err := svc.PutSecret(ctx, principal, secrets.PutSecretRequest{
 			Kind: secrets.KindVariable,
-			Name: input.Name,
+			Name: string(input.Name),
 			Scope: secrets.Scope{
-				Level:    input.Body.ScopeLevel,
-				SourceID: input.Body.SourceID,
-				EnvID:    input.Body.EnvID,
-				Branch:   input.Body.Branch,
+				Level:    stringFromContractPtr(input.Body.ScopeLevel),
+				SourceID: stringFromContractPtr(input.Body.SourceID),
+				EnvID:    stringFromContractPtr(input.Body.EnvID),
+				Branch:   stringFromContractPtr(input.Body.Branch),
 			},
-			Value: input.Body.Value,
+			Value: string(input.Body.Value),
 		})
 		if err != nil {
 			return nil, err
@@ -735,23 +636,22 @@ func putVariable(svc *secrets.Service, installationID string) func(context.Conte
 
 func readVariable(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *readSecretInput) (*variableValueOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *readSecretInput) (*variableValueOutput, error) {
-		value, err := svc.ReadSecret(ctx, principal, secrets.KindVariable, input.Name, secrets.Scope{
-			Level:    input.ScopeLevel,
-			SourceID: input.SourceID,
-			EnvID:    input.EnvID,
-			Branch:   input.Branch,
+		value, err := svc.ReadSecret(ctx, principal, secrets.KindVariable, string(input.Name), secrets.Scope{
+			Level:    string(input.ScopeLevel),
+			SourceID: string(input.SourceID),
+			EnvID:    string(input.EnvID),
+			Branch:   string(input.Branch),
 		})
 		if err != nil {
 			return nil, err
 		}
-		variable := variableDTO(value.Record, installationID)
-		return &variableValueOutput{Body: VariableValueDTO{VariableDTO: variable, Value: value.Value}}, nil
+		return &variableValueOutput{Body: variableValueDTO(value, installationID)}, nil
 	}
 }
 
 func listVariables(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *listSecretsInput) (*variablesOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *listSecretsInput) (*variablesOutput, error) {
-		records, err := svc.ListSecrets(ctx, principal, secrets.KindVariable, input.Limit)
+		records, err := svc.ListSecrets(ctx, principal, secrets.KindVariable, int(input.Limit))
 		if err != nil {
 			return nil, err
 		}
@@ -765,11 +665,11 @@ func listVariables(svc *secrets.Service, installationID string) func(context.Con
 
 func deleteVariable(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *deleteSecretInput) (*variableOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *deleteSecretInput) (*variableOutput, error) {
-		record, err := svc.DeleteSecret(ctx, principal, secrets.KindVariable, input.Name, secrets.Scope{
-			Level:    input.ScopeLevel,
-			SourceID: input.SourceID,
-			EnvID:    input.EnvID,
-			Branch:   input.Branch,
+		record, err := svc.DeleteSecret(ctx, principal, secrets.KindVariable, string(input.Name), secrets.Scope{
+			Level:    string(input.ScopeLevel),
+			SourceID: string(input.SourceID),
+			EnvID:    string(input.EnvID),
+			Branch:   string(input.Branch),
 		})
 		if err != nil {
 			return nil, err
@@ -781,15 +681,15 @@ func deleteVariable(svc *secrets.Service, installationID string) func(context.Co
 func createOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *createOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *createOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 		expiresAt := time.Time{}
-		if input.Body.ExpiresInSeconds > 0 {
-			expiresAt = time.Now().UTC().Add(time.Duration(input.Body.ExpiresInSeconds) * time.Second)
+		if input.Body.ExpiresInSeconds != nil && *input.Body.ExpiresInSeconds > 0 {
+			expiresAt = time.Now().UTC().Add(time.Duration(*input.Body.ExpiresInSeconds) * time.Second)
 		}
 		material, err := svc.CreateOpaqueCredential(ctx, principal, secrets.CreateOpaqueCredentialRequest{
-			Kind:        input.Body.Kind,
-			Subject:     input.Body.Subject,
-			DisplayName: input.Body.DisplayName,
-			Scopes:      input.Body.Scopes,
-			Metadata:    input.Body.Metadata,
+			Kind:        string(input.Body.Kind),
+			Subject:     stringFromContractPtr(input.Body.Subject),
+			DisplayName: stringFromContractPtr(input.Body.DisplayName),
+			Scopes:      stringSliceFromContract(input.Body.Scopes),
+			Metadata:    stringMapFromContractPtr(input.Body.Metadata),
 			ExpiresAt:   expiresAt,
 		})
 		if err != nil {
@@ -801,7 +701,7 @@ func createOpaqueCredential(svc *secrets.Service, installationID string) func(co
 
 func getOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *opaqueCredentialPathInput) (*opaqueCredentialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *opaqueCredentialPathInput) (*opaqueCredentialOutput, error) {
-		credential, err := svc.GetOpaqueCredential(ctx, principal, input.CredentialID)
+		credential, err := svc.GetOpaqueCredential(ctx, principal, string(input.CredentialID))
 		if err != nil {
 			return nil, err
 		}
@@ -811,7 +711,7 @@ func getOpaqueCredential(svc *secrets.Service, installationID string) func(conte
 
 func listOpaqueCredentials(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *listOpaqueCredentialsInput) (*opaqueCredentialsOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *listOpaqueCredentialsInput) (*opaqueCredentialsOutput, error) {
-		credentials, err := svc.ListOpaqueCredentials(ctx, principal, input.Kind, input.Limit)
+		credentials, err := svc.ListOpaqueCredentials(ctx, principal, string(input.Kind), int(input.Limit))
 		if err != nil {
 			return nil, err
 		}
@@ -826,11 +726,11 @@ func listOpaqueCredentials(svc *secrets.Service, installationID string) func(con
 func rollOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *rollOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *rollOpaqueCredentialInput) (*opaqueCredentialMaterialOutput, error) {
 		expiresAt := time.Time{}
-		if input.Body.ExpiresInSeconds > 0 {
-			expiresAt = time.Now().UTC().Add(time.Duration(input.Body.ExpiresInSeconds) * time.Second)
+		if input.Body.ExpiresInSeconds != nil && *input.Body.ExpiresInSeconds > 0 {
+			expiresAt = time.Now().UTC().Add(time.Duration(*input.Body.ExpiresInSeconds) * time.Second)
 		}
 		material, err := svc.RollOpaqueCredential(ctx, principal, secrets.RollOpaqueCredentialRequest{
-			CredentialID: input.CredentialID,
+			CredentialID: string(input.CredentialID),
 			ExpiresAt:    expiresAt,
 		})
 		if err != nil {
@@ -842,7 +742,7 @@ func rollOpaqueCredential(svc *secrets.Service, installationID string) func(cont
 
 func revokeOpaqueCredential(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *revokeOpaqueCredentialInput) (*opaqueCredentialOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *revokeOpaqueCredentialInput) (*opaqueCredentialOutput, error) {
-		credential, err := svc.RevokeOpaqueCredential(ctx, principal, input.CredentialID)
+		credential, err := svc.RevokeOpaqueCredential(ctx, principal, string(input.CredentialID))
 		if err != nil {
 			return nil, err
 		}
@@ -850,29 +750,15 @@ func revokeOpaqueCredential(svc *secrets.Service, installationID string) func(co
 	}
 }
 
-type createTransitKeyInput struct {
-	Body struct {
-		Name string `json:"name" minLength:"1" maxLength:"255"`
-	}
-}
-
-type transitKeyOutput struct {
-	Body TransitKeyDTO
-}
-
-type TransitKeyDTO struct {
-	KeyID          string           `json:"key_id"`
-	ResourceName   dto.ResourceName `json:"resourceName,omitempty" doc:"Globally unique Verself resource name for this transit key."`
-	Name           string           `json:"name"`
-	CurrentVersion string           `json:"current_version"`
-	PublicKey      string           `json:"public_key"`
-	CreatedAt      string           `json:"created_at" format:"date-time"`
-	UpdatedAt      string           `json:"updated_at" format:"date-time"`
-}
+type (
+	createTransitKeyInput = contractapi.CreateTransitKeyInput
+	transitKeyOutput      = contractapi.TransitKeyOutput
+	TransitKeyDTO         = contractapi.TransitKeyDTO
+)
 
 func createTransitKey(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *createTransitKeyInput) (*transitKeyOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *createTransitKeyInput) (*transitKeyOutput, error) {
-		key, err := svc.CreateTransitKey(ctx, principal, input.Body.Name)
+		key, err := svc.CreateTransitKey(ctx, principal, string(input.Body.Name))
 		if err != nil {
 			return nil, err
 		}
@@ -880,13 +766,11 @@ func createTransitKey(svc *secrets.Service, installationID string) func(context.
 	}
 }
 
-type rotateTransitKeyInput struct {
-	KeyName string `path:"key_name" minLength:"1" maxLength:"255"`
-}
+type rotateTransitKeyInput = contractapi.TransitKeyIdempotentInput
 
 func rotateTransitKey(svc *secrets.Service, installationID string) func(context.Context, secrets.Principal, *rotateTransitKeyInput) (*transitKeyOutput, error) {
 	return func(ctx context.Context, principal secrets.Principal, input *rotateTransitKeyInput) (*transitKeyOutput, error) {
-		key, err := svc.RotateTransitKey(ctx, principal, input.KeyName)
+		key, err := svc.RotateTransitKey(ctx, principal, string(input.KeyName))
 		if err != nil {
 			return nil, err
 		}
@@ -894,93 +778,69 @@ func rotateTransitKey(svc *secrets.Service, installationID string) func(context.
 	}
 }
 
-type transitPayloadInput struct {
-	KeyName string `path:"key_name" minLength:"1" maxLength:"255"`
-	Body    struct {
-		PlaintextBase64 string `json:"plaintext_base64,omitempty" maxLength:"262144"`
-		Ciphertext      string `json:"ciphertext,omitempty" maxLength:"262144"`
-		MessageBase64   string `json:"message_base64,omitempty" maxLength:"262144"`
-		Signature       string `json:"signature,omitempty" maxLength:"262144"`
-	}
-}
+type (
+	encryptInput  = contractapi.TransitEncryptInput
+	encryptOutput = contractapi.TransitCiphertextOutput
+	decryptInput  = contractapi.TransitDecryptInput
+	decryptOutput = contractapi.TransitPlaintextOutput
+	signInput     = contractapi.TransitSignInput
+	signOutput    = contractapi.TransitSignatureOutput
+	verifyInput   = contractapi.TransitVerifyInput
+	verifyOutput  = contractapi.TransitVerifyOutput
+)
 
-type encryptOutput struct {
-	Body struct {
-		Ciphertext string `json:"ciphertext"`
-		Version    string `json:"version"`
-	}
-}
-
-type decryptOutput struct {
-	Body struct {
-		PlaintextBase64 string `json:"plaintext_base64"`
-	}
-}
-
-type signOutput struct {
-	Body struct {
-		Signature string `json:"signature"`
-	}
-}
-
-type verifyOutput struct {
-	Body struct {
-		Valid bool `json:"valid"`
-	}
-}
-
-func encryptTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *transitPayloadInput) (*encryptOutput, error) {
-	return func(ctx context.Context, principal secrets.Principal, input *transitPayloadInput) (*encryptOutput, error) {
-		plaintext, err := base64.StdEncoding.DecodeString(input.Body.PlaintextBase64)
+func encryptTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *encryptInput) (*encryptOutput, error) {
+	return func(ctx context.Context, principal secrets.Principal, input *encryptInput) (*encryptOutput, error) {
+		plaintext, err := base64.StdEncoding.DecodeString(string(input.Body.PlaintextBase64))
 		if err != nil {
 			return nil, secrets.ErrInvalidArgument
 		}
-		ciphertext, err := svc.TransitEncrypt(ctx, principal, input.KeyName, plaintext)
+		ciphertext, err := svc.TransitEncrypt(ctx, principal, string(input.KeyName), plaintext)
 		if err != nil {
 			return nil, err
 		}
 		out := &encryptOutput{}
-		out.Body.Ciphertext = ciphertext.Ciphertext
-		out.Body.Version = strconv.FormatUint(ciphertext.Version, 10)
+		out.Body.Ciphertext = contractapi.Ciphertext(ciphertext.Ciphertext)
+		out.Body.Version = contractapi.SecretVersion(strconv.FormatUint(ciphertext.Version, 10))
 		return out, nil
 	}
 }
 
-func decryptTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *transitPayloadInput) (*decryptOutput, error) {
-	return func(ctx context.Context, principal secrets.Principal, input *transitPayloadInput) (*decryptOutput, error) {
-		plaintext, _, err := svc.TransitDecrypt(ctx, principal, input.KeyName, input.Body.Ciphertext)
+func decryptTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *decryptInput) (*decryptOutput, error) {
+	return func(ctx context.Context, principal secrets.Principal, input *decryptInput) (*decryptOutput, error) {
+		plaintext, _, err := svc.TransitDecrypt(ctx, principal, string(input.KeyName), string(input.Body.Ciphertext))
 		if err != nil {
 			return nil, err
 		}
 		out := &decryptOutput{}
-		out.Body.PlaintextBase64 = base64.StdEncoding.EncodeToString(plaintext)
+		out.Body.PlaintextBase64 = contractapi.PlaintextBase64(base64.StdEncoding.EncodeToString(plaintext))
 		return out, nil
 	}
 }
 
-func signTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *transitPayloadInput) (*signOutput, error) {
-	return func(ctx context.Context, principal secrets.Principal, input *transitPayloadInput) (*signOutput, error) {
-		message, err := base64.StdEncoding.DecodeString(input.Body.MessageBase64)
+func signTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *signInput) (*signOutput, error) {
+	return func(ctx context.Context, principal secrets.Principal, input *signInput) (*signOutput, error) {
+		message, err := base64.StdEncoding.DecodeString(string(input.Body.MessageBase64))
 		if err != nil {
 			return nil, secrets.ErrInvalidArgument
 		}
-		signature, _, err := svc.TransitSign(ctx, principal, input.KeyName, message)
+		signature, _, err := svc.TransitSign(ctx, principal, string(input.KeyName), message)
 		if err != nil {
 			return nil, err
 		}
 		out := &signOutput{}
-		out.Body.Signature = signature
+		out.Body.Signature = contractapi.Signature(signature)
 		return out, nil
 	}
 }
 
-func verifyTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *transitPayloadInput) (*verifyOutput, error) {
-	return func(ctx context.Context, principal secrets.Principal, input *transitPayloadInput) (*verifyOutput, error) {
-		message, err := base64.StdEncoding.DecodeString(input.Body.MessageBase64)
+func verifyTransit(svc *secrets.Service) func(context.Context, secrets.Principal, *verifyInput) (*verifyOutput, error) {
+	return func(ctx context.Context, principal secrets.Principal, input *verifyInput) (*verifyOutput, error) {
+		message, err := base64.StdEncoding.DecodeString(string(input.Body.MessageBase64))
 		if err != nil {
 			return nil, secrets.ErrInvalidArgument
 		}
-		valid, _, err := svc.TransitVerify(ctx, principal, input.KeyName, message, input.Body.Signature)
+		valid, _, err := svc.TransitVerify(ctx, principal, string(input.KeyName), message, string(input.Body.Signature))
 		if err != nil {
 			return nil, err
 		}
@@ -995,39 +855,75 @@ func secretDTO(record secrets.SecretRecord, installationID string) SecretDTO {
 		SecretID:       record.SecretID,
 		ResourceName:   secretResourceName(record, installationID),
 		Kind:           record.Kind,
-		Name:           record.Name,
-		ScopeLevel:     record.Scope.Level,
-		SourceID:       record.Scope.SourceID,
-		EnvID:          record.Scope.EnvID,
-		Branch:         record.Scope.Branch,
-		CurrentVersion: strconv.FormatUint(record.CurrentVersion, 10),
+		Name:           contractapi.SecretName(record.Name),
+		ScopeLevel:     contractapi.ScopeLevel(record.Scope.Level),
+		SourceID:       contractStringPtr[contractapi.SourceID](record.Scope.SourceID),
+		EnvID:          contractStringPtr[contractapi.EnvID](record.Scope.EnvID),
+		Branch:         contractStringPtr[contractapi.Branch](record.Scope.Branch),
+		CurrentVersion: contractapi.SecretVersion(strconv.FormatUint(record.CurrentVersion, 10)),
 		CreatedAt:      record.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:      record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func secretValueDTO(value secrets.SecretValue, installationID string) SecretValueDTO {
+	record := value.Record
+	return SecretValueDTO{
+		SecretID:       record.SecretID,
+		ResourceName:   secretResourceName(record, installationID),
+		Kind:           record.Kind,
+		Name:           contractapi.SecretName(record.Name),
+		ScopeLevel:     contractapi.ScopeLevel(record.Scope.Level),
+		SourceID:       contractStringPtr[contractapi.SourceID](record.Scope.SourceID),
+		EnvID:          contractStringPtr[contractapi.EnvID](record.Scope.EnvID),
+		Branch:         contractStringPtr[contractapi.Branch](record.Scope.Branch),
+		CurrentVersion: contractapi.SecretVersion(strconv.FormatUint(record.CurrentVersion, 10)),
+		CreatedAt:      record.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt:      record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		Value:          contractapi.SecretValue(value.Value),
 	}
 }
 
 func variableDTO(record secrets.SecretRecord, installationID string) VariableDTO {
 	return VariableDTO{
 		VariableID:     record.SecretID,
-		ResourceName:   optionalResourceName(installationID, record.OrgID, record.SecretID, dto.ResourceNameVariable),
+		ResourceName:   optionalResourceName(installationID, record.OrgID, record.SecretID, "variables"),
 		Kind:           record.Kind,
-		Name:           record.Name,
-		ScopeLevel:     record.Scope.Level,
-		SourceID:       record.Scope.SourceID,
-		EnvID:          record.Scope.EnvID,
-		Branch:         record.Scope.Branch,
-		CurrentVersion: strconv.FormatUint(record.CurrentVersion, 10),
+		Name:           contractapi.SecretName(record.Name),
+		ScopeLevel:     contractapi.ScopeLevel(record.Scope.Level),
+		SourceID:       contractStringPtr[contractapi.SourceID](record.Scope.SourceID),
+		EnvID:          contractStringPtr[contractapi.EnvID](record.Scope.EnvID),
+		Branch:         contractStringPtr[contractapi.Branch](record.Scope.Branch),
+		CurrentVersion: contractapi.SecretVersion(strconv.FormatUint(record.CurrentVersion, 10)),
 		CreatedAt:      record.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:      record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func variableValueDTO(value secrets.SecretValue, installationID string) VariableValueDTO {
+	record := value.Record
+	return VariableValueDTO{
+		VariableID:     record.SecretID,
+		ResourceName:   optionalResourceName(installationID, record.OrgID, record.SecretID, "variables"),
+		Kind:           record.Kind,
+		Name:           contractapi.SecretName(record.Name),
+		ScopeLevel:     contractapi.ScopeLevel(record.Scope.Level),
+		SourceID:       contractStringPtr[contractapi.SourceID](record.Scope.SourceID),
+		EnvID:          contractStringPtr[contractapi.EnvID](record.Scope.EnvID),
+		Branch:         contractStringPtr[contractapi.Branch](record.Scope.Branch),
+		CurrentVersion: contractapi.SecretVersion(strconv.FormatUint(record.CurrentVersion, 10)),
+		CreatedAt:      record.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt:      record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		Value:          contractapi.SecretValue(value.Value),
 	}
 }
 
 func transitKeyDTO(key secrets.TransitKey, installationID string) TransitKeyDTO {
 	return TransitKeyDTO{
 		KeyID:          key.KeyID,
-		ResourceName:   optionalResourceName(installationID, key.OrgID, key.KeyID, dto.ResourceNameTransitKey),
-		Name:           key.Name,
-		CurrentVersion: strconv.FormatUint(key.CurrentVersion, 10),
+		ResourceName:   optionalResourceName(installationID, key.OrgID, key.KeyID, "transitKeys"),
+		Name:           contractapi.KeyName(key.Name),
+		CurrentVersion: contractapi.SecretVersion(strconv.FormatUint(key.CurrentVersion, 10)),
 		PublicKey:      key.PublicKey,
 		CreatedAt:      key.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:      key.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -1037,23 +933,23 @@ func transitKeyDTO(key secrets.TransitKey, installationID string) TransitKeyDTO 
 func opaqueCredentialMaterialDTO(material secrets.OpaqueCredentialMaterial, installationID string) OpaqueCredentialMaterialDTO {
 	return OpaqueCredentialMaterialDTO{
 		Credential: opaqueCredentialDTO(material.Credential, installationID),
-		Token:      material.Token,
+		Token:      contractapi.SecretValue(material.Token),
 	}
 }
 
 func opaqueCredentialDTO(credential secrets.OpaqueCredential, installationID string) OpaqueCredentialDTO {
 	return OpaqueCredentialDTO{
-		CredentialID:   credential.CredentialID,
-		ResourceName:   optionalResourceName(installationID, credential.OrgID, credential.CredentialID, dto.ResourceNameOpaqueCredential),
-		OrgID:          credential.OrgID,
-		Kind:           credential.Kind,
+		CredentialID:   contractapi.CredentialID(credential.CredentialID),
+		ResourceName:   optionalResourceName(installationID, credential.OrgID, credential.CredentialID, "credentials"),
+		OrgID:          contractapi.OrgID(credential.OrgID),
+		Kind:           contractapi.CredentialKind(credential.Kind),
 		Subject:        credential.Subject,
 		DisplayName:    credential.DisplayName,
-		Status:         credential.Status,
+		Status:         contractapi.CredentialStatus(credential.Status),
 		TokenPrefix:    credential.TokenPrefix,
-		Scopes:         append([]string(nil), credential.Scopes...),
-		Metadata:       copyStringMap(credential.Metadata),
-		CurrentVersion: strconv.FormatUint(credential.CurrentVersion, 10),
+		Scopes:         contractScopes(credential.Scopes),
+		Metadata:       contractapi.CredentialMetadata(copyStringMap(credential.Metadata)),
+		CurrentVersion: contractapi.SecretVersion(strconv.FormatUint(credential.CurrentVersion, 10)),
 		ExpiresAt:      credential.ExpiresAt.UTC().Format(time.RFC3339Nano),
 		LastUsedAt:     formatOptionalDTOTime(credential.LastUsedAt),
 		CreatedAt:      credential.CreatedAt.UTC().Format(time.RFC3339Nano),
@@ -1062,20 +958,21 @@ func opaqueCredentialDTO(credential secrets.OpaqueCredential, installationID str
 	}
 }
 
-func secretResourceName(record secrets.SecretRecord, installationID string) dto.ResourceName {
+func secretResourceName(record secrets.SecretRecord, installationID string) *contractapi.ResourceName {
 	switch record.Kind {
 	case secrets.KindVariable:
-		return optionalResourceName(installationID, record.OrgID, record.SecretID, dto.ResourceNameVariable)
+		return optionalResourceName(installationID, record.OrgID, record.SecretID, "variables")
 	default:
-		return optionalResourceName(installationID, record.OrgID, record.SecretID, dto.ResourceNameSecret)
+		return optionalResourceName(installationID, record.OrgID, record.SecretID, "secrets")
 	}
 }
 
-func optionalResourceName(installationID, orgID, id string, format func(string, string, string) dto.ResourceName) dto.ResourceName {
+func optionalResourceName(installationID, orgID, id string, collection string) *contractapi.ResourceName {
 	if installationID == "" || orgID == "" || id == "" {
-		return ""
+		return nil
 	}
-	return format(installationID, orgID, id)
+	value := contractapi.ResourceName("urn:verself:" + installationID + ":orgs/" + orgID + "/" + collection + "/" + id)
+	return &value
 }
 
 func copyStringMap(input map[string]string) map[string]string {
@@ -1089,9 +986,10 @@ func copyStringMap(input map[string]string) map[string]string {
 	return out
 }
 
-func formatOptionalDTOTime(value *time.Time) string {
+func formatOptionalDTOTime(value *time.Time) *string {
 	if value == nil || value.IsZero() {
-		return ""
+		return nil
 	}
-	return value.UTC().Format(time.RFC3339Nano)
+	formatted := value.UTC().Format(time.RFC3339Nano)
+	return &formatted
 }

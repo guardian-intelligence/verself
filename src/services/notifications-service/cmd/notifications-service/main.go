@@ -164,7 +164,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("notifications secrets mtls: %w", err)
 	}
-	secrets, err := secretsclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
+	secrets, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("notifications secrets client: %w", err)
 	}
@@ -269,20 +269,20 @@ func run() error {
 	return httpserver.RunPair(ctx, logger, public, internal)
 }
 
-func readRuntimeSecret(ctx context.Context, client *secretsclient.ClientWithResponses, secretName string) (string, error) {
+func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, secretName string) (string, error) {
 	if client == nil {
 		return "", fmt.Errorf("runtime secrets client is required")
 	}
 	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	resp, err := client.ReadSecretWithResponse(secretCtx, secretName, nil)
+	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
 	if err != nil {
 		return "", fmt.Errorf("read runtime secret %s: %w", secretName, err)
 	}
-	if resp.JSON200 == nil {
-		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+	if resp.Result == nil {
+		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
 	}
-	value := strings.TrimSpace(resp.JSON200.Value)
+	value := strings.TrimSpace(string(resp.Result.Value))
 	if value == "" {
 		return "", fmt.Errorf("runtime secret %s is empty", secretName)
 	}

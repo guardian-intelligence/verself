@@ -21,7 +21,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	billingclient "github.com/verself/billing-service/client"
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/secrets-service/internal/secrets"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -269,7 +268,7 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy secretsOperationPoli
 	return ""
 }
 
-func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any) (*dto.BillingWindowReservation, error) {
+func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any) (*billingclient.BillingWindowReservation, error) {
 	if policy.BillingSKU == "" {
 		return nil, nil
 	}
@@ -311,17 +310,17 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	}
 	switch response.StatusCode() {
 	case http.StatusOK:
-		result, err := decodeBillingResponse[dto.BillingReserveWindowResult](response.Body)
-		if err != nil {
+		if response.JSON200 == nil {
+			err := unexpectedBillingStatus("reserve", response.StatusCode(), response.Body)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
 		span.SetAttributes(
-			attribute.String("billing.window_id", result.Reservation.WindowID),
-			attribute.String("billing.reservation_shape", result.Reservation.ReservationShape),
+			attribute.String("billing.window_id", response.JSON200.Reservation.WindowId),
+			attribute.String("billing.reservation_shape", response.JSON200.Reservation.ReservationShape),
 		)
-		return &result.Reservation, nil
+		return &response.JSON200.Reservation, nil
 	case http.StatusPaymentRequired:
 		err := fmt.Errorf("%w: reserve secrets billing window denied", errBillingPaymentRequired)
 		span.RecordError(err)
@@ -340,7 +339,7 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	}
 }
 
-func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *dto.BillingWindowReservation, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any, output any) error {
+func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *billingclient.BillingWindowReservation, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any, output any) error {
 	if reservation == nil {
 		return nil
 	}
@@ -363,14 +362,14 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 		attribute.String("verself.org_id", identity.OrgID),
 		attribute.String("verself.credential_id", claimString(identity.Raw, "verself:credential_id")),
 		attribute.String("secrets.operation_id", operationID),
-		attribute.String("billing.window_id", reservation.WindowID),
-		attribute.String("billing.product_id", reservation.ProductID),
+		attribute.String("billing.window_id", reservation.WindowId),
+		attribute.String("billing.product_id", reservation.ProductId),
 		attribute.String("billing.sku_id", policy.BillingSKU),
 	)
 	response, err := svc.Billing.SettleWindowWithResponse(billingCtx, billingclient.BillingSettleWindowRequest{
 		ActualQuantity: 1,
 		UsageSummary:   &usageSummary,
-		WindowId:       reservation.WindowID,
+		WindowId:       reservation.WindowId,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -379,13 +378,13 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 	}
 	switch response.StatusCode() {
 	case http.StatusOK:
-		result, err := decodeBillingResponse[dto.BillingSettleResult](response.Body)
-		if err != nil {
+		if response.JSON200 == nil {
+			err := unexpectedBillingStatus("settle", response.StatusCode(), response.Body)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		span.SetAttributes(attribute.String("billing.billed_charge_units", result.BilledChargeUnits.String()))
+		span.SetAttributes(attribute.String("billing.billed_charge_units", response.JSON200.BilledChargeUnits))
 		return nil
 	default:
 		err := unexpectedBillingStatus("settle", response.StatusCode(), response.Body)
@@ -395,19 +394,19 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 	}
 }
 
-func voidBillingReservation(ctx context.Context, svc *secrets.Service, reservation *dto.BillingWindowReservation) {
+func voidBillingReservation(ctx context.Context, svc *secrets.Service, reservation *billingclient.BillingWindowReservation) {
 	if reservation == nil || svc == nil || svc.Billing == nil {
 		return
 	}
 	billingCtx, span := apiTracer.Start(ctx, "secrets.billing.void")
 	defer span.End()
-	span.SetAttributes(attribute.String("billing.window_id", reservation.WindowID))
-	response, err := svc.Billing.VoidWindowWithResponse(billingCtx, billingclient.BillingVoidWindowRequest{WindowId: reservation.WindowID})
+	span.SetAttributes(attribute.String("billing.window_id", reservation.WindowId))
+	response, err := svc.Billing.VoidWindowWithResponse(billingCtx, billingclient.BillingVoidWindowRequest{WindowId: reservation.WindowId})
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		if svc.Logger != nil {
-			svc.Logger.WarnContext(ctx, "void secrets billing reservation failed", "window_id", reservation.WindowID, "error", err)
+			svc.Logger.WarnContext(ctx, "void secrets billing reservation failed", "window_id", reservation.WindowId, "error", err)
 		}
 		return
 	}
@@ -416,17 +415,9 @@ func voidBillingReservation(ctx context.Context, svc *secrets.Service, reservati
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		if svc.Logger != nil {
-			svc.Logger.WarnContext(ctx, "void secrets billing reservation failed", "window_id", reservation.WindowID, "error", err)
+			svc.Logger.WarnContext(ctx, "void secrets billing reservation failed", "window_id", reservation.WindowId, "error", err)
 		}
 	}
-}
-
-func decodeBillingResponse[T any](body []byte) (T, error) {
-	var value T
-	if err := json.Unmarshal(body, &value); err != nil {
-		return value, fmt.Errorf("decode billing response: %w", err)
-	}
-	return value, nil
 }
 
 func unexpectedBillingStatus(operation string, status int, body []byte) error {
@@ -685,7 +676,16 @@ func stringField(value reflect.Value, name string) string {
 		return ""
 	}
 	field := value.FieldByName(name)
-	if !field.IsValid() || field.Kind() != reflect.String {
+	if !field.IsValid() {
+		return ""
+	}
+	for field.Kind() == reflect.Pointer {
+		if field.IsNil() {
+			return ""
+		}
+		field = field.Elem()
+	}
+	if field.Kind() != reflect.String {
 		return ""
 	}
 	return strings.TrimSpace(field.String())

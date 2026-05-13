@@ -1,5 +1,6 @@
 $version: "2"
 namespace verself.secrets.v1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
@@ -7,7 +8,9 @@ use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#nestedProperties
 use smithy.api#pattern
+use smithy.api#range
 use smithy.api#readonly
 use smithy.api#required
 use smithy.api#sensitive
@@ -31,6 +34,7 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+
 @serviceRuntime(serviceName: "secrets-service", publicAudience: "secrets-service", internalAudience: "secrets-service")
 service Secrets {
     version: "2026-05-13"
@@ -63,6 +67,7 @@ service Secrets {
         TransitKey
     ]
 }
+
 @serviceRuntime(serviceName: "secrets-service", publicAudience: "secrets-service", internalAudience: "secrets-service")
 service SecretsInternal {
     version: "2026-05-13"
@@ -76,271 +81,585 @@ service SecretsInternal {
         OpaqueCredential
     ]
 }
+
 @length(min: 1, max: 255)
 string SecretName
+
 @pattern("^[0-9a-fA-F-]{36}$")
 string CredentialId
+
 @length(min: 1, max: 255)
 string KeyName
+
 @length(min: 1, max: 128)
 string OrgId
+
+@length(min: 1, max: 128)
+string SubjectId
+
 @length(min: 1, max: 128)
 string ScopeLevel
+
 @length(max: 255)
 string SourceId
+
 @length(max: 255)
 string EnvId
+
 @length(max: 255)
 string Branch
+
+@pattern("^[0-9]+$")
+string SecretVersion
+
 @length(min: 1, max: 65536)
 @sensitive
 string SecretValue
+
 @length(min: 1, max: 128)
 string CredentialKind
+
 @length(min: 1, max: 128)
 string CredentialStatus
+
+@length(min: 1, max: 128)
+string CredentialScope
+
+@length(max: 128)
+string CredentialDisplayName
+
+@length(max: 255)
+string CredentialSubject
+
+@length(min: 1, max: 64)
+list CredentialScopes {
+    member: CredentialScope
+}
+
+map CredentialMetadata {
+    key: String
+    value: String
+}
+
+@range(min: 60, max: 7776000)
+long CredentialExpiresInSeconds
+
 @length(min: 1, max: 128)
 string TransitAlgorithm
-@length(min: 1, max: 65536)
+
+@length(min: 1, max: 262144)
 @sensitive
-string Plaintext
-@length(min: 1, max: 65536)
+string PlaintextBase64
+
+@length(min: 1, max: 262144)
+@sensitive
+string MessageBase64
+
+@length(min: 1, max: 262144)
 @sensitive
 string Ciphertext
-@length(min: 1, max: 65536)
+
+@length(min: 1, max: 262144)
 @sensitive
 string Signature
-@length(min: 1, max: 4096)
-@sensitive
-string InjectionToken
+
+@range(min: 1, max: 200)
+integer SecretListLimit
+
+@length(min: 1, max: 255)
+string InjectionEnvName
+
+@length(min: 1, max: 255)
+string InjectionExecutionId
+
+@length(min: 1, max: 255)
+string InjectionAttemptId
+
+@length(min: 1, max: 255)
+string InjectionGrantId
+
+@length(min: 1, max: 200)
 list SecretNames {
     member: SecretName
 }
-list SecretSummaries {
-    member: SecretSummary
+
+list SecretDTOs {
+    member: SecretDTO
 }
-list VariableSummaries {
-    member: VariableSummary
+
+list SecretValueDTOs {
+    member: SecretValueDTO
 }
-list OpaqueCredentialSummaries {
-    member: OpaqueCredentialSummary
+
+list VariableDTOs {
+    member: VariableDTO
 }
+
+list OpaqueCredentialDTOs {
+    member: OpaqueCredentialDTO
+}
+
+list InjectionSecretRequests {
+    member: InjectionSecretRequest
+}
+
+list InjectionEnvValues {
+    member: InjectionEnvValue
+}
+
 @permission(name: "secrets:secret:write")
 string SecretWritePermission
+
 @permission(name: "secrets:secret:read")
 string SecretReadPermission
+
 @permission(name: "secrets:secret:list")
 string SecretListPermission
+
 @permission(name: "secrets:secret:delete")
 string SecretDeletePermission
+
 @permission(name: "secrets:variable:write")
 string VariableWritePermission
+
 @permission(name: "secrets:variable:read")
 string VariableReadPermission
+
 @permission(name: "secrets:variable:list")
 string VariableListPermission
+
 @permission(name: "secrets:variable:delete")
 string VariableDeletePermission
+
 @permission(name: "secrets:credential:create")
 string CredentialCreatePermission
+
 @permission(name: "secrets:credential:read")
 string CredentialReadPermission
+
 @permission(name: "secrets:credential:list")
 string CredentialListPermission
+
 @permission(name: "secrets:credential:roll")
 string CredentialRollPermission
+
 @permission(name: "secrets:credential:revoke")
 string CredentialRevokePermission
+
 @permission(name: "secrets:transit_key:create")
 string TransitKeyCreatePermission
+
 @permission(name: "secrets:transit_key:rotate")
 string TransitKeyRotatePermission
+
 @permission(name: "secrets:transit:encrypt")
 string TransitEncryptPermission
+
 @permission(name: "secrets:transit:decrypt")
 string TransitDecryptPermission
+
 @permission(name: "secrets:transit:sign")
 string TransitSignPermission
+
 @permission(name: "secrets:transit:verify")
 string TransitVerifyPermission
+
 @auditEvent(name: "secrets.secret.write")
 string SecretWriteAuditEvent
+
 @auditEvent(name: "secrets.secret.read")
 string SecretReadAuditEvent
+
 @auditEvent(name: "secrets.secret.list")
 string SecretListAuditEvent
+
 @auditEvent(name: "secrets.secret.resolve")
 string SecretResolveAuditEvent
+
 @auditEvent(name: "secrets.secret.delete")
 string SecretDeleteAuditEvent
+
 @auditEvent(name: "secrets.variable.write")
 string VariableWriteAuditEvent
+
 @auditEvent(name: "secrets.variable.read")
 string VariableReadAuditEvent
+
 @auditEvent(name: "secrets.variable.list")
 string VariableListAuditEvent
+
 @auditEvent(name: "secrets.variable.delete")
 string VariableDeleteAuditEvent
+
 @auditEvent(name: "secrets.credential.create")
 string CredentialCreateAuditEvent
+
 @auditEvent(name: "secrets.credential.read")
 string CredentialReadAuditEvent
+
 @auditEvent(name: "secrets.credential.list")
 string CredentialListAuditEvent
+
 @auditEvent(name: "secrets.credential.roll")
 string CredentialRollAuditEvent
+
 @auditEvent(name: "secrets.credential.revoke")
 string CredentialRevokeAuditEvent
+
 @auditEvent(name: "secrets.transit_key.create")
 string TransitKeyCreateAuditEvent
+
 @auditEvent(name: "secrets.transit_key.rotate")
 string TransitKeyRotateAuditEvent
+
 @auditEvent(name: "secrets.transit_key.encrypt")
 string TransitEncryptAuditEvent
+
 @auditEvent(name: "secrets.transit_key.decrypt")
 string TransitDecryptAuditEvent
+
 @auditEvent(name: "secrets.transit_key.sign")
 string TransitSignAuditEvent
+
 @auditEvent(name: "secrets.transit_key.verify")
 string TransitVerifyAuditEvent
+
 @auditEvent(name: "secrets.injection.resolve")
 string ResolveInjectionAuditEvent
+
 resource Secret {}
 resource Variable {}
 resource OpaqueCredential {}
 resource TransitKey {}
-structure SecretScope {
-    @protoField(number: 1)
-    scope_level: ScopeLevel
-    @protoField(number: 2)
-    source_id: SourceId
-    @protoField(number: 3)
-    env_id: EnvId
-    @protoField(number: 4)
-    branch: Branch
-}
-structure SecretSummary {
+
+structure EmptyInput {}
+structure EmptyOutput {}
+
+structure SecretDTO {
     @required
     @protoField(number: 1)
-    resourceName: ResourceName
-    @required
-    @protoField(number: 2)
-    name: SecretName
-    @required
-    @protoField(number: 3)
-    scope: SecretScope
-    @required
-    @protoField(number: 4)
-    updated_at: Timestamp
-}
-structure VariableSummary {
-    @required
-    @protoField(number: 1)
-    resourceName: ResourceName
-    @required
-    @protoField(number: 2)
-    name: SecretName
-    @required
-    @protoField(number: 3)
-    scope: SecretScope
-    @required
-    @protoField(number: 4)
-    updated_at: Timestamp
-}
-structure SecretValueView {
-    @required
-    @protoField(number: 1)
-    name: SecretName
-    @required
-    @protoField(number: 2)
-    value: SecretValue
-}
-structure OpaqueCredentialSummary {
-    @required
-    @protoField(number: 1)
-    credential_id: CredentialId
-    @required
+    secret_id: String
+
     @protoField(number: 2)
     resourceName: ResourceName
+
     @required
     @protoField(number: 3)
-    kind: CredentialKind
+    kind: String
+
     @required
     @protoField(number: 4)
-    status: CredentialStatus
+    name: SecretName
+
     @required
     @protoField(number: 5)
+    scope_level: ScopeLevel
+
+    @protoField(number: 6)
+    source_id: SourceId
+
+    @protoField(number: 7)
+    env_id: EnvId
+
+    @protoField(number: 8)
+    branch: Branch
+
+    @required
+    @protoField(number: 9)
+    current_version: SecretVersion
+
+    @required
+    @protoField(number: 10)
     created_at: Timestamp
+
+    @required
+    @protoField(number: 11)
+    updated_at: Timestamp
 }
-structure TransitKeyView {
+
+structure SecretValueDTO {
     @required
-    @protoField(number: 1)
-    key_name: KeyName
+    secret_id: String
+    resourceName: ResourceName
     @required
-    @protoField(number: 2)
-    algorithm: TransitAlgorithm
+    kind: String
     @required
-    @protoField(number: 3)
+    name: SecretName
+    @required
+    scope_level: ScopeLevel
+    source_id: SourceId
+    env_id: EnvId
+    branch: Branch
+    @required
+    current_version: SecretVersion
+    @required
     created_at: Timestamp
+    @required
+    updated_at: Timestamp
+    @required
+    value: SecretValue
 }
+
+structure VariableDTO {
+    @required
+    variable_id: String
+    resourceName: ResourceName
+    @required
+    kind: String
+    @required
+    name: SecretName
+    @required
+    scope_level: ScopeLevel
+    source_id: SourceId
+    env_id: EnvId
+    branch: Branch
+    @required
+    current_version: SecretVersion
+    @required
+    created_at: Timestamp
+    @required
+    updated_at: Timestamp
+}
+
+structure VariableValueDTO {
+    @required
+    variable_id: String
+    resourceName: ResourceName
+    @required
+    kind: String
+    @required
+    name: SecretName
+    @required
+    scope_level: ScopeLevel
+    source_id: SourceId
+    env_id: EnvId
+    branch: Branch
+    @required
+    current_version: SecretVersion
+    @required
+    created_at: Timestamp
+    @required
+    updated_at: Timestamp
+    @required
+    value: SecretValue
+}
+
+structure SecretsDTO {
+    @required
+    secrets: SecretDTOs
+}
+
+structure ResolvedSecretsDTO {
+    @required
+    values: SecretValueDTOs
+}
+
+structure VariablesDTO {
+    @required
+    variables: VariableDTOs
+}
+
+structure OpaqueCredentialDTO {
+    @required
+    credential_id: CredentialId
+    resourceName: ResourceName
+    @required
+    org_id: OrgId
+    @required
+    kind: CredentialKind
+    @required
+    subject: String
+    @required
+    display_name: String
+    @required
+    status: CredentialStatus
+    @required
+    token_prefix: String
+    @required
+    scopes: CredentialScopes
+    @required
+    metadata: CredentialMetadata
+    @required
+    current_version: SecretVersion
+    @required
+    expires_at: Timestamp
+    last_used_at: Timestamp
+    @required
+    created_at: Timestamp
+    @required
+    updated_at: Timestamp
+    revoked_at: Timestamp
+}
+
+structure OpaqueCredentialMaterialDTO {
+    @required
+    credential: OpaqueCredentialDTO
+
+    @required
+    token: SecretValue
+}
+
+structure OpaqueCredentialsDTO {
+    @required
+    credentials: OpaqueCredentialDTOs
+}
+
+structure TransitKeyDTO {
+    @required
+    key_id: String
+    resourceName: ResourceName
+    @required
+    name: KeyName
+    @required
+    current_version: SecretVersion
+    @required
+    public_key: String
+    @required
+    created_at: Timestamp
+    @required
+    updated_at: Timestamp
+}
+
 structure SecretPathInput {
     @required
     @httpLabel
     name: SecretName
+
     @httpQuery("scope_level")
     scope_level: ScopeLevel
+
     @httpQuery("source_id")
     source_id: SourceId
+
     @httpQuery("env_id")
     env_id: EnvId
+
     @httpQuery("branch")
     branch: Branch
 }
+
 structure SecretMutationInput {
     @required
     @httpLabel
     name: SecretName
+
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
-    @required
+
     scope_level: ScopeLevel
     source_id: SourceId
     env_id: EnvId
     branch: Branch
+
     @required
     value: SecretValue
 }
+
 structure SecretDeleteInput {
     @required
     @httpLabel
     name: SecretName
+
     @httpQuery("scope_level")
     scope_level: ScopeLevel
+
     @httpQuery("source_id")
     source_id: SourceId
+
     @httpQuery("env_id")
     env_id: EnvId
+
     @httpQuery("branch")
     branch: Branch
+
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
 }
+
+structure SecretListInput {
+    @httpQuery("limit")
+    limit: SecretListLimit
+}
+
+structure ResolveSecretsInput {
+    scope_level: ScopeLevel
+    source_id: SourceId
+    env_id: EnvId
+    branch: Branch
+    names: SecretNames
+    limit: SecretListLimit
+}
+
 structure SecretOutput {
     @required
-    secret: SecretSummary
+    @nestedProperties
+    secret: SecretDTO
 }
+
 structure SecretValueOutput {
     @required
-    secret: SecretValueView
+    @nestedProperties
+    secret: SecretValueDTO
 }
+
 structure SecretsOutput {
     @required
-    secrets: SecretSummaries
+    @nestedProperties
+    secrets: SecretsDTO
 }
+
+structure ResolvedSecretsOutput {
+    @required
+    @nestedProperties
+    resolved: ResolvedSecretsDTO
+}
+
+structure VariableOutput {
+    @required
+    @nestedProperties
+    variable: VariableDTO
+}
+
+structure VariableValueOutput {
+    @required
+    @nestedProperties
+    variable: VariableValueDTO
+}
+
+structure VariablesOutput {
+    @required
+    @nestedProperties
+    variables: VariablesDTO
+}
+
+structure OpaqueCredentialOutput {
+    @required
+    @nestedProperties
+    credential: OpaqueCredentialDTO
+}
+
+structure OpaqueCredentialMaterialOutput {
+    @required
+    @nestedProperties
+    material: OpaqueCredentialMaterialDTO
+}
+
+structure OpaqueCredentialsOutput {
+    @required
+    @nestedProperties
+    credentials: OpaqueCredentialsDTO
+}
+
+structure TransitKeyOutput {
+    @required
+    @nestedProperties
+    key: TransitKeyDTO
+}
+
 @idempotent
 @http(method: "PUT", uri: "/api/v1/secrets/{name}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -354,6 +673,7 @@ operation PutSecret {
     output: SecretOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/secrets/{name}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -367,6 +687,7 @@ operation ReadSecret {
     output: SecretValueOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/secrets")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -376,11 +697,11 @@ operation ReadSecret {
 @requestBudget(maxBytes: 0)
 @sdk(module: "secrets", method: "list", paginated: false, retryable: true)
 operation ListSecrets {
-    input: EmptyInput
+    input: SecretListInput
     output: SecretsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
-structure EmptyInput {}
+
 @http(method: "POST", uri: "/api/v1/secrets:resolve")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
 @authz(permission: SecretReadPermission, organization: {source: "token_org_id"})
@@ -393,17 +714,7 @@ operation ResolveSecrets {
     output: ResolvedSecretsOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
-structure ResolveSecretsInput {
-    scope_level: ScopeLevel
-    source_id: SourceId
-    env_id: EnvId
-    branch: Branch
-    names: SecretNames
-}
-structure ResolvedSecretsOutput {
-    @required
-    secrets: SecretSummaries
-}
+
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/secrets/{name}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -414,10 +725,10 @@ structure ResolvedSecretsOutput {
 @sdk(module: "secrets", method: "delete", paginated: false, retryable: false)
 operation DeleteSecret {
     input: SecretDeleteInput
-    output: EmptyOutput
+    output: SecretOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
-structure EmptyOutput {}
+
 @idempotent
 @http(method: "PUT", uri: "/api/v1/variables/{name}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -431,6 +742,7 @@ operation PutVariable {
     output: VariableOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/variables/{name}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -441,9 +753,10 @@ operation PutVariable {
 @sdk(module: "variables", method: "read", paginated: false, retryable: true)
 operation ReadVariable {
     input: SecretPathInput
-    output: SecretValueOutput
+    output: VariableValueOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/variables")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -453,18 +766,11 @@ operation ReadVariable {
 @requestBudget(maxBytes: 0)
 @sdk(module: "variables", method: "list", paginated: false, retryable: true)
 operation ListVariables {
-    input: EmptyInput
+    input: SecretListInput
     output: VariablesOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
-structure VariableOutput {
-    @required
-    variable: VariableSummary
-}
-structure VariablesOutput {
-    @required
-    variables: VariableSummaries
-}
+
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/variables/{name}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -475,9 +781,29 @@ structure VariablesOutput {
 @sdk(module: "variables", method: "delete", paginated: false, retryable: false)
 operation DeleteVariable {
     input: SecretDeleteInput
-    output: EmptyOutput
+    output: VariableOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
+
+structure CreateOpaqueCredentialInput {
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+
+    @required
+    kind: CredentialKind
+
+    display_name: CredentialDisplayName
+    subject: CredentialSubject
+
+    @required
+    scopes: CredentialScopes
+
+    metadata: CredentialMetadata
+    expires_in_seconds: CredentialExpiresInSeconds
+}
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/credentials", code: 201)
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -488,19 +814,16 @@ operation DeleteVariable {
 @sdk(module: "secrets.credentials", method: "create", paginated: false, retryable: false)
 operation CreateOpaqueCredential {
     input: CreateOpaqueCredentialInput
-    output: OpaqueCredentialOutput
+    output: OpaqueCredentialMaterialOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
-structure CreateOpaqueCredentialInput {
+
+structure OpaqueCredentialPathInput {
     @required
-    @httpHeader("Idempotency-Key")
-    @idempotencyToken
-    idempotencyKey: IdempotencyKey
-    @required
-    kind: CredentialKind
-    @required
-    value: SecretValue
+    @httpLabel
+    credential_id: CredentialId
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/credentials/{credential_id}")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -514,11 +837,15 @@ operation GetOpaqueCredential {
     output: OpaqueCredentialOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
-structure OpaqueCredentialPathInput {
-    @required
-    @httpLabel
-    credential_id: CredentialId
+
+structure ListOpaqueCredentialsInput {
+    @httpQuery("kind")
+    kind: CredentialKind
+
+    @httpQuery("limit")
+    limit: SecretListLimit
 }
+
 @readonly
 @http(method: "GET", uri: "/api/v1/credentials")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -528,18 +855,24 @@ structure OpaqueCredentialPathInput {
 @requestBudget(maxBytes: 0)
 @sdk(module: "secrets.credentials", method: "list", paginated: false, retryable: true)
 operation ListOpaqueCredentials {
-    input: EmptyInput
+    input: ListOpaqueCredentialsInput
     output: OpaqueCredentialsOutput
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
-structure OpaqueCredentialOutput {
+
+structure RollOpaqueCredentialInput {
     @required
-    credential: OpaqueCredentialSummary
-}
-structure OpaqueCredentialsOutput {
+    @httpLabel
+    credential_id: CredentialId
+
     @required
-    credentials: OpaqueCredentialSummaries
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+
+    expires_in_seconds: CredentialExpiresInSeconds
 }
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/credentials/{credential_id}/roll")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -549,20 +882,22 @@ structure OpaqueCredentialsOutput {
 @requestBudget(maxBytes: 65536)
 @sdk(module: "secrets.credentials", method: "roll", paginated: false, retryable: false)
 operation RollOpaqueCredential {
-    input: OpaqueCredentialMutationInput
-    output: OpaqueCredentialOutput
+    input: RollOpaqueCredentialInput
+    output: OpaqueCredentialMaterialOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
-structure OpaqueCredentialMutationInput {
+
+structure RevokeOpaqueCredentialInput {
     @required
     @httpLabel
     credential_id: CredentialId
+
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
-    value: SecretValue
 }
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/credentials/{credential_id}/revoke")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -572,10 +907,21 @@ structure OpaqueCredentialMutationInput {
 @requestBudget(maxBytes: 1)
 @sdk(module: "secrets.credentials", method: "revoke", paginated: false, retryable: false)
 operation RevokeOpaqueCredential {
-    input: OpaqueCredentialMutationInput
+    input: RevokeOpaqueCredentialInput
     output: OpaqueCredentialOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
+
+structure CreateTransitKeyInput {
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+
+    @required
+    name: KeyName
+}
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/transit/keys", code: 201)
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -589,20 +935,18 @@ operation CreateTransitKey {
     output: TransitKeyOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
-structure CreateTransitKeyInput {
+
+structure TransitKeyIdempotentInput {
+    @required
+    @httpLabel
+    key_name: KeyName
+
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
-    @required
-    key_name: KeyName
-    @required
-    algorithm: TransitAlgorithm
 }
-structure TransitKeyOutput {
-    @required
-    key: TransitKeyView
-}
+
 @idempotent
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/rotate")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
@@ -616,15 +960,24 @@ operation RotateTransitKey {
     output: TransitKeyOutput
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
 }
-structure TransitKeyIdempotentInput {
+
+structure TransitEncryptInput {
     @required
     @httpLabel
     key_name: KeyName
+
     @required
-    @httpHeader("Idempotency-Key")
-    @idempotencyToken
-    idempotencyKey: IdempotencyKey
+    plaintext_base64: PlaintextBase64
 }
+
+structure TransitCiphertextOutput {
+    @required
+    ciphertext: Ciphertext
+
+    @required
+    version: SecretVersion
+}
+
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/encrypt")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitEncryptPermission, organization: {source: "token_org_id"})
@@ -637,17 +990,21 @@ operation EncryptWithTransitKey {
     output: TransitCiphertextOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
-structure TransitEncryptInput {
+
+structure TransitDecryptInput {
     @required
     @httpLabel
     key_name: KeyName
-    @required
-    plaintext: Plaintext
-}
-structure TransitCiphertextOutput {
+
     @required
     ciphertext: Ciphertext
 }
+
+structure TransitPlaintextOutput {
+    @required
+    plaintext_base64: PlaintextBase64
+}
+
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/decrypt")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitDecryptPermission, organization: {source: "token_org_id"})
@@ -660,17 +1017,21 @@ operation DecryptWithTransitKey {
     output: TransitPlaintextOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
-structure TransitDecryptInput {
+
+structure TransitSignInput {
     @required
     @httpLabel
     key_name: KeyName
+
     @required
-    ciphertext: Ciphertext
+    message_base64: MessageBase64
 }
-structure TransitPlaintextOutput {
+
+structure TransitSignatureOutput {
     @required
-    plaintext: Plaintext
+    signature: Signature
 }
+
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/sign")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitSignPermission, organization: {source: "token_org_id"})
@@ -683,17 +1044,24 @@ operation SignWithTransitKey {
     output: TransitSignatureOutput
     errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
-structure TransitSignInput {
+
+structure TransitVerifyInput {
     @required
     @httpLabel
     key_name: KeyName
+
     @required
-    plaintext: Plaintext
-}
-structure TransitSignatureOutput {
+    message_base64: MessageBase64
+
     @required
     signature: Signature
 }
+
+structure TransitVerifyOutput {
+    @required
+    valid: Boolean
+}
+
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/verify")
 @identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitVerifyPermission, organization: {source: "token_org_id"})
@@ -704,81 +1072,143 @@ structure TransitSignatureOutput {
 operation VerifyWithTransitKey {
     input: TransitVerifyInput
     output: TransitVerifyOutput
-    errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
+    errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ServiceUnavailableError]
 }
-structure TransitVerifyInput {
+
+structure InjectionResolveInput {
     @required
-    @httpLabel
-    key_name: KeyName
+    org_id: OrgId
+
     @required
-    plaintext: Plaintext
+    actor_id: SubjectId
+
     @required
-    signature: Signature
+    execution_id: InjectionExecutionId
+
+    @required
+    attempt_id: InjectionAttemptId
+
+    @required
+    secrets: InjectionSecretRequests
 }
-structure TransitVerifyOutput {
+
+structure InjectionSecretRequest {
     @required
-    valid: Boolean
+    env_name: InjectionEnvName
+
+    kind: String
+
+    @required
+    secret_name: SecretName
+
+    scope_level: ScopeLevel
+    source_id: SourceId
+    env_id: EnvId
+    branch: Branch
+
+    @required
+    grant_id: InjectionGrantId
 }
+
+structure InjectionResolveOutput {
+    @required
+    env: InjectionEnvValues
+}
+
+structure InjectionEnvValue {
+    @required
+    name: InjectionEnvName
+
+    @required
+    value: SecretValue
+}
+
 @http(method: "POST", uri: "/internal/v1/injections/resolve")
 @identity(mode: "spiffe_mtls", audience: "secrets-service", principals: ["workload"])
 @authz(permission: SecretReadPermission, organization: {source: "body_org_id", member: "org_id"})
 @audit(event: ResolveInjectionAuditEvent, resource: Secret, action: "resolve")
 @rateLimit(bucket: "internal_read")
-@requestBudget(maxBytes: 65536)
+@requestBudget(maxBytes: 131072)
 @sdk(module: "secretsInternal.injections", method: "resolve", paginated: false, retryable: false)
 operation ResolveInjection {
-    input: ResolveInjectionInput
-    output: ResolvedSecretsOutput
-    errors: [ValidationFailedError, PermissionDeniedError, ServiceUnavailableError]
+    input: InjectionResolveInput
+    output: InjectionResolveOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ResourceNotFoundError, ServiceUnavailableError]
 }
-structure ResolveInjectionInput {
+
+structure InternalOpaqueCredentialInput {
     @required
     org_id: OrgId
+
     @required
-    injection_token: InjectionToken
+    actor_id: SubjectId
+
+    @required
+    kind: CredentialKind
+
+    display_name: CredentialDisplayName
+
+    @required
+    scopes: CredentialScopes
+
+    metadata: CredentialMetadata
+
+    expires_at: Timestamp
 }
-@idempotent
+
+structure InternalOpaqueCredentialOutput {
+    @required
+    credential: OpaqueCredentialDTO
+
+    @required
+    token: SecretValue
+}
+
 @http(method: "POST", uri: "/internal/v1/credentials", code: 201)
 @identity(mode: "spiffe_mtls", audience: "secrets-service", principals: ["workload"])
 @authz(permission: CredentialCreatePermission, organization: {source: "body_org_id", member: "org_id"})
 @audit(event: CredentialCreateAuditEvent, resource: OpaqueCredential, action: "create")
 @rateLimit(bucket: "internal_mutation")
-@requestBudget(maxBytes: 65536)
+@requestBudget(maxBytes: 131072)
 @sdk(module: "secretsInternal.credentials", method: "create", paginated: false, retryable: false)
 operation CreateInternalOpaqueCredential {
     input: InternalOpaqueCredentialInput
-    output: OpaqueCredentialOutput
-    errors: [ValidationFailedError, PermissionDeniedError, ConflictError, IdempotencyPayloadMismatchError, ServiceUnavailableError]
+    output: InternalOpaqueCredentialOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
 }
-structure InternalOpaqueCredentialInput {
-    @required
-    @httpHeader("Idempotency-Key")
-    @idempotencyToken
-    idempotencyKey: IdempotencyKey
+
+structure VerifyInternalOpaqueCredentialInput {
     @required
     org_id: OrgId
+
+    actor_id: SubjectId
+
     @required
     kind: CredentialKind
+
     @required
-    value: SecretValue
+    token: SecretValue
+
+    required_scopes: CredentialScopes
 }
+
+structure VerifyInternalOpaqueCredentialOutput {
+    @required
+    active: Boolean
+
+    denial_reason: String
+    credential: OpaqueCredentialDTO
+}
+
 @http(method: "POST", uri: "/internal/v1/credentials:verify")
 @identity(mode: "spiffe_mtls", audience: "secrets-service", principals: ["workload"])
 @authz(permission: CredentialReadPermission, organization: {source: "body_org_id", member: "org_id"})
 @audit(event: CredentialReadAuditEvent, resource: OpaqueCredential, action: "verify")
 @rateLimit(bucket: "internal_read")
-@requestBudget(maxBytes: 65536)
+@requestBudget(maxBytes: 131072)
 @sdk(module: "secretsInternal.credentials", method: "verify", paginated: false, retryable: false)
 operation VerifyInternalOpaqueCredential {
     input: VerifyInternalOpaqueCredentialInput
-    output: TransitVerifyOutput
+    output: VerifyInternalOpaqueCredentialOutput
     errors: [ValidationFailedError, PermissionDeniedError, ResourceNotFoundError, ServiceUnavailableError]
-}
-structure VerifyInternalOpaqueCredentialInput {
-    @required
-    org_id: OrgId
-    @required
-    credential_id: CredentialId
-    @required
-    value: SecretValue
 }

@@ -71,7 +71,7 @@ type DeleteSecretInput struct {
 }
 
 type SecretsClient struct {
-	client *secretscore.ClientWithResponses
+	client *secretscore.Client
 }
 
 func (c *SecretsClient) Put(ctx context.Context, name string, input PutSecretInput) (Secret, error) {
@@ -86,44 +86,50 @@ func (c *SecretsClient) Put(ctx context.Context, name string, input PutSecretInp
 	if err != nil {
 		return Secret{}, err
 	}
-	body := secretscore.PutSecretJSONRequestBody{
-		Value: input.Value,
+	body := secretscore.SecretMutationInputBody{
+		Value: secretscore.SecretValue(input.Value),
 	}
 	applyPutSecretScope(&body, input.Scope)
-	response, err := c.client.PutSecretWithResponse(ctx, name, &secretscore.PutSecretParams{
+	response, err := c.client.PutSecret(ctx, secretscore.PutSecretRequest{
 		IdempotencyKey: key,
-	}, body)
+		Name:           secretscore.SecretName(name),
+		Body:           body,
+	})
 	if err != nil {
 		return Secret{}, err
 	}
-	if response.JSON200 == nil {
-		return Secret{}, secretsAPIError("put secret", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return Secret{}, secretsAPIError("put secret", response.StatusCode, response.Problem, response.Body)
 	}
-	return secretFromGenerated(*response.JSON200), nil
+	return secretFromGenerated(*response.Result), nil
 }
 
 func (c *SecretsClient) Resolve(ctx context.Context, input ResolveSecretsInput) (ResolvedSecrets, error) {
 	if c == nil || c.client == nil {
 		return ResolvedSecrets{}, fmt.Errorf("verself sdk: secrets client is not initialized")
 	}
-	body := secretscore.ResolveSecretsJSONRequestBody{}
+	body := secretscore.ResolveSecretsInputBody{}
 	applyResolveSecretsScope(&body, input.Scope)
 	names := compactStrings(input.Names)
 	if len(names) > 0 {
-		body.Names = &names
+		converted := make(secretscore.SecretNames, 0, len(names))
+		for _, name := range names {
+			converted = append(converted, secretscore.SecretName(name))
+		}
+		body.Names = &converted
 	}
 	if input.Limit > 0 {
-		limit := int64(input.Limit)
+		limit := secretscore.SecretListLimit(input.Limit)
 		body.Limit = &limit
 	}
-	response, err := c.client.ResolveSecretsWithResponse(ctx, body)
+	response, err := c.client.ResolveSecrets(ctx, secretscore.ResolveSecretsRequest{Body: body})
 	if err != nil {
 		return ResolvedSecrets{}, err
 	}
-	if response.JSON200 == nil {
-		return ResolvedSecrets{}, secretsAPIError("resolve secrets", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return ResolvedSecrets{}, secretsAPIError("resolve secrets", response.StatusCode, response.Problem, response.Body)
 	}
-	return resolvedSecretsFromGenerated(*response.JSON200), nil
+	return resolvedSecretsFromGenerated(*response.Result), nil
 }
 
 func (c *SecretsClient) Delete(ctx context.Context, name string, input DeleteSecretInput) (Secret, error) {
@@ -138,72 +144,81 @@ func (c *SecretsClient) Delete(ctx context.Context, name string, input DeleteSec
 	if err != nil {
 		return Secret{}, err
 	}
-	params := &secretscore.DeleteSecretParams{IdempotencyKey: key}
-	applyDeleteSecretScope(params, input.Scope)
-	response, err := c.client.DeleteSecretWithResponse(ctx, name, params, secretscore.DeleteSecretJSONRequestBody{})
+	request := secretscore.DeleteSecretRequest{IdempotencyKey: key, Name: secretscore.SecretName(name)}
+	applyDeleteSecretScope(&request, input.Scope)
+	response, err := c.client.DeleteSecret(ctx, request)
 	if err != nil {
 		return Secret{}, err
 	}
-	if response.JSON200 == nil {
-		return Secret{}, secretsAPIError("delete secret", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return Secret{}, secretsAPIError("delete secret", response.StatusCode, response.Problem, response.Body)
 	}
-	return secretFromGenerated(*response.JSON200), nil
+	return secretFromGenerated(*response.Result), nil
 }
 
 func (c *SecretsClient) List(ctx context.Context, options ListSecretsOptions) (SecretList, error) {
 	if c == nil || c.client == nil {
 		return SecretList{}, fmt.Errorf("verself sdk: secrets client is not initialized")
 	}
-	params := &secretscore.ListSecretsParams{}
+	request := secretscore.ListSecretsRequest{}
 	if options.Limit > 0 {
-		limit := int64(options.Limit)
-		params.Limit = &limit
+		limit := secretscore.SecretListLimit(options.Limit)
+		request.Limit = &limit
 	}
-	response, err := c.client.ListSecretsWithResponse(ctx, params)
+	response, err := c.client.ListSecrets(ctx, request)
 	if err != nil {
 		return SecretList{}, err
 	}
-	if response.JSON200 == nil {
-		return SecretList{}, secretsAPIError("list secrets", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return SecretList{}, secretsAPIError("list secrets", response.StatusCode, response.Problem, response.Body)
 	}
-	out := SecretList{Secrets: make([]Secret, 0, len(response.JSON200.Secrets))}
-	for _, secret := range response.JSON200.Secrets {
+	out := SecretList{Secrets: make([]Secret, 0, len(response.Result.Secrets))}
+	for _, secret := range response.Result.Secrets {
 		out.Secrets = append(out.Secrets, secretFromGenerated(secret))
 	}
 	return out, nil
 }
 
-func applyPutSecretScope(body *secretscore.PutSecretBody, scope SecretScope) {
+func applyPutSecretScope(body *secretscore.SecretMutationInputBody, scope SecretScope) {
 	level := strings.TrimSpace(string(scope.Level))
 	if level != "" {
-		value := secretscore.PutSecretBodyScopeLevel(level)
+		value := secretscore.ScopeLevel(level)
 		body.ScopeLevel = &value
 	}
-	body.SourceId = trimPointer(scope.SourceID)
-	body.EnvId = trimPointer(scope.EnvID)
-	body.Branch = trimPointer(scope.Branch)
+	body.SourceID = trimAliasPointer[secretscore.SourceId](scope.SourceID)
+	body.EnvID = trimAliasPointer[secretscore.EnvId](scope.EnvID)
+	body.Branch = trimAliasPointer[secretscore.Branch](scope.Branch)
 }
 
-func applyResolveSecretsScope(body *secretscore.ResolveSecretsBody, scope SecretScope) {
+func applyResolveSecretsScope(body *secretscore.ResolveSecretsInputBody, scope SecretScope) {
 	level := strings.TrimSpace(string(scope.Level))
 	if level != "" {
-		value := secretscore.ResolveSecretsBodyScopeLevel(level)
+		value := secretscore.ScopeLevel(level)
 		body.ScopeLevel = &value
 	}
-	body.SourceId = trimPointer(scope.SourceID)
-	body.EnvId = trimPointer(scope.EnvID)
-	body.Branch = trimPointer(scope.Branch)
+	body.SourceID = trimAliasPointer[secretscore.SourceId](scope.SourceID)
+	body.EnvID = trimAliasPointer[secretscore.EnvId](scope.EnvID)
+	body.Branch = trimAliasPointer[secretscore.Branch](scope.Branch)
 }
 
-func applyDeleteSecretScope(params *secretscore.DeleteSecretParams, scope SecretScope) {
+func applyDeleteSecretScope(request *secretscore.DeleteSecretRequest, scope SecretScope) {
 	level := strings.TrimSpace(string(scope.Level))
 	if level != "" {
-		value := secretscore.DeleteSecretParamsScopeLevel(level)
-		params.ScopeLevel = &value
+		value := secretscore.ScopeLevel(level)
+		request.ScopeLevel = &value
 	}
-	params.SourceId = trimPointer(scope.SourceID)
-	params.EnvId = trimPointer(scope.EnvID)
-	params.Branch = trimPointer(scope.Branch)
+	request.SourceID = trimAliasPointer[secretscore.SourceId](scope.SourceID)
+	request.EnvID = trimAliasPointer[secretscore.EnvId](scope.EnvID)
+	request.Branch = trimAliasPointer[secretscore.Branch](scope.Branch)
+}
+
+func trimAliasPointer[T ~string](value string) *T {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	converted := T(trimmed)
+	return &converted
 }
 
 func trimPointer(value string) *string {
@@ -216,40 +231,40 @@ func trimPointer(value string) *string {
 
 func secretFromGenerated(input secretscore.SecretDTO) Secret {
 	return Secret{
-		SecretID:     input.SecretId,
-		ResourceName: stringFromPointer(input.ResourceName),
+		SecretID:     input.SecretID,
+		ResourceName: stringFromAliasPointer(input.ResourceName),
 		Kind:         input.Kind,
-		Name:         input.Name,
+		Name:         string(input.Name),
 		Scope: SecretScope{
 			Level:    SecretScopeLevel(input.ScopeLevel),
-			SourceID: stringFromPointer(input.SourceId),
-			EnvID:    stringFromPointer(input.EnvId),
-			Branch:   stringFromPointer(input.Branch),
+			SourceID: stringFromAliasPointer(input.SourceID),
+			EnvID:    stringFromAliasPointer(input.EnvID),
+			Branch:   stringFromAliasPointer(input.Branch),
 		},
-		CurrentVersion: input.CurrentVersion,
-		CreatedAt:      input.CreatedAt,
-		UpdatedAt:      input.UpdatedAt,
+		CurrentVersion: string(input.CurrentVersion),
+		CreatedAt:      parseSDKTime(input.CreatedAt),
+		UpdatedAt:      parseSDKTime(input.UpdatedAt),
 	}
 }
 
 func secretValueFromGenerated(input secretscore.SecretValueDTO) SecretValue {
 	return SecretValue{
 		Secret: Secret{
-			SecretID:     input.SecretId,
-			ResourceName: stringFromPointer(input.ResourceName),
+			SecretID:     input.SecretID,
+			ResourceName: stringFromAliasPointer(input.ResourceName),
 			Kind:         input.Kind,
-			Name:         input.Name,
+			Name:         string(input.Name),
 			Scope: SecretScope{
 				Level:    SecretScopeLevel(input.ScopeLevel),
-				SourceID: stringFromPointer(input.SourceId),
-				EnvID:    stringFromPointer(input.EnvId),
-				Branch:   stringFromPointer(input.Branch),
+				SourceID: stringFromAliasPointer(input.SourceID),
+				EnvID:    stringFromAliasPointer(input.EnvID),
+				Branch:   stringFromAliasPointer(input.Branch),
 			},
-			CurrentVersion: input.CurrentVersion,
-			CreatedAt:      input.CreatedAt,
-			UpdatedAt:      input.UpdatedAt,
+			CurrentVersion: string(input.CurrentVersion),
+			CreatedAt:      parseSDKTime(input.CreatedAt),
+			UpdatedAt:      parseSDKTime(input.UpdatedAt),
 		},
-		Value: input.Value,
+		Value: string(input.Value),
 	}
 }
 
@@ -261,11 +276,32 @@ func resolvedSecretsFromGenerated(input secretscore.ResolvedSecretsDTO) Resolved
 	return out
 }
 
+func stringFromAliasPointer[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
 func stringFromPointer(value *string) string {
 	if value == nil {
 		return ""
 	}
 	return *value
+}
+
+func parseSDKTime(value string) time.Time {
+	if strings.TrimSpace(value) == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, strings.TrimSpace(value))
+	}
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
 }
 
 func secretsAPIError(operation string, statusCode int, model *secretscore.ErrorModel, body []byte) error {

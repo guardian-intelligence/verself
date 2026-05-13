@@ -106,7 +106,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing secrets mtls: %w", err)
 	}
-	secretsClient, err := secretsclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing secrets client: %w", err)
 	}
@@ -287,7 +287,7 @@ func isUnauthenticatedBillingPath(path string) bool {
 	return false
 }
 
-func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
+func readRuntimeSecrets(ctx context.Context, client *secretsclient.Client, secretNames ...string) (map[string]string, error) {
 	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
 	defer span.End()
 	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
@@ -302,20 +302,20 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 	defer cancel()
 	values := make(map[string]string, len(secretNames))
 	for _, secretName := range secretNames {
-		resp, err := client.ReadSecretWithResponse(secretCtx, secretName, nil)
+		resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
 		if err != nil {
 			err = fmt.Errorf("read runtime secret %s: %w", secretName, err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
-		if resp.JSON200 == nil {
-			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+		if resp.Result == nil {
+			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
-		values[secretName] = resp.JSON200.Value
+		values[secretName] = string(resp.Result.Value)
 	}
 	return values, nil
 }

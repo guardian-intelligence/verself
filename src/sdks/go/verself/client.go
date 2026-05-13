@@ -163,7 +163,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	secretsEditor := secretsRequestEditor(token, options.Traceparent)
-	generatedSecrets, err := secretscore.NewClientWithResponses(
+	generatedSecrets, err := secretscore.NewClient(
 		secretsURL,
 		secretscore.WithHTTPClient(httpClient),
 		secretscore.WithRequestEditorFn(secretsEditor),

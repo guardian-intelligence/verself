@@ -8,7 +8,6 @@ require (
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/verself/billing-service v0.0.0
-	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/governance-service v0.0.0
 	github.com/verself/iam-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -56,8 +55,6 @@ replace github.com/verself/billing-service => ../billing-service
 replace github.com/verself/governance-service => ../governance-service
 
 replace github.com/verself/iam-service => ../iam-service
-
-replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 
