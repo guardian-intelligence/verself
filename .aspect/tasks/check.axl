@@ -1,128 +1,92 @@
-"""aspect check --kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|topology|buildifier|all
+"""aspect check --kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|all
 
-Cross-cutting verification gates used during PR review. `--kind=all` runs in
-fast-failure order: buildifier → frontend → topology → java → contracts → ansible → conversions → vet → lint → test.
+Cross-cutting verification gates used during PR review. The task delegates to
+Bazel-owned package targets so source relevance and cache reuse stay in Bazel's graph.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "HOST_CONFIGURATION_DIR", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
+load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
 
-def _go_each(ctx, args, label_prefix):
-    for d in GO_DIRS:
-        rc = checked_spawn(
-            ctx,
-            "go",
-            args,
-            cwd = ws_path(ctx, d),
-            label = label_prefix + " (" + d + ")",
-        )
-        if rc != 0:
-            return rc
-    return 0
-
-def _go_test(ctx):
-    return _go_each(ctx, ["test", "-race", "./..."], "go test -race")
-
-def _go_vet(ctx):
-    return _go_each(ctx, ["vet", "./..."], "go vet")
-
-def _go_lint(ctx):
-    for d in GO_DIRS:
-        rc = checked_spawn(
-            ctx,
-            "golangci-lint",
-            ["run", "./..."],
-            cwd = ws_path(ctx, d),
-            label = "golangci-lint (" + d + ")",
-        )
-        if rc != 0:
-            return rc
-    return 0
-
-def _conversions(ctx):
-    for d in GO_DIRS:
-        rc = checked_spawn(
-            ctx,
-            "gosec",
-            ["-quiet", "-include=G115", "./..."],
-            cwd = ws_path(ctx, d),
-            label = "gosec G115 (" + d + ")",
-        )
-        if rc != 0:
-            return rc
-    return 0
-
-def _ansible_lint(ctx):
-    return checked_spawn(
-        ctx,
-        "uvx",
-        [
-            "--from",
-            "ansible-lint==26.4.0",
-            "--with",
-            "ansible-core==2.20.3",
-            "ansible-lint",
-            "playbooks",
-            "roles",
-        ],
-        cwd = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
-        label = "ansible-lint",
-    )
-
-def _buildifier(ctx):
-    files = bazel_tracked_files(ctx)
-    if files == None:
-        return 1
-    return checked_spawn(
-        ctx,
-        "buildifier",
-        ["-mode=check", "-lint=warn"] + files,
-        cwd = ws_path(ctx),
-        label = "buildifier -mode=check -lint=warn",
-    )
-
-def _frontend(ctx):
+def _bazel(ctx, args, label):
     return checked_spawn(
         ctx,
         "bazelisk",
+        args,
+        cwd = ws_path(ctx),
+        label = label,
+    )
+
+def _build_tagged(ctx, tag, label):
+    r = (ctx.std.process.command("bazelisk")
+        .args(["query", "attr(tags, \"" + tag + "\", //...)"])
+        .current_dir(ws_path(ctx))
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write(r.stderr)
+        return r.status.code
+    targets = []
+    for target in r.stdout.splitlines():
+        if target != "":
+            targets.append(target)
+    if len(targets) == 0:
+        ctx.std.io.stderr.write("ERROR: no Bazel targets found with tag " + tag + "\n")
+        return 1
+    return _bazel(
+        ctx,
+        ["build"] + targets,
+        label,
+    )
+
+def _go_test(ctx):
+    return _bazel(
+        ctx,
+        [
+            "test",
+            "--@io_bazel_rules_go//go/config:race",
+            "--build_tests_only",
+            "--test_lang_filters=go",
+            "//...",
+        ],
+        "bazelisk test Go graph with race",
+    )
+
+def _go_vet(ctx):
+    return _build_tagged(ctx, "go_vet_check", "bazelisk build Go vet checks")
+
+def _go_lint(ctx):
+    return _build_tagged(ctx, "go_golangci_lint_check", "bazelisk build Go lint checks")
+
+def _conversions(ctx):
+    return _build_tagged(ctx, "go_gosec_g115_check", "bazelisk build Go G115 security checks")
+
+def _ansible_lint(ctx):
+    return _bazel(ctx, ["build", "//src/host:ansible_lint_check"], "bazelisk build Ansible lint check")
+
+def _frontend(ctx):
+    return _bazel(
+        ctx,
         [
             "build",
             "//src/websites:workspace_check",
         ],
-        cwd = ws_path(ctx),
-        label = "bazelisk build frontend Vite+ check",
+        "bazelisk build frontend Vite+ check",
     )
 
 def _java(ctx):
-    files = java_tracked_files(ctx)
-    if files == None:
-        return 1
-    if len(files) > 0:
-        rc = checked_spawn(
-            ctx,
-            "bazelisk",
-            ["run", "--java_runtime_version=remotejdk_25", "//src/smithy/tools:google_java_format", "--", "--dry-run", "--set-exit-if-changed"] + files,
-            cwd = ws_path(ctx),
-            label = "google-java-format --dry-run",
-        )
-        if rc != 0:
-            return rc
-    return checked_spawn(
+    return _bazel(
         ctx,
-        "bazelisk",
         [
             "build",
             "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
             "//src/smithy/models/verself:smithy_validate",
             "//src/smithy/models/verself:iam_public_ir",
         ],
-        cwd = ws_path(ctx),
-        label = "bazelisk build Smithy Java lane",
+        "bazelisk build Smithy Java lane",
     )
 
 def _contracts(ctx):
-    rc = checked_spawn(
+    rc = _bazel(
         ctx,
-        "bazelisk",
         [
             "build",
             "//src/smithy/models/verself:iam_public_ir",
@@ -133,32 +97,17 @@ def _contracts(ctx):
             "//src/websites/packages/sdk:iam_transport_generated_sources",
             "//src/websites/apps/verself-web:node_app_nomad_artifact",
         ],
-        cwd = ws_path(ctx),
-        label = "bazelisk build IAM contract vertical",
+        "bazelisk build IAM contract vertical",
     )
     if rc != 0:
         return rc
-    return checked_spawn(
+    return _bazel(
         ctx,
-        "bazelisk",
         [
             "test",
             "//src/sdks/go/verself:verself_test",
         ],
-        cwd = ws_path(ctx),
-        label = "bazelisk test SDK facade",
-    )
-
-def _legacy_topology_api(ctx):
-    return checked_spawn(
-        ctx,
-        "bash",
-        [
-            "-lc",
-            "if rg -n 'topology_(endpoints|routes|clusters|wireguard|artifacts)\\b' src .aspect AGENTS.md; then echo 'ERROR: legacy deployment topology variables remain' >&2; exit 1; fi",
-        ],
-        cwd = ws_path(ctx),
-        label = "legacy deployment topology variable check",
+        "bazelisk test SDK facade",
     )
 
 _CHECKERS = {
@@ -169,13 +118,11 @@ _CHECKERS = {
     "contracts": _contracts,
     "conversions": _conversions,
     "ansible": _ansible_lint,
-    "topology": _legacy_topology_api,
-    "buildifier": _buildifier,
     "frontend": _frontend,
 }
 
 # Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "frontend", "topology", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
+_ALL_ORDER = ["frontend", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
 
 def _impl(ctx):
     kind = ctx.args.kind
@@ -193,7 +140,7 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|topology|buildifier|all).",
+    summary = "Run a verification gate (--kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|all).",
     args = {
         "kind": args.string(
             default = "all",

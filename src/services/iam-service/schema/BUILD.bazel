@@ -27,7 +27,7 @@ install -m 0755 "$$tmp/zed" "$@"
 )
 
 go_test(
-    name = "schema_tests",
+    name = "schema_test",
     size = "small",
     srcs = ["schema_test.go"],
     data = [
@@ -41,10 +41,4 @@ alias(
     name = "go_default_library",
     actual = ":schema",
     visibility = ["//src/services/iam-service:__subpackages__"],
-)
-
-go_test(
-    name = "schema_test",
-    srcs = ["schema_test.go"],
-    embed = [":schema"],
 )

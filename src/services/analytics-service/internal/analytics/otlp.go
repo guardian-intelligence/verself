@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ const (
 	maxAttributesPerRecord  = 80
 	maxAttributeKeyBytes    = 128
 	maxStringAttributeBytes = 2048
+	nanosPerSecond          = 1_000_000_000
 )
 
 var (
@@ -261,9 +263,12 @@ func timestampFromNanos(value uint64) time.Time {
 	if value == 0 {
 		return time.Time{}
 	}
-	seconds := int64(value / 1_000_000_000)
-	nanos := int64(value % 1_000_000_000)
-	return time.Unix(seconds, nanos).UTC()
+	seconds := value / nanosPerSecond
+	if seconds > uint64(math.MaxInt64) {
+		return time.Time{}
+	}
+	nanos := value % nanosPerSecond
+	return time.Unix(int64(seconds), int64(nanos)).UTC() // #nosec G115 -- seconds and nanos are range-checked above.
 }
 
 func stringValue(value *commonpb.AnyValue) string {

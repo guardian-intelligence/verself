@@ -80,6 +80,42 @@ filegroup(
 )
 
 filegroup(
+    name = "ansible_lint_sources",
+    srcs = glob(
+        [
+            "ansible/.ansible-lint.yml",
+            "ansible/ansible.cfg",
+            "ansible/group_vars/**",
+            "ansible/host-files/**",
+            "ansible/playbooks/**",
+            "ansible/roles/**",
+        ],
+        allow_empty = False,
+    ),
+)
+
+genrule(
+    name = "ansible_lint_check",
+    srcs = [":ansible_lint_sources"],
+    outs = ["ansible_lint_check.stamp"],
+    cmd = """
+set -euo pipefail
+out="$$PWD/$@"
+cd src/host/ansible
+uvx --from ansible-lint==26.4.0 --with ansible-core==2.20.3 ansible-lint playbooks roles
+touch "$$out"
+""",
+    tags = [
+        "ansible_lint_check",
+        "local",
+        "manual",
+        "no-remote",
+        "no-sandbox",
+        "repo_check",
+    ],
+)
+
+filegroup(
     name = "nftables_sources",
     srcs = [
         "ansible/host-files/etc/nftables.conf",

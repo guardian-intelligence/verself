@@ -1,7 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 
 # gazelle:ignore
 # gazelle:prefix github.com/verself/domain-transfer-objects
+
+go_module_checks()
 
 go_library(
     name = "dto",

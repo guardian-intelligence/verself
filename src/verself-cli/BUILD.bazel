@@ -1,1 +1,5 @@
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+
 package(default_visibility = ["//visibility:private"])
+
+go_module_checks()

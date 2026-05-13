@@ -1,3 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["openapi_codegen.bzl"])
+exports_files([
+    "go_module_checks.bzl",
+    "openapi_codegen.bzl",
+])

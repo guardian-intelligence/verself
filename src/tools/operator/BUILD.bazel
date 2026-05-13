@@ -1,4 +1,4 @@
-# gazelle:prefix github.com/verself/dev-tools
+# gazelle:prefix github.com/verself/operator-tools
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 

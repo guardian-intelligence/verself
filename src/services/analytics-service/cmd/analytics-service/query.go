@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -87,7 +88,15 @@ func queryEventsHandler(svc *analytics.Service, authorizer runtimeiam.ResourceAu
 			return
 		}
 		access.Outcome = analytics.OutcomeAllowed
-		access.ResultCount = uint32(len(page.Events))
+		resultCount, err := uint32Len(len(page.Events))
+		if err != nil {
+			access.Outcome = analytics.OutcomeError
+			access.ErrorCode = "result_count_overflow"
+			recordAccessEvent(r.Context(), svc, access, logger)
+			writeJSONError(w, http.StatusInternalServerError, "analytics_query_failed")
+			return
+		}
+		access.ResultCount = resultCount
 		recordAccessEvent(r.Context(), svc, access, logger)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -276,6 +285,13 @@ func compactErrorCode(err error) string {
 		return "error"
 	}
 	return code
+}
+
+func uint32Len(value int) (uint32, error) {
+	if value < 0 || value > math.MaxUint32 {
+		return 0, fmt.Errorf("length %d exceeds uint32", value)
+	}
+	return uint32(value), nil // #nosec G115 -- value is checked against uint32 range above.
 }
 
 func firstNonEmpty(values ...string) string {

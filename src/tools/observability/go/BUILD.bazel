@@ -1,2 +1,6 @@
 # Empty package marker for the github.com/verself/observability Go module.
 # Go package targets live under otel/ and cmd/.
+
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+
+go_module_checks()

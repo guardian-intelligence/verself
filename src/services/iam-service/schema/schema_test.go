@@ -11,7 +11,7 @@ import (
 
 func TestVerselfSchemaValidatesWithPinnedZed(t *testing.T) {
 	if os.Getenv("RUNFILES_DIR") == "" && os.Getenv("TEST_SRCDIR") == "" {
-		t.Skip("pinned zed schema validation runs under //src/services/iam-service/schema:schema_tests")
+		t.Skip("pinned zed schema validation runs under //src/services/iam-service/schema:schema_test")
 	}
 
 	zedPath := runfile(t, "src/services/iam-service/schema/zed.bin")

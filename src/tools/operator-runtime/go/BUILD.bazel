@@ -1,0 +1,3 @@
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+
+go_module_checks()
