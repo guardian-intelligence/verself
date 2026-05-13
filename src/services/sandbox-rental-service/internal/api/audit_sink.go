@@ -1,9 +1,7 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -15,7 +13,7 @@ import (
 )
 
 type auditSinkConfig struct {
-	Client *governanceinternalclient.ClientWithResponses
+	Client *governanceinternalclient.Client
 }
 
 var configuredAuditSink atomic.Pointer[auditSinkConfig]
@@ -30,7 +28,7 @@ func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
 		slog.Default().Error("sandbox governance audit mtls client init failed", "error", err)
 		return
 	}
-	sinkClient, err := governanceinternalclient.NewClientWithResponses(url, governanceinternalclient.WithHTTPClient(httpClient))
+	sinkClient, err := governanceinternalclient.NewClient(url, governanceinternalclient.WithHTTPClient(httpClient))
 	if err != nil {
 		slog.Default().Error("sandbox governance audit client init failed", "error", err)
 		return
@@ -62,19 +60,48 @@ func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {
 	if sink == nil || record.OrgID == "" {
 		return
 	}
-	body, err := json.Marshal(record)
-	if err != nil {
-		slog.Default().ErrorContext(ctx, "sandbox governance audit marshal failed", "error", err)
-		return
-	}
 	reqCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	resp, err := sink.Client.AppendAuditEventWithBodyWithResponse(reqCtx, "application/json", bytes.NewReader(body))
+	resp, err := sink.Client.AppendAuditEvent(reqCtx, governanceinternalclient.AppendAuditEventRequest{Body: governanceAuditRecordToContract(record)})
 	if err != nil {
 		slog.Default().ErrorContext(ctx, "sandbox governance audit send failed", "error", err)
 		return
 	}
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		slog.Default().ErrorContext(ctx, "sandbox governance audit rejected", "status", resp.StatusCode())
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		slog.Default().ErrorContext(ctx, "sandbox governance audit rejected", "status", resp.StatusCode)
 	}
+}
+
+func governanceAuditRecordToContract(record governanceAuditRecord) governanceinternalclient.AuditRecord {
+	return governanceinternalclient.AuditRecord{
+		OrgID:        record.OrgID,
+		EventSource:  record.EventSource,
+		EventName:    record.EventName,
+		AuditEvent:   record.AuditEvent,
+		ActorType:    record.ActorType,
+		ActorID:      record.ActorID,
+		CredentialID: optionalString(record.CredentialID),
+		Permission:   record.Permission,
+		TargetType:   record.TargetType,
+		TargetID:     optionalString(record.TargetID),
+		Outcome:      governanceinternalclient.AuditOutcome(record.Outcome),
+		ErrorCode:    optionalString(record.ErrorCode),
+		TraceID:      optionalString(record.TraceID),
+		Detail:       optionalMap(record.Detail),
+	}
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func optionalMap(value map[string]any) *map[string]any {
+	if len(value) == 0 {
+		return nil
+	}
+	return &value
 }

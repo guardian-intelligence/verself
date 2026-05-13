@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/contractapi"
 	"github.com/verself/governance-service/internal/governance"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -43,11 +44,51 @@ func securedContract(desc contractapi.OperationDescriptor, summary string, optio
 		Path:          desc.Path,
 		Summary:       summary,
 		DefaultStatus: desc.DefaultStatus,
+		Errors:        contractProblemStatuses(desc.Problems),
+		Extensions:    map[string]any{"x-verself-contract": contractExtension(desc)},
 	}
 	for _, option := range options {
 		option(&op)
 	}
 	return secured(op, operationPolicyFromContract(desc))
+}
+
+func contractExtension(desc contractapi.OperationDescriptor) map[string]any {
+	return map[string]any{
+		"shape_id":               desc.ShapeID,
+		"operation_id":           desc.OperationID,
+		"identity":               desc.Identity.Mode,
+		"audience":               desc.Identity.Audience,
+		"permission":             desc.Authorization.Permission,
+		"organization_source":    desc.Authorization.OrganizationSource,
+		"organization_member":    desc.Authorization.OrganizationMember,
+		"audit_event":            desc.Audit.Event,
+		"resource":               desc.Audit.Resource,
+		"action":                 desc.Audit.Action,
+		"rate_limit_bucket":      desc.RateLimitBucket,
+		"request_body_max_bytes": desc.RequestBodyMaxBytes,
+		"idempotency":            desc.Idempotency.Policy,
+	}
+}
+
+func contractProblemStatuses(problems []contractapi.ProblemDescriptor) []int {
+	statuses := make([]int, 0, len(problems))
+	for _, problem := range problems {
+		if problem.Status > 0 {
+			statuses = append(statuses, problem.Status)
+		}
+	}
+	sort.Ints(statuses)
+	out := statuses[:0]
+	previous := 0
+	for _, status := range statuses {
+		if status == previous {
+			continue
+		}
+		out = append(out, status)
+		previous = status
+	}
+	return out
 }
 
 func operationPolicyFromContract(desc contractapi.OperationDescriptor) runtimeiam.OperationPolicy {
@@ -69,123 +110,100 @@ func operationPolicyFromContract(desc contractapi.OperationDescriptor) runtimeia
 	}
 }
 
-type listAuditEventsInput struct {
-	Limit              int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum events to return."`
-	Cursor             string `query:"cursor,omitempty" maxLength:"64" doc:"Opaque pagination cursor returned by the previous page."`
-	Order              string `query:"order,omitempty" enum:"asc,desc" doc:"Time ordering of results; defaults to 'desc' (newest first)."`
-	ActorID            string `query:"actor_id,omitempty" maxLength:"255"`
-	AuditEvent         string `query:"audit_event,omitempty" maxLength:"255"`
-	CredentialID       string `query:"credential_id,omitempty" maxLength:"255"`
-	EventName          string `query:"event_name,omitempty" maxLength:"128"`
-	EventSource        string `query:"event_source,omitempty" maxLength:"128"`
-	Outcome            string `query:"outcome,omitempty" enum:"allowed,denied,error"`
-	TargetID           string `query:"target_id,omitempty" maxLength:"255"`
-	TargetType         string `query:"target_type,omitempty" maxLength:"128"`
-	TargetResourceName string `query:"targetResourceName,omitempty" maxLength:"1024"`
-}
-
-type auditEventsOutput struct {
-	Body dto.GovernanceAuditEvents
-}
-
-func listAuditEvents(svc *governance.Service) func(context.Context, governance.Principal, *listAuditEventsInput) (*auditEventsOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *listAuditEventsInput) (*auditEventsOutput, error) {
+func listAuditEvents(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.ListAuditEventsInput) (*contractapi.ListAuditEventsOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *contractapi.ListAuditEventsInput) (*contractapi.ListAuditEventsOutput, error) {
 		page, err := svc.ListAuditEvents(ctx, principal, governance.AuditListFilters{
-			Limit:              input.Limit,
-			Cursor:             input.Cursor,
-			Order:              input.Order,
-			ActorID:            input.ActorID,
-			AuditEvent:         input.AuditEvent,
-			CredentialID:       input.CredentialID,
-			EventName:          input.EventName,
-			EventSource:        input.EventSource,
-			Outcome:            input.Outcome,
-			TargetID:           input.TargetID,
-			TargetType:         input.TargetType,
-			TargetResourceName: input.TargetResourceName,
+			Limit:              int(input.Limit),
+			Cursor:             string(input.Cursor),
+			Order:              string(input.Order),
+			ActorID:            string(input.ActorID),
+			AuditEvent:         string(input.AuditEvent),
+			CredentialID:       string(input.CredentialID),
+			EventName:          string(input.EventName),
+			EventSource:        string(input.EventSource),
+			Outcome:            string(input.Outcome),
+			TargetID:           string(input.TargetID),
+			TargetType:         string(input.TargetType),
+			TargetResourceName: string(input.TargetResourceName),
 		})
 		if err != nil {
 			return nil, err
 		}
-		out := dto.GovernanceAuditEvents{
-			Events:     make([]dto.GovernanceAuditEvent, 0, len(page.Events)),
-			NextCursor: page.NextCursor,
-			Limit:      int32FromInt(page.Limit, "audit page limit"),
-			Filters: dto.GovernanceAuditFilters{
-				ActorID:            input.ActorID,
-				AuditEvent:         input.AuditEvent,
-				CredentialID:       input.CredentialID,
-				EventName:          input.EventName,
-				EventSource:        input.EventSource,
-				Outcome:            input.Outcome,
-				TargetID:           input.TargetID,
-				TargetType:         input.TargetType,
-				TargetResourceName: dto.ResourceName(input.TargetResourceName),
+		out := contractapi.ListAuditEventsOutput{
+			Body: contractapi.ListAuditEventsOutputBody{
+				Events:     make(contractapi.AuditEvents, 0, len(page.Events)),
+				NextCursor: optionalContractString[contractapi.AuditCursor](page.NextCursor),
+				Limit:      contractapi.AuditEventsLimit(page.Limit),
+				Filters: contractapi.AuditFilters{
+					ActorID:            optionalContractString[contractapi.AuditActorID](string(input.ActorID)),
+					AuditEvent:         optionalContractString[contractapi.GovernanceAuditEventName](string(input.AuditEvent)),
+					CredentialID:       optionalContractString[contractapi.AuditCredentialID](string(input.CredentialID)),
+					EventName:          optionalContractString[contractapi.AuditEventOperationName](string(input.EventName)),
+					EventSource:        optionalContractString[contractapi.AuditEventSource](string(input.EventSource)),
+					Outcome:            optionalContractString[contractapi.AuditOutcome](string(input.Outcome)),
+					TargetID:           optionalContractString[contractapi.AuditTargetID](string(input.TargetID)),
+					TargetType:         optionalContractString[contractapi.AuditTargetType](string(input.TargetType)),
+					TargetResourceName: optionalContractString[contractapi.ResourceName](string(input.TargetResourceName)),
+				},
 			},
 		}
 		for _, event := range page.Events {
-			out.Events = append(out.Events, auditEventDTO(event))
+			out.Body.Events = append(out.Body.Events, auditEventDTO(event))
 		}
-		return &auditEventsOutput{Body: out}, nil
+		return &out, nil
 	}
 }
 
-type exportsOutput struct {
-	Body dto.GovernanceExportJobs
-}
-
-func listExports(svc *governance.Service) func(context.Context, governance.Principal, *struct{}) (*exportsOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *struct{}) (*exportsOutput, error) {
+func listExports(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.ListDataExportsInput) (*contractapi.ListDataExportsOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *contractapi.ListDataExportsInput) (*contractapi.ListDataExportsOutput, error) {
 		jobs, err := svc.ListExports(ctx, principal)
 		if err != nil {
 			return nil, err
 		}
-		return &exportsOutput{Body: dto.GovernanceExportJobs{Exports: exportJobDTOs(jobs, svc.PublicBaseURL, svc.InstallationID)}}, nil
+		return &contractapi.ListDataExportsOutput{Body: contractapi.ListDataExportsOutputBody{Exports: exportJobDTOs(jobs, svc.PublicBaseURL, svc.InstallationID)}}, nil
 	}
 }
 
-type createExportInput struct {
-	Body dto.GovernanceCreateExportRequest
-}
-
-type exportOutput struct {
-	Body dto.GovernanceExportJob
-}
-
-func createExport(svc *governance.Service) func(context.Context, governance.Principal, *createExportInput) (*exportOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *createExportInput) (*exportOutput, error) {
+func createExport(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.CreateDataExportInput) (*contractapi.CreateDataExportOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *contractapi.CreateDataExportInput) (*contractapi.CreateDataExportOutput, error) {
 		info := operationRequestInfoFromContext(ctx)
+		scopes := make([]string, 0)
+		if input.Body.Scopes != nil {
+			for _, scope := range *input.Body.Scopes {
+				scopes = append(scopes, string(scope))
+			}
+		}
+		includeLogs := false
+		if input.Body.IncludeLogs != nil {
+			includeLogs = *input.Body.IncludeLogs
+		}
 		job, err := svc.CreateExport(ctx, principal, governance.CreateExportRequest{
-			Scopes:         input.Body.Scopes,
-			IncludeLogs:    input.Body.IncludeLogs,
+			Scopes:         scopes,
+			IncludeLogs:    includeLogs,
 			IdempotencyKey: info.IdempotencyKey,
 		})
 		if err != nil {
 			return nil, err
 		}
-		return &exportOutput{Body: exportJobDTO(*job, svc.PublicBaseURL, svc.InstallationID)}, nil
+		return &contractapi.CreateDataExportOutput{Body: contractapi.CreateDataExportOutputBody{Export: exportJobDTO(*job, svc.PublicBaseURL, svc.InstallationID)}}, nil
 	}
 }
 
-type exportPathInput struct {
-	ExportID string `path:"export_id" format:"uuid"`
-}
-
-func getExport(svc *governance.Service) func(context.Context, governance.Principal, *exportPathInput) (*exportOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *exportPathInput) (*exportOutput, error) {
-		job, err := svc.GetExport(ctx, principal, input.ExportID)
+func getExport(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.GetDataExportInput) (*contractapi.GetDataExportOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *contractapi.GetDataExportInput) (*contractapi.GetDataExportOutput, error) {
+		job, err := svc.GetExport(ctx, principal, string(input.ExportID))
 		if err != nil {
 			return nil, err
 		}
-		return &exportOutput{Body: exportJobDTO(*job, svc.PublicBaseURL, svc.InstallationID)}, nil
+		return &contractapi.GetDataExportOutput{Body: contractapi.GetDataExportOutputBody{Export: exportJobDTO(*job, svc.PublicBaseURL, svc.InstallationID)}}, nil
 	}
 }
 
-func downloadExport(svc *governance.Service) func(context.Context, governance.Principal, *exportPathInput) (*contractapi.DownloadDataExportOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *exportPathInput) (*contractapi.DownloadDataExportOutput, error) {
+func downloadExport(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.DownloadDataExportInput) (*contractapi.DownloadDataExportOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *contractapi.DownloadDataExportInput) (*contractapi.DownloadDataExportOutput, error) {
 		ctx, span := apiTracer.Start(ctx, "governance.export.download")
 		defer span.End()
-		job, err := svc.GetExport(ctx, principal, input.ExportID)
+		job, err := svc.GetExport(ctx, principal, string(input.ExportID))
 		if err != nil {
 			return nil, err
 		}
@@ -215,75 +233,92 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 	}
 }
 
-func auditEventDTO(event governance.AuditEvent) dto.GovernanceAuditEvent {
-	return dto.GovernanceAuditEvent{
-		EventID:            event.EventID.String(),
+func auditEventDTO(event governance.AuditEvent) contractapi.AuditEvent {
+	return contractapi.AuditEvent{
+		EventID:            contractapi.AuditEventID(event.EventID.String()),
 		RecordedAt:         event.RecordedAt.UTC().Format(time.RFC3339Nano),
-		OrgID:              event.OrgID,
-		Sequence:           strconv.FormatUint(event.Sequence, 10),
-		EventSource:        event.EventSource,
-		EventName:          event.EventName,
-		AuditEvent:         event.AuditEvent,
-		ActorType:          event.ActorType,
-		ActorID:            event.ActorID,
-		CredentialID:       event.CredentialID,
-		TargetType:         event.TargetType,
-		TargetID:           event.TargetID,
-		TargetResourceName: dto.ResourceName(event.TargetResourceName),
-		Permission:         event.Permission,
-		Outcome:            event.Outcome,
-		ErrorCode:          event.ErrorCode,
-		TraceID:            event.TraceID,
-		DetailSHA256:       event.DetailSHA256,
-		PrevHMAC:           event.PrevHMAC,
-		RowHMAC:            event.RowHMAC,
-		HMACKeyID:          event.HMACKeyID,
+		OrgID:              contractapi.GovernanceOrgID(event.OrgID),
+		Sequence:           contractapi.DecimalUint64(strconv.FormatUint(event.Sequence, 10)),
+		EventSource:        contractapi.AuditEventSource(event.EventSource),
+		EventName:          contractapi.AuditEventOperationName(event.EventName),
+		AuditEvent:         contractapi.GovernanceAuditEventName(event.AuditEvent),
+		ActorType:          contractapi.AuditActorType(event.ActorType),
+		ActorID:            contractapi.AuditActorID(event.ActorID),
+		CredentialID:       optionalContractString[contractapi.AuditCredentialID](event.CredentialID),
+		TargetType:         contractapi.AuditTargetType(event.TargetType),
+		TargetID:           optionalContractString[contractapi.AuditTargetID](event.TargetID),
+		TargetResourceName: optionalContractString[contractapi.ResourceName](event.TargetResourceName),
+		Permission:         contractapi.GovernancePermissionName(event.Permission),
+		Outcome:            contractapi.AuditOutcome(event.Outcome),
+		ErrorCode:          optionalContractString[contractapi.AuditErrorCode](event.ErrorCode),
+		TraceID:            optionalContractString[contractapi.TraceID](event.TraceID),
+		DetailSHA256:       contractapi.SHA256Hex(event.DetailSHA256),
+		PrevHMAC:           contractapi.HMACHex(event.PrevHMAC),
+		RowHMAC:            contractapi.HMACHex(event.RowHMAC),
+		HMACKeyID:          optionalContractString[contractapi.AuditHMACKeyID](event.HMACKeyID),
 	}
 }
 
-func exportJobDTOs(jobs []governance.ExportJob, baseURL string, installationID string) []dto.GovernanceExportJob {
-	out := make([]dto.GovernanceExportJob, 0, len(jobs))
+func exportJobDTOs(jobs []governance.ExportJob, baseURL string, installationID string) contractapi.DataExportJobs {
+	out := make(contractapi.DataExportJobs, 0, len(jobs))
 	for _, job := range jobs {
 		out = append(out, exportJobDTO(job, baseURL, installationID))
 	}
 	return out
 }
 
-func exportJobDTO(job governance.ExportJob, baseURL string, installationID string) dto.GovernanceExportJob {
-	files := make([]dto.GovernanceExportFile, 0, len(job.Files))
+func exportJobDTO(job governance.ExportJob, baseURL string, installationID string) contractapi.DataExportJob {
+	files := make(contractapi.DataExportFiles, 0, len(job.Files))
 	for _, file := range job.Files {
-		files = append(files, dto.GovernanceExportFile{
-			Path:        file.Path,
-			ContentType: file.ContentType,
-			Rows:        strconv.FormatInt(file.Rows, 10),
-			Bytes:       strconv.FormatInt(file.Bytes, 10),
-			SHA256:      file.SHA256,
+		files = append(files, contractapi.DataExportFile{
+			Path:        contractapi.ExportArtifactPath(file.Path),
+			ContentType: contractapi.MediaType(file.ContentType),
+			Rows:        contractapi.DecimalUint64(strconv.FormatInt(file.Rows, 10)),
+			Bytes:       contractapi.DecimalUint64(strconv.FormatInt(file.Bytes, 10)),
+			SHA256:      contractapi.SHA256Hex(file.SHA256),
 		})
 	}
 	downloadURL := ""
 	if job.State == "completed" {
 		downloadURL = fmt.Sprintf("/api/v1/governance/exports/%s/download", job.ExportID.String())
 	}
-	return dto.GovernanceExportJob{
-		ExportID:       job.ExportID.String(),
-		ResourceName:   dto.ResourceNameAuditExport(installationID, job.OrgID, job.ExportID.String()),
-		OrgID:          job.OrgID,
-		RequestedBy:    job.RequestedBy,
-		Scopes:         job.Scopes,
+	return contractapi.DataExportJob{
+		ExportID:       contractapi.DataExportID(job.ExportID.String()),
+		ResourceName:   contractapi.ResourceName(governance.ResourceNameAuditExport(installationID, job.OrgID, job.ExportID.String()).String()),
+		OrgID:          contractapi.GovernanceOrgID(job.OrgID),
+		RequestedBy:    contractapi.AuditActorID(job.RequestedBy),
+		Scopes:         exportScopes(job.Scopes),
 		IncludeLogs:    job.IncludeLogs,
-		Format:         job.Format,
-		State:          job.State,
-		ArtifactSHA256: job.ArtifactSHA256,
-		ArtifactBytes:  strconv.FormatInt(job.ArtifactBytes, 10),
-		DownloadURL:    downloadURL,
+		Format:         contractapi.ExportFormat(job.Format),
+		State:          contractapi.ExportState(job.State),
+		ArtifactSHA256: optionalContractString[contractapi.SHA256Hex](job.ArtifactSHA256),
+		ArtifactBytes:  contractapi.DecimalUint64(strconv.FormatInt(job.ArtifactBytes, 10)),
+		DownloadURL:    optionalContractString[contractapi.ExportDownloadURL](downloadURL),
 		Files:          files,
 		CreatedAt:      job.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:      job.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		CompletedAt:    optionalTime(job.CompletedAt),
+		CompletedAt:    optionalContractString[string](optionalTime(job.CompletedAt)),
 		ExpiresAt:      job.ExpiresAt.UTC().Format(time.RFC3339Nano),
-		ErrorCode:      job.ErrorCode,
-		ErrorMessage:   job.ErrorMessage,
+		ErrorCode:      optionalContractString[contractapi.ExportErrorCode](job.ErrorCode),
+		ErrorMessage:   optionalContractString[contractapi.ExportErrorMessage](job.ErrorMessage),
 	}
+}
+
+func exportScopes(scopes []string) contractapi.ExportScopes {
+	out := make(contractapi.ExportScopes, 0, len(scopes))
+	for _, scope := range scopes {
+		out = append(out, contractapi.ExportScope(scope))
+	}
+	return out
+}
+
+func optionalContractString[T ~string](value string) *T {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	typed := T(value)
+	return &typed
 }
 
 func optionalTime(value *time.Time) string {

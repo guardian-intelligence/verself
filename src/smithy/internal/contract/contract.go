@@ -32,8 +32,9 @@ type Service struct {
 }
 
 type ServiceRuntime struct {
-	ServiceName    string `json:"serviceName"`
-	PublicAudience string `json:"publicAudience"`
+	ServiceName      string `json:"serviceName"`
+	PublicAudience   string `json:"publicAudience"`
+	InternalAudience string `json:"internalAudience"`
 }
 
 type Shape struct {
@@ -63,7 +64,9 @@ type Bound struct {
 
 type Member struct {
 	Name                string       `json:"name"`
+	GoName              string       `json:"-"`
 	Target              string       `json:"target"`
+	Type                string       `json:"-"`
 	JSONName            string       `json:"jsonName"`
 	Required            bool         `json:"required"`
 	HTTPBinding         *HTTPBinding `json:"httpBinding"`
@@ -72,6 +75,7 @@ type Member struct {
 	IdempotencyToken    bool         `json:"idempotencyToken"`
 	NotResourceProperty bool         `json:"notResourceProperty"`
 	Sensitive           bool         `json:"sensitive"`
+	Tags                []string     `json:"-"`
 }
 
 type ListMember struct {
@@ -148,7 +152,7 @@ type OperationSemantics struct {
 	RateLimit     RateLimitPolicy     `json:"rateLimit"`
 	RequestBudget RequestBudget       `json:"requestBudget"`
 	SDK           SDKPolicy           `json:"sdk"`
-	Idempotency   *IdempotencyPolicy  `json:"idempotency"`
+	Idempotency   IdempotencyPolicy   `json:"idempotency"`
 }
 
 type IdentityPolicy struct {
@@ -158,9 +162,14 @@ type IdentityPolicy struct {
 }
 
 type AuthorizationPolicy struct {
-	Permission      string          `json:"permission"`
-	PermissionShape string          `json:"permissionShape"`
-	Organization    json.RawMessage `json:"organization"`
+	Permission      string             `json:"permission"`
+	PermissionShape string             `json:"permissionShape"`
+	Organization    OrganizationPolicy `json:"organization"`
+}
+
+type OrganizationPolicy struct {
+	Source string `json:"source"`
+	Member string `json:"member"`
 }
 
 type AuditPolicy struct {
@@ -208,9 +217,38 @@ type Problem struct {
 }
 
 type Catalogs struct {
-	IAM           []json.RawMessage `json:"iam"`
-	Audit         []json.RawMessage `json:"audit"`
-	Observability []json.RawMessage `json:"observability"`
+	IAM           []IAMCatalogOperation `json:"iam"`
+	Audit         []AuditCatalogEvent   `json:"audit"`
+	Observability []ObservabilityItem   `json:"observability"`
+}
+
+type IAMCatalogOperation struct {
+	OperationID    string `json:"operationId"`
+	Permission     string `json:"permission"`
+	Resource       string `json:"resource"`
+	Action         string `json:"action"`
+	OrgScope       string `json:"orgScope"`
+	MemberEligible bool   `json:"memberEligible"`
+}
+
+type AuditCatalogEvent struct {
+	OperationID   string `json:"operationId"`
+	Event         string `json:"event"`
+	Resource      string `json:"resource"`
+	ResourceShape string `json:"resourceShape"`
+	Action        string `json:"action"`
+	OrgScope      string `json:"orgScope"`
+}
+
+type ObservabilityItem struct {
+	OperationID     string `json:"operationId"`
+	Service         string `json:"service"`
+	HTTPMethod      string `json:"httpMethod"`
+	HTTPRoute       string `json:"httpRoute"`
+	Permission      string `json:"permission"`
+	AuditEvent      string `json:"auditEvent"`
+	RateLimitBucket string `json:"rateLimitBucket"`
+	BodyBudgetBytes int64  `json:"bodyBudgetBytes"`
 }
 
 type SourceLocation struct {

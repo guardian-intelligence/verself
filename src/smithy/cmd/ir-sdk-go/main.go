@@ -480,6 +480,11 @@ func (g generator) goType(target string, optional bool) string {
 		return "string"
 	case "smithy.api#Blob":
 		return "[]byte"
+	case "smithy.api#Document":
+		if optional {
+			return "*map[string]any"
+		}
+		return "map[string]any"
 	case "smithy.api#Integer", "smithy.api#Long":
 		if optional {
 			return "*int64"
@@ -639,10 +644,20 @@ func isPayloadMember(member memberSpec) bool {
 }
 
 func payloadMediaType(payload *payloadSpec) string {
-	if payload == nil || strings.TrimSpace(payload.MediaType) == "" {
+	if payload == nil {
 		return "application/octet-stream"
 	}
-	return strings.TrimSpace(payload.MediaType)
+	if strings.TrimSpace(payload.MediaType) != "" {
+		return strings.TrimSpace(payload.MediaType)
+	}
+	switch payload.Kind {
+	case "blob":
+		return "application/octet-stream"
+	case "string":
+		return "text/plain"
+	default:
+		return "application/json"
+	}
 }
 
 func sortedBindings(bindings []bindingSpec) []bindingSpec {
@@ -690,6 +705,8 @@ func exportedIdentifier(name string) string {
 	value = strings.ReplaceAll(value, "Acl", "ACL")
 	value = strings.ReplaceAll(value, "Api", "API")
 	value = strings.ReplaceAll(value, "Url", "URL")
+	value = strings.ReplaceAll(value, "Hmac", "HMAC")
+	value = strings.ReplaceAll(value, "Sha256", "SHA256")
 	if strings.HasSuffix(value, "Id") {
 		value = strings.TrimSuffix(value, "Id") + "ID"
 	}

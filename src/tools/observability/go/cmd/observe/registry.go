@@ -531,7 +531,7 @@ var queryDocs = []queryDoc{
 		ID:      "deploy.codegen_actions",
 		Family:  "deploy",
 		Title:   "Deploy Codegen Actions",
-		Purpose: "Every codegen Bazel spawn (OpenAPISpec, OAPICodegen, OpenapiTsGen, NpmPackage) that ran during one deploy. cache_hit=1 means the action graph was warm; cache_hit=0 means a Huma route or spec source change forced a real codegen run.",
+		Purpose: "Every legacy OpenAPI, IR projection, SDK generator, and frontend package codegen Bazel spawn that ran during one deploy. cache_hit=1 means the action graph was warm; cache_hit=0 means a contract or projection change forced a real codegen run.",
 		Required: []string{
 			"--run-key=<deploy-run-key>",
 		},

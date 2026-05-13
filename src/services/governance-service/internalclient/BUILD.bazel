@@ -1,11 +1,27 @@
-load("//src/tools/build:openapi_codegen.bzl", "verself_oapi_go_client")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_go")
 
-verself_oapi_go_client(
-    name = "internalclient",
-    importpath = "github.com/verself/governance-service/internalclient",
+ir_sdk_go(
+    name = "internal_transport_go",
+    out = "__generated_sources/client.gen.go",
+    ir = "//src/smithy/models/verself:governance_internal_ir",
     package = "governanceinternalclient",
-    response_type_suffix = "HTTPResponse",
-    spec = "//src/services/governance-service/openapi:internal-openapi-3.0.yaml",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "client.gen.go": ":internal_transport_go",
+    },
+    tags = ["manual"],
+)
+
+go_library(
+    name = "internalclient",
+    srcs = ["client.gen.go"],
+    importpath = "github.com/verself/governance-service/internalclient",
+    visibility = ["//visibility:public"],
 )
 
 alias(

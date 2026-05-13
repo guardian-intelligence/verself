@@ -10,12 +10,10 @@ go_library(
         "openapi.go",
         "policy.go",
         "routes.go",
-        "safeconv.go",
     ],
     importpath = "github.com/verself/governance-service/internal/api",
     visibility = ["//src/services/governance-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internal/contractapi",
         "//src/services/governance-service/internal/governance",
         "//src/services/governance-service/internal/internalcontractapi",
@@ -40,10 +38,17 @@ alias(
 
 go_test(
     name = "api_test",
-    srcs = ["policy_test.go"],
+    srcs = [
+        "contract_conformance_test.go",
+        "policy_test.go",
+    ],
     embed = [":api"],
     deps = [
+        "//src/services/governance-service/internal/contractapi",
+        "//src/services/governance-service/internal/governance",
+        "//src/services/governance-service/internal/internalcontractapi",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
+        "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

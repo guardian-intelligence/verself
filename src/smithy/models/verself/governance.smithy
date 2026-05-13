@@ -356,6 +356,7 @@ structure AuditRecord {
     hmac_key_id: AuditHMACKeyId
     @protoField(number: 17)
     recorded_at: Timestamp
+    detail: Document
 }
 structure AppendAuditEventAccepted {
     @required
@@ -584,6 +585,7 @@ operation AppendAuditEvent {
 }
 structure AppendAuditEventInput {
     @required
+    @httpPayload
     @protoField(number: 1)
     record: AuditRecord
 }

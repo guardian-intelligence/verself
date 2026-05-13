@@ -19,6 +19,9 @@ type OperationDescriptor struct {
 	Audit               AuditDescriptor
 	RateLimitBucket     string
 	RequestBodyMaxBytes int64
+	RequestPayload      PayloadDescriptor
+	ResponsePayload     PayloadDescriptor
+	ResponseHeaders     []HeaderDescriptor
 	Idempotency         IdempotencyDescriptor
 	SDK                 SDKDescriptor
 	Problems            []ProblemDescriptor
@@ -46,6 +49,21 @@ type IdempotencyDescriptor struct {
 	Policy string
 	Header string
 	Member string
+}
+
+type PayloadDescriptor struct {
+	Member    string
+	Target    string
+	Kind      string
+	MediaType string
+	Streaming bool
+	Sensitive bool
+	Required  bool
+}
+
+type HeaderDescriptor struct {
+	Member string
+	Name   string
 }
 
 type SDKDescriptor struct {
@@ -158,15 +176,11 @@ type ValidationFailedError struct {
 type AppendAuditEventAccepted struct {
 	EventID  AuditEventID  `json:"event_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	Sequence DecimalUint64 `json:"sequence" required:"true" pattern:"^[0-9]+$"`
-	RowHmac  HMACHex       `json:"row_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
-}
-
-type AppendAuditEventInputBody struct {
-	Record AuditRecord `json:"record" required:"true"`
+	RowHMAC  HMACHex       `json:"row_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
 }
 
 type AppendAuditEventInput struct {
-	Body AppendAuditEventInputBody
+	Body AuditRecord
 }
 
 type AuditRecord struct {
@@ -185,8 +199,9 @@ type AuditRecord struct {
 	Outcome            AuditOutcome             `json:"outcome" required:"true"`
 	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty" maxLength:"128"`
 	TraceID            *TraceID                 `json:"trace_id,omitempty" pattern:"^[0-9a-f]{32}$"`
-	HmacKeyID          *AuditHMACKeyID          `json:"hmac_key_id,omitempty" maxLength:"128"`
+	HMACKeyID          *AuditHMACKeyID          `json:"hmac_key_id,omitempty" maxLength:"128"`
 	RecordedAt         *string                  `json:"recorded_at,omitempty"`
+	Detail             *map[string]any          `json:"detail,omitempty"`
 }
 
 type AppendAuditEventOutputBody struct {
@@ -215,6 +230,9 @@ var AppendAuditEvent = Operation[AppendAuditEventInput, AppendAuditEventOutput]{
 		Audit:               AuditDescriptor{Event: "governance.audit_log.append", Resource: "audit_log", Action: "write"},
 		RateLimitBucket:     "internal_mutation",
 		RequestBodyMaxBytes: 32768,
+		RequestPayload:      PayloadDescriptor{Member: "record", Target: "verself.governance.v1#AuditRecord", Kind: "structure", MediaType: "", Streaming: false, Sensitive: false, Required: true},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
 		SDK:                 SDKDescriptor{Module: "governanceInternal.audit", Method: "append", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{

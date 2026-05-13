@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	dto "github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -212,40 +211,40 @@ func (s *Service) normalizeAuditRecord(ctx context.Context, record AuditRecord) 
 	return record
 }
 
-func (s *Service) targetResourceName(record AuditRecord) dto.ResourceName {
+func (s *Service) targetResourceName(record AuditRecord) ResourceName {
 	if s.InstallationID == "" || record.OrgID == "" {
 		return ""
 	}
 	switch record.TargetType {
 	case "organization", "audit_log":
 		if record.TargetID != "" && record.TargetType == "audit_log" {
-			return dto.ResourceNameAuditExport(s.InstallationID, record.OrgID, record.TargetID)
+			return ResourceNameAuditExport(s.InstallationID, record.OrgID, record.TargetID)
 		}
-		return dto.ResourceNameOrg(s.InstallationID, record.OrgID)
+		return ResourceNameOrg(s.InstallationID, record.OrgID)
 	case "organization_member":
-		return optionalResourceName(record.TargetID, dto.ResourceNameMember(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameMember(s.InstallationID, record.OrgID, record.TargetID))
 	case "service_account":
-		return optionalResourceName(record.TargetID, dto.ResourceNameMachinePrincipal(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameMachinePrincipal(s.InstallationID, record.OrgID, record.TargetID))
 	case "api_credential", "opaque_credential":
-		return optionalResourceName(record.TargetID, dto.ResourceNameCredential(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameCredential(s.InstallationID, record.OrgID, record.TargetID))
 	case "secret":
-		return optionalResourceName(record.TargetID, dto.ResourceNameSecret(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameSecret(s.InstallationID, record.OrgID, record.TargetID))
 	case "variable":
-		return optionalResourceName(record.TargetID, dto.ResourceNameVariable(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameVariable(s.InstallationID, record.OrgID, record.TargetID))
 	case "transit_key":
-		return optionalResourceName(record.TargetID, dto.ResourceNameTransitKey(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameTransitKey(s.InstallationID, record.OrgID, record.TargetID))
 	case "run", "execution":
-		return optionalResourceName(record.TargetID, dto.ResourceNameRun(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameRun(s.InstallationID, record.OrgID, record.TargetID))
 	case "execution_schedule":
-		return optionalResourceName(record.TargetID, dto.ResourceNameSchedule(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameSchedule(s.InstallationID, record.OrgID, record.TargetID))
 	case "github_installation":
-		return optionalResourceName(record.TargetID, dto.ResourceNameGitHubInstallation(s.InstallationID, record.OrgID, record.TargetID))
+		return optionalResourceName(record.TargetID, ResourceNameGitHubInstallation(s.InstallationID, record.OrgID, record.TargetID))
 	default:
 		return ""
 	}
 }
 
-func optionalResourceName(id string, name dto.ResourceName) dto.ResourceName {
+func optionalResourceName(id string, name ResourceName) ResourceName {
 	if id == "" {
 		return ""
 	}

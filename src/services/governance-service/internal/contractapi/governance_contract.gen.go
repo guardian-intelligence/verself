@@ -289,10 +289,10 @@ type AuditEvent struct {
 	Outcome            AuditOutcome             `json:"outcome" required:"true"`
 	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty" maxLength:"128"`
 	TraceID            *TraceID                 `json:"trace_id,omitempty" pattern:"^[0-9a-f]{32}$"`
-	DetailSha256       SHA256Hex                `json:"detail_sha256" required:"true" pattern:"^[0-9a-f]{64}$"`
-	PrevHmac           HMACHex                  `json:"prev_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
-	RowHmac            HMACHex                  `json:"row_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
-	HmacKeyID          *AuditHMACKeyID          `json:"hmac_key_id,omitempty" maxLength:"128"`
+	DetailSHA256       SHA256Hex                `json:"detail_sha256" required:"true" pattern:"^[0-9a-f]{64}$"`
+	PrevHMAC           HMACHex                  `json:"prev_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
+	RowHMAC            HMACHex                  `json:"row_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
+	HMACKeyID          *AuditHMACKeyID          `json:"hmac_key_id,omitempty" maxLength:"128"`
 }
 
 type AuditFilters struct {
@@ -322,7 +322,7 @@ type DataExportFile struct {
 	ContentType MediaType          `json:"content_type" required:"true" minLength:"1" maxLength:"255"`
 	Rows        DecimalUint64      `json:"rows" required:"true" pattern:"^[0-9]+$"`
 	Bytes       DecimalUint64      `json:"bytes" required:"true" pattern:"^[0-9]+$"`
-	Sha256      SHA256Hex          `json:"sha256" required:"true" pattern:"^[0-9a-f]{64}$"`
+	SHA256      SHA256Hex          `json:"sha256" required:"true" pattern:"^[0-9a-f]{64}$"`
 }
 
 type DataExportJob struct {
@@ -334,7 +334,7 @@ type DataExportJob struct {
 	IncludeLogs    bool                `json:"include_logs" required:"true"`
 	Format         ExportFormat        `json:"format" required:"true" minLength:"1" maxLength:"128"`
 	State          ExportState         `json:"state" required:"true" minLength:"1" maxLength:"128"`
-	ArtifactSha256 *SHA256Hex          `json:"artifact_sha256,omitempty" pattern:"^[0-9a-f]{64}$"`
+	ArtifactSHA256 *SHA256Hex          `json:"artifact_sha256,omitempty" pattern:"^[0-9a-f]{64}$"`
 	ArtifactBytes  DecimalUint64       `json:"artifact_bytes" required:"true" pattern:"^[0-9]+$"`
 	DownloadURL    *ExportDownloadURL  `json:"download_url,omitempty" maxLength:"4096"`
 	Files          DataExportFiles     `json:"files" required:"true"`

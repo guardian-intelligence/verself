@@ -5,6 +5,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/verself/src/smithy/cmd/ir-go",
     visibility = ["//visibility:private"],
+    deps = ["//src/smithy/internal/contract"],
 )
 
 go_binary(

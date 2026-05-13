@@ -130,10 +130,10 @@ type AuditEvent struct {
 	Outcome            AuditOutcome             `json:"outcome"`
 	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty"`
 	TraceID            *TraceId                 `json:"trace_id,omitempty"`
-	DetailSha256       SHA256Hex                `json:"detail_sha256"`
-	PrevHmac           HMACHex                  `json:"prev_hmac"`
-	RowHmac            HMACHex                  `json:"row_hmac"`
-	HmacKeyID          *AuditHMACKeyId          `json:"hmac_key_id,omitempty"`
+	DetailSHA256       SHA256Hex                `json:"detail_sha256"`
+	PrevHMAC           HMACHex                  `json:"prev_hmac"`
+	RowHMAC            HMACHex                  `json:"row_hmac"`
+	HMACKeyID          *AuditHMACKeyId          `json:"hmac_key_id,omitempty"`
 }
 
 type AuditFilters struct {
@@ -164,7 +164,7 @@ type DataExportFile struct {
 	ContentType MediaType          `json:"content_type"`
 	Rows        DecimalUint64      `json:"rows"`
 	Bytes       DecimalUint64      `json:"bytes"`
-	Sha256      SHA256Hex          `json:"sha256"`
+	SHA256      SHA256Hex          `json:"sha256"`
 }
 
 type DataExportJob struct {
@@ -176,7 +176,7 @@ type DataExportJob struct {
 	IncludeLogs    bool                `json:"include_logs"`
 	Format         ExportFormat        `json:"format"`
 	State          ExportState         `json:"state"`
-	ArtifactSha256 *SHA256Hex          `json:"artifact_sha256,omitempty"`
+	ArtifactSHA256 *SHA256Hex          `json:"artifact_sha256,omitempty"`
 	ArtifactBytes  DecimalUint64       `json:"artifact_bytes"`
 	DownloadURL    *ExportDownloadURL  `json:"download_url,omitempty"`
 	Files          DataExportFiles     `json:"files"`

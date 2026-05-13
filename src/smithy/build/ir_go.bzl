@@ -142,7 +142,7 @@ def _ir_openapi_impl(ctx):
 ir_openapi = rule(
     implementation = _ir_openapi_impl,
     attrs = {
-        "format": attr.string(mandatory = True, values = ["3.0", "3.1"]),
+        "format": attr.string(mandatory = True, values = ["3.0", "3.1", "3.2"]),
         "ir": attr.label(allow_single_file = True, mandatory = True),
         "out": attr.output(mandatory = True),
         "server_url": attr.string(default = ""),
@@ -184,9 +184,20 @@ def verself_ir_openapi_specs(name, public_ir = None, internal_ir = None, public_
             ir = public_ir,
             server_url = public_server_url,
         )
+        ir_openapi(
+            name = "spec_3_2",
+            out = "openapi-3.2.yaml",
+            format = "3.2",
+            ir = public_ir,
+            server_url = public_server_url,
+        )
         copy_to_bin(
             name = "openapi-3.1.yaml.bin",
             srcs = [":openapi-3.1.yaml"],
+        )
+        copy_to_bin(
+            name = "openapi-3.2.yaml.bin",
+            srcs = [":openapi-3.2.yaml"],
         )
     if internal_ir:
         ir_openapi(
@@ -202,4 +213,15 @@ def verself_ir_openapi_specs(name, public_ir = None, internal_ir = None, public_
             format = "3.1",
             ir = internal_ir,
             server_url = internal_server_url,
+        )
+        ir_openapi(
+            name = "internal_spec_3_2",
+            out = "internal-openapi-3.2.yaml",
+            format = "3.2",
+            ir = internal_ir,
+            server_url = internal_server_url,
+        )
+        copy_to_bin(
+            name = "internal-openapi-3.2.yaml.bin",
+            srcs = [":internal-openapi-3.2.yaml"],
         )

@@ -187,12 +187,12 @@ func (g generator) writeTransportTypes(out *bytes.Buffer) {
 	out.WriteString("  readonly data?: T;\n")
 	out.WriteString("  readonly error?: ErrorModel;\n")
 	out.WriteString("}\n\n")
-	out.WriteString("export interface IAMTransportOptions {\n")
+	fmt.Fprintf(out, "export interface %sTransportOptions {\n", g.transportPrefix())
 	out.WriteString("  readonly baseUrl: string;\n")
 	out.WriteString("  readonly headers?: HeadersInit;\n")
 	out.WriteString("  readonly fetch?: typeof fetch;\n")
 	out.WriteString("}\n\n")
-	out.WriteString("export interface IAMTransport {\n")
+	fmt.Fprintf(out, "export interface %sTransport {\n", g.transportPrefix())
 	for _, op := range g.sortedOperations() {
 		method := lowerCamel(op.Name)
 		requestType := op.Name + "Request"
@@ -224,7 +224,8 @@ func (g generator) writeResponsePayloadOutput(out *bytes.Buffer, op operationSpe
 }
 
 func (g generator) writeTransport(out *bytes.Buffer) {
-	out.WriteString("export function createIAMTransport(options: IAMTransportOptions): IAMTransport {\n")
+	prefix := g.transportPrefix()
+	fmt.Fprintf(out, "export function create%sTransport(options: %sTransportOptions): %sTransport {\n", prefix, prefix, prefix)
 	out.WriteString("  const baseUrl = normalizeBaseUrl(options.baseUrl);\n")
 	out.WriteString("  const fetchFn = options.fetch ?? globalThis.fetch?.bind(globalThis);\n")
 	out.WriteString("  if (fetchFn === undefined) {\n")
@@ -433,6 +434,8 @@ func (g generator) tsType(target string, optional bool) string {
 			base = "string"
 		case "smithy.api#Blob":
 			base = "Uint8Array"
+		case "smithy.api#Document":
+			base = "Record<string, unknown>"
 		case "smithy.api#Integer", "smithy.api#Long":
 			base = "number"
 		case "smithy.api#Boolean":
@@ -586,6 +589,29 @@ func (g generator) serviceName() string {
 	return g.ir.Projection
 }
 
+func (g generator) transportPrefix() string {
+	name := strings.TrimSuffix(g.serviceName(), "-service")
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.' || r == '/'
+	})
+	if len(parts) == 0 {
+		return "Contract"
+	}
+	for i, part := range parts {
+		switch strings.ToLower(part) {
+		case "iam":
+			parts[i] = "IAM"
+		case "oidc":
+			parts[i] = "OIDC"
+		case "api":
+			parts[i] = "API"
+		default:
+			parts[i] = exportedIdentifier(part)
+		}
+	}
+	return strings.Join(parts, "")
+}
+
 func isDocumentMember(member memberSpec) bool {
 	return member.HTTPBinding == nil || member.HTTPBinding.Location == "" || member.HTTPBinding.Location == "document"
 }
@@ -595,10 +621,20 @@ func isPayloadMember(member memberSpec) bool {
 }
 
 func payloadMediaType(payload *payloadSpec) string {
-	if payload == nil || strings.TrimSpace(payload.MediaType) == "" {
+	if payload == nil {
 		return "application/octet-stream"
 	}
-	return strings.TrimSpace(payload.MediaType)
+	if strings.TrimSpace(payload.MediaType) != "" {
+		return strings.TrimSpace(payload.MediaType)
+	}
+	switch payload.Kind {
+	case "blob":
+		return "application/octet-stream"
+	case "string":
+		return "text/plain"
+	default:
+		return "application/json"
+	}
 }
 
 func payloadBodyKind(payload *payloadSpec) string {

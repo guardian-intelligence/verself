@@ -13,235 +13,19 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/verself/verself/src/smithy/internal/contract"
 )
 
-type contractIR struct {
-	IRVersion  string               `json:"irVersion"`
-	Package    string               `json:"package"`
-	Projection string               `json:"projection"`
-	Service    serviceSpec          `json:"service"`
-	Shapes     map[string]shapeSpec `json:"shapes"`
-	Operations []operationSpec      `json:"operations"`
-	Problems   []problemSpec        `json:"problems"`
-	Catalogs   catalogSpec          `json:"catalogs"`
-}
-
-type serviceSpec struct {
-	ShapeID string             `json:"shapeId"`
-	Name    string             `json:"name"`
-	Version string             `json:"version"`
-	Runtime serviceRuntimeSpec `json:"runtime"`
-}
-
-type serviceRuntimeSpec struct {
-	ServiceName string `json:"serviceName"`
-}
-
-type shapeSpec struct {
-	Kind        string          `json:"kind"`
-	Name        string          `json:"name"`
-	MediaType   string          `json:"mediaType"`
-	Streaming   bool            `json:"streaming"`
-	Constraints constraintsSpec `json:"constraints"`
-	Sensitive   bool            `json:"sensitive"`
-	Input       bool            `json:"input"`
-	Output      bool            `json:"output"`
-	Members     []memberSpec    `json:"members"`
-	Member      *listMemberSpec `json:"member"`
-	Enum        []enumValueSpec `json:"enum"`
-}
-
-type constraintsSpec struct {
-	Length  boundSpec `json:"length"`
-	Range   boundSpec `json:"range"`
-	Pattern string    `json:"pattern"`
-}
-
-type boundSpec struct {
-	Min *int `json:"min"`
-	Max *int `json:"max"`
-}
-
-type memberSpec struct {
-	Name                string `json:"name"`
-	GoName              string
-	Target              string `json:"target"`
-	Type                string
-	JSONName            string           `json:"jsonName"`
-	Required            bool             `json:"required"`
-	HTTPBinding         *httpBindingSpec `json:"httpBinding"`
-	NestedProperties    bool             `json:"nestedProperties"`
-	IdempotencyToken    bool             `json:"idempotencyToken"`
-	NotResourceProperty bool             `json:"notResourceProperty"`
-	ProtoField          *protoFieldSpec  `json:"protoField"`
-	Tags                []string
-}
-
-type listMemberSpec struct {
-	Target string `json:"target"`
-}
-
-type enumValueSpec struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-type protoFieldSpec struct {
-	Number int    `json:"number"`
-	Name   string `json:"name"`
-}
-
-type httpBindingSpec struct {
-	Location string `json:"location"`
-	Name     string `json:"name"`
-}
-
-type operationSpec struct {
-	ShapeID     string        `json:"shapeId"`
-	Name        string        `json:"name"`
-	OperationID string        `json:"operationId"`
-	Readonly    bool          `json:"readonly"`
-	Idempotent  bool          `json:"idempotent"`
-	Paginated   bool          `json:"paginated"`
-	HTTP        httpSpec      `json:"http"`
-	Input       string        `json:"input"`
-	Output      string        `json:"output"`
-	Errors      []string      `json:"errors"`
-	Bindings    bindingsSpec  `json:"bindings"`
-	Verself     verselfSpec   `json:"verself"`
-	Problems    []problemSpec `json:"problems"`
-}
-
-type httpSpec struct {
-	Method        string `json:"method"`
-	Path          string `json:"path"`
-	SuccessStatus int    `json:"successStatus"`
-}
-
-type bindingsSpec struct {
-	Labels                  []bindingSpec `json:"labels"`
-	Headers                 []bindingSpec `json:"headers"`
-	Queries                 []bindingSpec `json:"queries"`
-	DocumentMembers         []string      `json:"documentMembers"`
-	Payload                 *payloadSpec  `json:"payload"`
-	ResponseHeaders         []bindingSpec `json:"responseHeaders"`
-	ResponseDocumentMembers []string      `json:"responseDocumentMembers"`
-	ResponsePayload         *payloadSpec  `json:"responsePayload"`
-}
-
-type bindingSpec struct {
-	Member string `json:"member"`
-	Name   string `json:"name"`
-}
-
-type payloadSpec struct {
-	Member    string `json:"member"`
-	Target    string `json:"target"`
-	Kind      string `json:"kind"`
-	MediaType string `json:"mediaType"`
-	Streaming bool   `json:"streaming"`
-	Sensitive bool   `json:"sensitive"`
-	Required  bool   `json:"required"`
-}
-
-type verselfSpec struct {
-	Identity      identitySpec      `json:"identity"`
-	Authz         authzSpec         `json:"authz"`
-	Audit         auditSpec         `json:"audit"`
-	RateLimit     rateLimitSpec     `json:"rateLimit"`
-	RequestBudget requestBudgetSpec `json:"requestBudget"`
-	SDK           sdkSpec           `json:"sdk"`
-	Idempotency   idempotencySpec   `json:"idempotency"`
-}
-
-type identitySpec struct {
-	Mode       string   `json:"mode"`
-	Audience   string   `json:"audience"`
-	Principals []string `json:"principals"`
-}
-
-type authzSpec struct {
-	Permission      string           `json:"permission"`
-	PermissionShape string           `json:"permissionShape"`
-	Organization    organizationSpec `json:"organization"`
-}
-
-type organizationSpec struct {
-	Source string `json:"source"`
-	Member string `json:"member"`
-}
-
-type auditSpec struct {
-	Event         string `json:"event"`
-	EventShape    string `json:"eventShape"`
-	Resource      string `json:"resource"`
-	ResourceShape string `json:"resourceShape"`
-	Action        string `json:"action"`
-}
-
-type rateLimitSpec struct {
-	Bucket string `json:"bucket"`
-}
-
-type requestBudgetSpec struct {
-	MaxBytes int64 `json:"maxBytes"`
-}
-
-type idempotencySpec struct {
-	Policy string `json:"policy"`
-	Header string `json:"header"`
-	Member string `json:"member"`
-}
-
-type sdkSpec struct {
-	Module    string `json:"module"`
-	Method    string `json:"method"`
-	Paginated bool   `json:"paginated"`
-	Retryable bool   `json:"retryable"`
-}
-
-type problemSpec struct {
-	ShapeID string `json:"shapeId"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Code    string `json:"code"`
-	Status  int    `json:"status"`
-}
-
-type catalogSpec struct {
-	IAM           []iamCatalogOperation `json:"iam"`
-	Audit         []auditCatalogEvent   `json:"audit"`
-	Observability []observabilityItem   `json:"observability"`
-}
-
-type iamCatalogOperation struct {
-	OperationID    string `json:"operationId"`
-	Permission     string `json:"permission"`
-	Resource       string `json:"resource"`
-	Action         string `json:"action"`
-	OrgScope       string `json:"orgScope"`
-	MemberEligible bool   `json:"memberEligible"`
-}
-
-type auditCatalogEvent struct {
-	OperationID   string `json:"operationId"`
-	Event         string `json:"event"`
-	Resource      string `json:"resource"`
-	ResourceShape string `json:"resourceShape"`
-	Action        string `json:"action"`
-	OrgScope      string `json:"orgScope"`
-}
-
-type observabilityItem struct {
-	OperationID     string `json:"operationId"`
-	Service         string `json:"service"`
-	HTTPMethod      string `json:"httpMethod"`
-	HTTPRoute       string `json:"httpRoute"`
-	Permission      string `json:"permission"`
-	AuditEvent      string `json:"auditEvent"`
-	RateLimitBucket string `json:"rateLimitBucket"`
-	BodyBudgetBytes int64  `json:"bodyBudgetBytes"`
-}
+type contractIR = contract.IR
+type shapeSpec = contract.Shape
+type constraintsSpec = contract.Constraints
+type memberSpec = contract.Member
+type enumValueSpec = contract.EnumValue
+type operationSpec = contract.Operation
+type bindingSpec = contract.BoundMember
+type payloadSpec = contract.PayloadBinding
+type problemSpec = contract.Problem
 
 func main() {
 	var irPath string
@@ -321,12 +105,8 @@ func fail(err error) {
 }
 
 func readIR(path string) (*contractIR, error) {
-	data, err := os.ReadFile(path)
+	ir, err := contract.ReadFile(path)
 	if err != nil {
-		return nil, err
-	}
-	var ir contractIR
-	if err := json.Unmarshal(data, &ir); err != nil {
 		return nil, err
 	}
 	for id, shape := range ir.Shapes {
@@ -413,8 +193,11 @@ func generateCatalogJSON(ir *contractIR, catalog string) ([]byte, error) {
 func generateProto(ir *contractIR) ([]byte, error) {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "syntax = \"proto3\";\n\n")
-	fmt.Fprintf(&b, "package verself.iam.v1;\n\n")
-	fmt.Fprintf(&b, "option go_package = \"github.com/verself/iam-service/proto/v1;iampb\";\n\n")
+	fmt.Fprintf(&b, "package %s;\n\n", protoPackage(ir))
+	if protoUsesStruct(ir) {
+		fmt.Fprintf(&b, "import \"google/protobuf/struct.proto\";\n\n")
+	}
+	fmt.Fprintf(&b, "option go_package = %q;\n\n", protoGoPackage(ir))
 	for _, id := range sortedShapeIDs(ir, "enum") {
 		shape := ir.Shapes[id]
 		fmt.Fprintf(&b, "enum %s {\n", goName(shape.Name))
@@ -457,6 +240,8 @@ func generateOpenAPI(ir *contractIR, format string, serverURL string) ([]byte, e
 		version = "3.1.0"
 	case "3.0":
 		version = "3.0.3"
+	case "3.2":
+		version = "3.2.0"
 	default:
 		return nil, fmt.Errorf("unsupported OpenAPI format %q", format)
 	}
@@ -613,6 +398,8 @@ func openAPISchemaForTarget(ir *contractIR, target string) map[string]any {
 			return map[string]any{"type": "integer", "format": "int64"}
 		case "Boolean":
 			return map[string]any{"type": "boolean"}
+		case "Document":
+			return map[string]any{"type": "object", "additionalProperties": true}
 		default:
 			return map[string]any{"type": "string"}
 		}
@@ -635,10 +422,20 @@ func openAPIPayloadSchema(ir *contractIR, payload *payloadSpec) map[string]any {
 }
 
 func payloadMediaType(payload *payloadSpec) string {
-	if payload == nil || strings.TrimSpace(payload.MediaType) == "" {
+	if payload == nil {
 		return "application/octet-stream"
 	}
-	return strings.TrimSpace(payload.MediaType)
+	if strings.TrimSpace(payload.MediaType) != "" {
+		return strings.TrimSpace(payload.MediaType)
+	}
+	switch payload.Kind {
+	case "blob":
+		return "application/octet-stream"
+	case "string":
+		return "text/plain"
+	default:
+		return "application/json"
+	}
 }
 
 func membersByName(shape shapeSpec, names []string) []memberSpec {
@@ -1318,6 +1115,8 @@ func goTypeForTarget(ir *contractIR, target string) string {
 			return "bool"
 		case "Blob":
 			return "[]byte"
+		case "Document":
+			return "map[string]any"
 		default:
 			return "string"
 		}
@@ -1435,6 +1234,8 @@ func protoType(ir *contractIR, target string) string {
 			return "bool"
 		case "Blob":
 			return "bytes"
+		case "Document":
+			return "google.protobuf.Struct"
 		default:
 			return "string"
 		}
@@ -1459,6 +1260,52 @@ func protoType(ir *contractIR, target string) string {
 	default:
 		return goName(localName(target))
 	}
+}
+
+func protoPackage(ir *contractIR) string {
+	if strings.TrimSpace(ir.Service.Namespace) != "" {
+		return strings.TrimSpace(ir.Service.Namespace)
+	}
+	if namespace, _, ok := strings.Cut(strings.TrimSpace(ir.Service.ShapeID), "#"); ok && namespace != "" {
+		return namespace
+	}
+	return "verself.contract.v1"
+}
+
+func protoGoPackage(ir *contractIR) string {
+	serviceName := strings.TrimSpace(ir.Service.Runtime.ServiceName)
+	if serviceName == "" {
+		serviceName = lowerKebab(ir.Service.Name)
+	}
+	if serviceName == "" {
+		serviceName = "contract-service"
+	}
+	return fmt.Sprintf("github.com/verself/%s/proto/v1;%spb", serviceName, protoGoPackageAlias(serviceName))
+}
+
+func protoGoPackageAlias(serviceName string) string {
+	serviceName = strings.TrimSuffix(strings.TrimSpace(serviceName), "-service")
+	serviceName = strings.ReplaceAll(serviceName, "-", "_")
+	serviceName = strings.ReplaceAll(serviceName, ".", "_")
+	parts := strings.FieldsFunc(serviceName, func(r rune) bool { return r == '_' || r == '/' })
+	if len(parts) == 0 {
+		return "contract"
+	}
+	return strings.Join(parts, "")
+}
+
+func protoUsesStruct(ir *contractIR) bool {
+	for _, shape := range ir.Shapes {
+		for _, member := range shape.Members {
+			if member.Target == "smithy.api#Document" {
+				return true
+			}
+		}
+		if shape.Member != nil && shape.Member.Target == "smithy.api#Document" {
+			return true
+		}
+	}
+	return false
 }
 
 func localName(id string) string {
@@ -1489,6 +1336,8 @@ func goName(name string) string {
 		{"Oidc", "OIDC"},
 		{"Url", "URL"},
 		{"Http", "HTTP"},
+		{"Hmac", "HMAC"},
+		{"Sha256", "SHA256"},
 		{"OrgId", "OrgID"},
 		{"MemberId", "MemberID"},
 		{"ResourceId", "ResourceID"},

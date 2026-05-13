@@ -18,7 +18,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	dto "github.com/verself/domain-transfer-objects"
 	"github.com/verself/governance-service/internal/governance"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -35,9 +34,6 @@ const (
 	idempotencyHeaderKey        = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
-
-	bodyLimitNoBody    int64 = 1024
-	bodyLimitSmallJSON int64 = 16 << 10
 
 	auditLogResourceType = "audit_log"
 	orgResourceType      = "org"
@@ -360,9 +356,9 @@ func governanceTargetResourceName(installationID, orgID, resource, targetID stri
 		return ""
 	}
 	if resource == "audit_log" && targetID != "" {
-		return dto.ResourceNameAuditExport(installationID, orgID, targetID).String()
+		return governance.ResourceNameAuditExport(installationID, orgID, targetID).String()
 	}
-	return dto.ResourceNameOrg(installationID, orgID).String()
+	return governance.ResourceNameOrg(installationID, orgID).String()
 }
 
 func compactAuditDetail(values map[string]any) map[string]any {

@@ -5,13 +5,13 @@ go_library(
     srcs = [
         "audit.go",
         "export.go",
+        "resource_name.go",
         "safeconv.go",
         "service.go",
     ],
     importpath = "github.com/verself/governance-service/internal/governance",
     visibility = ["//src/services/governance-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internal/store",
         "//src/services/governance-service/internal/store/billingexport",
         "//src/services/governance-service/internal/store/identityexport",
