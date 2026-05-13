@@ -187,7 +187,7 @@ type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -198,7 +198,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -209,7 +209,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -220,7 +220,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -231,7 +231,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -242,7 +242,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -253,7 +253,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -264,7 +264,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -284,7 +284,7 @@ type AuditEvent struct {
 	CredentialID       *AuditCredentialID       `json:"credential_id,omitempty" maxLength:"512"`
 	TargetType         AuditTargetType          `json:"target_type" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
 	TargetID           *AuditTargetID           `json:"target_id,omitempty" maxLength:"512"`
-	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	Permission         GovernancePermissionName `json:"permission" required:"true" minLength:"1" maxLength:"255"`
 	Outcome            AuditOutcome             `json:"outcome" required:"true"`
 	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty" maxLength:"128"`
@@ -304,7 +304,7 @@ type AuditFilters struct {
 	Outcome            *AuditOutcome             `json:"outcome,omitempty"`
 	TargetID           *AuditTargetID            `json:"target_id,omitempty" maxLength:"512"`
 	TargetType         *AuditTargetType          `json:"target_type,omitempty" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
-	TargetResourceName *ResourceName             `json:"targetResourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	TargetResourceName *ResourceName             `json:"targetResourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 }
 
 type CreateDataExportInputBody struct {
@@ -318,7 +318,7 @@ type CreateDataExportInput struct {
 }
 
 type DataExportFile struct {
-	Path        ExportArtifactPath `json:"path" required:"true" minLength:"1" maxLength:"512"`
+	Path        ExportArtifactPath `json:"path" required:"true" minLength:"1" maxLength:"4096"`
 	ContentType MediaType          `json:"content_type" required:"true" minLength:"1" maxLength:"255"`
 	Rows        DecimalUint64      `json:"rows" required:"true" pattern:"^[0-9]+$"`
 	Bytes       DecimalUint64      `json:"bytes" required:"true" pattern:"^[0-9]+$"`
@@ -327,7 +327,7 @@ type DataExportFile struct {
 
 type DataExportJob struct {
 	ExportID       DataExportID        `json:"export_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	ResourceName   ResourceName        `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   ResourceName        `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	OrgID          GovernanceOrgID     `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	RequestedBy    AuditActorID        `json:"requested_by" required:"true" minLength:"1" maxLength:"512"`
 	Scopes         ExportScopes        `json:"scopes" required:"true"`
@@ -336,14 +336,14 @@ type DataExportJob struct {
 	State          ExportState         `json:"state" required:"true" minLength:"1" maxLength:"128"`
 	ArtifactSHA256 *SHA256Hex          `json:"artifact_sha256,omitempty" pattern:"^[0-9a-f]{64}$"`
 	ArtifactBytes  DecimalUint64       `json:"artifact_bytes" required:"true" pattern:"^[0-9]+$"`
-	DownloadURL    *ExportDownloadURL  `json:"download_url,omitempty" maxLength:"4096"`
+	DownloadURL    *ExportDownloadURL  `json:"download_url,omitempty" maxLength:"8192"`
 	Files          DataExportFiles     `json:"files" required:"true"`
 	CreatedAt      string              `json:"created_at" required:"true"`
 	UpdatedAt      string              `json:"updated_at" required:"true"`
 	CompletedAt    *string             `json:"completed_at,omitempty"`
 	ExpiresAt      string              `json:"expires_at" required:"true"`
 	ErrorCode      *ExportErrorCode    `json:"error_code,omitempty" maxLength:"128"`
-	ErrorMessage   *ExportErrorMessage `json:"error_message,omitempty" maxLength:"2048"`
+	ErrorMessage   *ExportErrorMessage `json:"error_message,omitempty" maxLength:"4096"`
 }
 
 type DownloadDataExportInput struct {
@@ -366,7 +366,7 @@ type ListAuditEventsInput struct {
 	Outcome            AuditOutcome             `query:"outcome"`
 	TargetID           AuditTargetID            `query:"target_id" maxLength:"512"`
 	TargetType         AuditTargetType          `query:"target_type" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
-	TargetResourceName ResourceName             `query:"targetResourceName" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	TargetResourceName ResourceName             `query:"targetResourceName" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 }
 
 type ListDataExportsInput struct{}

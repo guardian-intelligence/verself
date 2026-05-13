@@ -133,7 +133,7 @@ func (c CLI) usage() error {
   %[1]s runs analytics jobs|costs|runner-sizing [--json]
   %[1]s github installations list [--json]
   %[1]s github installations connect [--json]
-  %[1]s schedules list [--json]
+  %[1]s schedules list [--json] [--limit N] [--cursor CURSOR]
   %[1]s schedules create --project-id PROJECT_ID --source-repository-id REPO_ID --workflow-path PATH --interval-seconds SECONDS [--json]
   %[1]s schedules get <schedule-id> [--json]
   %[1]s schedules pause <schedule-id> [--json]

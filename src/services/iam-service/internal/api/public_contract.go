@@ -98,7 +98,7 @@ func (r publicRuntime) BeforeOperation(ctx context.Context, desc contractapi.Ope
 	if err := requireContractIdempotency(ctx, desc); err != nil {
 		return authIdentity, err
 	}
-	if decision := apiOperationRateLimiter.allow(runtimeiam.RateLimitClass(desc.RateLimitBucket), contractRateLimitKey(ctx, authIdentity, desc, orgIDs), time.Now()); !decision.Allowed {
+	if decision := apiOperationRateLimiter.Allow(runtimeiam.RateLimitClass(desc.RateLimitBucket), contractRateLimitKey(ctx, authIdentity, desc, orgIDs), time.Now()); !decision.Allowed {
 		return authIdentity, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return publicOperationIdentity{Auth: authIdentity, PublicOrgIDs: orgIDs}, nil

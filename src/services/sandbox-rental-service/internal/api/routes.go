@@ -354,21 +354,24 @@ func createExecutionSchedule(recurringSvc *recurring.Service, installationID str
 	}
 }
 
-func listExecutionSchedules(recurringSvc *recurring.Service, installationID string) func(context.Context, *contractapi.EmptyInput) (*contractapi.ListExecutionSchedulesOutput, error) {
-	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.ListExecutionSchedulesOutput, error) {
+func listExecutionSchedules(recurringSvc *recurring.Service, installationID string) func(context.Context, *contractapi.ListExecutionSchedulesInput) (*contractapi.SandboxExecutionSchedulesPage, error) {
+	return func(ctx context.Context, input *contractapi.ListExecutionSchedulesInput) (*contractapi.SandboxExecutionSchedulesPage, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		records, err := recurringSvc.ListSchedules(ctx, orgID)
+		page, err := recurringSvc.ListSchedules(ctx, orgID, recurring.ScheduleListFilters{
+			Limit:  int(input.Limit),
+			Cursor: string(input.Cursor),
+		})
 		if err != nil {
+			if errors.Is(err, recurring.ErrScheduleCursorInvalid) {
+				return nil, badRequest(ctx, "invalid-schedule-cursor", "cursor must be a valid execution schedule pagination cursor", err)
+			}
 			return nil, internalFailure(ctx, "list-execution-schedules-failed", "list execution schedules failed", err)
 		}
-		out := make(contractapi.SandboxExecutionSchedules, 0, len(records))
-		for _, record := range records {
-			out = append(out, executionScheduleRecord(record, installationID))
-		}
-		return &contractapi.ListExecutionSchedulesOutput{Body: out}, nil
+		out := executionSchedulePage(page, installationID)
+		return &out, nil
 	}
 }
 

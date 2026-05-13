@@ -142,7 +142,7 @@ type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -153,7 +153,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -164,7 +164,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -175,7 +175,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -186,7 +186,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -197,7 +197,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -208,7 +208,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -219,7 +219,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -250,7 +250,7 @@ type BucketPathInput struct {
 
 type BucketView struct {
 	BucketID       BucketID                    `json:"bucket_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	ResourceName   ResourceName                `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   ResourceName                `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	OrgID          OrgID                       `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	BucketName     BucketName                  `json:"bucket_name" required:"true" minLength:"3" maxLength:"63" pattern:"^[a-z0-9][a-z0-9.-]*[a-z0-9]$"`
 	QuotaBytes     *DecimalUint64              `json:"quota_bytes,omitempty" pattern:"^[0-9]+$"`
@@ -413,7 +413,7 @@ var DeleteObjectStorageAccessKey = Operation[AccessKeyIdempotentInput, EmptyOutp
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:access-key:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "object_storage.access_key.delete", Resource: "object_storage_access_key", Action: "delete"},
 		RateLimitBucket:     "object_storage_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -443,7 +443,7 @@ var RollObjectStorageAccessKey = Operation[AccessKeyIdempotentInput, ObjectStora
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:access-key:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "object_storage.access_key.roll", Resource: "object_storage_access_key", Action: "roll"},
 		RateLimitBucket:     "object_storage_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -532,7 +532,7 @@ var DeleteObjectStorageBucket = Operation[BucketIdempotentInput, EmptyOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:bucket:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "object_storage.bucket.delete", Resource: "bucket", Action: "delete"},
 		RateLimitBucket:     "object_storage_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -717,7 +717,7 @@ var DeleteObjectStorageBucketAlias = Operation[DeleteObjectStorageBucketAliasInp
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:bucket:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "object_storage.bucket_alias.delete", Resource: "bucket_alias", Action: "delete"},
 		RateLimitBucket:     "object_storage_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -808,7 +808,7 @@ var DeleteObjectStorageMtlsPrincipal = Operation[DeleteObjectStorageMTLSPrincipa
 		Authorization:       AuthorizationDescriptor{Permission: "object-storage:access-key:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "object_storage.mtls_principal.delete", Resource: "object_storage_mtls_principal", Action: "delete"},
 		RateLimitBucket:     "object_storage_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},

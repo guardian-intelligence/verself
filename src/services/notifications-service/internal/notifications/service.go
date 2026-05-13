@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,38 @@ import (
 
 	notificationstore "github.com/verself/notifications-service/internal/store"
 )
+
+type listCursorPayload struct {
+	Version           int   `json:"v"`
+	RecipientSequence int64 `json:"recipient_sequence"`
+}
+
+func makeListCursor(recipientSequence int64) string {
+	payload, err := json.Marshal(listCursorPayload{Version: 1, RecipientSequence: recipientSequence})
+	if err != nil {
+		panic(fmt.Sprintf("encode notification cursor: %v", err))
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func parseListCursor(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, ErrInvalidInput
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return 0, ErrInvalidInput
+	}
+	var payload listCursorPayload
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		return 0, ErrInvalidInput
+	}
+	if payload.Version != 1 || payload.RecipientSequence <= 0 {
+		return 0, ErrInvalidInput
+	}
+	return payload.RecipientSequence, nil
+}
 
 type Publisher interface {
 	PublishDomainEvent(ctx context.Context, event DomainEvent) error
@@ -146,6 +179,15 @@ func (s *Service) List(ctx context.Context, principal Principal, input ListReque
 	if err != nil {
 		return ListResult{}, err
 	}
+	cursorEnabled := false
+	cursorSequence := int64(0)
+	if input.Cursor != "" {
+		cursorSequence, err = parseListCursor(input.Cursor)
+		if err != nil {
+			return ListResult{}, fmt.Errorf("%w: cursor is invalid", ErrInvalidInput)
+		}
+		cursorEnabled = true
+	}
 	summary, err := s.Summary(ctx, principal)
 	if err != nil {
 		return ListResult{}, err
@@ -153,7 +195,9 @@ func (s *Service) List(ctx context.Context, principal Principal, input ListReque
 	rows, err := s.q().ListNotifications(ctx, notificationstore.ListNotificationsParams{
 		OrgID:              principal.OrgID,
 		RecipientSubjectID: principal.Subject,
-		LimitCount:         int32FromInt(input.Limit, "notification list limit"),
+		CursorEnabled:      cursorEnabled,
+		CursorSequence:     cursorSequence,
+		LimitCount:         int32FromInt(input.Limit+1, "notification list limit"),
 	})
 	if err != nil {
 		return ListResult{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -166,8 +210,14 @@ func (s *Service) List(ctx context.Context, principal Principal, input ListReque
 		}
 		notifications = append(notifications, notification)
 	}
+	nextCursor := ""
+	if len(notifications) > input.Limit {
+		last := notifications[input.Limit-1]
+		nextCursor = makeListCursor(last.RecipientSequence)
+		notifications = notifications[:input.Limit]
+	}
 	span.SetAttributes(attribute.Int("notification.list_count", len(notifications)))
-	return ListResult{Summary: summary, Notifications: notifications}, nil
+	return ListResult{Summary: summary, Notifications: notifications, NextCursor: nextCursor}, nil
 }
 
 func (s *Service) PutPreferences(ctx context.Context, principal Principal, input PutPreferencesRequest) (Summary, error) {

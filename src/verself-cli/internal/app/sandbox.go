@@ -291,17 +291,22 @@ func (c CLI) runSchedules(ctx context.Context, args []string) error {
 func (c CLI) schedulesList(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("schedules list", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
+	limit := fs.Int64("limit", 0, "maximum schedules to return")
+	cursor := fs.String("cursor", "", "pagination cursor")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: schedules list [--json]")
+		return errors.New("usage: schedules list [--json] [--limit N] [--cursor CURSOR]")
 	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	schedules, err := client.Sandbox.ListSchedules(ctx)
+	schedules, err := client.Sandbox.ListSchedules(ctx, verself.ListSandboxExecutionSchedulesOptions{
+		Limit:  *limit,
+		Cursor: *cursor,
+	})
 	if err != nil {
 		return err
 	}
@@ -312,6 +317,9 @@ func (c CLI) schedulesList(ctx context.Context, args []string) error {
 		if err := writeSandboxSchedule(c.out, schedule); err != nil {
 			return err
 		}
+	}
+	if schedules.NextCursor != "" {
+		return writef(c.out, "next_cursor\t%s\n", schedules.NextCursor)
 	}
 	return nil
 }

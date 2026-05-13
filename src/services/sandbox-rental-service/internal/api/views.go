@@ -422,6 +422,20 @@ func executionScheduleRecord(record recurring.ScheduleRecord, installationID str
 	}
 }
 
+func executionSchedulePage(page recurring.SchedulePage, installationID string) contractapi.SandboxExecutionSchedulesPage {
+	out := contractapi.SandboxExecutionSchedulesPage{
+		Body: contractapi.SandboxExecutionSchedulesPageBody{
+			Schedules:  make(contractapi.SandboxExecutionSchedules, 0, len(page.Schedules)),
+			NextCursor: optionalContractString[contractapi.ScheduleListCursor](page.NextCursor),
+			Limit:      contractapi.ScheduleListPageSize(page.Limit),
+		},
+	}
+	for _, record := range page.Schedules {
+		out.Body.Schedules = append(out.Body.Schedules, executionScheduleRecord(record, installationID))
+	}
+	return out
+}
+
 func executionScheduleDispatches(records []recurring.DispatchRecord) *contractapi.SandboxExecutionScheduleDispatches {
 	if len(records) == 0 {
 		return nil
@@ -596,7 +610,7 @@ func stringMapFromPtr(value *contractapi.ScheduleInputs) map[string]string {
 	}
 	out := make(map[string]string, len(*value))
 	for key, item := range *value {
-		out[key] = item
+		out[string(key)] = string(item)
 	}
 	return out
 }
@@ -607,7 +621,7 @@ func optionalStringMap(value map[string]string) *contractapi.ScheduleInputs {
 	}
 	out := make(contractapi.ScheduleInputs, len(value))
 	for key, item := range value {
-		out[key] = item
+		out[key] = contractapi.ScheduleInputValue(item)
 	}
 	return &out
 }

@@ -209,7 +209,7 @@ type PaymentRequiredError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -220,7 +220,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -231,7 +231,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -242,7 +242,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -253,7 +253,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`

@@ -15,6 +15,7 @@ use smithy.api#pattern
 use smithy.api#range
 use smithy.api#readonly
 use smithy.api#required
+use smithy.api#sensitive
 use verself.common.v1#ConflictError
 use verself.common.v1#DisplayName
 use verself.common.v1#IdempotencyKey
@@ -120,13 +121,13 @@ string ExternalProvider
 @length(min: 1, max: 255)
 string ExternalTaskId
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string GitRef
 
 @length(min: 1, max: 4096)
 string LogChunk
 
-@length(max: 2048)
+@length(max: 4096)
 string LogQuery
 
 @length(min: 1, max: 128)
@@ -153,19 +154,19 @@ string ProviderRepositoryId
 @length(min: 1, max: 1024)
 string ReservationShape
 
-@length(max: 160)
+@length(max: 4096)
 string RunLogSearchCursor
 
 @range(min: 1, max: 500)
 integer RunLogSearchPageSize
 
-@length(max: 128)
+@length(max: 4096)
 string RunListCursor
 
 @range(min: 1, max: 200)
 integer RunListPageSize
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 8192)
 string RunCommand
 
 @length(min: 1, max: 255)
@@ -177,13 +178,13 @@ long SafeNonNegativeLong
 @range(min: 0, max: 255)
 integer SafeExitCode
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 8192)
 string SetupURL
 
 @length(min: 1, max: 64)
 string SourceKind
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 4096)
 string SourceRef
 
 @length(min: 1, max: 64)
@@ -201,7 +202,7 @@ string ExecutionStatus
 @length(min: 1, max: 64)
 string AttemptState
 
-@length(min: 1, max: 2048)
+@length(min: 1, max: 8192)
 string FailureReason
 
 @length(min: 1, max: 512)
@@ -216,19 +217,19 @@ string BillingJobId
 @length(min: 1, max: 512)
 string TraceId
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string RepositoryFullName
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string WorkflowName
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 4096)
 string WorkflowPath
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string JobName
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string HeadBranch
 
 @length(min: 1, max: 128)
@@ -252,9 +253,23 @@ string WorkflowState
 @range(min: 15, max: 4294967295)
 integer IntervalSeconds
 
+@length(max: 4096)
+@sensitive
+string ScheduleListCursor
+
+@range(min: 1, max: 500)
+integer ScheduleListPageSize
+
+@length(min: 1, max: 256)
+string ScheduleInputName
+
+@length(max: 8192)
+string ScheduleInputValue
+
+@length(max: 64)
 map ScheduleInputs {
-    key: String
-    value: String
+    key: ScheduleInputName
+    value: ScheduleInputValue
 }
 
 list GitHubInstallations {
@@ -647,6 +662,16 @@ structure SandboxRunsPage {
 
     @required
     filters: SandboxRunsFilters
+}
+
+structure SandboxExecutionSchedulesPage {
+    @required
+    schedules: SandboxExecutionSchedules
+
+    next_cursor: ScheduleListCursor
+
+    @required
+    limit: ScheduleListPageSize
 }
 
 structure SandboxRunLogSearchResult {
@@ -1248,7 +1273,7 @@ structure SandboxRunnerSizingAnalyticsOutput {
 @authz(permission: ScheduleWritePermission, organization: {source: "token_org_id"})
 @audit(event: ScheduleCreateAuditEvent, resource: ExecutionSchedule, action: "create")
 @rateLimit(bucket: "execution_schedule_mutation")
-@requestBudget(maxBytes: 8192)
+@requestBudget(maxBytes: 262144)
 @sdk(module: "sandbox.schedules", method: "create", paginated: false, retryable: false)
 operation CreateExecutionSchedule {
     input: CreateExecutionScheduleInput
@@ -1283,22 +1308,25 @@ structure CreateExecutionScheduleInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/execution-schedules")
+@paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "schedules")
 @identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
 @authz(permission: ScheduleReadPermission, organization: {source: "token_org_id"})
 @audit(event: ScheduleListAuditEvent, resource: ExecutionSchedule, action: "list")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
-@sdk(module: "sandbox.schedules", method: "list", paginated: false, retryable: true)
+@sdk(module: "sandbox.schedules", method: "list", paginated: true, retryable: true)
 operation ListExecutionSchedules {
-    input: EmptyInput
-    output: ListExecutionSchedulesOutput
+    input: ListExecutionSchedulesInput
+    output: SandboxExecutionSchedulesPage
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
 
-structure ListExecutionSchedulesOutput {
-    @required
-    @httpPayload
-    schedules: SandboxExecutionSchedules
+structure ListExecutionSchedulesInput {
+    @httpQuery("limit")
+    limit: ScheduleListPageSize
+
+    @httpQuery("cursor")
+    cursor: ScheduleListCursor
 }
 
 @readonly
@@ -1371,7 +1399,7 @@ structure ExecutionScheduleMutationInput {
 @authz(permission: RunnerRepositoryRegisterPermission, organization: {source: "body_org_id", member: "org_id"})
 @audit(event: RunnerRepositoryRegisterAuditEvent, resource: RunnerRepository, action: "register")
 @rateLimit(bucket: "internal_mutation")
-@requestBudget(maxBytes: 8192)
+@requestBudget(maxBytes: 65536)
 @sdk(module: "sandboxInternal.runnerRepositories", method: "register", paginated: false, retryable: false)
 operation InternalRegisterRunnerRepository {
     input: InternalRegisterRunnerRepositoryInput

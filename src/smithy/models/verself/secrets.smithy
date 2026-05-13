@@ -721,7 +721,7 @@ operation ResolveSecrets {
 @authz(permission: SecretDeletePermission, organization: {source: "token_org_id"})
 @audit(event: SecretDeleteAuditEvent, resource: Secret, action: "delete")
 @rateLimit(bucket: "secret_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "secrets", method: "delete", paginated: false, retryable: false)
 operation DeleteSecret {
     input: SecretDeleteInput
@@ -777,7 +777,7 @@ operation ListVariables {
 @authz(permission: VariableDeletePermission, organization: {source: "token_org_id"})
 @audit(event: VariableDeleteAuditEvent, resource: Variable, action: "delete")
 @rateLimit(bucket: "secret_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "variables", method: "delete", paginated: false, retryable: false)
 operation DeleteVariable {
     input: SecretDeleteInput
@@ -904,7 +904,7 @@ structure RevokeOpaqueCredentialInput {
 @authz(permission: CredentialRevokePermission, organization: {source: "token_org_id"})
 @audit(event: CredentialRevokeAuditEvent, resource: OpaqueCredential, action: "revoke")
 @rateLimit(bucket: "credential_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "secrets.credentials", method: "revoke", paginated: false, retryable: false)
 operation RevokeOpaqueCredential {
     input: RevokeOpaqueCredentialInput

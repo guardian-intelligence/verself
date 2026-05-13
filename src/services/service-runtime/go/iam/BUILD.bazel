@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "iam.go",
         "policy.go",
+        "rate_limiter.go",
     ],
     importpath = "github.com/verself/service-runtime/iam",
     visibility = ["//visibility:public"],
@@ -15,7 +16,10 @@ go_library(
 
 go_test(
     name = "iam_test",
-    srcs = ["policy_test.go"],
+    srcs = [
+        "policy_test.go",
+        "rate_limiter_test.go",
+    ],
     embed = [":iam"],
 )
 

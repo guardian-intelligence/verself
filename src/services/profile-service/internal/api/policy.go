@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel"
@@ -18,6 +20,7 @@ import (
 	"github.com/verself/profile-service/internal/profile"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (
@@ -26,6 +29,12 @@ const (
 )
 
 var apiTracer = otel.Tracer("profile-service/internal/api")
+
+var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
+	"read":                 {Limit: 6000, Window: time.Minute},
+	"profile_mutation":     {Limit: 600, Window: time.Minute},
+	"internal_data_rights": {Limit: 600, Window: time.Minute},
+})
 
 type profileOperationPolicy struct {
 	runtimeiam.OperationPolicy
@@ -154,8 +163,15 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 
 func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy profileOperationPolicy) (*auth.Identity, error) {
 	if policy.Internal {
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
+		if !ok {
+			return nil, unauthorized(ctx)
+		}
 		if err := requireOperationIdempotency(ctx, policy); err != nil {
 			return nil, err
+		}
+		if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(nil, peerID.String()), time.Now()); !decision.Allowed {
+			return nil, rateLimitExceeded(ctx, decision.RetryAfter)
 		}
 		return nil, nil
 	}
@@ -179,6 +195,9 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return identity, err
+	}
+	if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(identity, ""), time.Now()); !decision.Allowed {
+		return identity, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return identity, nil
 }
@@ -212,6 +231,31 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
 	return info
+}
+
+func operationRateLimitKey(identity *auth.Identity, internalSubject string) string {
+	if identity == nil {
+		subject := strings.TrimSpace(internalSubject)
+		if subject == "" {
+			return "anonymous"
+		}
+		return subject
+	}
+	key := strings.TrimSpace(identity.OrgID) + "\x00" + strings.TrimSpace(identity.Subject)
+	if strings.Trim(key, "\x00") == "" {
+		return "anonymous"
+	}
+	return key
+}
+
+func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
+	err := problem(ctx, http.StatusTooManyRequests, "rate-limit-exceeded", "rate limit exceeded", nil)
+	if retryAfter <= 0 {
+		return err
+	}
+	headers := http.Header{}
+	headers.Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+	return huma.ErrorWithHeaders(err, headers)
 }
 
 func auditOperation(ctx context.Context, operationID string, policy profileOperationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {

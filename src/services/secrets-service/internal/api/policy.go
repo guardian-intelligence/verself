@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -55,12 +54,11 @@ const (
 	billingSKUSecretsTransit      = "secrets_transit_operation"
 	billingSourceTypeAPIOperation = "secrets_api_operation"
 
-	idempotencyHeaderKey              = runtimeiam.IdempotencyHeaderKey
-	maxIdempotencyKeyLength           = 128
-	rateLimiterMaxWindowEntries       = 10000
-	bodyLimitSmallJSON          int64 = 64 << 10
-	bodyLimitCryptoJSON         int64 = 256 << 10
-	bodyLimitNoBody             int64 = 1
+	idempotencyHeaderKey          = runtimeiam.IdempotencyHeaderKey
+	maxIdempotencyKeyLength       = 128
+	bodyLimitSmallJSON      int64 = 64 << 10
+	bodyLimitCryptoJSON     int64 = 256 << 10
+	bodyLimitNoBody         int64 = 1
 )
 
 var apiTracer = otel.Tracer("secrets-service/internal/api")
@@ -196,7 +194,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, identity, err
 	}
-	if decision := apiOperationRateLimiter.allow(string(policy.RateLimitClass), operationRateLimitKey(ctx, identity, policy), time.Now()); !decision.Allowed {
+	if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(ctx, identity, policy), time.Now()); !decision.Allowed {
 		return principal, identity, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return principal, identity, nil
@@ -824,77 +822,15 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-type rateLimitRule struct {
-	Limit  int
-	Window time.Duration
-}
-
-type rateLimitDecision struct {
-	Allowed    bool
-	RetryAfter time.Duration
-}
-
-type rateLimitWindow struct {
-	ResetAt time.Time
-	Count   int
-}
-
-type fixedWindowOperationRateLimiter struct {
-	mu      sync.Mutex
-	rules   map[string]rateLimitRule
-	windows map[string]rateLimitWindow
-}
-
-var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":                {Limit: 600, Window: time.Minute},
+var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
+	"read":                {Limit: 6000, Window: time.Minute},
 	"secret_mutation":     {Limit: 120, Window: time.Minute},
 	"credential_mutation": {Limit: 60, Window: time.Minute},
 	"crypto":              {Limit: 1200, Window: time.Minute},
 	"key_mutation":        {Limit: 60, Window: time.Minute},
+	"internal_read":       {Limit: 6000, Window: time.Minute},
+	"internal_mutation":   {Limit: 600, Window: time.Minute},
 })
-
-func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {
-	copied := make(map[string]rateLimitRule, len(rules))
-	for class, rule := range rules {
-		copied[class] = rule
-	}
-	return &fixedWindowOperationRateLimiter{rules: copied, windows: map[string]rateLimitWindow{}}
-}
-
-func (l *fixedWindowOperationRateLimiter) allow(class, key string, now time.Time) rateLimitDecision {
-	if l == nil || class == "" {
-		return rateLimitDecision{Allowed: true}
-	}
-	rule, ok := l.rules[class]
-	if !ok || rule.Limit <= 0 || rule.Window <= 0 {
-		return rateLimitDecision{Allowed: true}
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if len(l.windows) > rateLimiterMaxWindowEntries {
-		l.pruneExpired(now)
-	}
-	key = class + "\x00" + key
-	window := l.windows[key]
-	if window.ResetAt.IsZero() || !now.Before(window.ResetAt) {
-		l.windows[key] = rateLimitWindow{ResetAt: now.Add(rule.Window), Count: 1}
-		return rateLimitDecision{Allowed: true}
-	}
-	if window.Count >= rule.Limit {
-		return rateLimitDecision{Allowed: false, RetryAfter: window.ResetAt.Sub(now).Round(time.Second)}
-	}
-	window.Count++
-	l.windows[key] = window
-	return rateLimitDecision{Allowed: true}
-}
-
-func (l *fixedWindowOperationRateLimiter) pruneExpired(now time.Time) {
-	for key, window := range l.windows {
-		if !now.Before(window.ResetAt) {
-			delete(l.windows, key)
-		}
-	}
-}
 
 func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
 	err := problem(ctx, http.StatusTooManyRequests, "rate-limit-exceeded", "rate limit exceeded", nil)

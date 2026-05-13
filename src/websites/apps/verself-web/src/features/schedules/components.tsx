@@ -1,6 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { useSignedInAuth } from "@verself/auth-web/react";
 import { Button } from "@verself/ui/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@verself/ui/components/ui/field";
@@ -52,9 +53,13 @@ export function ExecutionSchedulesPanel() {
   const auth = useSignedInAuth();
   const newSchedulePath = useOrgScopedPath("/schedules/new");
   const schedulePath = useOrgScopedPath("/schedules/$scheduleId");
-  const schedules = useSuspenseQuery(executionSchedulesQuery(auth)).data;
+  const [cursor, setCursor] = useState("");
+  const schedulesPage = useSuspenseQuery(
+    executionSchedulesQuery(auth, cursor ? { cursor } : undefined),
+  ).data;
+  const schedules = schedulesPage.schedules;
 
-  if (schedules.length === 0) {
+  if (schedules.length === 0 && !cursor) {
     return (
       <EmptyState
         title="No schedules yet"
@@ -65,47 +70,68 @@ export function ExecutionSchedulesPanel() {
   }
 
   return (
-    <div className="overflow-hidden rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Workflow</TableHead>
-            <TableHead>Every</TableHead>
-            <TableHead>State</TableHead>
-            <TableHead>Recent dispatches</TableHead>
-            <TableHead>Updated</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {schedules.map((schedule) => (
-            <TableRow key={schedule.schedule_id}>
-              <TableCell>
-                <Link
-                  to={schedulePath}
-                  params={{ scheduleId: schedule.schedule_id }}
-                  className="font-medium hover:underline"
-                >
-                  {schedule.display_name || schedule.schedule_id.slice(0, 8)}
-                </Link>
-              </TableCell>
-              <TableCell>
-                <div className="min-w-0">
-                  <div className="font-mono text-sm break-all">{schedule.workflow_path}</div>
-                  <div className="font-mono text-xs text-muted-foreground">
-                    {schedule.project_id.slice(0, 8)} / {schedule.source_repository_id.slice(0, 8)}
-                    {schedule.ref ? ` @ ${schedule.ref}` : ""}
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell>{schedule.interval_seconds}s</TableCell>
-              <TableCell className="capitalize">{schedule.state}</TableCell>
-              <TableCell>{schedule.dispatches.length}</TableCell>
-              <TableCell>{formatDateTimeUTC(schedule.updated_at)}</TableCell>
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Workflow</TableHead>
+              <TableHead>Every</TableHead>
+              <TableHead>State</TableHead>
+              <TableHead>Recent dispatches</TableHead>
+              <TableHead>Updated</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {schedules.map((schedule) => (
+              <TableRow key={schedule.schedule_id}>
+                <TableCell>
+                  <Link
+                    to={schedulePath}
+                    params={{ scheduleId: schedule.schedule_id }}
+                    className="font-medium hover:underline"
+                  >
+                    {schedule.display_name || schedule.schedule_id.slice(0, 8)}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <div className="min-w-0">
+                    <div className="font-mono text-sm break-all">{schedule.workflow_path}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {schedule.project_id.slice(0, 8)} /{" "}
+                      {schedule.source_repository_id.slice(0, 8)}
+                      {schedule.ref ? ` @ ${schedule.ref}` : ""}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>{schedule.interval_seconds}s</TableCell>
+                <TableCell className="capitalize">{schedule.state}</TableCell>
+                <TableCell>{schedule.dispatches.length}</TableCell>
+                <TableCell>{formatDateTimeUTC(schedule.updated_at)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      {cursor || schedulesPage.nextCursor ? (
+        <div className="flex justify-end gap-2">
+          {cursor ? (
+            <Button type="button" variant="outline" onClick={() => setCursor("")}>
+              First
+            </Button>
+          ) : null}
+          {schedulesPage.nextCursor ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCursor(schedulesPage.nextCursor)}
+            >
+              Next
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

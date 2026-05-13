@@ -215,7 +215,7 @@ type BillingContractChangeResponse struct {
 	FinalizationID  *BillingFinalizationID `json:"finalization_id,omitempty" minLength:"1" maxLength:"255"`
 	PriceDeltaUnits DecimalUint64          `json:"price_delta_units" required:"true" pattern:"^[0-9]+$"`
 	Status          BillingState           `json:"status" required:"true" minLength:"1" maxLength:"128"`
-	URL             URL                    `json:"url" required:"true" minLength:"1" maxLength:"2048"`
+	URL             URL                    `json:"url" required:"true" minLength:"1" maxLength:"8192"`
 }
 
 type BillingDocument struct {
@@ -231,10 +231,10 @@ type BillingDocument struct {
 	PeriodEnd              string                `json:"period_end" required:"true"`
 	PeriodStart            string                `json:"period_start" required:"true"`
 	ProductID              ProductID             `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
-	ResourceName           ResourceName          `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName           ResourceName          `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	Status                 BillingState          `json:"status" required:"true" minLength:"1" maxLength:"128"`
-	StripeHostedInvoiceURL *URL                  `json:"stripe_hosted_invoice_url,omitempty" minLength:"1" maxLength:"2048"`
-	StripeInvoicePdfURL    *URL                  `json:"stripe_invoice_pdf_url,omitempty" minLength:"1" maxLength:"2048"`
+	StripeHostedInvoiceURL *URL                  `json:"stripe_hosted_invoice_url,omitempty" minLength:"1" maxLength:"8192"`
+	StripeInvoicePdfURL    *URL                  `json:"stripe_invoice_pdf_url,omitempty" minLength:"1" maxLength:"8192"`
 	StripePaymentIntentID  *string               `json:"stripe_payment_intent_id,omitempty"`
 	SubtotalUnits          DecimalUint64         `json:"subtotal_units" required:"true" pattern:"^[0-9]+$"`
 	TaxUnits               DecimalUint64         `json:"tax_units" required:"true" pattern:"^[0-9]+$"`
@@ -375,14 +375,14 @@ type BillingStatementTotals struct {
 }
 
 type BillingURLResponse struct {
-	URL URL `json:"url" required:"true" minLength:"1" maxLength:"2048"`
+	URL URL `json:"url" required:"true" minLength:"1" maxLength:"8192"`
 }
 
 type CheckoutInputBody struct {
 	AmountCents CheckoutAmountCents `json:"amount_cents" required:"true" minimum:"1" maximum:"9007199254740991"`
-	CancelURL   URL                 `json:"cancel_url" required:"true" minLength:"1" maxLength:"2048"`
+	CancelURL   URL                 `json:"cancel_url" required:"true" minLength:"1" maxLength:"8192"`
 	ProductID   ProductID           `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
-	SuccessURL  URL                 `json:"success_url" required:"true" minLength:"1" maxLength:"2048"`
+	SuccessURL  URL                 `json:"success_url" required:"true" minLength:"1" maxLength:"8192"`
 }
 
 type CheckoutInput struct {
@@ -396,8 +396,8 @@ type ContractMutationInput struct {
 }
 
 type CreateBillingContractChangeInputBody struct {
-	CancelURL    URL    `json:"cancel_url" required:"true" minLength:"1" maxLength:"2048"`
-	SuccessURL   URL    `json:"success_url" required:"true" minLength:"1" maxLength:"2048"`
+	CancelURL    URL    `json:"cancel_url" required:"true" minLength:"1" maxLength:"8192"`
+	SuccessURL   URL    `json:"success_url" required:"true" minLength:"1" maxLength:"8192"`
 	TargetPlanID PlanID `json:"target_plan_id" required:"true" minLength:"1" maxLength:"255"`
 }
 
@@ -409,9 +409,9 @@ type CreateBillingContractChangeInput struct {
 
 type CreateBillingContractInputBody struct {
 	Cadence    *BillingCadence `json:"cadence,omitempty" minLength:"1" maxLength:"128"`
-	CancelURL  URL             `json:"cancel_url" required:"true" minLength:"1" maxLength:"2048"`
+	CancelURL  URL             `json:"cancel_url" required:"true" minLength:"1" maxLength:"8192"`
 	PlanID     PlanID          `json:"plan_id" required:"true" minLength:"1" maxLength:"255"`
-	SuccessURL URL             `json:"success_url" required:"true" minLength:"1" maxLength:"2048"`
+	SuccessURL URL             `json:"success_url" required:"true" minLength:"1" maxLength:"8192"`
 }
 
 type CreateBillingContractInput struct {
@@ -420,7 +420,7 @@ type CreateBillingContractInput struct {
 }
 
 type CreateBillingPortalInputBody struct {
-	ReturnURL URL `json:"return_url" required:"true" minLength:"1" maxLength:"2048"`
+	ReturnURL URL `json:"return_url" required:"true" minLength:"1" maxLength:"8192"`
 }
 
 type CreateBillingPortalInput struct {
@@ -447,7 +447,7 @@ type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -458,7 +458,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -469,7 +469,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -480,7 +480,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -491,7 +491,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -502,7 +502,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -513,7 +513,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -524,7 +524,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`

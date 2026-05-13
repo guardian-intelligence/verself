@@ -146,7 +146,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -157,7 +157,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -168,7 +168,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -179,7 +179,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -192,10 +192,10 @@ type GrafanaAlert struct {
 	Annotations  *GrafanaLabelMap `json:"annotations,omitempty"`
 	StartsAt     *string          `json:"startsAt,omitempty"`
 	EndsAt       *string          `json:"endsAt,omitempty"`
-	GeneratorURL *GrafanaURL      `json:"generatorURL,omitempty" maxLength:"2048"`
-	DashboardURL *GrafanaURL      `json:"dashboardURL,omitempty" maxLength:"2048"`
-	PanelURL     *GrafanaURL      `json:"panelURL,omitempty" maxLength:"2048"`
-	SilenceURL   *GrafanaURL      `json:"silenceURL,omitempty" maxLength:"2048"`
+	GeneratorURL *GrafanaURL      `json:"generatorURL,omitempty" maxLength:"8192"`
+	DashboardURL *GrafanaURL      `json:"dashboardURL,omitempty" maxLength:"8192"`
+	PanelURL     *GrafanaURL      `json:"panelURL,omitempty" maxLength:"8192"`
+	SilenceURL   *GrafanaURL      `json:"silenceURL,omitempty" maxLength:"8192"`
 	Fingerprint  *GrafanaString   `json:"fingerprint,omitempty" minLength:"1" maxLength:"255"`
 }
 
@@ -204,9 +204,9 @@ type GrafanaWebhookPayload struct {
 	Status            *GrafanaString     `json:"status,omitempty" minLength:"1" maxLength:"255"`
 	OrgID             *OrgID             `json:"orgId,omitempty" minLength:"1" maxLength:"128"`
 	GroupKey          *GrafanaString     `json:"groupKey,omitempty" minLength:"1" maxLength:"255"`
-	ExternalURL       *GrafanaURL        `json:"externalURL,omitempty" maxLength:"2048"`
-	Title             *NotificationTitle `json:"title,omitempty" maxLength:"120"`
-	Message           *NotificationBody  `json:"message,omitempty" maxLength:"500"`
+	ExternalURL       *GrafanaURL        `json:"externalURL,omitempty" maxLength:"8192"`
+	Title             *NotificationTitle `json:"title,omitempty" maxLength:"240"`
+	Message           *NotificationBody  `json:"message,omitempty" maxLength:"4096"`
 	CommonLabels      *GrafanaLabelMap   `json:"commonLabels,omitempty"`
 	CommonAnnotations *GrafanaLabelMap   `json:"commonAnnotations,omitempty"`
 	Alerts            *GrafanaAlerts     `json:"alerts,omitempty"`
@@ -229,14 +229,14 @@ type ReceiveGrafanaAlertWebhookInput struct {
 }
 
 type TriggerNotificationWorkflowInputBody struct {
-	ActionURL          *ActionURL               `json:"action_url,omitempty" maxLength:"500"`
-	Body               RequiredNotificationBody `json:"body" required:"true" minLength:"1" maxLength:"500"`
+	ActionURL          *ActionURL               `json:"action_url,omitempty" maxLength:"8192"`
+	Body               RequiredNotificationBody `json:"body" required:"true" minLength:"1" maxLength:"4096"`
 	Data               *map[string]any          `json:"data,omitempty"`
 	OrgID              OrgID                    `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	Priority           *NotificationPriority    `json:"priority,omitempty"`
 	Recipients         WorkflowRecipients       `json:"recipients" required:"true" minLength:"1" maxLength:"100"`
-	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
-	Title              *NotificationTitle       `json:"title,omitempty" maxLength:"120"`
+	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	Title              *NotificationTitle       `json:"title,omitempty" maxLength:"240"`
 	Traceparent        *TraceParent             `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
 }
 

@@ -50,6 +50,10 @@ func conflict(ctx context.Context, code, detail string, cause error) error {
 	return problem(ctx, http.StatusConflict, code, detail, cause)
 }
 
+func tooManyRequests(ctx context.Context, code, detail string) error {
+	return problem(ctx, http.StatusTooManyRequests, code, detail, nil)
+}
+
 func internalFailure(ctx context.Context, code, detail string, cause error) error {
 	return problem(ctx, http.StatusInternalServerError, code, detail, cause)
 }

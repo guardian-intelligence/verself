@@ -144,7 +144,7 @@ type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -155,7 +155,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -166,7 +166,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -177,7 +177,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -188,7 +188,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -199,7 +199,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -214,12 +214,12 @@ type DownloadSourceCheckoutArchiveInput struct {
 type InternalCreateSourceWorkflowRunInputBody struct {
 	ActorID        ActorID         `json:"actor_id" required:"true" minLength:"1" maxLength:"512"`
 	IdempotencyKey IdempotencyKey  `json:"idempotency_key" required:"true" minLength:"8" maxLength:"128"`
-	Inputs         *WorkflowInputs `json:"inputs,omitempty"`
+	Inputs         *WorkflowInputs `json:"inputs,omitempty" maxLength:"64"`
 	OrgID          OrgID           `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	ProjectID      ProjectID       `json:"project_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	Ref            *GitRef         `json:"ref,omitempty" minLength:"1" maxLength:"255"`
+	Ref            *GitRef         `json:"ref,omitempty" minLength:"1" maxLength:"1024"`
 	RepoID         RepositoryID    `json:"repo_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	WorkflowPath   WorkflowPath    `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
+	WorkflowPath   WorkflowPath    `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
 }
 
 type InternalCreateSourceWorkflowRunInput struct {
@@ -228,20 +228,20 @@ type InternalCreateSourceWorkflowRunInput struct {
 
 type WorkflowRunSummary struct {
 	WorkflowRunID          WorkflowRunID      `json:"workflow_run_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	ResourceName           ResourceName       `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName           ResourceName       `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	OrgID                  OrgID              `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	ProjectID              ProjectID          `json:"project_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	ProjectResourceName    ResourceName       `json:"projectResourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ProjectResourceName    ResourceName       `json:"projectResourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	RepoID                 RepositoryID       `json:"repo_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	RepositoryResourceName ResourceName       `json:"repositoryResourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	RepositoryResourceName ResourceName       `json:"repositoryResourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ActorID                ActorID            `json:"actor_id" required:"true" minLength:"1" maxLength:"512"`
 	Backend                SourceBackend      `json:"backend" required:"true" minLength:"1" maxLength:"128"`
-	WorkflowPath           WorkflowPath       `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
-	Ref                    GitRef             `json:"ref" required:"true" minLength:"1" maxLength:"255"`
-	Inputs                 WorkflowInputs     `json:"inputs" required:"true"`
+	WorkflowPath           WorkflowPath       `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
+	Ref                    GitRef             `json:"ref" required:"true" minLength:"1" maxLength:"1024"`
+	Inputs                 WorkflowInputs     `json:"inputs" required:"true" maxLength:"64"`
 	State                  SourceState        `json:"state" required:"true" minLength:"1" maxLength:"128"`
-	BackendDispatchID      *BackendDispatchID `json:"backend_dispatch_id,omitempty" minLength:"1" maxLength:"512"`
-	FailureReason          *FailureReason     `json:"failure_reason,omitempty" maxLength:"2048"`
+	BackendDispatchID      *BackendDispatchID `json:"backend_dispatch_id,omitempty" minLength:"1" maxLength:"1024"`
+	FailureReason          *FailureReason     `json:"failure_reason,omitempty" maxLength:"8192"`
 	TraceID                *TraceID           `json:"trace_id,omitempty" minLength:"1" maxLength:"128"`
 	DispatchedAt           *string            `json:"dispatched_at,omitempty"`
 	CreatedAt              string             `json:"created_at" required:"true"`
@@ -249,7 +249,7 @@ type WorkflowRunSummary struct {
 }
 
 type DownloadSourceCheckoutArchiveOutput struct {
-	ContentDisposition ContentDisposition `header:"Content-Disposition" required:"true" minLength:"1" maxLength:"255"`
+	ContentDisposition ContentDisposition `header:"Content-Disposition" required:"true" minLength:"1" maxLength:"1024"`
 	ContentType        MediaType          `header:"Content-Type" required:"true" minLength:"1" maxLength:"128"`
 	Body               []byte
 }
@@ -307,7 +307,7 @@ var InternalCreateSourceWorkflowRun = Operation[InternalCreateSourceWorkflowRunI
 		Authorization:       AuthorizationDescriptor{Permission: "source:workflow:write", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
 		Audit:               AuditDescriptor{Event: "source.workflow.dispatch.internal", Resource: "source_workflow_run", Action: "create"},
 		RateLimitBucket:     "internal_mutation",
-		RequestBodyMaxBytes: 65536,
+		RequestBodyMaxBytes: 262144,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},

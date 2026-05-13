@@ -160,7 +160,7 @@ type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -171,7 +171,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -182,7 +182,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -193,7 +193,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -204,7 +204,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -215,7 +215,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -226,7 +226,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -237,7 +237,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -282,7 +282,7 @@ type OpaqueCredentialDTO struct {
 	LastUsedAt     *string            `json:"last_used_at,omitempty"`
 	Metadata       CredentialMetadata `json:"metadata" required:"true"`
 	OrgID          OrgID              `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
-	ResourceName   *ResourceName      `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   *ResourceName      `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	RevokedAt      *string            `json:"revoked_at,omitempty"`
 	Scopes         CredentialScopes   `json:"scopes" required:"true" minLength:"1" maxLength:"64"`
 	Status         CredentialStatus   `json:"status" required:"true" minLength:"1" maxLength:"128"`
@@ -338,7 +338,7 @@ type RollOpaqueCredentialInput struct {
 
 type SecretDTO struct {
 	SecretID       string        `json:"secret_id" required:"true"`
-	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	Kind           string        `json:"kind" required:"true"`
 	Name           SecretName    `json:"name" required:"true" minLength:"1" maxLength:"255"`
 	ScopeLevel     ScopeLevel    `json:"scope_level" required:"true" minLength:"1" maxLength:"128"`
@@ -392,7 +392,7 @@ type SecretValueDTO struct {
 	EnvID          *EnvID        `json:"env_id,omitempty" maxLength:"255"`
 	Kind           string        `json:"kind" required:"true"`
 	Name           SecretName    `json:"name" required:"true" minLength:"1" maxLength:"255"`
-	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScopeLevel     ScopeLevel    `json:"scope_level" required:"true" minLength:"1" maxLength:"128"`
 	SecretID       string        `json:"secret_id" required:"true"`
 	SourceID       *SourceID     `json:"source_id,omitempty" maxLength:"255"`
@@ -428,7 +428,7 @@ type TransitKeyDTO struct {
 	KeyID          string        `json:"key_id" required:"true"`
 	Name           KeyName       `json:"name" required:"true" minLength:"1" maxLength:"255"`
 	PublicKey      string        `json:"public_key" required:"true"`
-	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	UpdatedAt      string        `json:"updated_at" required:"true"`
 }
 
@@ -463,7 +463,7 @@ type VariableDTO struct {
 	EnvID          *EnvID        `json:"env_id,omitempty" maxLength:"255"`
 	Kind           string        `json:"kind" required:"true"`
 	Name           SecretName    `json:"name" required:"true" minLength:"1" maxLength:"255"`
-	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScopeLevel     ScopeLevel    `json:"scope_level" required:"true" minLength:"1" maxLength:"128"`
 	SourceID       *SourceID     `json:"source_id,omitempty" maxLength:"255"`
 	UpdatedAt      string        `json:"updated_at" required:"true"`
@@ -477,7 +477,7 @@ type VariableValueDTO struct {
 	EnvID          *EnvID        `json:"env_id,omitempty" maxLength:"255"`
 	Kind           string        `json:"kind" required:"true"`
 	Name           SecretName    `json:"name" required:"true" minLength:"1" maxLength:"255"`
-	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   *ResourceName `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScopeLevel     ScopeLevel    `json:"scope_level" required:"true" minLength:"1" maxLength:"128"`
 	SourceID       *SourceID     `json:"source_id,omitempty" maxLength:"255"`
 	UpdatedAt      string        `json:"updated_at" required:"true"`
@@ -690,7 +690,7 @@ var RevokeOpaqueCredential = Operation[RevokeOpaqueCredentialInput, OpaqueCreden
 		Authorization:       AuthorizationDescriptor{Permission: "secrets:credential:revoke", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "secrets.credential.revoke", Resource: "opaque_credential", Action: "revoke"},
 		RateLimitBucket:     "credential_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -779,7 +779,7 @@ var DeleteSecret = Operation[SecretDeleteInput, SecretOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "secrets:secret:delete", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "secrets.secret.delete", Resource: "secret", Action: "delete"},
 		RateLimitBucket:     "secret_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -1105,7 +1105,7 @@ var DeleteVariable = Operation[SecretDeleteInput, VariableOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "secrets:variable:delete", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "secrets.variable.delete", Resource: "variable", Action: "delete"},
 		RateLimitBucket:     "secret_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},

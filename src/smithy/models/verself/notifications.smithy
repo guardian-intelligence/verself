@@ -90,16 +90,16 @@ string EmailAddress
 @pattern("^[a-z0-9._-]+$")
 string WorkflowKey
 
-@length(max: 120)
+@length(max: 240)
 string NotificationTitle
 
-@length(max: 500)
+@length(max: 4096)
 string NotificationBody
 
-@length(min: 1, max: 500)
+@length(min: 1, max: 4096)
 string RequiredNotificationBody
 
-@length(max: 500)
+@length(max: 8192)
 string ActionURL
 
 @length(min: 1, max: 128)
@@ -114,7 +114,7 @@ integer UnreadCount
 @range(min: 0, max: 2147483647)
 integer PreferenceVersion
 
-@range(min: 1, max: 100)
+@range(min: 1, max: 500)
 integer NotificationPageSize
 
 @range(min: 0, max: 200)
@@ -123,7 +123,7 @@ integer NotificationSmallCount
 @length(min: 1, max: 255)
 string GrafanaString
 
-@length(max: 2048)
+@length(max: 8192)
 string GrafanaURL
 
 @length(min: 1, max: 128)
@@ -325,7 +325,6 @@ structure NotificationPreferencesView {
     @protoField(number: 7)
     updated_at: Timestamp
 
-    @required
     @protoField(number: 8)
     updated_by: SubjectId
 }
@@ -572,7 +571,7 @@ structure AdvanceNotificationReadCursorInput {
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationDismissAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "notifications", method: "dismiss", paginated: false, retryable: false)
 operation DismissNotification {
     input: NotificationPathIdempotentInput
@@ -586,7 +585,7 @@ operation DismissNotification {
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationMarkReadAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "notifications", method: "markRead", paginated: false, retryable: false)
 operation MarkNotificationRead {
     input: NotificationPathIdempotentInput
@@ -600,7 +599,7 @@ operation MarkNotificationRead {
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationsClearAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "notifications", method: "clear", paginated: false, retryable: false)
 operation ClearNotifications {
     input: NotificationIdempotentInput

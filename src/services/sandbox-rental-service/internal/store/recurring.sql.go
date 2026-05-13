@@ -273,15 +273,27 @@ SELECT
     updated_at
 FROM execution_schedules
 WHERE org_id = $1
+  AND ($2::boolean = false OR (created_at, schedule_id) < ($3::timestamptz, $4::uuid))
 ORDER BY created_at DESC, schedule_id DESC
+LIMIT $5
 `
 
 type ListExecutionSchedulesParams struct {
-	OrgID int64
+	OrgID            int64
+	CursorEnabled    bool
+	CursorCreatedAt  pgtype.Timestamptz
+	CursorScheduleID uuid.UUID
+	LimitCount       int32
 }
 
 func (q *Queries) ListExecutionSchedules(ctx context.Context, arg ListExecutionSchedulesParams) ([]ExecutionSchedule, error) {
-	rows, err := q.db.Query(ctx, listExecutionSchedules, arg.OrgID)
+	rows, err := q.db.Query(ctx, listExecutionSchedules,
+		arg.OrgID,
+		arg.CursorEnabled,
+		arg.CursorCreatedAt,
+		arg.CursorScheduleID,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

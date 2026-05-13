@@ -126,7 +126,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -137,7 +137,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -148,7 +148,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -159,7 +159,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -170,7 +170,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -181,7 +181,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -192,7 +192,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -378,7 +378,7 @@ var MailFlag = Operation[MailEmailIdempotentInput, MailMutationOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "mailbox:mail:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "mailbox.mail_flag", Resource: "mailbox_email", Action: "write"},
 		RateLimitBucket:     "mail_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -439,7 +439,7 @@ var MailMarkRead = Operation[MailEmailIdempotentInput, MailMutationOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "mailbox:mail:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "mailbox.mail_mark_read", Resource: "mailbox_email", Action: "write"},
 		RateLimitBucket:     "mail_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -469,7 +469,7 @@ var MailTrash = Operation[MailEmailIdempotentInput, MailMutationOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "mailbox:mail:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "mailbox.mail_trash", Resource: "mailbox_email", Action: "write"},
 		RateLimitBucket:     "mail_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -499,7 +499,7 @@ var MailUnflag = Operation[MailEmailIdempotentInput, MailMutationOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "mailbox:mail:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "mailbox.mail_unflag", Resource: "mailbox_email", Action: "write"},
 		RateLimitBucket:     "mail_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -529,7 +529,7 @@ var MailMarkUnread = Operation[MailEmailIdempotentInput, MailMutationOutput]{
 		Authorization:       AuthorizationDescriptor{Permission: "mailbox:mail:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "mailbox.mail_mark_unread", Resource: "mailbox_email", Action: "write"},
 		RateLimitBucket:     "mail_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},

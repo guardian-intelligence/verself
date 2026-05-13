@@ -258,20 +258,20 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 }
 
 func TestFixedWindowOperationRateLimiter(t *testing.T) {
-	limiter := newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
+	limiter := runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
 		"execution_schedule_mutation": {Limit: 2, Window: time.Minute},
 	})
 	now := time.Unix(1700000000, 0)
-	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now); !decision.Allowed {
+	if decision := limiter.Allow("execution_schedule_mutation", "org:subject:ip", now); !decision.Allowed {
 		t.Fatalf("first request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
+	if decision := limiter.Allow("execution_schedule_mutation", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
 		t.Fatalf("second request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
+	if decision := limiter.Allow("execution_schedule_mutation", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
 		t.Fatalf("third request should be throttled with retry_after: %#v", decision)
 	}
-	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
+	if decision := limiter.Allow("execution_schedule_mutation", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
 		t.Fatalf("next window should be allowed: %#v", decision)
 	}
 }

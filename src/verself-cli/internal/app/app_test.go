@@ -811,7 +811,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"setup_url":"https://github.com/apps/verself/installations/new","state":"github_state","expires_at":"2026-05-06T00:10:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/execution-schedules":
-			_, _ = w.Write([]byte(`[` + scheduleJSON + `]`))
+			_, _ = w.Write([]byte(`{"limit":50,"next_cursor":"schedule_cursor","schedules":[` + scheduleJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/execution-schedules":
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
 				t.Fatal(err)
@@ -903,7 +903,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 
 	var schedulesOut bytes.Buffer
 	runCLI(t, &schedulesOut, "schedules", "list")
-	if !strings.Contains(schedulesOut.String(), scheduleID+"\t"+projectID+"\tactive\t900\t.github/workflows/build.yml\tNightly") {
+	if !strings.Contains(schedulesOut.String(), scheduleID+"\t"+projectID+"\tactive\t900\t.github/workflows/build.yml\tNightly") || !strings.Contains(schedulesOut.String(), "next_cursor\tschedule_cursor") {
 		t.Fatalf("schedules list output:\n%s", schedulesOut.String())
 	}
 	runCLI(t, nil,

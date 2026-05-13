@@ -133,9 +133,9 @@ func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *internalcont
 			Recipients: []notifications.WorkflowRecipient{
 				{Email: alertEmail},
 			},
-			Title:        truncateText(grafanaTitle(payload, status), 120),
-			Body:         truncateText(grafanaBody(payload, status), 500),
-			ActionURL:    truncateText(grafanaActionURL(payload), 500),
+			Title:        truncateText(grafanaTitle(payload, status), 240),
+			Body:         truncateText(grafanaBody(payload, status), 4096),
+			ActionURL:    truncateText(grafanaActionURL(payload), 8192),
 			Priority:     grafanaPriority(payload),
 			ResourceKind: "grafana_alert_group",
 			ResourceID:   grafanaResourceID(payload),

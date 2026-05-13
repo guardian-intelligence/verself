@@ -879,14 +879,19 @@ const listNotifications = `-- name: ListNotifications :many
 SELECT notification_id, org_id, recipient_subject_id, recipient_sequence, kind, priority, title, body,
        action_url, resource_kind, resource_id, created_at, expires_at, read_at, dismissed_at
 FROM user_notifications
-WHERE org_id = $1 AND recipient_subject_id = $2 AND dismissed_at IS NULL
+WHERE org_id = $1
+  AND recipient_subject_id = $2
+  AND dismissed_at IS NULL
+  AND ($3::boolean = false OR recipient_sequence < $4::bigint)
 ORDER BY recipient_sequence DESC
-LIMIT $3::int
+LIMIT $5::int
 `
 
 type ListNotificationsParams struct {
 	OrgID              string
 	RecipientSubjectID string
+	CursorEnabled      bool
+	CursorSequence     int64
 	LimitCount         int32
 }
 
@@ -909,7 +914,13 @@ type ListNotificationsRow struct {
 }
 
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]ListNotificationsRow, error) {
-	rows, err := q.db.Query(ctx, listNotifications, arg.OrgID, arg.RecipientSubjectID, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listNotifications,
+		arg.OrgID,
+		arg.RecipientSubjectID,
+		arg.CursorEnabled,
+		arg.CursorSequence,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

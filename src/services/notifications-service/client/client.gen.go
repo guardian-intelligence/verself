@@ -100,7 +100,7 @@ type NotificationPreferencesView struct {
 	SmsEnabled   bool              `json:"sms_enabled"`
 	Version      PreferenceVersion `json:"version"`
 	UpdatedAt    string            `json:"updated_at"`
-	UpdatedBy    SubjectId         `json:"updated_by"`
+	UpdatedBy    *SubjectId        `json:"updated_by,omitempty"`
 }
 
 type NotificationRecord struct {

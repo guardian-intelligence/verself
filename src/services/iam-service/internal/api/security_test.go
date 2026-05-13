@@ -557,17 +557,17 @@ func TestProblemRedactsInternalCause(t *testing.T) {
 }
 
 func TestFixedWindowOperationRateLimiter(t *testing.T) {
-	limiter := newFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]rateLimitRule{
+	limiter := runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
 		rateLimitIAMMutation: {Limit: 2, Window: time.Minute},
 	})
 	now := time.Unix(1700000000, 0)
-	if decision := limiter.allow(rateLimitIAMMutation, "org:subject:ip", now); !decision.Allowed {
+	if decision := limiter.Allow(rateLimitIAMMutation, "org:subject:ip", now); !decision.Allowed {
 		t.Fatalf("first request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow(rateLimitIAMMutation, "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
+	if decision := limiter.Allow(rateLimitIAMMutation, "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
 		t.Fatalf("second request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow(rateLimitIAMMutation, "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
+	if decision := limiter.Allow(rateLimitIAMMutation, "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
 		t.Fatalf("third request should be throttled: %#v", decision)
 	}
 }

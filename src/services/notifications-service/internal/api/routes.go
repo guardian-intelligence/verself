@@ -120,6 +120,9 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if !decision.Allowed {
 		return identity, forbidden(ctx, "permission-denied", "missing required notification permission")
 	}
+	if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(identity), time.Now()); !decision.Allowed {
+		return identity, rateLimitExceeded(ctx, decision.RetryAfter)
+	}
 	return identity, nil
 }
 
@@ -129,7 +132,10 @@ func listNotifications(svc *notifications.Service, installationID string) func(c
 		if err != nil {
 			return nil, err
 		}
-		result, err := svc.List(ctx, principal, notifications.ListRequest{Limit: int(input.Limit)})
+		result, err := svc.List(ctx, principal, notifications.ListRequest{
+			Limit:  int(input.Limit),
+			Cursor: string(input.Cursor),
+		})
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
@@ -313,6 +319,7 @@ func listContract(result notifications.ListResult, installationID string) contra
 	out := contractapi.ListNotificationsOutputBody{
 		Summary:       summaryContract(result.Summary, installationID),
 		Notifications: make(contractapi.NotificationsList, 0, len(result.Notifications)),
+		NextCursor:    optionalContractString[contractapi.PageToken](result.NextCursor),
 	}
 	for _, notification := range result.Notifications {
 		out.Notifications = append(out.Notifications, notificationContract(notification, installationID))
@@ -345,7 +352,7 @@ func preferencesContract(preferences notifications.Preferences) contractapi.Noti
 		SmsEnabled:   preferences.SMSEnabled,
 		Version:      contractapi.PreferenceVersion(preferences.Version),
 		UpdatedAt:    formatContractTime(preferences.UpdatedAt),
-		UpdatedBy:    contractapi.SubjectID(preferences.UpdatedBy),
+		UpdatedBy:    optionalContractString[contractapi.SubjectID](preferences.UpdatedBy),
 	}
 }
 
@@ -426,4 +433,26 @@ func int32FromContractInt(value int64, field string) (int32, error) {
 		return 0, fmt.Errorf("%s is outside int32 range", field)
 	}
 	return int32(value), nil
+}
+
+func operationRateLimitKey(identity *auth.Identity) string {
+	if identity == nil {
+		return "anonymous"
+	}
+	return strings.TrimSpace(identity.OrgID) + "\x00" + strings.TrimSpace(identity.Subject)
+}
+
+var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
+	"read":                  {Limit: 6000, Window: time.Minute},
+	"notification_mutation": {Limit: 600, Window: time.Minute},
+})
+
+func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
+	err := tooManyRequests(ctx, "rate-limit-exceeded", "rate limit exceeded")
+	if retryAfter <= 0 {
+		return err
+	}
+	headers := http.Header{}
+	headers.Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+	return huma.ErrorWithHeaders(err, headers)
 }

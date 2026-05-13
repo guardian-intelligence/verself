@@ -99,10 +99,10 @@ string TraceId
 @length(min: 1, max: 4096)
 @sensitive
 string AuditCursor
-@length(max: 4096)
+@length(max: 8192)
 @sensitive
 string ExportDownloadURL
-@length(min: 1, max: 512)
+@length(min: 1, max: 4096)
 string ExportArtifactPath
 @length(min: 1, max: 128)
 string ExportScope
@@ -112,7 +112,7 @@ string ExportFormat
 string ExportState
 @length(max: 128)
 string ExportErrorCode
-@length(max: 2048)
+@length(max: 4096)
 string ExportErrorMessage
 @length(min: 1, max: 255)
 string MediaType

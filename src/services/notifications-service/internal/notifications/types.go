@@ -43,6 +43,11 @@ const (
 	defaultSyntheticKind     = "test"
 	defaultSyntheticTitle    = "Notification test"
 	defaultSyntheticBody     = "Your realtime notification pipeline is working."
+	defaultListLimit         = 50
+	maxListLimit             = 500
+	maxTitleRunes            = 240
+	maxBodyRunes             = 4096
+	maxActionURLBytes        = 8192
 
 	zitadelGenericProjectRolesClaim = "urn:zitadel:iam:org:project:roles"
 )
@@ -88,6 +93,7 @@ type Summary struct {
 type ListResult struct {
 	Summary       Summary
 	Notifications []Notification
+	NextCursor    string
 }
 
 type Notification struct {
@@ -122,7 +128,8 @@ type MarkReadRequest struct {
 }
 
 type ListRequest struct {
-	Limit int
+	Limit  int
+	Cursor string
 }
 
 type DismissRequest struct {
@@ -270,13 +277,13 @@ func NormalizeWorkflowTrigger(input WorkflowTriggerRequest) (WorkflowTriggerRequ
 	if input.Body == "" {
 		return input, fmt.Errorf("%w: body is required", ErrInvalidInput)
 	}
-	if err := validateText("title", input.Title, 120); err != nil {
+	if err := validateText("title", input.Title, maxTitleRunes); err != nil {
 		return input, err
 	}
-	if err := validateText("body", input.Body, 500); err != nil {
+	if err := validateText("body", input.Body, maxBodyRunes); err != nil {
 		return input, err
 	}
-	if len(input.ActionURL) > 500 {
+	if len(input.ActionURL) > maxActionURLBytes {
 		return input, fmt.Errorf("%w: action_url is too long", ErrInvalidInput)
 	}
 	if len(input.Recipients) == 0 {
@@ -310,11 +317,12 @@ func NormalizeMarkRead(input MarkReadRequest) (MarkReadRequest, error) {
 
 func NormalizeListRequest(input ListRequest) (ListRequest, error) {
 	if input.Limit <= 0 {
-		input.Limit = 20
+		input.Limit = defaultListLimit
 	}
-	if input.Limit > 100 {
-		return input, fmt.Errorf("%w: limit must be <= 100", ErrInvalidInput)
+	if input.Limit > maxListLimit {
+		input.Limit = maxListLimit
 	}
+	input.Cursor = strings.TrimSpace(input.Cursor)
 	return input, nil
 }
 
@@ -328,13 +336,13 @@ func NormalizeTestRequest(input TestRequest) (TestRequest, error) {
 	if input.Body == "" {
 		input.Body = defaultSyntheticBody
 	}
-	if err := validateText("title", input.Title, 120); err != nil {
+	if err := validateText("title", input.Title, maxTitleRunes); err != nil {
 		return input, err
 	}
-	if err := validateText("body", input.Body, 500); err != nil {
+	if err := validateText("body", input.Body, maxBodyRunes); err != nil {
 		return input, err
 	}
-	if len(input.ActionURL) > 500 {
+	if len(input.ActionURL) > maxActionURLBytes {
 		return input, fmt.Errorf("%w: action_url is too long", ErrInvalidInput)
 	}
 	return input, nil
@@ -383,10 +391,10 @@ func NormalizeDomainEvent(event DomainEvent) (DomainEvent, error) {
 	default:
 		return event, fmt.Errorf("%w: priority is invalid", ErrInvalidInput)
 	}
-	if err := validateText("title", event.Title, 120); err != nil {
+	if err := validateText("title", event.Title, maxTitleRunes); err != nil {
 		return event, err
 	}
-	if err := validateText("body", event.Body, 500); err != nil {
+	if err := validateText("body", event.Body, maxBodyRunes); err != nil {
 		return event, err
 	}
 	if event.OccurredAt.IsZero() {

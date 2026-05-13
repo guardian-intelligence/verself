@@ -113,6 +113,14 @@ type SafeNonNegativeLong = int64
 
 type ScheduleId = string
 
+type ScheduleInputName = string
+
+type ScheduleInputValue = string
+
+type ScheduleListCursor = string
+
+type ScheduleListPageSize = int64
+
 type ScheduleState = string
 
 type SetupURL = string
@@ -165,7 +173,7 @@ type SandboxRunLogSearchResults []SandboxRunLogSearchResult
 
 type SandboxRunnerSizingSamples []SandboxRunnerSizingSample
 
-type ScheduleInputs map[string]string
+type ScheduleInputs map[string]ScheduleInputValue
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type"`
@@ -649,16 +657,20 @@ type GetRunnerSizingAnalyticsResponse struct {
 }
 
 type ListExecutionSchedulesRequest struct {
+	Cursor *ScheduleListCursor
+	Limit  *ScheduleListPageSize
 }
 
-type ListExecutionSchedulesOutput struct {
-	Body SandboxExecutionSchedules
+type SandboxExecutionSchedulesPageBody struct {
+	Limit      ScheduleListPageSize      `json:"limit"`
+	NextCursor *ScheduleListCursor       `json:"next_cursor,omitempty"`
+	Schedules  SandboxExecutionSchedules `json:"schedules"`
 }
 
 type ListExecutionSchedulesResponse struct {
 	StatusCode   int
 	Body         []byte
-	Result       *ListExecutionSchedulesOutput
+	Result       *SandboxExecutionSchedulesPageBody
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -1254,6 +1266,14 @@ func (c *Client) newListExecutionSchedulesRequest(ctx context.Context, request L
 	if err != nil {
 		return nil, err
 	}
+	query := endpoint.Query()
+	if request.Cursor != nil {
+		query.Set("cursor", fmt.Sprint(*request.Cursor))
+	}
+	if request.Limit != nil {
+		query.Set("limit", fmt.Sprint(*request.Limit))
+	}
+	endpoint.RawQuery = query.Encode()
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
 	if err != nil {
 		return nil, err
@@ -1769,9 +1789,9 @@ func parseListExecutionSchedulesResponse(resp *http.Response) (*ListExecutionSch
 	}
 	result := &ListExecutionSchedulesResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
-		decoded := ListExecutionSchedulesOutput{}
+		var decoded SandboxExecutionSchedulesPageBody
 		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded.Body); err != nil {
+			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err
 			}
 		}

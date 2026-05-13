@@ -154,7 +154,7 @@ string DecimalUint64
 @pattern("^-?[0-9]+$")
 string DecimalInt64
 
-@length(min: 1, max: 2048)
+@length(min: 1, max: 8192)
 string URL
 
 @length(min: 1, max: 32)

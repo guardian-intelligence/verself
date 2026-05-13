@@ -186,6 +186,14 @@ type SafeNonNegativeLong int64
 
 type ScheduleID string
 
+type ScheduleInputName string
+
+type ScheduleInputValue string
+
+type ScheduleListCursor string
+
+type ScheduleListPageSize int
+
 type ScheduleState string
 
 type SetupURL string
@@ -236,13 +244,13 @@ type SandboxRunLogSearchResults []SandboxRunLogSearchResult
 
 type SandboxRunnerSizingSamples []SandboxRunnerSizingSample
 
-type ScheduleInputs map[string]string
+type ScheduleInputs map[string]ScheduleInputValue
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -253,7 +261,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -264,7 +272,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -275,7 +283,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -286,7 +294,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -297,7 +305,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -308,7 +316,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -319,7 +327,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -338,13 +346,13 @@ type BeginGithubInstallationInput struct {
 type CreateExecutionScheduleInputBody struct {
 	DisplayName        *DisplayName       `json:"display_name,omitempty" minLength:"1" maxLength:"120"`
 	IdempotencyKey     IdempotencyKey     `json:"idempotency_key" required:"true" minLength:"8" maxLength:"128"`
-	Inputs             *ScheduleInputs    `json:"inputs,omitempty"`
+	Inputs             *ScheduleInputs    `json:"inputs,omitempty" maxLength:"64"`
 	IntervalSeconds    IntervalSeconds    `json:"interval_seconds" required:"true" minimum:"15" maximum:"4294967295"`
 	Paused             *bool              `json:"paused,omitempty"`
 	ProjectID          ProjectID          `json:"project_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	Ref                *GitRef            `json:"ref,omitempty" minLength:"1" maxLength:"255"`
+	Ref                *GitRef            `json:"ref,omitempty" minLength:"1" maxLength:"1024"`
 	SourceRepositoryID SourceRepositoryID `json:"source_repository_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	WorkflowPath       WorkflowPath       `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
+	WorkflowPath       WorkflowPath       `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
 }
 
 type CreateExecutionScheduleInput struct {
@@ -372,19 +380,24 @@ type GitHubInstallationRepository struct {
 	ProviderOwner        ProviderOwner        `json:"provider_owner" required:"true" minLength:"1" maxLength:"255"`
 	ProviderRepo         ProviderRepo         `json:"provider_repo" required:"true" minLength:"1" maxLength:"255"`
 	ProviderRepositoryID ProviderRepositoryID `json:"provider_repository_id" required:"true" minLength:"1" maxLength:"512"`
-	RepositoryFullName   RepositoryFullName   `json:"repository_full_name" required:"true" minLength:"1" maxLength:"255"`
+	RepositoryFullName   RepositoryFullName   `json:"repository_full_name" required:"true" minLength:"1" maxLength:"1024"`
 	SyncedAt             string               `json:"synced_at" required:"true"`
 }
 
+type ListExecutionSchedulesInput struct {
+	Cursor ScheduleListCursor   `query:"cursor" maxLength:"4096"`
+	Limit  ScheduleListPageSize `query:"limit" minimum:"1" maximum:"500"`
+}
+
 type ListRunsInput struct {
-	Branch      GitRef             `query:"branch" minLength:"1" maxLength:"255"`
-	Cursor      RunListCursor      `query:"cursor" maxLength:"128"`
+	Branch      GitRef             `query:"branch" minLength:"1" maxLength:"1024"`
+	Cursor      RunListCursor      `query:"cursor" maxLength:"4096"`
 	Limit       RunListPageSize    `query:"limit" minimum:"1" maximum:"200"`
-	Repository  RepositoryFullName `query:"repository" minLength:"1" maxLength:"255"`
+	Repository  RepositoryFullName `query:"repository" minLength:"1" maxLength:"1024"`
 	RunnerClass RunnerClass        `query:"runner_class" minLength:"1" maxLength:"255"`
 	SourceKind  SourceKind         `query:"source_kind" minLength:"1" maxLength:"64"`
 	Status      ExecutionStatus    `query:"status" minLength:"1" maxLength:"64"`
-	Workflow    WorkflowName       `query:"workflow" minLength:"1" maxLength:"255"`
+	Workflow    WorkflowName       `query:"workflow" minLength:"1" maxLength:"1024"`
 }
 
 type RunPathInput struct {
@@ -411,11 +424,11 @@ type SandboxAttemptRecord struct {
 	DurationMs             *SafeNonNegativeLong `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
 	ExecID                 *ExecID              `json:"exec_id,omitempty" minLength:"1" maxLength:"512"`
 	ExitCode               *SafeExitCode        `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
-	FailureReason          *FailureReason       `json:"failure_reason,omitempty" minLength:"1" maxLength:"2048"`
+	FailureReason          *FailureReason       `json:"failure_reason,omitempty" minLength:"1" maxLength:"8192"`
 	LeaseID                *LeaseID             `json:"lease_id,omitempty" minLength:"1" maxLength:"512"`
 	NetRxBytes             *SafeNonNegativeLong `json:"net_rx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
 	NetTxBytes             *SafeNonNegativeLong `json:"net_tx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	ResourceName           *ResourceName        `json:"resourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName           *ResourceName        `json:"resourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	RootfsProvisionedBytes *SafeNonNegativeLong `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
 	StartedAt              *string              `json:"started_at,omitempty"`
 	State                  AttemptState         `json:"state" required:"true" minLength:"1" maxLength:"64"`
@@ -476,14 +489,14 @@ type SandboxExecutionRecord struct {
 	OrgID            OrgID                       `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	ProductID        ProductID                   `json:"product_id" required:"true" minLength:"1" maxLength:"64"`
 	Provider         *Provider                   `json:"provider,omitempty" minLength:"1" maxLength:"64"`
-	ResourceName     ResourceName                `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
-	RunCommand       *RunCommand                 `json:"run_command,omitempty" minLength:"1" maxLength:"512"`
+	ResourceName     ResourceName                `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	RunCommand       *RunCommand                 `json:"run_command,omitempty" minLength:"1" maxLength:"8192"`
 	RunID            RunID                       `json:"run_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	Runner           *SandboxRunnerRunMetadata   `json:"runner,omitempty"`
 	RunnerClass      *RunnerClass                `json:"runner_class,omitempty" minLength:"1" maxLength:"255"`
 	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
 	SourceKind       *SourceKind                 `json:"source_kind,omitempty" minLength:"1" maxLength:"64"`
-	SourceRef        *SourceRef                  `json:"source_ref,omitempty" minLength:"1" maxLength:"512"`
+	SourceRef        *SourceRef                  `json:"source_ref,omitempty" minLength:"1" maxLength:"4096"`
 	Status           ExecutionStatus             `json:"status" required:"true" minLength:"1" maxLength:"64"`
 	UpdatedAt        string                      `json:"updated_at" required:"true"`
 	WorkloadKind     *WorkloadKind               `json:"workload_kind,omitempty" minLength:"1" maxLength:"64"`
@@ -492,7 +505,7 @@ type SandboxExecutionRecord struct {
 type SandboxExecutionScheduleDispatchRecord struct {
 	CreatedAt           string               `json:"created_at" required:"true"`
 	DispatchID          DispatchID           `json:"dispatch_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	FailureReason       *FailureReason       `json:"failure_reason,omitempty" minLength:"1" maxLength:"2048"`
+	FailureReason       *FailureReason       `json:"failure_reason,omitempty" minLength:"1" maxLength:"8192"`
 	ScheduleID          ScheduleID           `json:"schedule_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	ScheduledAt         string               `json:"scheduled_at" required:"true"`
 	SourceWorkflowRunID *SourceWorkflowRunID `json:"source_workflow_run_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
@@ -510,27 +523,27 @@ type SandboxExecutionScheduleRecord struct {
 	Dispatches                   *SandboxExecutionScheduleDispatches `json:"dispatches,omitempty"`
 	DisplayName                  *DisplayName                        `json:"display_name,omitempty" minLength:"1" maxLength:"120"`
 	IdempotencyKey               *IdempotencyKey                     `json:"idempotency_key,omitempty" minLength:"8" maxLength:"128"`
-	Inputs                       *ScheduleInputs                     `json:"inputs,omitempty"`
+	Inputs                       *ScheduleInputs                     `json:"inputs,omitempty" maxLength:"64"`
 	IntervalSeconds              IntervalSeconds                     `json:"interval_seconds" required:"true" minimum:"15" maximum:"4294967295"`
 	OrgID                        OrgID                               `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
-	ProjectResourceName          ResourceName                        `json:"projectResourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ProjectResourceName          ResourceName                        `json:"projectResourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ProjectID                    ProjectID                           `json:"project_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	Ref                          *GitRef                             `json:"ref,omitempty" minLength:"1" maxLength:"255"`
-	ResourceName                 ResourceName                        `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	Ref                          *GitRef                             `json:"ref,omitempty" minLength:"1" maxLength:"1024"`
+	ResourceName                 ResourceName                        `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScheduleID                   ScheduleID                          `json:"schedule_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	SourceRepositoryResourceName ResourceName                        `json:"sourceRepositoryResourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	SourceRepositoryResourceName ResourceName                        `json:"sourceRepositoryResourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	SourceRepositoryID           SourceRepositoryID                  `json:"source_repository_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	State                        ScheduleState                       `json:"state" required:"true" minLength:"1" maxLength:"64"`
 	TaskQueue                    TaskQueue                           `json:"task_queue" required:"true" minLength:"1" maxLength:"255"`
 	TemporalNamespace            TemporalNamespace                   `json:"temporal_namespace" required:"true" minLength:"1" maxLength:"255"`
 	TemporalScheduleID           TemporalID                          `json:"temporal_schedule_id" required:"true" minLength:"1" maxLength:"512"`
 	UpdatedAt                    string                              `json:"updated_at" required:"true"`
-	WorkflowPath                 WorkflowPath                        `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
+	WorkflowPath                 WorkflowPath                        `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
 }
 
 type SandboxGitHubInstallationConnectResponse struct {
 	ExpiresAt string   `json:"expires_at" required:"true"`
-	SetupURL  SetupURL `json:"setup_url" required:"true" minLength:"1" maxLength:"512"`
+	SetupURL  SetupURL `json:"setup_url" required:"true" minLength:"1" maxLength:"8192"`
 	State     string   `json:"state" required:"true"`
 }
 
@@ -541,7 +554,7 @@ type SandboxGitHubInstallationRecord struct {
 	CreatedAt      string        `json:"created_at" required:"true"`
 	InstallationID DecimalUint64 `json:"installation_id" required:"true" pattern:"^[0-9]+$"`
 	OrgID          OrgID         `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
-	ResourceName   ResourceName  `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName   ResourceName  `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	UpdatedAt      string        `json:"updated_at" required:"true"`
 }
 
@@ -572,22 +585,22 @@ type SandboxRunDurationSample struct {
 	CompletedAt        string              `json:"completed_at" required:"true"`
 	DurationMs         SafeNonNegativeLong `json:"duration_ms" required:"true" minimum:"0" maximum:"9007199254740991"`
 	ExecutionID        ExecutionID         `json:"execution_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	JobName            *JobName            `json:"job_name,omitempty" minLength:"1" maxLength:"255"`
-	RepositoryFullName *RepositoryFullName `json:"repository_full_name,omitempty" minLength:"1" maxLength:"255"`
+	JobName            *JobName            `json:"job_name,omitempty" minLength:"1" maxLength:"1024"`
+	RepositoryFullName *RepositoryFullName `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
 	RunnerClass        *RunnerClass        `json:"runner_class,omitempty" minLength:"1" maxLength:"255"`
 	Status             ExecutionStatus     `json:"status" required:"true" minLength:"1" maxLength:"64"`
-	WorkflowName       *WorkflowName       `json:"workflow_name,omitempty" minLength:"1" maxLength:"255"`
+	WorkflowName       *WorkflowName       `json:"workflow_name,omitempty" minLength:"1" maxLength:"1024"`
 }
 
 type SandboxRunLogSearchFilters struct {
 	AttemptID   *AttemptID          `json:"attempt_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
-	Branch      *GitRef             `json:"branch,omitempty" minLength:"1" maxLength:"255"`
-	Query       *LogQuery           `json:"query,omitempty" maxLength:"2048"`
-	Repository  *RepositoryFullName `json:"repository,omitempty" minLength:"1" maxLength:"255"`
+	Branch      *GitRef             `json:"branch,omitempty" minLength:"1" maxLength:"1024"`
+	Query       *LogQuery           `json:"query,omitempty" maxLength:"4096"`
+	Repository  *RepositoryFullName `json:"repository,omitempty" minLength:"1" maxLength:"1024"`
 	RunID       *RunID              `json:"run_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
 	RunnerClass *RunnerClass        `json:"runner_class,omitempty" minLength:"1" maxLength:"255"`
 	SourceKind  *SourceKind         `json:"source_kind,omitempty" minLength:"1" maxLength:"64"`
-	Workflow    *WorkflowName       `json:"workflow,omitempty" minLength:"1" maxLength:"255"`
+	Workflow    *WorkflowName       `json:"workflow,omitempty" minLength:"1" maxLength:"1024"`
 }
 
 type SandboxRunLogSearchResult struct {
@@ -595,27 +608,27 @@ type SandboxRunLogSearchResult struct {
 	Chunk              LogChunk            `json:"chunk" required:"true" minLength:"1" maxLength:"4096"`
 	CreatedAt          string              `json:"created_at" required:"true"`
 	ExecutionID        ExecutionID         `json:"execution_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	HeadBranch         *HeadBranch         `json:"head_branch,omitempty" minLength:"1" maxLength:"255"`
-	JobName            *JobName            `json:"job_name,omitempty" minLength:"1" maxLength:"255"`
-	RepositoryFullName *RepositoryFullName `json:"repository_full_name,omitempty" minLength:"1" maxLength:"255"`
+	HeadBranch         *HeadBranch         `json:"head_branch,omitempty" minLength:"1" maxLength:"1024"`
+	JobName            *JobName            `json:"job_name,omitempty" minLength:"1" maxLength:"1024"`
+	RepositoryFullName *RepositoryFullName `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
 	RunnerClass        *RunnerClass        `json:"runner_class,omitempty" minLength:"1" maxLength:"255"`
 	ScheduleID         *ScheduleID         `json:"schedule_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
 	Seq                SafeNonNegativeLong `json:"seq" required:"true" minimum:"0" maximum:"9007199254740991"`
 	SourceKind         *SourceKind         `json:"source_kind,omitempty" minLength:"1" maxLength:"64"`
 	Stream             StreamName          `json:"stream" required:"true" minLength:"1" maxLength:"64"`
-	WorkflowName       *WorkflowName       `json:"workflow_name,omitempty" minLength:"1" maxLength:"255"`
+	WorkflowName       *WorkflowName       `json:"workflow_name,omitempty" minLength:"1" maxLength:"1024"`
 	WorkloadKind       *WorkloadKind       `json:"workload_kind,omitempty" minLength:"1" maxLength:"64"`
 }
 
 type SandboxRunnerRunMetadata struct {
-	HeadBranch             *HeadBranch         `json:"head_branch,omitempty" minLength:"1" maxLength:"255"`
+	HeadBranch             *HeadBranch         `json:"head_branch,omitempty" minLength:"1" maxLength:"1024"`
 	HeadSha                *HeadSHA            `json:"head_sha,omitempty" minLength:"1" maxLength:"128"`
-	JobName                *JobName            `json:"job_name,omitempty" minLength:"1" maxLength:"255"`
+	JobName                *JobName            `json:"job_name,omitempty" minLength:"1" maxLength:"1024"`
 	ProviderInstallationID *DecimalUint64      `json:"provider_installation_id,omitempty" pattern:"^[0-9]+$"`
 	ProviderJobID          *DecimalUint64      `json:"provider_job_id,omitempty" pattern:"^[0-9]+$"`
 	ProviderRunID          *DecimalUint64      `json:"provider_run_id,omitempty" pattern:"^[0-9]+$"`
-	RepositoryFullName     *RepositoryFullName `json:"repository_full_name,omitempty" minLength:"1" maxLength:"255"`
-	WorkflowName           *WorkflowName       `json:"workflow_name,omitempty" minLength:"1" maxLength:"255"`
+	RepositoryFullName     *RepositoryFullName `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
+	WorkflowName           *WorkflowName       `json:"workflow_name,omitempty" minLength:"1" maxLength:"1024"`
 }
 
 type SandboxRunnerSizingAnalytics struct {
@@ -635,17 +648,17 @@ type SandboxRunnerSizingSample struct {
 }
 
 type SandboxRunsFilters struct {
-	Branch      *GitRef             `json:"branch,omitempty" minLength:"1" maxLength:"255"`
-	Repository  *RepositoryFullName `json:"repository,omitempty" minLength:"1" maxLength:"255"`
+	Branch      *GitRef             `json:"branch,omitempty" minLength:"1" maxLength:"1024"`
+	Repository  *RepositoryFullName `json:"repository,omitempty" minLength:"1" maxLength:"1024"`
 	RunnerClass *RunnerClass        `json:"runner_class,omitempty" minLength:"1" maxLength:"255"`
 	SourceKind  *SourceKind         `json:"source_kind,omitempty" minLength:"1" maxLength:"64"`
 	Status      *ExecutionStatus    `json:"status,omitempty" minLength:"1" maxLength:"64"`
-	Workflow    *WorkflowName       `json:"workflow,omitempty" minLength:"1" maxLength:"255"`
+	Workflow    *WorkflowName       `json:"workflow,omitempty" minLength:"1" maxLength:"1024"`
 }
 
 type SandboxScheduleRunMetadata struct {
 	DisplayName          *DisplayName  `json:"display_name,omitempty" minLength:"1" maxLength:"120"`
-	ScheduleResourceName *ResourceName `json:"scheduleResourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ScheduleResourceName *ResourceName `json:"scheduleResourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScheduleID           *ScheduleID   `json:"schedule_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
 	TemporalRunID        *TemporalID   `json:"temporal_run_id,omitempty" minLength:"1" maxLength:"512"`
 	TemporalWorkflowID   *TemporalID   `json:"temporal_workflow_id,omitempty" minLength:"1" maxLength:"512"`
@@ -653,15 +666,15 @@ type SandboxScheduleRunMetadata struct {
 
 type SearchRunLogsInput struct {
 	AttemptID   AttemptID            `query:"attempt_id" pattern:"^[0-9a-fA-F-]{36}$"`
-	Branch      GitRef               `query:"branch" minLength:"1" maxLength:"255"`
-	Cursor      RunLogSearchCursor   `query:"cursor" maxLength:"160"`
+	Branch      GitRef               `query:"branch" minLength:"1" maxLength:"1024"`
+	Cursor      RunLogSearchCursor   `query:"cursor" maxLength:"4096"`
 	Limit       RunLogSearchPageSize `query:"limit" minimum:"1" maximum:"500"`
-	Query       LogQuery             `query:"query" maxLength:"2048"`
-	Repository  RepositoryFullName   `query:"repository" minLength:"1" maxLength:"255"`
+	Query       LogQuery             `query:"query" maxLength:"4096"`
+	Repository  RepositoryFullName   `query:"repository" minLength:"1" maxLength:"1024"`
 	RunID       RunID                `query:"run_id" pattern:"^[0-9a-fA-F-]{36}$"`
 	RunnerClass RunnerClass          `query:"runner_class" minLength:"1" maxLength:"255"`
 	SourceKind  SourceKind           `query:"source_kind" minLength:"1" maxLength:"64"`
-	Workflow    WorkflowName         `query:"workflow" minLength:"1" maxLength:"255"`
+	Workflow    WorkflowName         `query:"workflow" minLength:"1" maxLength:"1024"`
 }
 
 type SyncGithubInstallationRepositoriesInput struct {
@@ -669,8 +682,14 @@ type SyncGithubInstallationRepositoriesInput struct {
 	InstallationID DecimalUint64  `path:"installation_id" required:"true" pattern:"^[0-9]+$"`
 }
 
-type ListExecutionSchedulesOutput struct {
-	Body SandboxExecutionSchedules
+type SandboxExecutionSchedulesPageBody struct {
+	Limit      ScheduleListPageSize      `json:"limit" required:"true" minimum:"1" maximum:"500"`
+	NextCursor *ScheduleListCursor       `json:"next_cursor,omitempty" maxLength:"4096"`
+	Schedules  SandboxExecutionSchedules `json:"schedules" required:"true"`
+}
+
+type SandboxExecutionSchedulesPage struct {
+	Body SandboxExecutionSchedulesPageBody
 }
 
 type SandboxExecutionScheduleOutput struct {
@@ -718,7 +737,7 @@ type SandboxRunnerSizingAnalyticsOutput struct {
 type SandboxRunLogSearchPageBody struct {
 	Filters    SandboxRunLogSearchFilters `json:"filters" required:"true"`
 	Limit      RunLogSearchPageSize       `json:"limit" required:"true" minimum:"1" maximum:"500"`
-	NextCursor *RunLogSearchCursor        `json:"next_cursor,omitempty" maxLength:"160"`
+	NextCursor *RunLogSearchCursor        `json:"next_cursor,omitempty" maxLength:"4096"`
 	Results    SandboxRunLogSearchResults `json:"results" required:"true"`
 }
 
@@ -729,7 +748,7 @@ type SandboxRunLogSearchPage struct {
 type SandboxRunsPageBody struct {
 	Filters    SandboxRunsFilters `json:"filters" required:"true"`
 	Limit      RunListPageSize    `json:"limit" required:"true" minimum:"1" maximum:"200"`
-	NextCursor *RunListCursor     `json:"next_cursor,omitempty" maxLength:"128"`
+	NextCursor *RunListCursor     `json:"next_cursor,omitempty" maxLength:"4096"`
 	Runs       Runs               `json:"runs" required:"true"`
 }
 
@@ -756,7 +775,7 @@ var Operations = []OperationDescriptor{
 	GetRun.Descriptor,
 }
 
-var ListExecutionSchedules = Operation[EmptyInput, ListExecutionSchedulesOutput]{
+var ListExecutionSchedules = Operation[ListExecutionSchedulesInput, SandboxExecutionSchedulesPage]{
 	Descriptor: OperationDescriptor{
 		ShapeID:             "verself.sandbox.v1#ListExecutionSchedules",
 		OperationID:         "list-execution-schedules",
@@ -764,17 +783,17 @@ var ListExecutionSchedules = Operation[EmptyInput, ListExecutionSchedulesOutput]
 		Path:                "/api/v1/execution-schedules",
 		DefaultStatus:       200,
 		Readonly:            true,
-		Paginated:           false,
+		Paginated:           true,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "sandbox-rental-service", Principals: []string{"browser", "cli"}},
 		Authorization:       AuthorizationDescriptor{Permission: "sandbox:execution_schedule:read", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "sandbox.execution_schedule.list", Resource: "execution_schedule", Action: "list"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
 		RequestPayload:      PayloadDescriptor{},
-		ResponsePayload:     PayloadDescriptor{Member: "schedules", Target: "verself.sandbox.v1#SandboxExecutionSchedules", Kind: "list", MediaType: "", Streaming: false, Sensitive: false, Required: true},
+		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
-		SDK:                 SDKDescriptor{Module: "sandbox.schedules", Method: "list", Paginated: false, Retryable: true},
+		SDK:                 SDKDescriptor{Module: "sandbox.schedules", Method: "list", Paginated: true, Retryable: true},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
@@ -797,7 +816,7 @@ var CreateExecutionSchedule = Operation[CreateExecutionScheduleInput, SandboxExe
 		Authorization:       AuthorizationDescriptor{Permission: "sandbox:execution_schedule:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "sandbox.execution_schedule.create", Resource: "execution_schedule", Action: "create"},
 		RateLimitBucket:     "execution_schedule_mutation",
-		RequestBodyMaxBytes: 8192,
+		RequestBodyMaxBytes: 262144,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -1220,7 +1239,7 @@ var GetRun = Operation[RunPathInput, SandboxExecutionOutput]{
 type Handlers = PublicHandlers
 
 type PublicHandlers interface {
-	ListExecutionSchedules(context.Context, *EmptyInput) (*ListExecutionSchedulesOutput, error)
+	ListExecutionSchedules(context.Context, *ListExecutionSchedulesInput) (*SandboxExecutionSchedulesPage, error)
 	CreateExecutionSchedule(context.Context, *CreateExecutionScheduleInput) (*SandboxExecutionScheduleOutput, error)
 	GetExecutionSchedule(context.Context, *ExecutionSchedulePathInput) (*SandboxExecutionScheduleOutput, error)
 	PauseExecutionSchedule(context.Context, *ExecutionScheduleMutationInput) (*SandboxExecutionScheduleOutput, error)
@@ -1238,7 +1257,7 @@ type PublicHandlers interface {
 	GetRun(context.Context, *RunPathInput) (*SandboxExecutionOutput, error)
 }
 
-type ListExecutionSchedulesHandler = Handler[EmptyInput, ListExecutionSchedulesOutput]
+type ListExecutionSchedulesHandler = Handler[ListExecutionSchedulesInput, SandboxExecutionSchedulesPage]
 
 type CreateExecutionScheduleHandler = Handler[CreateExecutionScheduleInput, SandboxExecutionScheduleOutput]
 

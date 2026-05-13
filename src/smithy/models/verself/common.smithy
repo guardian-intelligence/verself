@@ -58,7 +58,7 @@ string PermissionName
 string ResourceKind
 
 /// Globally unique Verself resource name.
-@length(min: 1, max: 1024)
+@length(min: 1, max: 4096)
 @pattern("^urn:verself:.+$")
 string ResourceName
 
@@ -89,7 +89,7 @@ string ProblemCode
 string ProblemType
 
 /// Optional human-readable problem detail.
-@length(max: 2048)
+@length(max: 4096)
 string ProblemDetail
 
 /// Marks a string shape as the declaration site for a product permission.

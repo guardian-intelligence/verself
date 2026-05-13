@@ -140,7 +140,7 @@ type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -151,7 +151,7 @@ type IdempotencyPayloadMismatchError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -162,7 +162,7 @@ type PermissionDeniedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -173,7 +173,7 @@ type RateLimitedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -184,7 +184,7 @@ type ResourceNotFoundError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -195,7 +195,7 @@ type ServiceUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -206,7 +206,7 @@ type UnauthenticatedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -217,7 +217,7 @@ type ValidationFailedError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
-	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -237,7 +237,7 @@ type EmptyInput struct{}
 
 type ListNotificationsInput struct {
 	Cursor PageToken            `query:"cursor" minLength:"1" maxLength:"4096"`
-	Limit  NotificationPageSize `query:"limit" minimum:"1" maximum:"100"`
+	Limit  NotificationPageSize `query:"limit" minimum:"1" maximum:"500"`
 }
 
 type NotificationAccepted struct {
@@ -262,21 +262,21 @@ type NotificationPreferencesView struct {
 	SmsEnabled   bool              `json:"sms_enabled" required:"true"`
 	Version      PreferenceVersion `json:"version" required:"true" minimum:"0" maximum:"2147483647"`
 	UpdatedAt    string            `json:"updated_at" required:"true"`
-	UpdatedBy    SubjectID         `json:"updated_by" required:"true" minLength:"1" maxLength:"512"`
+	UpdatedBy    *SubjectID        `json:"updated_by,omitempty" minLength:"1" maxLength:"512"`
 }
 
 type NotificationRecord struct {
 	NotificationID     NotificationID           `json:"notification_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	ResourceName       ResourceName             `json:"resourceName" required:"true" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	ResourceName       ResourceName             `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	OrgID              OrgID                    `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	RecipientSubjectID SubjectID                `json:"recipient_subject_id" required:"true" minLength:"1" maxLength:"512"`
 	RecipientSequence  DecimalInt64             `json:"recipient_sequence" required:"true" pattern:"^[0-9]+$"`
 	Kind               NotificationKind         `json:"kind" required:"true" minLength:"1" maxLength:"128"`
 	Priority           NotificationPriority     `json:"priority" required:"true"`
-	Title              NotificationTitle        `json:"title" required:"true" maxLength:"120"`
-	Body               RequiredNotificationBody `json:"body" required:"true" minLength:"1" maxLength:"500"`
-	ActionURL          *ActionURL               `json:"action_url,omitempty" maxLength:"500"`
-	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"1024" pattern:"^urn:verself:.+$"`
+	Title              NotificationTitle        `json:"title" required:"true" maxLength:"240"`
+	Body               RequiredNotificationBody `json:"body" required:"true" minLength:"1" maxLength:"4096"`
+	ActionURL          *ActionURL               `json:"action_url,omitempty" maxLength:"8192"`
+	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	CreatedAt          string                   `json:"created_at" required:"true"`
 	ExpiresAt          *string                  `json:"expires_at,omitempty"`
 	ReadAt             *string                  `json:"read_at,omitempty"`
@@ -294,9 +294,9 @@ type NotificationSummary struct {
 }
 
 type PublishTestNotificationInputBody struct {
-	ActionURL *ActionURL         `json:"action_url,omitempty" maxLength:"500"`
-	Body      *NotificationBody  `json:"body,omitempty" maxLength:"500"`
-	Title     *NotificationTitle `json:"title,omitempty" maxLength:"120"`
+	ActionURL *ActionURL         `json:"action_url,omitempty" maxLength:"8192"`
+	Body      *NotificationBody  `json:"body,omitempty" maxLength:"4096"`
+	Title     *NotificationTitle `json:"title,omitempty" maxLength:"240"`
 }
 
 type PublishTestNotificationInput struct {
@@ -388,7 +388,7 @@ var ClearNotifications = Operation[NotificationIdempotentInput, NotificationSumm
 		Authorization:       AuthorizationDescriptor{Permission: "notifications:self:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "notifications.clear", Resource: "notification_subject", Action: "write"},
 		RateLimitBucket:     "notification_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -536,7 +536,7 @@ var DismissNotification = Operation[NotificationPathIdempotentInput, Notificatio
 		Authorization:       AuthorizationDescriptor{Permission: "notifications:self:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "notifications.dismiss", Resource: "notification_subject", Action: "write"},
 		RateLimitBucket:     "notification_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
@@ -566,7 +566,7 @@ var MarkNotificationRead = Operation[NotificationPathIdempotentInput, Notificati
 		Authorization:       AuthorizationDescriptor{Permission: "notifications:self:write", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "notifications.mark_read", Resource: "notification_subject", Action: "write"},
 		RateLimitBucket:     "notification_mutation",
-		RequestBodyMaxBytes: 1,
+		RequestBodyMaxBytes: 1024,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},

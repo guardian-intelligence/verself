@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel"
@@ -33,6 +34,12 @@ const (
 )
 
 var apiTracer = otel.Tracer("projects-service/internal/api")
+
+var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
+	"read":              {Limit: 6000, Window: time.Minute},
+	"projects_mutation": {Limit: 600, Window: time.Minute},
+	"internal":          {Limit: 6000, Window: time.Minute},
+})
 
 type projectsOperationPolicy struct {
 	runtimeiam.OperationPolicy
@@ -213,9 +220,19 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 			if err := requireOperationIdempotency(ctx, policy); err != nil {
 				return principal, err
 			}
+			if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(principal), time.Now()); !decision.Allowed {
+				return principal, rateLimitExceeded(ctx, decision.RetryAfter)
+			}
 			return principal, nil
 		}
-		return projects.Principal{Subject: peerID.String()}, requireOperationIdempotency(ctx, policy)
+		principal := projects.Principal{Subject: peerID.String()}
+		if err := requireOperationIdempotency(ctx, policy); err != nil {
+			return principal, err
+		}
+		if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(principal), time.Now()); !decision.Allowed {
+			return principal, rateLimitExceeded(ctx, decision.RetryAfter)
+		}
+		return principal, nil
 	}
 	identity := auth.FromContext(ctx)
 	if identity == nil {
@@ -241,6 +258,9 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, err
+	}
+	if decision := apiOperationRateLimiter.Allow(policy.RateLimitClass, operationRateLimitKey(principal), time.Now()); !decision.Allowed {
+		return principal, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return principal, nil
 }
@@ -310,4 +330,26 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
 	return info
+}
+
+func operationRateLimitKey(principal projects.Principal) string {
+	orgID := ""
+	if principal.OrgID != 0 {
+		orgID = strconv.FormatUint(principal.OrgID, 10)
+	}
+	key := strings.TrimSpace(orgID) + "\x00" + strings.TrimSpace(principal.Subject)
+	if strings.Trim(key, "\x00") == "" {
+		return "anonymous"
+	}
+	return key
+}
+
+func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
+	err := problem(ctx, http.StatusTooManyRequests, "rate-limit-exceeded", "rate limit exceeded", nil)
+	if retryAfter <= 0 {
+		return err
+	}
+	headers := http.Header{}
+	headers.Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+	return huma.ErrorWithHeaders(err, headers)
 }

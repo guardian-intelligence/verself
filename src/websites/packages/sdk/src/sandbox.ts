@@ -4,6 +4,7 @@ import {
   type GetCostsAnalyticsData,
   type GetJobsAnalyticsData,
   type GetRunnerSizingAnalyticsData,
+  type ListExecutionSchedulesData,
   type ListRunsData,
   type SearchRunLogsData,
   beginGithubInstallation as beginGeneratedGithubInstallation,
@@ -40,6 +41,7 @@ import {
   vGetRunResponse,
   vGetRunnerSizingAnalyticsQuery,
   vGetRunnerSizingAnalyticsResponse,
+  vListExecutionSchedulesQuery,
   vListExecutionSchedulesResponse,
   vListGithubInstallationsResponse,
   vListRunsQuery,
@@ -124,8 +126,11 @@ export class SandboxRental {
     });
   }
 
-  listExecutionSchedules(): Promise<ExecutionSchedules> {
-    return listExecutionSchedules(this.#options);
+  listExecutionSchedules(query?: ExecutionScheduleListQueryInput): Promise<ExecutionSchedules> {
+    return listExecutionSchedules({
+      ...this.#options,
+      ...(query === undefined ? {} : { query }),
+    });
   }
 
   createExecutionSchedule(body: ExecutionScheduleRequest): Promise<ExecutionSchedule> {
@@ -346,12 +351,12 @@ function normalizeRunListFilter(value: string | undefined): string | undefined {
 export const runListQuerySchema = v.pipe(
   v.strictObject({
     limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
-    cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
+    cursor: v.optional(v.pipe(v.string(), v.maxLength(4096))),
     sourceKind: v.optional(v.pipe(v.string(), v.maxLength(64))),
     status: v.optional(v.pipe(v.string(), v.maxLength(64))),
-    repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
-    workflow: v.optional(v.pipe(v.string(), v.maxLength(255))),
-    branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    repository: v.optional(v.pipe(v.string(), v.maxLength(1024))),
+    workflow: v.optional(v.pipe(v.string(), v.maxLength(1024))),
+    branch: v.optional(v.pipe(v.string(), v.maxLength(1024))),
     runnerClass: v.optional(v.pipe(v.string(), v.maxLength(255))),
   }),
   v.transform((query) => {
@@ -384,14 +389,14 @@ export type RunListQuery = v.InferOutput<typeof runListQuerySchema>;
 export const runLogSearchQuerySchema = v.pipe(
   v.strictObject({
     limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(500))),
-    cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
-    query: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    cursor: v.optional(v.pipe(v.string(), v.maxLength(4096))),
+    query: v.optional(v.pipe(v.string(), v.maxLength(4096))),
     runId: v.optional(v.pipe(v.string(), v.uuid())),
     attemptId: v.optional(v.pipe(v.string(), v.uuid())),
     sourceKind: v.optional(v.pipe(v.string(), v.maxLength(64))),
-    repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
-    workflow: v.optional(v.pipe(v.string(), v.maxLength(255))),
-    branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+    repository: v.optional(v.pipe(v.string(), v.maxLength(1024))),
+    workflow: v.optional(v.pipe(v.string(), v.maxLength(1024))),
+    branch: v.optional(v.pipe(v.string(), v.maxLength(1024))),
     runnerClass: v.optional(v.pipe(v.string(), v.maxLength(255))),
   }),
   v.transform((query) => {
@@ -449,6 +454,15 @@ function toGeneratedRunListQuery(query: RunListQueryInput | undefined) {
     branch: parsed.branch,
     runner_class: parsed.runnerClass,
   }) as NonNullable<ListRunsData["query"]>;
+}
+
+function toGeneratedExecutionScheduleListQuery(query: ExecutionScheduleListQueryInput | undefined) {
+  if (query === undefined) return undefined;
+  const parsed = v.parse(executionScheduleListQuerySchema, query);
+  return removeUndefined({
+    limit: parsed.limit,
+    cursor: parsed.cursor,
+  }) as NonNullable<ListExecutionSchedulesData["query"]>;
 }
 
 function toGeneratedRunLogSearchQuery(query: RunLogSearchQueryInput | undefined) {
@@ -512,9 +526,9 @@ export const executionScheduleRequestSchema = v.pipe(
     interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15)),
     paused: v.optional(v.boolean()),
     project_id: v.pipe(v.string(), v.uuid()),
-    ref: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(255))),
+    ref: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(1024))),
     source_repository_id: v.pipe(v.string(), v.uuid()),
-    workflow_path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(512)),
+    workflow_path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4096)),
   }),
   v.transform((body) => {
     const providedIdempotencyKey = body.idempotency_key?.trim();
@@ -600,10 +614,36 @@ export type ExecutionSchedule = ReturnType<typeof parseExecutionSchedule>;
 
 function parseExecutionSchedules(input: unknown) {
   const parsed = v.parse(vListExecutionSchedulesResponse, input);
-  return (parsed ?? []).map((schedule) => parseExecutionSchedule(schedule));
+  return {
+    limit: parsed.limit,
+    nextCursor: parsed.next_cursor ?? "",
+    schedules: (parsed.schedules ?? []).map((schedule) => parseExecutionSchedule(schedule)),
+  };
 }
 
 export type ExecutionSchedules = ReturnType<typeof parseExecutionSchedules>;
+
+export const executionScheduleListQuerySchema = v.pipe(
+  v.strictObject({
+    limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(500))),
+    cursor: v.optional(v.pipe(v.string(), v.maxLength(4096))),
+  }),
+  v.transform((query) => {
+    const parsed = v.parse(vListExecutionSchedulesQuery, {
+      limit: query.limit,
+      cursor: normalizeRunListFilter(query.cursor),
+    });
+    return {
+      ...(parsed.limit === undefined
+        ? {}
+        : { limit: toSafeNumber(parsed.limit, "execution_schedules.limit") }),
+      ...(parsed.cursor === undefined ? {} : { cursor: parsed.cursor }),
+    };
+  }),
+);
+
+export type ExecutionScheduleListQueryInput = v.InferInput<typeof executionScheduleListQuerySchema>;
+export type ExecutionScheduleListQuery = v.InferOutput<typeof executionScheduleListQuerySchema>;
 
 export async function getExecution(
   options: SandboxRentalClientOptions & { executionId: string },
@@ -807,12 +847,14 @@ export async function beginGitHubInstallation(
 }
 
 export async function listExecutionSchedules(
-  options: SandboxRentalClientOptions,
+  options: SandboxRentalClientOptions & { query?: ExecutionScheduleListQueryInput },
 ): Promise<ExecutionSchedules> {
   const client = createSandboxRentalClient(options);
+  const query = toGeneratedExecutionScheduleListQuery(options.query);
   const path = "/api/v1/execution-schedules";
   const result = await listGeneratedExecutionSchedules({
     client,
+    ...(query === undefined ? {} : { query }),
     responseStyle: "fields",
     throwOnError: false,
   });

@@ -65,7 +65,8 @@ function throwNotificationsError(
 }
 
 export const notificationsListQuerySchema = v.strictObject({
-  limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100))),
+  limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(500))),
+  cursor: v.optional(v.pipe(v.string(), v.maxLength(4096))),
 });
 
 export const putNotificationPreferencesRequestSchema = v.strictObject({
@@ -86,9 +87,9 @@ export const dismissNotificationRequestSchema = v.strictObject({
 });
 
 export const publishTestNotificationRequestSchema = v.strictObject({
-  action_url: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(500))),
-  body: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(500))),
-  title: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(120))),
+  action_url: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(8192))),
+  body: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(4096))),
+  title: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(240))),
 });
 
 export type NotificationsListQuery = v.InferOutput<typeof notificationsListQuerySchema>;

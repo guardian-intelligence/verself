@@ -287,7 +287,9 @@ type SandboxExecutionSchedule struct {
 }
 
 type SandboxExecutionSchedules struct {
-	Schedules []SandboxExecutionSchedule `json:"schedules"`
+	Schedules  []SandboxExecutionSchedule `json:"schedules"`
+	Limit      int32                      `json:"limit"`
+	NextCursor string                     `json:"next_cursor,omitempty"`
 }
 
 type SandboxMutationOptions struct {
@@ -303,6 +305,11 @@ type ListSandboxRunsOptions struct {
 	Workflow    string
 	Branch      string
 	RunnerClass string
+}
+
+type ListSandboxExecutionSchedulesOptions struct {
+	Limit  int64
+	Cursor string
 }
 
 type SearchSandboxRunLogsOptions struct {
@@ -556,18 +563,27 @@ func (c *SandboxClient) BeginGitHubInstallation(ctx context.Context, options San
 	return sandboxFromGenerated[SandboxGitHubInstallationConnect](*response.Result)
 }
 
-func (c *SandboxClient) ListSchedules(ctx context.Context) (SandboxExecutionSchedules, error) {
+func (c *SandboxClient) ListSchedules(ctx context.Context, options ListSandboxExecutionSchedulesOptions) (SandboxExecutionSchedules, error) {
 	if c == nil || c.client == nil {
 		return SandboxExecutionSchedules{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
 	}
-	response, err := c.client.ListExecutionSchedules(ctx, sandboxcore.ListExecutionSchedulesRequest{})
+	request := sandboxcore.ListExecutionSchedulesRequest{}
+	if options.Limit > 0 {
+		limit := sandboxcore.ScheduleListPageSize(options.Limit)
+		request.Limit = &limit
+	}
+	if strings.TrimSpace(options.Cursor) != "" {
+		cursor := sandboxcore.ScheduleListCursor(strings.TrimSpace(options.Cursor))
+		request.Cursor = &cursor
+	}
+	response, err := c.client.ListExecutionSchedules(ctx, request)
 	if err != nil {
 		return SandboxExecutionSchedules{}, err
 	}
 	if response.Result == nil {
 		return SandboxExecutionSchedules{}, sandboxAPIError("list schedules", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[SandboxExecutionSchedules](map[string]any{"schedules": response.Result.Body})
+	return sandboxFromGenerated[SandboxExecutionSchedules](*response.Result)
 }
 
 func (c *SandboxClient) CreateSchedule(ctx context.Context, input CreateSandboxExecutionScheduleInput) (SandboxExecutionSchedule, error) {

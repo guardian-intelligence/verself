@@ -31,7 +31,9 @@ SELECT
     updated_at
 FROM execution_schedules
 WHERE org_id = sqlc.arg(org_id)
-ORDER BY created_at DESC, schedule_id DESC;
+  AND (sqlc.arg(cursor_enabled)::boolean = false OR (created_at, schedule_id) < (sqlc.arg(cursor_created_at)::timestamptz, sqlc.arg(cursor_schedule_id)::uuid))
+ORDER BY created_at DESC, schedule_id DESC
+LIMIT sqlc.arg(limit_count);
 
 -- name: GetExecutionSchedule :one
 SELECT

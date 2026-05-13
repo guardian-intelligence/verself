@@ -2,6 +2,7 @@ package recurring
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,14 +44,17 @@ const (
 
 	minIntervalSeconds = 15
 	maxDispatches      = 10
+	defaultListLimit   = 100
+	maxListLimit       = 500
 )
 
 var (
-	ErrScheduleMissing = errors.New("sandbox-rental: execution schedule missing")
-	ErrTemporalMissing = errors.New("sandbox-rental: recurring temporal client unavailable")
-	ErrDispatcherNil   = errors.New("sandbox-rental: recurring workflow dispatcher unavailable")
-	ErrInvalid         = errors.New("sandbox-rental: invalid execution schedule")
-	ErrConflict        = errors.New("sandbox-rental: execution schedule conflict")
+	ErrScheduleMissing       = errors.New("sandbox-rental: execution schedule missing")
+	ErrScheduleCursorInvalid = errors.New("sandbox-rental: execution schedule cursor invalid")
+	ErrTemporalMissing       = errors.New("sandbox-rental: recurring temporal client unavailable")
+	ErrDispatcherNil         = errors.New("sandbox-rental: recurring workflow dispatcher unavailable")
+	ErrInvalid               = errors.New("sandbox-rental: invalid execution schedule")
+	ErrConflict              = errors.New("sandbox-rental: execution schedule conflict")
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/recurring")
@@ -126,6 +130,17 @@ type ScheduleRecord struct {
 	Dispatches         []DispatchRecord
 }
 
+type ScheduleListFilters struct {
+	Limit  int
+	Cursor string
+}
+
+type SchedulePage struct {
+	Schedules  []ScheduleRecord
+	NextCursor string
+	Limit      int
+}
+
 type DispatchRecord struct {
 	DispatchID          uuid.UUID
 	ScheduleID          uuid.UUID
@@ -174,6 +189,59 @@ type DispatchResult struct {
 	SourceWorkflowRunID string
 	WorkflowState       string
 	State               string
+}
+
+type scheduleCursor struct {
+	CreatedAt  time.Time
+	ScheduleID uuid.UUID
+}
+
+type scheduleCursorPayload struct {
+	Version    int    `json:"v"`
+	CreatedAt  string `json:"created_at"`
+	ScheduleID string `json:"schedule_id"`
+}
+
+func makeScheduleCursor(createdAt time.Time, scheduleID uuid.UUID) string {
+	payload, err := json.Marshal(scheduleCursorPayload{
+		Version:    1,
+		CreatedAt:  createdAt.UTC().Format(time.RFC3339Nano),
+		ScheduleID: scheduleID.String(),
+	})
+	if err != nil {
+		panic(fmt.Sprintf("encode schedule cursor: %v", err))
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func parseScheduleCursor(value string) (scheduleCursor, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	var payload scheduleCursorPayload
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	if payload.Version != 1 {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, payload.CreatedAt)
+	if err != nil {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	scheduleID, err := uuid.Parse(payload.ScheduleID)
+	if err != nil {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	if createdAt.IsZero() || scheduleID == uuid.Nil {
+		return scheduleCursor{}, ErrScheduleCursorInvalid
+	}
+	return scheduleCursor{CreatedAt: createdAt.UTC(), ScheduleID: scheduleID}, nil
 }
 
 func NewService(cfg Config) (*Service, error) {
@@ -307,7 +375,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 	return row, nil
 }
 
-func (s *Service) ListSchedules(ctx context.Context, orgID uint64) (_ []ScheduleRecord, err error) {
+func (s *Service) ListSchedules(ctx context.Context, orgID uint64, filters ScheduleListFilters) (_ SchedulePage, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution_schedule.list")
 	defer func() {
 		if err != nil {
@@ -316,24 +384,54 @@ func (s *Service) ListSchedules(ctx context.Context, orgID uint64) (_ []Schedule
 		}
 		span.End()
 	}()
-	rows, err := s.storeQueries().ListExecutionSchedules(ctx, store.ListExecutionSchedulesParams{OrgID: dbOrgID(orgID)})
-	if err != nil {
-		return nil, fmt.Errorf("list execution schedules: %w", err)
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
 	}
-	out := make([]ScheduleRecord, 0, 16)
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+	cursor := scheduleCursor{CreatedAt: time.Unix(0, 0).UTC(), ScheduleID: uuid.Nil}
+	cursorEnabled := false
+	if strings.TrimSpace(filters.Cursor) != "" {
+		parsed, err := parseScheduleCursor(filters.Cursor)
+		if err != nil {
+			return SchedulePage{}, err
+		}
+		cursor = parsed
+		cursorEnabled = true
+	}
+	rows, err := s.storeQueries().ListExecutionSchedules(ctx, store.ListExecutionSchedulesParams{
+		OrgID:            dbOrgID(orgID),
+		CursorEnabled:    cursorEnabled,
+		CursorCreatedAt:  pgTime(cursor.CreatedAt),
+		CursorScheduleID: cursor.ScheduleID,
+		LimitCount:       int32(limit + 1),
+	})
+	if err != nil {
+		return SchedulePage{}, fmt.Errorf("list execution schedules: %w", err)
+	}
+	out := make([]ScheduleRecord, 0, limit)
 	for _, row := range rows {
 		record, scanErr := scheduleRecordFromStore(row)
 		if scanErr != nil {
-			return nil, scanErr
+			return SchedulePage{}, scanErr
 		}
 		dispatches, dispatchErr := s.loadDispatches(ctx, record.ScheduleID)
 		if dispatchErr != nil {
-			return nil, dispatchErr
+			return SchedulePage{}, dispatchErr
 		}
 		record.Dispatches = dispatches
 		out = append(out, record)
 	}
-	return out, nil
+	nextCursor := ""
+	if len(out) > limit {
+		last := out[limit-1]
+		nextCursor = makeScheduleCursor(last.CreatedAt, last.ScheduleID)
+		out = out[:limit]
+	}
+	span.SetAttributes(attribute.String("verself.org_id", fmt.Sprintf("%d", orgID)), attribute.Int("sandbox.schedule_count", len(out)))
+	return SchedulePage{Schedules: out, NextCursor: nextCursor, Limit: limit}, nil
 }
 
 func (s *Service) GetSchedule(ctx context.Context, orgID uint64, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {

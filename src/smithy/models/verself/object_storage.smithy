@@ -338,7 +338,7 @@ structure UpdateObjectStorageBucketInput {
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketDeleteAuditEvent, resource: Bucket, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "objectStorage.buckets", method: "delete", paginated: false, retryable: false)
 operation DeleteObjectStorageBucket {
     input: BucketIdempotentInput
@@ -402,7 +402,7 @@ structure ListObjectStorageBucketAliasesOutput {
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketAliasDeleteAuditEvent, resource: BucketAlias, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "objectStorage.aliases", method: "delete", paginated: false, retryable: false)
 operation DeleteObjectStorageBucketAlias {
     input: DeleteObjectStorageBucketAliasInput
@@ -477,7 +477,7 @@ structure ObjectStorageAccessKeySecretOutput {
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: AccessKeyRollAuditEvent, resource: ObjectStorageAccessKey, action: "roll")
 @rateLimit(bucket: "object_storage_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "objectStorage.accessKeys", method: "roll", paginated: false, retryable: false)
 operation RollObjectStorageAccessKey {
     input: AccessKeyIdempotentInput
@@ -490,7 +490,7 @@ operation RollObjectStorageAccessKey {
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: AccessKeyDeleteAuditEvent, resource: ObjectStorageAccessKey, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "objectStorage.accessKeys", method: "delete", paginated: false, retryable: false)
 operation DeleteObjectStorageAccessKey {
     input: AccessKeyIdempotentInput
@@ -538,7 +538,7 @@ structure CreateObjectStorageMTLSPrincipalInput {
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: MTLSPrincipalDeleteAuditEvent, resource: ObjectStorageMtlsPrincipal, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "objectStorage.mtlsPrincipals", method: "delete", paginated: false, retryable: false)
 operation DeleteObjectStorageMtlsPrincipal {
     input: DeleteObjectStorageMTLSPrincipalInput

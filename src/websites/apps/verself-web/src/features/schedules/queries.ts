@@ -1,12 +1,23 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
-import { getExecutionSchedule, listExecutionSchedules } from "~/server-fns/api";
+import {
+  getExecutionSchedule,
+  listExecutionSchedules,
+  type ExecutionScheduleListQueryInput,
+} from "~/server-fns/api";
 import { ensureOrNotFound } from "~/lib/query-loader";
 
-export function executionSchedulesQuery(auth: AuthenticatedAuth) {
+export function executionSchedulesQuery(
+  auth: AuthenticatedAuth,
+  query?: ExecutionScheduleListQueryInput,
+) {
   return queryOptions({
-    queryKey: authQueryKey(auth, "execution-schedules"),
-    queryFn: () => listExecutionSchedules(),
+    queryKey:
+      query === undefined
+        ? authQueryKey(auth, "execution-schedules")
+        : authQueryKey(auth, "execution-schedules", query),
+    queryFn: () =>
+      query === undefined ? listExecutionSchedules() : listExecutionSchedules({ data: query }),
     staleTime: 10_000,
     refetchInterval: 5_000,
   });

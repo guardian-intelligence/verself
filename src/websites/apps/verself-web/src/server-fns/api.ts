@@ -31,6 +31,7 @@ import {
   createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
   dismissNotificationRequestSchema,
   executionIdInputSchema,
+  executionScheduleListQuerySchema,
   executionScheduleIdInputSchema,
   executionScheduleRequestSchema,
   governanceAuditEventsQuerySchema as auditEventsQuerySchema,
@@ -77,6 +78,7 @@ import {
   type ExecutionLogs,
   type ExecutionSchedule,
   type ExecutionScheduleIdInput,
+  type ExecutionScheduleListQueryInput,
   type ExecutionScheduleRequest,
   type ExecutionSchedules,
   type Member,
@@ -216,6 +218,7 @@ export type {
   Execution,
   ExecutionSchedule,
   ExecutionScheduleIdInput,
+  ExecutionScheduleListQueryInput,
   ExecutionScheduleRequest,
   ExecutionSchedules,
   Statement,
@@ -719,8 +722,9 @@ export const beginGitHubInstallation = createServerFn({ method: "POST" })
 
 export const listExecutionSchedules = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
-  .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.listExecutionSchedules();
+  .inputValidator(v.optional(executionScheduleListQuerySchema))
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.listExecutionSchedules(data);
   });
 
 export const createExecutionSchedule = createServerFn({ method: "POST" })

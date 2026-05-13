@@ -30,7 +30,10 @@ GROUP BY state.next_sequence, state.read_up_to_sequence;
 SELECT notification_id, org_id, recipient_subject_id, recipient_sequence, kind, priority, title, body,
        action_url, resource_kind, resource_id, created_at, expires_at, read_at, dismissed_at
 FROM user_notifications
-WHERE org_id = $1 AND recipient_subject_id = $2 AND dismissed_at IS NULL
+WHERE org_id = $1
+  AND recipient_subject_id = $2
+  AND dismissed_at IS NULL
+  AND (sqlc.arg(cursor_enabled)::boolean = false OR recipient_sequence < sqlc.arg(cursor_sequence)::bigint)
 ORDER BY recipient_sequence DESC
 LIMIT sqlc.arg(limit_count)::int;
 

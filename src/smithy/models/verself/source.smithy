@@ -107,13 +107,13 @@ string ProjectSlug
 @length(min: 1, max: 255)
 string RepositoryName
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string GitRef
 
-@length(min: 1, max: 2048)
+@length(min: 1, max: 8192)
 string RepositoryPath
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 4096)
 string WorkflowPath
 
 @length(max: 1024)
@@ -122,7 +122,7 @@ string RepositoryDescription
 @length(min: 1, max: 128)
 string BranchName
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 8192)
 string GitURL
 
 @length(min: 1, max: 128)
@@ -178,19 +178,19 @@ string GitObjectEncoding
 @range(min: 0, max: 9007199254740991)
 long SafeByteCount
 
-@length(min: 1, max: 2048)
+@length(min: 1, max: 8192)
 string BlobDownloadURL
 
 @length(min: 1, max: 128)
 string WorkflowInputName
 
-@length(max: 4096)
+@length(max: 8192)
 string WorkflowInputValue
 
-@length(min: 1, max: 512)
+@length(min: 1, max: 1024)
 string BackendDispatchId
 
-@length(max: 2048)
+@length(max: 8192)
 string FailureReason
 
 @length(min: 1, max: 128)
@@ -199,7 +199,7 @@ string TraceId
 @length(min: 1, max: 128)
 string MediaType
 
-@length(min: 1, max: 255)
+@length(min: 1, max: 1024)
 string ContentDisposition
 
 @mediaType("application/gzip")
@@ -225,6 +225,7 @@ list WorkflowRuns {
     member: WorkflowRunSummary
 }
 
+@length(max: 64)
 map WorkflowInputs {
     key: WorkflowInputName
     value: WorkflowInputValue
@@ -728,7 +729,7 @@ structure CheckoutGrantOutput {
 @authz(permission: WorkflowWritePermission, organization: {source: "token_org_id"})
 @audit(event: WorkflowDispatchAuditEvent, resource: SourceWorkflowRun, action: "create")
 @rateLimit(bucket: "source_mutation")
-@requestBudget(maxBytes: 65536)
+@requestBudget(maxBytes: 262144)
 @sdk(module: "source.workflowRuns", method: "create", paginated: false, retryable: false)
 operation CreateSourceWorkflowRun {
     input: CreateSourceWorkflowRunInput
@@ -803,7 +804,7 @@ structure WorkflowRunOutput {
 @authz(permission: WorkflowWritePermission, organization: {source: "body_org_id", member: "org_id"})
 @audit(event: InternalWorkflowDispatchAuditEvent, resource: SourceWorkflowRun, action: "create")
 @rateLimit(bucket: "internal_mutation")
-@requestBudget(maxBytes: 65536)
+@requestBudget(maxBytes: 262144)
 @sdk(module: "sourceInternal.workflowRuns", method: "create", paginated: false, retryable: false)
 operation InternalCreateSourceWorkflowRun {
     input: InternalCreateSourceWorkflowRunInput

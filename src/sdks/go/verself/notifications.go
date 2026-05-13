@@ -60,6 +60,7 @@ type NotificationSummary struct {
 type NotificationList struct {
 	Summary       NotificationSummary `json:"summary"`
 	Notifications []Notification      `json:"notifications"`
+	NextCursor    string              `json:"next_cursor,omitempty"`
 }
 
 type NotificationAccepted struct {
@@ -72,7 +73,8 @@ type NotificationsMutationOptions struct {
 }
 
 type ListNotificationsOptions struct {
-	Limit int64
+	Limit  int64
+	Cursor string
 }
 
 type PutNotificationPreferencesInput struct {
@@ -114,6 +116,10 @@ func (c *NotificationsClient) List(ctx context.Context, options ListNotification
 	if options.Limit > 0 {
 		limit := notificationscore.NotificationPageSize(options.Limit)
 		request.Limit = &limit
+	}
+	if strings.TrimSpace(options.Cursor) != "" {
+		cursor := notificationscore.PageToken(strings.TrimSpace(options.Cursor))
+		request.Cursor = &cursor
 	}
 	response, err := c.client.ListNotifications(ctx, request)
 	if err != nil {
@@ -297,6 +303,9 @@ func notificationListFromGenerated(input notificationscore.ListNotificationsOutp
 		return NotificationList{}, err
 	}
 	out := NotificationList{Summary: summary}
+	if input.NextCursor != nil {
+		out.NextCursor = string(*input.NextCursor)
+	}
 	out.Notifications = make([]Notification, 0, len(input.Notifications))
 	for _, generated := range input.Notifications {
 		notification, err := notificationFromGenerated(generated)
@@ -346,7 +355,7 @@ func notificationSummaryFromGenerated(input *notificationscore.NotificationSumma
 			SMSEnabled:   input.Preferences.SmsEnabled,
 			Version:      preferencesVersion,
 			UpdatedAt:    preferencesUpdatedAt,
-			UpdatedBy:    input.Preferences.UpdatedBy,
+			UpdatedBy:    optionalGeneratedString(input.Preferences.UpdatedBy),
 		},
 	}
 	if input.LatestNotification != nil {
@@ -357,6 +366,13 @@ func notificationSummaryFromGenerated(input *notificationscore.NotificationSumma
 		out.LatestNotification = &latest
 	}
 	return out, nil
+}
+
+func optionalGeneratedString[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }
 
 func notificationFromGenerated(input notificationscore.NotificationRecord) (Notification, error) {

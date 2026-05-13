@@ -255,7 +255,7 @@ structure MailMutationOutput {
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailMarkReadAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "mailbox.mail", method: "markRead", paginated: false, retryable: false)
 operation MailMarkRead {
     input: MailEmailIdempotentInput
@@ -268,7 +268,7 @@ operation MailMarkRead {
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailMarkUnreadAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "mailbox.mail", method: "markUnread", paginated: false, retryable: false)
 operation MailMarkUnread {
     input: MailEmailIdempotentInput
@@ -281,7 +281,7 @@ operation MailMarkUnread {
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailFlagAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "mailbox.mail", method: "flag", paginated: false, retryable: false)
 operation MailFlag {
     input: MailEmailIdempotentInput
@@ -294,7 +294,7 @@ operation MailFlag {
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailUnflagAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "mailbox.mail", method: "unflag", paginated: false, retryable: false)
 operation MailUnflag {
     input: MailEmailIdempotentInput
@@ -320,7 +320,7 @@ operation MailMove {
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailTrashAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
-@requestBudget(maxBytes: 1)
+@requestBudget(maxBytes: 1024)
 @sdk(module: "mailbox.mail", method: "trash", paginated: false, retryable: false)
 operation MailTrash {
     input: MailEmailIdempotentInput

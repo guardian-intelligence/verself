@@ -66,7 +66,7 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"setup_url":"https://github.com/apps/verself/installations/new","state":"github_state","expires_at":"2026-05-06T00:10:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/execution-schedules":
-			_, _ = w.Write([]byte(`[` + scheduleJSON + `]`))
+			_, _ = w.Write([]byte(`{"limit":50,"schedules":[` + scheduleJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/execution-schedules":
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
 				t.Fatal(err)
@@ -161,7 +161,7 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	if connect.State != "github_state" || githubInstallKey != "sandbox:github-connect" {
 		t.Fatalf("unexpected github connect: response=%#v key=%q", connect, githubInstallKey)
 	}
-	schedules, err := client.Sandbox.ListSchedules(context.Background())
+	schedules, err := client.Sandbox.ListSchedules(context.Background(), ListSandboxExecutionSchedulesOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
