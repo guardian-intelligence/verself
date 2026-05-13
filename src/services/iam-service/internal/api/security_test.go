@@ -303,6 +303,24 @@ func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 	}
 }
 
+func TestInternalAuthorizationResourceRefNormalizesAuditLogOrgID(t *testing.T) {
+	resource := internalAuthorizationResourceRef(authz.ResourceRef{
+		Type: " audit_log ",
+		ID:   " 371564185181576922 ",
+	}, "371564185181576922", "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y")
+	if resource.Type != "audit_log" || resource.ID != "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y" {
+		t.Fatalf("resource = %#v, want canonical audit_log public org ID", resource)
+	}
+
+	project := internalAuthorizationResourceRef(authz.ResourceRef{
+		Type: "project",
+		ID:   "371564185181576922",
+	}, "371564185181576922", "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y")
+	if project.ID != "371564185181576922" {
+		t.Fatalf("project resource ID = %q, want original ID", project.ID)
+	}
+}
+
 func identityServiceToken(orgID string, roles ...string) *auth.Identity {
 	assignments := make([]auth.RoleAssignment, 0, len(roles))
 	for _, role := range roles {

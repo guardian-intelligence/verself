@@ -23,6 +23,11 @@ import (
 
 var internalAPITracer = otel.Tracer("iam-service/internal/api/internal")
 
+const (
+	authorizationResourceTypeAuditLog = "audit_log"
+	authorizationResourceTypeOrg      = "org"
+)
+
 func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
 	runtime := internalRuntime{}
 	handlers := internalHandlers{service: svc, authz: authzSvc}
@@ -318,7 +323,7 @@ func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(cont
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
 		}
-		resource := resourceRefFromContract(input.Body.Resource)
+		resource := internalAuthorizationResourceRef(resourceRefFromContract(input.Body.Resource), string(input.Body.OrgID), orgID)
 		operationPermission := contractString(input.Body.OperationPermission)
 		minZedToken := contractString(input.Body.MinZedToken)
 		span.SetAttributes(
@@ -375,9 +380,9 @@ func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) fun
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		resource := resourceRefFromContract(input.Body.Resource)
+		resource := internalAuthorizationResourceRef(resourceRefFromContract(input.Body.Resource), string(input.Body.OrgID), orgID)
 		parent := resourceRefFromContract(input.Body.Parent)
-		if parent.Type == "org" && parent.ID == string(input.Body.OrgID) {
+		if parent.Type == authorizationResourceTypeOrg && parent.ID == strings.TrimSpace(string(input.Body.OrgID)) {
 			parent.ID = orgID
 		}
 		span.SetAttributes(
@@ -437,6 +442,17 @@ func resourceRefFromContract(resource internalcontractapi.IAMResourceRef) authz.
 		Type: strings.TrimSpace(string(resource.Type)),
 		ID:   strings.TrimSpace(string(resource.ID)),
 	}
+}
+
+func internalAuthorizationResourceRef(resource authz.ResourceRef, providerOrgID string, publicOrgID string) authz.ResourceRef {
+	resource.Type = strings.TrimSpace(resource.Type)
+	resource.ID = strings.TrimSpace(resource.ID)
+	providerOrgID = strings.TrimSpace(providerOrgID)
+	publicOrgID = strings.TrimSpace(publicOrgID)
+	if resource.Type == authorizationResourceTypeAuditLog && resource.ID == providerOrgID {
+		resource.ID = publicOrgID
+	}
+	return resource
 }
 
 func resourceRefContract(resource authz.ResourceRef) internalcontractapi.IAMResourceRef {
