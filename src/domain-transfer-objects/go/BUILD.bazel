@@ -31,10 +31,14 @@ go_test(
     name = "dto_test",
     srcs = [
         "decimal_test.go",
+        "openapi_test.go",
         "resource_name_test.go",
     ],
     embed = [":dto"],
-    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
+    deps = [
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+    ],
 )
 
 alias(

@@ -20,7 +20,7 @@ type PublicAPIConfig struct {
 }
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, publicConfig PublicAPIConfig) huma.API {
-	config := huma.DefaultConfig("Sandbox Rental Service", version)
+	config := dto.DefaultHumaConfig("Sandbox Rental Service", version)
 	config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
@@ -30,7 +30,7 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, r
 }
 
 func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service) huma.API {
-	config := huma.DefaultConfig("Sandbox Rental Service Internal API", version)
+	config := dto.DefaultHumaConfig("Sandbox Rental Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)

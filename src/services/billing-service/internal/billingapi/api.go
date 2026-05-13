@@ -85,7 +85,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "2.0.0"
 	}
-	config := huma.DefaultConfig("Billing Service", version)
+	config := dto.DefaultHumaConfig("Billing Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
 	}
@@ -113,7 +113,7 @@ func NewInternalAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "2.0.0"
 	}
-	config := huma.DefaultConfig("Billing Internal API", version)
+	config := dto.DefaultHumaConfig("Billing Internal API", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}

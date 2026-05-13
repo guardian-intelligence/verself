@@ -38,7 +38,7 @@ type verifyInternalCredentialOpenAPIOutput struct {
 }
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service) huma.API {
-	config := huma.DefaultConfig("Verself Secrets Service Internal API", version)
+	config := dto.DefaultHumaConfig("Verself Secrets Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)

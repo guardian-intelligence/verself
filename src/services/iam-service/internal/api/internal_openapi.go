@@ -19,7 +19,7 @@ func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity
 	if len(authzServices) > 0 {
 		authzSvc = authzServices[0]
 	}
-	config := huma.DefaultConfig("Verself IAM Service Internal API", version)
+	config := dto.DefaultHumaConfig("Verself IAM Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecuritySchemes(api)

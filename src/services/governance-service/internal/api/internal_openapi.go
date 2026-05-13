@@ -12,7 +12,7 @@ import (
 )
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service) huma.API {
-	config := huma.DefaultConfig("Verself Governance Service Internal API", version)
+	config := dto.DefaultHumaConfig("Verself Governance Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)

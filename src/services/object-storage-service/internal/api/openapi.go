@@ -23,7 +23,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := huma.DefaultConfig("Object Storage Service", version)
+	config := dto.DefaultHumaConfig("Object Storage Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.ListenAddr}}
 	}

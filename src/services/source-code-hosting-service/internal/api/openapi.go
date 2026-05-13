@@ -11,7 +11,7 @@ import (
 )
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) huma.API {
-	config := huma.DefaultConfig("Source Code Hosting Service", version)
+	config := dto.DefaultHumaConfig("Source Code Hosting Service", version)
 	if listenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
@@ -40,7 +40,7 @@ func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 }
 
 func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) huma.API {
-	config := huma.DefaultConfig("Source Code Hosting Service Internal API", version)
+	config := dto.DefaultHumaConfig("Source Code Hosting Service Internal API", version)
 	if listenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}

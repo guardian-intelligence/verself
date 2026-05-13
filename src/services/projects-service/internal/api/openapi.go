@@ -25,7 +25,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := huma.DefaultConfig("Projects Service", version)
+	config := dto.DefaultHumaConfig("Projects Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *profile.Service) huma.API {
-	config := huma.DefaultConfig("Profile Service Internal API", version)
+	config := dto.DefaultHumaConfig("Profile Service Internal API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecurityScheme(api)

@@ -2,6 +2,13 @@ package dto
 
 import "github.com/danielgtaylor/huma/v2"
 
+func DefaultHumaConfig(title, version string) huma.Config {
+	config := huma.DefaultConfig(title, version)
+	// Huma's default create hook injects a `$schema` member into response bodies.
+	config.CreateHooks = nil
+	return config
+}
+
 func ApplyOpenAPIWireDefaults(api huma.API) {
 	oapi := api.OpenAPI()
 	if oapi == nil || oapi.Components == nil || oapi.Components.Schemas == nil {

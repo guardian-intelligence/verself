@@ -13,7 +13,7 @@ import (
 )
 
 func NewAPI(mux *http.ServeMux, version, serverURL string, svc *governance.Service, authorizers ...runtimeiam.ResourceAuthorizer) huma.API {
-	config := huma.DefaultConfig("Verself Governance Service API", version)
+	config := dto.DefaultHumaConfig("Verself Governance Service API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)

@@ -13,7 +13,7 @@ import (
 )
 
 func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service, installationID string, authorizers ...runtimeiam.OperationAuthorizer) huma.API {
-	config := huma.DefaultConfig("Verself Secrets Service API", version)
+	config := dto.DefaultHumaConfig("Verself Secrets Service API", version)
 	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)

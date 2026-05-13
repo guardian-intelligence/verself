@@ -25,7 +25,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := huma.DefaultConfig("Notifications Service", version)
+	config := dto.DefaultHumaConfig("Notifications Service", version)
 	if cfg.ListenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}
@@ -40,7 +40,7 @@ func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Internal
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := huma.DefaultConfig("Notifications Service Internal API", version)
+	config := dto.DefaultHumaConfig("Notifications Service Internal API", version)
 	if listenAddr != "" {
 		config.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	}
