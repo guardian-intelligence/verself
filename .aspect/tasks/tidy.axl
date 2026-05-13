@@ -1,7 +1,8 @@
 """aspect tidy — mutate authored sources into the repo's canonical shape.
 
 This is the one-stop local hygiene command. It runs ecosystem-native formatters
-and metadata tidiers in a fixed order, then regenerates Bazel metadata.
+and metadata tidiers in a fixed order, regenerates Bazel metadata, then fails
+if tracked sources still differ from the index.
 """
 
 load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
@@ -88,10 +89,22 @@ def _bzlmod(ctx):
         label = "bazelisk mod tidy",
     )
 
+def _tracked_diff(ctx):
+    rc = checked_spawn(
+        ctx,
+        "git",
+        ["diff", "--exit-code"],
+        cwd = ws_path(ctx),
+        label = "git diff --exit-code",
+    )
+    if rc != 0:
+        ctx.std.io.stderr.write("ERROR: aspect tidy left tracked source changes; review and stage the diff, then rerun.\n")
+    return rc
+
 def _impl(ctx):
     # gazelle runs after buildifier so newly emitted BUILD files inherit
     # the canonical format on the same pass.
-    for step in [_viteplus, _go, _java, _buildifier, _gazelle, _bzlmod]:
+    for step in [_viteplus, _go, _java, _buildifier, _gazelle, _bzlmod, _tracked_diff]:
         rc = step(ctx)
         if rc != 0:
             return rc
@@ -100,5 +113,5 @@ def _impl(ctx):
 tidy = task(
     implementation = _impl,
     name = "tidy",
-    summary = "Run repo-wide source formatting and metadata tidying.",
+    summary = "Run repo-wide source formatting and metadata tidying, then assert a clean tracked diff.",
 )
