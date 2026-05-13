@@ -130,6 +130,10 @@ func (g generator) writeScalarAliases(out *bytes.Buffer) {
 			fmt.Fprintf(out, "type %s = string\n\n", shape.Name)
 		case "integer", "long":
 			fmt.Fprintf(out, "type %s = int64\n\n", shape.Name)
+		case "float":
+			fmt.Fprintf(out, "type %s = float32\n\n", shape.Name)
+		case "double":
+			fmt.Fprintf(out, "type %s = float64\n\n", shape.Name)
 		case "boolean":
 			fmt.Fprintf(out, "type %s = bool\n\n", shape.Name)
 		case "blob":
@@ -485,7 +489,7 @@ func (g generator) goType(target string, optional bool) string {
 	if strings.Contains(target, "#") {
 		if shape, ok := g.ir.Shapes[target]; ok {
 			switch shape.Kind {
-			case "string", "integer", "long", "boolean", "blob", "enum", "structure", "list", "map":
+			case "string", "integer", "long", "float", "double", "boolean", "blob", "enum", "structure", "list", "map":
 				name := shape.Name
 				if optional {
 					return "*" + name
@@ -512,6 +516,16 @@ func (g generator) goType(target string, optional bool) string {
 			return "*int64"
 		}
 		return "int64"
+	case "smithy.api#Float":
+		if optional {
+			return "*float32"
+		}
+		return "float32"
+	case "smithy.api#Double":
+		if optional {
+			return "*float64"
+		}
+		return "float64"
 	case "smithy.api#Boolean":
 		if optional {
 			return "*bool"

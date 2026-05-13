@@ -20,12 +20,10 @@ import (
 type permission = runtimeiam.Permission
 
 const (
-	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
 	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
-	bodyLimitSmallJSON      = 64 << 10
 )
 
 var apiTracer = otel.Tracer("billing-service/internal/billingapi")
@@ -34,31 +32,6 @@ type operationRequestInfoKey struct{}
 
 type operationRequestInfo struct {
 	IdempotencyKey string
-}
-
-func readPolicy(resource runtimeiam.ResourceKind, action runtimeiam.Action, auditEvent runtimeiam.AuditEvent) runtimeiam.OperationPolicy {
-	return runtimeiam.OperationPolicy{
-		Permission:     permissionBillingRead,
-		Resource:       resource,
-		Action:         action,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "read",
-		AuditEvent:     auditEvent,
-		BodyLimitBytes: 0,
-	}
-}
-
-func checkoutPolicy(resource runtimeiam.ResourceKind, action runtimeiam.Action, auditEvent runtimeiam.AuditEvent) runtimeiam.OperationPolicy {
-	return runtimeiam.OperationPolicy{
-		Permission:     permissionBillingCheckout,
-		Resource:       resource,
-		Action:         action,
-		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
-		RateLimitClass: "billing_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     auditEvent,
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}
 }
 
 func registerPublicBillingRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy runtimeiam.OperationPolicy, handler func(context.Context, billing.OrgID, *I) (*O, error)) {

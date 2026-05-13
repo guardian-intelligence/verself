@@ -15,7 +15,6 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/stripe/stripe-go/v85 v85.0.0
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1
-	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -23,11 +22,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 )
 
-require (
-	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
-	github.com/oapi-codegen/runtime v1.4.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
-)
+require go.yaml.in/yaml/v3 v3.0.4 // indirect
 
 require (
 	github.com/ClickHouse/ch-go v0.68.0 // indirect
@@ -90,8 +85,6 @@ require (
 replace github.com/verself/secrets-service => ../secrets-service
 
 replace github.com/verself/iam-service => ../iam-service
-
-replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

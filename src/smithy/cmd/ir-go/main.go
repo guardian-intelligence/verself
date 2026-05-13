@@ -334,6 +334,10 @@ func openAPISchemaForShape(ir *contractIR, shape shapeSpec) map[string]any {
 		schema := map[string]any{"type": "integer", "format": "int64"}
 		addOpenAPIConstraints(schema, shape.Constraints)
 		return schema
+	case "float", "double":
+		schema := map[string]any{"type": "number", "format": shape.Kind}
+		addOpenAPIConstraints(schema, shape.Constraints)
+		return schema
 	case "boolean":
 		return map[string]any{"type": "boolean"}
 	case "blob":
@@ -403,6 +407,10 @@ func openAPISchemaForTarget(ir *contractIR, target string) map[string]any {
 			return map[string]any{"type": "integer", "format": "int32"}
 		case "Long":
 			return map[string]any{"type": "integer", "format": "int64"}
+		case "Float":
+			return map[string]any{"type": "number", "format": "float"}
+		case "Double":
+			return map[string]any{"type": "number", "format": "double"}
 		case "Boolean":
 			return map[string]any{"type": "boolean"}
 		case "Document":
@@ -1159,6 +1167,10 @@ func goTypeForTarget(ir *contractIR, target string) string {
 			return "int"
 		case "Long":
 			return "int64"
+		case "Float":
+			return "float32"
+		case "Double":
+			return "float64"
 		case "Boolean":
 			return "bool"
 		case "Blob":
@@ -1210,6 +1222,10 @@ func scalarGoType(shapeType string) string {
 		return "int"
 	case "long":
 		return "int64"
+	case "float":
+		return "float32"
+	case "double":
+		return "float64"
 	case "boolean":
 		return "bool"
 	case "blob":
@@ -1278,6 +1294,10 @@ func protoType(ir *contractIR, target string) string {
 			return "int32"
 		case "Long":
 			return "int64"
+		case "Float":
+			return "float"
+		case "Double":
+			return "double"
 		case "Boolean":
 			return "bool"
 		case "Blob":
@@ -1296,6 +1316,10 @@ func protoType(ir *contractIR, target string) string {
 		return "int32"
 	case "long":
 		return "int64"
+	case "float":
+		return "float"
+	case "double":
+		return "double"
 	case "boolean":
 		return "bool"
 	case "blob":

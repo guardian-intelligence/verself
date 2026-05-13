@@ -270,77 +270,77 @@ type BillingStatementOptions struct {
 }
 
 type BillingClient struct {
-	client *billingcore.ClientWithResponses
+	client *billingcore.Client
 }
 
 func (c *BillingClient) GetEntitlements(ctx context.Context) (BillingEntitlementsView, error) {
 	if c == nil || c.client == nil {
 		return BillingEntitlementsView{}, fmt.Errorf("verself sdk: billing client is not initialized")
 	}
-	response, err := c.client.GetBillingEntitlementsWithResponse(ctx)
+	response, err := c.client.GetBillingEntitlements(ctx, billingcore.GetBillingEntitlementsRequest{})
 	if err != nil {
 		return BillingEntitlementsView{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingEntitlementsView{}, billingAPIError("get entitlements", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingEntitlementsView{}, billingAPIError("get entitlements", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingEntitlementsView](*response.JSON200)
+	return billingFromGenerated[BillingEntitlementsView](*response.Result)
 }
 
 func (c *BillingClient) ListGrants(ctx context.Context, options BillingListGrantsOptions) (BillingGrants, error) {
 	if c == nil || c.client == nil {
 		return BillingGrants{}, fmt.Errorf("verself sdk: billing client is not initialized")
 	}
-	params := &billingcore.ListBillingGrantsParams{}
+	request := billingcore.ListBillingGrantsRequest{}
 	if strings.TrimSpace(options.ProductID) != "" {
-		productID := strings.TrimSpace(options.ProductID)
-		params.ProductId = &productID
+		productID := billingcore.ProductId(strings.TrimSpace(options.ProductID))
+		request.ProductID = &productID
 	}
 	if options.Active {
 		active := true
-		params.Active = &active
+		request.Active = &active
 	}
-	response, err := c.client.ListBillingGrantsWithResponse(ctx, params)
+	response, err := c.client.ListBillingGrants(ctx, request)
 	if err != nil {
 		return BillingGrants{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingGrants{}, billingAPIError("list grants", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingGrants{}, billingAPIError("list grants", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingGrants](*response.JSON200)
+	return billingFromGenerated[BillingGrants](*response.Result)
 }
 
 func (c *BillingClient) ListDocuments(ctx context.Context, options BillingListDocumentsOptions) (BillingDocuments, error) {
 	if c == nil || c.client == nil {
 		return BillingDocuments{}, fmt.Errorf("verself sdk: billing client is not initialized")
 	}
-	params := &billingcore.ListBillingDocumentsParams{}
+	request := billingcore.ListBillingDocumentsRequest{}
 	if strings.TrimSpace(options.ProductID) != "" {
-		productID := strings.TrimSpace(options.ProductID)
-		params.ProductId = &productID
+		productID := billingcore.ProductId(strings.TrimSpace(options.ProductID))
+		request.ProductID = &productID
 	}
-	response, err := c.client.ListBillingDocumentsWithResponse(ctx, params)
+	response, err := c.client.ListBillingDocuments(ctx, request)
 	if err != nil {
 		return BillingDocuments{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingDocuments{}, billingAPIError("list documents", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingDocuments{}, billingAPIError("list documents", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingDocuments](*response.JSON200)
+	return billingFromGenerated[BillingDocuments](*response.Result)
 }
 
 func (c *BillingClient) ListContracts(ctx context.Context) (BillingContracts, error) {
 	if c == nil || c.client == nil {
 		return BillingContracts{}, fmt.Errorf("verself sdk: billing client is not initialized")
 	}
-	response, err := c.client.ListBillingContractsWithResponse(ctx)
+	response, err := c.client.ListBillingContracts(ctx, billingcore.ListBillingContractsRequest{})
 	if err != nil {
 		return BillingContracts{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingContracts{}, billingAPIError("list contracts", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingContracts{}, billingAPIError("list contracts", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingContracts](*response.JSON200)
+	return billingFromGenerated[BillingContracts](*response.Result)
 }
 
 func (c *BillingClient) ListPlans(ctx context.Context, options BillingListPlansOptions) (BillingPlans, error) {
@@ -351,14 +351,14 @@ func (c *BillingClient) ListPlans(ctx context.Context, options BillingListPlansO
 	if productID == "" {
 		return BillingPlans{}, fmt.Errorf("verself sdk: billing plans product id is required")
 	}
-	response, err := c.client.ListBillingPlansWithResponse(ctx, &billingcore.ListBillingPlansParams{ProductId: productID})
+	response, err := c.client.ListBillingPlans(ctx, billingcore.ListBillingPlansRequest{ProductID: billingcore.ProductId(productID)})
 	if err != nil {
 		return BillingPlans{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingPlans{}, billingAPIError("list plans", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingPlans{}, billingAPIError("list plans", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingPlans](*response.JSON200)
+	return billingFromGenerated[BillingPlans](*response.Result)
 }
 
 func (c *BillingClient) GetStatement(ctx context.Context, options BillingStatementOptions) (BillingStatement, error) {
@@ -369,14 +369,14 @@ func (c *BillingClient) GetStatement(ctx context.Context, options BillingStateme
 	if productID == "" {
 		return BillingStatement{}, fmt.Errorf("verself sdk: billing statement product id is required")
 	}
-	response, err := c.client.GetBillingStatementWithResponse(ctx, &billingcore.GetBillingStatementParams{ProductId: productID})
+	response, err := c.client.GetBillingStatement(ctx, billingcore.GetBillingStatementRequest{ProductID: billingcore.ProductId(productID)})
 	if err != nil {
 		return BillingStatement{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingStatement{}, billingAPIError("get statement", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingStatement{}, billingAPIError("get statement", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingStatement](*response.JSON200)
+	return billingFromGenerated[BillingStatement](*response.Result)
 }
 
 func (c *BillingClient) CreateCheckoutSession(ctx context.Context, input BillingCheckoutInput) (BillingURL, error) {
@@ -390,20 +390,20 @@ func (c *BillingClient) CreateCheckoutSession(ctx context.Context, input Billing
 	if err != nil {
 		return BillingURL{}, err
 	}
-	body := billingcore.BillingCreateCheckoutRequest{
-		ProductId:   strings.TrimSpace(input.ProductID),
+	body := billingcore.CheckoutInputBody{
+		ProductID:   billingcore.ProductId(strings.TrimSpace(input.ProductID)),
 		AmountCents: input.AmountCents,
-		SuccessUrl:  strings.TrimSpace(input.SuccessURL),
-		CancelUrl:   strings.TrimSpace(input.CancelURL),
+		SuccessURL:  billingcore.URL(strings.TrimSpace(input.SuccessURL)),
+		CancelURL:   billingcore.URL(strings.TrimSpace(input.CancelURL)),
 	}
-	response, err := c.client.CreateBillingCheckoutWithResponse(ctx, &billingcore.CreateBillingCheckoutParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateBillingCheckout(ctx, billingcore.CreateBillingCheckoutRequest{IdempotencyKey: billingcore.IdempotencyKey(key), Body: body})
 	if err != nil {
 		return BillingURL{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingURL{}, billingAPIError("create checkout", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingURL{}, billingAPIError("create checkout", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingURL](*response.JSON200)
+	return billingFromGenerated[BillingURL](*response.Result)
 }
 
 func (c *BillingClient) CreateContractSession(ctx context.Context, input BillingContractInput) (BillingURL, error) {
@@ -417,23 +417,23 @@ func (c *BillingClient) CreateContractSession(ctx context.Context, input Billing
 	if err != nil {
 		return BillingURL{}, err
 	}
-	body := billingcore.BillingCreateContractRequest{
-		PlanId:     strings.TrimSpace(input.PlanID),
-		SuccessUrl: strings.TrimSpace(input.SuccessURL),
-		CancelUrl:  strings.TrimSpace(input.CancelURL),
+	body := billingcore.CreateBillingContractInputBody{
+		PlanID:     billingcore.PlanId(strings.TrimSpace(input.PlanID)),
+		SuccessURL: billingcore.URL(strings.TrimSpace(input.SuccessURL)),
+		CancelURL:  billingcore.URL(strings.TrimSpace(input.CancelURL)),
 	}
 	if strings.TrimSpace(input.Cadence) != "" {
-		cadence := billingcore.BillingCreateContractRequestCadence(strings.TrimSpace(input.Cadence))
+		cadence := billingcore.BillingCadence(strings.TrimSpace(input.Cadence))
 		body.Cadence = &cadence
 	}
-	response, err := c.client.CreateBillingContractWithResponse(ctx, &billingcore.CreateBillingContractParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateBillingContract(ctx, billingcore.CreateBillingContractRequest{IdempotencyKey: billingcore.IdempotencyKey(key), Body: body})
 	if err != nil {
 		return BillingURL{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingURL{}, billingAPIError("create contract", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingURL{}, billingAPIError("create contract", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingURL](*response.JSON200)
+	return billingFromGenerated[BillingURL](*response.Result)
 }
 
 func (c *BillingClient) CreateContractChangeSession(ctx context.Context, input BillingContractChangeInput) (BillingContractChange, error) {
@@ -448,19 +448,19 @@ func (c *BillingClient) CreateContractChangeSession(ctx context.Context, input B
 	if err != nil {
 		return BillingContractChange{}, err
 	}
-	body := billingcore.BillingCreateContractChangeRequest{
-		TargetPlanId: strings.TrimSpace(input.TargetPlanID),
-		SuccessUrl:   strings.TrimSpace(input.SuccessURL),
-		CancelUrl:    strings.TrimSpace(input.CancelURL),
+	body := billingcore.CreateBillingContractChangeInputBody{
+		TargetPlanID: billingcore.PlanId(strings.TrimSpace(input.TargetPlanID)),
+		SuccessURL:   billingcore.URL(strings.TrimSpace(input.SuccessURL)),
+		CancelURL:    billingcore.URL(strings.TrimSpace(input.CancelURL)),
 	}
-	response, err := c.client.CreateBillingContractChangeWithResponse(ctx, contractID, &billingcore.CreateBillingContractChangeParams{IdempotencyKey: key}, body)
+	response, err := c.client.CreateBillingContractChange(ctx, billingcore.CreateBillingContractChangeRequest{ContractID: billingcore.ContractId(contractID), IdempotencyKey: billingcore.IdempotencyKey(key), Body: body})
 	if err != nil {
 		return BillingContractChange{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingContractChange{}, billingAPIError("create contract change", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingContractChange{}, billingAPIError("create contract change", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingContractChange](*response.JSON200)
+	return billingFromGenerated[BillingContractChange](*response.Result)
 }
 
 func (c *BillingClient) CreatePortalSession(ctx context.Context, input BillingPortalInput) (BillingURL, error) {
@@ -474,15 +474,15 @@ func (c *BillingClient) CreatePortalSession(ctx context.Context, input BillingPo
 	if err != nil {
 		return BillingURL{}, err
 	}
-	body := billingcore.BillingCreatePortalSessionRequest{ReturnUrl: strings.TrimSpace(input.ReturnURL)}
-	response, err := c.client.CreateBillingPortalWithResponse(ctx, &billingcore.CreateBillingPortalParams{IdempotencyKey: key}, body)
+	body := billingcore.CreateBillingPortalInputBody{ReturnURL: billingcore.URL(strings.TrimSpace(input.ReturnURL))}
+	response, err := c.client.CreateBillingPortal(ctx, billingcore.CreateBillingPortalRequest{IdempotencyKey: billingcore.IdempotencyKey(key), Body: body})
 	if err != nil {
 		return BillingURL{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingURL{}, billingAPIError("create portal", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingURL{}, billingAPIError("create portal", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingURL](*response.JSON200)
+	return billingFromGenerated[BillingURL](*response.Result)
 }
 
 func (c *BillingClient) CancelContract(ctx context.Context, input BillingCancelContractInput) (BillingCancelContractResponse, error) {
@@ -497,14 +497,14 @@ func (c *BillingClient) CancelContract(ctx context.Context, input BillingCancelC
 	if err != nil {
 		return BillingCancelContractResponse{}, err
 	}
-	response, err := c.client.CancelBillingContractWithResponse(ctx, contractID, &billingcore.CancelBillingContractParams{IdempotencyKey: key})
+	response, err := c.client.CancelBillingContract(ctx, billingcore.CancelBillingContractRequest{ContractID: billingcore.ContractId(contractID), IdempotencyKey: billingcore.IdempotencyKey(key)})
 	if err != nil {
 		return BillingCancelContractResponse{}, err
 	}
-	if response.JSON200 == nil {
-		return BillingCancelContractResponse{}, billingAPIError("cancel contract", response.StatusCode(), response.ApplicationproblemJSONDefault, response.Body)
+	if response.Result == nil {
+		return BillingCancelContractResponse{}, billingAPIError("cancel contract", response.StatusCode, response.Problem, response.Body)
 	}
-	return billingFromGenerated[BillingCancelContractResponse](*response.JSON200)
+	return billingFromGenerated[BillingCancelContractResponse](*response.Result)
 }
 
 func billingAPIError(operation string, statusCode int, model *billingcore.ErrorModel, body []byte) error {

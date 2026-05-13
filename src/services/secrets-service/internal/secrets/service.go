@@ -42,7 +42,7 @@ var tracer = otel.Tracer("secrets-service/internal/secrets")
 
 type Service struct {
 	Store          *BaoStore
-	Billing        *billingclient.ClientWithResponses
+	Billing        *billingclient.Client
 	Logger         *slog.Logger
 	ServiceVersion string
 	Environment    string

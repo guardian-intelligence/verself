@@ -18,7 +18,6 @@ import {
   listBillingPlans,
 } from "./__generated/billing-api/index.js";
 import {
-  vBillingCancelContractResponse,
   vBillingContract,
   vBillingDocument,
   vBillingEntitlementBucketSection,
@@ -29,6 +28,7 @@ import {
   vBillingGrant,
   vBillingPlan,
   vBillingStatement,
+  vCancelBillingContractResponse,
   vCancelBillingContractPath,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
@@ -712,6 +712,6 @@ export async function cancelContract(
     throwBillingError(path, result.response, result.error);
   }
 
-  const parsed = v.parse(vBillingCancelContractResponse, result.data);
+  const parsed = v.parse(vCancelBillingContractResponse, result.data);
   return { contract: parseContract(parsed.contract) };
 }

@@ -26,3 +26,12 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 		Instance: instance,
 	}
 }
+
+func badRequest(detail string) error {
+	return &huma.ErrorModel{
+		Type:   problemTypePrefix + "request.invalid",
+		Title:  http.StatusText(http.StatusBadRequest),
+		Status: http.StatusBadRequest,
+		Detail: detail,
+	}
+}

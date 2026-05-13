@@ -221,7 +221,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sandbox billing mtls: %w", err)
 	}
-	billingClient, err := billingclient.NewClientWithResponses(workloadauth.InternalURL(workloadauth.ServiceBilling), billingclient.WithHTTPClient(billingHTTPClient))
+	billingClient, err := billingclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceBilling), billingclient.WithHTTPClient(billingHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}

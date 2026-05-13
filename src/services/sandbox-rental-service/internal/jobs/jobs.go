@@ -55,6 +55,7 @@ const (
 	billingSKUExecutionRootStorageGiBMs = "sandbox_execution_root_storage_premium_nvme_gib_ms"
 	billingMiBPerGiB                    = 1024
 	billingBytesPerGiB                  = 1024 * 1024 * 1024
+	billingMaxJSONSafePositiveInt       = uint64(1<<53 - 1)
 
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
@@ -206,7 +207,7 @@ type Service struct {
 	CH                     driver.Conn
 	CHDatabase             string
 	Orchestrator           Runner
-	Billing                *billingclient.ClientWithResponses
+	Billing                *billingclient.Client
 	Bounds                 dto.VMResourceBounds
 	GitHubRunner           *GitHubRunner
 	ForgejoRunner          *ForgejoRunner
@@ -970,8 +971,7 @@ func (s *Service) loadExecutionFilesystemMounts(ctx context.Context, executionID
 func billingJobIDForAttempt(attemptID uuid.UUID) int64 {
 	// A sandbox-local sequence collides after sandbox DB resets while billing
 	// keeps historical windows; the attempt UUID is the cross-service identity.
-	const maxJSONSafePositiveInt = uint64(1<<53 - 1)
-	raw := binary.BigEndian.Uint64(attemptID[:8]) & maxJSONSafePositiveInt
+	raw := binary.BigEndian.Uint64(attemptID[:8]) & billingMaxJSONSafePositiveInt
 	if raw == 0 {
 		return 1
 	}
@@ -999,7 +999,7 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 		SourceType:       item.SourceKind,
 		SourceRef:        item.ExecutionID.String(),
 		WindowSeq:        1,
-		ReservationShape: string(billingclient.Time),
+		ReservationShape: "time",
 		ReservedQuantity: 0,
 		BillingJobID:     billingJobID,
 		Allocation:       allocation,
@@ -1627,11 +1627,11 @@ func detachedContext(ctx context.Context) context.Context {
 }
 
 func (s *Service) reserveBillingWindow(ctx context.Context, request dto.BillingReserveWindowRequest) (dto.BillingWindowReservation, error) {
-	windowSeq, err := billingInt32("window_seq", request.WindowSeq)
+	windowSeq, err := billingWireInt64("window_seq", request.WindowSeq)
 	if err != nil {
 		return dto.BillingWindowReservation{}, err
 	}
-	reservedQuantity, err := billingInt32("reserved_quantity", request.ReservedQuantity)
+	reservedQuantity, err := billingWireInt64("reserved_quantity", request.ReservedQuantity)
 	if err != nil {
 		return dto.BillingWindowReservation{}, err
 	}
@@ -1639,24 +1639,26 @@ func (s *Service) reserveBillingWindow(ctx context.Context, request dto.BillingR
 	if err != nil {
 		return dto.BillingWindowReservation{}, err
 	}
-	billingJobID := request.BillingJobID
-	resp, err := s.Billing.ReserveWindowWithResponse(ctx, billingclient.BillingReserveWindowRequest{
-		ActorId:          request.ActorID,
-		Allocation:       request.Allocation,
-		BillingJobId:     &billingJobID,
-		ConcurrentCount:  concurrentCount,
-		OrgId:            request.OrgID.String(),
-		ProductId:        request.ProductID,
-		ReservationShape: billingclient.BillingReserveWindowRequestReservationShape(request.ReservationShape),
-		ReservedQuantity: reservedQuantity,
-		SourceRef:        request.SourceRef,
-		SourceType:       request.SourceType,
-		WindowSeq:        windowSeq,
+	billingJobID := billingclient.SafeInt64(request.BillingJobID)
+	resp, err := s.Billing.ReserveWindow(ctx, billingclient.ReserveWindowRequest{
+		Body: billingclient.ReserveWindowInputBody{
+			ActorID:          request.ActorID,
+			Allocation:       request.Allocation,
+			BillingJobID:     &billingJobID,
+			ConcurrentCount:  billingclient.SafeUint64(concurrentCount),
+			OrgID:            request.OrgID.String(),
+			ProductID:        request.ProductID,
+			ReservationShape: billingclient.ReservationShape(request.ReservationShape),
+			ReservedQuantity: billingclient.WindowQuantity(reservedQuantity),
+			SourceRef:        request.SourceRef,
+			SourceType:       request.SourceType,
+			WindowSeq:        billingclient.WindowSequence(windowSeq),
+		},
 	})
 	if err != nil {
 		return dto.BillingWindowReservation{}, fmt.Errorf("reserve billing window: %w", err)
 	}
-	switch resp.StatusCode() {
+	switch resp.StatusCode {
 	case http.StatusOK:
 		out, err := decodeBillingResponseBody[dto.BillingReserveWindowResult]("decode reserve billing window response", resp.Body)
 		if err != nil {
@@ -1664,23 +1666,25 @@ func (s *Service) reserveBillingWindow(ctx context.Context, request dto.BillingR
 		}
 		return out.Reservation, nil
 	case http.StatusPaymentRequired:
-		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON402, ErrBillingPaymentRequired)
+		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, ErrBillingPaymentRequired)
 	case http.StatusForbidden:
-		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON403, ErrBillingForbidden)
+		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, ErrBillingForbidden)
 	default:
-		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return dto.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, nil)
 	}
 }
 
 func (s *Service) activateBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation, activatedAt time.Time) (dto.BillingWindowReservation, error) {
-	resp, err := s.Billing.ActivateWindowWithResponse(ctx, billingclient.BillingActivateWindowRequest{
-		ActivatedAt: activatedAt.UTC(),
-		WindowId:    reservation.WindowID,
+	resp, err := s.Billing.ActivateWindow(ctx, billingclient.ActivateWindowRequest{
+		Body: billingclient.ActivateWindowInputBody{
+			ActivatedAt: activatedAt.UTC().Format(time.RFC3339Nano),
+			WindowID:    billingclient.BillingWindowId(reservation.WindowID),
+		},
 	})
 	if err != nil {
 		return dto.BillingWindowReservation{}, fmt.Errorf("activate billing window: %w", err)
 	}
-	switch resp.StatusCode() {
+	switch resp.StatusCode {
 	case http.StatusOK:
 		out, err := decodeBillingResponseBody[dto.BillingActivateWindowResult]("decode activate billing window response", resp.Body)
 		if err != nil {
@@ -1688,46 +1692,48 @@ func (s *Service) activateBillingWindow(ctx context.Context, reservation dto.Bil
 		}
 		return out.Reservation, nil
 	default:
-		return dto.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return dto.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode, resp.Problem, nil)
 	}
 }
 
 func (s *Service) settleBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation, actualQuantity uint32, usageSummary map[string]any) (dto.BillingSettleResult, error) {
-	actualQuantityInt, err := billingInt32("actual_quantity", actualQuantity)
+	actualQuantityInt, err := billingWireInt64("actual_quantity", actualQuantity)
 	if err != nil {
 		return dto.BillingSettleResult{}, err
 	}
-	req := billingclient.BillingSettleWindowRequest{
-		ActualQuantity: actualQuantityInt,
-		WindowId:       reservation.WindowID,
-	}
+	req := billingclient.SettleWindowRequest{Body: billingclient.SettleWindowInputBody{
+		ActualQuantity: billingclient.WindowQuantity(actualQuantityInt),
+		WindowID:       billingclient.BillingWindowId(reservation.WindowID),
+	}}
 	if usageSummary != nil {
-		req.UsageSummary = &usageSummary
+		req.Body.UsageSummary = &usageSummary
 	}
-	resp, err := s.Billing.SettleWindowWithResponse(ctx, req)
+	resp, err := s.Billing.SettleWindow(ctx, req)
 	if err != nil {
 		return dto.BillingSettleResult{}, fmt.Errorf("settle billing window: %w", err)
 	}
-	switch resp.StatusCode() {
+	switch resp.StatusCode {
 	case http.StatusOK:
 		return decodeBillingResponseBody[dto.BillingSettleResult]("decode settle billing window response", resp.Body)
 	default:
-		return dto.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return dto.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode, resp.Problem, nil)
 	}
 }
 
 func (s *Service) voidBillingWindow(ctx context.Context, reservation dto.BillingWindowReservation) error {
-	resp, err := s.Billing.VoidWindowWithResponse(ctx, billingclient.BillingVoidWindowRequest{
-		WindowId: reservation.WindowID,
+	resp, err := s.Billing.VoidWindow(ctx, billingclient.VoidWindowRequest{
+		Body: billingclient.VoidWindowInputBody{
+			WindowID: billingclient.BillingWindowId(reservation.WindowID),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("void billing window: %w", err)
 	}
-	switch resp.StatusCode() {
+	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil
 	default:
-		return newBillingStatusError("void billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+		return newBillingStatusError("void billing window", resp.StatusCode, resp.Problem, nil)
 	}
 }
 
@@ -1752,22 +1758,11 @@ func newBillingStatusError(operation string, statusCode int, problem *billingcli
 	}
 }
 
-func firstBillingProblem(problems ...*billingclient.ErrorModel) *billingclient.ErrorModel {
-	for _, problem := range problems {
-		if problem != nil {
-			return problem
-		}
+func billingWireInt64(field string, value uint32) (int64, error) {
+	if uint64(value) > billingMaxJSONSafePositiveInt {
+		return 0, fmt.Errorf("%s exceeds billing wire range", field)
 	}
-	return nil
-}
-
-func billingInt32(field string, value uint32) (int32, error) {
-	// The generated client renders these wire fields as int32, so fail loudly
-	// if a wider sandbox quantity would otherwise wrap during JSON encoding.
-	if value > math.MaxInt32 {
-		return 0, fmt.Errorf("%s exceeds int32 range", field)
-	}
-	return int32(value), nil
+	return int64(value), nil
 }
 
 func int64FromUint64(field string, value uint64) (int64, error) {

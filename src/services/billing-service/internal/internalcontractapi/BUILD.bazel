@@ -1,0 +1,31 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//src/smithy/build:ir_go.bzl", "ir_contract_go")
+
+ir_contract_go(
+    name = "billing_internal_contract_go",
+    out = "__generated_sources/billing_internal_contract.gen.go",
+    ir = "//src/smithy/models/verself:billing_internal_ir",
+    package = "internalcontractapi",
+)
+
+write_source_files(
+    name = "generated_sources",
+    files = {
+        "billing_internal_contract.gen.go": ":billing_internal_contract_go",
+    },
+    tags = ["manual"],
+)
+
+go_library(
+    name = "internalcontractapi",
+    srcs = ["billing_internal_contract.gen.go"],
+    importpath = "github.com/verself/billing-service/internal/internalcontractapi",
+    visibility = ["//src/services/billing-service:__subpackages__"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":internalcontractapi",
+    visibility = ["//src/services/billing-service:__subpackages__"],
+)

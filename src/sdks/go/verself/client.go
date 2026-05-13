@@ -127,7 +127,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	billingEditor := billingRequestEditor(token, options.Traceparent)
-	generatedBilling, err := billingcore.NewClientWithResponses(
+	generatedBilling, err := billingcore.NewClient(
 		billingURL,
 		billingcore.WithHTTPClient(httpClient),
 		billingcore.WithRequestEditorFn(billingEditor),
