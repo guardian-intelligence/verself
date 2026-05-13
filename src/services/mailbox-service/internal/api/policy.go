@@ -5,11 +5,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/verself/mailbox-service/internal/contractapi"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
-
-const bodyLimitSmallJSON int64 = 16 << 10
 
 func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy runtimeiam.OperationPolicy, handler func(context.Context, *I) (*O, error)) {
 	if op.OperationID == "" {
@@ -34,6 +33,19 @@ func registerMailRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAu
 	})
 }
 
+func mailboxContract(desc contractapi.OperationDescriptor, summary string) (huma.Operation, runtimeiam.OperationPolicy) {
+	op := huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+		Errors:        contractProblemStatuses(desc.Problems),
+		Extensions:    map[string]any{"x-verself-contract": contractExtension(desc)},
+	}
+	return op, operationPolicyFromContract(desc)
+}
+
 func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) error {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
@@ -50,27 +62,4 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 		return huma.Error403Forbidden("missing required mailbox permission")
 	}
 	return nil
-}
-
-func mailReadPolicy(operationID, resource, _ string) runtimeiam.OperationPolicy {
-	return runtimeiam.OperationPolicy{
-		Permission:     runtimeiam.Permission("mailbox:mail:read"),
-		Resource:       runtimeiam.ResourceKind(resource),
-		Action:         runtimeiam.ActionRead,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "read",
-		AuditEvent:     runtimeiam.AuditEvent("mailbox." + operationID),
-	}
-}
-
-func mailWritePolicy(operationID, resource, _ string) runtimeiam.OperationPolicy {
-	return runtimeiam.OperationPolicy{
-		Permission:     runtimeiam.Permission("mailbox:mail:write"),
-		Resource:       runtimeiam.ResourceKind(resource),
-		Action:         runtimeiam.ActionWrite,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "mailbox_mutation",
-		AuditEvent:     runtimeiam.AuditEvent("mailbox." + operationID),
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}
 }

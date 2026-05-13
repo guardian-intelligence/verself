@@ -6,6 +6,7 @@ use smithy.api#httpLabel
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
+use smithy.api#nestedProperties
 use smithy.api#readonly
 use smithy.api#required
 use verself.common.v1#ConflictError
@@ -55,12 +56,20 @@ string MailboxId
 string AccountId
 @length(min: 1, max: 320)
 string EmailAddress
-@length(min: 1, max: 1024)
-string MailSubject
 @length(max: 1048576)
 string MailBodyText
-@length(min: 1, max: 128)
-string MailSyncState
+@length(max: 1048576)
+string MailBodyHTML
+@length(max: 255)
+string MailboxDisplayName
+@length(max: 4096)
+string MailboxStatusError
+@length(max: 1024)
+string MailboxServiceURL
+@length(max: 320)
+string ForwarderMailbox
+@length(max: 255)
+string ForwardedEmailId
 @permission(name: "mailbox:account:read")
 string MailboxAccountReadPermission
 @permission(name: "mailbox:mail:read")
@@ -96,18 +105,24 @@ structure MailMutationResult {
     email_id: EmailId
     @required
     @protoField(number: 2)
-    changed: Boolean
+    status: String
 }
 structure MailBodyResult {
     @required
     @protoField(number: 1)
-    email_id: EmailId
+    account_id: AccountId
     @required
     @protoField(number: 2)
-    subject: MailSubject
+    email_id: EmailId
     @required
     @protoField(number: 3)
-    body: MailBodyText
+    text_body: MailBodyText
+    @required
+    @protoField(number: 4)
+    html_body: MailBodyHTML
+    @required
+    @protoField(number: 5)
+    fetched_at: Timestamp
 }
 structure MailboxAccountView {
     @required
@@ -115,44 +130,123 @@ structure MailboxAccountView {
     account_id: AccountId
     @required
     @protoField(number: 2)
-    email: EmailAddress
+    email_address: EmailAddress
+    @required
+    @protoField(number: 3)
+    display_name: MailboxDisplayName
+    @protoField(number: 4)
+    default_mailbox_id: MailboxId
+}
+structure MailboxForwarderStatusView {
+    @required
+    @protoField(number: 1)
+    enabled: Boolean
+    @required
+    @protoField(number: 2)
+    running: Boolean
+    @required
+    @protoField(number: 3)
+    mailbox: ForwarderMailbox
+    @required
+    @protoField(number: 4)
+    forward_target_configured: Boolean
+    @protoField(number: 5)
+    last_error: MailboxStatusError
+    @protoField(number: 6)
+    last_sync_at: Timestamp
+    @protoField(number: 7)
+    last_forwarded_at: Timestamp
+    @protoField(number: 8)
+    last_forwarded_email_id: ForwardedEmailId
+}
+structure MailboxSyncAccountStatusView {
+    @required
+    @protoField(number: 1)
+    account_id: AccountId
+    @required
+    @protoField(number: 2)
+    running: Boolean
+    @required
+    @protoField(number: 3)
+    connected: Boolean
+    @protoField(number: 4)
+    last_sync_at: Timestamp
+    @protoField(number: 5)
+    last_event_at: Timestamp
+    @protoField(number: 6)
+    last_connected_at: Timestamp
+    @protoField(number: 7)
+    last_error: MailboxStatusError
+}
+map MailboxSyncAccounts {
+    key: AccountId
+    value: MailboxSyncAccountStatusView
+}
+structure MailboxSyncWorkerStatusView {
+    @required
+    @protoField(number: 1)
+    running: Boolean
+    @protoField(number: 2)
+    last_discovery_at: Timestamp
+    @protoField(number: 3)
+    last_error: MailboxStatusError
+    @required
+    @protoField(number: 4)
+    accounts: MailboxSyncAccounts
 }
 structure MailboxSyncStatusView {
     @required
     @protoField(number: 1)
-    state: MailSyncState
+    started_at: Timestamp
     @required
     @protoField(number: 2)
-    synced_at: Timestamp
+    stalwart_base_url: MailboxServiceURL
+    @required
+    @protoField(number: 3)
+    public_base_url: MailboxServiceURL
+    @required
+    @protoField(number: 4)
+    forwarder: MailboxForwarderStatusView
+    @required
+    @protoField(number: 5)
+    mailbox_sync: MailboxSyncWorkerStatusView
 }
 structure MailEmailPathInput {
     @required
     @httpLabel
+    @protoField(number: 1)
     email_id: EmailId
 }
 structure MailEmailIdempotentInput {
     @required
     @httpLabel
+    @protoField(number: 1)
     email_id: EmailId
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
+    @protoField(number: 100)
     idempotencyKey: IdempotencyKey
 }
 structure MailMoveInput {
     @required
     @httpLabel
+    @protoField(number: 1)
     email_id: EmailId
     @required
     @httpHeader("Idempotency-Key")
     @idempotencyToken
+    @protoField(number: 100)
     idempotencyKey: IdempotencyKey
     @required
+    @protoField(number: 2)
     mailbox_id: MailboxId
 }
 structure EmptyInput {}
 structure MailMutationOutput {
     @required
+    @nestedProperties
+    @protoField(number: 1)
     result: MailMutationResult
 }
 @idempotent
@@ -248,6 +342,8 @@ operation MailBody {
 }
 structure MailBodyOutput {
     @required
+    @nestedProperties
+    @protoField(number: 1)
     body: MailBodyResult
 }
 @readonly
@@ -265,6 +361,8 @@ operation MailAccount {
 }
 structure MailAccountOutput {
     @required
+    @nestedProperties
+    @protoField(number: 1)
     account: MailboxAccountView
 }
 @readonly
@@ -282,5 +380,6 @@ operation MailSyncStatus {
 }
 structure MailSyncStatusOutput {
     @required
+    @protoField(number: 1)
     status: MailboxSyncStatusView
 }

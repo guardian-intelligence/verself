@@ -7,8 +7,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
-	github.com/oapi-codegen/runtime v1.4.0
-	github.com/verself/domain-transfer-objects v0.0.0
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -18,7 +16,6 @@ require (
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -59,8 +56,6 @@ require (
 replace github.com/verself/secrets-service => ../secrets-service
 
 replace github.com/verself/iam-service => ../iam-service
-
-replace github.com/verself/domain-transfer-objects => ../../domain-transfer-objects/go
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

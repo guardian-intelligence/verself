@@ -2,205 +2,111 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/mailbox-service/internal/contractapi"
 	"github.com/verself/mailbox-service/internal/mailstore"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type mailEmailPathInput struct {
-	EmailID string `path:"email_id"`
-}
-
-type mailMoveInput struct {
-	EmailID string `path:"email_id"`
-	Body    dto.MailboxMoveRequest
-}
-
-type mailMutationOutput struct {
-	Body dto.MailboxMutation
-}
-
-type mailBodyOutput struct {
-	Body dto.MailboxBody
-}
-
-type mailAccountOutput struct {
-	Body dto.MailboxAccount
-}
-
-type mailSyncStatusOutput struct {
-	Body dto.MailboxServiceStatusResponse
-}
-
 func registerMailRoutes(api huma.API, svc provider, authorizer runtimeiam.OperationAuthorizer) {
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-mark-read",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/mail/emails/{email_id}/read",
-		Summary:     "Mark an email as read",
-	}, mailWritePolicy("mail_mark_read", "mailbox_email", "mark_read"), markRead(svc, true))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-mark-unread",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/mail/emails/{email_id}/unread",
-		Summary:     "Mark an email as unread",
-	}, mailWritePolicy("mail_mark_unread", "mailbox_email", "mark_unread"), markRead(svc, false))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-flag",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/mail/emails/{email_id}/flag",
-		Summary:     "Flag an email",
-	}, mailWritePolicy("mail_flag", "mailbox_email", "flag"), flagEmail(svc, true))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-unflag",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/mail/emails/{email_id}/unflag",
-		Summary:     "Unflag an email",
-	}, mailWritePolicy("mail_unflag", "mailbox_email", "unflag"), flagEmail(svc, false))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-move",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/mail/emails/{email_id}/move",
-		Summary:     "Move an email to another mailbox",
-	}, mailWritePolicy("mail_move", "mailbox_email", "move"), moveEmail(svc))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-trash",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/mail/emails/{email_id}/trash",
-		Summary:     "Move an email to trash",
-	}, mailWritePolicy("mail_trash", "mailbox_email", "trash"), trashEmail(svc))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-body",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/mail/emails/{email_id}/body",
-		Summary:     "Fetch and cache an email body",
-	}, mailReadPolicy("mail_body", "mailbox_email", "read"), fetchBody(svc))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-account",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/mail/account",
-		Summary:     "Get the authenticated user's bound mailbox account",
-	}, runtimeiam.OperationPolicy{
-		Permission:     runtimeiam.Permission("mailbox:account:read"),
-		Resource:       "mailbox_account",
-		Action:         runtimeiam.ActionRead,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "read",
-		AuditEvent:     "mailbox.mail_account",
-	}, accountInfo(svc))
-
-	registerMailRoute(api, authorizer, huma.Operation{
-		OperationID: "mail-sync-status",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/mail/sync/status",
-		Summary:     "Mailbox sync status",
-	}, runtimeiam.OperationPolicy{
-		Permission:     runtimeiam.Permission("mailbox:sync_status:read"),
-		Resource:       "mailbox_sync_status",
-		Action:         runtimeiam.ActionRead,
-		OrgScope:       runtimeiam.OrgScopeTokenSubject,
-		RateLimitClass: "read",
-		AuditEvent:     "mailbox.mail_sync_status",
-	}, syncStatus(svc))
+	op, policy := mailboxContract(contractapi.MailMarkRead.Descriptor, "Mark an email as read")
+	registerMailRoute(api, authorizer, op, policy, markRead(svc, true))
+	op, policy = mailboxContract(contractapi.MailMarkUnread.Descriptor, "Mark an email as unread")
+	registerMailRoute(api, authorizer, op, policy, markRead(svc, false))
+	op, policy = mailboxContract(contractapi.MailFlag.Descriptor, "Flag an email")
+	registerMailRoute(api, authorizer, op, policy, flagEmail(svc, true))
+	op, policy = mailboxContract(contractapi.MailUnflag.Descriptor, "Unflag an email")
+	registerMailRoute(api, authorizer, op, policy, flagEmail(svc, false))
+	op, policy = mailboxContract(contractapi.MailMove.Descriptor, "Move an email to another mailbox")
+	registerMailRoute(api, authorizer, op, policy, moveEmail(svc))
+	op, policy = mailboxContract(contractapi.MailTrash.Descriptor, "Move an email to trash")
+	registerMailRoute(api, authorizer, op, policy, trashEmail(svc))
+	op, policy = mailboxContract(contractapi.MailBody.Descriptor, "Fetch and cache an email body")
+	registerMailRoute(api, authorizer, op, policy, fetchBody(svc))
+	op, policy = mailboxContract(contractapi.MailAccount.Descriptor, "Get the authenticated user's bound mailbox account")
+	registerMailRoute(api, authorizer, op, policy, accountInfo(svc))
+	op, policy = mailboxContract(contractapi.MailSyncStatus.Descriptor, "Mailbox sync status")
+	registerMailRoute(api, authorizer, op, policy, syncStatus(svc))
 }
 
-func markRead(svc provider, seen bool) func(context.Context, *mailEmailPathInput) (*mailMutationOutput, error) {
-	return func(ctx context.Context, input *mailEmailPathInput) (*mailMutationOutput, error) {
+func markRead(svc provider, seen bool) func(context.Context, *contractapi.MailEmailIdempotentInput) (*contractapi.MailMutationOutput, error) {
+	return func(ctx context.Context, input *contractapi.MailEmailIdempotentInput) (*contractapi.MailMutationOutput, error) {
 		accountID, err := boundAccountID(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
-		if err := svc.SetEmailSeen(ctx, accountID, input.EmailID, seen); err != nil {
+		if err := svc.SetEmailSeen(ctx, accountID, string(input.EmailID), seen); err != nil {
 			return nil, toHumaError("set read state", err)
 		}
-		out := &mailMutationOutput{}
-		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
-		return out, nil
+		return mailMutation(input.EmailID), nil
 	}
 }
 
-func flagEmail(svc provider, flagged bool) func(context.Context, *mailEmailPathInput) (*mailMutationOutput, error) {
-	return func(ctx context.Context, input *mailEmailPathInput) (*mailMutationOutput, error) {
+func flagEmail(svc provider, flagged bool) func(context.Context, *contractapi.MailEmailIdempotentInput) (*contractapi.MailMutationOutput, error) {
+	return func(ctx context.Context, input *contractapi.MailEmailIdempotentInput) (*contractapi.MailMutationOutput, error) {
 		accountID, err := boundAccountID(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
-		if err := svc.SetEmailFlagged(ctx, accountID, input.EmailID, flagged); err != nil {
+		if err := svc.SetEmailFlagged(ctx, accountID, string(input.EmailID), flagged); err != nil {
 			return nil, toHumaError("set flag state", err)
 		}
-		out := &mailMutationOutput{}
-		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
-		return out, nil
+		return mailMutation(input.EmailID), nil
 	}
 }
 
-func moveEmail(svc provider) func(context.Context, *mailMoveInput) (*mailMutationOutput, error) {
-	return func(ctx context.Context, input *mailMoveInput) (*mailMutationOutput, error) {
+func moveEmail(svc provider) func(context.Context, *contractapi.MailMoveInput) (*contractapi.MailMutationOutput, error) {
+	return func(ctx context.Context, input *contractapi.MailMoveInput) (*contractapi.MailMutationOutput, error) {
 		accountID, err := boundAccountID(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
-		if err := svc.MoveEmail(ctx, accountID, input.EmailID, input.Body.MailboxID); err != nil {
+		if err := svc.MoveEmail(ctx, accountID, string(input.EmailID), string(input.Body.MailboxID)); err != nil {
 			return nil, toHumaError("move email", err)
 		}
-		out := &mailMutationOutput{}
-		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
-		return out, nil
+		return mailMutation(input.EmailID), nil
 	}
 }
 
-func trashEmail(svc provider) func(context.Context, *mailEmailPathInput) (*mailMutationOutput, error) {
-	return func(ctx context.Context, input *mailEmailPathInput) (*mailMutationOutput, error) {
+func trashEmail(svc provider) func(context.Context, *contractapi.MailEmailIdempotentInput) (*contractapi.MailMutationOutput, error) {
+	return func(ctx context.Context, input *contractapi.MailEmailIdempotentInput) (*contractapi.MailMutationOutput, error) {
 		accountID, err := boundAccountID(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
-		if err := svc.TrashEmail(ctx, accountID, input.EmailID); err != nil {
+		if err := svc.TrashEmail(ctx, accountID, string(input.EmailID)); err != nil {
 			return nil, toHumaError("trash email", err)
 		}
-		out := &mailMutationOutput{}
-		out.Body = dto.MailboxMutation{Status: "ok", EmailID: input.EmailID}
-		return out, nil
+		return mailMutation(input.EmailID), nil
 	}
 }
 
-func fetchBody(svc provider) func(context.Context, *mailEmailPathInput) (*mailBodyOutput, error) {
-	return func(ctx context.Context, input *mailEmailPathInput) (*mailBodyOutput, error) {
+func fetchBody(svc provider) func(context.Context, *contractapi.MailEmailPathInput) (*contractapi.MailBodyOutput, error) {
+	return func(ctx context.Context, input *contractapi.MailEmailPathInput) (*contractapi.MailBodyOutput, error) {
 		accountID, err := boundAccountID(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
-		body, err := svc.FetchEmailBody(ctx, accountID, input.EmailID)
+		body, err := svc.FetchEmailBody(ctx, accountID, string(input.EmailID))
 		if err != nil {
 			return nil, toHumaError("fetch email body", err)
 		}
-		out := &mailBodyOutput{}
-		out.Body = dto.MailboxBody{
-			AccountID: body.AccountID,
-			EmailID:   body.EmailID,
-			TextBody:  body.TextBody,
-			HTMLBody:  body.HTMLBody,
+		return &contractapi.MailBodyOutput{Body: contractapi.MailBodyResult{
+			AccountID: contractapi.AccountID(body.AccountID),
+			EmailID:   contractapi.EmailID(body.EmailID),
+			TextBody:  contractapi.MailBodyText(body.TextBody),
+			HtmlBody:  contractapi.MailBodyHTML(body.HTMLBody),
 			FetchedAt: body.FetchedAt.UTC().Format(time.RFC3339),
-		}
-		return out, nil
+		}}, nil
 	}
 }
 
-func accountInfo(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mailAccountOutput, error) {
-	return func(ctx context.Context, _ *mailboxServiceEmptyInput) (*mailAccountOutput, error) {
+func accountInfo(svc provider) func(context.Context, *contractapi.EmptyInput) (*contractapi.MailAccountOutput, error) {
+	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.MailAccountOutput, error) {
 		identity := auth.FromContext(ctx)
 		if identity == nil {
 			return nil, huma.Error401Unauthorized("missing identity")
@@ -213,34 +119,47 @@ func accountInfo(svc provider) func(context.Context, *mailboxServiceEmptyInput) 
 		if err != nil {
 			return nil, toHumaError("list mailboxes", err)
 		}
-		out := &mailAccountOutput{}
-		out.Body = dto.MailboxAccount{
-			AccountID:        account.AccountID,
-			EmailAddress:     account.EmailAddress,
-			DisplayName:      account.DisplayName,
+		return &contractapi.MailAccountOutput{Body: contractapi.MailboxAccountView{
+			AccountID:        contractapi.AccountID(account.AccountID),
+			EmailAddress:     contractapi.EmailAddress(account.EmailAddress),
+			DisplayName:      contractapi.MailboxDisplayName(account.DisplayName),
 			DefaultMailboxID: defaultMailboxID(mailboxes),
-		}
-		return out, nil
+		}}, nil
 	}
 }
 
-func defaultMailboxID(mailboxes []mailstore.Mailbox) string {
+func defaultMailboxID(mailboxes []mailstore.Mailbox) *contractapi.MailboxID {
 	if len(mailboxes) == 0 {
-		return ""
+		return nil
 	}
 	for _, mailbox := range mailboxes {
 		if mailbox.Role == "inbox" {
-			return mailbox.ID
+			return mailboxIDPtr(mailbox.ID)
 		}
 	}
-	return mailboxes[0].ID
+	return mailboxIDPtr(mailboxes[0].ID)
 }
 
-func syncStatus(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mailSyncStatusOutput, error) {
-	return func(context.Context, *mailboxServiceEmptyInput) (*mailSyncStatusOutput, error) {
-		out := &mailSyncStatusOutput{}
-		out.Body.Status = serviceStatus(svc.Status())
-		return out, nil
+func mailboxIDPtr(value string) *contractapi.MailboxID {
+	if value == "" {
+		return nil
+	}
+	out := contractapi.MailboxID(value)
+	return &out
+}
+
+func mailMutation(emailID contractapi.EmailID) *contractapi.MailMutationOutput {
+	return &contractapi.MailMutationOutput{
+		Body: contractapi.MailMutationResult{
+			EmailID: emailID,
+			Status:  "ok",
+		},
+	}
+}
+
+func syncStatus(svc provider) func(context.Context, *contractapi.EmptyInput) (*contractapi.MailSyncStatusOutput, error) {
+	return func(context.Context, *contractapi.EmptyInput) (*contractapi.MailSyncStatusOutput, error) {
+		return &contractapi.MailSyncStatusOutput{Body: contractapi.MailSyncStatusOutputBody{Status: serviceStatus(svc.Status())}}, nil
 	}
 }
 

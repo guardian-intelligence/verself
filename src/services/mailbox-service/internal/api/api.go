@@ -51,26 +51,6 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider, author
 	return publicAPI, privateMux
 }
 
-func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	privateConfig := humaapi.DefaultConfig("Mailbox Service", version)
-	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
-	privateAPI := humago.New(http.NewServeMux(), privateConfig)
-	applyPublicAPISecurityScheme(privateAPI)
-	registerMailRoutes(privateAPI, nil, nil)
-	humaapi.ApplyOpenAPIWireDefaults(privateAPI)
-	return privateAPI.OpenAPI().DowngradeYAML()
-}
-
-func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	privateConfig := humaapi.DefaultConfig("Mailbox Service", version)
-	privateConfig.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
-	privateAPI := humago.New(http.NewServeMux(), privateConfig)
-	applyPublicAPISecurityScheme(privateAPI)
-	registerMailRoutes(privateAPI, nil, nil)
-	humaapi.ApplyOpenAPIWireDefaults(privateAPI)
-	return privateAPI.OpenAPI().YAML()
-}
-
 func applyPublicAPISecurityScheme(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {
