@@ -176,6 +176,8 @@ func (g generator) writeStructures(out *bytes.Buffer) {
 
 func (g generator) writeOperationTypes(out *bytes.Buffer) {
 	ops := g.sortedOperations()
+	writtenBodies := map[string]bool{}
+	writtenOutputs := map[string]bool{}
 	for _, op := range ops {
 		input, ok := g.ir.Shapes[op.Input]
 		if !ok {
@@ -193,7 +195,11 @@ func (g generator) writeOperationTypes(out *bytes.Buffer) {
 		if op.Bindings.Payload != nil {
 			requestFields = append(requestFields, memberSpec{Name: "body", Target: op.Bindings.Payload.Target, JSONName: "body", Required: op.Bindings.Payload.Required})
 		} else if len(bodyFields) > 0 {
-			g.writeStruct(out, input.Name+"Body", bodyFields, nil)
+			bodyName := input.Name + "Body"
+			if !writtenBodies[bodyName] {
+				writtenBodies[bodyName] = true
+				g.writeStruct(out, bodyName, bodyFields, nil)
+			}
 			bodyMember := memberSpec{Name: "body", Target: input.Name + "Body", JSONName: "body", Required: true}
 			requestFields = append(requestFields, bodyMember)
 		}
@@ -204,10 +210,15 @@ func (g generator) writeOperationTypes(out *bytes.Buffer) {
 			bodyOverrides["body"] = input.Name + "Body"
 		}
 		g.writeStruct(out, op.Name+"Request", requestFields, bodyOverrides)
-		if op.Bindings.ResponsePayload != nil {
-			g.writeResponsePayloadOutput(out, op)
-		} else if output, ok := g.ir.Shapes[op.Output]; ok && !g.outputFlattens(op.Output) {
-			g.writeStruct(out, output.Name+"Body", g.documentMembers(output, op.Bindings.ResponseDocumentMembers), nil)
+		if output, ok := g.ir.Shapes[op.Output]; ok {
+			if !writtenOutputs[output.Name] {
+				writtenOutputs[output.Name] = true
+				if op.Bindings.ResponsePayload != nil {
+					g.writeResponsePayloadOutput(out, op)
+				} else if !g.outputFlattens(op.Output) {
+					g.writeStruct(out, output.Name+"Body", g.documentMembers(output, op.Bindings.ResponseDocumentMembers), nil)
+				}
+			}
 		}
 		fmt.Fprintf(out, "type %sResponse struct {\n", op.Name)
 		out.WriteString("\tStatusCode int\n")

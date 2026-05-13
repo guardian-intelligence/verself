@@ -3,109 +3,54 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/verself/domain-transfer-objects"
+	"github.com/verself/profile-service/internal/internalcontractapi"
 	"github.com/verself/profile-service/internal/profile"
-	runtimeiam "github.com/verself/service-runtime/iam"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type dataRightsInput struct {
-	Body dto.ProfileDataRightsRequest
-}
+type dataRightsInput = internalcontractapi.ProfileDataRightsInput
 
-type dataRightsStatusInput struct {
-	RequestID string `path:"request_id" doc:"Data-rights request ID"`
-}
+type dataRightsStatusInput = internalcontractapi.ProfileDataRightsStatusInput
 
 type dataRightsOutput struct {
-	Body dto.ProfileDataRightsManifest
+	Body internalcontractapi.ProfileDataRightsOutputBody
 }
 
 func (o *dataRightsOutput) auditDetails() auditDetails {
 	return auditDetails{
-		artifactSHA256: firstArtifactHash(o.Body.Artifacts),
-		artifactBytes:  artifactBytes(o.Body.Artifacts),
+		artifactSHA256: firstArtifactHash(o.Body.Manifest.Artifacts),
+		artifactBytes:  artifactBytes(o.Body.Manifest.Artifacts),
 	}
 }
 
 func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
-	registerProfileRoute(api, nil, huma.Operation{
-		OperationID:   "profile-org-export",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/data-rights/org-export",
-		Summary:       "Export organization-local profile data",
-		DefaultStatus: http.StatusOK,
-	}, profileOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProfileDataRights,
-			Resource:       "profile_data_rights",
-			Action:         runtimeiam.ActionExport,
-			OrgScope:       runtimeiam.OrgScopeRequestOrgID,
-			RateLimitClass: "internal_data_rights",
-			AuditEvent:     "profile.data_rights.org_export",
-			BodyLimitBytes: bodyLimitDataRightsJSON,
-		},
-		Internal: true,
-	}, orgExport(svc))
+	op, policy := internalProfileContract(internalcontractapi.ProfileOrgExport.Descriptor, "Export organization-local profile data")
+	registerProfileRoute(api, nil, op, policy, orgExport(svc))
+	op, policy = internalProfileContract(internalcontractapi.ProfileSubjectExport.Descriptor, "Export subject-local profile data")
+	registerProfileRoute(api, nil, op, policy, subjectExport(svc))
+	op, policy = internalProfileContract(internalcontractapi.ProfileSubjectErasure.Descriptor, "Erase subject-local profile data")
+	registerProfileRoute(api, nil, op, policy, subjectErasure(svc))
+	op, policy = internalProfileContract(internalcontractapi.ProfileDataRightsStatus.Descriptor, "Get profile data-rights request status")
+	registerProfileRoute(api, nil, op, policy, dataRightsStatus(svc))
+}
 
-	registerProfileRoute(api, nil, huma.Operation{
-		OperationID:   "profile-subject-export",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/data-rights/subject-export",
-		Summary:       "Export subject-local profile data",
-		DefaultStatus: http.StatusOK,
-	}, profileOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProfileDataRights,
-			Resource:       "profile_data_rights",
-			Action:         runtimeiam.ActionExport,
-			OrgScope:       runtimeiam.OrgScopeRequestSubjectID,
-			RateLimitClass: "internal_data_rights",
-			AuditEvent:     "profile.data_rights.subject_export",
-			BodyLimitBytes: bodyLimitDataRightsJSON,
-		},
-		Internal: true,
-	}, subjectExport(svc))
-
-	registerProfileRoute(api, nil, huma.Operation{
-		OperationID:   "profile-subject-erasure",
-		Method:        http.MethodPost,
-		Path:          "/internal/v1/data-rights/subject-erasure",
-		Summary:       "Erase subject-local profile data",
-		DefaultStatus: http.StatusOK,
-	}, profileOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProfileDataRights,
-			Resource:       "profile_data_rights",
-			Action:         runtimeiam.ActionErase,
-			OrgScope:       runtimeiam.OrgScopeRequestSubjectID,
-			RateLimitClass: "internal_data_rights",
-			AuditEvent:     "profile.data_rights.subject_erasure",
-			BodyLimitBytes: bodyLimitDataRightsJSON,
-		},
-		Internal: true,
-	}, subjectErasure(svc))
-
-	registerProfileRoute(api, nil, huma.Operation{
-		OperationID: "profile-data-rights-status",
-		Method:      http.MethodGet,
-		Path:        "/internal/v1/data-rights/requests/{request_id}",
-		Summary:     "Get profile data-rights request status",
-	}, profileOperationPolicy{
-		OperationPolicy: runtimeiam.OperationPolicy{
-			Permission:     permissionProfileDataRights,
-			Resource:       "profile_data_rights",
-			Action:         runtimeiam.ActionRead,
-			OrgScope:       runtimeiam.OrgScopeRequestID,
-			RateLimitClass: "internal_data_rights",
-			AuditEvent:     "profile.data_rights.status",
-		},
-		Internal: true,
-	}, dataRightsStatus(svc))
+func internalProfileContract(desc internalcontractapi.OperationDescriptor, summary string) (huma.Operation, profileOperationPolicy) {
+	op := huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		Summary:       summary,
+		DefaultStatus: desc.DefaultStatus,
+		Errors:        internalContractProblemStatuses(desc.Problems),
+		Extensions:    map[string]any{"x-verself-contract": internalContractExtension(desc)},
+	}
+	return op, profileOperationPolicy{OperationPolicy: operationPolicyFromInternalContract(desc), Internal: true}
 }
 
 func orgExport(svc *profile.Service) func(context.Context, *dataRightsInput) (*dataRightsOutput, error) {
@@ -113,11 +58,15 @@ func orgExport(svc *profile.Service) func(context.Context, *dataRightsInput) (*d
 		if err := requireGovernancePeer(ctx); err != nil {
 			return nil, err
 		}
-		manifest, err := svc.OrgExport(ctx, dataRightsRequest(input.Body))
+		request, err := dataRightsRequest(input.Body)
+		if err != nil {
+			return nil, badRequest(ctx, "data-rights-request-invalid", "data-rights request is invalid", err)
+		}
+		manifest, err := svc.OrgExport(ctx, request)
 		if err != nil {
 			return nil, profileError(ctx, err)
 		}
-		return &dataRightsOutput{Body: dataRightsManifestDTO(manifest)}, nil
+		return &dataRightsOutput{Body: dataRightsOutputBody(manifest)}, nil
 	}
 }
 
@@ -126,11 +75,15 @@ func subjectExport(svc *profile.Service) func(context.Context, *dataRightsInput)
 		if err := requireGovernancePeer(ctx); err != nil {
 			return nil, err
 		}
-		manifest, err := svc.SubjectExport(ctx, dataRightsRequest(input.Body))
+		request, err := dataRightsRequest(input.Body)
+		if err != nil {
+			return nil, badRequest(ctx, "data-rights-request-invalid", "data-rights request is invalid", err)
+		}
+		manifest, err := svc.SubjectExport(ctx, request)
 		if err != nil {
 			return nil, profileError(ctx, err)
 		}
-		return &dataRightsOutput{Body: dataRightsManifestDTO(manifest)}, nil
+		return &dataRightsOutput{Body: dataRightsOutputBody(manifest)}, nil
 	}
 }
 
@@ -139,11 +92,15 @@ func subjectErasure(svc *profile.Service) func(context.Context, *dataRightsInput
 		if err := requireGovernancePeer(ctx); err != nil {
 			return nil, err
 		}
-		manifest, err := svc.SubjectErasure(ctx, dataRightsRequest(input.Body))
+		request, err := dataRightsRequest(input.Body)
+		if err != nil {
+			return nil, badRequest(ctx, "data-rights-request-invalid", "data-rights request is invalid", err)
+		}
+		manifest, err := svc.SubjectErasure(ctx, request)
 		if err != nil {
 			return nil, profileError(ctx, err)
 		}
-		return &dataRightsOutput{Body: dataRightsManifestDTO(manifest)}, nil
+		return &dataRightsOutput{Body: dataRightsOutputBody(manifest)}, nil
 	}
 }
 
@@ -152,11 +109,11 @@ func dataRightsStatus(svc *profile.Service) func(context.Context, *dataRightsSta
 		if err := requireGovernancePeer(ctx); err != nil {
 			return nil, err
 		}
-		manifest, err := svc.DataRightsStatus(ctx, strings.TrimSpace(input.RequestID))
+		manifest, err := svc.DataRightsStatus(ctx, strings.TrimSpace(string(input.RequestID)))
 		if err != nil {
 			return nil, profileError(ctx, err)
 		}
-		return &dataRightsOutput{Body: dataRightsManifestDTO(manifest)}, nil
+		return &dataRightsOutput{Body: dataRightsOutputBody(manifest)}, nil
 	}
 }
 
@@ -167,72 +124,99 @@ func requireGovernancePeer(ctx context.Context) error {
 	return nil
 }
 
-func dataRightsRequest(dto dto.ProfileDataRightsRequest) profile.DataRightsRequest {
+func dataRightsRequest(body internalcontractapi.ProfileDataRightsInputBody) (profile.DataRightsRequest, error) {
+	requestedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(body.RequestedAt))
+	if err != nil {
+		return profile.DataRightsRequest{}, err
+	}
 	return profile.DataRightsRequest{
-		RequestID:   dto.RequestID,
-		RequestedAt: dto.RequestedAt,
-		RequestedBy: dto.RequestedBy,
-		Traceparent: dto.Traceparent,
-		OrgID:       dto.OrgID,
-		SubjectID:   dto.SubjectID,
+		RequestID:   string(body.RequestID),
+		RequestedAt: requestedAt.UTC(),
+		RequestedBy: string(body.RequestedBy),
+		Traceparent: contractString(body.Traceparent),
+		OrgID:       contractString(body.OrgID),
+		SubjectID:   contractString(body.SubjectID),
+	}, nil
+}
+
+func dataRightsOutputBody(manifest profile.DataRightsManifest) internalcontractapi.ProfileDataRightsOutputBody {
+	return internalcontractapi.ProfileDataRightsOutputBody{
+		Manifest: internalcontractapi.ProfileDataRightsManifest{
+			RequestID:          internalcontractapi.DataRightsRequestID(manifest.RequestID),
+			RequestType:        internalcontractapi.DataRightsRequestType(manifest.RequestType),
+			Status:             internalcontractapi.DataRightsStatus(manifest.Status),
+			OrgID:              optionalContractString[internalcontractapi.OrgID](manifest.OrgID),
+			SubjectID:          optionalContractString[internalcontractapi.SubjectID](manifest.SubjectID),
+			Artifacts:          artifactContracts(manifest.Artifacts),
+			ErasureActions:     erasureActionContracts(manifest.ErasureActions),
+			RetainedCategories: retainedCategoryContracts(manifest.RetainedCategories),
+			RecordCounts:       recordCountsContract(manifest.RecordCounts),
+			CompletedAt:        formatContractTime(manifest.CompletedAt),
+		},
 	}
 }
 
-func dataRightsManifestDTO(manifest profile.DataRightsManifest) dto.ProfileDataRightsManifest {
-	return dto.ProfileDataRightsManifest{
-		RequestID:          manifest.RequestID,
-		RequestType:        manifest.RequestType,
-		Status:             manifest.Status,
-		OrgID:              manifest.OrgID,
-		SubjectID:          manifest.SubjectID,
-		Artifacts:          artifactDTOs(manifest.Artifacts),
-		ErasureActions:     erasureActionDTOs(manifest.ErasureActions),
-		RetainedCategories: retainedCategoryDTOs(manifest.RetainedCategories),
-		RecordCounts:       manifest.RecordCounts,
-		CompletedAt:        manifest.CompletedAt,
-	}
-}
-
-func artifactDTOs(artifacts []profile.DataRightsArtifact) []dto.ProfileDataRightsArtifact {
-	out := make([]dto.ProfileDataRightsArtifact, 0, len(artifacts))
+func artifactContracts(artifacts []profile.DataRightsArtifact) internalcontractapi.ProfileArtifacts {
+	out := make(internalcontractapi.ProfileArtifacts, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		out = append(out, dto.ProfileDataRightsArtifact{
-			Path:        artifact.Path,
-			ContentType: artifact.ContentType,
-			Rows:        artifact.Rows,
-			Bytes:       artifact.Bytes,
-			SHA256:      artifact.SHA256,
+		out = append(out, internalcontractapi.ProfileArtifact{
+			Path:        internalcontractapi.ArtifactPath(artifact.Path),
+			ContentType: internalcontractapi.MediaType(artifact.ContentType),
+			Rows:        internalcontractapi.DecimalUint64(artifact.Rows),
+			Bytes:       internalcontractapi.DecimalUint64(artifact.Bytes),
+			SHA256:      internalcontractapi.SHA256Hex(artifact.SHA256),
 		})
 	}
 	return out
 }
 
-func erasureActionDTOs(actions []profile.DataRightsErasureAction) []dto.ProfileDataRightsErasureAction {
-	out := make([]dto.ProfileDataRightsErasureAction, 0, len(actions))
+func erasureActionContracts(actions []profile.DataRightsErasureAction) internalcontractapi.ProfileErasureActions {
+	out := make(internalcontractapi.ProfileErasureActions, 0, len(actions))
 	for _, action := range actions {
-		out = append(out, dto.ProfileDataRightsErasureAction{
-			Name:        action.Name,
-			Rows:        action.Rows,
-			Description: action.Description,
+		out = append(out, internalcontractapi.ProfileDataRightsErasureAction{
+			Name:        internalcontractapi.DataRightsActionName(action.Name),
+			Rows:        internalcontractapi.DecimalUint64(action.Rows),
+			Description: optionalContractString[internalcontractapi.DataRightsActionDescription](action.Description),
 		})
 	}
 	return out
 }
 
-func retainedCategoryDTOs(categories []profile.DataRightsRetainedCategory) []dto.ProfileDataRightsRetainedCategory {
-	out := make([]dto.ProfileDataRightsRetainedCategory, 0, len(categories))
+func retainedCategoryContracts(categories []profile.DataRightsRetainedCategory) internalcontractapi.ProfileRetainedCategories {
+	out := make(internalcontractapi.ProfileRetainedCategories, 0, len(categories))
 	for _, category := range categories {
-		out = append(out, dto.ProfileDataRightsRetainedCategory{
-			Category: category.Category,
-			Reason:   category.Reason,
+		out = append(out, internalcontractapi.ProfileDataRightsRetainedCategory{
+			Category: internalcontractapi.DataRightsCategory(category.Category),
+			Reason:   internalcontractapi.DataRightsReason(category.Reason),
 		})
 	}
 	return out
 }
 
-func firstArtifactHash(artifacts []dto.ProfileDataRightsArtifact) string {
+func recordCountsContract(counts map[string]string) map[string]any {
+	out := make(map[string]any, len(counts))
+	for key, value := range counts {
+		if strings.TrimSpace(key) != "" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func firstArtifactHash(artifacts internalcontractapi.ProfileArtifacts) string {
 	if len(artifacts) == 0 {
 		return ""
 	}
-	return artifacts[0].SHA256
+	return string(artifacts[0].SHA256)
+}
+
+func artifactBytes(artifacts internalcontractapi.ProfileArtifacts) uint64 {
+	var total uint64
+	for _, artifact := range artifacts {
+		bytes, err := strconv.ParseUint(string(artifact.Bytes), 10, 64)
+		if err == nil {
+			total += bytes
+		}
+	}
+	return total
 }

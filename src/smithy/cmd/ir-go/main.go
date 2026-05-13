@@ -877,10 +877,16 @@ func writeStructs(b *bytes.Buffer, ir *contractIR, ids []string) {
 
 func writeOutputBodies(b *bytes.Buffer, ir *contractIR) {
 	written := map[string]bool{}
+	writtenOutputs := map[string]bool{}
 	for _, op := range ir.Operations {
 		output := ir.Shapes[op.Output]
+		outputName := goName(output.Name)
+		if writtenOutputs[outputName] {
+			continue
+		}
+		writtenOutputs[outputName] = true
 		if op.Bindings.ResponsePayload != nil {
-			fmt.Fprintf(b, "type %s struct {\n", goName(output.Name))
+			fmt.Fprintf(b, "type %s struct {\n", outputName)
 			for _, member := range headerMemberSpecs(ir, output, op.Bindings.ResponseHeaders) {
 				fmt.Fprintf(b, "\t%s %s `%s`\n", member.GoName, member.Type, strings.Join(member.Tags, " "))
 			}
@@ -889,10 +895,10 @@ func writeOutputBodies(b *bytes.Buffer, ir *contractIR) {
 			continue
 		}
 		if nested := nestedOutputMember(output); nested != nil {
-			fmt.Fprintf(b, "type %s struct {\n\tBody %s\n}\n\n", goName(output.Name), goTypeForTarget(ir, nested.Target))
+			fmt.Fprintf(b, "type %s struct {\n\tBody %s\n}\n\n", outputName, goTypeForTarget(ir, nested.Target))
 			continue
 		}
-		bodyName := goName(output.Name) + "Body"
+		bodyName := outputName + "Body"
 		if !written[bodyName] {
 			written[bodyName] = true
 			fmt.Fprintf(b, "type %s struct {\n", bodyName)
@@ -901,7 +907,7 @@ func writeOutputBodies(b *bytes.Buffer, ir *contractIR) {
 			}
 			fmt.Fprintln(b, "}\n")
 		}
-		fmt.Fprintf(b, "type %s struct {\n\tBody %s\n}\n\n", goName(output.Name), bodyName)
+		fmt.Fprintf(b, "type %s struct {\n\tBody %s\n}\n\n", outputName, bodyName)
 	}
 }
 

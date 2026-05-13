@@ -6,13 +6,13 @@ import {
   putProfilePreferences as putGeneratedProfilePreferences,
 } from "../__generated/profile-api/index.js";
 import type {
-  ProfilePutPreferencesRequest as ProfilePutPreferencesRequestBody,
-  ProfileUpdateIdentityRequest as ProfileUpdateIdentityRequestBody,
+  PatchProfileIdentityData,
+  PutProfilePreferencesData,
 } from "../__generated/profile-api/types.gen.js";
 import {
-  vProfilePutPreferencesRequest,
-  vProfileSnapshot,
-  vProfileUpdateIdentityRequest,
+  vPatchProfileIdentityBody,
+  vProfileOutput,
+  vPutProfilePreferencesBody,
 } from "../__generated/profile-api/valibot.gen.js";
 import {
   type BearerClientOptions,
@@ -50,11 +50,13 @@ function createProfileClient(options: ProfileClientOptions): Client {
 const profileTextSchema = (maxLength: number) =>
   v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(maxLength));
 
+const decimalInt64Schema = v.pipe(v.string(), v.trim(), v.regex(/^-?[0-9]+$/));
+
 export const updateProfileIdentityRequestSchema = v.strictObject({
   display_name: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(200))),
   family_name: profileTextSchema(100),
   given_name: profileTextSchema(100),
-  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  version: decimalInt64Schema,
 });
 
 export type UpdateProfileIdentityRequest = v.InferInput<typeof updateProfileIdentityRequestSchema>;
@@ -65,13 +67,13 @@ export const putProfilePreferencesRequestSchema = v.strictObject({
   theme: v.picklist(["system", "light", "dark"]),
   time_display: v.picklist(["utc", "local"]),
   timezone: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(64)),
-  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  version: decimalInt64Schema,
 });
 
 export type PutProfilePreferencesRequest = v.InferInput<typeof putProfilePreferencesRequestSchema>;
 
 function parseProfileSnapshot(input: unknown) {
-  return v.parse(vProfileSnapshot, input);
+  return v.parse(vProfileOutput, input).profile;
 }
 
 export type ProfileSnapshot = ReturnType<typeof parseProfileSnapshot>;
@@ -105,10 +107,7 @@ export async function updateProfileIdentity(
   if (input.display_name !== undefined) {
     bodySource.display_name = input.display_name;
   }
-  const body = v.parse(
-    vProfileUpdateIdentityRequest,
-    bodySource,
-  ) as ProfileUpdateIdentityRequestBody;
+  const body = v.parse(vPatchProfileIdentityBody, bodySource) as PatchProfileIdentityData["body"];
   const path = "/api/v1/profile/identity";
   const result = await patchGeneratedProfileIdentity({
     body,
@@ -140,10 +139,7 @@ export async function putProfilePreferences(
   if (input.default_surface !== undefined) {
     bodySource.default_surface = input.default_surface;
   }
-  const body = v.parse(
-    vProfilePutPreferencesRequest,
-    bodySource,
-  ) as ProfilePutPreferencesRequestBody;
+  const body = v.parse(vPutProfilePreferencesBody, bodySource) as PutProfilePreferencesData["body"];
   const path = "/api/v1/profile/preferences";
   const result = await putGeneratedProfilePreferences({
     body,

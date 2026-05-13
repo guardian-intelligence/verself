@@ -1,9 +1,10 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "api",
     srcs = [
         "audit_sink.go",
+        "contract.go",
         "errors.go",
         "internal.go",
         "internal_openapi.go",
@@ -11,12 +12,14 @@ go_library(
         "policy.go",
         "raw_token.go",
         "routes.go",
+        "safeconv.go",
     ],
     importpath = "github.com/verself/profile-service/internal/api",
     visibility = ["//src/services/profile-service:__subpackages__"],
     deps = [
-        "//src/domain-transfer-objects/go:dto",
         "//src/services/governance-service/internalclient",
+        "//src/services/profile-service/internal/contractapi",
+        "//src/services/profile-service/internal/internalcontractapi",
         "//src/services/profile-service/internal/profile",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/humaapi",
@@ -36,4 +39,16 @@ alias(
     name = "go_default_library",
     actual = ":api",
     visibility = ["//src/services/profile-service:__subpackages__"],
+)
+
+go_test(
+    name = "api_test",
+    srcs = ["contract_conformance_test.go"],
+    embed = [":api"],
+    deps = [
+        "//src/services/profile-service/internal/contractapi",
+        "//src/services/profile-service/internal/internalcontractapi",
+        "//src/services/profile-service/internal/profile",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+    ],
 )

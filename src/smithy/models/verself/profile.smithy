@@ -17,6 +17,7 @@ use verself.common.v1#PermissionDeniedError
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceNotFoundError
 use verself.common.v1#ServiceUnavailableError
+use verself.common.v1#TraceParent
 use verself.common.v1#UnauthenticatedError
 use verself.common.v1#ValidationFailedError
 use verself.common.v1#audit
@@ -60,7 +61,7 @@ string OrgId
 string SubjectId
 @length(min: 1, max: 128)
 string DataRightsRequestId
-@length(min: 1, max: 320)
+@length(max: 320)
 string EmailAddress
 @length(max: 100)
 string GivenName
@@ -78,10 +79,30 @@ string DecimalInt64
 string DecimalUint64
 @pattern("^[0-9a-f]{64}$")
 string SHA256Hex
-@length(min: 1, max: 2048)
-string ArtifactURI
+@length(min: 1, max: 512)
+string ArtifactPath
+@length(min: 1, max: 255)
+string MediaType
+@length(min: 1, max: 64)
+string DataRightsStatus
+@length(min: 1, max: 64)
+string DataRightsRequestType
+@length(min: 1, max: 128)
+string DataRightsActionName
+@length(min: 1, max: 128)
+string DataRightsCategory
+@length(min: 1, max: 512)
+string DataRightsReason
+@length(max: 1024)
+string DataRightsActionDescription
 list ProfileArtifacts {
     member: ProfileArtifact
+}
+list ProfileErasureActions {
+    member: ProfileDataRightsErasureAction
+}
+list ProfileRetainedCategories {
+    member: ProfileDataRightsRetainedCategory
 }
 @permission(name: "profile:self:read")
 string ProfileReadPermission
@@ -113,7 +134,6 @@ structure ProfileIdentityView {
     @required
     @protoField(number: 1)
     version: DecimalInt64
-    @required
     @protoField(number: 2)
     email: EmailAddress
     @protoField(number: 3)
@@ -122,7 +142,6 @@ structure ProfileIdentityView {
     family_name: FamilyName
     @protoField(number: 5)
     display_name: DisplayName
-    @required
     @protoField(number: 6)
     synced_at: Timestamp
 }
@@ -163,13 +182,37 @@ structure ProfileSnapshot {
 structure ProfileArtifact {
     @required
     @protoField(number: 1)
-    uri: ArtifactURI
+    path: ArtifactPath
     @required
     @protoField(number: 2)
-    bytes: DecimalUint64
+    content_type: MediaType
     @required
     @protoField(number: 3)
+    rows: DecimalUint64
+    @required
+    @protoField(number: 4)
+    bytes: DecimalUint64
+    @required
+    @protoField(number: 5)
     sha256: SHA256Hex
+}
+structure ProfileDataRightsErasureAction {
+    @required
+    @protoField(number: 1)
+    name: DataRightsActionName
+    @required
+    @protoField(number: 2)
+    rows: DecimalUint64
+    @protoField(number: 3)
+    description: DataRightsActionDescription
+}
+structure ProfileDataRightsRetainedCategory {
+    @required
+    @protoField(number: 1)
+    category: DataRightsCategory
+    @required
+    @protoField(number: 2)
+    reason: DataRightsReason
 }
 structure ProfileDataRightsManifest {
     @required
@@ -177,15 +220,29 @@ structure ProfileDataRightsManifest {
     request_id: DataRightsRequestId
     @required
     @protoField(number: 2)
-    org_id: OrgId
+    request_type: DataRightsRequestType
+    @required
     @protoField(number: 3)
+    status: DataRightsStatus
+    @protoField(number: 4)
+    org_id: OrgId
+    @protoField(number: 5)
     subject_id: SubjectId
     @required
-    @protoField(number: 4)
-    status: String
-    @required
-    @protoField(number: 5)
+    @protoField(number: 6)
     artifacts: ProfileArtifacts
+    @required
+    @protoField(number: 7)
+    erasure_actions: ProfileErasureActions
+    @required
+    @protoField(number: 8)
+    retained_categories: ProfileRetainedCategories
+    @required
+    @protoField(number: 9)
+    record_counts: Document
+    @required
+    @protoField(number: 10)
+    completed_at: Timestamp
 }
 structure EmptyInput {}
 structure ProfileOutput {
@@ -226,7 +283,9 @@ structure PatchProfileIdentityInput {
     idempotencyKey: IdempotencyKey
     @required
     version: DecimalInt64
+    @required
     given_name: GivenName
+    @required
     family_name: FamilyName
     display_name: DisplayName
 }
@@ -257,11 +316,15 @@ structure PutProfilePreferencesInput {
     default_surface: ProfilePreferenceValue
 }
 structure ProfileDataRightsInput {
-    @required
     org_id: OrgId
     subject_id: SubjectId
     @required
     request_id: DataRightsRequestId
+    @required
+    requested_at: Timestamp
+    @required
+    requested_by: SubjectId
+    traceparent: TraceParent
 }
 structure ProfileDataRightsOutput {
     @required

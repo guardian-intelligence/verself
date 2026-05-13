@@ -1,6 +1,9 @@
-load("//src/tools/build:openapi_codegen.bzl", "verself_openapi_specs")
+load("//src/smithy/build:ir_go.bzl", "verself_ir_openapi_specs")
 
-verself_openapi_specs(
-    internal_tool = "//src/services/profile-service/cmd/profile-internal-openapi",
-    public_tool = "//src/services/profile-service/cmd/profile-openapi",
+verself_ir_openapi_specs(
+    name = "profile_openapi",
+    internal_ir = "//src/smithy/models/verself:profile_internal_ir",
+    internal_server_url = "https://127.0.0.1:4254",
+    public_ir = "//src/smithy/models/verself:profile_public_ir",
+    public_server_url = "https://profile.api.verself.sh",
 )

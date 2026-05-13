@@ -16,7 +16,7 @@ type AutoSyncFormAction<TForm> =
   | { readonly type: "synced"; readonly form: TForm }
   | { readonly type: "syncing" };
 
-export function useAutoSyncForm<TForm, TRequest, TResult>({
+export function useAutoSyncForm<TForm, TRequest, TResult, TVersion = number>({
   formEqual,
   formFromResult,
   initialForm,
@@ -30,12 +30,12 @@ export function useAutoSyncForm<TForm, TRequest, TResult>({
   readonly formEqual: (left: TForm, right: TForm) => boolean;
   readonly formFromResult: (result: TResult) => TForm;
   readonly initialForm: TForm;
-  readonly initialVersion: number;
+  readonly initialVersion: TVersion;
   readonly isConflictError?: (error: unknown) => boolean;
   readonly mutate: (request: TRequest) => Promise<TResult>;
-  readonly requestFromForm: (form: TForm, version: number) => TRequest;
+  readonly requestFromForm: (form: TForm, version: TVersion) => TRequest;
   readonly validate?: (form: TForm) => string | null;
-  readonly versionFromResult: (result: TResult) => number;
+  readonly versionFromResult: (result: TResult) => TVersion;
 }) {
   const [state, dispatch] = useReducer(autoSyncFormReducer<TForm>, {
     error: null,

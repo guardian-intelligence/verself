@@ -92,7 +92,12 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
   const queryClient = useQueryClient();
   const mutation = useUpdateProfileIdentityMutation();
   const [refreshingLatest, setRefreshingLatest] = useState(false);
-  const autosync = useAutoSyncForm<IdentityForm, UpdateProfileIdentityRequest, ProfileSnapshot>({
+  const autosync = useAutoSyncForm<
+    IdentityForm,
+    UpdateProfileIdentityRequest,
+    ProfileSnapshot,
+    string
+  >({
     formEqual: identityFormsEqual,
     formFromResult: identityFormFromProfile,
     initialForm: identityFormFromProfile(profile),
@@ -200,7 +205,12 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
   const queryClient = useQueryClient();
   const mutation = usePutProfilePreferencesMutation();
   const [refreshingLatest, setRefreshingLatest] = useState(false);
-  const autosync = useAutoSyncForm<PreferencesForm, PutProfilePreferencesRequest, ProfileSnapshot>({
+  const autosync = useAutoSyncForm<
+    PreferencesForm,
+    PutProfilePreferencesRequest,
+    ProfileSnapshot,
+    string
+  >({
     formEqual: preferenceFormsEqual,
     formFromResult: preferencesFormFromProfile,
     initialForm: preferencesFormFromProfile(profile),
@@ -454,9 +464,9 @@ function Field({
 
 function identityFormFromProfile(profile: ProfileSnapshot): IdentityForm {
   return {
-    display_name: profile.identity.display_name,
-    family_name: profile.identity.family_name,
-    given_name: profile.identity.given_name,
+    display_name: profile.identity.display_name ?? "",
+    family_name: profile.identity.family_name ?? "",
+    given_name: profile.identity.given_name ?? "",
   };
 }
 
@@ -464,10 +474,31 @@ function preferencesFormFromProfile(profile: ProfileSnapshot): PreferencesForm {
   return {
     default_surface: profile.preferences.default_surface || "executions",
     locale: profile.preferences.locale || "en-US",
-    theme: profile.preferences.theme,
-    time_display: profile.preferences.time_display,
+    theme: profileTheme(profile.preferences.theme),
+    time_display: profileTimeDisplay(profile.preferences.time_display),
     timezone: profile.preferences.timezone || "UTC",
   };
+}
+
+function profileTheme(value: string | undefined): PreferencesForm["theme"] {
+  switch (value) {
+    case "dark":
+    case "light":
+    case "system":
+      return value;
+    default:
+      return "system";
+  }
+}
+
+function profileTimeDisplay(value: string | undefined): PreferencesForm["time_display"] {
+  switch (value) {
+    case "local":
+    case "utc":
+      return value;
+    default:
+      return "utc";
+  }
 }
 
 function identityFormsEqual(left: IdentityForm, right: IdentityForm): boolean {

@@ -20,18 +20,9 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-type permission = runtimeiam.Permission
-
 const (
-	permissionProfileRead        permission = "profile:self:read"
-	permissionProfileIdentity    permission = "profile:self:identity:write"
-	permissionProfilePreferences permission = "profile:self:preferences:write"
-	permissionProfileDataRights  permission = "profile:data_rights:write"
-
 	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
-	bodyLimitSmallJSON      = 16 << 10
-	bodyLimitDataRightsJSON = 64 << 10
 )
 
 var apiTracer = otel.Tracer("profile-service/internal/api")
@@ -362,7 +353,7 @@ func orgIDFromInput(input any) string {
 	}
 	switch typed := any(input).(type) {
 	case *dataRightsInput:
-		return typed.Body.OrgID
+		return contractString(typed.Body.OrgID)
 	case *dataRightsStatusInput:
 		return ""
 	default:
@@ -375,7 +366,7 @@ func actorIDFromInput(input any) string {
 		return ""
 	}
 	if typed, ok := any(input).(*dataRightsInput); ok {
-		return typed.Body.RequestedBy
+		return string(typed.Body.RequestedBy)
 	}
 	return ""
 }
@@ -385,13 +376,13 @@ func targetIDFromInput(input any, identity *auth.Identity) string {
 		return identity.Subject
 	}
 	if typed, ok := any(input).(*dataRightsInput); ok {
-		if typed.Body.SubjectID != "" {
-			return typed.Body.SubjectID
+		if subjectID := contractString(typed.Body.SubjectID); subjectID != "" {
+			return subjectID
 		}
-		return typed.Body.OrgID
+		return contractString(typed.Body.OrgID)
 	}
 	if typed, ok := any(input).(*dataRightsStatusInput); ok {
-		return typed.RequestID
+		return string(typed.RequestID)
 	}
 	return ""
 }
