@@ -145,7 +145,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceA
 		Resource:  auditLogResource,
 		Relation:  parentOrgRelation,
 		Parent:    runtimeiam.ResourceRef{Type: orgResourceType, ID: orgID},
-		Operation: string(policy.AuditEvent),
+		Operation: string(policy.Permission),
 	})
 	if err != nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM audit log resource write failed", err)
