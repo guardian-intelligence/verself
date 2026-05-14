@@ -6,6 +6,7 @@ java_binary(
     name = "smithy_cli",
     main_class = "software.amazon.smithy.cli.SmithyCli",
     runtime_deps = [
+        "//src/smithy/plugins/validators:verself_smithy_validators",
         "@maven//:software_amazon_smithy_smithy_aws_traits",
         "@maven//:software_amazon_smithy_smithy_cli",
         "@maven//:software_amazon_smithy_smithy_openapi",

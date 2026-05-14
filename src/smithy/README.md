@@ -28,6 +28,8 @@ control-plane APIs.
 - `cmd/smithy-artifact/` - small extractor used to expose files from a
   `smithy build` output tree as Bazel outputs.
 - `openapi/` - generated compatibility projections when materialized.
+- `plugins/validators/` - narrow Smithy validators for Verself operation
+  metadata and binding invariants.
 - `proto/` - Connect/protobuf contracts for RPC-shaped internal surfaces.
 
 ## Contract Rule
