@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the bootstrap_pivot dev tools that have to land before any other
-# delivery channel can run. Today that is Bazelisk, the Aspect CLI, and
-# Vite+ (which owns vp/vite/rolldown/vitest invocation for the JS workspace).
+# delivery channel can run. CI uses `--bazelisk-only`; developer/agent
+# environments install Bazelisk, the Aspect CLI, and Vite+.
 #
 # The dev-tools catalog owns the version-of-record for controller tools. The
 # constants here are hand-mirrored because this script bootstraps Bazelisk
@@ -25,6 +25,20 @@ viteplus_install_url="https://vite.plus"
 
 install_dir="${BOOTSTRAP_INSTALL_DIR:-/usr/local/bin}"
 last_installed_path=""
+bootstrap_scope="${1:-all}"
+
+case "${bootstrap_scope}" in
+  --bazelisk-only | bazelisk-only)
+    bootstrap_scope="bazelisk"
+    ;;
+  --all | all)
+    bootstrap_scope="all"
+    ;;
+  *)
+    echo "usage: $0 [--bazelisk-only]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
   echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
@@ -166,8 +180,13 @@ ensure_bazel_symlink() {
 
 install_pivot bazelisk "${bazelisk_version}" "${bazelisk_sha256}" "${bazelisk_url}"
 bazelisk_path="${last_installed_path}"
-install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
 ensure_bazel_symlink "${bazelisk_path}"
+
+if [[ "${bootstrap_scope}" == "bazelisk" ]]; then
+  exit 0
+fi
+
+install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
 
 # Vite+ ships its own multi-version toolchain at ~/.vite-plus/, with `vp`
 # at ~/.vite-plus/bin/vp. The installer is a shell script (so no sha256 pin

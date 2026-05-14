@@ -298,18 +298,21 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		Result:        "succeeded",
 		Reason:        firstNonEmpty(decl.SourcePath, decl.SourceSHA),
 	})
+	mountPolicyHash := stableHex("bind", "noatime", "nodev", "nosuid")
+	cacheVolumeCompatibilityHashes := make(map[string]string, len(decl.Volumes))
 	for _, volume := range decl.Volumes {
 		pathsJSON, pathHash, err := normalizedPathsJSON(volume.Paths)
 		if err != nil {
 			return durableVolumePlan{}, err
 		}
+		cacheVolumeCompatibilityHashes[volume.Name] = stableHex("cache-volume", volume.Name, strconv.FormatUint(volume.SizeBytes, 10), pathHash, mountPolicyHash)
 		if err := s.storeQueries().InsertCacheVolumeSpec(ctx, store.InsertCacheVolumeSpecParams{
 			CacheVolumeSpecID:   stableUUID("cache-volume-spec", cacheDeclarationID.String(), volume.Name),
 			CacheDeclarationID:  cacheDeclarationID,
 			Name:                volume.Name,
 			SizeBytes:           mustInt64FromUint64(volume.SizeBytes, "cache volume size"),
 			PathSetHash:         pathHash,
-			MountPolicyHash:     stableHex("bind", "noatime", "nodev", "nosuid"),
+			MountPolicyHash:     mountPolicyHash,
 			NormalizedPathsJson: pathsJSON,
 			CreatedAt:           pgTime(now),
 		}); err != nil {
@@ -321,33 +324,40 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 	jobIdentity := githubJobIdentity(identity)
 	matrixKey := githubMatrixKey(identity)
 	workspacePolicyHash := stableHex("workspace", "v0", githubRunnerDurableWorkDir, "preserve-untracked")
-	jobShapeID := stableUUID("durable-job-shape", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), workflowIdentity, jobIdentity, matrixKey, identity.RunnerClass, durablePlatformImage, durableGuestArch, workspacePolicyHash, declarationHash)
-	shape, err := s.storeQueries().UpsertJobShape(ctx, store.UpsertJobShapeParams{
-		JobShapeID:             jobShapeID,
-		RepositoryID:           identity.ProviderRepositoryID,
-		Provider:               identity.Provider,
-		WorkflowIdentity:       workflowIdentity,
-		CalledWorkflowIdentity: "",
-		JobIdentity:            jobIdentity,
-		MatrixKey:              matrixKey,
-		RunnerClass:            identity.RunnerClass,
-		GuestArch:              durableGuestArch,
-		PlatformImageID:        durablePlatformImage,
-		KernelImageID:          "default",
-		RunnerToolchainImageID: durableToolchainImage,
-		WorkspacePolicyHash:    workspacePolicyHash,
-		CacheDeclarationHash:   declarationHash,
-		CreatedAt:              pgTime(now),
-	})
+	upsertJobShape := func(componentCompatibilityHash string) (uuid.UUID, error) {
+		jobShapeID := stableUUID("durable-job-shape", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), workflowIdentity, jobIdentity, matrixKey, identity.RunnerClass, durablePlatformImage, durableGuestArch, workspacePolicyHash, componentCompatibilityHash)
+		shape, err := s.storeQueries().UpsertJobShape(ctx, store.UpsertJobShapeParams{
+			JobShapeID:             jobShapeID,
+			RepositoryID:           identity.ProviderRepositoryID,
+			Provider:               identity.Provider,
+			WorkflowIdentity:       workflowIdentity,
+			CalledWorkflowIdentity: "",
+			JobIdentity:            jobIdentity,
+			MatrixKey:              matrixKey,
+			RunnerClass:            identity.RunnerClass,
+			GuestArch:              durableGuestArch,
+			PlatformImageID:        durablePlatformImage,
+			KernelImageID:          "default",
+			RunnerToolchainImageID: durableToolchainImage,
+			WorkspacePolicyHash:    workspacePolicyHash,
+			CacheDeclarationHash:   componentCompatibilityHash,
+			CreatedAt:              pgTime(now),
+		})
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("upsert durable job shape: %w", err)
+		}
+		return shape, nil
+	}
+	workspaceShape, err := upsertJobShape(stableHex("workspace-volume", workspacePolicyHash))
 	if err != nil {
-		return durableVolumePlan{}, fmt.Errorf("upsert durable job shape: %w", err)
+		return durableVolumePlan{}, err
 	}
 
 	scopeRef := durableScopeRef(identity)
 	promotionEligible := durablePromotionCandidate(identity)
 	plan := durableVolumePlan{Enabled: true, Identity: identity}
 	workspace, err := s.insertDurableOperation(ctx, item, identity, durableOperationSpec{
-		JobShapeID:        shape,
+		JobShapeID:        workspaceShape,
 		ScopeRef:          scopeRef,
 		ComponentKind:     durableWorkspaceComponentKind,
 		ComponentName:     "repo-workspace",
@@ -365,8 +375,12 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 	}
 	plan.Operations = append(plan.Operations, workspace)
 	for _, volume := range decl.Volumes {
+		cacheShape, err := upsertJobShape(cacheVolumeCompatibilityHashes[volume.Name])
+		if err != nil {
+			return durableVolumePlan{}, err
+		}
 		op, err := s.insertDurableOperation(ctx, item, identity, durableOperationSpec{
-			JobShapeID:        shape,
+			JobShapeID:        cacheShape,
 			ScopeRef:          scopeRef,
 			ComponentKind:     durableCacheComponentKind,
 			ComponentName:     volume.Name,

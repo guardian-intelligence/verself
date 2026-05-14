@@ -100,8 +100,8 @@ execution.
 
 Verself differences:
 
-- Volume promotion is scoped by repository, target ref, workflow job shape,
-  runner class, platform image, architecture, and declaration hash.
+- Volume promotion is scoped by repository, target ref, workflow job identity,
+  runner class, platform image, architecture, and component compatibility hash.
 - Pull requests may read a protected branch's secretless cache generation, but
   PR writes never promote that protected branch pointer.
 - Protected branch promotion is gated by the provider workflow result, not by a
@@ -367,10 +367,10 @@ none
 
 `source_ref` and `source_sha` record the last observed source for diagnostics.
 The declaration identity is repository, normalized declaration hash, source
-kind, source path, workflow identity, job identity, and step identity. The
-compatible runtime lineage is keyed later by `job_shape` and
-`durable_scope.scope_ref`, so the same trusted manifest content observed through
-a branch, tag, or rerun resolves to the same declaration row.
+kind, source path, workflow identity, job identity, and step identity. Runtime
+lineage is keyed later per component by `job_shape`, `durable_scope.scope_ref`,
+and the component compatibility hash, so a manifest edit only invalidates
+volumes whose compatibility-affecting fields changed.
 
 `declaration_hash` is the canonical hash of the normalized declaration. It
 changes when volume names, sizes, paths, or mount policy change.
@@ -413,8 +413,11 @@ job_shape
   created_at
 ```
 
-`job_shape` is the compatibility boundary for generated state. `guest_arch` is
-explicit so x86_64 and aarch64 never share cache generations.
+`job_shape` is the compatibility boundary for generated state. The
+`cache_declaration_hash` column stores the component compatibility hash:
+workspace policy for the workspace volume, and volume name, size, path set, and
+mount policy for a cache volume. `guest_arch` is explicit so x86_64 and aarch64
+never share cache generations.
 
 ### Durable Scope
 
@@ -598,7 +601,7 @@ guest_arch
 platform_image_id
 kernel_image_id
 runner_toolchain_image_id
-cache_declaration_hash
+component_compatibility_hash
 component_name
 component_kind
 trust_class
@@ -607,7 +610,8 @@ trust_class
 Matrix values are canonicalized after GitHub expands the job. Jobs with
 different Node versions, Python versions, CPU architecture, service topology,
 or runner class naturally receive different scopes because their job identity,
-matrix key, runner class, platform image, or declaration hash differs.
+matrix key, runner class, platform image, or component compatibility hash
+differs.
 
 ## CPU Architecture
 
@@ -667,10 +671,11 @@ been merged into the trusted branch.
 
 ### Declaration Changes
 
-A declaration change changes `cache_declaration_hash`. New hashes create new
-durable scopes. Existing current pointers remain available for older scopes
-until retention prunes them. A declaration edit is therefore a cache miss for
-the new scope, not a migration.
+A compatibility-affecting change to a volume's name, size, path set, or mount
+policy changes that volume's component compatibility hash and creates a new
+durable scope. Existing current pointers remain available for older scopes until
+retention prunes them. Adding, removing, or changing one cache volume does not
+invalidate the workspace volume or unrelated cache volumes.
 
 ### Lease Cancellation
 
