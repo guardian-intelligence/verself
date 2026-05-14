@@ -208,8 +208,11 @@ func apiActivityResult(outcome string) (governanceinternalclient.AuthorizationDe
 func httpStatusFromOperationResult(outcome string, err error) uint16 {
 	if err != nil {
 		var statusErr huma.StatusError
-		if errors.As(err, &statusErr) && statusErr.GetStatus() > 0 {
-			return uint16(statusErr.GetStatus())
+		if errors.As(err, &statusErr) {
+			status := statusErr.GetStatus()
+			if status >= http.StatusContinue && status <= 599 {
+				return uint16(status)
+			}
 		}
 	}
 	if outcome == "denied" {
