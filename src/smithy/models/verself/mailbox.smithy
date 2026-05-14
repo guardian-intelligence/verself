@@ -32,7 +32,7 @@ use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
-@serviceRuntime(serviceName: "mailbox-service", publicAudience: "mailbox-service", internalAudience: "mailbox-service")
+@serviceRuntime(serviceName: "mailbox-service", publicAudience: "verself-api", internalAudience: "mailbox-service")
 @restJson1
 service Mailbox {
     version: "2026-05-13"
@@ -257,7 +257,7 @@ structure MailMutationOutput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/mail/emails/{email_id}/read")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailMarkReadAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
@@ -270,7 +270,7 @@ operation MailMarkRead {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/mail/emails/{email_id}/unread")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailMarkUnreadAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
@@ -283,7 +283,7 @@ operation MailMarkUnread {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/mail/emails/{email_id}/flag")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailFlagAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
@@ -296,7 +296,7 @@ operation MailFlag {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/mail/emails/{email_id}/unflag")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailUnflagAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
@@ -309,7 +309,7 @@ operation MailUnflag {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/mail/emails/{email_id}/move")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailMoveAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
@@ -322,7 +322,7 @@ operation MailMove {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/mail/emails/{email_id}/trash")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailWritePermission, organization: {source: "request_subject"})
 @audit(event: MailTrashAuditEvent, resource: MailboxEmail, action: "write")
 @rateLimit(bucket: "mail_mutation")
@@ -335,7 +335,7 @@ operation MailTrash {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/mail/emails/{email_id}/body")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxMailReadPermission, organization: {source: "request_subject"})
 @audit(event: MailBodyAuditEvent, resource: MailboxEmail, action: "read")
 @rateLimit(bucket: "read")
@@ -354,7 +354,7 @@ structure MailBodyOutput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/mail/account")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxAccountReadPermission, organization: {source: "request_subject"})
 @audit(event: MailAccountAuditEvent, resource: MailboxAccount, action: "read")
 @rateLimit(bucket: "read")
@@ -374,7 +374,7 @@ structure MailAccountOutput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/mail/sync/status")
-@identity(mode: "bearer", audience: "mailbox-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MailboxSyncStatusReadPermission, organization: {source: "request_subject"})
 @audit(event: MailSyncStatusAuditEvent, resource: MailboxSyncStatus, action: "read")
 @rateLimit(bucket: "read")

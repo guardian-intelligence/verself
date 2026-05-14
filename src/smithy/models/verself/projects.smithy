@@ -39,7 +39,7 @@ use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
-@serviceRuntime(serviceName: "projects-service", publicAudience: "projects-service", internalAudience: "projects-service")
+@serviceRuntime(serviceName: "projects-service", publicAudience: "verself-api", internalAudience: "projects-service")
 @restJson1
 service Projects {
     version: "2026-05-13"
@@ -57,7 +57,7 @@ service Projects {
     ]
     resources: [Project]
 }
-@serviceRuntime(serviceName: "projects-service", publicAudience: "projects-service", internalAudience: "projects-service")
+@serviceRuntime(serviceName: "projects-service", publicAudience: "verself-api", internalAudience: "projects-service")
 @restJson1
 service ProjectsInternal {
     version: "2026-05-13"
@@ -287,7 +287,7 @@ structure ProjectEventSummary {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects", code: 201)
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ProjectWritePermission, organization: {source: "token_org_id"})
 @audit(event: ProjectCreateAuditEvent, resource: Project, action: "create")
 @rateLimit(bucket: "projects_mutation")
@@ -315,7 +315,7 @@ structure CreateProjectInput {
 @readonly
 @http(method: "GET", uri: "/api/v1/projects")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "projects")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ProjectReadPermission, organization: {source: "token_org_id"})
 @audit(event: ProjectListAuditEvent, resource: Project, action: "list")
 @rateLimit(bucket: "read")
@@ -346,7 +346,7 @@ structure ListProjectsOutput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/projects/{project_id}")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ProjectReadPermission, organization: {source: "token_org_id"})
 @audit(event: ProjectReadAuditEvent, resource: Project, action: "read")
 @rateLimit(bucket: "read")
@@ -359,7 +359,7 @@ operation GetProject {
 }
 @idempotent
 @http(method: "PATCH", uri: "/api/v1/projects/{project_id}")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ProjectWritePermission, organization: {source: "token_org_id"})
 @audit(event: ProjectUpdateAuditEvent, resource: Project, action: "update")
 @rateLimit(bucket: "projects_mutation")
@@ -392,7 +392,7 @@ structure PatchProjectInput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects/{project_id}/archive")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ProjectWritePermission, organization: {source: "token_org_id"})
 @audit(event: ProjectArchiveAuditEvent, resource: Project, action: "archive")
 @rateLimit(bucket: "projects_mutation")
@@ -405,7 +405,7 @@ operation ArchiveProject {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects/{project_id}/restore")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ProjectWritePermission, organization: {source: "token_org_id"})
 @audit(event: ProjectRestoreAuditEvent, resource: Project, action: "restore")
 @rateLimit(bucket: "projects_mutation")
@@ -445,7 +445,7 @@ structure ProjectOutput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/projects/{project_id}/environments")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: EnvironmentReadPermission, organization: {source: "token_org_id"})
 @audit(event: EnvironmentListAuditEvent, resource: ProjectEnvironment, action: "list")
 @rateLimit(bucket: "read")
@@ -469,7 +469,7 @@ structure ListProjectEnvironmentsOutput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects/{project_id}/environments", code: 201)
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: EnvironmentWritePermission, organization: {source: "token_org_id"})
 @audit(event: EnvironmentCreateAuditEvent, resource: ProjectEnvironment, action: "create")
 @rateLimit(bucket: "projects_mutation")
@@ -504,7 +504,7 @@ structure CreateProjectEnvironmentInput {
 }
 @idempotent
 @http(method: "PATCH", uri: "/api/v1/projects/{project_id}/environments/{environment_id}")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: EnvironmentWritePermission, organization: {source: "token_org_id"})
 @audit(event: EnvironmentUpdateAuditEvent, resource: ProjectEnvironment, action: "update")
 @rateLimit(bucket: "projects_mutation")
@@ -539,7 +539,7 @@ structure PatchProjectEnvironmentInput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/projects/{project_id}/environments/{environment_id}/archive")
-@identity(mode: "bearer", audience: "projects-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: EnvironmentWritePermission, organization: {source: "token_org_id"})
 @audit(event: EnvironmentArchiveAuditEvent, resource: ProjectEnvironment, action: "archive")
 @rateLimit(bucket: "projects_mutation")

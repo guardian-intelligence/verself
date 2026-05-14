@@ -44,6 +44,6 @@ func applyInternalAPISecuritySchemes(api huma.API) {
 		Type:         "http",
 		Scheme:       "bearer",
 		BearerFormat: "JWT",
-		Description:  "Forwarded Zitadel human bearer token scoped to the iam-service API audience.",
+		Description:  "Forwarded Zitadel human bearer token scoped to the Verself product API audience.",
 	}
 }

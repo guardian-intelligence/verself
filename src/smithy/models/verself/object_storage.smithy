@@ -36,7 +36,7 @@ use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
-@serviceRuntime(serviceName: "object-storage-service", publicAudience: "object-storage-service", internalAudience: "object-storage-service")
+@serviceRuntime(serviceName: "object-storage-service", publicAudience: "verself-api", internalAudience: "object-storage-service")
 @restJson1
 service ObjectStorage {
     version: "2026-05-13"
@@ -259,7 +259,7 @@ structure BucketOutput {
 structure EmptyOutput {}
 @readonly
 @http(method: "GET", uri: "/api/v1/buckets")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketReadPermission, organization: {source: "token_org_id"})
 @audit(event: BucketListAuditEvent, resource: Bucket, action: "list")
 @rateLimit(bucket: "read")
@@ -277,7 +277,7 @@ structure ListObjectStorageBucketsOutput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/buckets")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketCreateAuditEvent, resource: Bucket, action: "create")
 @rateLimit(bucket: "object_storage_mutation")
@@ -301,7 +301,7 @@ structure CreateObjectStorageBucketInput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/buckets/{bucket_id}")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketReadPermission, organization: {source: "token_org_id"})
 @audit(event: BucketReadAuditEvent, resource: Bucket, action: "read")
 @rateLimit(bucket: "read")
@@ -314,7 +314,7 @@ operation GetObjectStorageBucket {
 }
 @idempotent
 @http(method: "PUT", uri: "/api/v1/buckets/{bucket_id}")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketUpdateAuditEvent, resource: Bucket, action: "update")
 @rateLimit(bucket: "object_storage_mutation")
@@ -339,7 +339,7 @@ structure UpdateObjectStorageBucketInput {
 }
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/buckets/{bucket_id}")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketDeleteAuditEvent, resource: Bucket, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
@@ -352,7 +352,7 @@ operation DeleteObjectStorageBucket {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/buckets/{bucket_id}/aliases")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketAliasCreateAuditEvent, resource: BucketAlias, action: "create")
 @rateLimit(bucket: "object_storage_mutation")
@@ -385,7 +385,7 @@ structure BucketAliasOutput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/buckets/{bucket_id}/aliases")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketReadPermission, organization: {source: "token_org_id"})
 @audit(event: BucketAliasListAuditEvent, resource: BucketAlias, action: "list")
 @rateLimit(bucket: "read")
@@ -403,7 +403,7 @@ structure ListObjectStorageBucketAliasesOutput {
 }
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/buckets/{bucket_id}/aliases/{alias}")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BucketWritePermission, organization: {source: "token_org_id"})
 @audit(event: BucketAliasDeleteAuditEvent, resource: BucketAlias, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
@@ -428,7 +428,7 @@ structure DeleteObjectStorageBucketAliasInput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/buckets/{bucket_id}/credentials")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyReadPermission, organization: {source: "token_org_id"})
 @audit(event: CredentialListAuditEvent, resource: ObjectStorageCredential, action: "list")
 @rateLimit(bucket: "read")
@@ -446,7 +446,7 @@ structure ListObjectStorageCredentialsOutput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/buckets/{bucket_id}/access-keys")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: AccessKeyCreateAuditEvent, resource: ObjectStorageAccessKey, action: "create")
 @rateLimit(bucket: "object_storage_mutation")
@@ -478,7 +478,7 @@ structure ObjectStorageAccessKeySecretOutput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/access-keys/{access_key_id}/roll")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: AccessKeyRollAuditEvent, resource: ObjectStorageAccessKey, action: "roll")
 @rateLimit(bucket: "object_storage_mutation")
@@ -491,7 +491,7 @@ operation RollObjectStorageAccessKey {
 }
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/access-keys/{access_key_id}")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: AccessKeyDeleteAuditEvent, resource: ObjectStorageAccessKey, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")
@@ -513,7 +513,7 @@ structure AccessKeyIdempotentInput {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/buckets/{bucket_id}/mtls-principals")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: MTLSPrincipalCreateAuditEvent, resource: ObjectStorageMtlsPrincipal, action: "create")
 @rateLimit(bucket: "object_storage_mutation")
@@ -539,7 +539,7 @@ structure CreateObjectStorageMTLSPrincipalInput {
 }
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}")
-@identity(mode: "bearer", audience: "object-storage-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AccessKeyWritePermission, organization: {source: "token_org_id"})
 @audit(event: MTLSPrincipalDeleteAuditEvent, resource: ObjectStorageMtlsPrincipal, action: "delete")
 @rateLimit(bucket: "object_storage_mutation")

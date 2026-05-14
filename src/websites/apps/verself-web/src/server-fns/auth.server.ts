@@ -100,17 +100,13 @@ export async function selectIdentityOrganization(data: { orgID: string }): Promi
   return parseAuthSnapshot(await response.json());
 }
 
-export async function getIdentityAccessTokenForAudience(
+export async function getIdentityProductAccessToken(
   context: ConsoleAuthContext | undefined,
-  audience: string,
 ): Promise<string> {
   await requireAuthSnapshot(context);
   const response = await identityAuthFetch("resource-token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      audience,
-    }),
   });
   if (!response.ok) {
     throw new Error(`identity resource token failed: ${response.status} ${await response.text()}`);

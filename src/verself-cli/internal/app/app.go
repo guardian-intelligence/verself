@@ -85,7 +85,7 @@ func (c CLI) usage() error {
 	return writef(c.out, `Usage:
   %[1]s auth login --token-file PATH [--profile NAME]
   %[1]s auth whoami [--json]
-  %[1]s auth token [--audience AUDIENCE]
+  %[1]s auth token
   %[1]s orgs list [--json]
   %[1]s orgs use <org-id|slug>
   %[1]s orgs inspect [--json]

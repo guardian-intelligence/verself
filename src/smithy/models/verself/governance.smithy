@@ -39,7 +39,7 @@ use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 
-@serviceRuntime(serviceName: "governance-service", publicAudience: "governance-service", internalAudience: "governance-service")
+@serviceRuntime(serviceName: "governance-service", publicAudience: "verself-api", internalAudience: "governance-service")
 @restJson1
 service Governance {
     version: "2026-05-13"
@@ -56,7 +56,7 @@ service Governance {
     ]
 }
 
-@serviceRuntime(serviceName: "governance-service", publicAudience: "governance-service", internalAudience: "governance-service")
+@serviceRuntime(serviceName: "governance-service", publicAudience: "verself-api", internalAudience: "governance-service")
 @restJson1
 service GovernanceInternal {
     version: "2026-05-13"
@@ -781,7 +781,7 @@ structure DataExportJob {
 @readonly
 @http(method: "GET", uri: "/api/v1/governance/ocsf/api-activities")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "api_activities")
-@identity(mode: "bearer", audience: "governance-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: APIActivityReadPermission, organization: {source: "token_org_id"})
 @audit(event: APIActivityListOperationEvent, resource: APIActivity, action: "list", ocsf_class_uid: 6003, ocsf_class_name: "API Activity")
 @rateLimit(bucket: "read")
@@ -876,7 +876,7 @@ structure ListAPIActivitiesOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/governance/exports")
-@identity(mode: "bearer", audience: "governance-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: APIActivityExportPermission, organization: {source: "token_org_id"})
 @audit(event: DataExportListOperationEvent, resource: DataExport, action: "list", ocsf_class_uid: 6003, ocsf_class_name: "API Activity")
 @rateLimit(bucket: "read")
@@ -903,7 +903,7 @@ structure ListDataExportsOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/governance/exports", code: 201)
-@identity(mode: "bearer", audience: "governance-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: APIActivityExportPermission, organization: {source: "token_org_id"})
 @audit(event: DataExportCreateOperationEvent, resource: DataExport, action: "create", ocsf_class_uid: 6003, ocsf_class_name: "API Activity")
 @rateLimit(bucket: "export_create")
@@ -945,7 +945,7 @@ structure CreateDataExportOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/governance/exports/{export_id}")
-@identity(mode: "bearer", audience: "governance-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: APIActivityExportPermission, organization: {source: "token_org_id"})
 @audit(event: DataExportReadOperationEvent, resource: DataExport, action: "read", ocsf_class_uid: 6003, ocsf_class_name: "API Activity")
 @rateLimit(bucket: "read")
@@ -979,7 +979,7 @@ structure GetDataExportOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/governance/exports/{export_id}/download")
-@identity(mode: "bearer", audience: "governance-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: APIActivityExportPermission, organization: {source: "token_org_id"})
 @audit(event: DataExportDownloadOperationEvent, resource: DataExport, action: "download", ocsf_class_uid: 6003, ocsf_class_name: "API Activity")
 @rateLimit(bucket: "export_download")

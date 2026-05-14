@@ -45,15 +45,15 @@ const (
 var browserAuthTracer = otel.Tracer("github.com/verself/iam-service/browser-auth")
 
 type BrowserAuthConfig struct {
-	PG             *pgxpool.Pool
-	Logger         *slog.Logger
-	IssuerURL      string
-	ClientID       string
-	ClientSecret   string
-	PublicBaseURL  string
-	LoginAudiences []string
-	HTTPClient     *http.Client
-	Authz          *authz.Service
+	PG              *pgxpool.Pool
+	Logger          *slog.Logger
+	IssuerURL       string
+	ClientID        string
+	ClientSecret    string
+	PublicBaseURL   string
+	ProductAudience string
+	HTTPClient      *http.Client
+	Authz           *authz.Service
 }
 
 type BrowserAuth struct {
@@ -65,6 +65,7 @@ type BrowserAuth struct {
 	oauth              oauth2.Config
 	httpClient         *http.Client
 	authz              *authz.Service
+	productAudience    string
 	publicBaseURL      *url.URL
 	postLogoutURL      string
 	endSessionEndpoint string
@@ -91,9 +92,9 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	if err != nil {
 		return nil, err
 	}
-	loginAudiences := compactUniqueStrings(cfg.LoginAudiences)
-	if len(loginAudiences) == 0 {
-		return nil, errors.New("identity browser auth login audiences are required")
+	productAudience := strings.TrimSpace(cfg.ProductAudience)
+	if productAudience == "" {
+		return nil, errors.New("identity browser auth product audience is required")
 	}
 	if cfg.Authz == nil {
 		return nil, errors.New("identity browser auth authorization graph is required")
@@ -116,9 +117,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		"email",
 		"offline_access",
 		"urn:zitadel:iam:user:resourceowner",
-	}
-	for _, audience := range loginAudiences {
-		scopes = append(scopes, "urn:zitadel:iam:org:project:id:"+audience+":aud")
+		"urn:zitadel:iam:org:project:id:" + productAudience + ":aud",
 	}
 	callbackURL := publicBaseURL.ResolveReference(&url.URL{Path: browserAuthCallbackPath}).String()
 	// Zitadel matches post_logout_redirect_uri against the registered string.
@@ -140,6 +139,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		},
 		httpClient:         httpClient,
 		authz:              cfg.Authz,
+		productAudience:    productAudience,
 		publicBaseURL:      publicBaseURL,
 		postLogoutURL:      postLogoutURL,
 		endSessionEndpoint: strings.TrimSpace(metadata.EndSessionEndpoint),
@@ -385,23 +385,11 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 		http.Error(w, "origin not allowed", http.StatusForbidden)
 		return
 	}
-	var input struct {
-		Audience string `json:"audience"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid resource token payload", http.StatusBadRequest)
-		return
-	}
-	audience := strings.TrimSpace(input.Audience)
-	if audience == "" {
-		http.Error(w, "audience is required", http.StatusBadRequest)
-		return
-	}
 	session, err := a.requireSession(w, r)
 	if err != nil {
 		return
 	}
-	token, err := a.resourceToken(r.Context(), session, audience)
+	token, err := a.resourceToken(r.Context(), session)
 	if err != nil {
 		a.serverError(w, "exchange browser resource token", err)
 		return
@@ -530,10 +518,14 @@ func (a *BrowserAuth) refreshSession(ctx context.Context, session *browserSessio
 	return a.readSession(ctx, session.SessionHash)
 }
 
-func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession, audience string) (string, error) {
+func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession) (string, error) {
 	selectedOrgID := stringValue(session.User.SelectedOrgID)
 	if selectedOrgID == "" {
 		return "", errors.New("selected organization is required for resource token exchange")
+	}
+	audience := strings.TrimSpace(a.productAudience)
+	if audience == "" {
+		return "", errors.New("product audience is required for resource token exchange")
 	}
 	selectedOrganization, ok := session.User.organization(selectedOrgID)
 	if !ok || strings.TrimSpace(selectedOrganization.IdentityProviderOrgID) == "" {

@@ -40,7 +40,7 @@ use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
 
-@serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "sandbox-rental-service", internalAudience: "sandbox-rental-service")
+@serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "verself-api", internalAudience: "sandbox-rental-service")
 @restJson1
 service SandboxRental {
     version: "2026-05-13"
@@ -76,7 +76,7 @@ service SandboxRental {
     ]
 }
 
-@serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "sandbox-rental-service", internalAudience: "sandbox-rental-service")
+@serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "verself-api", internalAudience: "sandbox-rental-service")
 @restJson1
 service SandboxRentalInternal {
     version: "2026-05-13"
@@ -968,7 +968,7 @@ structure RunnerRepositoryRegistration {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/github/installations/connect", code: 201)
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: GitHubInstallationWritePermission, organization: {source: "token_org_id"})
 @audit(event: GitHubInstallationConnectAuditEvent, resource: GitHubInstallation, action: "connect")
 @rateLimit(bucket: "github_installation_mutation")
@@ -996,7 +996,7 @@ structure BeginGithubInstallationOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/github/installations")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: GitHubInstallationReadPermission, organization: {source: "token_org_id"})
 @audit(event: GitHubInstallationListAuditEvent, resource: GitHubInstallation, action: "list")
 @rateLimit(bucket: "read")
@@ -1017,7 +1017,7 @@ structure ListGithubInstallationsOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/github/installations/{installation_id}/repositories/sync")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: GitHubInstallationWritePermission, organization: {source: "token_org_id"})
 @audit(event: GitHubRepositoriesSyncAuditEvent, resource: GitHubInstallationRepositoryResource, action: "sync")
 @rateLimit(bucket: "github_installation_mutation")
@@ -1053,7 +1053,7 @@ structure SyncGithubInstallationRepositoriesOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/executions/{execution_id}")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ExecutionReadPermission, organization: {source: "token_org_id"})
 @audit(event: ExecutionReadAuditEvent, resource: Execution, action: "read")
 @rateLimit(bucket: "read")
@@ -1080,7 +1080,7 @@ structure SandboxExecutionOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/executions/{execution_id}/logs")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: LogsReadPermission, organization: {source: "token_org_id"})
 @audit(event: ExecutionLogsReadAuditEvent, resource: ExecutionLogsResource, action: "read")
 @rateLimit(bucket: "logs_read")
@@ -1102,7 +1102,7 @@ structure SandboxExecutionLogsOutput {
 @readonly
 @http(method: "GET", uri: "/api/v1/runs")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "runs")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ExecutionReadPermission, organization: {source: "token_org_id"})
 @audit(event: RunListAuditEvent, resource: Run, action: "list")
 @rateLimit(bucket: "read")
@@ -1142,7 +1142,7 @@ structure ListRunsInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/runs/{run_id}")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: ExecutionReadPermission, organization: {source: "token_org_id"})
 @audit(event: RunReadAuditEvent, resource: Run, action: "read")
 @rateLimit(bucket: "read")
@@ -1163,7 +1163,7 @@ structure RunPathInput {
 @readonly
 @http(method: "GET", uri: "/api/v1/run-logs/search")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "results")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: LogsReadPermission, organization: {source: "token_org_id"})
 @audit(event: RunLogsSearchAuditEvent, resource: RunLogsResource, action: "search")
 @rateLimit(bucket: "logs_read")
@@ -1209,7 +1209,7 @@ structure SearchRunLogsInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/run-analytics/jobs")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: AnalyticsReadPermission, organization: {source: "token_org_id"})
 @audit(event: JobsAnalyticsReadAuditEvent, resource: RunAnalyticsJobsResource, action: "read")
 @rateLimit(bucket: "read")
@@ -1223,7 +1223,7 @@ operation GetJobsAnalytics {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/run-analytics/costs")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: AnalyticsReadPermission, organization: {source: "token_org_id"})
 @audit(event: CostsAnalyticsReadAuditEvent, resource: RunAnalyticsCostsResource, action: "read")
 @rateLimit(bucket: "read")
@@ -1237,7 +1237,7 @@ operation GetCostsAnalytics {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/run-analytics/runner-sizing")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: AnalyticsReadPermission, organization: {source: "token_org_id"})
 @audit(event: RunnerSizingAnalyticsReadAuditEvent, resource: RunAnalyticsRunnerSizingResource, action: "read")
 @rateLimit(bucket: "read")
@@ -1280,7 +1280,7 @@ structure SandboxRunnerSizingAnalyticsOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/execution-schedules", code: 201)
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ScheduleWritePermission, organization: {source: "token_org_id"})
 @audit(event: ScheduleCreateAuditEvent, resource: ExecutionSchedule, action: "create")
 @rateLimit(bucket: "execution_schedule_mutation")
@@ -1320,7 +1320,7 @@ structure CreateExecutionScheduleInput {
 @readonly
 @http(method: "GET", uri: "/api/v1/execution-schedules")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "schedules")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ScheduleReadPermission, organization: {source: "token_org_id"})
 @audit(event: ScheduleListAuditEvent, resource: ExecutionSchedule, action: "list")
 @rateLimit(bucket: "read")
@@ -1342,7 +1342,7 @@ structure ListExecutionSchedulesInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/execution-schedules/{schedule_id}")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ScheduleReadPermission, organization: {source: "token_org_id"})
 @audit(event: ScheduleReadAuditEvent, resource: ExecutionSchedule, action: "read")
 @rateLimit(bucket: "read")
@@ -1369,7 +1369,7 @@ structure SandboxExecutionScheduleOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/execution-schedules/{schedule_id}/pause")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ScheduleWritePermission, organization: {source: "token_org_id"})
 @audit(event: SchedulePauseAuditEvent, resource: ExecutionSchedule, action: "pause")
 @rateLimit(bucket: "execution_schedule_mutation")
@@ -1383,7 +1383,7 @@ operation PauseExecutionSchedule {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/execution-schedules/{schedule_id}/resume")
-@identity(mode: "bearer", audience: "sandbox-rental-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ScheduleWritePermission, organization: {source: "token_org_id"})
 @audit(event: ScheduleResumeAuditEvent, resource: ExecutionSchedule, action: "resume")
 @rateLimit(bucket: "execution_schedule_mutation")

@@ -30,7 +30,7 @@ use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
-@serviceRuntime(serviceName: "analytics-service", publicAudience: "analytics-service", internalAudience: "analytics-service")
+@serviceRuntime(serviceName: "analytics-service", publicAudience: "verself-api", internalAudience: "analytics-service")
 @restJson1
 service Analytics {
     version: "2026-05-13"
@@ -108,7 +108,7 @@ structure AnalyticsDatasetView {
 }
 @idempotent
 @http(method: "POST", uri: "/api/v1/analytics/logs:ingest")
-@identity(mode: "bearer", audience: "analytics-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AnalyticsDatasetIngestPermission, organization: {source: "token_org_id"})
 @audit(event: AnalyticsDatasetIngestAuditEvent, resource: AnalyticsDataset, action: "ingest")
 @rateLimit(bucket: "analytics_ingest")
@@ -134,7 +134,7 @@ structure IngestAnalyticsLogsOutput {
     result: AnalyticsIngestResult
 }
 @http(method: "POST", uri: "/api/v1/analytics/events:query")
-@identity(mode: "bearer", audience: "analytics-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AnalyticsDatasetReadPermission, organization: {source: "token_org_id"})
 @audit(event: AnalyticsDatasetQueryAuditEvent, resource: AnalyticsDataset, action: "query")
 @rateLimit(bucket: "analytics_query")
@@ -156,7 +156,7 @@ structure QueryAnalyticsEventsOutput {
     result: AnalyticsQueryResult
 }
 @http(method: "POST", uri: "/api/v1/analytics/events/raw:query")
-@identity(mode: "bearer", audience: "analytics-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AnalyticsDatasetReadRawPermission, organization: {source: "token_org_id"})
 @audit(event: AnalyticsDatasetRawQueryAuditEvent, resource: AnalyticsDataset, action: "query")
 @rateLimit(bucket: "analytics_query")
@@ -169,7 +169,7 @@ operation QueryRawAnalyticsEvents {
 }
 @idempotent
 @http(method: "PUT", uri: "/api/v1/analytics/dataset")
-@identity(mode: "bearer", audience: "analytics-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: AnalyticsDatasetManagePermission, organization: {source: "token_org_id"})
 @audit(event: AnalyticsDatasetManageAuditEvent, resource: AnalyticsDataset, action: "manage")
 @rateLimit(bucket: "analytics_manage")

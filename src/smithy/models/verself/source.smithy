@@ -40,7 +40,7 @@ use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
 
-@serviceRuntime(serviceName: "source-code-hosting-service", publicAudience: "source-code-hosting-service", internalAudience: "source-code-hosting-service")
+@serviceRuntime(serviceName: "source-code-hosting-service", publicAudience: "verself-api", internalAudience: "source-code-hosting-service")
 @restJson1
 service SourceHosting {
     version: "2026-05-13"
@@ -68,7 +68,7 @@ service SourceHosting {
     ]
 }
 
-@serviceRuntime(serviceName: "source-code-hosting-service", publicAudience: "source-code-hosting-service", internalAudience: "source-code-hosting-service")
+@serviceRuntime(serviceName: "source-code-hosting-service", publicAudience: "verself-api", internalAudience: "source-code-hosting-service")
 @restJson1
 service SourceHostingInternal {
     version: "2026-05-13"
@@ -515,7 +515,7 @@ structure WorkflowRunSummary {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/repos", code: 201)
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: RepoWritePermission, organization: {source: "token_org_id"})
 @audit(event: RepoCreateAuditEvent, resource: SourceRepository, action: "create")
 @rateLimit(bucket: "source_mutation")
@@ -540,7 +540,7 @@ structure CreateSourceRepositoryInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/repos")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: RepoReadPermission, organization: {source: "token_org_id"})
 @audit(event: RepoListAuditEvent, resource: SourceRepository, action: "list")
 @rateLimit(bucket: "read")
@@ -564,7 +564,7 @@ structure ListSourceRepositoriesOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/repos/{repo_id}")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: RepoReadPermission, organization: {source: "token_org_id"})
 @audit(event: RepoReadAuditEvent, resource: SourceRepository, action: "read")
 @rateLimit(bucket: "read")
@@ -591,7 +591,7 @@ structure RepositoryPathInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/git-credentials", code: 201)
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: GitCredentialWritePermission, organization: {source: "token_org_id"})
 @audit(event: GitCredentialCreateAuditEvent, resource: SourceGitCredential, action: "create")
 @rateLimit(bucket: "source_mutation")
@@ -623,7 +623,7 @@ structure GitCredentialOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/repos/{repo_id}/refs")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: RepoReadPermission, organization: {source: "token_org_id"})
 @audit(event: RefsListAuditEvent, resource: SourceRef, action: "list")
 @rateLimit(bucket: "read")
@@ -642,7 +642,7 @@ structure ListSourceRefsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/repos/{repo_id}/tree")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: RepoReadPermission, organization: {source: "token_org_id"})
 @audit(event: TreeGetAuditEvent, resource: SourceTree, action: "read")
 @rateLimit(bucket: "read")
@@ -671,7 +671,7 @@ structure GetSourceTreeOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/repos/{repo_id}/blob")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: RepoReadPermission, organization: {source: "token_org_id"})
 @audit(event: BlobGetAuditEvent, resource: SourceBlob, action: "read")
 @rateLimit(bucket: "read")
@@ -703,7 +703,7 @@ structure GetSourceBlobOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/repos/{repo_id}/checkout-grants", code: 201)
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: CheckoutWritePermission, organization: {source: "token_org_id"})
 @audit(event: CheckoutGrantCreateAuditEvent, resource: SourceCheckoutGrant, action: "create")
 @rateLimit(bucket: "source_mutation")
@@ -735,7 +735,7 @@ structure CheckoutGrantOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/repos/{repo_id}/workflow-runs", code: 201)
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: WorkflowWritePermission, organization: {source: "token_org_id"})
 @audit(event: WorkflowDispatchAuditEvent, resource: SourceWorkflowRun, action: "create")
 @rateLimit(bucket: "source_mutation")
@@ -765,7 +765,7 @@ structure CreateSourceWorkflowRunInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/repos/{repo_id}/workflow-runs")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: WorkflowReadPermission, organization: {source: "token_org_id"})
 @audit(event: WorkflowRunListAuditEvent, resource: SourceWorkflowRun, action: "list")
 @rateLimit(bucket: "read")
@@ -784,7 +784,7 @@ structure ListSourceWorkflowRunsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/workflow-runs/{workflow_run_id}")
-@identity(mode: "bearer", audience: "source-code-hosting-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: WorkflowReadPermission, organization: {source: "token_org_id"})
 @audit(event: WorkflowRunReadAuditEvent, resource: SourceWorkflowRun, action: "read")
 @rateLimit(bucket: "read")

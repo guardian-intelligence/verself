@@ -41,7 +41,7 @@ use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
 
-@serviceRuntime(serviceName: "billing-service", publicAudience: "billing-service", internalAudience: "billing-service")
+@serviceRuntime(serviceName: "billing-service", publicAudience: "verself-api", internalAudience: "billing-service")
 @restJson1
 service Billing {
     version: "2026-05-13"
@@ -67,7 +67,7 @@ service Billing {
     ]
 }
 
-@serviceRuntime(serviceName: "billing-service", publicAudience: "billing-service", internalAudience: "billing-service")
+@serviceRuntime(serviceName: "billing-service", publicAudience: "verself-api", internalAudience: "billing-service")
 @restJson1
 service BillingInternal {
     version: "2026-05-13"
@@ -80,7 +80,7 @@ service BillingInternal {
     resources: [BillingWindow]
 }
 
-@serviceRuntime(serviceName: "billing-service", publicAudience: "billing-service", internalAudience: "billing-service")
+@serviceRuntime(serviceName: "billing-service", publicAudience: "verself-api", internalAudience: "billing-service")
 @restJson1
 service BillingIngress {
     version: "2026-05-13"
@@ -713,7 +713,7 @@ structure BillingSettleResult {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/entitlements")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BillingReadPermission, organization: {source: "token_org_id"})
 @audit(event: BillingEntitlementsReadAuditEvent, resource: BillingEntitlements, action: "read")
 @rateLimit(bucket: "read")
@@ -736,7 +736,7 @@ structure GetBillingEntitlementsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/grants")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BillingReadPermission, organization: {source: "token_org_id"})
 @audit(event: BillingGrantListAuditEvent, resource: BillingGrantResource, action: "list")
 @rateLimit(bucket: "read")
@@ -762,7 +762,7 @@ structure ListBillingGrantsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/billing-documents")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BillingReadPermission, organization: {source: "token_org_id"})
 @audit(event: BillingDocumentListAuditEvent, resource: BillingDocumentResource, action: "list")
 @rateLimit(bucket: "read")
@@ -786,7 +786,7 @@ structure ListBillingDocumentsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/statement")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BillingReadPermission, organization: {source: "token_org_id"})
 @audit(event: BillingStatementReadAuditEvent, resource: BillingDocumentResource, action: "read")
 @rateLimit(bucket: "read")
@@ -813,7 +813,7 @@ structure GetBillingStatementOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/contracts")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BillingReadPermission, organization: {source: "token_org_id"})
 @audit(event: BillingContractListAuditEvent, resource: BillingContractResource, action: "list")
 @rateLimit(bucket: "read")
@@ -832,7 +832,7 @@ structure ListBillingContractsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/plans")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: BillingReadPermission, organization: {source: "token_org_id"})
 @audit(event: BillingPlanListAuditEvent, resource: BillingPlanResource, action: "list")
 @rateLimit(bucket: "read")
@@ -851,7 +851,7 @@ structure ListBillingPlansOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/checkout")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: BillingCheckoutPermission, organization: {source: "token_org_id"})
 @audit(event: BillingCheckoutCreateAuditEvent, resource: BillingEntitlements, action: "create")
 @rateLimit(bucket: "billing_mutation")
@@ -880,7 +880,7 @@ structure CheckoutInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/contracts")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: BillingCheckoutPermission, organization: {source: "token_org_id"})
 @audit(event: BillingContractCreateAuditEvent, resource: BillingContractResource, action: "create")
 @rateLimit(bucket: "billing_mutation")
@@ -908,7 +908,7 @@ structure CreateBillingContractInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/contracts/{contract_id}/changes")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: BillingCheckoutPermission, organization: {source: "token_org_id"})
 @audit(event: BillingContractChangeCreateAuditEvent, resource: BillingContractResource, action: "create")
 @rateLimit(bucket: "billing_mutation")
@@ -945,7 +945,7 @@ structure CreateBillingContractChangeOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/contracts/{contract_id}/cancel")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: BillingCheckoutPermission, organization: {source: "token_org_id"})
 @audit(event: BillingContractCancelAuditEvent, resource: BillingContractResource, action: "cancel")
 @rateLimit(bucket: "billing_mutation")
@@ -974,7 +974,7 @@ structure BillingCancelContractResponseOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/portal")
-@identity(mode: "bearer", audience: "billing-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: BillingCheckoutPermission, organization: {source: "token_org_id"})
 @audit(event: BillingPortalCreateAuditEvent, resource: BillingContractResource, action: "create")
 @rateLimit(bucket: "billing_mutation")

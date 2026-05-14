@@ -252,7 +252,7 @@ files.
 
 ## Authentication
 
-The SDK owns token acquisition, refresh, audience selection, credential parsing,
+The SDK owns token acquisition, refresh, credential parsing,
 clock skew handling, and in-process token caching. Resource modules receive a
 token source and never parse credential files directly.
 

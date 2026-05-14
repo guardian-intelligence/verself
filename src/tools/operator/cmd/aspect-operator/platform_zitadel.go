@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -18,11 +17,9 @@ import (
 )
 
 type platformRuntimeAuthAudienceSpec struct {
-	ComponentName        string
-	ProjectName          string
-	CredentialPath       string
-	Group                string
-	BrowserLoginAudience bool
+	ComponentName  string
+	CredentialPath string
+	Group          string
 }
 
 type platformZitadelClient struct {
@@ -54,6 +51,12 @@ type platformZitadelProject struct {
 	State string
 }
 
+type platformZitadelOIDCApp struct {
+	ID           string
+	ClientID     string
+	ClientSecret string
+}
+
 type platformZitadelStatusError struct {
 	Method string
 	Path   string
@@ -67,42 +70,19 @@ func (e platformZitadelStatusError) Error() string {
 
 func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 	return []platformRuntimeAuthAudienceSpec{
-		{ComponentName: "analytics-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/analytics-service/auth-audience", Group: "analytics_service"},
-		{ComponentName: "iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/iam-service/auth-audience", Group: "iam_service"},
-		{ComponentName: "governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
-		{ComponentName: "notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},
-		{ComponentName: "object-storage-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/object-storage-service/auth-audience", Group: "object_storage_service"},
-		{ComponentName: "profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/profile-service/auth-audience", Group: "profile_service"},
-		{ComponentName: "projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/projects-service/auth-audience", Group: "projects_service"},
-		{ComponentName: "source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/source-code-hosting-service/auth-audience", Group: "source_code_hosting_service"},
-		{ComponentName: "billing", ProjectName: "iam-service", CredentialPath: "/etc/credstore/billing/auth-audience", Group: "billing"},
-		{ComponentName: "sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
-		{ComponentName: "secrets-service", ProjectName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
-		{ComponentName: "mailbox-service", ProjectName: "mailbox-service", CredentialPath: "/etc/credstore/mailbox-service/auth-audience", Group: "mailbox_service"},
-		{ComponentName: "verself-web.iam-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/iam-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.governance-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/governance-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.notifications-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/notifications-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.profile-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/profile-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.projects-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/projects-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.billing", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/billing-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.source-code-hosting-service", ProjectName: "iam-service", CredentialPath: "/etc/credstore/verself-web/source-code-hosting-service-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
-		{ComponentName: "verself-web.sandbox-rental", ProjectName: "sandbox-rental", CredentialPath: "/etc/credstore/verself-web/sandbox-rental-auth-audience", Group: "verself-web", BrowserLoginAudience: true},
+		{ComponentName: "analytics-service", CredentialPath: "/etc/credstore/analytics-service/auth-audience", Group: "analytics_service"},
+		{ComponentName: "iam-service", CredentialPath: "/etc/credstore/iam-service/auth-audience", Group: "iam_service"},
+		{ComponentName: "governance-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
+		{ComponentName: "notifications-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},
+		{ComponentName: "object-storage-service", CredentialPath: "/etc/credstore/object-storage-service/auth-audience", Group: "object_storage_service"},
+		{ComponentName: "profile-service", CredentialPath: "/etc/credstore/profile-service/auth-audience", Group: "profile_service"},
+		{ComponentName: "projects-service", CredentialPath: "/etc/credstore/projects-service/auth-audience", Group: "projects_service"},
+		{ComponentName: "source-code-hosting-service", CredentialPath: "/etc/credstore/source-code-hosting-service/auth-audience", Group: "source_code_hosting_service"},
+		{ComponentName: "billing", CredentialPath: "/etc/credstore/billing/auth-audience", Group: "billing"},
+		{ComponentName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
+		{ComponentName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
+		{ComponentName: "mailbox-service", CredentialPath: "/etc/credstore/mailbox-service/auth-audience", Group: "mailbox_service"},
 	}
-}
-
-func platformBrowserAuthLoginProjectNames() []string {
-	projectNames := map[string]struct{}{}
-	for _, spec := range platformRuntimeAuthAudienceSpecs() {
-		if spec.BrowserLoginAudience {
-			projectNames[spec.ProjectName] = struct{}{}
-		}
-	}
-	names := make([]string, 0, len(projectNames))
-	for name := range projectNames {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
@@ -144,14 +124,14 @@ func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
 			}
 			r.markChanged("zitadel.owner.created")
 		}
-		projectIDs, err := r.resolvePlatformZitadelProjectIDs(ctx, client)
+		project, err := client.EnsureProject(ctx, platformProductAPIProjectName)
 		if err != nil {
 			return err
 		}
-		if err := r.ensureRuntimeAuthAudienceCredentials(ctx, projectIDs); err != nil {
+		if err := r.ensureRuntimeAuthAudienceCredentials(ctx, project.ID); err != nil {
 			return err
 		}
-		if err := r.ensureBrowserAuthLoginAudienceCredential(ctx, projectIDs); err != nil {
+		if err := r.ensureBrowserOIDCApplication(ctx, client, project.ID); err != nil {
 			return err
 		}
 		owner = user
@@ -198,16 +178,16 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
 			mismatches = append(mismatches, fmt.Sprintf("owner.resource_owner=%q", user.ResourceOwner))
 		}
-		projectIDs, err := r.resolvePlatformZitadelProjectIDs(ctx, client)
+		project, err := client.ProjectByName(ctx, platformProductAPIProjectName)
 		if err != nil {
 			return err
 		}
-		credentialMismatches, err := r.platformRuntimeAuthAudienceCredentialMismatches(ctx, projectIDs)
+		credentialMismatches, err := r.platformRuntimeAuthAudienceCredentialMismatches(ctx, project.ID)
 		if err != nil {
 			return err
 		}
 		mismatches = append(mismatches, credentialMismatches...)
-		browserAudienceMismatches, err := r.browserAuthLoginAudienceCredentialMismatches(ctx, projectIDs)
+		browserAudienceMismatches, err := r.browserOIDCApplicationMismatches(ctx, client, project.ID)
 		if err != nil {
 			return err
 		}
@@ -250,33 +230,12 @@ func (r *platformRunner) zitadelClient(ctx context.Context) (platformZitadelClie
 	return client, closeFn, nil
 }
 
-func (r *platformRunner) resolvePlatformZitadelProjectIDs(ctx context.Context, client platformZitadelClient) (map[string]string, error) {
-	projectNames := map[string]struct{}{}
+func (r *platformRunner) ensureRuntimeAuthAudienceCredentials(ctx context.Context, projectID string) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return fmt.Errorf("product auth audience project ID is required")
+	}
 	for _, spec := range platformRuntimeAuthAudienceSpecs() {
-		projectNames[spec.ProjectName] = struct{}{}
-	}
-	names := make([]string, 0, len(projectNames))
-	for name := range projectNames {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	projectIDs := make(map[string]string, len(names))
-	for _, name := range names {
-		project, err := client.ProjectByName(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		projectIDs[name] = project.ID
-	}
-	return projectIDs, nil
-}
-
-func (r *platformRunner) ensureRuntimeAuthAudienceCredentials(ctx context.Context, projectIDs map[string]string) error {
-	for _, spec := range platformRuntimeAuthAudienceSpecs() {
-		projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
-		if projectID == "" {
-			return fmt.Errorf("auth audience credential %s requires project %s", spec.ComponentName, spec.ProjectName)
-		}
 		value := projectID + "\n"
 		changed, err := r.writeRootCredential(ctx, spec.CredentialPath, spec.Group, value)
 		if err != nil {
@@ -289,41 +248,82 @@ func (r *platformRunner) ensureRuntimeAuthAudienceCredentials(ctx context.Contex
 	return nil
 }
 
-func (r *platformRunner) ensureBrowserAuthLoginAudienceCredential(ctx context.Context, projectIDs map[string]string) error {
-	value, err := browserAuthLoginAudienceCredentialValue(projectIDs)
+func (r *platformRunner) ensureBrowserOIDCApplication(ctx context.Context, client platformZitadelClient, projectID string) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return fmt.Errorf("browser OIDC application project ID is required")
+	}
+	app, found, err := client.FindOIDCAppByName(ctx, projectID, browserOIDCAppName)
 	if err != nil {
 		return err
 	}
-	changed, err := r.writeRootCredential(ctx, browserAuthLoginAudiencesPath, browserAuthLoginAudiencesGroup, value)
-	if err != nil {
-		return fmt.Errorf("write browser auth login audiences credential: %w", err)
+	storedProjectID := ""
+	if raw, readErr := opruntime.ReadRemoteFile(ctx, r.rt.SSH, browserOIDCCredstoreDir+"/oidc-project-id"); readErr == nil {
+		storedProjectID = strings.TrimSpace(string(raw))
 	}
-	if changed {
-		r.markChanged("iam.browser_auth_login_audiences.updated")
+	storedSecret := ""
+	if raw, readErr := opruntime.ReadRemoteFile(ctx, r.rt.SSH, browserOIDCCredstoreDir+"/oidc-client-secret"); readErr == nil {
+		storedSecret = strings.TrimSpace(string(raw))
+	}
+	needsSecretReissue := found && strings.TrimSpace(app.ClientSecret) == "" && (storedProjectID != projectID || storedSecret == "")
+	if needsSecretReissue {
+		if err := client.DeleteOIDCApp(ctx, projectID, app.ID); err != nil {
+			return err
+		}
+		r.markChanged("iam.browser_oidc_app.reissued")
+		found = false
+	}
+	if !found || strings.TrimSpace(app.ClientID) == "" {
+		app, err = client.CreateBrowserOIDCApp(ctx, projectID, browserOIDCAppName, r.browserOIDCRedirectURIs(), r.browserOIDCPostLogoutRedirectURIs())
+		if err != nil {
+			return err
+		}
+		r.markChanged("iam.browser_oidc_app.created")
+	} else if err := client.ReconcileBrowserOIDCApp(ctx, projectID, app.ID, browserOIDCAppName, r.browserOIDCRedirectURIs(), r.browserOIDCPostLogoutRedirectURIs()); err != nil {
+		return err
+	}
+	values := map[string]string{
+		"oidc-app-id":     app.ID + "\n",
+		"oidc-client-id":  app.ClientID + "\n",
+		"oidc-project-id": projectID + "\n",
+	}
+	if strings.TrimSpace(app.ClientSecret) != "" {
+		values["oidc-client-secret"] = app.ClientSecret + "\n"
+	} else if storedSecret == "" {
+		return fmt.Errorf("browser OIDC app exists but no client secret is available in %s/oidc-client-secret", browserOIDCCredstoreDir)
+	}
+	for name, value := range values {
+		changed, err := r.writeRootCredential(ctx, browserOIDCCredstoreDir+"/"+name, browserOIDCCredstoreGroup, value)
+		if err != nil {
+			return fmt.Errorf("write browser OIDC %s credential: %w", name, err)
+		}
+		if changed {
+			r.markChanged("iam.browser_oidc_app." + name + ".updated")
+		}
+	}
+	marker := fmt.Sprintf("app_id=%s\nclient_id=%s\nauth_method=OIDC_AUTH_METHOD_TYPE_POST\n", app.ID, app.ClientID)
+	if changed, err := r.writeRootCredential(ctx, browserOIDCCredstoreDir+"/oidc-web-cutover", browserOIDCCredstoreGroup, marker); err != nil {
+		return fmt.Errorf("write browser OIDC cutover marker: %w", err)
+	} else if changed {
+		r.markChanged("iam.browser_oidc_app.cutover_marker.updated")
 	}
 	return nil
 }
 
-const (
-	browserAuthLoginAudiencesPath  = "/etc/credstore/iam-service/browser-auth-login-audiences"
-	browserAuthLoginAudiencesGroup = "iam_service"
-)
-
-func browserAuthLoginAudienceCredentialValue(projectIDs map[string]string) (string, error) {
-	names := platformBrowserAuthLoginProjectNames()
-	if len(names) == 0 {
-		return "", fmt.Errorf("browser auth login audiences require at least one browser audience")
-	}
-	ids := make([]string, 0, len(names))
-	for _, name := range names {
-		projectID := strings.TrimSpace(projectIDs[name])
-		if projectID == "" {
-			return "", fmt.Errorf("browser auth login audience %s project ID is not resolved", name)
-		}
-		ids = append(ids, projectID)
-	}
-	return strings.Join(ids, ",") + "\n", nil
+func (r *platformRunner) browserOIDCRedirectURIs() []string {
+	return []string{"https://" + r.cfg.VerselfDomain + "/api/v1/auth/callback"}
 }
+
+func (r *platformRunner) browserOIDCPostLogoutRedirectURIs() []string {
+	return []string{"https://" + r.cfg.VerselfDomain}
+}
+
+const (
+	platformProductAPIProjectName = "verself-api"
+	browserOIDCAppName            = "verself-web"
+	browserOIDCCredstoreDir       = "/etc/credstore/iam-service"
+	browserOIDCCredstoreGroup     = "iam_service"
+)
 
 func (r *platformRunner) writeRootCredential(ctx context.Context, path, group, value string) (bool, error) {
 	existing, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, path)
@@ -368,10 +368,10 @@ func (r *platformRunner) remoteCredentialStat(ctx context.Context, path string) 
 	return remoteCredentialStat{Group: fields[0], Mode: fields[1]}, nil
 }
 
-func (r *platformRunner) platformRuntimeAuthAudienceCredentialMismatches(ctx context.Context, projectIDs map[string]string) ([]string, error) {
+func (r *platformRunner) platformRuntimeAuthAudienceCredentialMismatches(ctx context.Context, projectID string) ([]string, error) {
+	projectID = strings.TrimSpace(projectID)
 	var mismatches []string
 	for _, spec := range platformRuntimeAuthAudienceSpecs() {
-		projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
 		if projectID == "" {
 			mismatches = append(mismatches, fmt.Sprintf("%s.auth_audience.project_missing", spec.ComponentName))
 			continue
@@ -399,28 +399,42 @@ func (r *platformRunner) platformRuntimeAuthAudienceCredentialMismatches(ctx con
 	return mismatches, nil
 }
 
-func (r *platformRunner) browserAuthLoginAudienceCredentialMismatches(ctx context.Context, projectIDs map[string]string) ([]string, error) {
-	value, err := browserAuthLoginAudienceCredentialValue(projectIDs)
+func (r *platformRunner) browserOIDCApplicationMismatches(ctx context.Context, client platformZitadelClient, projectID string) ([]string, error) {
+	var mismatches []string
+	app, found, err := client.FindOIDCAppByName(ctx, projectID, browserOIDCAppName)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, browserAuthLoginAudiencesPath)
-	if err != nil {
-		return []string{fmt.Sprintf("iam.browser_auth_login_audiences.read_error=%q", err.Error())}, nil
+	if !found {
+		mismatches = append(mismatches, "iam.browser_oidc_app.missing")
+		return mismatches, nil
 	}
-	var mismatches []string
-	if string(raw) != value {
-		mismatches = append(mismatches, "iam.browser_auth_login_audiences.value_mismatch")
+	expected := map[string]string{
+		"oidc-app-id":     app.ID,
+		"oidc-client-id":  app.ClientID,
+		"oidc-project-id": projectID,
 	}
-	stat, err := r.remoteCredentialStat(ctx, browserAuthLoginAudiencesPath)
-	if err != nil {
-		return append(mismatches, fmt.Sprintf("iam.browser_auth_login_audiences.stat_error=%q", err.Error())), nil
-	}
-	if stat.Group != browserAuthLoginAudiencesGroup {
-		mismatches = append(mismatches, fmt.Sprintf("iam.browser_auth_login_audiences.group=%q", stat.Group))
-	}
-	if stat.Mode != "640" {
-		mismatches = append(mismatches, fmt.Sprintf("iam.browser_auth_login_audiences.mode=%q", stat.Mode))
+	for name, value := range expected {
+		path := browserOIDCCredstoreDir + "/" + name
+		raw, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, path)
+		if err != nil {
+			mismatches = append(mismatches, fmt.Sprintf("iam.browser_oidc_app.%s.read_error=%q", name, err.Error()))
+			continue
+		}
+		if strings.TrimSpace(string(raw)) != value {
+			mismatches = append(mismatches, "iam.browser_oidc_app."+name+".value_mismatch")
+		}
+		stat, err := r.remoteCredentialStat(ctx, path)
+		if err != nil {
+			mismatches = append(mismatches, fmt.Sprintf("iam.browser_oidc_app.%s.stat_error=%q", name, err.Error()))
+			continue
+		}
+		if stat.Group != browserOIDCCredstoreGroup {
+			mismatches = append(mismatches, fmt.Sprintf("iam.browser_oidc_app.%s.group=%q", name, stat.Group))
+		}
+		if stat.Mode != "640" {
+			mismatches = append(mismatches, fmt.Sprintf("iam.browser_oidc_app.%s.mode=%q", name, stat.Mode))
+		}
 	}
 	return mismatches, nil
 }
@@ -468,6 +482,50 @@ func (c platformZitadelClient) EnsureOrganizationName(ctx context.Context, orgID
 }
 
 func (c platformZitadelClient) ProjectByName(ctx context.Context, name string) (platformZitadelProject, error) {
+	project, found, err := c.FindProjectByName(ctx, name)
+	if err != nil {
+		return platformZitadelProject{}, err
+	}
+	if !found {
+		return platformZitadelProject{}, fmt.Errorf("zitadel project not found: %s", name)
+	}
+	return project, nil
+}
+
+func (c platformZitadelClient) EnsureProject(ctx context.Context, name string) (platformZitadelProject, error) {
+	project, found, err := c.FindProjectByName(ctx, name)
+	if err != nil {
+		return platformZitadelProject{}, err
+	}
+	if !found {
+		var out struct {
+			ID string `json:"id"`
+		}
+		body := map[string]any{
+			"name":                 strings.TrimSpace(name),
+			"projectRoleAssertion": false,
+			"projectRoleCheck":     false,
+		}
+		if err := c.doJSON(ctx, http.MethodPost, "/management/v1/projects", body, &out, false); err != nil {
+			return platformZitadelProject{}, fmt.Errorf("create Zitadel project %s: %w", name, err)
+		}
+		if strings.TrimSpace(out.ID) == "" {
+			return platformZitadelProject{}, fmt.Errorf("create Zitadel project %s returned no id", name)
+		}
+		return platformZitadelProject{ID: strings.TrimSpace(out.ID), Name: strings.TrimSpace(name), State: "PROJECT_STATE_ACTIVE"}, nil
+	}
+	body := map[string]any{
+		"name":                 strings.TrimSpace(name),
+		"projectRoleAssertion": false,
+		"projectRoleCheck":     false,
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/management/v1/projects/"+url.PathEscape(project.ID), body, nil, false); err != nil && !isZitadelNoChanges(err) {
+		return platformZitadelProject{}, fmt.Errorf("update Zitadel project %s defaults: %w", name, err)
+	}
+	return project, nil
+}
+
+func (c platformZitadelClient) FindProjectByName(ctx context.Context, name string) (platformZitadelProject, bool, error) {
 	var out struct {
 		Result []struct {
 			ID    string `json:"id"`
@@ -484,13 +542,101 @@ func (c platformZitadelClient) ProjectByName(ctx context.Context, name string) (
 		}},
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/management/v1/projects/_search", body, &out, false); err != nil {
-		return platformZitadelProject{}, fmt.Errorf("search Zitadel project %s: %w", name, err)
+		return platformZitadelProject{}, false, fmt.Errorf("search Zitadel project %s: %w", name, err)
 	}
 	if len(out.Result) == 0 || strings.TrimSpace(out.Result[0].ID) == "" {
-		return platformZitadelProject{}, fmt.Errorf("zitadel project not found: %s", name)
+		return platformZitadelProject{}, false, nil
 	}
 	item := out.Result[0]
-	return platformZitadelProject{ID: item.ID, Name: item.Name, State: item.State}, nil
+	return platformZitadelProject{ID: item.ID, Name: item.Name, State: item.State}, true, nil
+}
+
+func (c platformZitadelClient) FindOIDCAppByName(ctx context.Context, projectID, name string) (platformZitadelOIDCApp, bool, error) {
+	var out struct {
+		Result []struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			OIDCConfig struct {
+				ClientID string `json:"clientId"`
+			} `json:"oidcConfig"`
+		} `json:"result"`
+	}
+	body := map[string]any{
+		"queries": []map[string]any{{
+			"nameQuery": map[string]string{
+				"name":   strings.TrimSpace(name),
+				"method": "TEXT_QUERY_METHOD_EQUALS",
+			},
+		}},
+	}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/_search"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &out, false); err != nil {
+		return platformZitadelOIDCApp{}, false, fmt.Errorf("search Zitadel OIDC app %s: %w", name, err)
+	}
+	if len(out.Result) == 0 || strings.TrimSpace(out.Result[0].ID) == "" {
+		return platformZitadelOIDCApp{}, false, nil
+	}
+	item := out.Result[0]
+	return platformZitadelOIDCApp{ID: item.ID, ClientID: item.OIDCConfig.ClientID}, true, nil
+}
+
+func (c platformZitadelClient) CreateBrowserOIDCApp(ctx context.Context, projectID, name string, redirectURIs, postLogoutRedirectURIs []string) (platformZitadelOIDCApp, error) {
+	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs)
+	body["name"] = strings.TrimSpace(name)
+	var out struct {
+		AppID        string `json:"appId"`
+		ClientID     string `json:"clientId"`
+		ClientSecret string `json:"clientSecret"`
+	}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/oidc"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &out, false); err != nil {
+		return platformZitadelOIDCApp{}, fmt.Errorf("create Zitadel OIDC app %s: %w", name, err)
+	}
+	appID := strings.TrimSpace(out.AppID)
+	clientID := strings.TrimSpace(out.ClientID)
+	clientSecret := strings.TrimSpace(out.ClientSecret)
+	if appID == "" || clientID == "" || clientSecret == "" {
+		return platformZitadelOIDCApp{}, fmt.Errorf("create Zitadel OIDC app %s returned incomplete credentials", name)
+	}
+	return platformZitadelOIDCApp{ID: appID, ClientID: clientID, ClientSecret: clientSecret}, nil
+}
+
+func (c platformZitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID, appID, name string, redirectURIs, postLogoutRedirectURIs []string) error {
+	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs)
+	body["accessTokenRoleAssertion"] = false
+	body["idTokenRoleAssertion"] = false
+	body["idTokenUserinfoAssertion"] = true
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(appID)) + "/oidc_config"
+	if err := c.doJSON(ctx, http.MethodPut, path, body, nil, false); err != nil && !isZitadelNoChanges(err) {
+		return fmt.Errorf("update Zitadel OIDC app %s: %w", name, err)
+	}
+	return nil
+}
+
+func (c platformZitadelClient) DeleteOIDCApp(ctx context.Context, projectID, appID string) error {
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(appID))
+	if err := c.doJSON(ctx, http.MethodDelete, path, nil, nil, false); err != nil {
+		return fmt.Errorf("delete Zitadel OIDC app %s: %w", appID, err)
+	}
+	return nil
+}
+
+func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string) map[string]any {
+	return map[string]any{
+		"redirectUris":           redirectURIs,
+		"responseTypes":          []string{"OIDC_RESPONSE_TYPE_CODE"},
+		"grantTypes":             []string{"OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN", "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"},
+		"appType":                "OIDC_APP_TYPE_WEB",
+		"authMethodType":         "OIDC_AUTH_METHOD_TYPE_POST",
+		"postLogoutRedirectUris": postLogoutRedirectURIs,
+		"devMode":                false,
+		"accessTokenType":        "OIDC_TOKEN_TYPE_JWT",
+	}
+}
+
+func isZitadelNoChanges(err error) bool {
+	var status platformZitadelStatusError
+	return errors.As(err, &status) && status.Status == http.StatusBadRequest && strings.Contains(status.Body, "No changes")
 }
 
 func (c platformZitadelClient) FindHumanByEmail(ctx context.Context, email string) (platformZitadelUser, bool, error) {

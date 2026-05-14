@@ -86,7 +86,7 @@ string RateLimitBucket
 
 /// Expected token audience, SPIFFE service name, or checkout grant audience.
 @length(min: 1, max: 160)
-@pattern("^([a-z][a-z0-9-]*-service|https://[A-Za-z0-9.-]+|spiffe://.+)$")
+@pattern("^([a-z][a-z0-9-]*-(service|api)|https://[A-Za-z0-9.-]+|spiffe://.+)$")
 string Audience
 
 /// Repository-owned service binary name.

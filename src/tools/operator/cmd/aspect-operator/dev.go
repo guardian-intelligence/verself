@@ -188,16 +188,6 @@ func resolveVerselfWebDevEnv(rt *opruntime.Runtime, printOnly bool) (map[string]
 	}
 	env["VERSELF_DOMAIN"] = domain
 	env["PRODUCT_BASE_URL"] = firstNonEmpty(os.Getenv("PRODUCT_BASE_URL"), "https://"+domain)
-	for _, key := range []string{
-		"SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE",
-		"IAM_SERVICE_AUTH_AUDIENCE",
-		"PROFILE_SERVICE_AUTH_AUDIENCE",
-		"NOTIFICATIONS_SERVICE_AUTH_AUDIENCE",
-		"PROJECTS_SERVICE_AUTH_AUDIENCE",
-		"SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
-	} {
-		env[key] = firstNonEmpty(os.Getenv(key), jobEnv[key])
-	}
 	for _, tunnel := range tunnels {
 		if missing[tunnel.EnvKey] {
 			env[tunnel.EnvKey] = placeholderUnreachableURL

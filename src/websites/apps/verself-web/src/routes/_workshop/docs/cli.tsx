@@ -43,7 +43,7 @@ const CLI_SECTIONS: readonly CLISection[] = [
     status: "next",
     summary: "Non-human authentication for headless CLI, CI, SDK integrations, and agent runs.",
     body: [
-      "Use a credential file only when the runtime cannot present a stronger workload identity. The file contains one machine credential bundle and is exchanged for short-lived access tokens for the selected organization and service audience.",
+      "Use a credential file only when the runtime cannot present a stronger workload identity. The file contains one machine credential bundle and is exchanged for short-lived access tokens for the selected organization and product API audience.",
       "Use workload trust when the runtime can prove its own identity. GitHub Actions OIDC, future Verself runner identity, and self-hosted SPIFFE identities should exchange runtime assertions for short-lived Verself tokens instead of storing long-lived secrets.",
       "The CLI stores profile metadata locally. It should not persist human bearer tokens, prompt for passwords, or treat a credential file as an all-purpose global token.",
     ],
@@ -72,7 +72,7 @@ verself auth logout`,
     topics: ["Profile storage", "Active profile", "Organization context", "Service origins"],
     commands: `verself auth profiles
 verself orgs use guardian-intelligence --profile guardian
-verself auth token --profile guardian --audience iam-service`,
+verself auth token --profile guardian`,
   },
   {
     id: "resource-identifiers",

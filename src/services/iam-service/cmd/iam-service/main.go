@@ -179,17 +179,12 @@ func run() error {
 	authAudience := cfg.RequireCredential("auth-audience")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
-	browserAuthLoginAudiencesRaw := cfg.RequireCredential("browser-auth-login-audiences")
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
 	spiceDBPresharedKey := cfg.RequireCredential("spicedb-grpc-preshared-key")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
-		return err
-	}
-	browserAuthLoginAudiences, err := splitRequiredCSV("browser-auth-login-audiences", browserAuthLoginAudiencesRaw)
-	if err != nil {
 		return err
 	}
 
@@ -270,14 +265,14 @@ func run() error {
 	}
 	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
-		PG:             pg,
-		Logger:         logger,
-		IssuerURL:      authIssuerURL,
-		ClientID:       browserOIDCClientID,
-		ClientSecret:   browserOIDCClientSecret,
-		PublicBaseURL:  browserAuthPublicBaseURL,
-		LoginAudiences: browserAuthLoginAudiences,
-		Authz:          authzService,
+		PG:              pg,
+		Logger:          logger,
+		IssuerURL:       authIssuerURL,
+		ClientID:        browserOIDCClientID,
+		ClientSecret:    browserOIDCClientSecret,
+		PublicBaseURL:   browserAuthPublicBaseURL,
+		ProductAudience: authAudience,
+		Authz:           authzService,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,
@@ -402,27 +397,6 @@ func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func splitRequiredCSV(name, raw string) ([]string, error) {
-	parts := strings.Split(raw, ",")
-	values := make([]string, 0, len(parts))
-	seen := map[string]struct{}{}
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		values = append(values, value)
-	}
-	if len(values) == 0 {
-		return nil, fmt.Errorf("%s must contain at least one value", name)
-	}
-	return values, nil
 }
 
 func requestMayHaveBody(r *http.Request) bool {

@@ -121,7 +121,7 @@ func validateGeneratedOperation(desc contractapi.OperationDescriptor) error {
 	if desc.Identity.Mode != "bearer" {
 		return fmt.Errorf("%s: unsupported public identity mode %q", desc.OperationID, desc.Identity.Mode)
 	}
-	if desc.Identity.Audience != "iam-service" {
+	if desc.Identity.Audience != "verself-api" {
 		return fmt.Errorf("%s: unexpected audience %q", desc.OperationID, desc.Identity.Audience)
 	}
 	if desc.Authorization.Permission == "" || desc.Audit.Event == "" || desc.Audit.Resource == "" || desc.Audit.Action == "" {

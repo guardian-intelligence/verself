@@ -70,7 +70,7 @@ go get github.com/verself/verself-go`,
     summary:
       "Credential sources exchange non-human identity proof for short-lived access tokens used by resource clients.",
     body: [
-      "The SDK should abstract token acquisition, refresh, audience selection, and credential material parsing. Product resource clients should receive an access-token supplier instead of reading credential files directly.",
+      "The SDK should abstract token acquisition, refresh, and credential material parsing. Product resource clients should receive an access-token supplier instead of reading credential files directly.",
       "Credential files are a fallback for runtimes without workload identity. Workload trust should become the preferred SDK path for CI, agents, and self-hosted deployments.",
     ],
     topics: [

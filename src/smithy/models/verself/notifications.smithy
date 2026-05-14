@@ -41,7 +41,7 @@ use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
 
-@serviceRuntime(serviceName: "notifications-service", publicAudience: "notifications-service", internalAudience: "notifications-service")
+@serviceRuntime(serviceName: "notifications-service", publicAudience: "verself-api", internalAudience: "notifications-service")
 @restJson1
 service Notifications {
     version: "2026-05-13"
@@ -62,7 +62,7 @@ service Notifications {
     ]
 }
 
-@serviceRuntime(serviceName: "notifications-service", publicAudience: "notifications-service", internalAudience: "notifications-service")
+@serviceRuntime(serviceName: "notifications-service", publicAudience: "verself-api", internalAudience: "notifications-service")
 @restJson1
 service NotificationsInternal {
     version: "2026-05-13"
@@ -458,7 +458,7 @@ structure EmptyInput {}
 @readonly
 @http(method: "GET", uri: "/api/v1/notifications")
 @paginated(inputToken: "cursor", outputToken: "next_cursor", pageSize: "limit", items: "notifications")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsReadPermission, organization: {source: "request_subject"})
 @audit(event: NotificationListAuditEvent, resource: NotificationSubject, action: "list")
 @rateLimit(bucket: "read")
@@ -493,7 +493,7 @@ structure ListNotificationsOutput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/notifications/summary")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsReadPermission, organization: {source: "request_subject"})
 @audit(event: NotificationSummaryReadAuditEvent, resource: NotificationSubject, action: "read")
 @rateLimit(bucket: "read")
@@ -515,7 +515,7 @@ structure NotificationSummaryOutput {
 
 @idempotent
 @http(method: "PUT", uri: "/api/v1/notifications/preferences")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationPreferencesWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationPreferencesWriteAuditEvent, resource: NotificationPreferences, action: "write")
 @rateLimit(bucket: "notification_mutation")
@@ -550,7 +550,7 @@ structure PutNotificationPreferencesInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/notifications/read-cursor")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationReadCursorAdvanceAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
@@ -574,7 +574,7 @@ structure AdvanceNotificationReadCursorInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/notifications/{notification_id}/dismiss")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationDismissAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
@@ -588,7 +588,7 @@ operation DismissNotification {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/notifications/{notification_id}/read")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationMarkReadAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
@@ -602,7 +602,7 @@ operation MarkNotificationRead {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/notifications/clear")
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsWritePermission, organization: {source: "request_subject"})
 @audit(event: NotificationsClearAuditEvent, resource: NotificationSubject, action: "write")
 @rateLimit(bucket: "notification_mutation")
@@ -616,7 +616,7 @@ operation ClearNotifications {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/notifications/test", code: 202)
-@identity(mode: "bearer", audience: "notifications-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: NotificationsTestPermission, organization: {source: "request_subject"})
 @audit(event: NotificationTestPublishAuditEvent, resource: NotificationSubject, action: "test")
 @rateLimit(bucket: "notification_mutation")

@@ -839,6 +839,6 @@ func applyPublicAPISecurityScheme(api huma.API) {
 		Type:         "http",
 		Scheme:       "bearer",
 		BearerFormat: "JWT",
-		Description:  "Zitadel-issued bearer token scoped to the secrets-service API audience.",
+		Description:  "Zitadel-issued bearer token scoped to the Verself product API audience.",
 	}
 }

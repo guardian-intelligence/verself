@@ -51,14 +51,14 @@ use verself.common.v1#DateTime
 
 @httpBearerAuth
 @auth([smithy.api#httpBearerAuth])
-@serviceRuntime(serviceName: "iam-service", publicAudience: "iam-service")
+@serviceRuntime(serviceName: "iam-service", publicAudience: "verself-api")
 @restJson1
 service Iam {
     version: "2026-05-12"
     resources: [Organization]
 }
 
-@serviceRuntime(serviceName: "iam-service", publicAudience: "iam-service", internalAudience: "iam-service")
+@serviceRuntime(serviceName: "iam-service", publicAudience: "verself-api", internalAudience: "iam-service")
 @restJson1
 service IamInternal {
     version: "2026-05-12"
@@ -324,7 +324,7 @@ structure MemberSummary for Member {
 @readonly
 @http(method: "GET", uri: "/api/v1/orgs")
 @paginated(inputToken: "pageToken", outputToken: "nextPageToken", pageSize: "pageSize", items: "organizations")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: OrganizationListPermission, organization: {source: "request_subject"})
 @audit(event: OrganizationListAuditEvent, resource: Organization, action: "list")
 @rateLimit(bucket: "read")
@@ -357,7 +357,7 @@ list Organizations {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/orgs/{orgId}")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: OrganizationReadPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: OrganizationReadAuditEvent, resource: Organization, action: "read")
 @rateLimit(bucket: "read")
@@ -395,7 +395,7 @@ structure GetOrganizationOutput {
 
 @idempotent
 @http(method: "PATCH", uri: "/api/v1/orgs/{orgId}")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: OrganizationUpdatePermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: OrganizationUpdateAuditEvent, resource: Organization, action: "update")
 @rateLimit(bucket: "iam_mutation")
@@ -454,7 +454,7 @@ structure UpdateOrganizationOutput {
 @readonly
 @http(method: "GET", uri: "/api/v1/orgs/{orgId}/members")
 @paginated(inputToken: "pageToken", outputToken: "nextPageToken", pageSize: "pageSize", items: "members")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MemberListPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: MemberListAuditEvent, resource: Member, action: "list")
 @rateLimit(bucket: "read")
@@ -493,7 +493,7 @@ list Members {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/orgs/{orgId}/members/{memberId}")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: MemberReadPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: MemberReadAuditEvent, resource: Member, action: "read")
 @rateLimit(bucket: "read")
@@ -567,7 +567,7 @@ list IAMMembers {
 
 @readonly
 @http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:get")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: IAMPolicyGetPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: IAMPolicyGetAuditEvent, resource: Organization, action: "read")
 @rateLimit(bucket: "read")
@@ -605,7 +605,7 @@ structure GetIamPolicyOutput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:set")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: IAMPolicySetPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: IAMPolicySetAuditEvent, resource: Organization, action: "set")
 @rateLimit(bucket: "iam_mutation")
@@ -657,7 +657,7 @@ structure SetIamPolicyOutput {
 
 @readonly
 @http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:testPermissions")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: IAMPolicyTestPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: IAMPolicyTestAuditEvent, resource: Organization, action: "test")
 @rateLimit(bucket: "read")

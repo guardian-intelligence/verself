@@ -155,7 +155,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			MachineSecretPath:  "/etc/credstore/seed-system/assume-platform-admin-client-secret",
 			MailboxAccount:     "agents",
 			IncludePlatformOps: true,
-			TokenProjects:      []string{"sandbox-rental", "iam-service", "secrets-service", "mailbox-service", "forgejo"},
+			TokenProjects:      []string{platformProductAPIProjectName, "forgejo"},
 		}, nil
 	case "acme-admin":
 		return personaDefinition{
@@ -164,7 +164,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			HumanPasswordPath: "/etc/credstore/seed-system/acme-admin-password",
 			MachineUsername:   "assume-acme-admin",
 			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-admin-client-secret",
-			TokenProjects:     []string{"sandbox-rental", "iam-service", "secrets-service"},
+			TokenProjects:     []string{platformProductAPIProjectName},
 		}, nil
 	case "acme-member":
 		return personaDefinition{
@@ -173,7 +173,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			HumanPasswordPath: "/etc/credstore/seed-system/acme-user-password",
 			MachineUsername:   "assume-acme-member",
 			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-member-client-secret",
-			TokenProjects:     []string{"sandbox-rental", "iam-service", "secrets-service"},
+			TokenProjects:     []string{platformProductAPIProjectName},
 		}, nil
 	default:
 		return personaDefinition{}, fmt.Errorf("persona must be one of platform-admin, acme-admin, acme-member")
@@ -265,7 +265,7 @@ func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath stri
 	finalized = true
 	fmt.Fprintf(os.Stderr, "persona env written: %s\n", outputPath)
 	fmt.Fprintf(os.Stderr, "source %s\n", shellExportValue(outputPath))
-	return printIdentityMetadata(rt, client, def.Name, projectTokens["iam-service"])
+	return printIdentityMetadata(rt, client, def.Name, projectTokens[platformProductAPIProjectName])
 }
 
 func readRemoteSecretString(rt *opruntime.Runtime, path string) (string, error) {
@@ -368,22 +368,20 @@ func personaEnv(def personaDefinition, domain, authBaseURL, humanPassword string
 		"WEBMAIL_URL":               "https://mail." + domain,
 		"FORGEJO_URL":               "https://git." + domain,
 	}
-	addProjectEnv := func(project, prefix string) {
-		if token := projectTokens[project]; token != "" {
-			env[prefix+"_AUTH_AUDIENCE"] = projectIDs[project]
-			env[prefix+"_ACCESS_TOKEN"] = token
-			env[prefix+"_TOKEN"] = token
-		}
-	}
-	addProjectEnv("sandbox-rental", "SANDBOX_RENTAL")
-	addProjectEnv("iam-service", "IAM_SERVICE")
-	if token := projectTokens["iam-service"]; token != "" {
-		env["SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE"] = projectIDs["iam-service"]
+	if token := projectTokens[platformProductAPIProjectName]; token != "" {
+		env["VERSELF_PRODUCT_API_AUTH_AUDIENCE"] = projectIDs[platformProductAPIProjectName]
+		env["VERSELF_PRODUCT_API_ACCESS_TOKEN"] = token
+		env["IAM_SERVICE_ACCESS_TOKEN"] = token
+		env["IAM_SERVICE_TOKEN"] = token
+		env["SANDBOX_RENTAL_ACCESS_TOKEN"] = token
+		env["SANDBOX_RENTAL_TOKEN"] = token
+		env["SECRETS_SERVICE_ACCESS_TOKEN"] = token
+		env["SECRETS_SERVICE_TOKEN"] = token
+		env["MAILBOX_SERVICE_ACCESS_TOKEN"] = token
+		env["MAILBOX_SERVICE_TOKEN"] = token
 		env["SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN"] = token
 		env["SOURCE_CODE_HOSTING_SERVICE_TOKEN"] = token
 	}
-	addProjectEnv("secrets-service", "SECRETS_SERVICE")
-	addProjectEnv("mailbox-service", "MAILBOX_SERVICE")
 	if token := projectTokens["forgejo"]; token != "" {
 		env["FORGEJO_AUTH_AUDIENCE"] = projectIDs["forgejo"]
 		env["FORGEJO_OIDC_ACCESS_TOKEN"] = token

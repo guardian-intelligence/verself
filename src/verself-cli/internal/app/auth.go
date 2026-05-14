@@ -75,7 +75,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	tokenFile := fs.String("token-file", "", "read bearer token from owner-only file")
 	issuerURL := fs.String("issuer", "", "OIDC issuer URL")
 	clientID := fs.String("client-id", "", "OIDC public client ID")
-	audience := fs.String("audience", "", "Zitadel project audience ID")
+	audience := fs.String("audience", "", "Verself product API audience ID")
 	iamURL := fs.String("iam-url", "", "IAM service base URL")
 	projectsURL := fs.String("projects-url", "", "Projects service base URL")
 	notificationsURL := fs.String("notifications-url", "", "Notifications service base URL")
@@ -110,7 +110,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		TokenFile: strings.TrimSpace(*tokenFile),
 		IssuerURL: firstNonEmpty(*issuerURL, c.getenv("VERSELF_AUTH_ISSUER_URL")),
 		ClientID:  firstNonEmpty(*clientID, c.getenv("VERSELF_CLI_CLIENT_ID")),
-		Audience:  firstNonEmpty(*audience, c.getenv("VERSELF_IAM_SERVICE_AUTH_AUDIENCE")),
+		Audience:  firstNonEmpty(*audience, c.getenv("VERSELF_PRODUCT_API_AUTH_AUDIENCE")),
 	})
 	if err != nil {
 		return err
@@ -428,12 +428,11 @@ func (c CLI) authWhoami(ctx context.Context, args []string) error {
 func (c CLI) authToken(args []string) error {
 	fs, serviceFlags := serviceFlagSet("auth token", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
-	audience := fs.String("audience", "", "requested audience label")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth token [--audience AUDIENCE]")
+		return errors.New("usage: auth token")
 	}
 	token, _, err := c.bearerTokenWithProfile(serviceFlags.tokenFile)
 	if err != nil {
@@ -442,7 +441,6 @@ func (c CLI) authToken(args []string) error {
 	if *jsonOut {
 		return writeJSON(c.out, map[string]string{
 			"access_token": token,
-			"audience":     strings.TrimSpace(*audience),
 		})
 	}
 	return writef(c.out, "%s\n", token)

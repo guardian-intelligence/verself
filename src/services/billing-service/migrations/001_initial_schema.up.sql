@@ -34,6 +34,10 @@ CREATE TABLE orgs (
     CHECK ((overage_policy = 'bill_published_rate') = (overage_consent_at IS NOT NULL))
 );
 
+CREATE UNIQUE INDEX orgs_single_platform_trust_tier_idx
+    ON orgs (trust_tier)
+    WHERE trust_tier = 'platform';
+
 CREATE TABLE products (
     product_id      TEXT        PRIMARY KEY CHECK (product_id <> ''),
     display_name    TEXT        NOT NULL,

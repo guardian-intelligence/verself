@@ -102,6 +102,7 @@ type platformConfig struct {
 	GitHubInstallationID int64  `json:"github_installation_id,omitempty"`
 	GitHubRepositoryID   int64  `json:"github_repository_id,omitempty"`
 	ForgejoDomain        string `json:"forgejo_domain"`
+	VerselfDomain        string `json:"verself_domain"`
 	ZitadelHost          string `json:"zitadel_host"`
 	CanonicalGitURL      string `json:"canonical_git_url"`
 	ForgejoWebhookURL    string `json:"forgejo_webhook_url"`
@@ -305,6 +306,7 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 		GitHubInstallationID: mainVars.PlatformGitHubInstallationID,
 		GitHubRepositoryID:   mainVars.PlatformGitHubRepositoryID,
 		ForgejoDomain:        resolveForgejoDomain(mainVars),
+		VerselfDomain:        strings.TrimSpace(mainVars.VerselfDomain),
 		ZitadelHost:          resolveZitadelHost(mainVars),
 		ForgejoWebhookURL:    resolveForgejoWebhookURL(mainVars),
 	}
@@ -361,6 +363,9 @@ func (cfg *platformConfig) validate() error {
 	}
 	if cfg.ForgejoDomain == "" || strings.Contains(cfg.ForgejoDomain, "{{") {
 		return fmt.Errorf("platform config: forgejo_domain or forgejo_subdomain + verself_domain is required")
+	}
+	if cfg.VerselfDomain == "" || strings.Contains(cfg.VerselfDomain, "{{") {
+		return fmt.Errorf("platform config: verself_domain is required")
 	}
 	if cfg.ForgejoWebhookURL == "" || strings.Contains(cfg.ForgejoWebhookURL, "{{") {
 		return fmt.Errorf("platform config: verself_domain is required for the sandbox Forgejo webhook URL")
@@ -438,6 +443,9 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIAMOwnerPolicy(owner.ID); err != nil {
 		return platformReport{}, err
 	}
+	if err := r.ensurePlatformBillingOrganization(); err != nil {
+		return platformReport{}, err
+	}
 	if err := r.ensureProject(); err != nil {
 		return platformReport{}, err
 	}
@@ -499,6 +507,7 @@ func (r *platformRunner) check() (platformReport, error) {
 	var issues []string
 	report.BoundaryResults = append(report.BoundaryResults, r.checkIdentityOrganization(&issues))
 	report.BoundaryResults = append(report.BoundaryResults, r.checkPlatformOwner(&issues))
+	report.BoundaryResults = append(report.BoundaryResults, r.checkPlatformBillingOrganization(&issues))
 	report.BoundaryResults = append(report.BoundaryResults, r.checkProject(&issues))
 	forgejoRow, forgejoRepoID := r.checkForgejo(&issues)
 	report.ForgejoRepoID = forgejoRepoID
@@ -617,6 +626,81 @@ WHERE org_id = $1`,
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("iam organization: commit: %w", err)
+		}
+		return nil
+	})
+}
+
+func (r *platformRunner) ensurePlatformBillingOrganization() error {
+	return r.withSpan("platform.billing_org.ensure", []attribute.KeyValue{
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.name", "billing"),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+		attribute.String("billing.trust_tier", r.cfg.TrustTier),
+	}, func(ctx context.Context) error {
+		if r.cfg.TrustTier != "platform" {
+			return fmt.Errorf("platform billing organization requires trust tier platform, got %q", r.cfg.TrustTier)
+		}
+		conn, err := r.openPG(ctx, "billing")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close(context.Background()) }()
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("billing platform organization: begin: %w", err)
+		}
+		defer rollbackTx(ctx, tx)
+		rows, err := tx.Query(ctx, `
+SELECT org_id
+FROM orgs
+WHERE trust_tier = 'platform'
+FOR UPDATE`)
+		if err != nil {
+			return fmt.Errorf("billing platform organization: query platform orgs: %w", err)
+		}
+		var platformOrgIDs []string
+		for rows.Next() {
+			var orgID string
+			if err := rows.Scan(&orgID); err != nil {
+				rows.Close()
+				return err
+			}
+			platformOrgIDs = append(platformOrgIDs, orgID)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("billing platform organization: scan platform orgs: %w", err)
+		}
+		for _, orgID := range platformOrgIDs {
+			if orgID != r.cfg.PublicOrgIDText {
+				return fmt.Errorf("billing platform organization: refusing second platform org %s while configured platform org is %s", orgID, r.cfg.PublicOrgIDText)
+			}
+		}
+		tag, err := tx.Exec(ctx, `
+INSERT INTO orgs (org_id, display_name, billing_email, trust_tier, overage_policy, overage_consent_at)
+VALUES ($1, $2, $3, 'platform', 'block', NULL)
+ON CONFLICT (org_id) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    billing_email = EXCLUDED.billing_email,
+    trust_tier = 'platform',
+    overage_policy = 'block',
+    overage_consent_at = NULL,
+    updated_at = now()
+WHERE orgs.display_name IS DISTINCT FROM EXCLUDED.display_name
+   OR orgs.billing_email IS DISTINCT FROM EXCLUDED.billing_email
+   OR orgs.trust_tier IS DISTINCT FROM 'platform'
+   OR orgs.overage_policy IS DISTINCT FROM 'block'
+   OR orgs.overage_consent_at IS NOT NULL`,
+			r.cfg.PublicOrgIDText, r.cfg.OrganizationName, r.cfg.OwnerEmail)
+		if err != nil {
+			return fmt.Errorf("billing platform organization: upsert: %w", err)
+		}
+		if tag.RowsAffected() > 0 {
+			r.markChanged("billing.platform_organization.updated")
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("billing platform organization: commit: %w", err)
 		}
 		return nil
 	})
@@ -1249,6 +1333,92 @@ WHERE org_id = $1`, r.cfg.PublicOrgIDText).Scan(&providerOrgID, &displayName, &s
 			*issues = append(*issues, "iam organization mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
 			row.Detail = strings.Join(mismatches, ", ")
+		}
+		return nil
+	})
+	if err != nil {
+		row.Status = "error"
+		row.Detail = err.Error()
+		*issues = append(*issues, err.Error())
+	}
+	return row
+}
+
+func (r *platformRunner) checkPlatformBillingOrganization(issues *[]string) platformBoundaryRow {
+	row := platformBoundaryRow{Boundary: "billing.orgs.platform", Status: "ok"}
+	err := r.withSpan("platform.billing_org.check", []attribute.KeyValue{
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.name", "billing"),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+	}, func(ctx context.Context) error {
+		conn, err := r.openPG(ctx, "billing")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close(context.Background()) }()
+		rows, err := conn.Query(ctx, `
+SELECT org_id, display_name, billing_email, state, trust_tier
+FROM orgs
+WHERE trust_tier = 'platform'
+ORDER BY org_id`)
+		if err != nil {
+			return fmt.Errorf("billing platform organization: query: %w", err)
+		}
+		defer rows.Close()
+		type platformBillingOrg struct {
+			orgID        string
+			displayName  string
+			billingEmail string
+			state        string
+			trustTier    string
+		}
+		var matches []platformBillingOrg
+		for rows.Next() {
+			var item platformBillingOrg
+			if err := rows.Scan(&item.orgID, &item.displayName, &item.billingEmail, &item.state, &item.trustTier); err != nil {
+				return err
+			}
+			matches = append(matches, item)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if len(matches) == 0 {
+			*issues = append(*issues, "billing platform organization is missing")
+			row.Status = "missing"
+			return nil
+		}
+		if len(matches) > 1 {
+			ids := make([]string, 0, len(matches))
+			for _, match := range matches {
+				ids = append(ids, match.orgID)
+			}
+			row.Status = "mismatch"
+			row.Detail = "multiple platform orgs: " + strings.Join(ids, ",")
+			*issues = append(*issues, row.Detail)
+			return nil
+		}
+		match := matches[0]
+		var mismatches []string
+		if match.orgID != r.cfg.PublicOrgIDText {
+			mismatches = append(mismatches, fmt.Sprintf("org_id=%q", match.orgID))
+		}
+		if match.displayName != r.cfg.OrganizationName {
+			mismatches = append(mismatches, fmt.Sprintf("display_name=%q", match.displayName))
+		}
+		if match.billingEmail != r.cfg.OwnerEmail {
+			mismatches = append(mismatches, fmt.Sprintf("billing_email=%q", match.billingEmail))
+		}
+		if match.state != "active" {
+			mismatches = append(mismatches, fmt.Sprintf("state=%q", match.state))
+		}
+		if match.trustTier != "platform" {
+			mismatches = append(mismatches, fmt.Sprintf("trust_tier=%q", match.trustTier))
+		}
+		if len(mismatches) > 0 {
+			row.Status = "mismatch"
+			row.Detail = strings.Join(mismatches, ", ")
+			*issues = append(*issues, "billing platform organization mismatch: "+row.Detail)
 		}
 		return nil
 	})

@@ -39,12 +39,9 @@ export const selectActiveOrganization = createServerFn({ method: "POST" })
     return selectIdentityOrganization(data);
   });
 
-export const getAccessTokenForAudience = createServerOnlyFn(
-  async function getAccessTokenForAudience(
-    context: ConsoleAuthContext | undefined,
-    audience: string,
-  ): Promise<string> {
-    const { getIdentityAccessTokenForAudience } = await import("./auth.server");
-    return getIdentityAccessTokenForAudience(context, audience);
-  },
-);
+export const getProductAccessToken = createServerOnlyFn(async function getProductAccessToken(
+  context: ConsoleAuthContext | undefined,
+): Promise<string> {
+  const { getIdentityProductAccessToken } = await import("./auth.server");
+  return getIdentityProductAccessToken(context);
+});

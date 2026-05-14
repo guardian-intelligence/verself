@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
-import { readFileSync } from "node:fs";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
   ProfileApiError,
@@ -121,7 +120,7 @@ import type {
   PutProfilePreferencesRequest,
   UpdateProfileIdentityRequest,
 } from "~/lib/profile-api";
-import { consoleAuthMiddleware, getAccessTokenForAudience, type ConsoleAuthContext } from "./auth";
+import { consoleAuthMiddleware, getProductAccessToken, type ConsoleAuthContext } from "./auth";
 
 const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
@@ -133,37 +132,6 @@ const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
   "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
 );
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
-const IAM_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("IAM_SERVICE_AUTH_AUDIENCE");
-const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
-  "SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE",
-);
-const PROFILE_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("PROFILE_SERVICE_AUTH_AUDIENCE");
-const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
-  "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE",
-);
-const PROJECTS_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("PROJECTS_SERVICE_AUTH_AUDIENCE");
-const GOVERNANCE_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("GOVERNANCE_SERVICE_AUTH_AUDIENCE");
-const BILLING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv("BILLING_SERVICE_AUTH_AUDIENCE");
-const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE = requireCredentialEnv(
-  "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE",
-);
-
-function requireCredentialEnv(name: string): string {
-  const inlineValue = process.env[name]?.trim();
-  if (inlineValue) {
-    return inlineValue;
-  }
-  const pathEnvName = `VERSELF_CRED_${name}`;
-  const path = process.env[pathEnvName]?.trim();
-  if (!path) {
-    throw new Error(`${name} or ${pathEnvName} is required`);
-  }
-  const value = readFileSync(path, "utf8").trim();
-  if (!value) {
-    throw new Error(`${pathEnvName} points to an empty credential`);
-  }
-  return value;
-}
 
 export { IAMApiError, isIAMApiError };
 export { GovernanceApiError, isGovernanceApiError };
@@ -240,7 +208,7 @@ export type {
 export type { Member, Organization, OrganizationMetadata, UpdateOrganizationRequest };
 
 async function iamSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, IAM_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getProductAccessToken(context);
   return new Verself({
     bearerToken: accessToken,
     iamURL: IAM_SERVICE_BASE_URL,
@@ -249,12 +217,12 @@ async function iamSDK(context: ConsoleAuthContext | undefined) {
 }
 
 async function governanceSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, GOVERNANCE_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getProductAccessToken(context);
   return new Verself({ bearerToken: accessToken, governanceURL: GOVERNANCE_SERVICE_BASE_URL });
 }
 
 async function profileClientOptions(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, PROFILE_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getProductAccessToken(context);
   return {
     accessToken,
     baseUrl: PROFILE_SERVICE_BASE_URL,
@@ -262,7 +230,7 @@ async function profileClientOptions(context: ConsoleAuthContext | undefined) {
 }
 
 async function notificationsSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, NOTIFICATIONS_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getProductAccessToken(context);
   return new Verself({
     bearerToken: accessToken,
     notificationsURL: NOTIFICATIONS_SERVICE_BASE_URL,
@@ -270,28 +238,22 @@ async function notificationsSDK(context: ConsoleAuthContext | undefined) {
 }
 
 async function projectsSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, PROJECTS_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getProductAccessToken(context);
   return new Verself({ bearerToken: accessToken, projectsURL: PROJECTS_SERVICE_BASE_URL });
 }
 
 async function billingSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(context, BILLING_SERVICE_AUTH_AUDIENCE);
+  const accessToken = await getProductAccessToken(context);
   return new Verself({ bearerToken: accessToken, billingURL: BILLING_SERVICE_BASE_URL });
 }
 
 async function sourceCodeHostingSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(
-    context,
-    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
-  );
+  const accessToken = await getProductAccessToken(context);
   return new Verself({ bearerToken: accessToken, sourceURL: SOURCE_CODE_HOSTING_SERVICE_BASE_URL });
 }
 
 async function sandboxRentalSDK(context: ConsoleAuthContext | undefined) {
-  const accessToken = await getAccessTokenForAudience(
-    context,
-    SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE,
-  );
+  const accessToken = await getProductAccessToken(context);
   return new Verself({
     bearerToken: accessToken,
     sandboxURL: SANDBOX_RENTAL_SERVICE_BASE_URL,

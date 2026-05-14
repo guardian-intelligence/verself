@@ -39,7 +39,7 @@ use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
 
-@serviceRuntime(serviceName: "secrets-service", publicAudience: "secrets-service", internalAudience: "secrets-service")
+@serviceRuntime(serviceName: "secrets-service", publicAudience: "verself-api", internalAudience: "secrets-service")
 @restJson1
 service Secrets {
     version: "2026-05-13"
@@ -73,7 +73,7 @@ service Secrets {
     ]
 }
 
-@serviceRuntime(serviceName: "secrets-service", publicAudience: "secrets-service", internalAudience: "secrets-service")
+@serviceRuntime(serviceName: "secrets-service", publicAudience: "verself-api", internalAudience: "secrets-service")
 @restJson1
 service SecretsInternal {
     version: "2026-05-13"
@@ -680,7 +680,7 @@ structure TransitKeyOutput {
 
 @idempotent
 @http(method: "PUT", uri: "/api/v1/secrets/{name}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: SecretWritePermission, organization: {source: "token_org_id"})
 @audit(event: SecretWriteAuditEvent, resource: Secret, action: "write")
 @rateLimit(bucket: "secret_mutation")
@@ -694,7 +694,7 @@ operation PutSecret {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/secrets/{name}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: SecretReadPermission, organization: {source: "token_org_id"})
 @audit(event: SecretReadAuditEvent, resource: Secret, action: "read")
 @rateLimit(bucket: "read")
@@ -708,7 +708,7 @@ operation ReadSecret {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/secrets")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: SecretListPermission, organization: {source: "token_org_id"})
 @audit(event: SecretListAuditEvent, resource: Secret, action: "list")
 @rateLimit(bucket: "read")
@@ -721,7 +721,7 @@ operation ListSecrets {
 }
 
 @http(method: "POST", uri: "/api/v1/secrets:resolve")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: SecretReadPermission, organization: {source: "token_org_id"})
 @audit(event: SecretResolveAuditEvent, resource: Secret, action: "resolve")
 @rateLimit(bucket: "read")
@@ -735,7 +735,7 @@ operation ResolveSecrets {
 
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/secrets/{name}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: SecretDeletePermission, organization: {source: "token_org_id"})
 @audit(event: SecretDeleteAuditEvent, resource: Secret, action: "delete")
 @rateLimit(bucket: "secret_mutation")
@@ -749,7 +749,7 @@ operation DeleteSecret {
 
 @idempotent
 @http(method: "PUT", uri: "/api/v1/variables/{name}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: VariableWritePermission, organization: {source: "token_org_id"})
 @audit(event: VariableWriteAuditEvent, resource: Variable, action: "write")
 @rateLimit(bucket: "secret_mutation")
@@ -763,7 +763,7 @@ operation PutVariable {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/variables/{name}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: VariableReadPermission, organization: {source: "token_org_id"})
 @audit(event: VariableReadAuditEvent, resource: Variable, action: "read")
 @rateLimit(bucket: "read")
@@ -777,7 +777,7 @@ operation ReadVariable {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/variables")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: VariableListPermission, organization: {source: "token_org_id"})
 @audit(event: VariableListAuditEvent, resource: Variable, action: "list")
 @rateLimit(bucket: "read")
@@ -791,7 +791,7 @@ operation ListVariables {
 
 @idempotent
 @http(method: "DELETE", uri: "/api/v1/variables/{name}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: VariableDeletePermission, organization: {source: "token_org_id"})
 @audit(event: VariableDeleteAuditEvent, resource: Variable, action: "delete")
 @rateLimit(bucket: "secret_mutation")
@@ -824,7 +824,7 @@ structure CreateOpaqueCredentialInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/credentials", code: 201)
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: CredentialCreatePermission, organization: {source: "token_org_id"})
 @audit(event: CredentialCreateAuditEvent, resource: OpaqueCredential, action: "create")
 @rateLimit(bucket: "credential_mutation")
@@ -844,7 +844,7 @@ structure OpaqueCredentialPathInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/credentials/{credential_id}")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: CredentialReadPermission, organization: {source: "token_org_id"})
 @audit(event: CredentialReadAuditEvent, resource: OpaqueCredential, action: "read")
 @rateLimit(bucket: "read")
@@ -866,7 +866,7 @@ structure ListOpaqueCredentialsInput {
 
 @readonly
 @http(method: "GET", uri: "/api/v1/credentials")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: CredentialListPermission, organization: {source: "token_org_id"})
 @audit(event: CredentialListAuditEvent, resource: OpaqueCredential, action: "list")
 @rateLimit(bucket: "read")
@@ -893,7 +893,7 @@ structure RollOpaqueCredentialInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/credentials/{credential_id}/roll")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: CredentialRollPermission, organization: {source: "token_org_id"})
 @audit(event: CredentialRollAuditEvent, resource: OpaqueCredential, action: "roll")
 @rateLimit(bucket: "credential_mutation")
@@ -918,7 +918,7 @@ structure RevokeOpaqueCredentialInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/credentials/{credential_id}/revoke")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: CredentialRevokePermission, organization: {source: "token_org_id"})
 @audit(event: CredentialRevokeAuditEvent, resource: OpaqueCredential, action: "revoke")
 @rateLimit(bucket: "credential_mutation")
@@ -942,7 +942,7 @@ structure CreateTransitKeyInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/transit/keys", code: 201)
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitKeyCreatePermission, organization: {source: "token_org_id"})
 @audit(event: TransitKeyCreateAuditEvent, resource: TransitKey, action: "create")
 @rateLimit(bucket: "key_mutation")
@@ -967,7 +967,7 @@ structure TransitKeyIdempotentInput {
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/rotate")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitKeyRotatePermission, organization: {source: "token_org_id"})
 @audit(event: TransitKeyRotateAuditEvent, resource: TransitKey, action: "rotate")
 @rateLimit(bucket: "key_mutation")
@@ -997,7 +997,7 @@ structure TransitCiphertextOutput {
 }
 
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/encrypt")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitEncryptPermission, organization: {source: "token_org_id"})
 @audit(event: TransitEncryptAuditEvent, resource: TransitKey, action: "encrypt")
 @rateLimit(bucket: "crypto")
@@ -1024,7 +1024,7 @@ structure TransitPlaintextOutput {
 }
 
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/decrypt")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitDecryptPermission, organization: {source: "token_org_id"})
 @audit(event: TransitDecryptAuditEvent, resource: TransitKey, action: "decrypt")
 @rateLimit(bucket: "crypto")
@@ -1051,7 +1051,7 @@ structure TransitSignatureOutput {
 }
 
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/sign")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitSignPermission, organization: {source: "token_org_id"})
 @audit(event: TransitSignAuditEvent, resource: TransitKey, action: "sign")
 @rateLimit(bucket: "crypto")
@@ -1081,7 +1081,7 @@ structure TransitVerifyOutput {
 }
 
 @http(method: "POST", uri: "/api/v1/transit/keys/{key_name}/verify")
-@identity(mode: "bearer", audience: "secrets-service", principals: ["browser", "cli", "workload"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: TransitVerifyPermission, organization: {source: "token_org_id"})
 @audit(event: TransitVerifyAuditEvent, resource: TransitKey, action: "verify")
 @rateLimit(bucket: "crypto")

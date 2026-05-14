@@ -33,7 +33,7 @@ use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
 use verself.common.v1#DateTime
-@serviceRuntime(serviceName: "profile-service", publicAudience: "profile-service", internalAudience: "profile-service")
+@serviceRuntime(serviceName: "profile-service", publicAudience: "verself-api", internalAudience: "profile-service")
 @restJson1
 service Profile {
     version: "2026-05-13"
@@ -48,7 +48,7 @@ service Profile {
         ProfilePreferences
     ]
 }
-@serviceRuntime(serviceName: "profile-service", publicAudience: "profile-service", internalAudience: "profile-service")
+@serviceRuntime(serviceName: "profile-service", publicAudience: "verself-api", internalAudience: "profile-service")
 @restJson1
 service ProfileInternal {
     version: "2026-05-13"
@@ -258,7 +258,7 @@ structure ProfileOutput {
 }
 @readonly
 @http(method: "GET", uri: "/api/v1/profile")
-@identity(mode: "bearer", audience: "profile-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ProfileReadPermission, organization: {source: "request_subject"})
 @audit(event: ProfileSubjectReadAuditEvent, resource: ProfileSubject, action: "read")
 @rateLimit(bucket: "read")
@@ -271,7 +271,7 @@ operation GetProfile {
 }
 @idempotent
 @http(method: "PATCH", uri: "/api/v1/profile/identity")
-@identity(mode: "bearer", audience: "profile-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ProfileIdentityWritePermission, organization: {source: "request_subject"})
 @audit(event: ProfileIdentityWriteAuditEvent, resource: ProfileIdentity, action: "write")
 @rateLimit(bucket: "profile_mutation")
@@ -297,7 +297,7 @@ structure PatchProfileIdentityInput {
 }
 @idempotent
 @http(method: "PUT", uri: "/api/v1/profile/preferences")
-@identity(mode: "bearer", audience: "profile-service", principals: ["browser", "cli"])
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: ProfilePreferencesWritePermission, organization: {source: "request_subject"})
 @audit(event: ProfilePreferencesWriteAuditEvent, resource: ProfilePreferences, action: "write")
 @rateLimit(bucket: "profile_mutation")

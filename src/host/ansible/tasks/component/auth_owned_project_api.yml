@@ -44,8 +44,13 @@
       name: "{{ component_auth_project_name }}"
       projectRoleAssertion: false
       projectRoleCheck: false
-    status_code: 200
+    status_code: [200, 400]
   when: component_auth_project != {}
+  failed_when: >-
+    component_auth_project_updated.status == 400
+    and 'No changes' not in (component_auth_project_updated.json.message | default(''))
+  changed_when: component_auth_project_updated.status == 200
+  register: component_auth_project_updated
   no_log: true
 
 - name: Index owned component Zitadel project ID
