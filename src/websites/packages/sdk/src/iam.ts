@@ -1,14 +1,22 @@
 import * as v from "valibot";
+import { createClient, type Client } from "./__generated/iam-api/client/index.js";
 import type {
-  IAMTransport,
-  ListMembersOutputBody,
-  ListOrganizationsOutputBody,
+  ListMembersResponseContent as ListMembersOutputBody,
+  ListOrganizationsResponseContent as ListOrganizationsOutputBody,
   MemberSummary,
   OrganizationSummary,
-  UpdateMemberRoleInputBody,
-  UpdateOrganizationInputBody,
-} from "./__generated/iam-transport/client.gen.js";
-import { createIAMTransport } from "./__generated/iam-transport/client.gen.js";
+  UpdateMemberRoleData,
+  UpdateMemberRoleRequestContent as UpdateMemberRoleInputBody,
+  UpdateOrganizationData,
+  UpdateOrganizationRequestContent as UpdateOrganizationInputBody,
+} from "./__generated/iam-api/index.js";
+import {
+  getOrganization,
+  listMembers,
+  listOrganizations,
+  updateMemberRole,
+  updateOrganization,
+} from "./__generated/iam-api/index.js";
 import type { BearerClientOptions } from "./service-api";
 import {
   ServiceApiError,
@@ -33,8 +41,8 @@ export function isIAMApiError(error: unknown): error is IAMApiError {
   return error instanceof IAMApiError;
 }
 
-function createIAMClient(options: IAMClientOptions): IAMTransport {
-  return createIAMTransport({
+function createIAMClient(options: IAMClientOptions): Client {
+  return createClient({
     baseUrl: options.baseUrl,
     headers: createBearerJSONHeaders(options.accessToken, options.traceparent),
     ...(options.fetch ? { fetch: options.fetch } : {}),
@@ -49,15 +57,14 @@ function unwrapIAMResult<T>(
   path: string,
   result: {
     readonly response: Response;
-    readonly bodyText: string;
     readonly data?: T;
     readonly error?: unknown;
   },
-): T {
+): NonNullable<T> {
   if (result.error !== undefined || result.data === undefined) {
-    throwIAMError(path, result.response, result.error ?? result.bodyText);
+    throwIAMError(path, result.response, result.error ?? "empty response body");
   }
-  return result.data;
+  return result.data as NonNullable<T>;
 }
 
 const organizationSlugSchema = v.pipe(
@@ -229,14 +236,23 @@ export class IAM {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
     const path = `/api/v1/orgs/${org.org_id}`;
-    const result = await client.getOrganization({ orgId: org.org_id });
+    const result = await getOrganization({
+      client,
+      path: { orgId: org.org_id },
+      responseStyle: "fields",
+      throwOnError: false,
+    });
     return parseOrganization(unwrapIAMResult(path, result));
   }
 
   async listMyOrganizations(): Promise<Array<OrganizationMetadata>> {
     const client = createIAMClient(this.#options);
     const path = "/api/v1/orgs";
-    const result = await client.listOrganizations();
+    const result = await listOrganizations({
+      client,
+      responseStyle: "fields",
+      throwOnError: false,
+    });
     const body = v.parse(
       listOrganizationsOutputBodySchema,
       unwrapIAMResult(path, result),
@@ -257,12 +273,13 @@ export class IAM {
       version: input.version,
     };
     const path = `/api/v1/orgs/${org.org_id}`;
-    const result = await client.updateOrganization({
-      body: parsedBody,
-      idempotencyKey: idempotencyHeaders("iam-organization", options.idempotencyKey)[
-        "Idempotency-Key"
-      ],
-      orgId: org.org_id,
+    const result = await updateOrganization({
+      client,
+      body: parsedBody as UpdateOrganizationData["body"],
+      headers: idempotencyHeaders("iam-organization", options.idempotencyKey),
+      path: { orgId: org.org_id },
+      responseStyle: "fields",
+      throwOnError: false,
     });
     return parseOrganization(unwrapIAMResult(path, result));
   }
@@ -271,7 +288,12 @@ export class IAM {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
     const path = `/api/v1/orgs/${org.org_id}/members`;
-    const result = await client.listMembers({ orgId: org.org_id });
+    const result = await listMembers({
+      client,
+      path: { orgId: org.org_id },
+      responseStyle: "fields",
+      throwOnError: false,
+    });
     const body = v.parse(
       listMembersOutputBodySchema,
       unwrapIAMResult(path, result),
@@ -297,20 +319,24 @@ export class IAM {
       role,
     };
     const path = `/api/v1/orgs/${org.org_id}/members/${input.userId}/role`;
-    const result = await client.updateMemberRole({
-      body: parsedBody,
-      idempotencyKey: idempotencyHeaders("iam-member-role", options.idempotencyKey)[
-        "Idempotency-Key"
-      ],
-      memberId: input.userId,
-      orgId: org.org_id,
+    const result = await updateMemberRole({
+      client,
+      body: parsedBody as UpdateMemberRoleData["body"],
+      headers: idempotencyHeaders("iam-member-role", options.idempotencyKey),
+      path: { memberId: input.userId, orgId: org.org_id },
+      responseStyle: "fields",
+      throwOnError: false,
     });
     return parseMember(unwrapIAMResult(path, result));
   }
 
   async currentOrganization(client = createIAMClient(this.#options)): Promise<Organization> {
     const path = "/api/v1/orgs";
-    const result = await client.listOrganizations();
+    const result = await listOrganizations({
+      client,
+      responseStyle: "fields",
+      throwOnError: false,
+    });
     const body = v.parse(
       listOrganizationsOutputBodySchema,
       unwrapIAMResult(path, result),

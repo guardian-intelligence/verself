@@ -25,6 +25,7 @@ viteplus_openapi_clients(
         ("notifications-api", "//src/services/notifications-service/openapi:openapi-3.1.yaml.bin"),
         ("governance-api", "//src/services/governance-service/openapi:openapi-3.1.yaml.bin"),
         ("billing-api", "//src/services/billing-service/openapi:openapi-3.1.yaml.bin"),
+        ("iam-api", "//src/services/iam-service/openapi:openapi-3.1.yaml.bin"),
         ("sandbox-rental-api", "//src/services/sandbox-rental-service/openapi:openapi-3.1.yaml.bin"),
         ("secrets-api", "//src/services/secrets-service/openapi:openapi-3.1.yaml.bin"),
         ("source-api", "//src/services/source-code-hosting-service/openapi:openapi-3.1.yaml.bin"),
