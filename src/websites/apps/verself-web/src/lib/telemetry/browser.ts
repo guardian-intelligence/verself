@@ -18,8 +18,10 @@ const TRACER_VERSION = "0.1.0";
 // app's CSP pins connect-src 'self', which forbids the browser from posting
 // directly to the otel collector at 127.0.0.1:4318 — proxy is mandatory.
 const TRACES_ENDPOINT = "/api/otel/v1/traces";
+const BROWSER_EVENT_ENDPOINT = "/api/browser-events/runtime";
 
 let provider: WebTracerProvider | undefined;
+let browserEventReportingInstalled = false;
 
 function readMetaContent(name: string): string {
   if (typeof document === "undefined") {
@@ -45,6 +47,68 @@ function buildResourceAttributes() {
   return attrs;
 }
 
+function currentDocumentURL(): string {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function postBrowserEvent(payload: Record<string, string | number>): void {
+  if (typeof navigator === "undefined") return;
+  const body = JSON.stringify({
+    ...payload,
+    document_url: currentDocumentURL(),
+  });
+  const blob = new Blob([body], { type: "application/json" });
+  if (navigator.sendBeacon?.(BROWSER_EVENT_ENDPOINT, blob)) {
+    return;
+  }
+  void fetch(BROWSER_EVENT_ENDPOINT, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
+function installBrowserEventReporting(): void {
+  if (browserEventReportingInstalled || typeof window === "undefined") return;
+  browserEventReportingInstalled = true;
+
+  window.addEventListener("error", (event) => {
+    postBrowserEvent({
+      kind: "runtime_error",
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      error_name: event.error instanceof Error ? event.error.name : "",
+    });
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    postBrowserEvent({
+      kind: "unhandled_rejection",
+      message: reason instanceof Error ? reason.message : String(reason),
+      error_name: reason instanceof Error ? reason.name : "",
+    });
+  });
+
+  document.addEventListener("securitypolicyviolation", (event) => {
+    postBrowserEvent({
+      kind: "security_policy_violation",
+      blocked_url: event.blockedURI,
+      source_url: event.sourceFile,
+      effective_directive: event.effectiveDirective,
+      violated_directive: event.violatedDirective,
+      disposition: event.disposition,
+      status_code: event.statusCode,
+      line_number: event.lineNumber,
+      column_number: event.columnNumber,
+    });
+  });
+}
+
 // Initialise the browser tracer. Idempotent so HMR re-imports don't stack
 // providers. The BatchSpanProcessor flushes on visibilitychange:hidden via the
 // listener below; the OTLP HTTP exporter uses fetch keepalive so the request
@@ -68,6 +132,7 @@ export function initBrowserTelemetry(): void {
   });
   next.register({ contextManager: new ZoneContextManager() });
   provider = next;
+  installBrowserEventReporting();
 
   // FetchInstrumentation is the load-bearing wire from a user interaction to
   // a server span: it wraps `window.fetch`, so every TanStack Start server
