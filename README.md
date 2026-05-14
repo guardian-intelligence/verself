@@ -4,7 +4,7 @@ Verself is two things:
 
 1. Prima facie, a PaaS selling stateful, suspendable compute with near-serverless economics via fast-launching Firecracker VMs with hot-swappable filesystems via `zfs clone`.
 
-2. The "golden image" of a self-contained self-replicating software company that can clone itself via an API call to `source-code-hosting-service`, which clones the repo with the user's configured company name, founder details, domain name, Resend API key, Stripe API key, etc. and uses all that to configure the repository for the caller, culminating in a download link. The user can then download their white-labelled clone configured for their providers and execute a shell script to bootstrap a replica of Verself for themselves. IOW: technology that converts any bare metal into structured, useful general purpose compute with economically valuable systems already set up for the user like auth, email, billing/payments, CI, observability, and a fully-functioning end-to-end revenue-generating product.
+2. [PLANNED ONLY] See docs/product/future-state.md
 
 The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App where we run customer's GitHub actions on our bare metal. We ship a custom GitHub action that replaces the standard `actions/checkout`. The action:
 

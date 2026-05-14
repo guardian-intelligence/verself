@@ -276,48 +276,25 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 </assistant_contract>
 
 <writing_guidelines>
-The contained instructions in this block are guidelines that apply to writing markdown architecture documents in docs/ directories.
-
-- Avoid framing rhetoric, e.g. "X is Y, not Z". Just write "X is Y".
-- Avoid attention-grabby language like "The same X and Y that do A also does B" or "both X and Y". Or short punchy sentences like "One binary. Five nodes. Infinite possibilities." Prefer to be straightforward: "X and Y do A and B via a single binary across five nodes and are designed to be extensible."
-- Preferred writing style: advanced industry-level textbook sans historical context.
-- Write for an audience of expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.
+Before writing markdown architecture in docs/ directories, please read docs/agents/writing-guidelines.md
 </writing_guidelines>
 
 <tool_use_contract>
 - Dev tools are system-installed via `aspect dev install`.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
-- Use `aspect tidy` for source formatters only. Use `aspect bazel update` for Gazelle/Bzlmod metadata refreshes, and run `go mod tidy` in the owning Go module when dependency metadata changes.
-- There is a bundled headless Chrome under .agent-browser that you can use to use a browser. Run `agent-browser skills get core` for more information. When using agent-browser, don't use the sandbox (`--no-sandbox`)
-- Deploy frontend changes to prod fearlessly (e.g. `aspect deploy site=prod`) -- I can't see your dev server.
+- Use `aspect tidy` to format the codebase efficiently. Use `aspect bazel update` for Gazelle/Bzlmod metadata refreshes
 </tool_use_contract>
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term* in terms of functionality, elegance of architecture, security, performance, and best-practices.
-- Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise the modified code are the only admissible completion evidence. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed, create one.
+- Unit tests and successful `bazelisk` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are the only admissible completion evidence. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
 - Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
-- Avoid emojis.
 </output_contract>
 
-<frontend_design>
-- Mobile-first -- all changes must be tested on iPhone SE dimensions: 375 x 667
-- Never use animations for keyboard-initiated UX, e.g. the cmd+k search
-</frontend_design>
 
 <coding_contract>
-- Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.
-- When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-- Treat errors as data. Use tagged and structured errors to aid control flow.
-- Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
-- Avoid verbosity. When solving a specific problem, the patch should solve the general case. E.g. if solving a TOCTOU vuln, don't write a function named `fix_toctou_bug`, make the simple patch to use the toctou-safe call and optionally leave a comment (no more than a few words).
-- Do not check in Ansible "clean up" tasks. Just clean up the host directly and remove Ansible "clean up legacy X" and "assert old Y isn't there" steps.
-- Browser coverage belongs in ongoing live canaries with ClickHouse evidence. Do not add frontend Playwright suites; the old frontend e2e harness has been retired.
-- Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
-- ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. `batch.Append` silently corrupts data when columns are added or reordered.
-- ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden `UInt8` column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (`UInt8` over `Int32` when the range fits).
-- Browser canaries should use short operation deadlines and diagnose behavior from traces, logs, and ClickHouse evidence instead of extending waits. Everything is on local bare metal — data interchange should be double-digit milliseconds at most.
-- Our customers use our services via API and browser. Fix issues at the service level; don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that API consumers call directly.
+Before writing code, please read docs/agents/coding-guidelines.md and apply the relevant rules to your reasoning.
 </coding_contract>
 
 <instruction_priority>
@@ -336,12 +313,3 @@ Planned Upcoming Projects
 
 Site names are `prod`, `beta`, `gamma`, or `dev-<operator>`. The apex domain, Pomerium route name, Cloudflare zone scope, and allowed Stripe environment are site-level facts in `src/host/sites/<site>/vars.yml`.
 
-Each site has one checked-in directory:
-
-- `src/host/sites/<site>/`
-
-The site directory owns checked-in `vars.yml`, checked-in `inventory.ini`, local-only `provisioning.tfvars.json`, and three independently decryptable SOPS bags under `secrets/`. The provisioning bag contains only the Latitude.sh token and must exist before `aspect provision apply --site=<site>`. The host bag contains host bootstrap secrets and must exist before host convergence. The external bag contains third-party integration secrets for product/runtime bootstrappers. Do not commit `provisioning.tfvars.json`; keep it as operator-local provisioning input.
-
-To add a site, copy `src/host/sites/prod/` to the new site name, replace the three SOPS bags, update `src/host/sites/<site>/vars.yml`, and let Bazel-discovered deployable units declare their own `site_scope`, `requires`, and `provides` relationships. Site variables do not decide which Nomad jobs exist.
-
-CLI borrows the Vercel command grammar where it fits: `verself auth login`, `verself orgs use`, `verself env pull`. Semantics are different because Verself does not deploy customer applications. `verself deploy` is an operator-local checkout command for deploying this Verself installation, not a customer app deploy. We'll dogfood the CLI by using it to seed our organization and run automations. Auth context decides which surface a given command targets.
