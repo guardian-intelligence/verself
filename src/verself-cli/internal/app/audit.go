@@ -46,6 +46,10 @@ func (c CLI) auditAPIActivities(ctx context.Context, args []string) error {
 	if *limit < 1 || *limit > 200 {
 		return errors.New("audit api-activities requires --limit between 1 and 200")
 	}
+	if *statusID < 0 || *statusID > 99 {
+		return errors.New("audit api-activities requires --status-id between 0 and 99")
+	}
+	statusIDValue := uint8(*statusID)
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
@@ -59,7 +63,7 @@ func (c CLI) auditAPIActivities(ctx context.Context, args []string) error {
 		APIOperation: *apiOperation,
 		ResourceUID:  *resourceUID,
 		ResourceType: *resourceType,
-		StatusID:     uint8(*statusID),
+		StatusID:     statusIDValue,
 	})
 	if err != nil {
 		return err
