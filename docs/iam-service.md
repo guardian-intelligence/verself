@@ -252,10 +252,11 @@ src/services/iam-service/
     organization profile, organization lookup, available-org listing
 
   internal/members/
-    directory-backed member listing, invite, and role binding commands
+    directory-backed member listing, invite, and removal commands
 
   internal/roles/
-    customer-visible role catalog, role grants, capability replacement
+    customer-visible role catalog, policy binding validation, and permission
+    metadata
 
   internal/policies/
     getIamPolicy, setIamPolicy, testIamPermissions, etag handling, and
@@ -624,8 +625,8 @@ surface:
 | Available organizations for the caller | `internal/orgs` | Uses token role assignments and directory-backed org metadata; returns only orgs the token proves. |
 | Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
 | Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |
-| Member invite and role update | `internal/members` plus `internal/roles` | Mutations write directory state and SpiceDB relationships through command envelopes. |
-| Member capability replacement | `internal/roles` | Represented as role grants and SpiceDB relationships; no customer-editable policy language in the first cut. |
+| Member invite and removal | `internal/members` | Mutations write directory state and SpiceDB relationships through command envelopes. |
+| IAM policy binding update | `internal/policies` plus `internal/roles` | `setIamPolicy` validates role bindings and writes SpiceDB relationships as the customer-editable policy surface. |
 | IAM policy get/set/test | `internal/policies` plus `internal/authz` | Google-IAM-style resource policy operations over Smithy-modeled HTTP APIs. `setIamPolicy` requires `etag` and idempotency after bootstrap. |
 | Permission and role catalog | `internal/roles` plus `internal/policies` | Exposes predefined roles, org-scoped roles, and permission metadata for SDKs, CLI, and console affordances. |
 | Service account list/read/disable | `internal/identity` plus `internal/authz` | Service accounts are non-human authorization subjects inside an organization. Direct permission grants are reconciled into SpiceDB. |

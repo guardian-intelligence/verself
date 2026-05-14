@@ -104,7 +104,7 @@ user_state = task(
     args = {
         "email": args.string(default = "", description = "User email."),
         "org": args.string(default = "", description = "Org slug (e.g. platform)."),
-        "org_id": args.string(default = "", description = "Numeric org ID (alternative to --org)."),
+        "org_id": args.string(default = "", description = "Public org ID (alternative to --org)."),
         "org_name": args.string(default = "", description = "Org display name."),
         "state": args.string(default = "", description = "Billing state (free|hobby|pro|...)."),
         "plan_id": args.string(default = "", description = "Plan ID override."),

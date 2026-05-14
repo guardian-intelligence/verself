@@ -27,6 +27,7 @@ const (
 	secretsKVOperationSKU          = "secrets_kv_operation"
 	secretsCredentialOperationSKU  = "secrets_credential_operation"
 	secretsTransitOperationSKU     = "secrets_transit_operation"
+	defaultTargetPrepaidUnits      = 100_000_000_000
 )
 
 type config struct {
@@ -159,8 +160,10 @@ func run() error {
 	deposited := uint64(0)
 	if before < cfg.targetPrepaidUnits {
 		deposited = cfg.targetPrepaidUnits - before
-		expiresAt := time.Now().UTC().Add(cfg.expiresAfter)
-		_, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(cfg.orgID), ScopeType: "account", Amount: deposited, Source: cfg.prepaidSource, SourceReferenceID: fmt.Sprintf("seed:%s:%s", cfg.orgID, cfg.productID), ExpiresAt: &expiresAt})
+		issuedAt := time.Now().UTC()
+		expiresAt := issuedAt.Add(cfg.expiresAfter)
+		sourceRef := fmt.Sprintf("seed-topup:%s:%s:%d:%d:%s", cfg.orgID, cfg.productID, before, cfg.targetPrepaidUnits, issuedAt.Format(time.RFC3339Nano))
+		_, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(cfg.orgID), ScopeType: "account", Amount: deposited, Source: cfg.prepaidSource, SourceReferenceID: sourceRef, ExpiresAt: &expiresAt})
 		if err != nil {
 			return fmt.Errorf("deposit prepaid credits: %w", err)
 		}
@@ -192,10 +195,10 @@ func openLedgerClient() (*ledger.Client, error) {
 }
 
 func parseFlags() (config, error) {
-	cfg := config{productID: sandboxProductID, productDisplayName: "Sandbox", meterUnit: "sku_ms", billingModel: "metered", orgTrustTier: "new", planID: "sandbox-default", planDisplayName: "Sandbox PAYG", freeTierBucketsJSON: `{}`, planEntitlementsJSON: `{}`, targetPrepaidUnits: 500_000_000, prepaidSource: "purchase", expiresAfter: 365 * 24 * time.Hour}
+	cfg := config{productID: sandboxProductID, productDisplayName: "Sandbox", meterUnit: "sku_ms", billingModel: "metered", orgTrustTier: "new", planID: "sandbox-default", planDisplayName: "Sandbox PAYG", freeTierBucketsJSON: `{}`, planEntitlementsJSON: `{}`, targetPrepaidUnits: defaultTargetPrepaidUnits, prepaidSource: "purchase", expiresAfter: 365 * 24 * time.Hour}
 	flag.StringVar(&cfg.pgDSNFile, "pg-dsn-file", "", "path to PostgreSQL DSN file")
 	flag.StringVar(&cfg.pgDSN, "pg-dsn", "", "PostgreSQL DSN")
-	flag.StringVar(&cfg.orgID, "org-id", "", "org ID to seed")
+	flag.StringVar(&cfg.orgID, "org-id", "", "public org ID to seed")
 	flag.StringVar(&cfg.orgName, "org-name", "", "org display name")
 	flag.StringVar(&cfg.orgTrustTier, "org-trust-tier", cfg.orgTrustTier, "org trust tier")
 	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "product ID")

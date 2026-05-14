@@ -115,7 +115,7 @@ def _events_impl(ctx):
 
 _INSPECT_ARGS = {
     "org": args.string(default = "", description = "Org slug (alternative to --org-id)."),
-    "org_id": args.string(default = "", description = "Numeric org ID."),
+    "org_id": args.string(default = "", description = "Public org ID."),
     "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
     "format": args.string(default = "", description = "Output format (table|json)."),
 }
@@ -126,7 +126,7 @@ seed = task(
     group = ["billing"],
     summary = "Seed billing product catalog and a fixture org.",
     args = {
-        "org_id": args.string(description = "Numeric org ID."),
+        "org_id": args.string(description = "Public org ID."),
         "org_name": args.string(default = "", description = "Org display name."),
         "org_trust_tier": args.string(default = "", description = "Org trust tier."),
         "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
@@ -141,7 +141,7 @@ clock = task(
     summary = "Inspect or mutate billing business time.",
     args = {
         "org": args.string(default = "", description = "Org slug."),
-        "org_id": args.string(default = "", description = "Numeric org ID."),
+        "org_id": args.string(default = "", description = "Public org ID."),
         "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
         "set": args.string(default = "", description = "Set business-time to RFC3339 timestamp."),
         "advance_seconds": args.string(default = "", description = "Advance business-time by N seconds."),
@@ -183,7 +183,7 @@ events = task(
     summary = "Query recent billing events in ClickHouse.",
     args = {
         "org": args.string(default = "", description = "Org slug."),
-        "org_id": args.string(default = "", description = "Numeric org ID."),
+        "org_id": args.string(default = "", description = "Public org ID."),
         "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
         "format": args.string(default = "", description = "Output format (table|json)."),
         "event": args.string(default = "", description = "Event type filter (e.g. billing_document_issued)."),

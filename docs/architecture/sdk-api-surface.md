@@ -319,7 +319,7 @@ The initial public module target is:
 | Module | Scope |
 | --- | --- |
 | `orgs` | Create, inspect, list, update, and select organization context. |
-| `members` | Invite, list, update roles, remove, and inspect capabilities for human members. |
+| `members` | Invite, list, remove, and inspect human members. Access changes flow through IAM policy operations. |
 | `credentials` | Create, list, get, rotate, revoke, and inspect non-human credentials. |
 | `credentials.trust` | Create and inspect secretless workload trust bindings. |
 | `projects` | Create, list, inspect, update, archive, and manage environments. |
