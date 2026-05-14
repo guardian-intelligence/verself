@@ -431,7 +431,7 @@ CREATE TABLE IF NOT EXISTS verself.job_logs
 (
     execution_id        UUID,
     attempt_id          UUID,
-    org_id              UInt64,
+    org_id              LowCardinality(String),
     source_kind         LowCardinality(String) DEFAULT '',
     workload_kind       LowCardinality(String) DEFAULT '',
     runner_class        LowCardinality(String) DEFAULT '',
@@ -458,7 +458,7 @@ CREATE TABLE IF NOT EXISTS verself.job_events
 (
     execution_id            UUID,
     attempt_id              UUID,
-    org_id                  UInt64,
+    org_id                  LowCardinality(String),
     actor_id                LowCardinality(String),
     kind                    LowCardinality(String),
     source_kind             LowCardinality(String) DEFAULT '',
