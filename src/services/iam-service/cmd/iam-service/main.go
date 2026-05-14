@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -35,6 +36,13 @@ const (
 )
 
 func main() {
+	if handled, err := runBootstrapPolicyCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := runMigrationCLI(context.Background()); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -53,6 +61,92 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+}
+
+func runBootstrapPolicyCLI(ctx context.Context) (bool, error) {
+	if len(os.Args) < 2 || os.Args[1] != "bootstrap-policy" {
+		return false, nil
+	}
+	fs := flag.NewFlagSet("bootstrap-policy", flag.ExitOnError)
+	spiceDBEndpoint := fs.String("spicedb-endpoint", "", "SpiceDB gRPC endpoint")
+	spiceDBPresharedKeyFile := fs.String("spicedb-preshared-key-file", "", "SpiceDB preshared key file")
+	orgID := fs.String("org-id", "", "Verself public organization ID")
+	ownerSubject := fs.String("owner-subject", "", "Zitadel subject ID for a human organization owner")
+	if err := fs.Parse(os.Args[2:]); err != nil {
+		return true, err
+	}
+	if strings.TrimSpace(*spiceDBEndpoint) == "" {
+		return true, fmt.Errorf("bootstrap-policy: --spicedb-endpoint is required")
+	}
+	if strings.TrimSpace(*spiceDBPresharedKeyFile) == "" {
+		return true, fmt.Errorf("bootstrap-policy: --spicedb-preshared-key-file is required")
+	}
+	if strings.TrimSpace(*orgID) == "" {
+		return true, fmt.Errorf("bootstrap-policy: --org-id is required")
+	}
+	if strings.TrimSpace(*ownerSubject) == "" {
+		return true, fmt.Errorf("bootstrap-policy: --owner-subject is required")
+	}
+	keyRaw, err := os.ReadFile(*spiceDBPresharedKeyFile)
+	if err != nil {
+		return true, fmt.Errorf("bootstrap-policy: read spicedb preshared key: %w", err)
+	}
+	spice, err := spicedb.New(ctx, spicedb.Config{
+		Endpoint:     strings.TrimSpace(*spiceDBEndpoint),
+		PresharedKey: strings.TrimSpace(string(keyRaw)),
+	})
+	if err != nil {
+		return true, err
+	}
+	defer func() { _ = spice.Close() }()
+	schemaCtx, schemaCancel := context.WithTimeout(ctx, 2*time.Second)
+	_, err = spice.WriteSchema(schemaCtx, iamschema.Verself)
+	schemaCancel()
+	if err != nil {
+		return true, fmt.Errorf("bootstrap-policy: write spicedb schema: %w", err)
+	}
+	authzService := authz.New(spice)
+	current, err := authzService.GetOrganizationPolicy(ctx, strings.TrimSpace(*orgID))
+	if err != nil {
+		return true, err
+	}
+	ownerMember := "user:" + strings.TrimSpace(*ownerSubject)
+	if policyHasMember(current, "roles/owner", ownerMember) {
+		return true, nil
+	}
+	next := current
+	next.Bindings = appendOwnerBinding(next.Bindings, ownerMember)
+	_, err = authzService.SetOrganizationPolicy(ctx, strings.TrimSpace(*orgID), next, "iam.platform_bootstrap_policy")
+	if err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func policyHasMember(policy authz.Policy, role, member string) bool {
+	for _, binding := range policy.Bindings {
+		if binding.Role != role {
+			continue
+		}
+		for _, existing := range binding.Members {
+			if existing == member {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func appendOwnerBinding(bindings []authz.PolicyBinding, ownerMember string) []authz.PolicyBinding {
+	out := append([]authz.PolicyBinding(nil), bindings...)
+	for i := range out {
+		if out[i].Role != "roles/owner" {
+			continue
+		}
+		out[i].Members = append(append([]string(nil), out[i].Members...), ownerMember)
+		return out
+	}
+	return append(out, authz.PolicyBinding{Role: "roles/owner", Members: []string{ownerMember}})
 }
 
 func run() error {

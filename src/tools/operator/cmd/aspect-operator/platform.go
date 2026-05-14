@@ -32,6 +32,9 @@ const (
 	platformManifestVersion                        = "verself.platform.v1"
 	platformDefaultForgejoRemote                   = "127.0.0.1:3000"
 	platformDefaultForgejoTokenPath                = "/etc/credstore/forgejo/automation-token"
+	platformIAMBootstrapTarget                     = "//src/services/iam-service/cmd/iam-service:iam-service"
+	platformIAMBootstrapBin                        = "bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service"
+	platformIAMSpiceDBPresharedKeyPath             = "/etc/credstore/iam-service/spicedb-grpc-preshared-key"
 	platformDefaultSandboxForgejoWebhookSecretPath = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
 	platformDefaultZitadelRemote                   = "127.0.0.1:8085"
 	platformDefaultZitadelAdminPATPath             = "/etc/zitadel/admin.pat"
@@ -427,7 +430,11 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIdentityOrganization(); err != nil {
 		return platformReport{}, err
 	}
-	if err := r.ensurePlatformOwner(); err != nil {
+	owner, err := r.ensurePlatformOwner()
+	if err != nil {
+		return platformReport{}, err
+	}
+	if err := r.ensureIAMOwnerPolicy(owner.ID); err != nil {
 		return platformReport{}, err
 	}
 	if err := r.ensureProject(); err != nil {
@@ -449,6 +456,29 @@ func (r *platformRunner) seed() (platformReport, error) {
 	report, err := r.check()
 	report.Changed = append([]string{}, r.changes...)
 	return report, err
+}
+
+func (r *platformRunner) ensureIAMOwnerPolicy(ownerSubject string) error {
+	return r.withSpan("platform.iam_policy.ensure", []attribute.KeyValue{
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+		attribute.String("verself.owner_subject", ownerSubject),
+	}, func(ctx context.Context) error {
+		endpoint, err := lookupNomadService(ctx, r.rt.SSH, "spicedb-grpc")
+		if err != nil {
+			return fmt.Errorf("iam policy: resolve spicedb-grpc: %w", err)
+		}
+		args := []string{
+			"bootstrap-policy",
+			"--spicedb-endpoint", endpoint,
+			"--spicedb-preshared-key-file", platformIAMSpiceDBPresharedKeyPath,
+			"--org-id", r.cfg.PublicOrgIDText,
+			"--owner-subject", ownerSubject,
+		}
+		if err := runRemoteBazelExecutable(r.rt, platformIAMBootstrapTarget, platformIAMBootstrapBin, "verself-iam-bootstrap-policy", "iam_service", args); err != nil {
+			return fmt.Errorf("iam policy: bootstrap owner policy: %w", err)
+		}
+		return nil
+	})
 }
 
 func (r *platformRunner) check() (platformReport, error) {

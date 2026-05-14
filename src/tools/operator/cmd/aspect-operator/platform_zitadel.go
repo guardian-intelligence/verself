@@ -105,8 +105,9 @@ func platformBrowserAuthLoginProjectNames() []string {
 	return names
 }
 
-func (r *platformRunner) ensurePlatformOwner() error {
-	return r.withSpan("platform.zitadel_owner.ensure", []attribute.KeyValue{
+func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
+	var owner platformZitadelUser
+	err := r.withSpan("platform.zitadel_owner.ensure", []attribute.KeyValue{
 		attribute.String("zitadel.host", r.cfg.ZitadelHost),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
 		attribute.String("verself.owner_email", r.cfg.OwnerEmail),
@@ -153,8 +154,10 @@ func (r *platformRunner) ensurePlatformOwner() error {
 		if err := r.ensureBrowserAuthLoginAudienceCredential(ctx, projectIDs); err != nil {
 			return err
 		}
+		owner = user
 		return nil
 	})
+	return owner, err
 }
 
 func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRow {
