@@ -28,9 +28,8 @@ jobs:
           persist-credentials: false
 
       - name: Bootstrap toolchain
-        env:
-          BOOTSTRAP_INSTALL_DIR: ${{ runner.temp }}/bootstrap-bin
         run: |
+          export BOOTSTRAP_INSTALL_DIR="${HOME}/.cache/verself/bootstrap-bin"
           mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
           src/tools/dev/bootstrap/bootstrap-linux-amd64
           {

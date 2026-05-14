@@ -16,3 +16,9 @@ cache:
     size: 40GiB
     paths:
       - ~/.local/share/pnpm/store
+  - name: bootstrap-tools
+    size: 16GiB
+    paths:
+      - ~/.cache/verself/bootstrap-bin
+      - ~/.cache/bazelisk
+      - ~/.vite-plus
