@@ -30,7 +30,7 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	}
 	svc := &identity.Service{Store: store}
 	payload := []byte(`{"user":{"id":"subject-1"}}`)
-	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/api-credential-claims", bytes.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/product-token-claims", bytes.NewReader(payload))
 	req.Header.Set(zitadelActionSigningHeader, actionSignatureHeader(time.Now(), payload, "signing-key"))
 	rec := httptest.NewRecorder()
 
@@ -67,7 +67,7 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 
 func TestZitadelActionRejectsInvalidSignature(t *testing.T) {
 	svc := &identity.Service{Store: actionStore{}}
-	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/api-credential-claims", bytes.NewReader([]byte(`{"user":{"id":"subject-1"}}`)))
+	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/product-token-claims", bytes.NewReader([]byte(`{"user":{"id":"subject-1"}}`)))
 	req.Header.Set(zitadelActionSigningHeader, "t=1700000000,v1=deadbeef")
 	rec := httptest.NewRecorder()
 
@@ -82,10 +82,44 @@ func actionSignatureHeader(ts time.Time, payload []byte, signingKey string) stri
 	return fmt.Sprintf("t=%d,v1=%s", ts.Unix(), hex.EncodeToString(computeZitadelActionSignature(ts, payload, signingKey)))
 }
 
+func TestZitadelActionAppendsPublicOrgClaimFromPreAccessTokenPayload(t *testing.T) {
+	store := actionStore{
+		profile: identity.OrganizationProfile{
+			OrgID:                 "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+			IdentityProviderOrgID: "provider-org-1",
+			State:                 identity.OrganizationProfileStateActive,
+		},
+		err: identity.ErrAPICredentialMissing,
+	}
+	svc := &identity.Service{Store: store}
+	payload := []byte(`{"function":"preaccesstoken","user":{"id":"subject-1"},"org":{"id":"provider-org-1"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/product-token-claims", bytes.NewReader(payload))
+	req.Header.Set(zitadelActionSigningHeader, actionSignatureHeader(time.Now(), payload, "signing-key"))
+	rec := httptest.NewRecorder()
+
+	zitadelActionHandler(svc, "signing-key").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response zitadelActionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	claims := map[string]any{}
+	for _, claim := range response.AppendClaims {
+		claims[claim.Key] = claim.Value
+	}
+	if claims["org_id"] != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+		t.Fatalf("org_id claim = %#v", claims["org_id"])
+	}
+}
+
 type actionStore struct {
 	staticIdentityStore
-	result identity.ResolveAPICredentialClaimsResult
-	err    error
+	result  identity.ResolveAPICredentialClaimsResult
+	profile identity.OrganizationProfile
+	err     error
 }
 
 func (s actionStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (identity.ResolveAPICredentialClaimsResult, error) {
@@ -93,4 +127,11 @@ func (s actionStore) ResolveAPICredentialClaims(context.Context, string, time.Ti
 		return identity.ResolveAPICredentialClaimsResult{}, s.err
 	}
 	return s.result, nil
+}
+
+func (s actionStore) ResolveOrganizationProfile(context.Context, identity.ResolveOrganizationRequest) (identity.OrganizationProfile, error) {
+	if s.profile.OrgID == "" {
+		return identity.OrganizationProfile{}, identity.ErrOrganizationMissing
+	}
+	return s.profile, nil
 }

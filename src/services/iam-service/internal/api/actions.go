@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	zitadelActionSigningHeader = "X-ZITADEL-Signature"
+	zitadelActionSigningHeader = "ZITADEL-Signature"
 	zitadelActionMaxBodyBytes  = 64 << 10
 	zitadelActionTolerance     = 5 * time.Minute
 )
@@ -34,7 +34,7 @@ type zitadelActionResponse struct {
 
 func RegisterZitadelActionRoutes(mux *http.ServeMux, svc *identity.Service, signingKey string) {
 	signingKey = strings.TrimSpace(signingKey)
-	mux.Handle("/internal/zitadel/actions/api-credential-claims", zitadelActionHandler(svc, signingKey))
+	mux.Handle("/internal/zitadel/actions/product-token-claims", zitadelActionHandler(svc, signingKey))
 }
 
 func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler {
@@ -65,7 +65,7 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 		}
 		subjectID := actionSubjectID(raw)
 		if subjectID == "" {
-			slog.Default().WarnContext(r.Context(), "zitadel action api credential subject missing")
+			slog.Default().WarnContext(r.Context(), "zitadel action subject missing")
 			writeActionResponse(w, zitadelActionResponse{})
 			return
 		}
@@ -82,7 +82,7 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 		}
 		claims, err := svc.ResolveAPICredentialClaims(r.Context(), subjectID)
 		if err != nil {
-			slog.Default().WarnContext(r.Context(), "zitadel action api credential claims denied", "subject_id", subjectID, "error", err)
+			slog.Default().WarnContext(r.Context(), "zitadel action service account claims denied", "subject_id", subjectID, "error", err)
 			writeActionResponse(w, zitadelActionResponse{AppendClaims: appendClaims})
 			return
 		}
@@ -117,6 +117,7 @@ func actionProviderOrgID(raw map[string]any) string {
 	for _, path := range [][]string{
 		{"orgID"},
 		{"orgId"},
+		{"org", "id"},
 		{"organization", "id"},
 		{"request", "orgID"},
 		{"request", "orgId"},

@@ -57,6 +57,14 @@ type platformZitadelOIDCApp struct {
 	ClientSecret string
 }
 
+type platformZitadelActionTarget struct {
+	ID         string
+	Name       string
+	Endpoint   string
+	Timeout    string
+	SigningKey string
+}
+
 type platformZitadelStatusError struct {
 	Method string
 	Path   string
@@ -134,6 +142,9 @@ func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
 		if err := r.ensureBrowserOIDCApplication(ctx, client, project.ID); err != nil {
 			return err
 		}
+		if err := r.ensureProductTokenClaimsAction(ctx, client); err != nil {
+			return err
+		}
 		owner = user
 		return nil
 	})
@@ -192,6 +203,11 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 			return err
 		}
 		mismatches = append(mismatches, browserAudienceMismatches...)
+		tokenActionMismatches, err := r.productTokenClaimsActionMismatches(ctx, client)
+		if err != nil {
+			return err
+		}
+		mismatches = append(mismatches, tokenActionMismatches...)
 		if len(mismatches) > 0 {
 			*issues = append(*issues, "Zitadel platform owner mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
@@ -323,7 +339,47 @@ const (
 	browserOIDCAppName            = "verself-web"
 	browserOIDCCredstoreDir       = "/etc/credstore/iam-service"
 	browserOIDCCredstoreGroup     = "iam_service"
+	productTokenClaimsTargetName  = "verself-product-token-claims"
+	productTokenClaimsActionPath  = "/internal/zitadel/actions/product-token-claims"
+	productTokenClaimsFunction    = "preaccesstoken"
 )
+
+func (r *platformRunner) ensureProductTokenClaimsAction(ctx context.Context, client platformZitadelClient) error {
+	endpoint := r.productTokenClaimsActionEndpoint()
+	target, found, err := client.FindActionTargetByName(ctx, productTokenClaimsTargetName)
+	if err != nil {
+		return err
+	}
+	if !found {
+		target, err = client.CreateProductTokenClaimsTarget(ctx, productTokenClaimsTargetName, endpoint)
+		if err != nil {
+			return err
+		}
+		r.markChanged("zitadel.product_token_claims_target.created")
+	} else if target.Name != productTokenClaimsTargetName || target.Endpoint != endpoint || target.Timeout != "1s" {
+		target, err = client.UpdateProductTokenClaimsTarget(ctx, target, productTokenClaimsTargetName, endpoint)
+		if err != nil {
+			return err
+		}
+		r.markChanged("zitadel.product_token_claims_target.updated")
+	}
+	if strings.TrimSpace(target.ID) == "" || strings.TrimSpace(target.SigningKey) == "" {
+		return fmt.Errorf("Zitadel product token claims target returned incomplete credentials")
+	}
+	if changed, err := r.writeRootCredential(ctx, browserOIDCCredstoreDir+"/zitadel-action-signing-key", browserOIDCCredstoreGroup, target.SigningKey+"\n"); err != nil {
+		return fmt.Errorf("write Zitadel product token claims signing key: %w", err)
+	} else if changed {
+		r.markChanged("zitadel.product_token_claims_target.signing_key.updated")
+	}
+	if err := client.SetFunctionExecution(ctx, productTokenClaimsFunction, []string{target.ID}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *platformRunner) productTokenClaimsActionEndpoint() string {
+	return "https://zitadel-actions." + r.cfg.VerselfDomain + productTokenClaimsActionPath
+}
 
 func (r *platformRunner) writeRootCredential(ctx context.Context, path, group, value string) (bool, error) {
 	existing, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, path)
@@ -435,6 +491,40 @@ func (r *platformRunner) browserOIDCApplicationMismatches(ctx context.Context, c
 		if stat.Mode != "640" {
 			mismatches = append(mismatches, fmt.Sprintf("iam.browser_oidc_app.%s.mode=%q", name, stat.Mode))
 		}
+	}
+	return mismatches, nil
+}
+
+func (r *platformRunner) productTokenClaimsActionMismatches(ctx context.Context, client platformZitadelClient) ([]string, error) {
+	var mismatches []string
+	target, found, err := client.FindActionTargetByName(ctx, productTokenClaimsTargetName)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		mismatches = append(mismatches, "zitadel.product_token_claims_target.missing")
+		return mismatches, nil
+	}
+	if target.Endpoint != r.productTokenClaimsActionEndpoint() {
+		mismatches = append(mismatches, fmt.Sprintf("zitadel.product_token_claims_target.endpoint=%q", target.Endpoint))
+	}
+	if target.Timeout != "1s" {
+		mismatches = append(mismatches, fmt.Sprintf("zitadel.product_token_claims_target.timeout=%q", target.Timeout))
+	}
+	raw, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, browserOIDCCredstoreDir+"/zitadel-action-signing-key")
+	if err != nil {
+		mismatches = append(mismatches, fmt.Sprintf("zitadel.product_token_claims_target.signing_key.read_error=%q", err.Error()))
+	} else if strings.TrimSpace(string(raw)) != target.SigningKey {
+		mismatches = append(mismatches, "zitadel.product_token_claims_target.signing_key.value_mismatch")
+	}
+	executionTargets, found, err := client.FunctionExecutionTargets(ctx, productTokenClaimsFunction)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		mismatches = append(mismatches, "zitadel.product_token_claims_execution.missing")
+	} else if len(executionTargets) != 1 || executionTargets[0] != target.ID {
+		mismatches = append(mismatches, fmt.Sprintf("zitadel.product_token_claims_execution.targets=%q", strings.Join(executionTargets, ",")))
 	}
 	return mismatches, nil
 }
@@ -632,6 +722,137 @@ func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string) map[st
 		"devMode":                false,
 		"accessTokenType":        "OIDC_TOKEN_TYPE_JWT",
 	}
+}
+
+func (c platformZitadelClient) FindActionTargetByName(ctx context.Context, name string) (platformZitadelActionTarget, bool, error) {
+	targets, err := c.ListActionTargets(ctx)
+	if err != nil {
+		return platformZitadelActionTarget{}, false, err
+	}
+	for _, target := range targets {
+		if target.Name == name {
+			return target, true, nil
+		}
+	}
+	return platformZitadelActionTarget{}, false, nil
+}
+
+func (c platformZitadelClient) ListActionTargets(ctx context.Context) ([]platformZitadelActionTarget, error) {
+	var out struct {
+		Targets []struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			Timeout    string `json:"timeout"`
+			Endpoint   string `json:"endpoint"`
+			SigningKey string `json:"signingKey"`
+		} `json:"targets"`
+	}
+	body := map[string]any{"pagination": map[string]any{"limit": 200}}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/actions/targets/search", body, &out, false); err != nil {
+		return nil, fmt.Errorf("search Zitadel action targets: %w", err)
+	}
+	targets := make([]platformZitadelActionTarget, 0, len(out.Targets))
+	for _, item := range out.Targets {
+		targets = append(targets, platformZitadelActionTarget{
+			ID:         strings.TrimSpace(item.ID),
+			Name:       strings.TrimSpace(item.Name),
+			Endpoint:   strings.TrimSpace(item.Endpoint),
+			Timeout:    strings.TrimSpace(item.Timeout),
+			SigningKey: strings.TrimSpace(item.SigningKey),
+		})
+	}
+	return targets, nil
+}
+
+func (c platformZitadelClient) CreateProductTokenClaimsTarget(ctx context.Context, name, endpoint string) (platformZitadelActionTarget, error) {
+	var out struct {
+		ID         string `json:"id"`
+		SigningKey string `json:"signingKey"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/actions/targets", productTokenClaimsTargetBody(name, endpoint), &out, false); err != nil {
+		return platformZitadelActionTarget{}, fmt.Errorf("create Zitadel product token claims target: %w", err)
+	}
+	target := platformZitadelActionTarget{
+		ID:         strings.TrimSpace(out.ID),
+		Name:       strings.TrimSpace(name),
+		Endpoint:   strings.TrimSpace(endpoint),
+		Timeout:    "1s",
+		SigningKey: strings.TrimSpace(out.SigningKey),
+	}
+	if target.ID == "" || target.SigningKey == "" {
+		return platformZitadelActionTarget{}, fmt.Errorf("create Zitadel product token claims target returned incomplete credentials")
+	}
+	return target, nil
+}
+
+func (c platformZitadelClient) UpdateProductTokenClaimsTarget(ctx context.Context, target platformZitadelActionTarget, name, endpoint string) (platformZitadelActionTarget, error) {
+	var out struct {
+		SigningKey string `json:"signingKey"`
+	}
+	path := "/v2/actions/targets/" + url.PathEscape(strings.TrimSpace(target.ID))
+	if err := c.doJSON(ctx, http.MethodPost, path, productTokenClaimsTargetBody(name, endpoint), &out, false); err != nil {
+		return platformZitadelActionTarget{}, fmt.Errorf("update Zitadel product token claims target: %w", err)
+	}
+	target.Name = strings.TrimSpace(name)
+	target.Endpoint = strings.TrimSpace(endpoint)
+	target.Timeout = "1s"
+	if signingKey := strings.TrimSpace(out.SigningKey); signingKey != "" {
+		target.SigningKey = signingKey
+	}
+	return target, nil
+}
+
+func productTokenClaimsTargetBody(name, endpoint string) map[string]any {
+	return map[string]any{
+		"name":        strings.TrimSpace(name),
+		"restCall":    map[string]any{"interruptOnError": true},
+		"endpoint":    strings.TrimSpace(endpoint),
+		"timeout":     "1s",
+		"payloadType": "PAYLOAD_TYPE_JSON",
+	}
+}
+
+func (c platformZitadelClient) SetFunctionExecution(ctx context.Context, function string, targets []string) error {
+	body := map[string]any{
+		"condition": map[string]any{
+			"function": map[string]any{"name": strings.TrimSpace(function)},
+		},
+		"targets": targets,
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/v2/actions/executions", body, nil, false); err != nil {
+		return fmt.Errorf("set Zitadel %s execution: %w", function, err)
+	}
+	return nil
+}
+
+func (c platformZitadelClient) FunctionExecutionTargets(ctx context.Context, function string) ([]string, bool, error) {
+	var out struct {
+		Executions []struct {
+			Condition struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"condition"`
+			Targets []string `json:"targets"`
+		} `json:"executions"`
+	}
+	body := map[string]any{"pagination": map[string]any{"limit": 200}}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/actions/executions/search", body, &out, false); err != nil {
+		return nil, false, fmt.Errorf("search Zitadel action executions: %w", err)
+	}
+	for _, execution := range out.Executions {
+		if execution.Condition.Function.Name != function {
+			continue
+		}
+		targets := make([]string, 0, len(execution.Targets))
+		for _, target := range execution.Targets {
+			if target = strings.TrimSpace(target); target != "" {
+				targets = append(targets, target)
+			}
+		}
+		return targets, true, nil
+	}
+	return nil, false, nil
 }
 
 func isZitadelNoChanges(err error) bool {
