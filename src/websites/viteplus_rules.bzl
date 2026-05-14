@@ -17,6 +17,37 @@ _CDXGEN_BINARY = "@dev_tool_cdxgen//file"
 _JQ_BINARY = "@dev_tool_jq//file"
 _NODEJS_ARCHIVE = "@server_tool_nodejs//file"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
+_VITEPLUS_PACKAGE = "//src/websites:node_modules/vite-plus"
+
+def _viteplus_tool_inputs():
+    return [
+        _NODEJS_ARCHIVE,
+        _VITEPLUS_PACKAGE,
+    ]
+
+def _viteplus_tool_setup(tool_tmp = "tool_tmp"):
+    return """
+mkdir -p "$${tool_tmp}/node"
+tar -xJf "$(location {nodejs_archive})" -C "$${tool_tmp}/node" --strip-components=1
+node="$${tool_tmp}/node/bin/node"
+test -x "$$node"
+vp=""
+for candidate in $(locations {viteplus_package}); do
+  case "$$candidate" in
+    */node_modules/vite-plus)
+      candidate_abs="$$execroot/$$candidate"
+      if [ -x "$$candidate_abs/bin/vp" ]; then
+        vp="$$candidate_abs/bin/vp"
+      fi
+      ;;
+  esac
+done
+test -n "$$vp"
+""".format(
+        nodejs_archive = _NODEJS_ARCHIVE,
+        tool_tmp = tool_tmp,
+        viteplus_package = _VITEPLUS_PACKAGE,
+    )
 
 def viteplus_workspace_install(name):
     """Materialize the Vite+ workspace dependency tree through Bazel.
@@ -31,30 +62,25 @@ def viteplus_workspace_install(name):
         name = name,
         srcs = [
             ":workspace_install_inputs",
-        ],
+        ] + _viteplus_tool_inputs(),
         outs = [name + ".stamp"],
         cmd = """
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-home="$${HOME:-}"
-if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
-  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
-fi
-test -n "$$home"
-vp="$$home/.vite-plus/bin/vp"
-test -x "$$vp"
+tool_tmp="$$(mktemp -d)"
 npm_userconfig="$$(mktemp)"
-trap 'rm -f "$$npm_userconfig"' EXIT
+trap 'rm -rf "$$tool_tmp"; rm -f "$$npm_userconfig"' EXIT
+{viteplus_tool_setup}
 chmod 0600 "$$npm_userconfig"
 printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
 export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
 cd "src/websites"
-"$$vp" install --frozen-lockfile --prefer-offline
+"$$node" "$$vp" install --frozen-lockfile --prefer-offline
 lockfile_hash="$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')"
-tool_fingerprint="$$($$vp --version | sha256sum | awk '{{ print $$1 }}')"
+tool_fingerprint="$$("$$node" "$$vp" --version | sha256sum | awk '{{ print $$1 }}')"
 printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_fingerprint" > "$$out"
-""",
+""".format(viteplus_tool_setup = _viteplus_tool_setup()),
         local = True,
         tags = [
             "local",
@@ -139,28 +165,25 @@ def viteplus_workspace_check(name, generated_srcs = None):
         srcs = [
             ":workspace_check_sources",
             ":workspace_install",
-        ] + generated_srcs,
+        ] + _viteplus_tool_inputs() + generated_srcs,
         outs = [name + ".stamp"],
         cmd = """
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-home="$${{HOME:-}}"
-if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
-  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
-fi
-test -n "$$home"
-vp="$$home/.vite-plus/bin/vp"
-test -x "$$vp"
+tool_tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tool_tmp"' EXIT
+{viteplus_tool_setup}
 {generated_sync_cmds}
 cd "src/websites"
-"$$vp" check .
+"$$node" "$$vp" check .
 printf 'viteplus check ok\\n' > "$$out"
 """.format(
             generated_sync_cmds = _generated_source_sync_cmds(
                 generated_srcs,
                 "src/websites",
             ),
+            viteplus_tool_setup = _viteplus_tool_setup(),
         ),
         local = True,
         tags = [
@@ -196,28 +219,25 @@ def viteplus_workspace_test(name, generated_srcs = None):
         srcs = [
             ":workspace_check_sources",
             ":workspace_install",
-        ] + generated_srcs,
+        ] + _viteplus_tool_inputs() + generated_srcs,
         outs = [name + ".stamp"],
         cmd = """
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-home="$${{HOME:-}}"
-if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
-  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
-fi
-test -n "$$home"
-vp="$$home/.vite-plus/bin/vp"
-test -x "$$vp"
+tool_tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tool_tmp"' EXIT
+{viteplus_tool_setup}
 {generated_sync_cmds}
 cd "src/websites"
-"$$vp" test run
+"$$node" "$$vp" test run
 printf 'viteplus test ok\\n' > "$$out"
 """.format(
             generated_sync_cmds = _generated_source_sync_cmds(
                 generated_srcs,
                 "src/websites",
             ),
+            viteplus_tool_setup = _viteplus_tool_setup(),
         ),
         local = True,
         tags = [
@@ -449,7 +469,7 @@ def viteplus_node_app_artifact(name, output, migration_entry = None, migration_d
         ":sources",
         "//src/websites:workspace_install",
         "//src/websites:workspace_sources",
-    ] + generated_srcs
+    ] + _viteplus_tool_inputs() + generated_srcs
     migration_cmds = ""
     if migration_entry:
         js_run_binary(
@@ -502,24 +522,16 @@ chmod 0755 "$$tmp/bin/{output}-migrate"
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-home="$${{HOME:-}}"
-if [ -z "$$home" ] && command -v getent >/dev/null 2>&1; then
-  home="$$(getent passwd "$$(id -un)" | cut -d: -f6)"
-fi
-if [ -z "$$home" ] && command -v dscl >/dev/null 2>&1; then
-  home="$$(dscl . -read "/Users/$$(id -un)" NFSHomeDirectory | awk '{{ print $$2 }}')"
-fi
-test -n "$$home"
-vp="$$home/.vite-plus/bin/vp"
-test -x "$$vp"
 tmp="$$(mktemp -d)"
+tool_tmp="$$(mktemp -d)"
 members="$$out.members"
-trap 'rm -rf "$$tmp"; rm -f "$$members"' EXIT
+trap 'rm -rf "$$tmp" "$$tool_tmp"; rm -f "$$members"' EXIT
+{viteplus_tool_setup}
 
 {generated_sync_cmds}
 cd "{package_dir}"
 rm -rf .output
-"$$vp" build
+"$$node" "$$vp" build
 
 mkdir -p "$$tmp/app" "$$tmp/bin"
 cp -a .output "$$tmp/app/.output"
@@ -545,6 +557,7 @@ fi
             package_dir = package_dir,
             migration_cmds = migration_cmds,
             generated_sync_cmds = generated_sync_cmds,
+            viteplus_tool_setup = _viteplus_tool_setup(),
         ),
         tags = [
             "no-remote",
