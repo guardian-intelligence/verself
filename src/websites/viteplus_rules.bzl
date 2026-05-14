@@ -31,6 +31,10 @@ mkdir -p "$${tool_tmp}/node"
 tar -xJf "$(location {nodejs_archive})" -C "$${tool_tmp}/node" --strip-components=1
 node="$${tool_tmp}/node/bin/node"
 test -x "$$node"
+# `vp install` spawns pnpm; pnpm's CLI shim re-execs `node` from PATH, so the
+# extracted node binary's directory must lead PATH or pnpm hits "node: not found"
+# under --incompatible_strict_action_env.
+export PATH="$${tool_tmp}/node/bin:$${{PATH:-/usr/bin:/bin}}"
 vp=""
 for candidate in $(locations {viteplus_package}); do
   case "$$candidate" in
