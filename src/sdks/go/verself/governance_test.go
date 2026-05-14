@@ -9,13 +9,13 @@ import (
 	"testing"
 )
 
-func TestGovernanceAuditAndExportAPI(t *testing.T) {
+func TestGovernanceAPIActivitiesAndExportAPI(t *testing.T) {
 	const exportID = "11111111-1111-1111-1111-111111111111"
 	const traceparent = "00-11111111111111111111111111111111-2222222222222222-01"
 	var createBody map[string]any
 	var createKey string
-	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["audit"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"audit/audit_events.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
-	auditEventJSON := `{"actor_id":"user_1","actor_type":"user","audit_event":"governance.data_export.create","detail_sha256":"hash","event_id":"22222222-2222-2222-2222-222222222222","event_name":"create-data-export","event_source":"governance-service","org_id":"370200542594579812","outcome":"allowed","permission":"governance.exports.write","prev_hmac":"prev","recorded_at":"2026-05-07T00:00:01Z","row_hmac":"row","sequence":"1","target_id":"` + exportID + `","target_type":"data_export","trace_id":"11111111111111111111111111111111"}`
+	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["api_activity"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"governance/ocsf_api_activities.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
+	apiActivityJSON := `{"metadata_uid":"22222222-2222-2222-2222-222222222222","time":"2026-05-07T00:00:01Z","org_id":"370200542594579812","sequence":"1","ocsf_version":"1.5.0","category_uid":6,"category_name":"Application Activity","class_uid":6003,"class_name":"API Activity","type_uid":600301,"activity_id":1,"activity_name":"Create","action_id":1,"action":"Allowed","status_id":1,"status":"Success","status_code":"200","severity_id":1,"severity":"Informational","api_service":"governance-service","api_operation":"create-data-export","actor_type":"user","actor_uid":"user_1","credential_uid":"cred_1","primary_resource_type":"data_export","primary_resource_uid":"` + exportID + `","primary_resource_full_name":"urn:verself:governance:data_export:` + exportID + `","permission":"governance.exports.write","http_method":"POST","http_route":"/api/v1/governance/exports","http_response_code":201,"trace_uid":"11111111111111111111111111111111","span_uid":"2222222222222222","ocsf_sha256":"hash","prev_hmac":"prev","row_hmac":"row"}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok_governance" {
@@ -26,11 +26,11 @@ func TestGovernanceAuditAndExportAPI(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/audit/events":
-			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("event_source") != "governance-service" || r.URL.Query().Get("outcome") != "allowed" {
-				t.Fatalf("audit query = %s", r.URL.RawQuery)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/ocsf/api-activities":
+			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("api_service") != "governance-service" || r.URL.Query().Get("status_id") != "1" {
+				t.Fatalf("api activity query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"events":[` + auditEventJSON + `],"filters":{"event_source":"governance-service","outcome":"allowed"},"limit":2,"next_cursor":"cursor_1"}`))
+			_, _ = w.Write([]byte(`{"api_activities":[` + apiActivityJSON + `],"filters":{"api_service":"governance-service","status_id":1},"limit":2,"next_cursor":"cursor_1"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports":
 			_, _ = w.Write([]byte(`{"exports":[` + exportJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/governance/exports":
@@ -59,19 +59,19 @@ func TestGovernanceAuditAndExportAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	events, err := client.Governance.ListAuditEvents(context.Background(), ListGovernanceAuditEventsOptions{
-		Limit:       2,
-		EventSource: "governance-service",
-		Outcome:     GovernanceAuditOutcomeAllowed,
+	activities, err := client.Governance.ListAPIActivities(context.Background(), ListGovernanceAPIActivitiesOptions{
+		Limit:      2,
+		APIService: "governance-service",
+		StatusID:   1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if events.NextCursor != "cursor_1" || len(events.Events) != 1 || events.Events[0].AuditEvent != "governance.data_export.create" {
-		t.Fatalf("unexpected events: %#v", events)
+	if activities.NextCursor != "cursor_1" || len(activities.APIActivities) != 1 || activities.APIActivities[0].APIOperation != "create-data-export" {
+		t.Fatalf("unexpected API activities: %#v", activities)
 	}
 	export, err := client.Governance.CreateDataExport(context.Background(), CreateGovernanceExportInput{
-		Scopes:         []GovernanceExportScope{GovernanceExportScopeAudit},
+		Scopes:         []GovernanceExportScope{GovernanceExportScopeAPIActivity},
 		IncludeLogs:    true,
 		IdempotencyKey: "governance-export:test",
 	})
@@ -81,7 +81,7 @@ func TestGovernanceAuditAndExportAPI(t *testing.T) {
 	if createKey != "governance-export:test" || createBody["include_logs"] != true || export.ArtifactBytes != 10 {
 		t.Fatalf("unexpected create request/export: %q %#v %#v", createKey, createBody, export)
 	}
-	if scopes, ok := createBody["scopes"].([]any); !ok || len(scopes) != 1 || scopes[0] != "audit" {
+	if scopes, ok := createBody["scopes"].([]any); !ok || len(scopes) != 1 || scopes[0] != "api_activity" {
 		t.Fatalf("unexpected scopes: %#v", createBody)
 	}
 	exports, err := client.Governance.ListDataExports(context.Background())
@@ -112,7 +112,7 @@ func TestGovernanceAPIErrorsNormalizeProblemDetails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.Governance.ListAuditEvents(context.Background(), ListGovernanceAuditEventsOptions{})
+	_, err = client.Governance.ListAPIActivities(context.Background(), ListGovernanceAPIActivitiesOptions{})
 	apiErr, ok := err.(*APIError)
 	if !ok {
 		t.Fatalf("error = %#v, want *APIError", err)

@@ -25,17 +25,17 @@ import (
 type permission = runtimeiam.Permission
 
 const (
-	permissionAuditLogRead       permission = "governance:audit_log:read"
-	permissionAuditLogReadDetail permission = "governance:audit_log:read_detail"
-	permissionAuditLogExport     permission = "governance:audit_log:export"
-	permissionAuditLogManage     permission = "governance:audit_log:manage"
+	permissionAPIActivityRead       permission = "governance:api_activity:read"
+	permissionAPIActivityReadDetail permission = "governance:api_activity:read_detail"
+	permissionAPIActivityExport     permission = "governance:api_activity:export"
+	permissionAPIActivityManage     permission = "governance:api_activity:manage"
 
 	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
 
-	auditLogResourceType = "audit_log"
-	orgResourceType      = "org"
-	parentOrgRelation    = "parent_org"
+	apiActivityResourceType = "api_activity"
+	orgResourceType         = "org"
+	parentOrgRelation       = "parent_org"
 )
 
 type securedOperation struct {
@@ -61,16 +61,16 @@ func registerSecured[I, O any](api huma.API, svc *governance.Service, authorizer
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		principal, err := enforceOperationPolicy(ctx, authorizer, policy)
 		if err != nil {
-			auditOperation(ctx, svc, op, policy, principal, input, nil, "denied", err)
+			recordAPIActivity(ctx, svc, op, policy, principal, input, nil, "denied", err)
 			return nil, err
 		}
 		output, err := handler(ctx, principal, input)
 		if err != nil {
 			mapped := mapError(ctx, err)
-			auditOperation(ctx, svc, op, policy, principal, input, nil, "error", mapped)
+			recordAPIActivity(ctx, svc, op, policy, principal, input, nil, "error", mapped)
 			return nil, mapped
 		}
-		auditOperation(ctx, svc, op, policy, principal, input, output, "allowed", nil)
+		recordAPIActivity(ctx, svc, op, policy, principal, input, output, "allowed", nil)
 		return output, nil
 	})
 }
@@ -128,26 +128,26 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceA
 	if authorizer == nil {
 		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
-	resourcePermission, err := auditLogResourcePermission(policy.Permission)
+	resourcePermission, err := apiActivityResourcePermission(policy.Permission)
 	if err != nil {
 		return principal, problem(ctx, http.StatusInternalServerError, "iam-policy-invalid", "governance IAM policy is invalid", err)
 	}
 	orgID := strings.TrimSpace(authIdentity.OrgID)
-	auditLogResource := runtimeiam.ResourceRef{Type: auditLogResourceType, ID: orgID}
+	apiActivityResource := runtimeiam.ResourceRef{Type: apiActivityResourceType, ID: orgID}
 	_, err = authorizer.EnsureResourceParent(ctx, runtimeiam.ResourceParentEdgeRequest{
 		OrgID:     orgID,
-		Resource:  auditLogResource,
+		Resource:  apiActivityResource,
 		Relation:  parentOrgRelation,
 		Parent:    runtimeiam.ResourceRef{Type: orgResourceType, ID: orgID},
 		Operation: string(policy.Permission),
 	})
 	if err != nil {
-		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM audit log resource write failed", err)
+		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM API activity resource write failed", err)
 	}
 	decision, err := authorizer.AuthorizeResource(ctx, authIdentity, runtimeiam.ResourceAuthorizationRequest{
 		OrgID:               orgID,
 		OperationPermission: policy.Permission,
-		Resource:            auditLogResource,
+		Resource:            apiActivityResource,
 		ResourcePermission:  resourcePermission,
 	})
 	if err != nil {
@@ -165,15 +165,15 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceA
 	return principal, nil
 }
 
-func auditLogResourcePermission(productPermission permission) (string, error) {
+func apiActivityResourcePermission(productPermission permission) (string, error) {
 	switch productPermission {
-	case permissionAuditLogRead:
+	case permissionAPIActivityRead:
 		return "read", nil
-	case permissionAuditLogReadDetail:
+	case permissionAPIActivityReadDetail:
 		return "read_detail", nil
-	case permissionAuditLogExport:
+	case permissionAPIActivityExport:
 		return "export", nil
-	case permissionAuditLogManage:
+	case permissionAPIActivityManage:
 		return "manage", nil
 	default:
 		return "", fmt.Errorf("unsupported governance permission %q", productPermission)
@@ -313,53 +313,128 @@ func originFromURL(value string) string {
 	return parsed.Scheme + "://" + parsed.Host
 }
 
-func auditOperation(ctx context.Context, svc *governance.Service, op huma.Operation, policy runtimeiam.OperationPolicy, principal governance.Principal, input any, output any, outcome string, err error) {
+func recordAPIActivity(ctx context.Context, svc *governance.Service, op huma.Operation, policy runtimeiam.OperationPolicy, principal governance.Principal, input any, output any, outcome string, err error) {
 	if svc == nil || principal.OrgID == "" {
 		return
 	}
 	info := operationRequestInfoFromContext(ctx)
-	targetID, _ := targetFromBoundary(input, output)
-	targetResourceName := governanceTargetResourceName(svc.InstallationID, principal.OrgID, string(policy.Resource), targetID)
-	record := governance.AuditRecord{
-		OrgID:              principal.OrgID,
-		EventSource:        "governance-service",
-		EventName:          op.OperationID,
-		AuditEvent:         string(policy.AuditEvent),
-		ActorType:          principal.Type,
-		ActorID:            principal.Subject,
-		CredentialID:       principal.CredentialID,
-		Permission:         string(policy.Permission),
-		TargetType:         string(policy.Resource),
-		TargetID:           targetID,
-		TargetResourceName: targetResourceName,
-		Outcome:            outcome,
-		Detail: compactAuditDetail(map[string]any{
-			"idempotency_key_hash":   governanceHashForAPI(info.IdempotencyKey),
-			"credential_fingerprint": principal.CredentialFingerprint,
+	targetID, targetDisplay := targetFromBoundary(input, output)
+	httpStatus := httpStatusForActivity(op, outcome, err)
+	httpResponseCode, conversionErr := httpResponseCodeUint16(httpStatus)
+	if conversionErr != nil {
+		slog.Default().ErrorContext(ctx, "governance API activity response code conversion failed", "error", conversionErr, "api_event_code", policy.AuditEvent)
+		return
+	}
+	decision, status := apiActivityResult(outcome)
+	record := governance.APIActivityRecord{
+		OrgID:            principal.OrgID,
+		APIService:       "governance-service",
+		APIOperation:     op.OperationID,
+		APIEventCode:     string(policy.AuditEvent),
+		APIAction:        string(policy.Action),
+		ActorType:        principal.Type,
+		ActorID:          principal.Subject,
+		ActorDisplayName: firstNonEmpty(principal.Email, principal.Subject),
+		ActorEmail:       principal.Email,
+		CredentialID:     principal.CredentialID,
+		Permission:       string(policy.Permission),
+		Resources: []governance.APIActivityResource{{
+			Type:     string(policy.Resource),
+			UID:      targetID,
+			Name:     targetDisplay,
+			FullName: governanceResourceName(svc.InstallationID, principal.OrgID, string(policy.Resource), targetID),
+		}},
+		HTTPRequest: governance.APIActivityHTTPRequest{
+			UID:           info.RequestID,
+			Method:        op.Method,
+			Route:         op.Path,
+			SafeParams:    safeParamsFromInput(input),
+			UserAgent:     info.UserAgent,
+			XForwardedFor: info.IPChain,
+			Referrer:      info.RefererOrigin,
+			Host:          info.Host,
+			ClientIP:      info.ClientIP,
+		},
+		HTTPResponse: governance.APIActivityHTTPResponse{
+			Code:    httpResponseCode,
+			Message: http.StatusText(httpStatus),
+			Status:  http.StatusText(httpStatus),
+		},
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(httpStatus)),
+		Unmapped: compactUnmappedDetail(map[string]any{
+			"verself.idempotency_key_hash":   governanceHashForAPI(info.IdempotencyKey),
+			"verself.credential_fingerprint": principal.CredentialFingerprint,
+			"verself.trusted_proxy_hops":     info.TrustedHops,
+			"verself.origin":                 info.Origin,
 		}),
 	}
 	if err != nil {
-		record.ErrorCode = problemCode(err)
 		if outcome == "denied" {
-			record.Detail["denial_reason"] = record.ErrorCode
+			record.StatusDetail = problemCode(err)
 		}
 	}
-	if _, auditErr := svc.RecordAuditEvent(ctx, record); auditErr != nil {
-		slog.Default().ErrorContext(ctx, "governance audit write failed", "error", auditErr, "audit_event", policy.AuditEvent, "org_id", principal.OrgID)
+	if _, recordErr := svc.RecordAPIActivity(ctx, record); recordErr != nil {
+		slog.Default().ErrorContext(ctx, "governance API activity write failed", "error", recordErr, "api_event_code", policy.AuditEvent, "org_id", principal.OrgID)
 	}
 }
 
-func governanceTargetResourceName(installationID, orgID, resource, targetID string) string {
+func governanceResourceName(installationID, orgID, resource, targetID string) string {
 	if installationID == "" || orgID == "" {
 		return ""
 	}
-	if resource == "audit_log" && targetID != "" {
-		return governance.ResourceNameAuditExport(installationID, orgID, targetID).String()
+	if resource == "api_activity" && targetID != "" {
+		return governance.ResourceNameAPIActivity(installationID, orgID, targetID).String()
+	}
+	if resource == "data_export" && targetID != "" {
+		return governance.ResourceNameDataExport(installationID, orgID, targetID).String()
 	}
 	return governance.ResourceNameOrg(installationID, orgID).String()
 }
 
-func compactAuditDetail(values map[string]any) map[string]any {
+func httpResponseCodeUint16(status int) (uint16, error) {
+	if status < 0 || status > 65535 {
+		return 0, fmt.Errorf("http status out of UInt16 range: %d", status)
+	}
+	return uint16(status), nil
+}
+
+func apiActivityResult(result string) (governance.AuthorizationDecision, governance.Status) {
+	switch strings.TrimSpace(result) {
+	case "denied":
+		return governance.AuthorizationDenied, governance.StatusFailure
+	case "error":
+		return governance.AuthorizationAllowed, governance.StatusFailure
+	default:
+		return governance.AuthorizationAllowed, governance.StatusSuccess
+	}
+}
+
+func httpStatusForActivity(op huma.Operation, result string, err error) int {
+	if err != nil {
+		var statusErr huma.StatusError
+		if errors.As(err, &statusErr) && statusErr.GetStatus() > 0 {
+			return statusErr.GetStatus()
+		}
+	}
+	if result == "denied" {
+		return http.StatusForbidden
+	}
+	if op.DefaultStatus > 0 {
+		return op.DefaultStatus
+	}
+	return http.StatusOK
+}
+
+func problemCodeOrEmpty(err error) string {
+	if err == nil {
+		return ""
+	}
+	return problemCode(err)
+}
+
+func compactUnmappedDetail(values map[string]any) map[string]any {
 	detail := make(map[string]any, len(values))
 	for key, value := range values {
 		switch typed := value.(type) {
@@ -377,6 +452,51 @@ func compactAuditDetail(values map[string]any) map[string]any {
 		}
 	}
 	return detail
+}
+
+func safeParamsFromInput(input any) string {
+	values := url.Values{}
+	addSafeParams(values, reflectValue(input))
+	encoded := values.Encode()
+	if len(encoded) > 1024 {
+		return encoded[:1024]
+	}
+	return encoded
+}
+
+func addSafeParams(values url.Values, value reflect.Value) {
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return
+	}
+	valueType := value.Type()
+	for index := 0; index < value.NumField(); index++ {
+		field := valueType.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		name := firstNonEmpty(field.Tag.Get("query"), field.Tag.Get("path"))
+		if name == "" || name == "-" {
+			continue
+		}
+		item := reflectValue(value.Field(index).Interface())
+		if !item.IsValid() {
+			continue
+		}
+		switch item.Kind() {
+		case reflect.String:
+			if text := strings.TrimSpace(item.String()); text != "" {
+				values.Set(name, text)
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if item.Int() != 0 {
+				values.Set(name, strconv.FormatInt(item.Int(), 10))
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if item.Uint() != 0 {
+				values.Set(name, strconv.FormatUint(item.Uint(), 10))
+			}
+		}
+	}
 }
 
 func targetFromBoundary(input any, output any) (string, string) {

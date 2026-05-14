@@ -85,10 +85,10 @@ func TestWriteResourceParentEdgeAllowsOnlyModeledEdges(t *testing.T) {
 	_, err = New(backend).WriteResourceParentEdge(
 		context.Background(),
 		"org_1",
-		ResourceRef{Type: resourceTypeAuditLog, ID: "org_2"},
+		ResourceRef{Type: resourceTypeAPIActivity, ID: "org_2"},
 		relationParentOrg,
 		ResourceRef{Type: resourceTypeOrg, ID: "org_1"},
-		"test.audit_log.parent",
+		"test.api_activity.parent",
 	)
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("error = %v, want ErrInvalid", err)

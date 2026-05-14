@@ -109,7 +109,7 @@ func (c CLI) usage() error {
   %[1]s notifications dismiss <notification-id> [--json]
   %[1]s notifications clear [--json]
   %[1]s notifications test [--title TEXT] [--body TEXT] [--action-url URL] [--json]
-  %[1]s audit events [--high-risk] [--limit N] [--json]
+  %[1]s audit api-activities [--api-service SERVICE] [--status-id 1|2] [--limit N] [--json]
   %[1]s audit exports list [--json]
   %[1]s audit exports create [--scope SCOPE] [--include-logs] [--json]
   %[1]s audit exports get <export-id> [--json]

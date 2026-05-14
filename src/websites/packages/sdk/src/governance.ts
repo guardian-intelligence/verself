@@ -4,19 +4,13 @@ import {
   createDataExport as createGeneratedDataExport,
   downloadDataExport as downloadGeneratedDataExport,
   getDataExport as getGeneratedDataExport,
-  listAuditEvents as listGeneratedAuditEvents,
   listDataExports as listGeneratedDataExports,
 } from "./__generated/governance-api/index.js";
-import type {
-  CreateDataExportData,
-  ListAuditEventsData,
-} from "./__generated/governance-api/types.gen.js";
+import type { CreateDataExportData } from "./__generated/governance-api/types.gen.js";
 import {
-  vAuditEvent,
   vCreateDataExportResponse,
   vDataExportJob,
   vGetDataExportResponse,
-  vListAuditEventsResponse,
   vListDataExportsResponse,
 } from "./__generated/governance-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
@@ -56,25 +50,97 @@ function throwGovernanceError(path: string, response: Response | undefined, erro
   throwGeneratedServiceError(GovernanceApiError, path, response, error);
 }
 
-const governanceExportScopes = ["identity", "billing", "sandbox", "audit"] as const;
+const governanceExportScopes = ["identity", "billing", "sandbox", "api_activity"] as const;
 
 export const governanceCreateExportRequestSchema = v.strictObject({
   include_logs: v.optional(v.boolean(), false),
   scopes: v.optional(v.array(v.picklist(governanceExportScopes)), [...governanceExportScopes]),
 });
 
-export const governanceAuditEventsQuerySchema = v.strictObject({
-  actor_id: v.optional(v.string()),
-  audit_event: v.optional(v.string()),
-  credential_id: v.optional(v.string()),
+export const governanceAPIActivitiesQuerySchema = v.strictObject({
+  activity_id: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(99))),
+  actor_type: v.optional(v.string()),
+  actor_uid: v.optional(v.string()),
+  api_operation: v.optional(v.string()),
+  api_service: v.optional(v.string()),
+  credential_uid: v.optional(v.string()),
   cursor: v.optional(v.string()),
-  event_name: v.optional(v.string()),
-  event_source: v.optional(v.string()),
   limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
   order: v.optional(v.picklist(["asc", "desc"])),
-  outcome: v.optional(v.picklist(["allowed", "denied", "error"])),
-  target_id: v.optional(v.string()),
-  target_type: v.optional(v.string()),
+  resource_type: v.optional(v.string()),
+  resource_uid: v.optional(v.string()),
+  status_code: v.optional(v.string()),
+  status_id: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(99))),
+  trace_uid: v.optional(v.string()),
+});
+
+const vAPIActivity = v.object({
+  action: v.string(),
+  action_id: v.number(),
+  activity_id: v.number(),
+  activity_name: v.string(),
+  actor_name: v.optional(v.string()),
+  actor_type: v.string(),
+  actor_uid: v.string(),
+  api_operation: v.string(),
+  api_service: v.string(),
+  api_version: v.optional(v.string()),
+  category_name: v.string(),
+  category_uid: v.number(),
+  class_name: v.string(),
+  class_uid: v.number(),
+  credential_uid: v.optional(v.string()),
+  hmac_key_id: v.optional(v.string()),
+  http_args: v.optional(v.string()),
+  http_method: v.string(),
+  http_request_uid: v.optional(v.string()),
+  http_response_code: v.number(),
+  http_route: v.string(),
+  http_user_agent: v.optional(v.string()),
+  metadata_uid: v.string(),
+  ocsf_sha256: v.string(),
+  ocsf_version: v.string(),
+  org_id: v.string(),
+  permission: v.string(),
+  prev_hmac: v.string(),
+  primary_resource_full_name: v.optional(v.string()),
+  primary_resource_name: v.optional(v.string()),
+  primary_resource_type: v.string(),
+  primary_resource_uid: v.optional(v.string()),
+  row_hmac: v.string(),
+  sequence: v.string(),
+  severity: v.string(),
+  severity_id: v.number(),
+  span_uid: v.optional(v.string()),
+  src_endpoint_ip: v.optional(v.string()),
+  src_endpoint_name: v.optional(v.string()),
+  status: v.string(),
+  status_code: v.string(),
+  status_id: v.number(),
+  time: v.string(),
+  trace_uid: v.optional(v.string()),
+  type_uid: v.number(),
+});
+
+const vAPIActivityFilters = v.object({
+  activity_id: v.optional(v.number()),
+  actor_type: v.optional(v.string()),
+  actor_uid: v.optional(v.string()),
+  api_operation: v.optional(v.string()),
+  api_service: v.optional(v.string()),
+  credential_uid: v.optional(v.string()),
+  resource_type: v.optional(v.string()),
+  resource_uid: v.optional(v.string()),
+  status_code: v.optional(v.string()),
+  status_id: v.optional(v.number()),
+  trace_uid: v.optional(v.string()),
+});
+
+const vListAPIActivitiesResponse = v.object({
+  api_activities: v.array(vAPIActivity),
+  filters: v.optional(vAPIActivityFilters, {}),
+  limit: v.number(),
+  next_cursor: v.optional(v.string()),
 });
 
 export type GovernanceCreateExportRequest = v.InferOutput<
@@ -83,30 +149,32 @@ export type GovernanceCreateExportRequest = v.InferOutput<
 export type GovernanceCreateExportRequestInput = v.InferInput<
   typeof governanceCreateExportRequestSchema
 >;
-export type GovernanceAuditEventsQuery = v.InferOutput<typeof governanceAuditEventsQuerySchema>;
-export type GovernanceAuditEventsQueryInput = v.InferInput<typeof governanceAuditEventsQuerySchema>;
+export type GovernanceAPIActivitiesQuery = v.InferOutput<typeof governanceAPIActivitiesQuerySchema>;
+export type GovernanceAPIActivitiesQueryInput = v.InferInput<
+  typeof governanceAPIActivitiesQuerySchema
+>;
 
 function removeUndefined<T extends Record<string, unknown>>(input: T): Record<string, unknown> {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
-function parseAuditEvent(input: unknown) {
-  return v.parse(vAuditEvent, input);
+function parseAPIActivity(input: unknown) {
+  return v.parse(vAPIActivity, input);
 }
 
-export type GovernanceAuditEvent = ReturnType<typeof parseAuditEvent>;
+export type GovernanceAPIActivity = ReturnType<typeof parseAPIActivity>;
 
-function parseAuditEvents(input: unknown) {
-  const parsed = v.parse(vListAuditEventsResponse, input);
+function parseAPIActivities(input: unknown) {
+  const parsed = v.parse(vListAPIActivitiesResponse, input);
   return {
-    events: parsed.events.map((event) => parseAuditEvent(event)),
+    api_activities: parsed.api_activities.map((event) => parseAPIActivity(event)),
     filters: parsed.filters,
     limit: Number(parsed.limit),
     next_cursor: parsed.next_cursor ?? "",
   };
 }
 
-export type GovernanceAuditEvents = ReturnType<typeof parseAuditEvents>;
+export type GovernanceAPIActivities = ReturnType<typeof parseAPIActivities>;
 
 function parseExportJob(input: unknown) {
   const parsed = v.parse(vDataExportJob, input);
@@ -167,26 +235,28 @@ export class Governance {
     this.#options = options;
   }
 
-  async listAuditEvents(
-    input: GovernanceAuditEventsQueryInput = {},
-  ): Promise<GovernanceAuditEvents> {
-    const client = createGovernanceClient(this.#options);
+  async listAPIActivities(
+    input: GovernanceAPIActivitiesQueryInput = {},
+  ): Promise<GovernanceAPIActivities> {
     const parsedQuery = removeUndefined(
-      v.parse(governanceAuditEventsQuerySchema, input),
-    ) as NonNullable<ListAuditEventsData["query"]>;
-    const path = "/api/v1/governance/audit/events";
-    const result = await listGeneratedAuditEvents({
-      client,
-      query: parsedQuery,
-      responseStyle: "fields",
-      throwOnError: false,
+      v.parse(governanceAPIActivitiesQuerySchema, input),
+    ) as Record<string, string | number>;
+    const path = "/api/v1/governance/ocsf/api-activities";
+    const url = new URL(`${this.#options.baseUrl.replace(/\/+$/, "")}${path}`);
+    for (const [key, value] of Object.entries(parsedQuery)) {
+      url.searchParams.set(key, String(value));
+    }
+    const fetcher = this.#options.fetch ?? fetch;
+    const response = await fetcher(url, {
+      headers: createBearerJSONHeaders(this.#options.accessToken, this.#options.traceparent),
+      method: "GET",
     });
-
-    if (result.error !== undefined) {
-      throwGovernanceError(path, result.response, result.error);
+    const text = await response.text();
+    if (!response.ok) {
+      throw new GovernanceApiError(response.status, path, text);
     }
 
-    return parseAuditEvents(result.data);
+    return parseAPIActivities(text === "" ? {} : JSON.parse(text));
   }
 
   async listDataExports(): Promise<Array<GovernanceExportJob>> {

@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_workshop/docs/governance")({
       {
         name: "description",
         content:
-          "Use the Governance API, SDK, CLI, and console surfaces for audit events and organization data exports.",
+          "Use the Governance API, SDK, CLI, and console surfaces for OCSF API Activity records and organization data exports.",
       },
     ],
   }),
@@ -30,8 +30,8 @@ function GovernanceDocs() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Governance</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-          Query organization audit events, investigate high-risk operations, and export organization
-          data through the same public contract used by the console and CLI.
+          Query organization OCSF API Activity records, investigate high-risk operations, and export
+          organization data through the same public contract used by the console and CLI.
         </p>
       </header>
 
@@ -39,27 +39,27 @@ function GovernanceDocs() {
         <SectionHeading id="overview">Overview</SectionHeading>
         <SummaryPanel>
           <SummaryItem term="Service API">
-            <code>governance.api.&lt;domain&gt;</code> exposes audit event queries and data export
-            lifecycle operations.
+            <code>governance.api.&lt;domain&gt;</code> exposes OCSF API Activity queries and data
+            export lifecycle operations.
           </SummaryItem>
           <SummaryItem term="Curated SDKs">
             The TypeScript and Go SDKs own auth headers, trace propagation, idempotency keys, error
             normalization, response validation, and binary download handling.
           </SummaryItem>
           <SummaryItem term="Telemetry">
-            Governance operations emit tamper-evident audit rows and OpenTelemetry traces with the
+            Governance operations emit tamper-evident OCSF rows and OpenTelemetry traces with the
             caller-provided trace context when supplied.
           </SummaryItem>
         </SummaryPanel>
       </section>
 
       <section className="flex flex-col gap-4">
-        <SectionHeading id="audit-events">Audit Events</SectionHeading>
+        <SectionHeading id="api-activity">API Activity</SectionHeading>
         <Prose>
           <p>
-            Audit queries support exact filters for actor, credential, target, event source, event
-            name, audit event, outcome, cursor, and ordering. Large operation-specific payloads are
-            stored as hashed detail records behind the canonical row.
+            API Activity queries support exact filters for actor, credential, resource, API service,
+            API operation, status, trace, cursor, and ordering. Full OCSF payloads are stored behind
+            the hot query row.
           </p>
         </Prose>
         <Command>{`const verself = await Verself.fromWorkloadIdentity({
@@ -67,10 +67,10 @@ function GovernanceDocs() {
   provider: "github-actions",
 });
 
-const page = await verself.audit.events.list({
-  eventSource: "governance-service",
+const page = await verself.governance.listAPIActivities({
+  api_service: "governance-service",
   limit: 50,
-  outcome: "allowed",
+  status_id: 1,
 });`}</Command>
       </section>
 
@@ -84,8 +84,8 @@ const page = await verself.audit.events.list({
           </p>
         </Prose>
         <Command>{`export, err := client.Governance.CreateDataExport(ctx, verself.CreateGovernanceExportInput{
-    Scopes: []verself.GovernanceExportScope{verself.GovernanceExportScopeAudit},
-    IdempotencyKey: "audit-export:2026-05-07",
+    Scopes: []verself.GovernanceExportScope{verself.GovernanceExportScopeAPIActivity},
+    IdempotencyKey: "governance-export:2026-05-07",
 })
 
 artifact, err := client.Governance.DownloadDataExport(ctx, export.ExportID)`}</Command>
@@ -95,7 +95,8 @@ artifact, err := client.Governance.DownloadDataExport(ctx, export.ExportID)`}</C
         <SectionHeading id="commands">Commands</SectionHeading>
         <SummaryPanel>
           <SummaryItem term="Audit search">
-            <code>verself audit events</code> projects URL-style filters into the Governance API.
+            <code>verself audit api-activities</code> projects URL-style filters into the Governance
+            API.
           </SummaryItem>
           <SummaryItem term="Export lifecycle">
             <code>verself audit exports</code> lists, creates, reads, and downloads export
@@ -105,10 +106,10 @@ artifact, err := client.Governance.DownloadDataExport(ctx, export.ExportID)`}</C
             <code>--traceparent</code> joins CLI calls to an existing trace for ClickHouse evidence.
           </SummaryItem>
         </SummaryPanel>
-        <Command>{`verself audit events --event-source governance-service --limit 50
-verself audit events --event-name create-data-export --outcome allowed --json
+        <Command>{`verself audit api-activities --api-service governance-service --limit 50
+verself audit api-activities --api-operation create-data-export --status-id 1 --json
 verself audit exports list
-verself audit exports create --scope audit --idempotency-key audit-export:2026-05-07
+verself audit exports create --scope api_activity --idempotency-key governance-export:2026-05-07
 verself audit exports download <export-id> ./export.tar.gz --json`}</Command>
       </section>
     </article>

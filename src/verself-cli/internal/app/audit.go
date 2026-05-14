@@ -16,54 +16,50 @@ func (c CLI) runAudit(ctx context.Context, args []string) error {
 		return errors.New("audit command is required")
 	}
 	switch args[0] {
-	case "events":
-		return c.auditEvents(ctx, args[1:])
+	case "api-activities":
+		return c.auditAPIActivities(ctx, args[1:])
 	case "exports":
-		return c.runAuditExports(ctx, args[1:])
+		return c.runDataExports(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown audit command %q", args[0])
 	}
 }
 
-func (c CLI) auditEvents(ctx context.Context, args []string) error {
-	fs, serviceFlags := serviceFlagSet("audit events", c.err)
+func (c CLI) auditAPIActivities(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("audit api-activities", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	limit := fs.Int("limit", 50, "page size")
 	cursor := fs.String("cursor", "", "pagination cursor")
 	order := fs.String("order", "", "asc or desc")
-	actorID := fs.String("actor-id", "", "actor id")
-	auditEvent := fs.String("audit-event", "", "audit event name")
-	credentialID := fs.String("credential-id", "", "credential id")
-	eventName := fs.String("event-name", "", "operation event name")
-	eventSource := fs.String("event-source", "", "recording service or system")
-	outcome := fs.String("outcome", "", "allowed, denied, or error")
-	targetID := fs.String("target-id", "", "target id")
-	targetType := fs.String("target-type", "", "target type")
+	actorUID := fs.String("actor-uid", "", "actor uid")
+	apiService := fs.String("api-service", "", "api service")
+	apiOperation := fs.String("api-operation", "", "api operation")
+	resourceUID := fs.String("resource-uid", "", "resource uid")
+	resourceType := fs.String("resource-type", "", "resource type")
+	statusID := fs.Int("status-id", 0, "OCSF status_id")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: audit events [--event-source SOURCE] [--outcome allowed|denied|error] [--limit N] [--json]")
+		return errors.New("usage: audit api-activities [--api-service SERVICE] [--status-id 1|2] [--limit N] [--json]")
 	}
 	if *limit < 1 || *limit > 200 {
-		return errors.New("audit events requires --limit between 1 and 200")
+		return errors.New("audit api-activities requires --limit between 1 and 200")
 	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	page, err := client.Governance.ListAuditEvents(ctx, verself.ListGovernanceAuditEventsOptions{
+	page, err := client.Governance.ListAPIActivities(ctx, verself.ListGovernanceAPIActivitiesOptions{
 		Limit:        *limit,
 		Cursor:       *cursor,
-		Order:        verself.GovernanceAuditOrder(*order),
-		ActorID:      *actorID,
-		AuditEvent:   *auditEvent,
-		CredentialID: *credentialID,
-		EventName:    *eventName,
-		EventSource:  *eventSource,
-		Outcome:      verself.GovernanceAuditOutcome(*outcome),
-		TargetID:     *targetID,
-		TargetType:   *targetType,
+		Order:        verself.GovernanceAPIActivityOrder(*order),
+		ActorUID:     *actorUID,
+		APIService:   *apiService,
+		APIOperation: *apiOperation,
+		ResourceUID:  *resourceUID,
+		ResourceType: *resourceType,
+		StatusID:     uint8(*statusID),
 	})
 	if err != nil {
 		return err
@@ -71,8 +67,8 @@ func (c CLI) auditEvents(ctx context.Context, args []string) error {
 	if *jsonOut {
 		return writeJSON(c.out, page)
 	}
-	for _, event := range page.Events {
-		if err := writeAuditEvent(c.out, event); err != nil {
+	for _, event := range page.APIActivities {
+		if err := writeAPIActivity(c.out, event); err != nil {
 			return err
 		}
 	}
@@ -82,25 +78,25 @@ func (c CLI) auditEvents(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (c CLI) runAuditExports(ctx context.Context, args []string) error {
+func (c CLI) runDataExports(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("audit exports command is required")
 	}
 	switch args[0] {
 	case "list", "ls":
-		return c.auditExportsList(ctx, args[1:])
+		return c.dataExportsList(ctx, args[1:])
 	case "create":
-		return c.auditExportsCreate(ctx, args[1:])
+		return c.dataExportsCreate(ctx, args[1:])
 	case "get":
-		return c.auditExportsGet(ctx, args[1:])
+		return c.dataExportsGet(ctx, args[1:])
 	case "download":
-		return c.auditExportsDownload(ctx, args[1:])
+		return c.dataExportsDownload(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown audit exports command %q", args[0])
 	}
 }
 
-func (c CLI) auditExportsList(ctx context.Context, args []string) error {
+func (c CLI) dataExportsList(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("audit exports list", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
@@ -128,7 +124,7 @@ func (c CLI) auditExportsList(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (c CLI) auditExportsCreate(ctx context.Context, args []string) error {
+func (c CLI) dataExportsCreate(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("audit exports create", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	includeLogs := fs.Bool("include-logs", false, "include high-volume sandbox logs")
@@ -139,7 +135,7 @@ func (c CLI) auditExportsCreate(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: audit exports create [--scope identity|billing|sandbox|audit] [--json]")
+		return errors.New("usage: audit exports create [--scope identity|billing|sandbox|api_activity] [--json]")
 	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
@@ -163,7 +159,7 @@ func (c CLI) auditExportsCreate(ctx context.Context, args []string) error {
 	return writeGovernanceExport(c.out, export)
 }
 
-func (c CLI) auditExportsGet(ctx context.Context, args []string) error {
+func (c CLI) dataExportsGet(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("audit exports get", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
@@ -186,7 +182,7 @@ func (c CLI) auditExportsGet(ctx context.Context, args []string) error {
 	return writeGovernanceExport(c.out, export)
 }
 
-func (c CLI) auditExportsDownload(ctx context.Context, args []string) error {
+func (c CLI) dataExportsDownload(ctx context.Context, args []string) error {
 	fs, serviceFlags := serviceFlagSet("audit exports download", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
@@ -232,22 +228,22 @@ func (c CLI) auditExportsDownload(ctx context.Context, args []string) error {
 	return writef(c.out, "download\t%s\t%s\t%d\t%s\n", artifact.ExportID, artifact.FileName, len(artifact.Body), filepath.Clean(path))
 }
 
-func writeAuditEvent(w interface {
+func writeAPIActivity(w interface {
 	Write([]byte) (int, error)
-}, event verself.GovernanceAuditEvent,
+}, event verself.GovernanceAPIActivity,
 ) error {
 	return writef(
 		w,
-		"event\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-		event.EventID,
-		event.RecordedAt.Format("2006-01-02T15:04:05Z07:00"),
-		event.Outcome,
-		event.EventSource,
-		event.EventName,
-		event.ActorID,
-		event.TargetType,
-		event.TargetID,
-		event.TraceID,
+		"api_activity\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		event.MetadataUID,
+		event.Time.Format("2006-01-02T15:04:05Z07:00"),
+		event.Status,
+		event.APIService,
+		event.APIOperation,
+		event.ActorUID,
+		event.PrimaryResourceType,
+		event.PrimaryResourceUID,
+		event.TraceUID,
 	)
 }
 

@@ -34,7 +34,7 @@ import {
   executionScheduleListQuerySchema,
   executionScheduleIdInputSchema,
   executionScheduleRequestSchema,
-  governanceAuditEventsQuerySchema as auditEventsQuerySchema,
+  governanceAPIActivitiesQuerySchema as apiActivitiesQuerySchema,
   governanceCreateExportRequestSchema as createExportRequestSchema,
   isGovernanceApiError,
   isNotificationsApiError,
@@ -96,8 +96,8 @@ import {
   type ProjectList,
   type GitHubInstallation,
   type GitHubInstallationConnect,
-  type GovernanceAuditEvent,
-  type GovernanceAuditEvents,
+  type GovernanceAPIActivities,
+  type GovernanceAPIActivity,
   type GovernanceCreateExportRequest as CreateExportRequest,
   type GovernanceExportJob,
   type JobsAnalytics,
@@ -177,8 +177,8 @@ export { SourceCodeHostingApiError, isSourceCodeHostingApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
   CreateExportRequest,
-  GovernanceAuditEvent,
-  GovernanceAuditEvents,
+  GovernanceAPIActivities,
+  GovernanceAPIActivity,
   GovernanceExportJob,
 };
 export type { ProfileSnapshot, PutProfilePreferencesRequest, UpdateProfileIdentityRequest };
@@ -553,11 +553,11 @@ export const createSourceCheckoutGrant = createServerFn({ method: "POST" })
     return (await sourceCodeHostingSDK(context)).source.createCheckoutGrant(data.repoId, data.body);
   });
 
-export const listGovernanceAuditEvents = createServerFn({ method: "GET" })
+export const listGovernanceAPIActivities = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
-  .inputValidator(auditEventsQuerySchema)
+  .inputValidator(apiActivitiesQuerySchema)
   .handler(async ({ context, data }) => {
-    return (await governanceSDK(context)).governance.listAuditEvents(data);
+    return (await governanceSDK(context)).governance.listAPIActivities(data);
   });
 
 export const listGovernanceDataExports = createServerFn({ method: "GET" })

@@ -14,30 +14,30 @@ import (
 )
 
 func RegisterInternalRoutes(api huma.API, svc *governance.Service) {
-	desc := internalcontractapi.AppendAuditEvent.Descriptor
+	desc := internalcontractapi.AppendAPIActivity.Descriptor
 	huma.Register(api, huma.Operation{
 		OperationID:   desc.OperationID,
 		Method:        desc.Method,
 		Path:          desc.Path,
-		Summary:       "Append governance audit event",
-		Description:   "SPIFFE-mTLS internal endpoint for repo-owned services to append governance audit events.",
+		Summary:       "Append OCSF API Activity",
+		Description:   "SPIFFE-mTLS internal endpoint for repo-owned services to append OCSF API Activity events.",
 		DefaultStatus: desc.DefaultStatus,
 		MaxBodyBytes:  desc.RequestBodyMaxBytes,
 		Errors:        internalContractProblemStatuses(desc.Problems),
 		Extensions:    map[string]any{"x-verself-contract": internalContractExtension(desc)},
 		Security:      []map[string][]string{{"mutualTLS": {}}},
-	}, appendAuditEvent(svc))
+	}, appendAPIActivity(svc))
 }
 
-func appendAuditEvent(svc *governance.Service) func(context.Context, *internalcontractapi.AppendAuditEventInput) (*internalcontractapi.AppendAuditEventOutput, error) {
-	return func(ctx context.Context, input *internalcontractapi.AppendAuditEventInput) (*internalcontractapi.AppendAuditEventOutput, error) {
+func appendAPIActivity(svc *governance.Service) func(context.Context, *internalcontractapi.AppendAPIActivityInput) (*internalcontractapi.AppendAPIActivityOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.AppendAPIActivityInput) (*internalcontractapi.AppendAPIActivityOutput, error) {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
 			return nil, unauthorized(ctx, "missing-workload-identity", "missing SPIFFE peer identity")
 		}
-		record, err := auditRecordFromContract(input.Body)
+		record, err := apiActivityRecordFromContract(input.Body)
 		if err != nil {
-			return nil, problem(ctx, 400, "invalid-audit-record", "audit record is invalid", err)
+			return nil, problem(ctx, 400, "invalid-api-activity", "API activity is invalid", err)
 		}
 		if strings.TrimSpace(record.ActorType) == "" {
 			record.ActorType = "workload"
@@ -48,51 +48,88 @@ func appendAuditEvent(svc *governance.Service) func(context.Context, *internalco
 		if strings.TrimSpace(record.CredentialID) == "" {
 			record.CredentialID = peerID.String()
 		}
-		if record.Detail == nil {
-			record.Detail = map[string]any{}
+		if record.Unmapped == nil {
+			record.Unmapped = map[string]any{}
 		}
-		record.Detail["actor_spiffe_id"] = peerID.String()
-		record.Detail["auth_method"] = "spiffe"
-		event, err := svc.RecordAuditEvent(ctx, record)
+		record.Unmapped["verself.actor_spiffe_id"] = peerID.String()
+		record.Unmapped["verself.auth_method"] = "spiffe"
+		event, err := svc.RecordAPIActivity(ctx, record)
 		if err != nil {
 			return nil, mapError(ctx, err)
 		}
-		return &internalcontractapi.AppendAuditEventOutput{Body: internalcontractapi.AppendAuditEventOutputBody{Accepted: internalcontractapi.AppendAuditEventAccepted{
-			EventID:  internalcontractapi.AuditEventID(event.EventID.String()),
-			Sequence: internalcontractapi.DecimalUint64(strconv.FormatUint(event.Sequence, 10)),
-			RowHMAC:  internalcontractapi.HMACHex(event.RowHMAC),
+		return &internalcontractapi.AppendAPIActivityOutput{Body: internalcontractapi.AppendAPIActivityOutputBody{Accepted: internalcontractapi.APIActivityAccepted{
+			MetadataUID: internalcontractapi.OCSFMetadataUID(event.MetadataUID.String()),
+			Sequence:    internalcontractapi.DecimalUint64(strconv.FormatUint(event.Sequence, 10)),
+			RowHMAC:     internalcontractapi.HMACHex(event.RowHMAC),
 		}}}, nil
 	}
 }
 
-func auditRecordFromContract(input internalcontractapi.AuditRecord) (governance.AuditRecord, error) {
-	recordedAt, err := optionalContractTime(input.RecordedAt)
+func apiActivityRecordFromContract(input internalcontractapi.APIActivityRecord) (governance.APIActivityRecord, error) {
+	observedAt, err := optionalContractTime(input.ObservedAt)
 	if err != nil {
-		return governance.AuditRecord{}, err
+		return governance.APIActivityRecord{}, err
 	}
-	detail := map[string]any{}
-	if input.Detail != nil {
-		detail = *input.Detail
+	unmapped := map[string]any{}
+	if input.Unmapped != nil {
+		unmapped = *input.Unmapped
 	}
-	return governance.AuditRecord{
-		SchemaVersion:      optionalContractValue(input.SchemaVersion),
-		OrgID:              string(input.OrgID),
-		EventSource:        string(input.EventSource),
-		EventName:          string(input.EventName),
-		AuditEvent:         string(input.AuditEvent),
-		ActorType:          string(input.ActorType),
-		ActorID:            string(input.ActorID),
-		CredentialID:       optionalContractValue(input.CredentialID),
-		TargetType:         string(input.TargetType),
-		TargetID:           optionalContractValue(input.TargetID),
-		TargetResourceName: optionalContractValue(input.TargetResourceName),
-		Permission:         string(input.Permission),
-		Outcome:            string(input.Outcome),
-		ErrorCode:          optionalContractValue(input.ErrorCode),
-		TraceID:            optionalContractValue(input.TraceID),
-		HMACKeyID:          optionalContractValue(input.HMACKeyID),
-		Detail:             detail,
-		RecordedAt:         recordedAt,
+	resources := make([]governance.APIActivityResource, 0, len(input.Resources))
+	for _, resource := range input.Resources {
+		roleID := uint8(0)
+		if resource.RoleID != nil {
+			roleID = *resource.RoleID
+		}
+		resources = append(resources, governance.APIActivityResource{
+			Type:     string(resource.Type),
+			UID:      optionalContractValue(resource.UID),
+			Name:     optionalContractValue(resource.Name),
+			FullName: optionalContractValue(resource.FullName),
+			Role:     optionalContractValue(resource.Role),
+			RoleID:   roleID,
+		})
+	}
+	return governance.APIActivityRecord{
+		OrgID:            string(input.OrgID),
+		APIService:       string(input.APIService),
+		APIOperation:     string(input.APIOperation),
+		APIEventCode:     string(input.APIEventCode),
+		APIAction:        string(input.APIAction),
+		APIVersion:       optionalContractValue(input.APIVersion),
+		ActorType:        string(input.ActorType),
+		ActorID:          string(input.ActorUID),
+		ActorDisplayName: optionalContractValue(input.ActorName),
+		ActorEmail:       optionalContractValue(input.ActorEmail),
+		CredentialID:     optionalContractValue(input.CredentialUID),
+		Permission:       string(input.Permission),
+		Resources:        resources,
+		HTTPRequest: governance.APIActivityHTTPRequest{
+			UID:           optionalContractValue(input.HTTPRequest.UID),
+			Method:        string(input.HTTPRequest.Method),
+			Route:         input.HTTPRequest.Route,
+			SafeParams:    optionalContractValue(input.HTTPRequest.SafeParams),
+			UserAgent:     optionalContractValue(input.HTTPRequest.UserAgent),
+			XForwardedFor: optionalContractValue(input.HTTPRequest.XForwardedFor),
+			Referrer:      optionalContractValue(input.HTTPRequest.Referrer),
+			Host:          optionalContractValue(input.HTTPRequest.Host),
+			Scheme:        optionalContractValue(input.HTTPRequest.Scheme),
+			ClientIP:      optionalContractValue(input.HTTPRequest.ClientIP),
+			SourceName:    optionalContractValue(input.HTTPRequest.SourceName),
+		},
+		HTTPResponse: governance.APIActivityHTTPResponse{
+			Code:    input.HTTPResponse.Code,
+			Message: optionalContractValue(input.HTTPResponse.Message),
+			Status:  optionalContractValue(input.HTTPResponse.Status),
+		},
+		AuthorizationDecision: governance.AuthorizationDecision(input.AuthorizationDecision),
+		Status:                governance.Status(input.Status),
+		StatusCode:            string(input.StatusCode),
+		StatusDetail:          optionalContractValue(input.StatusDetail),
+		TraceID:               optionalContractValue(input.TraceUID),
+		SpanID:                optionalContractValue(input.SpanUID),
+		HMACKeyID:             optionalContractValue(input.HMACKeyID),
+		Time:                  observedAt,
+		Unmapped:              unmapped,
 	}, nil
 }
 
@@ -123,7 +160,7 @@ func internalContractExtension(desc internalcontractapi.OperationDescriptor) map
 		"permission":             desc.Authorization.Permission,
 		"organization_source":    desc.Authorization.OrganizationSource,
 		"organization_member":    desc.Authorization.OrganizationMember,
-		"audit_event":            desc.Audit.Event,
+		"api_event_code":         desc.Audit.Event,
 		"resource":               desc.Audit.Resource,
 		"action":                 desc.Audit.Action,
 		"rate_limit_bucket":      desc.RateLimitBucket,

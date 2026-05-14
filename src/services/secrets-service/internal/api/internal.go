@@ -676,30 +676,37 @@ func auditInternalCredential(ctx context.Context, operationID, auditEvent, actio
 	if targetID == "" {
 		targetID = kind
 	}
-	record := governanceAuditRecord{
-		OrgID:        orgID,
-		EventSource:  "secrets-service",
-		EventName:    operationID,
-		AuditEvent:   auditEvent,
-		ActorType:    "service_delegated",
-		ActorID:      actorID,
-		CredentialID: spiffePeerID(ctx),
-		Permission:   "secrets:credential:" + action,
-		TargetType:   "opaque_credential",
-		TargetID:     targetID,
-		Outcome:      "allowed",
-		Detail: compactAuditDetail(map[string]any{
-			"secret_mount":          secretMount,
-			"secret_operation":      "credential_" + action,
-			"openbao_request_id":    openBaoRequestID,
-			"openbao_accessor_hash": openBaoAccessorHash,
+	decision, status := apiActivityResult("allowed")
+	record := governanceAPIActivity{
+		OrgID:                 orgID,
+		APIService:            "secrets-service",
+		APIOperation:          operationID,
+		APIEventCode:          auditEvent,
+		APIAction:             action,
+		ActorType:             "service_delegated",
+		ActorUID:              actorID,
+		CredentialUID:         spiffePeerID(ctx),
+		Permission:            "secrets:credential:" + action,
+		ResourceType:          "opaque_credential",
+		ResourceUID:           targetID,
+		HTTPStatus:            200,
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            "200",
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.secret_mount":          secretMount,
+			"verself.secret_operation":      "credential_" + action,
+			"verself.openbao_request_id":    openBaoRequestID,
+			"verself.openbao_accessor_hash": openBaoAccessorHash,
 		}),
 	}
 	if err != nil {
-		record.Outcome = "error"
-		record.ErrorCode = "credential-operation-failed"
+		record.AuthorizationDecision, record.Status = apiActivityResult("error")
+		record.HTTPStatus = 500
+		record.StatusCode = "credential-operation-failed"
+		record.StatusDetail = "credential-operation-failed"
 	}
-	sendGovernanceAudit(ctx, record)
+	sendGovernanceAPIActivity(ctx, record)
 }
 
 func copyWireMap(input map[string]string) map[string]string {
@@ -867,34 +874,41 @@ func auditInjection(ctx context.Context, request injectionResolveRequest, reques
 		openBaoRequestID = baoInfo.RequestID
 		openBaoAccessorHash = baoInfo.AccessorHash
 	}
-	record := governanceAuditRecord{
-		OrgID:        request.OrgID,
-		EventSource:  "secrets-service",
-		EventName:    "resolve-sandbox-secret-injection",
-		AuditEvent:   "secrets.secret.inject",
-		ActorType:    "sandbox_execution",
-		ActorID:      request.ActorID,
-		CredentialID: spiffePeerID(ctx),
-		Permission:   "secrets:secret:read",
-		TargetType:   "secret",
-		Outcome:      "allowed",
-		Detail: compactAuditDetail(map[string]any{
-			"target_scope":          scope.Level,
-			"target_path_hash":      secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
-			"secret_mount":          secretMount,
-			"secret_version":        version,
-			"secret_operation":      "inject",
-			"openbao_request_id":    openBaoRequestID,
-			"openbao_accessor_hash": openBaoAccessorHash,
-			"attempt_id":            request.AttemptID,
-			"content_sha256":        hashTextForAudit(request.ExecutionID + "\x00" + request.AttemptID + "\x00" + requested.EnvName),
+	decision, status := apiActivityResult("allowed")
+	record := governanceAPIActivity{
+		OrgID:                 request.OrgID,
+		APIService:            "secrets-service",
+		APIOperation:          "resolve-sandbox-secret-injection",
+		APIEventCode:          "secrets.secret.inject",
+		APIAction:             "read",
+		ActorType:             "sandbox_execution",
+		ActorUID:              request.ActorID,
+		CredentialUID:         spiffePeerID(ctx),
+		Permission:            "secrets:secret:read",
+		ResourceType:          "secret",
+		HTTPStatus:            200,
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            "200",
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.target_scope":          scope.Level,
+			"verself.target_path_hash":      secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
+			"verself.secret_mount":          secretMount,
+			"verself.secret_version":        version,
+			"verself.secret_operation":      "inject",
+			"verself.openbao_request_id":    openBaoRequestID,
+			"verself.openbao_accessor_hash": openBaoAccessorHash,
+			"verself.attempt_id":            request.AttemptID,
+			"verself.content_sha256":        hashTextForAudit(request.ExecutionID + "\x00" + request.AttemptID + "\x00" + requested.EnvName),
 		}),
 	}
 	if err != nil {
-		record.Outcome = "error"
-		record.ErrorCode = "secret-injection-failed"
+		record.AuthorizationDecision, record.Status = apiActivityResult("error")
+		record.HTTPStatus = 500
+		record.StatusCode = "secret-injection-failed"
+		record.StatusDetail = "secret-injection-failed"
 	}
-	sendGovernanceAudit(ctx, record)
+	sendGovernanceAPIActivity(ctx, record)
 }
 
 func runtimeSecretWriteOpenBaoRole(orgID string) string {
@@ -964,36 +978,43 @@ func auditRuntimeSecret(ctx context.Context, platformOrgID string, peerID spiffe
 		openBaoRequestID = baoInfo.RequestID
 		openBaoAccessorHash = baoInfo.AccessorHash
 	}
-	record := governanceAuditRecord{
-		OrgID:        platformOrgID,
-		EventSource:  "secrets-service",
-		EventName:    "resolve-platform-runtime-secret",
-		AuditEvent:   "secrets.secret.read",
-		ActorType:    "service_workload",
-		ActorID:      credentialName,
-		CredentialID: peerID.String(),
-		Permission:   "secrets:secret:read",
-		TargetType:   "secret",
-		Outcome:      "allowed",
-		Detail: compactAuditDetail(map[string]any{
-			"target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
-			"target_scope":          secrets.ScopeOrg,
-			"content_sha256":        hashTextForAudit(secretName),
-			"secret_mount":          secretMount,
-			"secret_operation":      "read",
-			"openbao_request_id":    openBaoRequestID,
-			"openbao_accessor_hash": openBaoAccessorHash,
+	decision, status := apiActivityResult("allowed")
+	record := governanceAPIActivity{
+		OrgID:                 platformOrgID,
+		APIService:            "secrets-service",
+		APIOperation:          "resolve-platform-runtime-secret",
+		APIEventCode:          "secrets.secret.read",
+		APIAction:             "read",
+		ActorType:             "service_workload",
+		ActorUID:              credentialName,
+		CredentialUID:         peerID.String(),
+		Permission:            "secrets:secret:read",
+		ResourceType:          "secret",
+		HTTPStatus:            200,
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            "200",
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
+			"verself.target_scope":          secrets.ScopeOrg,
+			"verself.content_sha256":        hashTextForAudit(secretName),
+			"verself.secret_mount":          secretMount,
+			"verself.secret_operation":      "read",
+			"verself.openbao_request_id":    openBaoRequestID,
+			"verself.openbao_accessor_hash": openBaoAccessorHash,
 		}),
 	}
 	if err == nil {
-		record.TargetID = value.Record.SecretID
-		record.Detail["secret_version"] = value.Record.CurrentVersion
+		record.ResourceUID = value.Record.SecretID
+		record.Unmapped["verself.secret_version"] = value.Record.CurrentVersion
 	}
 	if err != nil {
-		record.Outcome = "error"
-		record.ErrorCode = "platform-runtime-secret-read-failed"
+		record.AuthorizationDecision, record.Status = apiActivityResult("error")
+		record.HTTPStatus = 500
+		record.StatusCode = "platform-runtime-secret-read-failed"
+		record.StatusDetail = "platform-runtime-secret-read-failed"
 	}
-	sendGovernanceAudit(ctx, record)
+	sendGovernanceAPIActivity(ctx, record)
 }
 
 func auditRuntimeSecretWrite(ctx context.Context, platformOrgID string, peerID spiffeid.ID, credentialName string, secretName string, record secrets.SecretRecord, err error) {
@@ -1006,36 +1027,43 @@ func auditRuntimeSecretWrite(ctx context.Context, platformOrgID string, peerID s
 		openBaoRequestID = baoInfo.RequestID
 		openBaoAccessorHash = baoInfo.AccessorHash
 	}
-	auditRecord := governanceAuditRecord{
-		OrgID:        platformOrgID,
-		EventSource:  "secrets-service",
-		EventName:    "upsert-platform-runtime-secret",
-		AuditEvent:   "secrets.secret.write",
-		ActorType:    "service_workload",
-		ActorID:      credentialName,
-		CredentialID: peerID.String(),
-		Permission:   "secrets:secret:write",
-		TargetType:   "secret",
-		Outcome:      "allowed",
-		Detail: compactAuditDetail(map[string]any{
-			"target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
-			"target_scope":          secrets.ScopeOrg,
-			"content_sha256":        hashTextForAudit(secretName),
-			"secret_mount":          secretMount,
-			"secret_operation":      "write",
-			"openbao_request_id":    openBaoRequestID,
-			"openbao_accessor_hash": openBaoAccessorHash,
+	writeDecision, writeStatus := apiActivityResult("allowed")
+	apiActivity := governanceAPIActivity{
+		OrgID:                 platformOrgID,
+		APIService:            "secrets-service",
+		APIOperation:          "upsert-platform-runtime-secret",
+		APIEventCode:          "secrets.secret.write",
+		APIAction:             "write",
+		ActorType:             "service_workload",
+		ActorUID:              credentialName,
+		CredentialUID:         peerID.String(),
+		Permission:            "secrets:secret:write",
+		ResourceType:          "secret",
+		HTTPStatus:            200,
+		AuthorizationDecision: writeDecision,
+		Status:                writeStatus,
+		StatusCode:            "200",
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
+			"verself.target_scope":          secrets.ScopeOrg,
+			"verself.content_sha256":        hashTextForAudit(secretName),
+			"verself.secret_mount":          secretMount,
+			"verself.secret_operation":      "write",
+			"verself.openbao_request_id":    openBaoRequestID,
+			"verself.openbao_accessor_hash": openBaoAccessorHash,
 		}),
 	}
 	if err == nil {
-		auditRecord.TargetID = record.SecretID
-		auditRecord.Detail["secret_version"] = record.CurrentVersion
+		apiActivity.ResourceUID = record.SecretID
+		apiActivity.Unmapped["verself.secret_version"] = record.CurrentVersion
 	}
 	if err != nil {
-		auditRecord.Outcome = "error"
-		auditRecord.ErrorCode = "platform-runtime-secret-write-failed"
+		apiActivity.AuthorizationDecision, apiActivity.Status = apiActivityResult("error")
+		apiActivity.HTTPStatus = 500
+		apiActivity.StatusCode = "platform-runtime-secret-write-failed"
+		apiActivity.StatusDetail = "platform-runtime-secret-write-failed"
 	}
-	sendGovernanceAudit(ctx, auditRecord)
+	sendGovernanceAPIActivity(ctx, apiActivity)
 }
 
 func spiffePeerID(ctx context.Context) string {

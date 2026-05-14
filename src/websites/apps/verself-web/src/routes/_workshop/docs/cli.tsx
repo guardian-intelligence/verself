@@ -252,10 +252,11 @@ verself notifications preferences set --version 1 --enabled true --web-enabled t
     id: "governance",
     title: "Governance and Audit",
     status: "current",
-    summary: "Audit event search and organization data exports over the public Governance API.",
-    topics: ["Search audit events", "Create export", "Download export", "Trace context"],
-    commands: `verself audit events --high-risk --limit 50
-verself audit exports create --scope audit
+    summary:
+      "OCSF API activity search and organization data exports over the public Governance API.",
+    topics: ["Search API activities", "Create export", "Download export", "Trace context"],
+    commands: `verself audit api-activities --high-risk --limit 50
+verself audit exports create --scope api_activity
 verself audit exports download <export-id> ./export.tar.gz`,
   },
   {

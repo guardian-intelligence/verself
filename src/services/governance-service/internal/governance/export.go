@@ -29,7 +29,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-var defaultScopes = []string{"identity", "billing", "sandbox", "audit"}
+var defaultScopes = []string{"identity", "billing", "sandbox", "api_activity"}
 
 type CreateExportRequest struct {
 	Scopes         []string
@@ -412,8 +412,8 @@ func (s *Service) collectExportFiles(ctx context.Context, orgID string, exportID
 				return nil, err
 			}
 			files = append(files, scopeFiles...)
-		case "audit":
-			scopeFiles, err := s.auditExportFiles(ctx, orgID)
+		case "api_activity":
+			scopeFiles, err := s.apiActivityExportFiles(ctx, orgID)
 			if err != nil {
 				return nil, err
 			}
@@ -627,42 +627,55 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 	return files, nil
 }
 
-func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportArtifactFile, error) {
-	rows, err := s.CH.Query(ctx, auditEventExportSelectSQL()+`
-		FROM verself.audit_events AS e
-		ANY LEFT JOIN verself.audit_event_details AS d
-			ON e.org_id = d.org_id AND e.event_date = d.event_date AND e.event_id = d.event_id
+func (s *Service) apiActivityExportFiles(ctx context.Context, orgID string) ([]exportArtifactFile, error) {
+	rows, err := s.CH.Query(ctx, `
+		SELECT
+			e.time, e.event_date, e.metadata_uid, e.org_id, e.sequence,
+			e.ocsf_version, p.ocsf_json, e.ocsf_sha256,
+			e.prev_hmac, e.row_hmac, e.hmac_key_id
+		FROM verself.api_activity_events AS e
+		ANY INNER JOIN verself.api_activity_payloads AS p
+			ON e.org_id = p.org_id AND e.event_date = p.event_date AND e.metadata_uid = p.metadata_uid
 		WHERE e.org_id = $1
-		ORDER BY e.recorded_at, e.sequence
+		ORDER BY e.time, e.sequence
 	`, orgID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: query audit export: %v", ErrStore, err)
+		return nil, fmt.Errorf("%w: query OCSF API activity export: %v", ErrStore, err)
 	}
 	defer func() { _ = rows.Close() }()
 	var body bytes.Buffer
 	var count int64
 	for rows.Next() {
-		var event AuditEvent
-		detailJSON, err := scanAuditEventExportRow(rows, &event)
+		var row APIActivityRow
+		var ocsfJSON string
+		err := rows.Scan(
+			&row.Time,
+			&row.EventDate,
+			&row.MetadataUID,
+			&row.OrgID,
+			&row.Sequence,
+			&row.OCSFVersion,
+			&ocsfJSON,
+			&row.OCSFSHA256,
+			&row.PrevHMAC,
+			&row.RowHMAC,
+			&row.HMACKeyID,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("%w: scan audit export row: %v", ErrStore, err)
+			return nil, fmt.Errorf("%w: scan OCSF API activity export row: %v", ErrStore, err)
 		}
-		raw, err := json.Marshal(auditEventExportRow(event, detailJSON))
+		raw, err := json.Marshal(apiActivityExportRow(row, ocsfJSON))
 		if err != nil {
-			return nil, fmt.Errorf("%w: marshal audit export row: %v", ErrStore, err)
+			return nil, fmt.Errorf("%w: marshal OCSF API activity export row: %v", ErrStore, err)
 		}
 		body.Write(raw)
 		body.WriteByte('\n')
 		count++
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%w: audit export rows: %v", ErrStore, err)
+		return nil, fmt.Errorf("%w: OCSF API activity export rows: %v", ErrStore, err)
 	}
-	return []exportArtifactFile{newArtifactFile("audit/audit_events.jsonl", "application/x-ndjson", body.Bytes(), count)}, nil
-}
-
-type auditRowScanner interface {
-	Scan(dest ...any) error
+	return []exportArtifactFile{newArtifactFile("governance/ocsf_api_activities.jsonl", "application/x-ndjson", body.Bytes(), count)}, nil
 }
 
 func (s *Service) billingInvoicesCSV(ctx context.Context, orgID string) (exportArtifactFile, error) {
@@ -731,83 +744,24 @@ func exportPGTime(value pgtype.Timestamptz) string {
 	return value.Time.UTC().Format(time.RFC3339)
 }
 
-func auditEventExportSelectSQL() string {
-	return `
-		SELECT
-			e.recorded_at, e.event_date, e.schema_version, e.event_id, e.org_id, e.sequence,
-			e.event_source, e.event_name, e.audit_event,
-			e.actor_type, e.actor_id, e.credential_id,
-			e.target_type, e.target_id, e.target_resource_name, e.permission,
-			e.outcome, e.error_code, e.trace_id, e.detail_sha256,
-			e.prev_hmac, e.row_hmac, e.hmac_key_id,
-			ifNull(d.detail_json, '') AS detail_json
-	`
-}
-
-func scanAuditEventExportRow(rows auditRowScanner, event *AuditEvent) (string, error) {
-	var detailJSON string
-	err := rows.Scan(
-		&event.RecordedAt,
-		&event.EventDate,
-		&event.SchemaVersion,
-		&event.EventID,
-		&event.OrgID,
-		&event.Sequence,
-		&event.EventSource,
-		&event.EventName,
-		&event.AuditEvent,
-		&event.ActorType,
-		&event.ActorID,
-		&event.CredentialID,
-		&event.TargetType,
-		&event.TargetID,
-		&event.TargetResourceName,
-		&event.Permission,
-		&event.Outcome,
-		&event.ErrorCode,
-		&event.TraceID,
-		&event.DetailSHA256,
-		&event.PrevHMAC,
-		&event.RowHMAC,
-		&event.HMACKeyID,
-		&detailJSON,
-	)
-	return detailJSON, err
-}
-
-func auditEventExportRow(event AuditEvent, detailJSON string) map[string]any {
+func apiActivityExportRow(event APIActivityRow, ocsfJSON string) map[string]any {
 	row := map[string]any{
-		"schema_version":       event.SchemaVersion,
-		"event_id":             event.EventID.String(),
-		"recorded_at":          event.RecordedAt.UTC().Format(time.RFC3339Nano),
-		"event_date":           event.EventDate.UTC().Format("2006-01-02"),
-		"org_id":               event.OrgID,
-		"sequence":             strconv.FormatUint(event.Sequence, 10),
-		"event_source":         event.EventSource,
-		"event_name":           event.EventName,
-		"audit_event":          event.AuditEvent,
-		"actor_type":           event.ActorType,
-		"actor_id":             event.ActorID,
-		"credential_id":        event.CredentialID,
-		"target_type":          event.TargetType,
-		"target_id":            event.TargetID,
-		"target_resource_name": event.TargetResourceName,
-		"permission":           event.Permission,
-		"outcome":              event.Outcome,
-		"error_code":           event.ErrorCode,
-		"trace_id":             event.TraceID,
-		"detail_sha256":        event.DetailSHA256,
-		"prev_hmac":            event.PrevHMAC,
-		"row_hmac":             event.RowHMAC,
-		"hmac_key_id":          event.HMACKeyID,
+		"metadata_uid": event.MetadataUID.String(),
+		"time":         event.Time.UTC().Format(time.RFC3339Nano),
+		"event_date":   event.EventDate.UTC().Format("2006-01-02"),
+		"org_id":       event.OrgID,
+		"sequence":     strconv.FormatUint(event.Sequence, 10),
+		"ocsf_version": event.OCSFVersion,
+		"ocsf_sha256":  event.OCSFSHA256,
+		"prev_hmac":    event.PrevHMAC,
+		"row_hmac":     event.RowHMAC,
+		"hmac_key_id":  event.HMACKeyID,
 	}
-	if hasAuditDetail(detailJSON) {
-		detail := json.RawMessage(detailJSON)
-		if json.Valid(detail) {
-			row["detail"] = detail
-		} else {
-			row["detail_json"] = detailJSON
-		}
+	payload := json.RawMessage(ocsfJSON)
+	if json.Valid(payload) {
+		row["ocsf"] = payload
+	} else {
+		row["ocsf_json"] = ocsfJSON
 	}
 	return row
 }
@@ -889,7 +843,7 @@ func exportFilesMetadata(files []exportArtifactFile) []ExportFile {
 }
 
 func normalizeScopes(scopes []string) ([]string, error) {
-	allowed := map[string]struct{}{"identity": {}, "billing": {}, "sandbox": {}, "audit": {}}
+	allowed := map[string]struct{}{"identity": {}, "billing": {}, "sandbox": {}, "api_activity": {}}
 	if len(scopes) == 0 {
 		return append([]string(nil), defaultScopes...), nil
 	}

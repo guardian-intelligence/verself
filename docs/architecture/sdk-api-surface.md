@@ -74,7 +74,7 @@ Every durable customer-facing resource has four identity surfaces:
 | Surface | Stability | Uniqueness | Purpose |
 | --- | --- | --- | --- |
 | `id` | Immutable | Unique within one installation and resource type | Storage keys, joins, path parameters, and service internals. |
-| `resourceName` | Immutable | Globally unique across Verself installations | IAM policies, audit events, cross-resource references, imports, exports, billing evidence, and support diagnostics. |
+| `resourceName` | Immutable | Globally unique across Verself installations | IAM policies, API activities, cross-resource references, imports, exports, billing evidence, and support diagnostics. |
 | `slug` | Mutable with redirect history | Unique within one parent and resource type while active | Human CLI input and readable URLs. |
 | `displayName` | Mutable | Duplicates allowed | UI labels, invoices, notifications, and prose. |
 
@@ -124,7 +124,7 @@ Initial resource name formats:
 | Secret | `urn:verself:<installation-id>:orgs/<org-id>/secrets/<secret-id>` |
 | Secret version | `urn:verself:<installation-id>:orgs/<org-id>/secrets/<secret-id>/versions/<version-id>` |
 | Transit key | `urn:verself:<installation-id>:orgs/<org-id>/transitKeys/<key-id>` |
-| Audit export | `urn:verself:<installation-id>:orgs/<org-id>/auditExports/<export-id>` |
+| Data export | `urn:verself:<installation-id>:orgs/<org-id>/dataExports/<export-id>` |
 | Invoice | `urn:verself:<installation-id>:orgs/<org-id>/invoices/<invoice-id>` |
 
 The `installation-id` is generated once during first bootstrap and persisted as
@@ -329,7 +329,7 @@ The initial public module target is:
 | `schedules` | Create, list, pause, resume, and delete recurring dispatch schedules. |
 | `secrets` | Read and write environment values, opaque credentials, and transit-key operations. |
 | `notifications` | List, summarize, dismiss, clear, and update delivery preferences. |
-| `audit` | Search audit events, create exports, poll export state, and download exports. |
+| `audit` | Search OCSF API activities, create exports, poll export state, and download exports. |
 | `billing` | Inspect entitlements, plans, contracts, credits, invoices, and current statements. |
 
 ## API Shape
@@ -419,7 +419,7 @@ SDK language, SDK version, runtime, and API version. The SDK should expose the
 request ID and trace ID on successful long-running operation handles and on
 errors.
 
-Credentials and workload-trust exchanges should produce audit events that name
+Credentials and workload-trust exchanges should produce OCSF API activities that name
 the machine principal, credential or trust binding, organization, requested
 audience, and resulting token lifetime without recording issued secrets or
 bearer token material.

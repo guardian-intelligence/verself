@@ -42,12 +42,12 @@ route.
 Customer-facing `/api/*` routes use `internal/contractapi` DTOs,
 operation descriptors, and handler types. Handwritten route registration owns
 the Huma wiring. The Smithy operation model, Huma method/path registration, IAM
-metadata, rate limits, idempotency, audit events, body limits, OpenAPI
+metadata, rate limits, idempotency, API activity metadata, body limits, OpenAPI
 projection, and service-client contracts must not drift.
 
 Public route policy metadata uses the shared `service-runtime/iam.OperationPolicy`
 vocabulary. `Permission` is the product permission sent to the Zanzibar-backed
-iam-service authorization API; `Resource` and `Action` are audit/contract labels,
+iam-service authorization API; `Resource` and `Action` are operation/contract labels,
 not raw SpiceDB tuples or a Cedar action expression. `OrgScope`, `Idempotency`,
 and common `Action` values are closed enums. Service-owned `Resource`,
 `RateLimitClass`, and `AuditEvent` values should be declared as typed constants

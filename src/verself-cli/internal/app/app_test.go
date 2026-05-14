@@ -299,22 +299,22 @@ func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
 	const traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
 	var createKey string
 	var createBody map[string]any
-	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["audit"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"audit/audit_events.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
-	auditEventJSON := `{"actor_id":"user_1","actor_type":"user","audit_event":"governance.data_export.create","detail_sha256":"hash","event_id":"22222222-2222-2222-2222-222222222222","event_name":"create-data-export","event_source":"governance-service","org_id":"370200542594579812","outcome":"allowed","permission":"governance.exports.write","prev_hmac":"prev","recorded_at":"2026-05-07T00:00:01Z","row_hmac":"row","sequence":"1","target_id":"` + exportID + `","target_type":"data_export","trace_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
+	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["api_activity"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"governance/ocsf_api_activities.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
+	apiActivityJSON := `{"metadata_uid":"22222222-2222-2222-2222-222222222222","time":"2026-05-07T00:00:01Z","org_id":"370200542594579812","sequence":"1","ocsf_version":"1.4.0","category_uid":6,"category_name":"Application Activity","class_uid":6003,"class_name":"API Activity","type_uid":600301,"activity_id":1,"activity_name":"Create","action_id":1,"action":"Allowed","status_id":1,"status":"Success","status_code":"200","severity_id":1,"severity":"Informational","api_service":"governance-service","api_operation":"create-data-export","actor_type":"user","actor_uid":"user_1","credential_uid":"cred_1","primary_resource_type":"data_export","primary_resource_uid":"` + exportID + `","primary_resource_full_name":"urn:verself:governance:data_export:` + exportID + `","permission":"governance.exports.write","http_method":"POST","http_route":"/api/v1/governance/exports","http_response_code":201,"trace_uid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","span_uid":"bbbbbbbbbbbbbbbb","ocsf_sha256":"hash","prev_hmac":"prev","row_hmac":"row"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok_governance" {
 			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/audit/events":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/ocsf/api-activities":
 			if r.Header.Get("Traceparent") != traceparent {
-				t.Fatalf("events Traceparent = %q", r.Header.Get("Traceparent"))
+				t.Fatalf("api activities Traceparent = %q", r.Header.Get("Traceparent"))
 			}
-			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("event_source") != "governance-service" {
-				t.Fatalf("events query = %s", r.URL.RawQuery)
+			if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("api_service") != "governance-service" {
+				t.Fatalf("api activities query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"events":[` + auditEventJSON + `],"filters":{"event_source":"governance-service"},"limit":2}`))
+			_, _ = w.Write([]byte(`{"api_activities":[` + apiActivityJSON + `],"filters":{"api_service":"governance-service"},"limit":2}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/governance/exports":
 			_, _ = w.Write([]byte(`{"exports":[` + exportJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/governance/exports":
@@ -342,24 +342,24 @@ func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
 	t.Setenv("VERSELF_TOKEN", "tok_governance")
 	t.Setenv("VERSELF_GOVERNANCE_API_URL", server.URL)
 
-	var eventsOut bytes.Buffer
-	runCLI(t, &eventsOut, "audit", "events", "--limit", "2", "--event-source", "governance-service", "--traceparent", traceparent)
-	if !strings.Contains(eventsOut.String(), "22222222-2222-2222-2222-222222222222\t2026-05-07T00:00:01Z\tallowed\tgovernance-service\tcreate-data-export") {
-		t.Fatalf("audit events output:\n%s", eventsOut.String())
+	var activitiesOut bytes.Buffer
+	runCLI(t, &activitiesOut, "audit", "api-activities", "--limit", "2", "--api-service", "governance-service", "--traceparent", traceparent)
+	if !strings.Contains(activitiesOut.String(), "api_activity\t22222222-2222-2222-2222-222222222222\t2026-05-07T00:00:01Z\tSuccess\tgovernance-service\tcreate-data-export") {
+		t.Fatalf("audit api-activities output:\n%s", activitiesOut.String())
 	}
 
 	var exportsOut bytes.Buffer
 	runCLI(t, &exportsOut, "audit", "exports", "list")
-	if !strings.Contains(exportsOut.String(), "ready\t"+exportID+"\taudit") {
+	if !strings.Contains(exportsOut.String(), "ready\t"+exportID+"\tapi_activity") {
 		t.Fatalf("audit exports list output:\n%s", exportsOut.String())
 	}
 
 	var createOut bytes.Buffer
-	runCLI(t, &createOut, "audit", "exports", "create", "--scope", "audit", "--include-logs", "--idempotency-key", "governance-export:test")
+	runCLI(t, &createOut, "audit", "exports", "create", "--scope", "api_activity", "--include-logs", "--idempotency-key", "governance-export:test")
 	if createKey != "governance-export:test" || createBody["include_logs"] != true {
 		t.Fatalf("unexpected export create: %q %#v", createKey, createBody)
 	}
-	if !strings.Contains(createOut.String(), "ready\t"+exportID+"\taudit") {
+	if !strings.Contains(createOut.String(), "ready\t"+exportID+"\tapi_activity") {
 		t.Fatalf("audit exports create output:\n%s", createOut.String())
 	}
 

@@ -63,7 +63,7 @@ func run() error {
 	identityPGDSN := cfg.RequireString("GOVERNANCE_IAM_PG_DSN")
 	billingPGDSN := cfg.RequireString("GOVERNANCE_BILLING_PG_DSN")
 	sandboxPGDSN := cfg.RequireString("GOVERNANCE_SANDBOX_PG_DSN")
-	auditHMACKey := cfg.RequireCredential("audit-hmac-key")
+	apiActivityHMACKey := cfg.RequireCredential("api-activity-hmac-key")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4250")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
@@ -74,7 +74,7 @@ func run() error {
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
-	hmacKeyID := cfg.String("GOVERNANCE_AUDIT_HMAC_KEY_ID", "governance-service.v1")
+	hmacKeyID := cfg.String("GOVERNANCE_API_ACTIVITY_HMAC_KEY_ID", "governance-service.v1")
 	exportTTLHours := cfg.Int("GOVERNANCE_EXPORT_TTL_HOURS", 168)
 	environment := cfg.String("GOVERNANCE_ENVIRONMENT", "single-node")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -149,7 +149,7 @@ func run() error {
 		SandboxPG:        sandboxPG,
 		CH:               chConn,
 		Logger:           logger,
-		HMACKey:          []byte(auditHMACKey),
+		HMACKey:          []byte(apiActivityHMACKey),
 		HMACKeyID:        hmacKeyID,
 		ExportDir:        exportDir,
 		ExportTTL:        time.Duration(exportTTLHours) * time.Hour,
@@ -222,13 +222,13 @@ func runAuditProjector(ctx context.Context, logger *slog.Logger, svc *governance
 	project := func(ctx context.Context) {
 		projectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		count, err := svc.ProjectPendingAuditEvents(projectCtx, 100)
+		count, err := svc.ProjectPendingAPIActivities(projectCtx, 100)
 		if err != nil {
-			logger.ErrorContext(ctx, "governance: project pending audit events", "error", err)
+			logger.ErrorContext(ctx, "governance: project pending API activities", "error", err)
 			return
 		}
 		if count > 0 {
-			logger.InfoContext(ctx, "governance: projected pending audit events", "count", count)
+			logger.InfoContext(ctx, "governance: projected pending API activities", "count", count)
 		}
 	}
 	project(ctx)

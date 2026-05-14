@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "store",
     srcs = [
-        "audit.sql.go",
+        "api_activity.sql.go",
         "db.go",
         "export.sql.go",
         "models.go",

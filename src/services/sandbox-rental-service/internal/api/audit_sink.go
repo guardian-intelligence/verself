@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -38,31 +39,37 @@ func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
 	})
 }
 
-type governanceAuditRecord struct {
-	OrgID        string         `json:"org_id"`
-	EventSource  string         `json:"event_source"`
-	EventName    string         `json:"event_name"`
-	AuditEvent   string         `json:"audit_event"`
-	ActorType    string         `json:"actor_type"`
-	ActorID      string         `json:"actor_id"`
-	CredentialID string         `json:"credential_id,omitempty"`
-	Permission   string         `json:"permission"`
-	TargetType   string         `json:"target_type"`
-	TargetID     string         `json:"target_id,omitempty"`
-	Outcome      string         `json:"outcome"`
-	ErrorCode    string         `json:"error_code,omitempty"`
-	TraceID      string         `json:"trace_id,omitempty"`
-	Detail       map[string]any `json:"detail,omitempty"`
+type governanceAPIActivity struct {
+	OrgID                 string
+	APIService            string
+	APIOperation          string
+	APIEventCode          string
+	APIAction             string
+	ActorType             string
+	ActorUID              string
+	CredentialUID         string
+	Permission            string
+	ResourceType          string
+	ResourceUID           string
+	HTTPMethod            string
+	HTTPRoute             string
+	HTTPStatus            uint16
+	AuthorizationDecision governanceinternalclient.AuthorizationDecision
+	Status                governanceinternalclient.APIActivityStatus
+	StatusCode            string
+	StatusDetail          string
+	TraceUID              string
+	Unmapped              map[string]any
 }
 
-func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {
+func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity) {
 	sink := configuredAuditSink.Load()
 	if sink == nil || record.OrgID == "" {
 		return
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	resp, err := sink.Client.AppendAuditEvent(reqCtx, governanceinternalclient.AppendAuditEventRequest{Body: governanceAuditRecordToContract(record)})
+	resp, err := sink.Client.AppendAPIActivity(reqCtx, governanceinternalclient.AppendAPIActivityRequest{Body: governanceAPIActivityToContract(record)})
 	if err != nil {
 		slog.Default().ErrorContext(ctx, "sandbox governance audit send failed", "error", err)
 		return
@@ -72,22 +79,38 @@ func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {
 	}
 }
 
-func governanceAuditRecordToContract(record governanceAuditRecord) governanceinternalclient.AuditRecord {
-	return governanceinternalclient.AuditRecord{
-		OrgID:        record.OrgID,
-		EventSource:  record.EventSource,
-		EventName:    record.EventName,
-		AuditEvent:   record.AuditEvent,
-		ActorType:    record.ActorType,
-		ActorID:      record.ActorID,
-		CredentialID: optionalString(record.CredentialID),
-		Permission:   record.Permission,
-		TargetType:   record.TargetType,
-		TargetID:     optionalString(record.TargetID),
-		Outcome:      governanceinternalclient.AuditOutcome(record.Outcome),
-		ErrorCode:    optionalString(record.ErrorCode),
-		TraceID:      optionalString(record.TraceID),
-		Detail:       optionalMap(record.Detail),
+func governanceAPIActivityToContract(record governanceAPIActivity) governanceinternalclient.APIActivityRecord {
+	method := firstNonEmpty(record.HTTPMethod, "POST")
+	route := firstNonEmpty(record.HTTPRoute, "/internal/"+record.APIOperation)
+	httpStatus := record.HTTPStatus
+	if httpStatus == 0 {
+		httpStatus = 500
+		if record.Status == governanceinternalclient.APIActivityStatusSuccess {
+			httpStatus = 200
+		}
+	}
+	return governanceinternalclient.APIActivityRecord{
+		OrgID:         record.OrgID,
+		APIService:    record.APIService,
+		APIOperation:  record.APIOperation,
+		APIEventCode:  record.APIEventCode,
+		APIAction:     record.APIAction,
+		ActorType:     record.ActorType,
+		ActorUID:      record.ActorUID,
+		CredentialUID: optionalStringTyped[governanceinternalclient.CredentialUID](record.CredentialUID),
+		Permission:    record.Permission,
+		Resources: governanceinternalclient.APIActivityResources{{
+			Type: record.ResourceType,
+			UID:  optionalStringTyped[governanceinternalclient.ResourceUID](record.ResourceUID),
+		}},
+		HTTPRequest:           governanceinternalclient.APIActivityHTTPRequest{Method: method, Route: route},
+		HTTPResponse:          governanceinternalclient.APIActivityHTTPResponse{Code: httpStatus},
+		AuthorizationDecision: record.AuthorizationDecision,
+		Status:                record.Status,
+		StatusCode:            governanceinternalclient.ProblemStatusCode(firstNonEmpty(record.StatusCode, strconv.Itoa(int(httpStatus)))),
+		StatusDetail:          optionalString(record.StatusDetail),
+		TraceUID:              optionalStringTyped[governanceinternalclient.TraceID](record.TraceUID),
+		Unmapped:              optionalMap(record.Unmapped),
 	}
 }
 
@@ -97,6 +120,15 @@ func optionalString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func optionalStringTyped[T ~string](value string) *T {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	typed := T(value)
+	return &typed
 }
 
 func optionalMap(value map[string]any) *map[string]any {

@@ -8,15 +8,15 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-func TestEnforceOperationPolicyWritesAuditLogParentEdgeWithPermissionName(t *testing.T) {
+func TestEnforceOperationPolicyWritesAPIActivityParentEdgeWithPermissionName(t *testing.T) {
 	authorizer := &recordingResourceAuthorizer{}
 	policy := runtimeiam.OperationPolicy{
-		Permission:     permissionAuditLogRead,
-		Resource:       "audit_log",
+		Permission:     permissionAPIActivityRead,
+		Resource:       "api_activity",
 		Action:         runtimeiam.ActionList,
 		OrgScope:       runtimeiam.OrgScopeTokenOrgID,
 		RateLimitClass: "read",
-		AuditEvent:     "governance.audit_log.list",
+		AuditEvent:     "governance.ocsf_api_activity.list",
 	}
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
 		Subject: "user_123",

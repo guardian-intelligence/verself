@@ -83,9 +83,9 @@ windows:
     suspended: { kind: preserved }
     pending_deletion: { kind: delete_after, days: 90 }
 
-  - id: audit_events
-    label: Audit events
-    description: State transitions and administrative actions recorded on every account. Readable via the billing console's Activity tab and via the audit-events API endpoint.
+  - id: api_activity_records
+    label: API activity records
+    description: OCSF API Activity records for state transitions and administrative actions. Readable via the governance console and API Activity endpoint.
     active: { kind: ttl_days, days: 365 }
     past_due: { kind: ttl_days, days: 365 }
     suspended: { kind: ttl_days, days: 365 }
@@ -129,7 +129,7 @@ export:
       format: newline-delimited JSON in OTLP/JSON encoding
     - class: Metrics
       format: newline-delimited JSON in OTLP/JSON encoding
-    - class: Audit events
+    - class: API activity records
       format: newline-delimited JSON
     - class: Billing records
       format: CSV invoice line-item export plus the corresponding rendered PDF invoices

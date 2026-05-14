@@ -183,8 +183,8 @@ func runAdmin(
 		Logger:  logger,
 		Config:  cfg,
 	}
-	svc.SetAuditSink(func(ctx context.Context, record objectstorage.AuditRecord) error {
-		return objectstorageapi.SendGovernanceAudit(ctx, record)
+	svc.SetAuditSink(func(ctx context.Context, record objectstorage.APIActivity) error {
+		return objectstorageapi.SendGovernanceAPIActivity(ctx, record)
 	})
 	if err := svc.AdminReady(ctx); err != nil {
 		return fmt.Errorf("object-storage admin readiness: %w", err)

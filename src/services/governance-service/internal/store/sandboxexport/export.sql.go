@@ -349,7 +349,7 @@ func (q *Queries) ExportSandboxRunnerJobBindingsJSONL(ctx context.Context, arg E
 const exportSandboxRunnerJobsJSONL = `-- name: ExportSandboxRunnerJobsJSONL :many
 SELECT row_to_json(t)::text AS row_json
 FROM (
-    SELECT j.provider, j.provider_job_id, j.provider_installation_id, j.provider_repository_id, j.repository_full_name, j.provider_run_id, j.provider_task_id, j.provider_job_handle, j.job_name, j.head_sha, j.head_branch, j.workflow_name, j.status, j.conclusion, j.labels_json, j.runner_id, j.runner_name, j.started_at, j.completed_at, j.last_webhook_delivery, j.updated_at, j.created_at
+    SELECT j.provider, j.provider_job_id, j.provider_installation_id, j.provider_repository_id, j.repository_full_name, j.provider_run_id, j.provider_run_attempt, j.provider_task_id, j.provider_job_handle, j.job_name, j.head_sha, j.head_branch, j.workflow_name, j.status, j.conclusion, j.labels_json, j.runner_id, j.runner_name, j.started_at, j.completed_at, j.last_webhook_delivery, j.updated_at, j.created_at
     FROM runner_jobs j
     LEFT JOIN runner_provider_repositories r ON r.provider = j.provider AND r.provider_repository_id = j.provider_repository_id
     WHERE r.org_id::text = $1

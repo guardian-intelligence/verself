@@ -13,149 +13,109 @@ import (
 
 const ServiceName = "governance-service"
 
-type AuditActorId = string
-
-type AuditActorType = string
-
-type AuditCredentialId = string
-
-type AuditCursor = string
-
-type AuditErrorCode = string
-
-type AuditEventId = string
-
-type AuditEventOperationName = string
-
-type AuditEventSource = string
-
-type AuditEventsLimit = int64
-
-type AuditHMACKeyId = string
-
-type AuditTargetId = string
-
-type AuditTargetType = string
-
-type ContentDisposition = string
-
-type DataExportArchive = []byte
-
-type DataExportId = string
-
-type DecimalUint64 = string
-
-type ExportArtifactPath = string
-
-type ExportDownloadURL = string
-
-type ExportErrorCode = string
-
-type ExportErrorMessage = string
-
-type ExportFormat = string
-
-type ExportScope = string
-
-type ExportState = string
-
-type GovernanceAuditEventName = string
-
-type GovernanceOrgId = string
-
-type GovernancePermissionName = string
-
-type HMACHex = string
-
-type IdempotencyKey = string
-
-type MediaType = string
-
-type ProblemCode = string
-
-type ProblemDetail = string
-
-type ProblemType = string
-
-type RequestId = string
-
-type ResourceName = string
-
-type SHA256Hex = string
-
-type TraceId = string
-
-type TraceParent = string
-
-type AuditListOrder string
-
-const (
-	AuditListOrderASC  AuditListOrder = "asc"
-	AuditListOrderDESC AuditListOrder = "desc"
+type (
+	APIActivityCursor        = string
+	APIActivityEventsLimit   = int64
+	APIActivityOperation     = string
+	APIActivityService       = string
+	ActorType                = string
+	ActorUID                 = string
+	CredentialUID            = string
+	DataExportArchive        = []byte
+	DataExportID             = string
+	DecimalUint64            = string
+	ExportArtifactPath       = string
+	ExportDownloadURL        = string
+	ExportErrorCode          = string
+	ExportErrorMessage       = string
+	ExportFormat             = string
+	ExportScope              = string
+	ExportState              = string
+	GovernanceOrgID          = string
+	GovernancePermissionName = string
+	HMACHex                  = string
+	MediaType                = string
+	OCSFClassName            = string
+	OCSFMetadataUID          = string
+	OCSFStatus               = string
+	ResourceName             = string
+	ResourceType             = string
+	ResourceUID              = string
+	SHA256Hex                = string
+	SpanID                   = string
+	TraceID                  = string
 )
 
-type AuditOutcome string
+type APIActivityListOrder string
 
 const (
-	AuditOutcomeALLOWED AuditOutcome = "allowed"
-	AuditOutcomeDENIED  AuditOutcome = "denied"
-	AuditOutcomeERROR   AuditOutcome = "error"
+	APIActivityListOrderASC  APIActivityListOrder = "asc"
+	APIActivityListOrderDESC APIActivityListOrder = "desc"
 )
 
-type AuditEvents []AuditEvent
-
-type DataExportFiles []DataExportFile
-
-type DataExportJobs []DataExportJob
-
-type ExportScopes []ExportScope
-
-type AuditEvent struct {
-	EventID            AuditEventId             `json:"event_id"`
-	RecordedAt         string                   `json:"recorded_at"`
-	OrgID              GovernanceOrgId          `json:"org_id"`
-	Sequence           DecimalUint64            `json:"sequence"`
-	EventSource        AuditEventSource         `json:"event_source"`
-	EventName          AuditEventOperationName  `json:"event_name"`
-	AuditEvent         GovernanceAuditEventName `json:"audit_event"`
-	ActorType          AuditActorType           `json:"actor_type"`
-	ActorID            AuditActorId             `json:"actor_id"`
-	CredentialID       *AuditCredentialId       `json:"credential_id,omitempty"`
-	TargetType         AuditTargetType          `json:"target_type"`
-	TargetID           *AuditTargetId           `json:"target_id,omitempty"`
-	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty"`
-	Permission         GovernancePermissionName `json:"permission"`
-	Outcome            AuditOutcome             `json:"outcome"`
-	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty"`
-	TraceID            *TraceId                 `json:"trace_id,omitempty"`
-	DetailSHA256       SHA256Hex                `json:"detail_sha256"`
-	PrevHMAC           HMACHex                  `json:"prev_hmac"`
-	RowHMAC            HMACHex                  `json:"row_hmac"`
-	HMACKeyID          *AuditHMACKeyId          `json:"hmac_key_id,omitempty"`
+type APIActivityEvent struct {
+	MetadataUID             OCSFMetadataUID          `json:"metadata_uid"`
+	Time                    string                   `json:"time"`
+	OrgID                   GovernanceOrgID          `json:"org_id"`
+	Sequence                DecimalUint64            `json:"sequence"`
+	OCSFVersion             string                   `json:"ocsf_version"`
+	CategoryUID             uint8                    `json:"category_uid"`
+	CategoryName            string                   `json:"category_name"`
+	ClassUID                uint16                   `json:"class_uid"`
+	ClassName               OCSFClassName            `json:"class_name"`
+	TypeUID                 uint32                   `json:"type_uid"`
+	ActivityID              uint8                    `json:"activity_id"`
+	ActivityName            string                   `json:"activity_name"`
+	ActionID                uint8                    `json:"action_id"`
+	Action                  string                   `json:"action"`
+	StatusID                uint8                    `json:"status_id"`
+	Status                  OCSFStatus               `json:"status"`
+	StatusCode              string                   `json:"status_code"`
+	SeverityID              uint8                    `json:"severity_id"`
+	Severity                string                   `json:"severity"`
+	APIService              APIActivityService       `json:"api_service"`
+	APIOperation            APIActivityOperation     `json:"api_operation"`
+	APIVersion              string                   `json:"api_version,omitempty"`
+	ActorType               ActorType                `json:"actor_type"`
+	ActorUID                ActorUID                 `json:"actor_uid"`
+	ActorName               string                   `json:"actor_name,omitempty"`
+	CredentialUID           *CredentialUID           `json:"credential_uid,omitempty"`
+	PrimaryResourceType     ResourceType             `json:"primary_resource_type"`
+	PrimaryResourceUID      *ResourceUID             `json:"primary_resource_uid,omitempty"`
+	PrimaryResourceName     string                   `json:"primary_resource_name,omitempty"`
+	PrimaryResourceFullName *ResourceName            `json:"primary_resource_full_name,omitempty"`
+	Permission              GovernancePermissionName `json:"permission"`
+	HTTPRequestUID          *string                  `json:"http_request_uid,omitempty"`
+	HTTPMethod              string                   `json:"http_method"`
+	HTTPRoute               string                   `json:"http_route"`
+	HTTPArgs                string                   `json:"http_args,omitempty"`
+	HTTPUserAgent           string                   `json:"http_user_agent,omitempty"`
+	SrcEndpointIP           string                   `json:"src_endpoint_ip,omitempty"`
+	SrcEndpointName         string                   `json:"src_endpoint_name,omitempty"`
+	HTTPResponseCode        uint16                   `json:"http_response_code"`
+	TraceUID                *TraceID                 `json:"trace_uid,omitempty"`
+	SpanUID                 *SpanID                  `json:"span_uid,omitempty"`
+	OCSFSHA256              SHA256Hex                `json:"ocsf_sha256"`
+	PrevHMAC                HMACHex                  `json:"prev_hmac"`
+	RowHMAC                 HMACHex                  `json:"row_hmac"`
+	HMACKeyID               *string                  `json:"hmac_key_id,omitempty"`
 }
 
-type AuditFilters struct {
-	ActorID            *AuditActorId             `json:"actor_id,omitempty"`
-	AuditEvent         *GovernanceAuditEventName `json:"audit_event,omitempty"`
-	CredentialID       *AuditCredentialId        `json:"credential_id,omitempty"`
-	EventName          *AuditEventOperationName  `json:"event_name,omitempty"`
-	EventSource        *AuditEventSource         `json:"event_source,omitempty"`
-	Outcome            *AuditOutcome             `json:"outcome,omitempty"`
-	TargetID           *AuditTargetId            `json:"target_id,omitempty"`
-	TargetType         *AuditTargetType          `json:"target_type,omitempty"`
-	TargetResourceName *ResourceName             `json:"targetResourceName,omitempty"`
+type APIActivityFilters struct {
+	ActorType     *ActorType            `json:"actor_type,omitempty"`
+	ActorUID      *ActorUID             `json:"actor_uid,omitempty"`
+	APIService    *APIActivityService   `json:"api_service,omitempty"`
+	APIOperation  *APIActivityOperation `json:"api_operation,omitempty"`
+	ActivityID    *uint8                `json:"activity_id,omitempty"`
+	CredentialUID *CredentialUID        `json:"credential_uid,omitempty"`
+	ResourceUID   *ResourceUID          `json:"resource_uid,omitempty"`
+	ResourceType  *ResourceType         `json:"resource_type,omitempty"`
+	StatusID      *uint8                `json:"status_id,omitempty"`
+	StatusCode    *string               `json:"status_code,omitempty"`
+	TraceUID      *TraceID              `json:"trace_uid,omitempty"`
 }
 
-type ConflictError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
+type APIActivityEvents []APIActivityEvent
 
 type DataExportFile struct {
 	Path        ExportArtifactPath `json:"path"`
@@ -165,11 +125,17 @@ type DataExportFile struct {
 	SHA256      SHA256Hex          `json:"sha256"`
 }
 
+type (
+	DataExportFiles []DataExportFile
+	DataExportJobs  []DataExportJob
+	ExportScopes    []ExportScope
+)
+
 type DataExportJob struct {
-	ExportID       DataExportId        `json:"export_id"`
+	ExportID       DataExportID        `json:"export_id"`
 	ResourceName   ResourceName        `json:"resourceName"`
-	OrgID          GovernanceOrgId     `json:"org_id"`
-	RequestedBy    AuditActorId        `json:"requested_by"`
+	OrgID          GovernanceOrgID     `json:"org_id"`
+	RequestedBy    ActorUID            `json:"requested_by"`
 	Scopes         ExportScopes        `json:"scopes"`
 	IncludeLogs    bool                `json:"include_logs"`
 	Format         ExportFormat        `json:"format"`
@@ -186,174 +152,49 @@ type DataExportJob struct {
 	ErrorMessage   *ExportErrorMessage `json:"error_message,omitempty"`
 }
 
-type IdempotencyPayloadMismatchError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type PermissionDeniedError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type RateLimitedError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type ResourceNotFoundError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type ServiceUnavailableError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type UnauthenticatedError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type ValidationFailedError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
 type CreateDataExportInputBody struct {
 	Scopes      *ExportScopes `json:"scopes,omitempty"`
 	IncludeLogs *bool         `json:"include_logs,omitempty"`
 }
 
-type CreateDataExportRequest struct {
-	IdempotencyKey IdempotencyKey
-	Body           CreateDataExportInputBody `json:"body"`
+type ListAPIActivitiesRequest struct {
+	Limit         *APIActivityEventsLimit
+	Cursor        *APIActivityCursor
+	Order         *APIActivityListOrder
+	ActorUID      *ActorUID
+	ActorType     *ActorType
+	APIService    *APIActivityService
+	APIOperation  *APIActivityOperation
+	ActivityID    *uint8
+	CredentialUID *CredentialUID
+	ResourceUID   *ResourceUID
+	ResourceType  *ResourceType
+	StatusID      *uint8
+	StatusCode    *string
+	TraceUID      *TraceID
 }
 
-type CreateDataExportOutputBody struct {
-	Export DataExportJob `json:"export"`
+type ListAPIActivitiesOutputBody struct {
+	APIActivities APIActivityEvents      `json:"api_activities"`
+	NextCursor    *APIActivityCursor     `json:"next_cursor,omitempty"`
+	Limit         APIActivityEventsLimit `json:"limit"`
+	Filters       APIActivityFilters     `json:"filters"`
 }
 
-type CreateDataExportResponse struct {
+type ListAPIActivitiesResponse struct {
 	StatusCode   int
 	Body         []byte
-	Result       *CreateDataExportOutputBody
+	Result       *ListAPIActivitiesOutputBody
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
 
-type DownloadDataExportRequest struct {
-	ExportID DataExportId
-}
-
-type DownloadDataExportOutput struct {
-	ContentType        MediaType
-	ContentDisposition ContentDisposition
-	Body               DataExportArchive
-}
-
-type DownloadDataExportResponse struct {
-	StatusCode   int
-	Body         []byte
-	Result       *DownloadDataExportOutput
-	Problem      *ErrorModel
-	HTTPResponse *http.Response
-}
-
-type GetDataExportRequest struct {
-	ExportID DataExportId
-}
-
-type GetDataExportOutputBody struct {
-	Export DataExportJob `json:"export"`
-}
-
-type GetDataExportResponse struct {
-	StatusCode   int
-	Body         []byte
-	Result       *GetDataExportOutputBody
-	Problem      *ErrorModel
-	HTTPResponse *http.Response
-}
-
-type ListAuditEventsRequest struct {
-	Limit              *AuditEventsLimit
-	Cursor             *AuditCursor
-	Order              *AuditListOrder
-	ActorID            *AuditActorId
-	AuditEvent         *GovernanceAuditEventName
-	CredentialID       *AuditCredentialId
-	EventName          *AuditEventOperationName
-	EventSource        *AuditEventSource
-	Outcome            *AuditOutcome
-	TargetID           *AuditTargetId
-	TargetType         *AuditTargetType
-	TargetResourceName *ResourceName
-}
-
-type ListAuditEventsOutputBody struct {
-	Events     AuditEvents      `json:"events"`
-	NextCursor *AuditCursor     `json:"next_cursor,omitempty"`
-	Limit      AuditEventsLimit `json:"limit"`
-	Filters    AuditFilters     `json:"filters"`
-}
-
-type ListAuditEventsResponse struct {
-	StatusCode   int
-	Body         []byte
-	Result       *ListAuditEventsOutputBody
-	Problem      *ErrorModel
-	HTTPResponse *http.Response
-}
-
-type ListDataExportsRequest struct{}
-
-type ListDataExportsOutputBody struct {
-	Exports DataExportJobs `json:"exports"`
-}
+type (
+	ListDataExportsRequest    struct{}
+	ListDataExportsOutputBody struct {
+		Exports DataExportJobs `json:"exports"`
+	}
+)
 
 type ListDataExportsResponse struct {
 	StatusCode   int
@@ -363,12 +204,54 @@ type ListDataExportsResponse struct {
 	HTTPResponse *http.Response
 }
 
-type RequestEditorFn func(ctx context.Context, req *http.Request) error
-
-type HTTPRequestDoer interface {
-	Do(req *http.Request) (*http.Response, error)
+type CreateDataExportRequest struct {
+	IdempotencyKey string
+	Body           CreateDataExportInputBody
+}
+type CreateDataExportOutputBody struct {
+	Export DataExportJob `json:"export"`
+}
+type CreateDataExportResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *CreateDataExportOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
 }
 
+type (
+	GetDataExportRequest    struct{ ExportID DataExportID }
+	GetDataExportOutputBody struct {
+		Export DataExportJob `json:"export"`
+	}
+)
+
+type GetDataExportResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *GetDataExportOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type (
+	DownloadDataExportRequest  struct{ ExportID DataExportID }
+	DownloadDataExportResponse struct {
+		StatusCode         int
+		Body               []byte
+		ContentType        string
+		ContentDisposition string
+		Problem            *ErrorModel
+		HTTPResponse       *http.Response
+	}
+)
+
+type (
+	RequestEditorFn func(ctx context.Context, req *http.Request) error
+	HTTPRequestDoer interface {
+		Do(req *http.Request) (*http.Response, error)
+	}
+)
 type ClientOption func(*Client)
 
 type Client struct {
@@ -404,359 +287,194 @@ func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
 	}
 }
 
-func (c *Client) CreateDataExport(ctx context.Context, request CreateDataExportRequest, reqEditors ...RequestEditorFn) (*CreateDataExportResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newCreateDataExportRequest(ctx, request)
+func (c *Client) ListAPIActivities(ctx context.Context, request ListAPIActivitiesRequest, reqEditors ...RequestEditorFn) (*ListAPIActivitiesResponse, error) {
+	req, err := c.newRequest(ctx, "GET", "/api/v1/governance/ocsf/api-activities", nil)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
+	query := req.URL.Query()
+	setQuery(query, "limit", request.Limit)
+	setQuery(query, "cursor", request.Cursor)
+	setQuery(query, "order", request.Order)
+	setQuery(query, "actor_uid", request.ActorUID)
+	setQuery(query, "actor_type", request.ActorType)
+	setQuery(query, "api_service", request.APIService)
+	setQuery(query, "api_operation", request.APIOperation)
+	setQuery(query, "activity_id", request.ActivityID)
+	setQuery(query, "credential_uid", request.CredentialUID)
+	setQuery(query, "resource_uid", request.ResourceUID)
+	setQuery(query, "resource_type", request.ResourceType)
+	setQuery(query, "status_id", request.StatusID)
+	setQuery(query, "status_code", request.StatusCode)
+	setQuery(query, "trace_uid", request.TraceUID)
+	req.URL.RawQuery = query.Encode()
+	if err := c.edit(ctx, req, reqEditors); err != nil {
+		return nil, err
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	return parseCreateDataExportResponse(resp)
+	result := &ListAPIActivitiesResponse{}
+	if err := parseJSONResponse(resp, 200, &result.StatusCode, &result.Body, &result.HTTPResponse, &result.Result, &result.Problem); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
-func (c *Client) newCreateDataExportRequest(ctx context.Context, request CreateDataExportRequest) (*http.Request, error) {
-	path := "/api/v1/governance/exports"
-	endpoint, err := url.Parse(c.server + path)
+func (c *Client) ListDataExports(ctx context.Context, request ListDataExportsRequest, reqEditors ...RequestEditorFn) (*ListDataExportsResponse, error) {
+	req, err := c.newRequest(ctx, "GET", "/api/v1/governance/exports", nil)
 	if err != nil {
 		return nil, err
 	}
-	requestBody, err := json.Marshal(request.Body)
+	if err := c.edit(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	result := &ListDataExportsResponse{}
+	if err := parseJSONResponse(resp, 200, &result.StatusCode, &result.Body, &result.HTTPResponse, &result.Result, &result.Problem); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *Client) CreateDataExport(ctx context.Context, request CreateDataExportRequest, reqEditors ...RequestEditorFn) (*CreateDataExportResponse, error) {
+	req, err := c.newRequest(ctx, "POST", "/api/v1/governance/exports", request.Body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
-	return req, nil
+	req.Header.Set("Idempotency-Key", request.IdempotencyKey)
+	if err := c.edit(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	result := &CreateDataExportResponse{}
+	if err := parseJSONResponse(resp, 201, &result.StatusCode, &result.Body, &result.HTTPResponse, &result.Result, &result.Problem); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *Client) GetDataExport(ctx context.Context, request GetDataExportRequest, reqEditors ...RequestEditorFn) (*GetDataExportResponse, error) {
+	req, err := c.newRequest(ctx, "GET", "/api/v1/governance/exports/"+url.PathEscape(string(request.ExportID)), nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.edit(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	result := &GetDataExportResponse{}
+	if err := parseJSONResponse(resp, 200, &result.StatusCode, &result.Body, &result.HTTPResponse, &result.Result, &result.Problem); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (c *Client) DownloadDataExport(ctx context.Context, request DownloadDataExportRequest, reqEditors ...RequestEditorFn) (*DownloadDataExportResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newDownloadDataExportRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return parseDownloadDataExportResponse(resp)
-}
-
-func (c *Client) newDownloadDataExportRequest(ctx context.Context, request DownloadDataExportRequest) (*http.Request, error) {
-	path := "/api/v1/governance/exports/{export_id}/download"
-	path = strings.ReplaceAll(path, "{export_id}", url.PathEscape(fmt.Sprint(request.ExportID)))
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	req, err := c.newRequest(ctx, "GET", "/api/v1/governance/exports/"+url.PathEscape(string(request.ExportID))+"/download", nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/gzip")
-	return req, nil
-}
-
-func (c *Client) GetDataExport(ctx context.Context, request GetDataExportRequest, reqEditors ...RequestEditorFn) (*GetDataExportResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newGetDataExportRequest(ctx, request)
-	if err != nil {
+	if err := c.edit(ctx, req, reqEditors); err != nil {
 		return nil, err
-	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	return parseGetDataExportResponse(resp)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &DownloadDataExportResponse{StatusCode: resp.StatusCode, Body: body, ContentType: resp.Header.Get("Content-Type"), ContentDisposition: resp.Header.Get("Content-Disposition"), HTTPResponse: resp}
+	if resp.StatusCode != 200 {
+		result.Problem = decodeProblem(body)
+	}
+	return result, nil
 }
 
-func (c *Client) newGetDataExportRequest(ctx context.Context, request GetDataExportRequest) (*http.Request, error) {
-	path := "/api/v1/governance/exports/{export_id}"
-	path = strings.ReplaceAll(path, "{export_id}", url.PathEscape(fmt.Sprint(request.ExportID)))
+func (c *Client) newRequest(ctx context.Context, method, path string, body any) (*http.Request, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
 	endpoint, err := url.Parse(c.server + path)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), reader)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	return req, nil
 }
 
-func (c *Client) ListAuditEvents(ctx context.Context, request ListAuditEventsRequest, reqEditors ...RequestEditorFn) (*ListAuditEventsResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newListAuditEventsRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
+func (c *Client) edit(ctx context.Context, req *http.Request, reqEditors []RequestEditorFn) error {
 	for _, editor := range c.requestEditors {
 		if err := editor(ctx, req); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	for _, editor := range reqEditors {
 		if editor != nil {
 			if err := editor(ctx, req); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return parseListAuditEventsResponse(resp)
+	return nil
 }
 
-func (c *Client) newListAuditEventsRequest(ctx context.Context, request ListAuditEventsRequest) (*http.Request, error) {
-	path := "/api/v1/governance/audit/events"
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
+func setQuery[T any](query url.Values, key string, value *T) {
+	if value != nil {
+		query.Set(key, fmt.Sprint(*value))
 	}
-	query := endpoint.Query()
-	if request.ActorID != nil {
-		query.Set("actor_id", fmt.Sprint(*request.ActorID))
-	}
-	if request.AuditEvent != nil {
-		query.Set("audit_event", fmt.Sprint(*request.AuditEvent))
-	}
-	if request.CredentialID != nil {
-		query.Set("credential_id", fmt.Sprint(*request.CredentialID))
-	}
-	if request.Cursor != nil {
-		query.Set("cursor", fmt.Sprint(*request.Cursor))
-	}
-	if request.EventName != nil {
-		query.Set("event_name", fmt.Sprint(*request.EventName))
-	}
-	if request.EventSource != nil {
-		query.Set("event_source", fmt.Sprint(*request.EventSource))
-	}
-	if request.Limit != nil {
-		query.Set("limit", fmt.Sprint(*request.Limit))
-	}
-	if request.Order != nil {
-		query.Set("order", fmt.Sprint(*request.Order))
-	}
-	if request.Outcome != nil {
-		query.Set("outcome", fmt.Sprint(*request.Outcome))
-	}
-	if request.TargetResourceName != nil {
-		query.Set("targetResourceName", fmt.Sprint(*request.TargetResourceName))
-	}
-	if request.TargetID != nil {
-		query.Set("target_id", fmt.Sprint(*request.TargetID))
-	}
-	if request.TargetType != nil {
-		query.Set("target_type", fmt.Sprint(*request.TargetType))
-	}
-	endpoint.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
 }
 
-func (c *Client) ListDataExports(ctx context.Context, request ListDataExportsRequest, reqEditors ...RequestEditorFn) (*ListDataExportsResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newListDataExportsRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return parseListDataExportsResponse(resp)
-}
-
-func (c *Client) newListDataExportsRequest(ctx context.Context, request ListDataExportsRequest) (*http.Request, error) {
-	path := "/api/v1/governance/exports"
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
-}
-
-func parseCreateDataExportResponse(resp *http.Response) (*CreateDataExportResponse, error) {
+func parseJSONResponse[T any](resp *http.Response, success int, statusCode *int, responseBody *[]byte, httpResponse **http.Response, result **T, problem **ErrorModel) error {
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	result := &CreateDataExportResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 201 {
-		var decoded CreateDataExportOutputBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
+	*statusCode = resp.StatusCode
+	*responseBody = body
+	*httpResponse = resp
+	if resp.StatusCode != success {
+		*problem = decodeProblem(body)
+		return nil
+	}
+	var decoded T
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return err
 		}
-		result.Result = &decoded
-		return result, nil
 	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
-func parseDownloadDataExportResponse(resp *http.Response) (*DownloadDataExportResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &DownloadDataExportResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		decoded := DownloadDataExportOutput{
-			ContentType:        MediaType(resp.Header.Get("Content-Type")),
-			ContentDisposition: ContentDisposition(resp.Header.Get("Content-Disposition")),
-			Body:               DataExportArchive(append([]byte(nil), body...)),
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
-func parseGetDataExportResponse(resp *http.Response) (*GetDataExportResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &GetDataExportResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded GetDataExportOutputBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
-func parseListAuditEventsResponse(resp *http.Response) (*ListAuditEventsResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &ListAuditEventsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded ListAuditEventsOutputBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
-func parseListDataExportsResponse(resp *http.Response) (*ListDataExportsResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &ListDataExportsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded ListDataExportsOutputBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
+	*result = &decoded
+	return nil
 }
 
 type ErrorModel struct {

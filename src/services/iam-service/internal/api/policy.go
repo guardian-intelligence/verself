@@ -14,6 +14,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	"github.com/verself/iam-service/internal/authz"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -160,27 +161,71 @@ func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.Op
 		principalType = "service_account"
 	}
 	targetID, targetDisplay := targetFromBoundary(input, output)
-	record := governanceAuditRecord{
-		OrgID:        identity.OrgID,
-		EventSource:  "iam-service",
-		EventName:    op.OperationID,
-		AuditEvent:   string(policy.AuditEvent),
-		ActorType:    principalType,
-		ActorID:      firstNonEmpty(serviceAccountID, identity.Subject),
-		CredentialID: credentialID,
-		Permission:   string(policy.Permission),
-		TargetType:   string(policy.Resource),
-		TargetID:     targetID,
-		Outcome:      outcome,
-		Detail: compactAuditDetail(map[string]any{
-			"idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
-			"target_display":       targetDisplay,
+	decision, status := apiActivityResult(outcome)
+	record := governanceAPIActivity{
+		OrgID:                 identity.OrgID,
+		APIService:            "iam-service",
+		APIOperation:          op.OperationID,
+		APIEventCode:          string(policy.AuditEvent),
+		APIAction:             string(policy.Action),
+		ActorType:             principalType,
+		ActorUID:              firstNonEmpty(serviceAccountID, identity.Subject),
+		ActorName:             firstNonEmpty(identity.Email, identity.Subject),
+		ActorEmail:            identity.Email,
+		CredentialUID:         credentialID,
+		Permission:            string(policy.Permission),
+		ResourceType:          string(policy.Resource),
+		ResourceUID:           targetID,
+		ResourceName:          targetDisplay,
+		HTTPMethod:            op.Method,
+		HTTPRoute:             op.Path,
+		HTTPSafeParams:        "",
+		HTTPStatus:            httpStatusFromOperationResult(outcome, err),
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(outcome, err)))),
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
 		}),
 	}
 	if err != nil {
-		record.ErrorCode = problemCode(err)
+		record.StatusDetail = problemCode(err)
 	}
-	sendGovernanceAudit(ctx, record)
+	sendGovernanceAPIActivity(ctx, record)
+}
+
+func apiActivityResult(outcome string) (governanceinternalclient.AuthorizationDecision, governanceinternalclient.APIActivityStatus) {
+	switch strings.TrimSpace(outcome) {
+	case "denied":
+		return governanceinternalclient.AuthorizationDecisionDenied, governanceinternalclient.APIActivityStatusFailure
+	case "error":
+		return governanceinternalclient.AuthorizationDecisionAllowed, governanceinternalclient.APIActivityStatusFailure
+	default:
+		return governanceinternalclient.AuthorizationDecisionAllowed, governanceinternalclient.APIActivityStatusSuccess
+	}
+}
+
+func httpStatusFromOperationResult(outcome string, err error) uint16 {
+	if err != nil {
+		var statusErr huma.StatusError
+		if errors.As(err, &statusErr) && statusErr.GetStatus() > 0 {
+			return uint16(statusErr.GetStatus())
+		}
+	}
+	if outcome == "denied" {
+		return http.StatusForbidden
+	}
+	if outcome == "error" {
+		return http.StatusInternalServerError
+	}
+	return http.StatusOK
+}
+
+func problemCodeOrEmpty(err error) string {
+	if err == nil {
+		return ""
+	}
+	return problemCode(err)
 }
 
 func targetFromBoundary(input any, output any) (string, string) {

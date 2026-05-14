@@ -70,7 +70,7 @@ func (s *Service) Validate() error {
 		return fmt.Errorf("%w: clickhouse is nil", ErrStore)
 	}
 	if len(s.HMACKey) < 32 {
-		return fmt.Errorf("%w: audit hmac key must be at least 32 bytes", ErrInvalidArgument)
+		return fmt.Errorf("%w: API activity HMAC key must be at least 32 bytes", ErrInvalidArgument)
 	}
 	if strings.TrimSpace(s.ExportDir) == "" {
 		return fmt.Errorf("%w: export dir is required", ErrInvalidArgument)

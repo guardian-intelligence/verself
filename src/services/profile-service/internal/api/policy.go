@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	"github.com/verself/profile-service/internal/profile"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -278,27 +279,55 @@ func auditOperation(ctx context.Context, operationID string, policy profileOpera
 	}
 	info := operationRequestInfoFromContext(ctx)
 	details := auditDetailsFromOutput(output)
-	sendGovernanceAudit(ctx, governanceAuditRecord{
-		OrgID:       orgID,
-		EventSource: "profile-service",
-		EventName:   operationID,
-		AuditEvent:  string(policy.AuditEvent),
-		ActorType:   actorType,
-		ActorID:     actorID,
-		Permission:  string(policy.Permission),
-		TargetType:  string(policy.Resource),
-		TargetID:    targetIDFromInput(input, identity),
-		Outcome:     outcome,
-		ErrorCode:   stableErrorCode(err),
-		Detail: compactAuditDetail(map[string]any{
-			"idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
-			"changed_fields":       strings.Join(details.changedFields, ","),
-			"before_hash":          details.beforeHash,
-			"after_hash":           details.afterHash,
-			"artifact_sha256":      details.artifactSHA256,
-			"artifact_bytes":       details.artifactBytes,
+	decision, status := apiActivityResult(outcome)
+	httpStatus := httpStatusFromOperationResult(outcome)
+	sendGovernanceAPIActivity(ctx, governanceAPIActivity{
+		OrgID:                 orgID,
+		APIService:            "profile-service",
+		APIOperation:          operationID,
+		APIEventCode:          string(policy.AuditEvent),
+		APIAction:             string(policy.Action),
+		ActorType:             actorType,
+		ActorUID:              actorID,
+		Permission:            string(policy.Permission),
+		ResourceType:          string(policy.Resource),
+		ResourceUID:           targetIDFromInput(input, identity),
+		HTTPStatus:            httpStatus,
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            firstNonEmpty(stableErrorCode(err), strconv.Itoa(int(httpStatus))),
+		StatusDetail:          stableErrorCode(err),
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
+			"verself.changed_fields":       strings.Join(details.changedFields, ","),
+			"verself.before_hash":          details.beforeHash,
+			"verself.after_hash":           details.afterHash,
+			"verself.artifact_sha256":      details.artifactSHA256,
+			"verself.artifact_bytes":       details.artifactBytes,
 		}),
 	})
+}
+
+func apiActivityResult(outcome string) (governanceinternalclient.AuthorizationDecision, governanceinternalclient.APIActivityStatus) {
+	switch strings.TrimSpace(outcome) {
+	case "denied":
+		return governanceinternalclient.AuthorizationDecisionDenied, governanceinternalclient.APIActivityStatusFailure
+	case "error":
+		return governanceinternalclient.AuthorizationDecisionAllowed, governanceinternalclient.APIActivityStatusFailure
+	default:
+		return governanceinternalclient.AuthorizationDecisionAllowed, governanceinternalclient.APIActivityStatusSuccess
+	}
+}
+
+func httpStatusFromOperationResult(outcome string) uint16 {
+	switch strings.TrimSpace(outcome) {
+	case "denied":
+		return http.StatusForbidden
+	case "error":
+		return http.StatusInternalServerError
+	default:
+		return http.StatusOK
+	}
 }
 
 type auditDetails struct {

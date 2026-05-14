@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ import (
 var internalAPITracer = otel.Tracer("iam-service/internal/api/internal")
 
 const (
-	authorizationResourceTypeAuditLog = "audit_log"
+	authorizationResourceTypeAuditLog = "api_activity"
 	authorizationResourceTypeOrg      = "org"
 )
 
@@ -624,11 +625,11 @@ func contractPermissions(values []string) internalcontractapi.Permissions {
 
 func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdentity *auth.Identity, outcome string, err error) {
 	args := []any{
-		"audit_event", "iam.human_profile.write",
+		"api_event_code", "iam.human_profile.write",
 		"operation_id", "update-human-profile",
 		"operation_resource", "human_profile",
 		"operation_action", "write",
-		"outcome", outcome,
+		"api_activity_status", outcome,
 	}
 	if authIdentity != nil {
 		args = append(args, "subject", authIdentity.Subject, "org_id", authIdentity.OrgID)
@@ -640,20 +641,29 @@ func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdent
 	if authIdentity == nil {
 		return
 	}
-	record := governanceAuditRecord{
-		OrgID:       authIdentity.OrgID,
-		EventSource: "iam-service",
-		EventName:   "update-human-profile",
-		AuditEvent:  "iam.human_profile.write",
-		ActorType:   "user",
-		ActorID:     authIdentity.Subject,
-		Permission:  "iam:human_profile:write",
-		TargetType:  "human_profile",
-		TargetID:    strings.TrimSpace(subjectID),
-		Outcome:     outcome,
+	decision, status := apiActivityResult(outcome)
+	record := governanceAPIActivity{
+		OrgID:                 authIdentity.OrgID,
+		APIService:            "iam-service",
+		APIOperation:          "update-human-profile",
+		APIEventCode:          "iam.human_profile.write",
+		APIAction:             "write",
+		ActorType:             "user",
+		ActorUID:              authIdentity.Subject,
+		ActorName:             firstNonEmpty(authIdentity.Email, authIdentity.Subject),
+		ActorEmail:            authIdentity.Email,
+		Permission:            "iam:human_profile:write",
+		ResourceType:          "human_profile",
+		ResourceUID:           strings.TrimSpace(subjectID),
+		HTTPMethod:            "PATCH",
+		HTTPRoute:             "/internal/v1/human-profile/{subject_id}",
+		HTTPStatus:            httpStatusFromOperationResult(outcome, err),
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(outcome, err)))),
 	}
 	if err != nil {
-		record.ErrorCode = problemCode(err)
+		record.StatusDetail = problemCode(err)
 	}
-	sendGovernanceAudit(ctx, record)
+	sendGovernanceAPIActivity(ctx, record)
 }

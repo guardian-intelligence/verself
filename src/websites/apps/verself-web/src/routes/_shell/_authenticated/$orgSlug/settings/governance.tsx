@@ -8,7 +8,7 @@ import {
   type AuditSearch,
 } from "~/features/governance/audit-search";
 import { GovernanceSettings } from "~/features/governance/components";
-import { listGovernanceAuditEvents, listGovernanceDataExports } from "~/server-fns/api";
+import { listGovernanceAPIActivities, listGovernanceDataExports } from "~/server-fns/api";
 
 export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/governance")({
   validateSearch: parseAuditSearch,
@@ -23,23 +23,23 @@ export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/settings/g
   },
   loaderDeps: ({ search }) => ({ auditQuery: auditSearchToQuery(search) }),
   loader: async ({ deps }) => {
-    const [audit, exports] = await Promise.all([
-      listGovernanceAuditEvents({ data: deps.auditQuery }),
+    const [apiActivities, exports] = await Promise.all([
+      listGovernanceAPIActivities({ data: deps.auditQuery }),
       listGovernanceDataExports(),
     ]);
-    return { audit, exports };
+    return { apiActivities, exports };
   },
   component: GovernanceSettingsRoute,
 });
 
 function GovernanceSettingsRoute() {
-  const { audit, exports } = Route.useLoaderData();
+  const { apiActivities, exports } = Route.useLoaderData();
   const search = Route.useSearch();
   return (
     <GovernanceSettings
-      auditEvents={audit.events}
-      auditLimit={audit.limit}
-      auditNextCursor={audit.next_cursor}
+      apiActivities={apiActivities.api_activities}
+      activityLimit={apiActivities.limit}
+      activityNextCursor={apiActivities.next_cursor}
       exports={exports}
       search={search}
     />

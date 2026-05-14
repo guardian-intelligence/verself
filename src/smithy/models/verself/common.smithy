@@ -72,6 +72,14 @@ string ResourceName
 @pattern("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$")
 string AuditEventName
 
+/// OCSF class UID emitted by governance-service for this operation.
+@range(min: 1, max: 65535)
+integer OCSFClassUid
+
+/// OCSF class name emitted by governance-service for this operation.
+@length(min: 1, max: 120)
+string OCSFClassName
+
 /// Service-owned rate-limit bucket name.
 @pattern("^[a-z][a-z0-9_]*$")
 string RateLimitBucket
@@ -259,6 +267,10 @@ structure audit {
 
     @required
     action: Action
+
+    ocsf_class_uid: OCSFClassUid
+
+    ocsf_class_name: OCSFClassName
 }
 
 /// Service-owned request throttle bucket.

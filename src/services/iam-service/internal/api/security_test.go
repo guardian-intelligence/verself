@@ -53,11 +53,11 @@ func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 
 func TestInternalAuthorizationResourceRefNormalizesAuditLogOrgID(t *testing.T) {
 	resource := internalAuthorizationResourceRef(authz.ResourceRef{
-		Type: " audit_log ",
+		Type: " api_activity ",
 		ID:   " 371564185181576922 ",
 	}, "371564185181576922", "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y")
-	if resource.Type != "audit_log" || resource.ID != "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y" {
-		t.Fatalf("resource = %#v, want canonical audit_log public org ID", resource)
+	if resource.Type != "api_activity" || resource.ID != "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y" {
+		t.Fatalf("resource = %#v, want canonical api_activity public org ID", resource)
 	}
 
 	project := internalAuthorizationResourceRef(authz.ResourceRef{

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "governance",
     srcs = [
-        "audit.go",
+        "api_activity.go",
         "export.go",
         "resource_name.go",
         "safeconv.go",
@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/verself/governance-service/internal/governance",
     visibility = ["//src/services/governance-service:__subpackages__"],
     deps = [
+        "//src/services/governance-service/internal/ocsf",
         "//src/services/governance-service/internal/store",
         "//src/services/governance-service/internal/store/billingexport",
         "//src/services/governance-service/internal/store/identityexport",
@@ -23,7 +24,6 @@ go_library(
         "@com_github_jackc_pgx_v5//pgxpool",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
 

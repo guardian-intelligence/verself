@@ -5,14 +5,7 @@ above curated SDKs, which wrap SDK transport clients for product services.
 Browser server functions, the CLI, and customer automation use the same service
 contracts with different auth flows and local state handling.
 
-The CLI has three surfaces:
-
-- service mode: authenticated commands call hosted public APIs through SDK
-  packages;
-- company mode: operator-local commands write durable company records and secret
-  references under XDG and the credential store;
-- bootstrap mode: operator-local commands read a company record, apply one-run
-  public option overrides, and materialize repo/site artifacts.
+CLI borrows the Vercel command grammar where it fits: `verself auth login`, `verself orgs use`, `verself env pull`. Semantics are different because Verself does not deploy customer applications. `verself deploy` is an operator-local checkout command for deploying this Verself installation, not a customer app deploy. We'll dogfood the CLI by using it to seed our organization and run automations. Auth context decides which surface a given command targets.
 
 `aspect` remains the repo task runner for contributors and agents. `verself`
 is the public product CLI. Operator-local commands can wrap selected `aspect`
@@ -34,21 +27,6 @@ CLI command
 Service calls go through SDK operations. Missing service behavior is added at
 the Smithy contract layer, projected into OpenAPI where needed, and wrapped by
 the SDK transport core.
-
-Bootstrap has a bounded artifact path:
-
-```text
-company input
-  -> company store
-  -> public option overrides
-  -> resolved manifest
-  -> site files, encrypted SOPS bags, and generated command metadata
-  -> bootstrap run record
-```
-
-Bootstrap writes files under `src/host/sites/<site>/`, emits a run record, and
-stops at artifact generation. Provisioning, deployment, and owner-grant seeding
-stay on checked-in repo tooling such as `aspect deploy` and operator tasks.
 
 ## SDK Shape
 
@@ -129,15 +107,11 @@ The CLI boundary has these major pieces:
 | --- | --- |
 | CLI facade | Command grammar, local profile resolution, interactive UX, JSON output, company option capture, and command orchestration. |
 | Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above SDK transport clients. |
-| XDG file store | Non-secret profiles, company records, active context, bootstrap run records, cached discovery documents, and local locks across config, data, state, cache, and runtime directories. |
+| XDG file store | Non-secret profiles, active context, cached discovery documents, and local locks across config, data, state, cache, and runtime directories. |
 | Credential store | Machine credential bundles, provider tokens, and company option secret values when they are not rendered into SOPS bags. |
-| Company store | Durable local company intent, owner defaults, CLI name, site defaults, provider options, runtime integration options, and secret references. |
-| Bootstrap manifest | Resolved snapshot of company, owner, site, domain, CLI, provider, and runtime integration intent. |
-| Site artifact renderer | `src/host/sites/<site>/` files, provisioning templates, encrypted SOPS bags, README instructions, and generated CLI entrypoints. |
 | Source-code-hosting-service | Repository storage, Git HTTP, checkout grants, archive resources, and signed download URLs. |
 | Aspect task surface | Repo-local provisioning, host convergence, Nomad deployment, owner-claim preparation, Zitadel grant reconciliation, and post-deploy verification through checked-in tasks such as `aspect deploy`. |
 | IAM service | Organization materialization, verified owner claim completion, Zitadel grants, and authorization graph convergence when invoked by repo-local operator/seeding logic. |
-| Host/provisioning layer | Latitude/OpenTofu inputs, Cloudflare DNS inputs, SOPS bags, Ansible host convergence, Nomad deployment, and post-deploy verification consumed after bootstrap rendering. |
 | Observability/audit | Trace propagation, ClickHouse evidence, service audit rows, and domain-event ledgers tied to operation IDs. |
 
 Hosted service observability covers hosted API calls. Operator-local rendering
@@ -462,26 +436,11 @@ verself orgs members list|invite|update|remove
 verself projects list|create|inspect|update|archive
 verself repos list|inspect|checkout-grants|workflow-runs
 verself runs list|inspect|logs
-verself schedules list|create|pause|resume|delete
 verself env list|set|get|pull|run
 verself notifications list|summary|dismiss|clear|preferences
-verself audit events|exports
+verself audit api-activities|exports
 verself billing entitlements|plans|contracts|statement
 ```
-
-Operator-local commands are available when running from a checkout:
-
-```text
-verself deploy
-verself company list|configure|use|inspect|remove
-verself company options list|add|set|remove
-verself company secret list|generate|reveal|set|remove
-verself bootstrap
-```
-
-`verself deploy` is local to an operator checkout and deploys the Verself
-installation itself through repo-owned deployment tooling. It is not a customer
-application deployment command.
 
 `teams` can be accepted as an alias for `orgs` for migration ergonomics:
 
@@ -520,6 +479,8 @@ unambiguous organization, project, and environment from flags, project linkage,
 or active profile state.
 
 ## Company UX
+
+[The below has been descoped]
 
 `verself company` is an operator-local surface. It owns the durable local data
 store for company intent and third-party options. Bootstrap reads this store and
@@ -575,7 +536,9 @@ For Guardian, the company record derives these seeding inputs:
 | Company domain | `guardianintelligence.org` |
 | Trust tier | `platform` |
 
-## Bootstrap UX
+## Bootstrap UX [DESCOPED]
+
+[The below has been descoped]
 
 `verself bootstrap` is an operator-local command that resolves a company record
 into repo-local artifacts. It can take one-run public option overrides, but
@@ -611,7 +574,7 @@ Out of scope for `verself bootstrap`:
 Those actions stay in checked-in repo tooling such as `aspect deploy` and
 operator tasks that consume the same company record and resolved manifest.
 
-## Company Options
+## Company Options [DESCOPED]
 
 Company options are the shared interface for all third-party and generated
 configuration needed by operator bootstrap. The same schema covers
@@ -662,7 +625,7 @@ the company secret store or rendered SOPS bag. `company options add --from-env`
 is a convenience that writes the secret value and the option metadata in one
 transaction.
 
-## Company Secrets
+## Company Secrets [DESCOPED]
 
 Company secrets are generated or supplied values that become SOPS bag entries,
 credential-store entries, or provider/runtime config secrets. They are modeled
@@ -736,7 +699,7 @@ The root SOPS key never leaves the operator checkout: bootstrap renders SOPS
 bags to its public Age recipient and stores the private identity through the
 local credential store.
 
-## Derivation Rules
+## Derivation Rules [DESCOPED]
 
 The bootstrap manifest stores a resolved snapshot of company input, one-run
 public option overrides, company options, and derived values separately:
@@ -829,7 +792,7 @@ Generated by company secret generation:
 - metadata describing target SOPS bags, consuming components, reveal policy,
   and rotation commands.
 
-## Site Artifacts
+## Site Artifacts [DESCOPED]
 
 `verself bootstrap` resolves a company record into the operator checkout. It
 writes the artifacts the operator's `aspect deploy` will consume:
@@ -1015,15 +978,12 @@ CLI implementation should have deterministic tests for:
 - project-local `.verself/project.json` resolution;
 - company record writes under XDG data and active company pointer updates under
   XDG config;
-- bootstrap manifest derivation from a company record plus one-run public option
-  overrides;
 - company option classification without leaking raw credential material;
 - company secret generation with deterministic metadata and nondeterministic
   values from cryptographic randomness;
 - secret reveal and set command behavior, including no plaintext in default JSON
   or progress output;
 - generated next-command output that uses `aspect deploy` for deployment;
-- bootstrap artifact rendering into deterministic file paths;
 - generated-client request shapes for SDK-backed commands;
 - idempotency key generation and retry behavior for mutating commands;
 - JSON output stability for automation.
@@ -1034,28 +994,9 @@ Live SDK and CLI coverage should exercise:
 - the Go SDK `Projects` client using the generated projects-service client;
 - TypeScript server functions in `verself-web` using the TypeScript SDK;
 - idempotency keys on project mutations;
-- service-side audit/domain-event rows and ClickHouse traces for each live
+- service-side API-activity/domain-event rows and ClickHouse traces for each live
   request.
 
 Completion evidence for SDK-backed work is the combination of API JSON output,
-service audit events, domain-event ledger rows, and traces linked by the same
+service API activities, domain-event ledger rows, and traces linked by the same
 trace ID.
-
-## Implementation Boundaries
-
-Suggested source layout:
-
-```text
-src/sdks/go/verself/             curated public Go SDK
-src/websites/packages/sdk/  curated public TypeScript SDK
-src/verself-cli/                 public CLI binary
-src/tools/operator/              legacy/internal operator helpers during cutover
-src/services/iam-service/        owner-claim and organization APIs
-src/host/sites/<site>/           pre-service site variable store
-```
-
-The current `aspect operator platform --action=seed` behavior can become a
-migration reference for repo-local owner-seeding logic. Infrastructure
-deployment stays on checked-in tooling such as `aspect deploy` rather than SDKs
-or service APIs; product state convergence can call service APIs only after the
-relevant services exist.

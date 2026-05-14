@@ -15,86 +15,94 @@ import (
 	governancecore "github.com/verself/verself-go/internal/transport/governance"
 )
 
-type GovernanceAuditOutcome string
+type GovernanceAPIActivityOrder string
 
 const (
-	GovernanceAuditOutcomeAllowed GovernanceAuditOutcome = "allowed"
-	GovernanceAuditOutcomeDenied  GovernanceAuditOutcome = "denied"
-	GovernanceAuditOutcomeError   GovernanceAuditOutcome = "error"
-)
-
-type GovernanceAuditOrder string
-
-const (
-	GovernanceAuditOrderAsc  GovernanceAuditOrder = "asc"
-	GovernanceAuditOrderDesc GovernanceAuditOrder = "desc"
+	GovernanceAPIActivityOrderAsc  GovernanceAPIActivityOrder = "asc"
+	GovernanceAPIActivityOrderDesc GovernanceAPIActivityOrder = "desc"
 )
 
 type GovernanceExportScope string
 
 const (
-	GovernanceExportScopeIdentity GovernanceExportScope = "identity"
-	GovernanceExportScopeBilling  GovernanceExportScope = "billing"
-	GovernanceExportScopeSandbox  GovernanceExportScope = "sandbox"
-	GovernanceExportScopeAudit    GovernanceExportScope = "audit"
+	GovernanceExportScopeIdentity    GovernanceExportScope = "identity"
+	GovernanceExportScopeBilling     GovernanceExportScope = "billing"
+	GovernanceExportScopeSandbox     GovernanceExportScope = "sandbox"
+	GovernanceExportScopeAPIActivity GovernanceExportScope = "api_activity"
 )
 
-type ListGovernanceAuditEventsOptions struct {
-	Limit              int
-	Cursor             string
-	Order              GovernanceAuditOrder
-	ActorID            string
-	AuditEvent         string
-	CredentialID       string
-	EventName          string
-	EventSource        string
-	Outcome            GovernanceAuditOutcome
-	TargetID           string
-	TargetType         string
-	TargetResourceName string
+type ListGovernanceAPIActivitiesOptions struct {
+	Limit         int
+	Cursor        string
+	Order         GovernanceAPIActivityOrder
+	ActorUID      string
+	ActorType     string
+	APIService    string
+	APIOperation  string
+	ActivityID    uint8
+	CredentialUID string
+	ResourceUID   string
+	ResourceType  string
+	StatusID      uint8
+	StatusCode    string
+	TraceUID      string
 }
 
-type GovernanceAuditEvent struct {
-	ActorID            string    `json:"actor_id"`
-	ActorType          string    `json:"actor_type"`
-	AuditEvent         string    `json:"audit_event"`
-	CredentialID       string    `json:"credential_id,omitempty"`
-	DetailSHA256       string    `json:"detail_sha256"`
-	ErrorCode          string    `json:"error_code,omitempty"`
-	EventID            string    `json:"event_id"`
-	EventName          string    `json:"event_name"`
-	EventSource        string    `json:"event_source"`
-	HMACKeyID          string    `json:"hmac_key_id,omitempty"`
-	OrgID              string    `json:"org_id"`
-	Outcome            string    `json:"outcome"`
-	Permission         string    `json:"permission"`
-	PrevHMAC           string    `json:"prev_hmac"`
-	RecordedAt         time.Time `json:"recorded_at"`
-	RowHMAC            string    `json:"row_hmac"`
-	Sequence           string    `json:"sequence"`
-	TargetID           string    `json:"target_id,omitempty"`
-	TargetType         string    `json:"target_type"`
-	TargetResourceName string    `json:"targetResourceName,omitempty"`
-	TraceID            string    `json:"trace_id,omitempty"`
+type GovernanceAPIActivity struct {
+	MetadataUID             string    `json:"metadata_uid"`
+	Time                    time.Time `json:"time"`
+	OrgID                   string    `json:"org_id"`
+	Sequence                string    `json:"sequence"`
+	OCSFVersion             string    `json:"ocsf_version"`
+	ClassUID                uint16    `json:"class_uid"`
+	ClassName               string    `json:"class_name"`
+	TypeUID                 uint32    `json:"type_uid"`
+	ActivityID              uint8     `json:"activity_id"`
+	ActivityName            string    `json:"activity_name"`
+	ActionID                uint8     `json:"action_id"`
+	Action                  string    `json:"action"`
+	StatusID                uint8     `json:"status_id"`
+	Status                  string    `json:"status"`
+	StatusCode              string    `json:"status_code"`
+	APIService              string    `json:"api_service"`
+	APIOperation            string    `json:"api_operation"`
+	ActorType               string    `json:"actor_type"`
+	ActorUID                string    `json:"actor_uid"`
+	CredentialUID           string    `json:"credential_uid,omitempty"`
+	PrimaryResourceType     string    `json:"primary_resource_type"`
+	PrimaryResourceUID      string    `json:"primary_resource_uid,omitempty"`
+	PrimaryResourceFullName string    `json:"primary_resource_full_name,omitempty"`
+	Permission              string    `json:"permission"`
+	HTTPMethod              string    `json:"http_method"`
+	HTTPRoute               string    `json:"http_route"`
+	HTTPResponseCode        uint16    `json:"http_response_code"`
+	TraceUID                string    `json:"trace_uid,omitempty"`
+	SpanUID                 string    `json:"span_uid,omitempty"`
+	OCSFSHA256              string    `json:"ocsf_sha256"`
+	PrevHMAC                string    `json:"prev_hmac"`
+	RowHMAC                 string    `json:"row_hmac"`
+	HMACKeyID               string    `json:"hmac_key_id,omitempty"`
 }
 
-type GovernanceAuditFilters struct {
-	ActorID            string `json:"actor_id,omitempty"`
-	AuditEvent         string `json:"audit_event,omitempty"`
-	CredentialID       string `json:"credential_id,omitempty"`
-	EventName          string `json:"event_name,omitempty"`
-	EventSource        string `json:"event_source,omitempty"`
-	Outcome            string `json:"outcome,omitempty"`
-	TargetID           string `json:"target_id,omitempty"`
-	TargetType         string `json:"target_type,omitempty"`
-	TargetResourceName string `json:"targetResourceName,omitempty"`
+type GovernanceAPIActivityFilters struct {
+	ActorUID      string `json:"actor_uid,omitempty"`
+	ActorType     string `json:"actor_type,omitempty"`
+	APIService    string `json:"api_service,omitempty"`
+	APIOperation  string `json:"api_operation,omitempty"`
+	CredentialUID string `json:"credential_uid,omitempty"`
+	ResourceUID   string `json:"resource_uid,omitempty"`
+	ResourceType  string `json:"resource_type,omitempty"`
+	StatusCode    string `json:"status_code,omitempty"`
+	TraceUID      string `json:"trace_uid,omitempty"`
+	ActivityID    uint8  `json:"activity_id,omitempty"`
+	StatusID      uint8  `json:"status_id,omitempty"`
 }
 
-type GovernanceAuditEvents struct {
-	Events     []GovernanceAuditEvent `json:"events"`
-	Filters    GovernanceAuditFilters `json:"filters"`
-	Limit      int32                  `json:"limit"`
-	NextCursor string                 `json:"next_cursor,omitempty"`
+type GovernanceAPIActivities struct {
+	APIActivities []GovernanceAPIActivity      `json:"api_activities"`
+	Filters       GovernanceAPIActivityFilters `json:"filters"`
+	Limit         int32                        `json:"limit"`
+	NextCursor    string                       `json:"next_cursor,omitempty"`
 }
 
 type CreateGovernanceExportInput struct {
@@ -143,71 +151,76 @@ type GovernanceClient struct {
 	client *governancecore.Client
 }
 
-func (c *GovernanceClient) ListAuditEvents(ctx context.Context, options ListGovernanceAuditEventsOptions) (GovernanceAuditEvents, error) {
+func (c *GovernanceClient) ListAPIActivities(ctx context.Context, options ListGovernanceAPIActivitiesOptions) (GovernanceAPIActivities, error) {
 	if c == nil || c.client == nil {
-		return GovernanceAuditEvents{}, fmt.Errorf("verself sdk: governance client is not initialized")
+		return GovernanceAPIActivities{}, fmt.Errorf("verself sdk: governance client is not initialized")
 	}
-	request := governancecore.ListAuditEventsRequest{}
+	request := governancecore.ListAPIActivitiesRequest{}
 	if options.Limit > 0 {
-		limit, err := governanceAuditEventsLimit(options.Limit)
+		limit, err := governanceAPIActivityLimit(options.Limit)
 		if err != nil {
-			return GovernanceAuditEvents{}, err
+			return GovernanceAPIActivities{}, err
 		}
 		request.Limit = &limit
 	}
 	if strings.TrimSpace(options.Cursor) != "" {
-		cursor := governancecore.AuditCursor(strings.TrimSpace(options.Cursor))
+		cursor := governancecore.APIActivityCursor(strings.TrimSpace(options.Cursor))
 		request.Cursor = &cursor
 	}
 	if options.Order != "" {
-		order := governancecore.AuditListOrder(options.Order)
+		order := governancecore.APIActivityListOrder(options.Order)
 		request.Order = &order
 	}
-	if strings.TrimSpace(options.ActorID) != "" {
-		actorID := governancecore.AuditActorId(strings.TrimSpace(options.ActorID))
-		request.ActorID = &actorID
+	if strings.TrimSpace(options.ActorUID) != "" {
+		actorUID := governancecore.ActorUID(strings.TrimSpace(options.ActorUID))
+		request.ActorUID = &actorUID
 	}
-	if strings.TrimSpace(options.AuditEvent) != "" {
-		auditEvent := governancecore.GovernanceAuditEventName(strings.TrimSpace(options.AuditEvent))
-		request.AuditEvent = &auditEvent
+	if strings.TrimSpace(options.ActorType) != "" {
+		actorType := governancecore.ActorType(strings.TrimSpace(options.ActorType))
+		request.ActorType = &actorType
 	}
-	if strings.TrimSpace(options.CredentialID) != "" {
-		credentialID := governancecore.AuditCredentialId(strings.TrimSpace(options.CredentialID))
-		request.CredentialID = &credentialID
+	if strings.TrimSpace(options.APIService) != "" {
+		apiService := governancecore.APIActivityService(strings.TrimSpace(options.APIService))
+		request.APIService = &apiService
 	}
-	if strings.TrimSpace(options.EventName) != "" {
-		eventName := governancecore.AuditEventOperationName(strings.TrimSpace(options.EventName))
-		request.EventName = &eventName
+	if strings.TrimSpace(options.APIOperation) != "" {
+		apiOperation := governancecore.APIActivityOperation(strings.TrimSpace(options.APIOperation))
+		request.APIOperation = &apiOperation
 	}
-	if strings.TrimSpace(options.EventSource) != "" {
-		eventSource := governancecore.AuditEventSource(strings.TrimSpace(options.EventSource))
-		request.EventSource = &eventSource
+	if options.ActivityID != 0 {
+		request.ActivityID = &options.ActivityID
 	}
-	if options.Outcome != "" {
-		outcome := governancecore.AuditOutcome(options.Outcome)
-		request.Outcome = &outcome
+	if strings.TrimSpace(options.CredentialUID) != "" {
+		credentialUID := governancecore.CredentialUID(strings.TrimSpace(options.CredentialUID))
+		request.CredentialUID = &credentialUID
 	}
-	if strings.TrimSpace(options.TargetID) != "" {
-		targetID := governancecore.AuditTargetId(strings.TrimSpace(options.TargetID))
-		request.TargetID = &targetID
+	if strings.TrimSpace(options.ResourceUID) != "" {
+		resourceUID := governancecore.ResourceUID(strings.TrimSpace(options.ResourceUID))
+		request.ResourceUID = &resourceUID
 	}
-	if strings.TrimSpace(options.TargetType) != "" {
-		targetType := governancecore.AuditTargetType(strings.TrimSpace(options.TargetType))
-		request.TargetType = &targetType
+	if strings.TrimSpace(options.ResourceType) != "" {
+		resourceType := governancecore.ResourceType(strings.TrimSpace(options.ResourceType))
+		request.ResourceType = &resourceType
 	}
-	if strings.TrimSpace(options.TargetResourceName) != "" {
-		targetResourceName := governancecore.ResourceName(strings.TrimSpace(options.TargetResourceName))
-		request.TargetResourceName = &targetResourceName
+	if options.StatusID != 0 {
+		request.StatusID = &options.StatusID
+	}
+	if strings.TrimSpace(options.StatusCode) != "" {
+		request.StatusCode = &options.StatusCode
+	}
+	if strings.TrimSpace(options.TraceUID) != "" {
+		traceUID := governancecore.TraceID(strings.TrimSpace(options.TraceUID))
+		request.TraceUID = &traceUID
 	}
 
-	response, err := c.client.ListAuditEvents(ctx, request)
+	response, err := c.client.ListAPIActivities(ctx, request)
 	if err != nil {
-		return GovernanceAuditEvents{}, err
+		return GovernanceAPIActivities{}, err
 	}
 	if response.Result == nil {
-		return GovernanceAuditEvents{}, governanceAPIError("list audit events", response.StatusCode, response.Body)
+		return GovernanceAPIActivities{}, governanceAPIError("list API activities", response.StatusCode, response.Body)
 	}
-	return governanceAuditEventsFromGenerated(response.Result.Events, response.Result.Filters, response.Result.Limit, response.Result.NextCursor)
+	return governanceAPIActivitiesFromGenerated(response.Result.APIActivities, response.Result.Filters, response.Result.Limit, response.Result.NextCursor)
 }
 
 func (c *GovernanceClient) ListDataExports(ctx context.Context) ([]GovernanceExportJob, error) {
@@ -253,7 +266,7 @@ func (c *GovernanceClient) CreateDataExport(ctx context.Context, input CreateGov
 		body.Scopes = &scopes
 	}
 	response, err := c.client.CreateDataExport(ctx, governancecore.CreateDataExportRequest{
-		IdempotencyKey: governancecore.IdempotencyKey(key),
+		IdempotencyKey: key,
 		Body:           body,
 	})
 	if err != nil {
@@ -273,7 +286,7 @@ func (c *GovernanceClient) GetDataExport(ctx context.Context, exportID string) (
 	if err != nil {
 		return GovernanceExportJob{}, err
 	}
-	response, err := c.client.GetDataExport(ctx, governancecore.GetDataExportRequest{ExportID: governancecore.DataExportId(id.String())})
+	response, err := c.client.GetDataExport(ctx, governancecore.GetDataExportRequest{ExportID: governancecore.DataExportID(id.String())})
 	if err != nil {
 		return GovernanceExportJob{}, err
 	}
@@ -291,22 +304,22 @@ func (c *GovernanceClient) DownloadDataExport(ctx context.Context, exportID stri
 	if err != nil {
 		return GovernanceExportArtifact{}, err
 	}
-	response, err := c.client.DownloadDataExport(ctx, governancecore.DownloadDataExportRequest{ExportID: governancecore.DataExportId(id.String())})
+	response, err := c.client.DownloadDataExport(ctx, governancecore.DownloadDataExportRequest{ExportID: governancecore.DataExportID(id.String())})
 	if err != nil {
 		return GovernanceExportArtifact{}, err
 	}
-	if response.Result == nil || response.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK {
 		return GovernanceExportArtifact{}, governanceAPIError("download data export", response.StatusCode, response.Body)
 	}
-	contentType := string(response.Result.ContentType)
+	contentType := response.ContentType
 	if strings.TrimSpace(contentType) == "" {
 		contentType = "application/gzip"
 	}
 	return GovernanceExportArtifact{
 		ExportID:    id.String(),
-		FileName:    governanceArtifactFileName(string(response.Result.ContentDisposition), id),
+		FileName:    governanceArtifactFileName(response.ContentDisposition, id),
 		ContentType: contentType,
-		Body:        append([]byte(nil), response.Result.Body...),
+		Body:        append([]byte(nil), response.Body...),
 	}, nil
 }
 
@@ -323,73 +336,92 @@ func governanceArtifactFileName(contentDisposition string, exportID uuid.UUID) s
 	return fmt.Sprintf("verself-export-%s.tar.gz", exportID.String())
 }
 
-func governanceAuditEventsFromGenerated(events governancecore.AuditEvents, filters governancecore.AuditFilters, limit governancecore.AuditEventsLimit, nextCursor *governancecore.AuditCursor) (GovernanceAuditEvents, error) {
-	out := GovernanceAuditEvents{
-		Events:  make([]GovernanceAuditEvent, 0, len(events)),
-		Filters: governanceAuditFiltersFromGenerated(filters),
-		Limit:   int32(limit), // #nosec G115 -- Smithy bounds audit event pages to 200.
+func governanceAPIActivitiesFromGenerated(events governancecore.APIActivityEvents, filters governancecore.APIActivityFilters, limit governancecore.APIActivityEventsLimit, nextCursor *governancecore.APIActivityCursor) (GovernanceAPIActivities, error) {
+	out := GovernanceAPIActivities{
+		APIActivities: make([]GovernanceAPIActivity, 0, len(events)),
+		Filters:       governanceAPIActivityFiltersFromGenerated(filters),
+		Limit:         int32(limit), // #nosec G115 -- Smithy bounds API activity pages to 200.
 	}
 	if nextCursor != nil {
 		out.NextCursor = string(*nextCursor)
 	}
 	for _, event := range events {
-		converted, err := governanceAuditEventFromGenerated(event)
+		converted, err := governanceAPIActivityFromGenerated(event)
 		if err != nil {
-			return GovernanceAuditEvents{}, err
+			return GovernanceAPIActivities{}, err
 		}
-		out.Events = append(out.Events, converted)
+		out.APIActivities = append(out.APIActivities, converted)
 	}
 	return out, nil
 }
 
-func governanceAuditEventsLimit(value int) (governancecore.AuditEventsLimit, error) {
+func governanceAPIActivityLimit(value int) (governancecore.APIActivityEventsLimit, error) {
 	if value < 1 || value > 200 {
-		return 0, fmt.Errorf("verself sdk: governance audit limit must be between 1 and 200")
+		return 0, fmt.Errorf("verself sdk: governance API activity limit must be between 1 and 200")
 	}
-	return governancecore.AuditEventsLimit(value), nil // #nosec G115 -- Smithy bounds audit event pages to 200.
+	return governancecore.APIActivityEventsLimit(value), nil // #nosec G115 -- Smithy bounds API activity pages to 200.
 }
 
-func governanceAuditFiltersFromGenerated(input governancecore.AuditFilters) GovernanceAuditFilters {
-	return GovernanceAuditFilters{
-		ActorID:            stringValue(input.ActorID),
-		AuditEvent:         stringValue(input.AuditEvent),
-		CredentialID:       stringValue(input.CredentialID),
-		EventName:          stringValue(input.EventName),
-		EventSource:        stringValue(input.EventSource),
-		Outcome:            stringValue(input.Outcome),
-		TargetID:           stringValue(input.TargetID),
-		TargetType:         stringValue(input.TargetType),
-		TargetResourceName: stringValue(input.TargetResourceName),
+func governanceAPIActivityFiltersFromGenerated(input governancecore.APIActivityFilters) GovernanceAPIActivityFilters {
+	out := GovernanceAPIActivityFilters{
+		ActorUID:      stringValue(input.ActorUID),
+		ActorType:     stringValue(input.ActorType),
+		APIService:    stringValue(input.APIService),
+		APIOperation:  stringValue(input.APIOperation),
+		CredentialUID: stringValue(input.CredentialUID),
+		ResourceUID:   stringValue(input.ResourceUID),
+		ResourceType:  stringValue(input.ResourceType),
+		StatusCode:    stringValue(input.StatusCode),
+		TraceUID:      stringValue(input.TraceUID),
 	}
+	if input.ActivityID != nil {
+		out.ActivityID = *input.ActivityID
+	}
+	if input.StatusID != nil {
+		out.StatusID = *input.StatusID
+	}
+	return out
 }
 
-func governanceAuditEventFromGenerated(input governancecore.AuditEvent) (GovernanceAuditEvent, error) {
-	recordedAt, err := parseGeneratedTime(input.RecordedAt, "governance audit recorded_at")
+func governanceAPIActivityFromGenerated(input governancecore.APIActivityEvent) (GovernanceAPIActivity, error) {
+	observedAt, err := parseGeneratedTime(input.Time, "governance API activity time")
 	if err != nil {
-		return GovernanceAuditEvent{}, err
+		return GovernanceAPIActivity{}, err
 	}
-	return GovernanceAuditEvent{
-		ActorID:            string(input.ActorID),
-		ActorType:          string(input.ActorType),
-		AuditEvent:         string(input.AuditEvent),
-		CredentialID:       stringValue(input.CredentialID),
-		DetailSHA256:       string(input.DetailSHA256),
-		ErrorCode:          stringValue(input.ErrorCode),
-		EventID:            string(input.EventID),
-		EventName:          string(input.EventName),
-		EventSource:        string(input.EventSource),
-		HMACKeyID:          stringValue(input.HMACKeyID),
-		OrgID:              string(input.OrgID),
-		Outcome:            string(input.Outcome),
-		Permission:         string(input.Permission),
-		PrevHMAC:           string(input.PrevHMAC),
-		RecordedAt:         recordedAt,
-		RowHMAC:            string(input.RowHMAC),
-		Sequence:           string(input.Sequence),
-		TargetID:           stringValue(input.TargetID),
-		TargetType:         string(input.TargetType),
-		TargetResourceName: stringValue(input.TargetResourceName),
-		TraceID:            stringValue(input.TraceID),
+	return GovernanceAPIActivity{
+		MetadataUID:             string(input.MetadataUID),
+		Time:                    observedAt,
+		OrgID:                   string(input.OrgID),
+		Sequence:                string(input.Sequence),
+		OCSFVersion:             input.OCSFVersion,
+		ClassUID:                input.ClassUID,
+		ClassName:               string(input.ClassName),
+		TypeUID:                 input.TypeUID,
+		ActivityID:              input.ActivityID,
+		ActivityName:            input.ActivityName,
+		ActionID:                input.ActionID,
+		Action:                  input.Action,
+		StatusID:                input.StatusID,
+		Status:                  string(input.Status),
+		StatusCode:              input.StatusCode,
+		APIService:              string(input.APIService),
+		APIOperation:            string(input.APIOperation),
+		ActorType:               string(input.ActorType),
+		ActorUID:                string(input.ActorUID),
+		CredentialUID:           stringValue(input.CredentialUID),
+		PrimaryResourceType:     string(input.PrimaryResourceType),
+		PrimaryResourceUID:      stringValue(input.PrimaryResourceUID),
+		PrimaryResourceFullName: stringValue(input.PrimaryResourceFullName),
+		Permission:              string(input.Permission),
+		HTTPMethod:              input.HTTPMethod,
+		HTTPRoute:               input.HTTPRoute,
+		HTTPResponseCode:        input.HTTPResponseCode,
+		TraceUID:                stringValue(input.TraceUID),
+		SpanUID:                 stringValue(input.SpanUID),
+		OCSFSHA256:              string(input.OCSFSHA256),
+		PrevHMAC:                string(input.PrevHMAC),
+		RowHMAC:                 string(input.RowHMAC),
+		HMACKeyID:               stringValue(input.HMACKeyID),
 	}, nil
 }
 

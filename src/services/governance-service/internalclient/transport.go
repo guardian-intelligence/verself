@@ -13,132 +13,125 @@ import (
 
 const ServiceName = "governance-service"
 
-type AuditActorId = string
-
-type AuditActorType = string
-
-type AuditCredentialId = string
-
-type AuditErrorCode = string
-
-type AuditEventId = string
-
-type AuditEventOperationName = string
-
-type AuditEventSource = string
-
-type AuditHMACKeyId = string
-
-type AuditSchemaVersion = string
-
-type AuditTargetId = string
-
-type AuditTargetType = string
-
-type DecimalUint64 = string
-
-type GovernanceAuditEventName = string
-
-type GovernanceOrgId = string
-
-type GovernancePermissionName = string
-
-type HMACHex = string
-
-type ProblemCode = string
-
-type ProblemDetail = string
-
-type ProblemType = string
-
-type RequestId = string
-
-type ResourceName = string
-
-type TraceId = string
-
-type TraceParent = string
-
-type AuditOutcome string
-
-const (
-	AuditOutcomeALLOWED AuditOutcome = "allowed"
-	AuditOutcomeDENIED  AuditOutcome = "denied"
-	AuditOutcomeERROR   AuditOutcome = "error"
+type (
+	APIActivityAction        = string
+	APIActivityOperation     = string
+	APIActivityService       = string
+	APIEventCode             = string
+	ActorType                = string
+	ActorUID                 = string
+	CredentialUID            = string
+	DecimalUint64            = string
+	GovernanceOrgID          = string
+	GovernancePermissionName = string
+	HMACHex                  = string
+	HTTPMethod               = string
+	OCSFMetadataUID          = string
+	ProblemCode              = string
+	ProblemDetail            = string
+	ProblemStatusCode        = string
+	ProblemType              = string
+	RequestID                = string
+	ResourceName             = string
+	ResourceType             = string
+	ResourceUID              = string
+	SafeHTTPArgs             = string
+	SpanID                   = string
+	TraceID                  = string
+	TraceParent              = string
 )
 
-type AppendAuditEventAccepted struct {
-	EventID  AuditEventId  `json:"event_id"`
-	Sequence DecimalUint64 `json:"sequence"`
-	RowHMAC  HMACHex       `json:"row_hmac"`
+type APIActivityStatus string
+
+const (
+	APIActivityStatusSuccess APIActivityStatus = "Success"
+	APIActivityStatusFailure APIActivityStatus = "Failure"
+	APIActivityStatusOther   APIActivityStatus = "Other"
+)
+
+type AuthorizationDecision string
+
+const (
+	AuthorizationDecisionAllowed AuthorizationDecision = "Allowed"
+	AuthorizationDecisionDenied  AuthorizationDecision = "Denied"
+)
+
+type APIActivityAccepted struct {
+	MetadataUID OCSFMetadataUID `json:"metadata_uid"`
+	Sequence    DecimalUint64   `json:"sequence"`
+	RowHMAC     HMACHex         `json:"row_hmac"`
 }
 
-type AuditRecord struct {
-	SchemaVersion      *AuditSchemaVersion      `json:"schema_version,omitempty"`
-	OrgID              GovernanceOrgId          `json:"org_id"`
-	EventSource        AuditEventSource         `json:"event_source"`
-	EventName          AuditEventOperationName  `json:"event_name"`
-	AuditEvent         GovernanceAuditEventName `json:"audit_event"`
-	ActorType          AuditActorType           `json:"actor_type"`
-	ActorID            AuditActorId             `json:"actor_id"`
-	CredentialID       *AuditCredentialId       `json:"credential_id,omitempty"`
-	TargetType         AuditTargetType          `json:"target_type"`
-	TargetID           *AuditTargetId           `json:"target_id,omitempty"`
-	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty"`
-	Permission         GovernancePermissionName `json:"permission"`
-	Outcome            AuditOutcome             `json:"outcome"`
-	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty"`
-	TraceID            *TraceId                 `json:"trace_id,omitempty"`
-	HMACKeyID          *AuditHMACKeyId          `json:"hmac_key_id,omitempty"`
-	RecordedAt         *string                  `json:"recorded_at,omitempty"`
-	Detail             *map[string]any          `json:"detail,omitempty"`
+type APIActivityHTTPRequest struct {
+	UID           *RequestID    `json:"uid,omitempty"`
+	Method        HTTPMethod    `json:"method"`
+	Route         string        `json:"route"`
+	SafeParams    *SafeHTTPArgs `json:"safe_params,omitempty"`
+	UserAgent     *string       `json:"user_agent,omitempty"`
+	XForwardedFor *string       `json:"x_forwarded_for,omitempty"`
+	Referrer      *string       `json:"referrer,omitempty"`
+	Host          *string       `json:"host,omitempty"`
+	Scheme        *string       `json:"scheme,omitempty"`
+	ClientIP      *string       `json:"client_ip,omitempty"`
+	SourceName    *string       `json:"source_name,omitempty"`
 }
 
-type PermissionDeniedError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+type APIActivityHTTPResponse struct {
+	Code    uint16  `json:"code"`
+	Message *string `json:"message,omitempty"`
+	Status  *string `json:"status,omitempty"`
 }
 
-type ServiceUnavailableError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+type APIActivityResource struct {
+	Type     ResourceType  `json:"type"`
+	UID      *ResourceUID  `json:"uid,omitempty"`
+	Name     *string       `json:"name,omitempty"`
+	FullName *ResourceName `json:"full_name,omitempty"`
+	Role     *string       `json:"role,omitempty"`
+	RoleID   *uint8        `json:"role_id,omitempty"`
 }
 
-type ValidationFailedError struct {
-	Type        ProblemType    `json:"type"`
-	Title       string         `json:"title"`
-	Status      int64          `json:"status"`
-	Detail      *ProblemDetail `json:"detail,omitempty"`
-	Instance    *string        `json:"instance,omitempty"`
-	Code        ProblemCode    `json:"code"`
-	RequestID   *RequestId     `json:"requestId,omitempty"`
-	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+type APIActivityResources []APIActivityResource
+
+type APIActivityRecord struct {
+	OrgID                 GovernanceOrgID          `json:"org_id"`
+	APIService            APIActivityService       `json:"api_service"`
+	APIOperation          APIActivityOperation     `json:"api_operation"`
+	APIEventCode          APIEventCode             `json:"api_event_code"`
+	APIAction             APIActivityAction        `json:"api_action"`
+	APIVersion            *string                  `json:"api_version,omitempty"`
+	ActorType             ActorType                `json:"actor_type"`
+	ActorUID              ActorUID                 `json:"actor_uid"`
+	ActorName             *string                  `json:"actor_name,omitempty"`
+	ActorEmail            *string                  `json:"actor_email,omitempty"`
+	CredentialUID         *CredentialUID           `json:"credential_uid,omitempty"`
+	Permission            GovernancePermissionName `json:"permission"`
+	Resources             APIActivityResources     `json:"resources"`
+	HTTPRequest           APIActivityHTTPRequest   `json:"http_request"`
+	HTTPResponse          APIActivityHTTPResponse  `json:"http_response"`
+	AuthorizationDecision AuthorizationDecision    `json:"authorization_decision"`
+	Status                APIActivityStatus        `json:"status"`
+	StatusCode            ProblemStatusCode        `json:"status_code"`
+	StatusDetail          *string                  `json:"status_detail,omitempty"`
+	TraceUID              *TraceID                 `json:"trace_uid,omitempty"`
+	SpanUID               *SpanID                  `json:"span_uid,omitempty"`
+	HMACKeyID             *string                  `json:"hmac_key_id,omitempty"`
+	ObservedAt            *string                  `json:"observed_at,omitempty"`
+	Unmapped              *map[string]any          `json:"unmapped,omitempty"`
 }
 
-type AppendAuditEventRequest struct {
-	Body AuditRecord `json:"body"`
+type AppendAPIActivityRequest struct {
+	Body APIActivityRecord `json:"body"`
 }
 
-type AppendAuditEventOutputBody struct {
-	Accepted AppendAuditEventAccepted `json:"accepted"`
+type AppendAPIActivityOutputBody struct {
+	Accepted APIActivityAccepted `json:"accepted"`
 }
 
-type AppendAuditEventResponse struct {
+type AppendAPIActivityResponse struct {
 	StatusCode   int
 	Body         []byte
-	Result       *AppendAuditEventOutputBody
+	Result       *AppendAPIActivityOutputBody
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -184,11 +177,11 @@ func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
 	}
 }
 
-func (c *Client) AppendAuditEvent(ctx context.Context, request AppendAuditEventRequest, reqEditors ...RequestEditorFn) (*AppendAuditEventResponse, error) {
+func (c *Client) AppendAPIActivity(ctx context.Context, request AppendAPIActivityRequest, reqEditors ...RequestEditorFn) (*AppendAPIActivityResponse, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
 	}
-	req, err := c.newAppendAuditEventRequest(ctx, request)
+	req, err := c.newAppendAPIActivityRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -208,12 +201,11 @@ func (c *Client) AppendAuditEvent(ctx context.Context, request AppendAuditEventR
 	if err != nil {
 		return nil, err
 	}
-	return parseAppendAuditEventResponse(resp)
+	return parseAppendAPIActivityResponse(resp)
 }
 
-func (c *Client) newAppendAuditEventRequest(ctx context.Context, request AppendAuditEventRequest) (*http.Request, error) {
-	path := "/internal/v1/audit/events"
-	endpoint, err := url.Parse(c.server + path)
+func (c *Client) newAppendAPIActivityRequest(ctx context.Context, request AppendAPIActivityRequest) (*http.Request, error) {
+	endpoint, err := url.Parse(c.server + "/internal/v1/ocsf/api-activities")
 	if err != nil {
 		return nil, err
 	}
@@ -230,15 +222,15 @@ func (c *Client) newAppendAuditEventRequest(ctx context.Context, request AppendA
 	return req, nil
 }
 
-func parseAppendAuditEventResponse(resp *http.Response) (*AppendAuditEventResponse, error) {
+func parseAppendAPIActivityResponse(resp *http.Response) (*AppendAPIActivityResponse, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	result := &AppendAuditEventResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	result := &AppendAPIActivityResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 202 {
-		var decoded AppendAuditEventOutputBody
+		var decoded AppendAPIActivityOutputBody
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

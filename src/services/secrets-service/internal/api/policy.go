@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	billingclient "github.com/verself/billing-service/client"
+	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	"github.com/verself/secrets-service/internal/secrets"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
@@ -532,35 +533,75 @@ func auditOperation(ctx context.Context, operationID string, policy secretsOpera
 			secretVersion = baoInfo.KeyVersion
 		}
 	}
-	record := governanceAuditRecord{
-		OrgID:        identity.OrgID,
-		EventSource:  "secrets-service",
-		EventName:    operationID,
-		AuditEvent:   string(policy.AuditEvent),
-		ActorType:    principalFromIdentity(identity, policy).Type,
-		ActorID:      identity.Subject,
-		CredentialID: claimString(identity.Raw, "verself:credential_id"),
-		Permission:   string(policy.Permission),
-		TargetType:   string(policy.Resource),
-		TargetID:     targetID,
-		Outcome:      outcome,
-		Detail: compactAuditDetail(map[string]any{
-			"target_scope":          targetScope,
-			"target_path_hash":      targetPathHash,
-			"idempotency_key_hash":  hashTextForAudit(info.IdempotencyKey),
-			"secret_mount":          secretMount,
-			"secret_version":        secretVersion,
-			"secret_operation":      policy.SecretOperation,
-			"key_id":                keyID,
-			"openbao_request_id":    openBaoRequestID,
-			"openbao_accessor_hash": openBaoAccessorHash,
-			"content_sha256":        contentHashFromBoundary(input),
+	decision, status := apiActivityResult(outcome)
+	httpStatus := httpStatusFromOperationResult(outcome, err)
+	record := governanceAPIActivity{
+		OrgID:                 identity.OrgID,
+		APIService:            "secrets-service",
+		APIOperation:          operationID,
+		APIEventCode:          string(policy.AuditEvent),
+		APIAction:             string(policy.Action),
+		ActorType:             principalFromIdentity(identity, policy).Type,
+		ActorUID:              identity.Subject,
+		CredentialUID:         claimString(identity.Raw, "verself:credential_id"),
+		Permission:            string(policy.Permission),
+		ResourceType:          string(policy.Resource),
+		ResourceUID:           targetID,
+		HTTPStatus:            httpStatus,
+		AuthorizationDecision: decision,
+		Status:                status,
+		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatus))),
+		Unmapped: compactAuditDetail(map[string]any{
+			"verself.target_scope":          targetScope,
+			"verself.target_path_hash":      targetPathHash,
+			"verself.idempotency_key_hash":  hashTextForAudit(info.IdempotencyKey),
+			"verself.secret_mount":          secretMount,
+			"verself.secret_version":        secretVersion,
+			"verself.secret_operation":      policy.SecretOperation,
+			"verself.key_id":                keyID,
+			"verself.openbao_request_id":    openBaoRequestID,
+			"verself.openbao_accessor_hash": openBaoAccessorHash,
+			"verself.content_sha256":        contentHashFromBoundary(input),
 		}),
 	}
 	if err != nil {
-		record.ErrorCode = problemCode(err)
+		record.StatusDetail = problemCode(err)
 	}
-	sendGovernanceAudit(ctx, record)
+	sendGovernanceAPIActivity(ctx, record)
+}
+
+func apiActivityResult(outcome string) (governanceinternalclient.AuthorizationDecision, governanceinternalclient.APIActivityStatus) {
+	switch strings.TrimSpace(outcome) {
+	case "denied":
+		return governanceinternalclient.AuthorizationDecisionDenied, governanceinternalclient.APIActivityStatusFailure
+	case "error":
+		return governanceinternalclient.AuthorizationDecisionAllowed, governanceinternalclient.APIActivityStatusFailure
+	default:
+		return governanceinternalclient.AuthorizationDecisionAllowed, governanceinternalclient.APIActivityStatusSuccess
+	}
+}
+
+func httpStatusFromOperationResult(outcome string, err error) uint16 {
+	if err != nil {
+		var statusErr huma.StatusError
+		if errors.As(err, &statusErr) && statusErr.GetStatus() > 0 {
+			return uint16(statusErr.GetStatus())
+		}
+	}
+	if outcome == "denied" {
+		return http.StatusForbidden
+	}
+	if outcome == "error" {
+		return http.StatusInternalServerError
+	}
+	return http.StatusOK
+}
+
+func problemCodeOrEmpty(err error) string {
+	if err == nil {
+		return ""
+	}
+	return problemCode(err)
 }
 
 func auditTarget(orgID string, input any, output any) (string, string, string, uint64, string) {

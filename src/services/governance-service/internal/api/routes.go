@@ -21,7 +21,7 @@ import (
 var apiTracer = otel.Tracer("governance-service/internal/api")
 
 func RegisterRoutes(api huma.API, svc *governance.Service, authorizer runtimeiam.ResourceAuthorizer) {
-	registerSecured(api, svc, authorizer, securedContract(contractapi.ListAuditEvents.Descriptor, "List organization audit events"), listAuditEvents(svc))
+	registerSecured(api, svc, authorizer, securedContract(contractapi.ListAPIActivities.Descriptor, "List organization OCSF API Activity events"), listAPIActivities(svc))
 	registerSecured(api, svc, authorizer, securedContract(contractapi.ListDataExports.Descriptor, "List organization data exports"), listExports(svc))
 	registerSecured(api, svc, authorizer, securedContract(contractapi.CreateDataExport.Descriptor, "Create an organization data export"), createExport(svc))
 	registerSecured(api, svc, authorizer, securedContract(contractapi.GetDataExport.Descriptor, "Get an organization data export"), getExport(svc))
@@ -62,7 +62,7 @@ func contractExtension(desc contractapi.OperationDescriptor) map[string]any {
 		"permission":             desc.Authorization.Permission,
 		"organization_source":    desc.Authorization.OrganizationSource,
 		"organization_member":    desc.Authorization.OrganizationMember,
-		"audit_event":            desc.Audit.Event,
+		"api_event_code":         desc.Audit.Event,
 		"resource":               desc.Audit.Resource,
 		"action":                 desc.Audit.Action,
 		"rate_limit_bucket":      desc.RateLimitBucket,
@@ -110,45 +110,49 @@ func operationPolicyFromContract(desc contractapi.OperationDescriptor) runtimeia
 	}
 }
 
-func listAuditEvents(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.ListAuditEventsInput) (*contractapi.ListAuditEventsOutput, error) {
-	return func(ctx context.Context, principal governance.Principal, input *contractapi.ListAuditEventsInput) (*contractapi.ListAuditEventsOutput, error) {
-		page, err := svc.ListAuditEvents(ctx, principal, governance.AuditListFilters{
-			Limit:              int(input.Limit),
-			Cursor:             string(input.Cursor),
-			Order:              string(input.Order),
-			ActorID:            string(input.ActorID),
-			AuditEvent:         string(input.AuditEvent),
-			CredentialID:       string(input.CredentialID),
-			EventName:          string(input.EventName),
-			EventSource:        string(input.EventSource),
-			Outcome:            string(input.Outcome),
-			TargetID:           string(input.TargetID),
-			TargetType:         string(input.TargetType),
-			TargetResourceName: string(input.TargetResourceName),
+func listAPIActivities(svc *governance.Service) func(context.Context, governance.Principal, *contractapi.ListAPIActivitiesInput) (*contractapi.ListAPIActivitiesOutput, error) {
+	return func(ctx context.Context, principal governance.Principal, input *contractapi.ListAPIActivitiesInput) (*contractapi.ListAPIActivitiesOutput, error) {
+		page, err := svc.ListAPIActivities(ctx, principal, governance.APIActivityListFilters{
+			Limit:         int(input.Limit),
+			Cursor:        string(input.Cursor),
+			Order:         string(input.Order),
+			ActorUID:      string(input.ActorUID),
+			ActorType:     string(input.ActorType),
+			APIService:    string(input.APIService),
+			APIOperation:  string(input.APIOperation),
+			ActivityID:    input.ActivityID,
+			CredentialUID: string(input.CredentialUID),
+			ResourceUID:   string(input.ResourceUID),
+			ResourceType:  string(input.ResourceType),
+			StatusID:      input.StatusID,
+			StatusCode:    input.StatusCode,
+			TraceUID:      string(input.TraceUID),
 		})
 		if err != nil {
 			return nil, err
 		}
-		out := contractapi.ListAuditEventsOutput{
-			Body: contractapi.ListAuditEventsOutputBody{
-				Events:     make(contractapi.AuditEvents, 0, len(page.Events)),
-				NextCursor: optionalContractString[contractapi.AuditCursor](page.NextCursor),
-				Limit:      contractapi.AuditEventsLimit(page.Limit),
-				Filters: contractapi.AuditFilters{
-					ActorID:            optionalContractString[contractapi.AuditActorID](string(input.ActorID)),
-					AuditEvent:         optionalContractString[contractapi.GovernanceAuditEventName](string(input.AuditEvent)),
-					CredentialID:       optionalContractString[contractapi.AuditCredentialID](string(input.CredentialID)),
-					EventName:          optionalContractString[contractapi.AuditEventOperationName](string(input.EventName)),
-					EventSource:        optionalContractString[contractapi.AuditEventSource](string(input.EventSource)),
-					Outcome:            optionalContractString[contractapi.AuditOutcome](string(input.Outcome)),
-					TargetID:           optionalContractString[contractapi.AuditTargetID](string(input.TargetID)),
-					TargetType:         optionalContractString[contractapi.AuditTargetType](string(input.TargetType)),
-					TargetResourceName: optionalContractString[contractapi.ResourceName](string(input.TargetResourceName)),
+		out := contractapi.ListAPIActivitiesOutput{
+			Body: contractapi.ListAPIActivitiesOutputBody{
+				APIActivities: make(contractapi.APIActivityEvents, 0, len(page.Events)),
+				NextCursor:    optionalContractString[contractapi.APIActivityCursor](page.NextCursor),
+				Limit:         contractapi.APIActivityEventsLimit(page.Limit),
+				Filters: contractapi.APIActivityFilters{
+					ActorUID:      optionalContractString[contractapi.ActorUID](string(input.ActorUID)),
+					ActorType:     optionalContractString[contractapi.ActorType](string(input.ActorType)),
+					APIService:    optionalContractString[contractapi.APIActivityService](string(input.APIService)),
+					APIOperation:  optionalContractString[contractapi.APIActivityOperation](string(input.APIOperation)),
+					ActivityID:    optionalUint8(input.ActivityID),
+					CredentialUID: optionalContractString[contractapi.CredentialUID](string(input.CredentialUID)),
+					ResourceUID:   optionalContractString[contractapi.ResourceUID](string(input.ResourceUID)),
+					ResourceType:  optionalContractString[contractapi.ResourceType](string(input.ResourceType)),
+					StatusID:      optionalUint8(input.StatusID),
+					StatusCode:    optionalContractString[string](input.StatusCode),
+					TraceUID:      optionalContractString[contractapi.TraceID](string(input.TraceUID)),
 				},
 			},
 		}
 		for _, event := range page.Events {
-			out.Body.Events = append(out.Body.Events, auditEventDTO(event))
+			out.Body.APIActivities = append(out.Body.APIActivities, apiActivityDTO(event))
 		}
 		return &out, nil
 	}
@@ -227,35 +231,59 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 		)
 		return &contractapi.DownloadDataExportOutput{
 			ContentType:        contractapi.MediaType("application/gzip"),
-			ContentDisposition: contractapi.ContentDisposition(fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String())),
+			ContentDisposition: fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String()),
 			Body:               body,
 		}, nil
 	}
 }
 
-func auditEventDTO(event governance.AuditEvent) contractapi.AuditEvent {
-	return contractapi.AuditEvent{
-		EventID:            contractapi.AuditEventID(event.EventID.String()),
-		RecordedAt:         event.RecordedAt.UTC().Format(time.RFC3339Nano),
-		OrgID:              contractapi.GovernanceOrgID(event.OrgID),
-		Sequence:           contractapi.DecimalUint64(strconv.FormatUint(event.Sequence, 10)),
-		EventSource:        contractapi.AuditEventSource(event.EventSource),
-		EventName:          contractapi.AuditEventOperationName(event.EventName),
-		AuditEvent:         contractapi.GovernanceAuditEventName(event.AuditEvent),
-		ActorType:          contractapi.AuditActorType(event.ActorType),
-		ActorID:            contractapi.AuditActorID(event.ActorID),
-		CredentialID:       optionalContractString[contractapi.AuditCredentialID](event.CredentialID),
-		TargetType:         contractapi.AuditTargetType(event.TargetType),
-		TargetID:           optionalContractString[contractapi.AuditTargetID](event.TargetID),
-		TargetResourceName: optionalContractString[contractapi.ResourceName](event.TargetResourceName),
-		Permission:         contractapi.GovernancePermissionName(event.Permission),
-		Outcome:            contractapi.AuditOutcome(event.Outcome),
-		ErrorCode:          optionalContractString[contractapi.AuditErrorCode](event.ErrorCode),
-		TraceID:            optionalContractString[contractapi.TraceID](event.TraceID),
-		DetailSHA256:       contractapi.SHA256Hex(event.DetailSHA256),
-		PrevHMAC:           contractapi.HMACHex(event.PrevHMAC),
-		RowHMAC:            contractapi.HMACHex(event.RowHMAC),
-		HMACKeyID:          optionalContractString[contractapi.AuditHMACKeyID](event.HMACKeyID),
+func apiActivityDTO(event governance.APIActivityRow) contractapi.APIActivityEvent {
+	return contractapi.APIActivityEvent{
+		MetadataUID:             contractapi.OCSFMetadataUID(event.MetadataUID.String()),
+		Time:                    event.Time.UTC().Format(time.RFC3339Nano),
+		OrgID:                   contractapi.GovernanceOrgID(event.OrgID),
+		Sequence:                contractapi.DecimalUint64(strconv.FormatUint(event.Sequence, 10)),
+		OCSFVersion:             event.OCSFVersion,
+		CategoryUID:             event.CategoryUID,
+		CategoryName:            event.CategoryName,
+		ClassUID:                event.ClassUID,
+		ClassName:               contractapi.OCSFClassName(event.ClassName),
+		TypeUID:                 event.TypeUID,
+		ActivityID:              event.ActivityID,
+		ActivityName:            event.ActivityName,
+		ActionID:                event.ActionID,
+		Action:                  event.Action,
+		StatusID:                event.StatusID,
+		Status:                  contractapi.OCSFStatus(event.Status),
+		StatusCode:              event.StatusCode,
+		SeverityID:              event.SeverityID,
+		Severity:                event.Severity,
+		APIService:              contractapi.APIActivityService(event.APIService),
+		APIOperation:            contractapi.APIActivityOperation(event.APIOperation),
+		APIVersion:              event.APIVersion,
+		ActorType:               contractapi.ActorType(event.ActorType),
+		ActorUID:                contractapi.ActorUID(event.ActorUID),
+		ActorName:               event.ActorName,
+		CredentialUID:           optionalContractString[contractapi.CredentialUID](event.CredentialUID),
+		PrimaryResourceType:     contractapi.ResourceType(event.PrimaryResourceType),
+		PrimaryResourceUID:      optionalContractString[contractapi.ResourceUID](event.PrimaryResourceUID),
+		PrimaryResourceName:     event.PrimaryResourceName,
+		PrimaryResourceFullName: optionalContractString[contractapi.ResourceName](event.PrimaryResourceFullName),
+		Permission:              contractapi.GovernancePermissionName(event.Permission),
+		HTTPRequestUID:          optionalContractString[contractapi.RequestID](event.HTTPRequestUID),
+		HTTPMethod:              event.HTTPMethod,
+		HTTPRoute:               event.HTTPRoute,
+		HTTPArgs:                event.HTTPArgs,
+		HTTPUserAgent:           event.HTTPUserAgent,
+		SrcEndpointIP:           event.SrcEndpointIP,
+		SrcEndpointName:         event.SrcEndpointName,
+		HTTPResponseCode:        event.HTTPResponseCode,
+		TraceUID:                optionalContractString[contractapi.TraceID](event.TraceUID),
+		SpanUID:                 optionalContractString[contractapi.SpanID](event.SpanUID),
+		OCSFSHA256:              contractapi.SHA256Hex(event.OCSFSHA256),
+		PrevHMAC:                contractapi.HMACHex(event.PrevHMAC),
+		RowHMAC:                 contractapi.HMACHex(event.RowHMAC),
+		HMACKeyID:               optionalContractString[string](event.HMACKeyID),
 	}
 }
 
@@ -284,9 +312,9 @@ func exportJobDTO(job governance.ExportJob, baseURL string, installationID strin
 	}
 	return contractapi.DataExportJob{
 		ExportID:       contractapi.DataExportID(job.ExportID.String()),
-		ResourceName:   contractapi.ResourceName(governance.ResourceNameAuditExport(installationID, job.OrgID, job.ExportID.String()).String()),
+		ResourceName:   contractapi.ResourceName(governance.ResourceNameDataExport(installationID, job.OrgID, job.ExportID.String()).String()),
 		OrgID:          contractapi.GovernanceOrgID(job.OrgID),
-		RequestedBy:    contractapi.AuditActorID(job.RequestedBy),
+		RequestedBy:    contractapi.ActorUID(job.RequestedBy),
 		Scopes:         exportScopes(job.Scopes),
 		IncludeLogs:    job.IncludeLogs,
 		Format:         contractapi.ExportFormat(job.Format),
@@ -319,6 +347,13 @@ func optionalContractString[T ~string](value string) *T {
 	}
 	typed := T(value)
 	return &typed
+}
+
+func optionalUint8(value uint8) *uint8 {
+	if value == 0 {
+		return nil
+	}
+	return &value
 }
 
 func optionalTime(value *time.Time) string {

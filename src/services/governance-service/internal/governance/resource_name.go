@@ -30,10 +30,17 @@ func ResourceNameOrg(installationID, orgID string) ResourceName {
 	return FormatResourceName(installationID, ResourcePathSegment{Collection: "orgs", ID: orgID})
 }
 
-func ResourceNameAuditExport(installationID, orgID, exportID string) ResourceName {
+func ResourceNameAPIActivity(installationID, orgID, metadataUID string) ResourceName {
 	return FormatResourceName(installationID,
 		ResourcePathSegment{Collection: "orgs", ID: orgID},
-		ResourcePathSegment{Collection: "auditExports", ID: exportID},
+		ResourcePathSegment{Collection: "apiActivities", ID: metadataUID},
+	)
+}
+
+func ResourceNameDataExport(installationID, orgID, exportID string) ResourceName {
+	return FormatResourceName(installationID,
+		ResourcePathSegment{Collection: "orgs", ID: orgID},
+		ResourcePathSegment{Collection: "dataExports", ID: exportID},
 	)
 }
 

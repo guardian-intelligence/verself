@@ -19,7 +19,7 @@ const (
 	resourceTypeRole                = "role"
 	resourceTypeProject             = "project"
 	resourceTypeAnalyticsDataset    = "analytics_dataset"
-	resourceTypeAuditLog            = "audit_log"
+	resourceTypeAPIActivity         = "api_activity"
 
 	relationGrantee       = "grantee"
 	relationMember        = "member"
@@ -138,86 +138,86 @@ var capabilityGrantRelations = map[string]string{
 }
 
 var orgPermissionByProductPermission = map[string]string{
-	identity.PermissionOrganizationList:              "read",
-	identity.PermissionOrganizationRead:              "read",
-	identity.PermissionOrganizationUpdate:            "manage_iam",
-	identity.PermissionMemberList:                    "read",
-	identity.PermissionMemberRead:                    "read",
-	identity.PermissionMemberInvite:                  "invite_members",
-	identity.PermissionMemberRoleUpdate:              "manage_members",
-	identity.PermissionMemberCapabilitiesRead:        "read",
-	identity.PermissionMemberCapabilitiesWrite:       "manage_iam",
-	identity.PermissionIAMPolicyRead:                 "manage_iam",
-	identity.PermissionIAMPolicySet:                  "manage_iam",
-	identity.PermissionIAMPolicyTest:                 "read",
-	identity.PermissionAPICredentialsRead:            "manage_api_credentials",
-	identity.PermissionAPICredentialsCreate:          "manage_api_credentials",
-	identity.PermissionAPICredentialsRoll:            "manage_api_credentials",
-	identity.PermissionAPICredentialsRevoke:          "manage_api_credentials",
-	identity.PermissionSandboxGitHubRead:             "list_executions",
-	identity.PermissionSandboxGitHubWrite:            "manage_iam",
-	identity.PermissionSandboxExecutionRead:          "list_executions",
-	identity.PermissionSandboxExecutionScheduleRead:  "list_executions",
-	identity.PermissionSandboxExecutionScheduleWrite: "list_executions",
-	identity.PermissionSandboxLogsRead:               "list_executions",
-	identity.PermissionSandboxAnalyticsRead:          "list_executions",
-	identity.PermissionBillingRead:                   "view_billing",
-	identity.PermissionBillingCheckout:               "manage_iam",
-	identity.PermissionProjectRead:                   "view_source",
-	identity.PermissionProjectWrite:                  "manage_iam",
-	identity.PermissionProjectEnvironmentRead:        "view_source",
-	identity.PermissionProjectEnvironmentWrite:       "manage_iam",
-	identity.PermissionProjectEventRead:              "view_source",
-	identity.PermissionProjectResolve:                "view_source",
-	identity.PermissionSourceRepoRead:                "view_source",
-	identity.PermissionSourceRepoWrite:               "manage_iam",
-	identity.PermissionSourceCheckoutWrite:           "manage_iam",
-	identity.PermissionSourceIntegrationWrite:        "manage_iam",
-	identity.PermissionSourceGitCredentialWrite:      "manage_iam",
-	identity.PermissionSourceWorkflowRead:            "view_source",
-	identity.PermissionSourceWorkflowWrite:           "manage_iam",
-	identity.PermissionSecretWrite:                   "manage_iam",
-	identity.PermissionSecretRead:                    "use_secrets",
-	identity.PermissionSecretList:                    "use_secrets",
-	identity.PermissionSecretDelete:                  "manage_iam",
-	identity.PermissionVariableWrite:                 "manage_iam",
-	identity.PermissionVariableRead:                  "use_secrets",
-	identity.PermissionVariableList:                  "use_secrets",
-	identity.PermissionVariableDelete:                "manage_iam",
-	identity.PermissionCredentialCreate:              "manage_iam",
-	identity.PermissionCredentialRead:                "manage_iam",
-	identity.PermissionCredentialList:                "manage_iam",
-	identity.PermissionCredentialRoll:                "manage_iam",
-	identity.PermissionCredentialRevoke:              "manage_iam",
-	identity.PermissionTransitKeyCreate:              "manage_iam",
-	identity.PermissionTransitKeyRotate:              "manage_iam",
-	identity.PermissionTransitEncrypt:                "use_secrets",
-	identity.PermissionTransitDecrypt:                "use_secrets",
-	identity.PermissionTransitSign:                   "use_secrets",
-	identity.PermissionTransitVerify:                 "use_secrets",
-	identity.PermissionAnalyticsDatasetRead:          "read",
-	identity.PermissionAnalyticsDatasetReadRaw:       "manage_iam",
-	identity.PermissionAnalyticsDatasetIngest:        "manage_iam",
-	identity.PermissionAnalyticsDatasetManage:        "manage_iam",
-	identity.PermissionGovernanceAuditLogRead:        "manage_iam",
-	identity.PermissionGovernanceAuditLogReadDetail:  "manage_iam",
-	identity.PermissionGovernanceAuditLogExport:      "manage_iam",
-	identity.PermissionGovernanceAuditLogManage:      "manage_iam",
-	identity.PermissionProfileRead:                   "read",
-	identity.PermissionProfileIdentityWrite:          "read",
-	identity.PermissionProfilePreferencesWrite:       "read",
-	identity.PermissionNotificationsRead:             "read",
-	identity.PermissionNotificationsWrite:            "read",
-	identity.PermissionNotificationsPreferencesWrite: "read",
-	identity.PermissionNotificationsTest:             "read",
-	identity.PermissionMailboxAccountRead:            "read",
-	identity.PermissionMailboxMailRead:               "read",
-	identity.PermissionMailboxMailWrite:              "read",
-	identity.PermissionMailboxSyncStatusRead:         "read",
-	identity.PermissionObjectStorageBucketRead:       "read",
-	identity.PermissionObjectStorageBucketWrite:      "manage_iam",
-	identity.PermissionObjectStorageAccessKeyRead:    "manage_iam",
-	identity.PermissionObjectStorageAccessKeyWrite:   "manage_iam",
+	identity.PermissionOrganizationList:                "read",
+	identity.PermissionOrganizationRead:                "read",
+	identity.PermissionOrganizationUpdate:              "manage_iam",
+	identity.PermissionMemberList:                      "read",
+	identity.PermissionMemberRead:                      "read",
+	identity.PermissionMemberInvite:                    "invite_members",
+	identity.PermissionMemberRoleUpdate:                "manage_members",
+	identity.PermissionMemberCapabilitiesRead:          "read",
+	identity.PermissionMemberCapabilitiesWrite:         "manage_iam",
+	identity.PermissionIAMPolicyRead:                   "manage_iam",
+	identity.PermissionIAMPolicySet:                    "manage_iam",
+	identity.PermissionIAMPolicyTest:                   "read",
+	identity.PermissionAPICredentialsRead:              "manage_api_credentials",
+	identity.PermissionAPICredentialsCreate:            "manage_api_credentials",
+	identity.PermissionAPICredentialsRoll:              "manage_api_credentials",
+	identity.PermissionAPICredentialsRevoke:            "manage_api_credentials",
+	identity.PermissionSandboxGitHubRead:               "list_executions",
+	identity.PermissionSandboxGitHubWrite:              "manage_iam",
+	identity.PermissionSandboxExecutionRead:            "list_executions",
+	identity.PermissionSandboxExecutionScheduleRead:    "list_executions",
+	identity.PermissionSandboxExecutionScheduleWrite:   "list_executions",
+	identity.PermissionSandboxLogsRead:                 "list_executions",
+	identity.PermissionSandboxAnalyticsRead:            "list_executions",
+	identity.PermissionBillingRead:                     "view_billing",
+	identity.PermissionBillingCheckout:                 "manage_iam",
+	identity.PermissionProjectRead:                     "view_source",
+	identity.PermissionProjectWrite:                    "manage_iam",
+	identity.PermissionProjectEnvironmentRead:          "view_source",
+	identity.PermissionProjectEnvironmentWrite:         "manage_iam",
+	identity.PermissionProjectEventRead:                "view_source",
+	identity.PermissionProjectResolve:                  "view_source",
+	identity.PermissionSourceRepoRead:                  "view_source",
+	identity.PermissionSourceRepoWrite:                 "manage_iam",
+	identity.PermissionSourceCheckoutWrite:             "manage_iam",
+	identity.PermissionSourceIntegrationWrite:          "manage_iam",
+	identity.PermissionSourceGitCredentialWrite:        "manage_iam",
+	identity.PermissionSourceWorkflowRead:              "view_source",
+	identity.PermissionSourceWorkflowWrite:             "manage_iam",
+	identity.PermissionSecretWrite:                     "manage_iam",
+	identity.PermissionSecretRead:                      "use_secrets",
+	identity.PermissionSecretList:                      "use_secrets",
+	identity.PermissionSecretDelete:                    "manage_iam",
+	identity.PermissionVariableWrite:                   "manage_iam",
+	identity.PermissionVariableRead:                    "use_secrets",
+	identity.PermissionVariableList:                    "use_secrets",
+	identity.PermissionVariableDelete:                  "manage_iam",
+	identity.PermissionCredentialCreate:                "manage_iam",
+	identity.PermissionCredentialRead:                  "manage_iam",
+	identity.PermissionCredentialList:                  "manage_iam",
+	identity.PermissionCredentialRoll:                  "manage_iam",
+	identity.PermissionCredentialRevoke:                "manage_iam",
+	identity.PermissionTransitKeyCreate:                "manage_iam",
+	identity.PermissionTransitKeyRotate:                "manage_iam",
+	identity.PermissionTransitEncrypt:                  "use_secrets",
+	identity.PermissionTransitDecrypt:                  "use_secrets",
+	identity.PermissionTransitSign:                     "use_secrets",
+	identity.PermissionTransitVerify:                   "use_secrets",
+	identity.PermissionAnalyticsDatasetRead:            "read",
+	identity.PermissionAnalyticsDatasetReadRaw:         "manage_iam",
+	identity.PermissionAnalyticsDatasetIngest:          "manage_iam",
+	identity.PermissionAnalyticsDatasetManage:          "manage_iam",
+	identity.PermissionGovernanceAPIActivityRead:       "manage_iam",
+	identity.PermissionGovernanceAPIActivityReadDetail: "manage_iam",
+	identity.PermissionGovernanceAPIActivityExport:     "manage_iam",
+	identity.PermissionGovernanceAPIActivityManage:     "manage_iam",
+	identity.PermissionProfileRead:                     "read",
+	identity.PermissionProfileIdentityWrite:            "read",
+	identity.PermissionProfilePreferencesWrite:         "read",
+	identity.PermissionNotificationsRead:               "read",
+	identity.PermissionNotificationsWrite:              "read",
+	identity.PermissionNotificationsPreferencesWrite:   "read",
+	identity.PermissionNotificationsTest:               "read",
+	identity.PermissionMailboxAccountRead:              "read",
+	identity.PermissionMailboxMailRead:                 "read",
+	identity.PermissionMailboxMailWrite:                "read",
+	identity.PermissionMailboxSyncStatusRead:           "read",
+	identity.PermissionObjectStorageBucketRead:         "read",
+	identity.PermissionObjectStorageBucketWrite:        "manage_iam",
+	identity.PermissionObjectStorageAccessKeyRead:      "manage_iam",
+	identity.PermissionObjectStorageAccessKeyWrite:     "manage_iam",
 }
 
 func New(backend Backend) *Service {
@@ -940,12 +940,12 @@ func validateResourcePermission(resource ResourceRef, permission string) error {
 		default:
 			return fmt.Errorf("%w: unsupported analytics_dataset permission %q", ErrInvalid, permission)
 		}
-	case resourceTypeAuditLog:
+	case resourceTypeAPIActivity:
 		switch permission {
 		case "read", "read_detail", "export", "manage", "append":
 			return nil
 		default:
-			return fmt.Errorf("%w: unsupported audit_log permission %q", ErrInvalid, permission)
+			return fmt.Errorf("%w: unsupported api_activity permission %q", ErrInvalid, permission)
 		}
 	default:
 		return fmt.Errorf("%w: unsupported resource type %q", ErrInvalid, resource.Type)
@@ -964,7 +964,7 @@ func validateResourceParentEdge(orgID string, resource ResourceRef, relation str
 		return nil
 	case resource.Type == resourceTypeAnalyticsDataset && relation == relationParentProject && parent.Type == resourceTypeProject:
 		return nil
-	case resource.Type == resourceTypeAuditLog && relation == relationParentOrg && parent.Type == resourceTypeOrg && parent.ID == strings.TrimSpace(orgID) && resource.ID == strings.TrimSpace(orgID):
+	case resource.Type == resourceTypeAPIActivity && relation == relationParentOrg && parent.Type == resourceTypeOrg && parent.ID == strings.TrimSpace(orgID) && resource.ID == strings.TrimSpace(orgID):
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported resource parent edge %s#%s@%s", ErrInvalid, resource.Type, relation, parent.Type)

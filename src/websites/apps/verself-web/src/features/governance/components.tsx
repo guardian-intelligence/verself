@@ -33,7 +33,7 @@ import {
 import { cn } from "@verself/ui/lib/utils";
 import { formatDateTimeLocal, formatDateTimeUTC, formatRelative } from "~/lib/format";
 import { createGovernanceDataExport, downloadGovernanceDataExport } from "~/server-fns/api";
-import type { GovernanceAuditEvent, GovernanceExportJob } from "~/server-fns/api";
+import type { GovernanceAPIActivity, GovernanceExportJob } from "~/server-fns/api";
 import {
   AUDIT_FILTER_DEFINITIONS,
   AUDIT_FILTER_KEYS,
@@ -55,17 +55,17 @@ const TZ_STORAGE_KEY = "verself:governance.audit.timezone";
 type TimezoneMode = "local" | "utc";
 
 interface GovernanceSettingsProps {
-  auditEvents: Array<GovernanceAuditEvent>;
-  auditLimit: number;
-  auditNextCursor: string;
+  apiActivities: Array<GovernanceAPIActivity>;
+  activityLimit: number;
+  activityNextCursor: string;
   exports: Array<GovernanceExportJob>;
   search: AuditSearch;
 }
 
 export function GovernanceSettings({
-  auditEvents,
-  auditLimit,
-  auditNextCursor,
+  apiActivities,
+  activityLimit,
+  activityNextCursor,
   exports,
   search,
 }: GovernanceSettingsProps) {
@@ -75,7 +75,7 @@ export function GovernanceSettings({
       createGovernanceDataExport({
         data: {
           include_logs: false,
-          scopes: ["identity", "billing", "sandbox", "audit"],
+          scopes: ["identity", "billing", "sandbox", "api_activity"],
         },
       }),
     onSuccess: async () => {
@@ -137,16 +137,16 @@ export function GovernanceSettings({
         <PageSection>
           <SectionHeader>
             <SectionHeaderContent>
-              <SectionTitle>Audit trail</SectionTitle>
+              <SectionTitle>API activity</SectionTitle>
               <SectionDescription>
-                Tamper-evident authorization events for this organization.
+                Tamper-evident OCSF API Activity records for this organization.
               </SectionDescription>
             </SectionHeaderContent>
           </SectionHeader>
-          <AuditTrail
-            events={auditEvents}
-            limit={auditLimit}
-            nextCursor={auditNextCursor}
+          <APIActivityTrail
+            activities={apiActivities}
+            limit={activityLimit}
+            nextCursor={activityNextCursor}
             search={search}
           />
         </PageSection>
@@ -252,13 +252,13 @@ function ExpiryCell({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-function AuditTrail({
-  events,
+function APIActivityTrail({
+  activities,
   limit,
   nextCursor,
   search,
 }: {
-  events: Array<GovernanceAuditEvent>;
+  activities: Array<GovernanceAPIActivity>;
   limit: number;
   nextCursor: string;
   search: AuditSearch;
@@ -284,25 +284,25 @@ function AuditTrail({
               <TableHead>
                 <TimeHeader order={order} timezone={timezone} />
               </TableHead>
-              <TableHead>Outcome</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Actor</TableHead>
-              <TableHead>Event</TableHead>
-              <TableHead>Target</TableHead>
-              <TableHead>Source</TableHead>
+              <TableHead>Operation</TableHead>
+              <TableHead>Resource</TableHead>
+              <TableHead>Service</TableHead>
               <TableHead>Permission</TableHead>
               <TableHead>Trace</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {events.length === 0 ? (
+            {activities.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                  No audit events match this query.
+                  No API activity records match this query.
                 </TableCell>
               </TableRow>
             ) : (
-              events.map((event) => (
-                <AuditRow key={event.event_id} event={event} timezone={timezone} />
+              activities.map((event) => (
+                <APIActivityRow key={event.metadata_uid} event={event} timezone={timezone} />
               ))
             )}
           </TableBody>
@@ -495,38 +495,44 @@ function TimeHeader({ order, timezone }: { order: AuditOrder; timezone: Timezone
   );
 }
 
-function AuditRow({ event, timezone }: { event: GovernanceAuditEvent; timezone: TimezoneMode }) {
+function APIActivityRow({
+  event,
+  timezone,
+}: {
+  event: GovernanceAPIActivity;
+  timezone: TimezoneMode;
+}) {
   const rowAccent =
-    event.outcome === "error"
+    event.status_id === 2
       ? "border-l-2 border-l-destructive"
-      : event.outcome === "denied"
+      : event.action === "Denied"
         ? "border-l-2 border-l-warning"
         : undefined;
   return (
     <TableRow className={cn("group/row hover:bg-muted/30", rowAccent)}>
       <TableCell className="align-top">
-        <TimeCell value={event.recorded_at} timezone={timezone} sequence={event.sequence} />
+        <TimeCell value={event.time} timezone={timezone} sequence={event.sequence} />
       </TableCell>
       <TableCell className="align-top">
-        <OutcomeBadge outcome={event.outcome} />
+        <ActivityStatusBadge status={event.status} statusID={event.status_id} />
       </TableCell>
       <TableCell className="align-top">
         <ActorCell event={event} />
       </TableCell>
       <TableCell className="align-top">
-        <EventCell event={event} />
+        <OperationCell event={event} />
       </TableCell>
       <TableCell className="align-top">
-        <TargetCell event={event} />
+        <ResourceCell event={event} />
       </TableCell>
       <TableCell className="align-top">
-        <SourceCell event={event} />
+        <ServiceCell event={event} />
       </TableCell>
       <TableCell className="max-w-[18rem] align-top">
         <span className="font-mono text-xs text-muted-foreground">{event.permission}</span>
       </TableCell>
       <TableCell className="align-top">
-        <TraceCell traceID={event.trace_id} eventID={event.event_id} />
+        <TraceCell traceID={event.trace_uid} metadataUID={event.metadata_uid} />
       </TableCell>
     </TableRow>
   );
@@ -574,85 +580,88 @@ function HydrationSafeTime({ value, mode }: { value: string; mode: TimezoneMode 
   return <span suppressHydrationWarning>{formatDateTimeLocal(value)}</span>;
 }
 
-function OutcomeBadge({ outcome }: { outcome: string }) {
-  const variant =
-    outcome === "allowed" ? "success" : outcome === "denied" ? "warning" : "destructive";
+function ActivityStatusBadge({ status, statusID }: { status: string; statusID: number }) {
+  const variant = statusID === 1 ? "success" : "destructive";
   return (
     <Link
       to={GOVERNANCE_ROUTE}
       search={(prev) => ({
         ...prev,
-        outcome: outcome as AuditSearch["outcome"],
+        status_id: String(statusID) as AuditSearch["status_id"],
         cursor: undefined,
       })}
-      data-testid="audit-cell-outcome"
+      data-testid="audit-cell-status"
     >
-      <Badge variant={variant}>{outcome}</Badge>
+      <Badge variant={variant}>{status}</Badge>
     </Link>
   );
 }
 
-function ActorCell({ event }: { event: GovernanceAuditEvent }) {
+function ActorCell({ event }: { event: GovernanceAPIActivity }) {
   return (
     <Link
       to={GOVERNANCE_ROUTE}
-      search={(prev) => ({ ...prev, actor_id: event.actor_id, cursor: undefined })}
+      search={(prev) => ({ ...prev, actor_uid: event.actor_uid, cursor: undefined })}
       className="flex flex-col gap-0.5 text-left hover:text-foreground"
       data-testid="audit-cell-actor"
     >
-      <span className="max-w-[16rem] truncate text-sm">{event.actor_id}</span>
+      <span className="max-w-[16rem] truncate text-sm">{event.actor_uid}</span>
       <span className="text-xs text-muted-foreground">{event.actor_type}</span>
     </Link>
   );
 }
 
-function EventCell({ event }: { event: GovernanceAuditEvent }) {
+function OperationCell({ event }: { event: GovernanceAPIActivity }) {
   return (
     <Link
       to={GOVERNANCE_ROUTE}
-      search={(prev) => ({ ...prev, event_name: event.event_name, cursor: undefined })}
+      search={(prev) => ({ ...prev, api_operation: event.api_operation, cursor: undefined })}
       className="flex flex-col gap-0.5 text-left hover:text-foreground"
       data-testid="audit-cell-event"
     >
-      <span className="text-sm">{event.event_name}</span>
-      <span className="font-mono text-xs text-muted-foreground">{event.audit_event}</span>
+      <span className="text-sm">{event.api_operation}</span>
+      <span className="font-mono text-xs text-muted-foreground">{event.activity_name}</span>
     </Link>
   );
 }
 
-function TargetCell({ event }: { event: GovernanceAuditEvent }) {
-  const targetID = event.target_id || event.org_id;
+function ResourceCell({ event }: { event: GovernanceAPIActivity }) {
+  const resourceUID = event.primary_resource_uid || event.org_id;
   return (
     <Link
       to={GOVERNANCE_ROUTE}
-      search={(prev) => ({ ...prev, target_type: event.target_type, cursor: undefined })}
+      search={(prev) => ({
+        ...prev,
+        resource_type: event.primary_resource_type,
+        cursor: undefined,
+      })}
       className="flex flex-col gap-0.5 text-left hover:text-foreground"
       data-testid="audit-cell-target"
     >
-      <span className="text-sm">{event.target_type}</span>
+      <span className="text-sm">{event.primary_resource_type}</span>
       <span className="max-w-[14rem] truncate font-mono text-xs text-muted-foreground">
-        {targetID}
+        {resourceUID}
       </span>
     </Link>
   );
 }
 
-function SourceCell({ event }: { event: GovernanceAuditEvent }) {
+function ServiceCell({ event }: { event: GovernanceAPIActivity }) {
   return (
     <Link
       to={GOVERNANCE_ROUTE}
-      search={(prev) => ({ ...prev, event_source: event.event_source, cursor: undefined })}
+      search={(prev) => ({ ...prev, api_service: event.api_service, cursor: undefined })}
       className="text-xs text-muted-foreground hover:text-foreground"
       data-testid="audit-cell-source"
     >
-      {event.event_source}
+      {event.api_service}
     </Link>
   );
 }
 
-function TraceCell({ traceID, eventID }: { traceID: string | undefined; eventID: string }) {
-  const value = traceID || eventID;
-  const label = traceID ? traceID.slice(0, 12) : eventID.slice(0, 8);
+function TraceCell({ traceID, metadataUID }: { traceID: string | undefined; metadataUID: string }) {
+  const value = traceID || metadataUID;
+  const label = traceID ? traceID.slice(0, 12) : metadataUID.slice(0, 8);
   const onCopy = () => {
     navigator.clipboard?.writeText(value).then(
       () => toast("Copied", { description: value }),

@@ -64,7 +64,7 @@ definition analytics_dataset {
   permission manage = manager + parent_project->write
 }
 
-definition audit_log {
+definition api_activity {
   relation parent_org: org
   relation viewer: user | service_account | role#member
   relation detail_viewer: user | service_account | role#member
