@@ -29,6 +29,27 @@ just a tarball-extracted ext4.
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+_E2FSPROGS_INPUTS = [
+    "@dev_tool_e2fsprogs//file",
+    "@dev_tool_e2fsprogs_libblkid//file",
+    "@dev_tool_e2fsprogs_libcom_err//file",
+    "@dev_tool_e2fsprogs_libe2fs//file",
+    "@dev_tool_e2fsprogs_libss//file",
+    "@dev_tool_e2fsprogs_libuuid//file",
+]
+
+def _e2fsprogs_setup_cmd():
+    return """
+mkdir -p "$$TOOL_ROOT/e2fsprogs"
+for deb in {debs}; do
+  dpkg-deb -x "$$deb" "$$TOOL_ROOT/e2fsprogs"
+done
+MKE2FS="$$TOOL_ROOT/e2fsprogs/usr/sbin/mke2fs"
+test -x "$$MKE2FS"
+export MKE2FS_CONFIG="$$TOOL_ROOT/e2fsprogs/etc/mke2fs.conf"
+export LD_LIBRARY_PATH="$$TOOL_ROOT/e2fsprogs/usr/lib/x86_64-linux-gnu:$${{LD_LIBRARY_PATH:-}}"
+""".format(debs = " ".join(["$(location %s)" % label for label in _E2FSPROGS_INPUTS]))
+
 def toolchain_ext4_image(
         name,
         tarball = None,
@@ -94,7 +115,7 @@ def toolchain_ext4_image(
     upstream_extract = (
         "tar -xf {input} -C \"$$STAGE\"".format(input = upstream_input) if tarball else ":"
     )
-    srcs = [":" + extras_target] + ([tarball] if tarball else [])
+    srcs = [":" + extras_target] + _E2FSPROGS_INPUTS + ([tarball] if tarball else [])
 
     native.genrule(
         name = name + "_image",
@@ -113,7 +134,8 @@ def toolchain_ext4_image(
                # drift in that hash causes a re-seed at deploy time —
                # determinism keeps no-op deploys actually no-op.
                "export SOURCE_DATE_EPOCH=0; " +
-               "STAGE=$$(mktemp -d); trap 'rm -rf \"$$STAGE\"' EXIT; " +
+               "TOOL_ROOT=$$(mktemp -d); STAGE=$$(mktemp -d); trap 'rm -rf \"$$STAGE\" \"$$TOOL_ROOT\"' EXIT; " +
+               _e2fsprogs_setup_cmd() +
                upstream_extract + "; " +
                "tar -xf $(location :{extras}) -C \"$$STAGE\"; ".format(extras = extras_target) +
                # Pre-allocate the image file with a sparse hole. mkfs.ext4
@@ -131,7 +153,7 @@ def toolchain_ext4_image(
                # don't depend on uid/gid matching the guest user.
                # `-E hash_seed=` pins HTREE directory hashing so the on-disk
                # layout is reproducible.
-               "/sbin/mkfs.ext4 -F -q -L {label} -U \"$$UUID\" -E hash_seed=\"$$UUID\",no_copy_xattrs -d \"$$STAGE\" $(location {image}); ".format(label = label, image = image_out) +
+               "\"$$MKE2FS\" -F -q -L {label} -U \"$$UUID\" -E hash_seed=\"$$UUID\",no_copy_xattrs -d \"$$STAGE\" $(location {image}); ".format(label = label, image = image_out) +
                # Manifest is plain JSON so the deploy bundle can roll it up
                # without parsing TOML/YAML. sha256 doubles as the build-side
                # equivalent of vs:source_digest the daemon records on
@@ -149,9 +171,6 @@ def toolchain_ext4_image(
                    manifest = manifest_out,
                )),
         visibility = visibility or ["//visibility:public"],
-        # mkfs.ext4 lives under /sbin which is on PATH for the genrule
-        # action by default. Pin a minimal toolchain explicitly so action
-        # caching is stable.
         toolchains = [],
         tags = ["no-remote-cache"],
     )

@@ -1,3 +1,5 @@
+load("@host_ansible_pip//:requirements.bzl", "requirement")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//src/tools/build:check_tests.bzl", "stamp_test")
 load("//src/tools/deployment/components:substrate.bzl", "component_substrate_registry")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
@@ -85,7 +87,10 @@ filegroup(
     srcs = [
         "ansible/.ansible-lint.yml",
         "ansible/ansible.cfg",
+        "ansible/pyproject.toml",
         "ansible/requirements.yml",
+        "ansible/requirements_lock.txt",
+        "ansible/uv.lock",
     ] + glob(
         [
             "ansible/group_vars/**",
@@ -98,22 +103,175 @@ filegroup(
     ),
 )
 
+py_binary(
+    name = "ansible_lint_bin",
+    main_module = "ansiblelint.__main__",
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("ansible-core"),
+        requirement("ansible-lint"),
+    ],
+)
+
+py_binary(
+    name = "ansible_bin",
+    main_module = "ansible.cli.adhoc",
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("ansible-core"),
+    ],
+)
+
+py_binary(
+    name = "ansible_config_bin",
+    main_module = "ansible.cli.config",
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("ansible-core"),
+    ],
+)
+
+py_binary(
+    name = "ansible_doc_bin",
+    main_module = "ansible.cli.doc",
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("ansible-core"),
+    ],
+)
+
+py_binary(
+    name = "ansible_galaxy_bin",
+    main_module = "ansible.cli.galaxy",
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("ansible-core"),
+    ],
+)
+
+py_binary(
+    name = "ansible_playbook_bin",
+    main_module = "ansible.cli.playbook",
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("ansible-core"),
+    ],
+)
+
+genrule(
+    name = "ansible_requirements_lock_check",
+    srcs = [
+        "ansible/pyproject.toml",
+        "ansible/requirements_lock.txt",
+        "ansible/uv.lock",
+        "@python_3_13//:files",
+    ],
+    outs = ["ansible_requirements_lock_check.stamp"],
+    cmd = """
+set -euo pipefail
+execroot="$$PWD"
+out="$$execroot/$@"
+uv_tmp="$$(mktemp -d)"
+uv_home="$$(mktemp -d)"
+export HOME="$$uv_home/home"
+export XDG_CACHE_HOME="$$uv_home/cache"
+export UV_CACHE_DIR="$$uv_home/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$$uv_home/python"
+export UV_PROJECT_ENVIRONMENT="$$uv_home/project"
+export UV_TOOL_DIR="$$uv_home/tools"
+export UV_LINK_MODE=copy
+export UV_NO_MANAGED_PYTHON=1
+export UV_PYTHON_DOWNLOADS=never
+trap 'rm -rf "$$uv_tmp" "$$uv_home"' EXIT
+mkdir -p "$$HOME" "$$XDG_CACHE_HOME" "$$UV_CACHE_DIR" "$$UV_PYTHON_INSTALL_DIR" "$$UV_PROJECT_ENVIRONMENT" "$$UV_TOOL_DIR"
+tar -xzf "$$execroot/$(location @dev_tool_uv//file)" -C "$$uv_tmp" --strip-components=1
+python=""
+for candidate in $(locations @python_3_13//:files); do
+  case "$$candidate" in
+    */bin/python3.13)
+      python="$$execroot/$$candidate"
+      ;;
+  esac
+done
+test -x "$$python"
+cd src/host/ansible
+"$$uv_tmp/uv" export --locked --python "$$python" --format requirements.txt --no-emit-project --no-header --output-file "$$uv_home/requirements_lock.txt" >/dev/null
+diff -u requirements_lock.txt "$$uv_home/requirements_lock.txt"
+touch "$$out"
+""",
+    tags = [
+        "ansible_lint_check",
+        "local",
+        "manual",
+        "no-remote",
+        "repo_check",
+    ],
+    tools = ["@dev_tool_uv//file"],
+)
+
+stamp_test(
+    name = "ansible_requirements_lock_test",
+    tags = [
+        "ansible_lint_check",
+        "local",
+        "no-remote",
+        "repo_check",
+    ],
+    target = ":ansible_requirements_lock_check",
+)
+
 genrule(
     name = "ansible_lint_check",
-    srcs = [":ansible_lint_sources"],
+    srcs = [
+        ":ansible_lint_sources",
+        "@dev_tool_ansible_collection_ansible_posix//file",
+        "@dev_tool_ansible_collection_community_general//file",
+        "@dev_tool_ansible_collection_community_postgresql//file",
+        "@dev_tool_ansible_collection_community_sops//file",
+    ],
     outs = ["ansible_lint_check.stamp"],
     cmd = """
 set -euo pipefail
-out="$$PWD/$@"
-uv_tmp="$$(mktemp -d)"
-trap 'rm -rf "$$uv_tmp"' EXIT
-tar -xzf "$(location @dev_tool_uv//file)" -C "$$uv_tmp" --strip-components=1
-cd src/host/ansible
+execroot="$$PWD"
+out="$$execroot/$@"
+ansible_home="$$(mktemp -d)"
 collections_tmp="$$(mktemp -d)"
-trap 'rm -rf "$$uv_tmp" "$$collections_tmp"' EXIT
+tool_bin="$$(mktemp -d)"
+trap 'rm -rf "$$ansible_home" "$$collections_tmp" "$$tool_bin"' EXIT
 export ANSIBLE_COLLECTIONS_PATH="$$collections_tmp"
-"$$uv_tmp/uvx" --from ansible-core==2.20.3 ansible-galaxy collection install -r requirements.yml -p "$$collections_tmp"
-"$$uv_tmp/uvx" --from ansible-lint==26.4.0 --with ansible-core==2.20.3 ansible-lint playbooks roles
+export HOME="$$ansible_home/home"
+export XDG_CACHE_HOME="$$ansible_home/cache"
+export PYTHONDONTWRITEBYTECODE=1
+mkdir -p "$$HOME" "$$XDG_CACHE_HOME"
+# Bazel Python launchers export their own runfiles; Ansible subprocesses need
+# each helper command to discover its own runfiles tree.
+write_tool() {
+  tool_name="$$1"
+  tool_path="$$2"
+  {
+    printf '%s\\n' '#!/usr/bin/env bash'
+    printf '%s\\n' 'unset RUNFILES_DIR'
+    printf '%s\\n' 'unset RUNFILES_MANIFEST_FILE'
+    printf 'exec "%s" "\\044@"\\n' "$$tool_path"
+  } > "$$tool_bin/$$tool_name"
+  chmod +x "$$tool_bin/$$tool_name"
+}
+write_tool ansible "$$execroot/$(execpath :ansible_bin)"
+write_tool ansible-config "$$execroot/$(execpath :ansible_config_bin)"
+write_tool ansible-doc "$$execroot/$(execpath :ansible_doc_bin)"
+write_tool ansible-galaxy "$$execroot/$(execpath :ansible_galaxy_bin)"
+write_tool ansible-playbook "$$execroot/$(execpath :ansible_playbook_bin)"
+export PATH="$$tool_bin:$${PATH:-}"
+mkdir -p "$$collections_tmp/ansible_collections/ansible/posix"
+mkdir -p "$$collections_tmp/ansible_collections/community/general"
+mkdir -p "$$collections_tmp/ansible_collections/community/postgresql"
+mkdir -p "$$collections_tmp/ansible_collections/community/sops"
+tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_ansible_posix//file)" -C "$$collections_tmp/ansible_collections/ansible/posix"
+tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_general//file)" -C "$$collections_tmp/ansible_collections/community/general"
+tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$collections_tmp/ansible_collections/community/postgresql"
+tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_sops//file)" -C "$$collections_tmp/ansible_collections/community/sops"
+cd src/host/ansible
+"$$execroot/$(execpath :ansible_lint_bin)" playbooks roles
 touch "$$out"
 """,
     tags = [
@@ -124,7 +282,14 @@ touch "$$out"
         "no-sandbox",
         "repo_check",
     ],
-    tools = ["@dev_tool_uv//file"],
+    tools = [
+        ":ansible_bin",
+        ":ansible_config_bin",
+        ":ansible_doc_bin",
+        ":ansible_galaxy_bin",
+        ":ansible_lint_bin",
+        ":ansible_playbook_bin",
+    ],
 )
 
 stamp_test(

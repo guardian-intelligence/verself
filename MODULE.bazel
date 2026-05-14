@@ -13,6 +13,7 @@ bazel_dep(name = "rules_java", version = "9.3.0")
 bazel_dep(name = "rules_jvm_external", version = "7.0")
 bazel_dep(name = "rules_nodejs", version = "6.7.4")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
@@ -96,6 +97,20 @@ npm.npm_translate_lock(
     pnpm_lock = "//src/websites:pnpm-lock.yaml",
 )
 use_repo(npm, "npm")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.13",
+)
+use_repo(python, "python_3_13", "python_3_13_host")
+
+host_ansible_pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+host_ansible_pip.parse(
+    hub_name = "host_ansible_pip",
+    python_version = "3.13",
+    requirements_lock = "//src/host:ansible/requirements_lock.txt",
+)
+use_repo(host_ansible_pip, "host_ansible_pip")
 
 zig = use_extension("@rules_zig//zig:extensions.bzl", "zig")
 zig.toolchain(
