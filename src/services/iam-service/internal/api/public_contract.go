@@ -570,6 +570,10 @@ func authzPolicy(policy contractapi.IAMPolicy) (authz.Policy, error) {
 	if policy.Version <= 0 {
 		return authz.Policy{}, fmt.Errorf("%w: policy version must be positive", authz.ErrInvalid)
 	}
+	version, err := int32FromInt64(int64(policy.Version), "policy version")
+	if err != nil {
+		return authz.Policy{}, fmt.Errorf("%w: %v", authz.ErrInvalid, err)
+	}
 	bindings := make([]authz.PolicyBinding, 0, len(policy.Bindings))
 	for _, binding := range policy.Bindings {
 		members := make([]string, 0, len(binding.Members))
@@ -586,7 +590,7 @@ func authzPolicy(policy contractapi.IAMPolicy) (authz.Policy, error) {
 		etag = string(*policy.Etag)
 	}
 	return authz.Policy{
-		Version:  int32(policy.Version),
+		Version:  version,
 		Etag:     etag,
 		Bindings: bindings,
 	}, nil
