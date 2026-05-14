@@ -1,3 +1,5 @@
+import { trace, type Attributes } from "@opentelemetry/api";
+
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_FIELD_BYTES = 512;
 const MAX_MESSAGE_BYTES = 1024;
@@ -231,6 +233,40 @@ function rowsFromJSON(
   return [{ ...baseRow(request, eventSource, bodyBytes), report_type: "unknown" }];
 }
 
+function spanAttributes(row: BrowserEventRow): Attributes {
+  return {
+    "browser.event.kind": row.event_kind,
+    "browser.event.source": row.event_source,
+    "browser.report.type": row.report_type,
+    "browser.document_url": row.document_url,
+    "browser.route_path": row.route_path,
+    "browser.blocked_url": row.blocked_url,
+    "browser.source_url": row.source_url,
+    "browser.effective_directive": row.effective_directive,
+    "browser.violated_directive": row.violated_directive,
+    "browser.disposition": row.disposition,
+    "browser.status_code": row.status_code,
+    "browser.line_number": row.line_number,
+    "browser.column_number": row.column_number,
+    "browser.error_name": row.error_name,
+    "browser.error_message": row.error_message,
+    "verself.correlation_id": row.verself_correlation_id,
+    "browser.report.body_bytes": row.body_bytes,
+  };
+}
+
+function recordRowsOnActiveSpan(rows: BrowserEventRow[]): void {
+  const span = trace.getActiveSpan();
+  if (!span) return;
+  const first = rows[0];
+  if (first) {
+    span.setAttributes(spanAttributes(first));
+  }
+  for (const row of rows) {
+    span.addEvent("browser.observability_event", spanAttributes(row));
+  }
+}
+
 function isLikelyCSPReport(input: UnknownRecord): boolean {
   return (
     nestedField(input, "effective-directive", "effectiveDirective") !== undefined ||
@@ -288,6 +324,7 @@ export async function ingestBrowserEvent(request: Request, eventSource: string):
   }
 
   const rows = rowsFromJSON(request, eventSource, body.byteLength, parsed);
+  recordRowsOnActiveSpan(rows);
   for (const row of rows) {
     console.error(JSON.stringify(row));
   }
