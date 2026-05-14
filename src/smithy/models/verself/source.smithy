@@ -98,6 +98,7 @@ string CheckoutGrantId
 string WorkflowRunId
 
 @length(min: 1, max: 128)
+@pattern("^org_[0-9A-HJKMNP-TV-Z]{26}$")
 string OrgId
 
 @length(min: 1, max: 512)

@@ -151,7 +151,7 @@ type BillingWindowReservation struct {
 	Allocation          BillingAllocation `json:"allocation" required:"true"`
 	CostPerUnit         DecimalUint64     `json:"cost_per_unit" required:"true" pattern:"^[0-9]+$"`
 	ExpiresAt           string            `json:"expires_at" required:"true"`
-	OrgID               OrgID             `json:"org_id" required:"true" pattern:"^[0-9]+$"`
+	OrgID               OrgID             `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	PlanID              PlanID            `json:"plan_id" required:"true" minLength:"1" maxLength:"255"`
 	PricingPhase        PricingPhase      `json:"pricing_phase" required:"true" minLength:"1" maxLength:"128"`
 	ProductID           ProductID         `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
@@ -172,7 +172,7 @@ type ReserveWindowInputBody struct {
 	Allocation       BillingAllocation `json:"allocation" required:"true"`
 	BillingJobID     *SafeInt64        `json:"billing_job_id,omitempty" minimum:"-9007199254740991" maximum:"9007199254740991"`
 	ConcurrentCount  SafeUint64        `json:"concurrent_count" required:"true" minimum:"0" maximum:"9007199254740991"`
-	OrgID            OrgID             `json:"org_id" required:"true" pattern:"^[0-9]+$"`
+	OrgID            OrgID             `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	ProductID        ProductID         `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
 	ReservationShape ReservationShape  `json:"reservation_shape" required:"true" minLength:"1" maxLength:"128"`
 	ReservedQuantity WindowQuantity    `json:"reserved_quantity" required:"true" minimum:"0" maximum:"4294967295"`

@@ -280,7 +280,7 @@ type BillingEntitlementSourceTotal struct {
 }
 
 type BillingEntitlementsView struct {
-	OrgID     OrgID                             `json:"org_id" required:"true" pattern:"^[0-9]+$"`
+	OrgID     OrgID                             `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Products  BillingEntitlementProductSections `json:"products" required:"true"`
 	Universal BillingEntitlementSlot            `json:"universal" required:"true"`
 }
@@ -321,7 +321,7 @@ type BillingStatement struct {
 	GeneratedAt    string                         `json:"generated_at" required:"true"`
 	GrantSummaries BillingStatementGrantSummaries `json:"grant_summaries" required:"true"`
 	LineItems      BillingStatementLineItems      `json:"line_items" required:"true"`
-	OrgID          OrgID                          `json:"org_id" required:"true" pattern:"^[0-9]+$"`
+	OrgID          OrgID                          `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	PeriodEnd      string                         `json:"period_end" required:"true"`
 	PeriodSource   string                         `json:"period_source" required:"true"`
 	PeriodStart    string                         `json:"period_start" required:"true"`

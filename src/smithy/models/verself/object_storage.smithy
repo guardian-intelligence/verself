@@ -69,6 +69,7 @@ string BucketId
 @pattern("^[0-9a-fA-F-]{36}$")
 string CredentialId
 @length(min: 1, max: 128)
+@pattern("^org_[0-9A-HJKMNP-TV-Z]{26}$")
 string OrgId
 @length(min: 3, max: 63)
 @pattern("^[a-z0-9][a-z0-9.-]*[a-z0-9]$")

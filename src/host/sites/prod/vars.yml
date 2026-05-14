@@ -200,6 +200,9 @@ platform_trust_tier: platform
 platform_repo_slug: verself
 platform_repo_display_name: Verself
 platform_repo_description: Verself platform monorepo.
+platform_github_account_id: 258150529
+platform_github_installation_id: 123769944
+platform_github_repository_id: 1195495246
 secrets_service_platform_org_id: "{{ platform_org_id }}"
 stalwart_operator_forward_to: ""
 
