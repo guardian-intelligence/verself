@@ -94,14 +94,6 @@ func governanceAPIActivityToContract(record objectstorageAPIActivity) governance
 	}
 }
 
-func optionalString(value string) *string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return &value
-}
-
 func optionalStringTyped[T ~string](value string) *T {
 	value = strings.TrimSpace(value)
 	if value == "" {
