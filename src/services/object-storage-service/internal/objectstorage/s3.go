@@ -85,7 +85,7 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ErrorClass:         "unsupported",
 			ErrorMessage:       err.Error(),
 			ClientIPHash:       hashRemoteAddr(r.RemoteAddr),
-			UserAgentHash:      hashForAudit(r.UserAgent()),
+			UserAgentHash:      hashForTelemetry(r.UserAgent()),
 			UpstreamRequestURI: r.URL.RequestURI(),
 		})
 		return
@@ -97,7 +97,7 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Operation:          operation.Name,
 		Status:             http.StatusInternalServerError,
 		ClientIPHash:       hashRemoteAddr(r.RemoteAddr),
-		UserAgentHash:      hashForAudit(r.UserAgent()),
+		UserAgentHash:      hashForTelemetry(r.UserAgent()),
 		UpstreamRequestURI: r.URL.RequestURI(),
 	}
 
@@ -470,7 +470,7 @@ func hashRemoteAddr(remoteAddr string) string {
 	if err != nil {
 		host = remoteAddr
 	}
-	return hashForAudit(host)
+	return hashForTelemetry(host)
 }
 
 func traceContext(ctx context.Context) context.Context {

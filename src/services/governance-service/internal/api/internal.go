@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,11 +34,11 @@ func appendAPIActivity(svc *governance.Service) func(context.Context, *internalc
 	return func(ctx context.Context, input *internalcontractapi.AppendAPIActivityInput) (*internalcontractapi.AppendAPIActivityOutput, error) {
 		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
-			return nil, unauthorized(ctx, "missing-workload-identity", "missing SPIFFE peer identity")
+			return nil, unauthorized(ctx, "auth.unauthenticated", "missing SPIFFE peer identity")
 		}
 		record, err := apiActivityRecordFromContract(input.Body)
 		if err != nil {
-			return nil, problem(ctx, 400, "invalid-api-activity", "API activity is invalid", err)
+			return nil, problem(ctx, 400, "request.validation_failed", "API activity is invalid", err)
 		}
 		if strings.TrimSpace(record.ActorType) == "" {
 			record.ActorType = "workload"
@@ -104,17 +105,17 @@ func apiActivityRecordFromContract(input internalcontractapi.APIActivityRecord) 
 		Permission:       string(input.Permission),
 		Resources:        resources,
 		HTTPRequest: governance.APIActivityHTTPRequest{
-			UID:           optionalContractValue(input.HTTPRequest.UID),
+			UID:           optionalContractValue(input.HTTPRequest.RequestUID),
 			Method:        string(input.HTTPRequest.Method),
 			Route:         input.HTTPRequest.Route,
-			SafeParams:    optionalContractValue(input.HTTPRequest.SafeParams),
+			SafeParams:    optionalContractValue(input.HTTPRequest.Args),
 			UserAgent:     optionalContractValue(input.HTTPRequest.UserAgent),
 			XForwardedFor: optionalContractValue(input.HTTPRequest.XForwardedFor),
 			Referrer:      optionalContractValue(input.HTTPRequest.Referrer),
 			Host:          optionalContractValue(input.HTTPRequest.Host),
 			Scheme:        optionalContractValue(input.HTTPRequest.Scheme),
-			ClientIP:      optionalContractValue(input.HTTPRequest.ClientIP),
-			SourceName:    optionalContractValue(input.HTTPRequest.SourceName),
+			ClientIP:      optionalContractValue(input.HTTPRequest.SrcEndpointIP),
+			SourceName:    optionalContractValue(input.HTTPRequest.SrcEndpointName),
 		},
 		HTTPResponse: governance.APIActivityHTTPResponse{
 			Code:    input.HTTPResponse.Code,
@@ -127,7 +128,6 @@ func apiActivityRecordFromContract(input internalcontractapi.APIActivityRecord) 
 		StatusDetail:          optionalContractValue(input.StatusDetail),
 		TraceID:               optionalContractValue(input.TraceUID),
 		SpanID:                optionalContractValue(input.SpanUID),
-		HMACKeyID:             optionalContractValue(input.HMACKeyID),
 		Time:                  observedAt,
 		Unmapped:              unmapped,
 	}, nil
@@ -176,5 +176,15 @@ func internalContractProblemStatuses(problems []internalcontractapi.ProblemDescr
 			statuses = append(statuses, problem.Status)
 		}
 	}
-	return statuses
+	sort.Ints(statuses)
+	out := statuses[:0]
+	previous := 0
+	for _, status := range statuses {
+		if status == previous {
+			continue
+		}
+		out = append(out, status)
+		previous = status
+	}
+	return out
 }

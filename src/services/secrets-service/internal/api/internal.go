@@ -693,7 +693,7 @@ func auditInternalCredential(ctx context.Context, operationID, auditEvent, actio
 		AuthorizationDecision: decision,
 		Status:                status,
 		StatusCode:            "200",
-		Unmapped: compactAuditDetail(map[string]any{
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.secret_mount":          secretMount,
 			"verself.secret_operation":      "credential_" + action,
 			"verself.openbao_request_id":    openBaoRequestID,
@@ -890,7 +890,7 @@ func auditInjection(ctx context.Context, request injectionResolveRequest, reques
 		AuthorizationDecision: decision,
 		Status:                status,
 		StatusCode:            "200",
-		Unmapped: compactAuditDetail(map[string]any{
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.target_scope":          scope.Level,
 			"verself.target_path_hash":      secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
 			"verself.secret_mount":          secretMount,
@@ -899,7 +899,7 @@ func auditInjection(ctx context.Context, request injectionResolveRequest, reques
 			"verself.openbao_request_id":    openBaoRequestID,
 			"verself.openbao_accessor_hash": openBaoAccessorHash,
 			"verself.attempt_id":            request.AttemptID,
-			"verself.content_sha256":        hashTextForAudit(request.ExecutionID + "\x00" + request.AttemptID + "\x00" + requested.EnvName),
+			"verself.content_sha256":        hashTextForAPIActivity(request.ExecutionID + "\x00" + request.AttemptID + "\x00" + requested.EnvName),
 		}),
 	}
 	if err != nil {
@@ -994,10 +994,10 @@ func auditRuntimeSecret(ctx context.Context, platformOrgID string, peerID spiffe
 		AuthorizationDecision: decision,
 		Status:                status,
 		StatusCode:            "200",
-		Unmapped: compactAuditDetail(map[string]any{
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
 			"verself.target_scope":          secrets.ScopeOrg,
-			"verself.content_sha256":        hashTextForAudit(secretName),
+			"verself.content_sha256":        hashTextForAPIActivity(secretName),
 			"verself.secret_mount":          secretMount,
 			"verself.secret_operation":      "read",
 			"verself.openbao_request_id":    openBaoRequestID,
@@ -1043,10 +1043,10 @@ func auditRuntimeSecretWrite(ctx context.Context, platformOrgID string, peerID s
 		AuthorizationDecision: writeDecision,
 		Status:                writeStatus,
 		StatusCode:            "200",
-		Unmapped: compactAuditDetail(map[string]any{
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
 			"verself.target_scope":          secrets.ScopeOrg,
-			"verself.content_sha256":        hashTextForAudit(secretName),
+			"verself.content_sha256":        hashTextForAPIActivity(secretName),
 			"verself.secret_mount":          secretMount,
 			"verself.secret_operation":      "write",
 			"verself.openbao_request_id":    openBaoRequestID,

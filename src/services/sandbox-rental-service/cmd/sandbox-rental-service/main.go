@@ -314,7 +314,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create source workflow dispatcher: %w", err)
 	}
-	sandboxapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
+	sandboxapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	recurringService, err := recurring.NewService(recurring.Config{
 		PGX:            pgxPool,
 		TemporalClient: temporalClient,

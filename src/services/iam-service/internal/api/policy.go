@@ -184,8 +184,8 @@ func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.Op
 		AuthorizationDecision: decision,
 		Status:                status,
 		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(outcome, err)))),
-		Unmapped: compactAuditDetail(map[string]any{
-			"verself.idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
+			"verself.idempotency_key_hash": hashTextForAPIActivity(info.IdempotencyKey),
 		}),
 	}
 	if err != nil {
@@ -235,7 +235,7 @@ func targetFromBoundary(input any, output any) (string, string) {
 	return targetFromValue(input)
 }
 
-func compactAuditDetail(values map[string]any) map[string]any {
+func compactAPIActivityUnmapped(values map[string]any) map[string]any {
 	detail := make(map[string]any, len(values))
 	for key, value := range values {
 		switch typed := value.(type) {

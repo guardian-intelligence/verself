@@ -162,9 +162,9 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("governance readiness: %w", err)
 	}
-	go runAuditProjector(ctx, logger, svc)
+	go runAPIActivityProjector(ctx, logger, svc)
 
-	auditClientIDs, err := workloadauth.PeerIDsForSource(
+	apiActivityClientIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
 		workloadauth.ServiceIAM,
 		workloadauth.ServiceProfile,
@@ -175,7 +175,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, auditClientIDs...)
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, apiActivityClientIDs...)
 	if err != nil {
 		return fmt.Errorf("governance spiffe internal tls: %w", err)
 	}
@@ -206,7 +206,7 @@ func run() error {
 
 	internalMux := http.NewServeMux()
 	governanceapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, svc)
-	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(auditClientIDs, internalMux)
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(apiActivityClientIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("governance internal allowlist: %w", err)
 	}
@@ -218,7 +218,7 @@ func run() error {
 	return httpserver.RunPair(ctx, logger, public, internal)
 }
 
-func runAuditProjector(ctx context.Context, logger *slog.Logger, svc *governance.Service) {
+func runAPIActivityProjector(ctx context.Context, logger *slog.Logger, svc *governance.Service) {
 	project := func(ctx context.Context) {
 		projectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()

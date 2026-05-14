@@ -25,8 +25,8 @@ import (
 var internalAPITracer = otel.Tracer("iam-service/internal/api/internal")
 
 const (
-	authorizationResourceTypeAuditLog = "api_activity"
-	authorizationResourceTypeOrg      = "org"
+	authorizationResourceTypeAPIActivity = "api_activity"
+	authorizationResourceTypeOrg         = "org"
 )
 
 func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
@@ -450,7 +450,7 @@ func internalAuthorizationResourceRef(resource authz.ResourceRef, providerOrgID 
 	resource.ID = strings.TrimSpace(resource.ID)
 	providerOrgID = strings.TrimSpace(providerOrgID)
 	publicOrgID = strings.TrimSpace(publicOrgID)
-	if resource.Type == authorizationResourceTypeAuditLog && resource.ID == providerOrgID {
+	if resource.Type == authorizationResourceTypeAPIActivity && resource.ID == providerOrgID {
 		resource.ID = publicOrgID
 	}
 	return resource

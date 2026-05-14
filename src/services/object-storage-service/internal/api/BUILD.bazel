@@ -4,7 +4,7 @@ go_library(
     name = "api",
     srcs = [
         "admin.go",
-        "audit_sink.go",
+        "api_activity_sink.go",
         "contract.go",
         "openapi.go",
         "policy.go",

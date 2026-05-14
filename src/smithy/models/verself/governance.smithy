@@ -93,11 +93,21 @@ string ActorUid
 string ActorName
 
 @length(max: 512)
+@sensitive
+string ActorEmail
+
+@length(max: 512)
 string CredentialUid
 
 @length(min: 1, max: 128)
 @pattern("^[a-z][a-z0-9_-]*$")
 string ResourceType
+
+@length(max: 64)
+string ResourceRole
+
+@range(min: 1, max: 4)
+integer ResourceRoleId
 
 @length(max: 512)
 string ResourceUid
@@ -130,7 +140,7 @@ string GovernancePermissionName
 @length(min: 1, max: 128)
 string HMACKeyId
 
-@length(max: 128)
+@length(min: 1, max: 128)
 string ProblemStatusCode
 
 @length(max: 4096)
@@ -191,11 +201,31 @@ string HTTPUserAgent
 @length(max: 128)
 string HTTPRequestUid
 
+@length(max: 1024)
+@sensitive
+string HTTPXForwardedFor
+
+@length(max: 1024)
+@sensitive
+string HTTPReferrer
+
+@length(max: 255)
+string HTTPHost
+
+@length(max: 16)
+string HTTPScheme
+
 @length(max: 128)
 string EndpointIP
 
 @length(max: 255)
 string EndpointName
+
+@length(max: 255)
+string HTTPResponseMessage
+
+@length(max: 255)
+string HTTPResponseStatus
 
 @mediaType("application/gzip")
 blob DataExportArchive
@@ -226,6 +256,7 @@ enum APIActivityListOrder {
 enum APIActivityStatus {
     SUCCESS = "Success"
     FAILURE = "Failure"
+    OTHER = "Other"
 }
 
 enum AuthorizationDecision {
@@ -255,9 +286,6 @@ list DataExportJobs {
 
 @permission(name: "governance:api_activity:read")
 string APIActivityReadPermission
-
-@permission(name: "governance:api_activity:read_detail")
-string APIActivityReadDetailPermission
 
 @permission(name: "governance:api_activity:export")
 string APIActivityExportPermission
@@ -502,6 +530,12 @@ structure APIActivityResource {
 
     @protoField(number: 4)
     full_name: ResourceName
+
+    @protoField(number: 5)
+    role: ResourceRole
+
+    @protoField(number: 6)
+    role_id: ResourceRoleId
 }
 
 structure APIActivityHTTPRequest {
@@ -527,12 +561,30 @@ structure APIActivityHTTPRequest {
 
     @protoField(number: 7)
     src_endpoint_name: EndpointName
+
+    @protoField(number: 8)
+    x_forwarded_for: HTTPXForwardedFor
+
+    @protoField(number: 9)
+    referrer: HTTPReferrer
+
+    @protoField(number: 10)
+    host: HTTPHost
+
+    @protoField(number: 11)
+    scheme: HTTPScheme
 }
 
 structure APIActivityHTTPResponse {
     @required
     @protoField(number: 1)
     code: HTTPStatusCode
+
+    @protoField(number: 2)
+    message: HTTPResponseMessage
+
+    @protoField(number: 3)
+    status: HTTPResponseStatus
 }
 
 structure APIActivityRecord {
@@ -615,6 +667,9 @@ structure APIActivityRecord {
 
     @protoField(number: 22)
     unmapped: Document
+
+    @protoField(number: 23)
+    actor_email: ActorEmail
 }
 
 structure AppendAPIActivityAccepted {
@@ -735,6 +790,7 @@ operation ListAPIActivities {
     input: ListAPIActivitiesInput
     output: ListAPIActivitiesOutput
     errors: [
+        ValidationFailedError
         UnauthenticatedError
         PermissionDeniedError
         RateLimitedError
@@ -898,6 +954,7 @@ operation GetDataExport {
     input: GetDataExportInput
     output: GetDataExportOutput
     errors: [
+        ValidationFailedError
         UnauthenticatedError
         PermissionDeniedError
         ResourceNotFoundError
@@ -931,6 +988,7 @@ operation DownloadDataExport {
     input: DownloadDataExportInput
     output: DownloadDataExportOutput
     errors: [
+        ValidationFailedError
         UnauthenticatedError
         PermissionDeniedError
         ResourceNotFoundError
@@ -975,6 +1033,7 @@ operation AppendAPIActivity {
     output: AppendAPIActivityOutput
     errors: [
         ValidationFailedError
+        UnauthenticatedError
         PermissionDeniedError
         ServiceUnavailableError
     ]

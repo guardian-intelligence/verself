@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -11,62 +10,82 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	governanceinternalclient "github.com/verself/governance-service/internalclient"
-	"github.com/verself/object-storage-service/internal/objectstorage"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type auditSinkConfig struct {
+type apiActivitySinkConfig struct {
 	Client *governanceinternalclient.Client
 }
 
-var configuredAuditSink atomic.Pointer[auditSinkConfig]
+var configuredAPIActivitySink atomic.Pointer[apiActivitySinkConfig]
 
-func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
+func ConfigureAPIActivitySink(url string, source *workloadapi.X509Source) {
 	url = strings.TrimSpace(url)
 	if url == "" || source == nil {
 		return
 	}
 	httpClient, err := workloadauth.MTLSClientForService(source, workloadauth.ServiceGovernance, nil)
 	if err != nil {
-		slog.Default().Error("object-storage governance audit mtls client init failed", "error", err)
+		slog.Default().Error("sandbox governance API Activity mtls client init failed", "error", err)
 		return
 	}
 	sinkClient, err := governanceinternalclient.NewClient(url, governanceinternalclient.WithHTTPClient(httpClient))
 	if err != nil {
-		slog.Default().Error("object-storage governance audit client init failed", "error", err)
+		slog.Default().Error("sandbox governance API Activity client init failed", "error", err)
 		return
 	}
-	configuredAuditSink.Store(&auditSinkConfig{
+	configuredAPIActivitySink.Store(&apiActivitySinkConfig{
 		Client: sinkClient,
 	})
 }
 
-func SendGovernanceAPIActivity(ctx context.Context, record objectstorageAPIActivity) error {
-	sink := configuredAuditSink.Load()
-	if sink == nil || strings.TrimSpace(record.OrgID) == "" {
-		return nil
+type governanceAPIActivity struct {
+	OrgID                 string
+	APIService            string
+	APIOperation          string
+	APIEventCode          string
+	APIAction             string
+	ActorType             string
+	ActorUID              string
+	CredentialUID         string
+	Permission            string
+	ResourceType          string
+	ResourceUID           string
+	HTTPMethod            string
+	HTTPRoute             string
+	HTTPStatus            uint16
+	AuthorizationDecision governanceinternalclient.AuthorizationDecision
+	Status                governanceinternalclient.APIActivityStatus
+	StatusCode            string
+	StatusDetail          string
+	TraceUID              string
+	Unmapped              map[string]any
+}
+
+func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity) {
+	sink := configuredAPIActivitySink.Load()
+	if sink == nil || record.OrgID == "" {
+		return
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	resp, err := sink.Client.AppendAPIActivity(reqCtx, governanceinternalclient.AppendAPIActivityRequest{Body: governanceAPIActivityToContract(record)})
 	if err != nil {
-		return err
+		slog.Default().ErrorContext(ctx, "sandbox governance API Activity send failed", "error", err)
+		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		err := fmt.Errorf("governance audit rejected with status %d", resp.StatusCode)
-		slog.Default().ErrorContext(ctx, "object-storage governance audit rejected", "status", resp.StatusCode)
-		return err
+		slog.Default().ErrorContext(ctx, "sandbox governance API Activity rejected", "status", resp.StatusCode)
 	}
-	return nil
 }
 
-type objectstorageAPIActivity = objectstorage.APIActivity
-
-func governanceAPIActivityToContract(record objectstorageAPIActivity) governanceinternalclient.APIActivityRecord {
+func governanceAPIActivityToContract(record governanceAPIActivity) governanceinternalclient.APIActivityRecord {
+	method := firstNonEmpty(record.HTTPMethod, "POST")
+	route := firstNonEmpty(record.HTTPRoute, "/internal/"+record.APIOperation)
 	httpStatus := record.HTTPStatus
 	if httpStatus == 0 {
 		httpStatus = 500
-		if strings.EqualFold(record.Status, "Success") {
+		if record.Status == governanceinternalclient.APIActivityStatusSuccess {
 			httpStatus = 200
 		}
 	}
@@ -84,11 +103,12 @@ func governanceAPIActivityToContract(record objectstorageAPIActivity) governance
 			Type: record.ResourceType,
 			UID:  optionalStringTyped[governanceinternalclient.ResourceUID](record.ResourceUID),
 		}},
-		HTTPRequest:           governanceinternalclient.APIActivityHTTPRequest{Method: "POST", Route: "/internal/" + record.APIOperation},
+		HTTPRequest:           governanceinternalclient.APIActivityHTTPRequest{Method: method, Route: route},
 		HTTPResponse:          governanceinternalclient.APIActivityHTTPResponse{Code: httpStatus},
-		AuthorizationDecision: governanceinternalclient.AuthorizationDecision(record.Decision),
-		Status:                governanceinternalclient.APIActivityStatus(record.Status),
+		AuthorizationDecision: record.AuthorizationDecision,
+		Status:                record.Status,
 		StatusCode:            governanceinternalclient.ProblemStatusCode(firstNonEmpty(record.StatusCode, strconv.Itoa(int(httpStatus)))),
+		StatusDetail:          optionalString(record.StatusDetail),
 		TraceUID:              optionalStringTyped[governanceinternalclient.TraceID](record.TraceUID),
 		Unmapped:              optionalMap(record.Unmapped),
 	}
@@ -116,13 +136,4 @@ func optionalMap(value map[string]any) *map[string]any {
 		return nil
 	}
 	return &value
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }

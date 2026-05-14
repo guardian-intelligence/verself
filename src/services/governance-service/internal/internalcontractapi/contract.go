@@ -104,12 +104,18 @@ type (
 	GovernanceOrgID          string
 	GovernancePermissionName string
 	HMACHex                  string
+	HTTPHost                 string
 	HTTPMethod               string
+	HTTPReferrer             string
+	HTTPResponseMessage      string
+	HTTPResponseStatus       string
+	HTTPSafeArgs             string
+	HTTPScheme               string
+	HTTPXForwardedFor        string
 	OCSFMetadataUID          string
 	ProblemStatusCode        string
 	ResourceType             string
 	ResourceUID              string
-	SafeHTTPArgs             string
 	TraceID                  string
 	SpanID                   string
 )
@@ -136,27 +142,27 @@ type APIActivityAccepted struct {
 }
 
 type APIActivityHTTPRequest struct {
-	UID           *RequestID    `json:"uid,omitempty" maxLength:"128"`
-	Method        HTTPMethod    `json:"method" required:"true" minLength:"1" maxLength:"16"`
-	Route         string        `json:"route" required:"true" minLength:"1" maxLength:"1024"`
-	SafeParams    *SafeHTTPArgs `json:"safe_params,omitempty" maxLength:"1024"`
-	UserAgent     *string       `json:"user_agent,omitempty" maxLength:"1024"`
-	XForwardedFor *string       `json:"x_forwarded_for,omitempty" maxLength:"1024"`
-	Referrer      *string       `json:"referrer,omitempty" maxLength:"1024"`
-	Host          *string       `json:"host,omitempty" maxLength:"255"`
-	Scheme        *string       `json:"scheme,omitempty" maxLength:"16"`
-	ClientIP      *string       `json:"client_ip,omitempty" maxLength:"128"`
-	SourceName    *string       `json:"source_name,omitempty" maxLength:"255"`
+	Method          HTTPMethod         `json:"method" required:"true" minLength:"1" maxLength:"32"`
+	Route           string             `json:"route" required:"true" minLength:"1" maxLength:"4096"`
+	RequestUID      *RequestID         `json:"request_uid,omitempty" maxLength:"128"`
+	Args            *HTTPSafeArgs      `json:"args,omitempty" maxLength:"8192"`
+	UserAgent       *string            `json:"user_agent,omitempty" maxLength:"512"`
+	SrcEndpointIP   *string            `json:"src_endpoint_ip,omitempty" maxLength:"128"`
+	SrcEndpointName *string            `json:"src_endpoint_name,omitempty" maxLength:"255"`
+	XForwardedFor   *HTTPXForwardedFor `json:"x_forwarded_for,omitempty" maxLength:"1024"`
+	Referrer        *HTTPReferrer      `json:"referrer,omitempty" maxLength:"1024"`
+	Host            *HTTPHost          `json:"host,omitempty" maxLength:"255"`
+	Scheme          *HTTPScheme        `json:"scheme,omitempty" maxLength:"16"`
 }
 
 type APIActivityHTTPResponse struct {
-	Code    uint16  `json:"code" required:"true" minimum:"100" maximum:"599"`
-	Message *string `json:"message,omitempty" maxLength:"255"`
-	Status  *string `json:"status,omitempty" maxLength:"255"`
+	Code    uint16               `json:"code" required:"true" minimum:"100" maximum:"599"`
+	Message *HTTPResponseMessage `json:"message,omitempty" maxLength:"255"`
+	Status  *HTTPResponseStatus  `json:"status,omitempty" maxLength:"255"`
 }
 
 type APIActivityResource struct {
-	Type     ResourceType  `json:"type" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
+	Type     ResourceType  `json:"type" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_-]*$"`
 	UID      *ResourceUID  `json:"uid,omitempty" maxLength:"512"`
 	Name     *string       `json:"name,omitempty" maxLength:"1024"`
 	FullName *ResourceName `json:"full_name,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
@@ -186,7 +192,6 @@ type APIActivityRecord struct {
 	StatusDetail          *string                  `json:"status_detail,omitempty" maxLength:"4096"`
 	TraceUID              *TraceID                 `json:"trace_uid,omitempty" pattern:"^[0-9a-f]{32}$"`
 	SpanUID               *SpanID                  `json:"span_uid,omitempty" pattern:"^[0-9a-f]{16}$"`
-	HMACKeyID             *string                  `json:"hmac_key_id,omitempty" maxLength:"128"`
 	ObservedAt            *string                  `json:"observed_at,omitempty"`
 	Unmapped              *map[string]any          `json:"unmapped,omitempty"`
 }
@@ -225,8 +230,9 @@ var AppendAPIActivity = Operation[AppendAPIActivityInput, AppendAPIActivityOutpu
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
-		SDK:                 SDKDescriptor{Module: "governanceInternal.ocsf", Method: "appendAPIActivity", Paginated: false, Retryable: false},
+		SDK:                 SDKDescriptor{Module: "governanceInternal.apiActivity", Method: "append", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},

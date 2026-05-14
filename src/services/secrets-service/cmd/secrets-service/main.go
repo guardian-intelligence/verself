@@ -137,7 +137,7 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("secrets readiness: %w", err)
 	}
-	secretsapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
+	secretsapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

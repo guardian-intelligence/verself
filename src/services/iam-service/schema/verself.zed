@@ -67,15 +67,11 @@ definition analytics_dataset {
 definition api_activity {
   relation parent_org: org
   relation viewer: user | service_account | role#member
-  relation detail_viewer: user | service_account | role#member
   relation exporter: user | service_account | role#member
-  relation manager: user | service_account | role#member
   relation appender: workload
 
-  permission read = viewer + detail_viewer + exporter + manager + parent_org->manage_iam
-  permission read_detail = detail_viewer + exporter + manager + parent_org->manage_iam
-  permission export = exporter + manager + parent_org->manage_iam
-  permission manage = manager + parent_org->manage_iam
+  permission read = viewer + exporter + parent_org->manage_iam
+  permission export = exporter + parent_org->manage_iam
   permission append = appender
 }
 

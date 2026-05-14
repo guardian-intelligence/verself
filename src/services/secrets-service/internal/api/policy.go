@@ -430,7 +430,7 @@ func unexpectedBillingStatus(operation string, status int, body []byte) error {
 func billingSourceRef(ctx context.Context, operationID string) string {
 	info := operationRequestInfoFromContext(ctx)
 	if info.IdempotencyKey != "" {
-		return operationID + ":idem:" + hashTextForAudit(info.IdempotencyKey)
+		return operationID + ":idem:" + hashTextForAPIActivity(info.IdempotencyKey)
 	}
 	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
 		return operationID + ":trace:" + sc.TraceID().String() + ":" + sc.SpanID().String()
@@ -551,10 +551,10 @@ func auditOperation(ctx context.Context, operationID string, policy secretsOpera
 		AuthorizationDecision: decision,
 		Status:                status,
 		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatus))),
-		Unmapped: compactAuditDetail(map[string]any{
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.target_scope":          targetScope,
 			"verself.target_path_hash":      targetPathHash,
-			"verself.idempotency_key_hash":  hashTextForAudit(info.IdempotencyKey),
+			"verself.idempotency_key_hash":  hashTextForAPIActivity(info.IdempotencyKey),
 			"verself.secret_mount":          secretMount,
 			"verself.secret_version":        secretVersion,
 			"verself.secret_operation":      policy.SecretOperation,
@@ -682,7 +682,7 @@ func contentHashFromBoundary(input any) string {
 	value := bodyValue(reflectValue(input))
 	for _, name := range []string{"Value", "PlaintextBase64", "Ciphertext", "MessageBase64", "Signature"} {
 		if text := stringField(value, name); text != "" {
-			return hashTextForAudit("redacted:" + name + ":" + text)
+			return hashTextForAPIActivity("redacted:" + name + ":" + text)
 		}
 	}
 	return ""

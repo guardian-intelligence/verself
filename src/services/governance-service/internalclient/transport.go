@@ -25,7 +25,14 @@ type (
 	GovernanceOrgID          = string
 	GovernancePermissionName = string
 	HMACHex                  = string
+	HTTPHost                 = string
 	HTTPMethod               = string
+	HTTPReferrer             = string
+	HTTPResponseMessage      = string
+	HTTPResponseStatus       = string
+	HTTPSafeArgs             = string
+	HTTPScheme               = string
+	HTTPXForwardedFor        = string
 	OCSFMetadataUID          = string
 	ProblemCode              = string
 	ProblemDetail            = string
@@ -35,7 +42,6 @@ type (
 	ResourceName             = string
 	ResourceType             = string
 	ResourceUID              = string
-	SafeHTTPArgs             = string
 	SpanID                   = string
 	TraceID                  = string
 	TraceParent              = string
@@ -63,23 +69,23 @@ type APIActivityAccepted struct {
 }
 
 type APIActivityHTTPRequest struct {
-	UID           *RequestID    `json:"uid,omitempty"`
-	Method        HTTPMethod    `json:"method"`
-	Route         string        `json:"route"`
-	SafeParams    *SafeHTTPArgs `json:"safe_params,omitempty"`
-	UserAgent     *string       `json:"user_agent,omitempty"`
-	XForwardedFor *string       `json:"x_forwarded_for,omitempty"`
-	Referrer      *string       `json:"referrer,omitempty"`
-	Host          *string       `json:"host,omitempty"`
-	Scheme        *string       `json:"scheme,omitempty"`
-	ClientIP      *string       `json:"client_ip,omitempty"`
-	SourceName    *string       `json:"source_name,omitempty"`
+	Method          HTTPMethod         `json:"method"`
+	Route           string             `json:"route"`
+	RequestUID      *RequestID         `json:"request_uid,omitempty"`
+	Args            *HTTPSafeArgs      `json:"args,omitempty"`
+	UserAgent       *string            `json:"user_agent,omitempty"`
+	SrcEndpointIP   *string            `json:"src_endpoint_ip,omitempty"`
+	SrcEndpointName *string            `json:"src_endpoint_name,omitempty"`
+	XForwardedFor   *HTTPXForwardedFor `json:"x_forwarded_for,omitempty"`
+	Referrer        *HTTPReferrer      `json:"referrer,omitempty"`
+	Host            *HTTPHost          `json:"host,omitempty"`
+	Scheme          *HTTPScheme        `json:"scheme,omitempty"`
 }
 
 type APIActivityHTTPResponse struct {
-	Code    uint16  `json:"code"`
-	Message *string `json:"message,omitempty"`
-	Status  *string `json:"status,omitempty"`
+	Code    uint16               `json:"code"`
+	Message *HTTPResponseMessage `json:"message,omitempty"`
+	Status  *HTTPResponseStatus  `json:"status,omitempty"`
 }
 
 type APIActivityResource struct {
@@ -115,7 +121,6 @@ type APIActivityRecord struct {
 	StatusDetail          *string                  `json:"status_detail,omitempty"`
 	TraceUID              *TraceID                 `json:"trace_uid,omitempty"`
 	SpanUID               *SpanID                  `json:"span_uid,omitempty"`
-	HMACKeyID             *string                  `json:"hmac_key_id,omitempty"`
 	ObservedAt            *string                  `json:"observed_at,omitempty"`
 	Unmapped              *map[string]any          `json:"unmapped,omitempty"`
 }

@@ -15,28 +15,28 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type auditSinkConfig struct {
+type apiActivitySinkConfig struct {
 	Client *governanceinternalclient.Client
 }
 
-var configuredAuditSink atomic.Pointer[auditSinkConfig]
+var configuredAPIActivitySink atomic.Pointer[apiActivitySinkConfig]
 
-func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
+func ConfigureAPIActivitySink(url string, source *workloadapi.X509Source) {
 	url = strings.TrimSpace(url)
 	if url == "" || source == nil {
 		return
 	}
 	httpClient, err := workloadauth.MTLSClientForService(source, workloadauth.ServiceGovernance, nil)
 	if err != nil {
-		slog.Default().Error("profile governance audit mtls client init failed", "error", err)
+		slog.Default().Error("profile governance API Activity mtls client init failed", "error", err)
 		return
 	}
 	client, err := governanceinternalclient.NewClient(url, governanceinternalclient.WithHTTPClient(httpClient))
 	if err != nil {
-		slog.Default().Error("profile governance audit client init failed", "error", err)
+		slog.Default().Error("profile governance API Activity client init failed", "error", err)
 		return
 	}
-	configuredAuditSink.Store(&auditSinkConfig{Client: client})
+	configuredAPIActivitySink.Store(&apiActivitySinkConfig{Client: client})
 }
 
 type governanceAPIActivity struct {
@@ -59,7 +59,7 @@ type governanceAPIActivity struct {
 }
 
 func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity) {
-	sink := configuredAuditSink.Load()
+	sink := configuredAPIActivitySink.Load()
 	if sink == nil || record.OrgID == "" {
 		return
 	}
@@ -67,11 +67,11 @@ func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity
 	defer cancel()
 	resp, err := sink.Client.AppendAPIActivity(reqCtx, governanceinternalclient.AppendAPIActivityRequest{Body: governanceAPIActivityToContract(record)})
 	if err != nil {
-		slog.Default().ErrorContext(ctx, "profile governance audit send failed", "error", err)
+		slog.Default().ErrorContext(ctx, "profile governance API Activity send failed", "error", err)
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		slog.Default().ErrorContext(ctx, "profile governance audit rejected", "status", resp.StatusCode)
+		slog.Default().ErrorContext(ctx, "profile governance API Activity rejected", "status", resp.StatusCode)
 	}
 }
 
@@ -139,7 +139,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func hashTextForAudit(value string) string {
+func hashTextForAPIActivity(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""

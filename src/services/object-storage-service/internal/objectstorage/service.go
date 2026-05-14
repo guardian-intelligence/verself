@@ -39,7 +39,7 @@ type Service struct {
 	Logger  *slog.Logger
 	Config  Config
 
-	auditSink AuditSink
+	apiActivitySink APIActivitySink
 }
 
 type CreateBucketInput struct {
@@ -133,8 +133,8 @@ func (s *Service) DataReady(ctx context.Context) error {
 	return s.Ready(ctx)
 }
 
-func (s *Service) SetAuditSink(fn AuditSink) {
-	s.auditSink = fn
+func (s *Service) SetAPIActivitySink(fn APIActivitySink) {
+	s.apiActivitySink = fn
 }
 
 func (s *Service) CreateBucket(ctx context.Context, input CreateBucketInput) (Bucket, error) {
@@ -174,8 +174,8 @@ func (s *Service) CreateBucket(ctx context.Context, input CreateBucketInput) (Bu
 		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("create garage bucket: %w", err))
 	}
 	bucket.GarageBucketID = garageBucket.ID
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(bucket.BucketName + "\x00" + bucket.GarageBucketID),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + bucket.GarageBucketID),
 	})
 
 	cleanup := func() error {
@@ -235,8 +235,8 @@ func (s *Service) UpdateBucket(ctx context.Context, bucketID uuid.UUID, quotaByt
 	record.Permission = "object-storage:bucket:write"
 	record.ResourceType = "bucket"
 	record.ResourceUID = bucket.BucketID.String()
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(bucket.BucketName + "\x00" + string(lifecycleJSON)),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + string(lifecycleJSON)),
 	})
 
 	garageBucket, err := s.Garage.UpdateBucket(ctx, bucket.GarageBucketID, GarageQuotas{MaxSize: quotaBytes, MaxObjects: quotaObjects}, lifecycleJSON)
@@ -276,8 +276,8 @@ func (s *Service) DeleteBucket(ctx context.Context, bucketID uuid.UUID, actor st
 	record.Permission = "object-storage:bucket:write"
 	record.ResourceType = "bucket"
 	record.ResourceUID = bucket.BucketID.String()
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(bucket.BucketName + "\x00" + bucket.GarageBucketID),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + bucket.GarageBucketID),
 	})
 
 	if err := s.Garage.DeleteBucket(ctx, bucket.GarageBucketID); err != nil {
@@ -317,8 +317,8 @@ func (s *Service) CreateAlias(ctx context.Context, input CreateAliasInput) (Buck
 	record.Permission = "object-storage:bucket:write"
 	record.ResourceType = "bucket_alias"
 	record.ResourceUID = alias.Alias
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(alias.Alias + "\x00" + alias.Prefix),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(alias.Alias + "\x00" + alias.Prefix),
 	})
 
 	if err := s.Store.CreateAlias(ctx, alias); err != nil {
@@ -353,8 +353,8 @@ func (s *Service) DeleteAlias(ctx context.Context, bucketID uuid.UUID, aliasName
 	record.Permission = "object-storage:bucket:write"
 	record.ResourceType = "bucket_alias"
 	record.ResourceUID = alias.Alias
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(alias.Alias + "\x00" + alias.Prefix),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(alias.Alias + "\x00" + alias.Prefix),
 	})
 	if err := s.Store.DeleteAlias(ctx, alias.Alias); err != nil {
 		return s.finishAdminOp(ctx, record, err)
@@ -387,9 +387,9 @@ func (s *Service) CreateStaticCredential(ctx context.Context, input CreateStatic
 	record.ResourceType = "access_key"
 	record.ResourceUID = material.credential.AccessKeyID
 	record.CredentialUID = material.credential.AccessKeyID
-	record.Unmapped = compactAuditDetail(map[string]any{
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
 		"credential_fingerprint": material.secret.Fingerprint,
-		"verself.content_sha256": hashForAudit(material.credential.AccessKeyID + "\x00" + material.secret.Fingerprint),
+		"verself.content_sha256": hashForTelemetry(material.credential.AccessKeyID + "\x00" + material.secret.Fingerprint),
 	})
 	if err := s.finishAdminOp(ctx, record, nil); err != nil {
 		_ = s.Store.DeleteCredential(ctx, material.credential.CredentialID)
@@ -430,8 +430,8 @@ func (s *Service) CreateSPIFFECredential(ctx context.Context, input CreateSPIFFE
 	record.ResourceType = "mtls_principal"
 	record.ResourceUID = input.SPIFFESubject
 	record.CredentialUID = credential.CredentialID.String()
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(input.SPIFFESubject),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(input.SPIFFESubject),
 	})
 
 	if err := s.Store.CreateCredential(ctx, credential); err != nil {
@@ -478,10 +478,10 @@ func (s *Service) RollStaticCredential(ctx context.Context, accessKeyID, actor s
 	record.ResourceType = "access_key"
 	record.ResourceUID = material.credential.AccessKeyID
 	record.CredentialUID = material.credential.AccessKeyID
-	record.Unmapped = compactAuditDetail(map[string]any{
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
 		"previous_access_key_id": current.AccessKeyID,
 		"credential_fingerprint": material.secret.Fingerprint,
-		"verself.content_sha256": hashForAudit(current.AccessKeyID + "\x00" + material.credential.AccessKeyID),
+		"verself.content_sha256": hashForTelemetry(current.AccessKeyID + "\x00" + material.credential.AccessKeyID),
 	})
 	if err := s.finishAdminOp(ctx, record, nil); err != nil {
 		return Credential{}, StaticCredentialSecret{}, err
@@ -512,8 +512,8 @@ func (s *Service) RevokeStaticCredential(ctx context.Context, accessKeyID, actor
 	record.ResourceType = "access_key"
 	record.ResourceUID = current.AccessKeyID
 	record.CredentialUID = current.AccessKeyID
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(current.AccessKeyID),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(current.AccessKeyID),
 	})
 
 	if err := s.Store.RevokeCredentialByAccessKey(ctx, current.AccessKeyID, actor, time.Now().UTC()); err != nil {
@@ -551,8 +551,8 @@ func (s *Service) RevokeSPIFFECredential(ctx context.Context, credentialID uuid.
 	record.ResourceType = "mtls_principal"
 	record.ResourceUID = current.SPIFFESubject
 	record.CredentialUID = current.CredentialID.String()
-	record.Unmapped = compactAuditDetail(map[string]any{
-		"verself.content_sha256": hashForAudit(current.SPIFFESubject),
+	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
+		"verself.content_sha256": hashForTelemetry(current.SPIFFESubject),
 	})
 
 	if err := s.Store.RevokeCredentialByID(ctx, current.CredentialID, actor, time.Now().UTC()); err != nil {
@@ -667,7 +667,7 @@ func (s *Service) issueStaticCredential(ctx context.Context, bucket Bucket, disp
 		AuthMode:          AuthModeSigV4Static,
 		DisplayName:       displayName,
 		AccessKeyID:       accessKeyID,
-		SecretHash:        hashForAudit(secretAccessKey),
+		SecretHash:        hashForTelemetry(secretAccessKey),
 		SecretFingerprint: SecretFingerprint(secretAccessKey),
 		SecretCiphertext:  ciphertext,
 		SecretNonce:       nonce,
@@ -719,16 +719,16 @@ func (s *Service) finishAdminOp(ctx context.Context, record APIActivity, opErr e
 		record.HTTPStatus = 500
 		record.StatusCode = classifyError(opErr)
 	}
-	if auditErr := s.emitAPIActivity(ctx, record); auditErr != nil {
+	if apiActivityErr := s.emitAPIActivity(ctx, record); apiActivityErr != nil {
 		if opErr != nil {
-			return errors.Join(opErr, auditErr)
+			return errors.Join(opErr, apiActivityErr)
 		}
-		return auditErr
+		return apiActivityErr
 	}
 	return opErr
 }
 
-func compactAuditDetail(values map[string]any) map[string]any {
+func compactAPIActivityUnmapped(values map[string]any) map[string]any {
 	detail := make(map[string]any, len(values))
 	for key, value := range values {
 		switch typed := value.(type) {
@@ -745,10 +745,10 @@ func compactAuditDetail(values map[string]any) map[string]any {
 }
 
 func (s *Service) emitAPIActivity(ctx context.Context, record APIActivity) error {
-	if s == nil || s.auditSink == nil {
+	if s == nil || s.apiActivitySink == nil {
 		return nil
 	}
-	return s.auditSink(ctx, record)
+	return s.apiActivitySink(ctx, record)
 }
 
 func apiActionFromOperation(operation string) string {
@@ -790,7 +790,7 @@ func invalidArgument(span oteltrace.Span, message string) error {
 	return err
 }
 
-func hashForAudit(value string) string {
+func hashForTelemetry(value string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
 	return hex.EncodeToString(sum[:])
 }

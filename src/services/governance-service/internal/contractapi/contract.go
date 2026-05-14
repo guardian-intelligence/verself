@@ -122,6 +122,7 @@ type (
 	SHA256Hex                string
 	SpanID                   string
 	TraceID                  string
+	ContentDisposition       string
 )
 
 type APIActivityListOrder string
@@ -277,7 +278,7 @@ type ListAPIActivitiesInput struct {
 	ActivityID    uint8                  `query:"activity_id" minimum:"1" maximum:"99"`
 	CredentialUID CredentialUID          `query:"credential_uid" maxLength:"512"`
 	ResourceUID   ResourceUID            `query:"resource_uid" maxLength:"512"`
-	ResourceType  ResourceType           `query:"resource_type" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
+	ResourceType  ResourceType           `query:"resource_type" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_-]*$"`
 	StatusID      uint8                  `query:"status_id" minimum:"1" maximum:"99"`
 	StatusCode    string                 `query:"status_code" maxLength:"128"`
 	TraceUID      TraceID                `query:"trace_uid" pattern:"^[0-9a-f]{32}$"`
@@ -315,8 +316,8 @@ type (
 type GetDataExportOutput struct{ Body GetDataExportOutputBody }
 
 type DownloadDataExportOutput struct {
-	ContentType        MediaType `header:"Content-Type" required:"true" minLength:"1" maxLength:"255"`
-	ContentDisposition string    `header:"Content-Disposition" required:"true" minLength:"1" maxLength:"255"`
+	ContentType        MediaType          `header:"Content-Type" required:"true" minLength:"1" maxLength:"255"`
+	ContentDisposition ContentDisposition `header:"Content-Disposition" required:"true" minLength:"1" maxLength:"255"`
 	Body               []byte
 }
 
@@ -342,34 +343,55 @@ var ListAPIActivities = Operation[ListAPIActivitiesInput, ListAPIActivitiesOutpu
 		Audit:               AuditDescriptor{Event: "governance.ocsf_api_activity.list", Resource: "api_activity", Action: "list"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
-		SDK:                 SDKDescriptor{Module: "governance.ocsf", Method: "listAPIActivities", Paginated: true, Retryable: true},
-		Problems:            commonReadProblems(),
+		SDK:                 SDKDescriptor{Module: "governance.apiActivity", Method: "list", Paginated: true, Retryable: true},
+		Problems:            listProblems(),
 	},
 }
 
 var (
-	ListDataExports    = Operation[ListDataExportsInput, ListDataExportsOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#ListDataExports", OperationID: "list-data-exports", Method: "GET", Path: "/api/v1/governance/exports", DefaultStatus: 200, Readonly: true, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli", "workload"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.list", Resource: "data_export", Action: "list"}, RateLimitBucket: "read", SDK: SDKDescriptor{Module: "governance.exports", Method: "list", Retryable: true}, Problems: commonReadProblems()}}
-	CreateDataExport   = Operation[CreateDataExportInput, CreateDataExportOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#CreateDataExport", OperationID: "create-data-export", Method: "POST", Path: "/api/v1/governance/exports", DefaultStatus: 201, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.create", Resource: "data_export", Action: "create"}, RateLimitBucket: "export_create", RequestBodyMaxBytes: 16384, Idempotency: IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"}, SDK: SDKDescriptor{Module: "governance.exports", Method: "create"}, Problems: commonMutationProblems()}}
-	GetDataExport      = Operation[GetDataExportInput, GetDataExportOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#GetDataExport", OperationID: "get-data-export", Method: "GET", Path: "/api/v1/governance/exports/{export_id}", DefaultStatus: 200, Readonly: true, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli", "workload"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.read", Resource: "data_export", Action: "read"}, RateLimitBucket: "read", SDK: SDKDescriptor{Module: "governance.exports", Method: "get", Retryable: true}, Problems: commonReadProblems()}}
-	DownloadDataExport = Operation[DownloadDataExportInput, DownloadDataExportOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#DownloadDataExport", OperationID: "download-data-export", Method: "GET", Path: "/api/v1/governance/exports/{export_id}/download", DefaultStatus: 200, Readonly: true, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.download", Resource: "data_export", Action: "download"}, RateLimitBucket: "export_download", ResponsePayload: PayloadDescriptor{Member: "body", Target: "verself.governance.v1#DataExportArchive", Kind: "blob", MediaType: "application/gzip", Required: true}, ResponseHeaders: []HeaderDescriptor{{Member: "contentDisposition", Name: "Content-Disposition"}, {Member: "contentType", Name: "Content-Type"}}, SDK: SDKDescriptor{Module: "governance.exports", Method: "download", Retryable: true}, Problems: commonReadProblems()}}
+	ListDataExports    = Operation[ListDataExportsInput, ListDataExportsOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#ListDataExports", OperationID: "list-data-exports", Method: "GET", Path: "/api/v1/governance/exports", DefaultStatus: 200, Readonly: true, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli", "workload"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.list", Resource: "data_export", Action: "list"}, RateLimitBucket: "read", SDK: SDKDescriptor{Module: "governance.exports", Method: "list", Retryable: true}, Problems: readProblems()}}
+	CreateDataExport   = Operation[CreateDataExportInput, CreateDataExportOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#CreateDataExport", OperationID: "create-data-export", Method: "POST", Path: "/api/v1/governance/exports", DefaultStatus: 201, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.create", Resource: "data_export", Action: "create"}, RateLimitBucket: "export_create", RequestBodyMaxBytes: 16384, Idempotency: IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"}, SDK: SDKDescriptor{Module: "governance.exports", Method: "create"}, Problems: mutationProblems()}}
+	GetDataExport      = Operation[GetDataExportInput, GetDataExportOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#GetDataExport", OperationID: "get-data-export", Method: "GET", Path: "/api/v1/governance/exports/{export_id}", DefaultStatus: 200, Readonly: true, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli", "workload"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.read", Resource: "data_export", Action: "read"}, RateLimitBucket: "read", SDK: SDKDescriptor{Module: "governance.exports", Method: "get", Retryable: true}, Problems: readValidationNotFoundProblems()}}
+	DownloadDataExport = Operation[DownloadDataExportInput, DownloadDataExportOutput]{Descriptor: OperationDescriptor{ShapeID: "verself.governance.v1#DownloadDataExport", OperationID: "download-data-export", Method: "GET", Path: "/api/v1/governance/exports/{export_id}/download", DefaultStatus: 200, Readonly: true, Identity: IdentityDescriptor{Mode: "bearer", Audience: "governance-service", Principals: []string{"browser", "cli"}}, Authorization: AuthorizationDescriptor{Permission: "governance:api_activity:export", OrganizationSource: "token_org_id"}, Audit: AuditDescriptor{Event: "governance.ocsf_api_activity.export.download", Resource: "data_export", Action: "download"}, RateLimitBucket: "export_download", ResponsePayload: PayloadDescriptor{Member: "body", Target: "verself.governance.v1#DataExportArchive", Kind: "blob", MediaType: "application/gzip", Required: true}, ResponseHeaders: []HeaderDescriptor{{Member: "contentDisposition", Name: "Content-Disposition"}, {Member: "contentType", Name: "Content-Type"}}, SDK: SDKDescriptor{Module: "governance.exports", Method: "download", Retryable: true}, Problems: readValidationNotFoundProblems()}}
 )
 
-func commonReadProblems() []ProblemDescriptor {
+func readProblems() []ProblemDescriptor {
 	return []ProblemDescriptor{
 		{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
 		{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
-		{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
 		{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 		{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
 	}
 }
 
-func commonMutationProblems() []ProblemDescriptor {
-	return append(commonReadProblems(),
-		ProblemDescriptor{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
-		ProblemDescriptor{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
-		ProblemDescriptor{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+func listProblems() []ProblemDescriptor {
+	return append([]ProblemDescriptor{
+		{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+	}, readProblems()...)
+}
+
+func readNotFoundProblems() []ProblemDescriptor {
+	return append(readProblems(),
+		ProblemDescriptor{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
 	)
+}
+
+func readValidationNotFoundProblems() []ProblemDescriptor {
+	return append([]ProblemDescriptor{
+		{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+	}, readNotFoundProblems()...)
+}
+
+func mutationProblems() []ProblemDescriptor {
+	return []ProblemDescriptor{
+		{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+		{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+		{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+		{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+		{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+		{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+	}
 }
 
 type Handlers = PublicHandlers

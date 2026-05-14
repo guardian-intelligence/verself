@@ -231,7 +231,7 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 		)
 		return &contractapi.DownloadDataExportOutput{
 			ContentType:        contractapi.MediaType("application/gzip"),
-			ContentDisposition: fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String()),
+			ContentDisposition: contractapi.ContentDisposition(fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String())),
 			Body:               body,
 		}, nil
 	}

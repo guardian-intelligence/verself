@@ -297,8 +297,8 @@ func auditOperation(ctx context.Context, operationID string, policy profileOpera
 		Status:                status,
 		StatusCode:            firstNonEmpty(stableErrorCode(err), strconv.Itoa(int(httpStatus))),
 		StatusDetail:          stableErrorCode(err),
-		Unmapped: compactAuditDetail(map[string]any{
-			"verself.idempotency_key_hash": hashTextForAudit(info.IdempotencyKey),
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
+			"verself.idempotency_key_hash": hashTextForAPIActivity(info.IdempotencyKey),
 			"verself.changed_fields":       strings.Join(details.changedFields, ","),
 			"verself.before_hash":          details.beforeHash,
 			"verself.after_hash":           details.afterHash,
@@ -358,7 +358,7 @@ func auditDetailsFromOutput(output any) auditDetails {
 	return auditDetails{}
 }
 
-func compactAuditDetail(values map[string]any) map[string]any {
+func compactAPIActivityUnmapped(values map[string]any) map[string]any {
 	detail := make(map[string]any, len(values))
 	for key, value := range values {
 		switch typed := value.(type) {
@@ -467,5 +467,5 @@ func sortedChangedFields(values []string) []string {
 }
 
 func versionHash(resource string, version int32) string {
-	return hashTextForAudit(fmt.Sprintf("%s:%d", resource, version))
+	return hashTextForAPIActivity(fmt.Sprintf("%s:%d", resource, version))
 }

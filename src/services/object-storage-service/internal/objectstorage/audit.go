@@ -22,4 +22,4 @@ type APIActivity struct {
 	Unmapped      map[string]any `json:"unmapped,omitempty"`
 }
 
-type AuditSink func(ctx context.Context, record APIActivity) error
+type APIActivitySink func(ctx context.Context, record APIActivity) error

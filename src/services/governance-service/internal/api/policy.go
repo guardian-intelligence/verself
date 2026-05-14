@@ -25,10 +25,8 @@ import (
 type permission = runtimeiam.Permission
 
 const (
-	permissionAPIActivityRead       permission = "governance:api_activity:read"
-	permissionAPIActivityReadDetail permission = "governance:api_activity:read_detail"
-	permissionAPIActivityExport     permission = "governance:api_activity:export"
-	permissionAPIActivityManage     permission = "governance:api_activity:manage"
+	permissionAPIActivityRead   permission = "governance:api_activity:read"
+	permissionAPIActivityExport permission = "governance:api_activity:export"
 
 	idempotencyHeaderKey    = runtimeiam.IdempotencyHeaderKey
 	maxIdempotencyKeyLength = 128
@@ -126,11 +124,11 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceA
 	}
 	principal := principalFromIdentity(authIdentity)
 	if authorizer == nil {
-		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
+		return principal, problem(ctx, http.StatusServiceUnavailable, "service.unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
 	}
 	resourcePermission, err := apiActivityResourcePermission(policy.Permission)
 	if err != nil {
-		return principal, problem(ctx, http.StatusInternalServerError, "iam-policy-invalid", "governance IAM policy is invalid", err)
+		return principal, problem(ctx, http.StatusServiceUnavailable, "service.unavailable", "governance IAM policy is invalid", err)
 	}
 	orgID := strings.TrimSpace(authIdentity.OrgID)
 	apiActivityResource := runtimeiam.ResourceRef{Type: apiActivityResourceType, ID: orgID}
@@ -142,7 +140,7 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceA
 		Operation: string(policy.Permission),
 	})
 	if err != nil {
-		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM API activity resource write failed", err)
+		return principal, problem(ctx, http.StatusServiceUnavailable, "service.unavailable", "IAM API activity resource write failed", err)
 	}
 	decision, err := authorizer.AuthorizeResource(ctx, authIdentity, runtimeiam.ResourceAuthorizationRequest{
 		OrgID:               orgID,
@@ -151,10 +149,10 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.ResourceA
 		ResourcePermission:  resourcePermission,
 	})
 	if err != nil {
-		return principal, problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorization check failed", err)
+		return principal, problem(ctx, http.StatusServiceUnavailable, "service.unavailable", "IAM authorization check failed", err)
 	}
 	if !decision.Allowed {
-		return principal, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
+		return principal, forbidden(ctx, "auth.permission_denied", fmt.Sprintf("missing required permission %q", policy.Permission))
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, err
@@ -169,12 +167,8 @@ func apiActivityResourcePermission(productPermission permission) (string, error)
 	switch productPermission {
 	case permissionAPIActivityRead:
 		return "read", nil
-	case permissionAPIActivityReadDetail:
-		return "read_detail", nil
 	case permissionAPIActivityExport:
 		return "export", nil
-	case permissionAPIActivityManage:
-		return "manage", nil
 	default:
 		return "", fmt.Errorf("unsupported governance permission %q", productPermission)
 	}
@@ -247,10 +241,10 @@ func requireOperationIdempotency(ctx context.Context, policy runtimeiam.Operatio
 	}
 	value := operationRequestInfoFromContext(ctx).IdempotencyKey
 	if strings.TrimSpace(value) == "" {
-		return problem(ctx, http.StatusBadRequest, "idempotency-key-required", "Idempotency-Key is required for this operation", nil)
+		return problem(ctx, http.StatusBadRequest, "request.validation_failed", "Idempotency-Key is required for this operation", nil)
 	}
 	if len(value) > maxIdempotencyKeyLength || strings.ContainsAny(value, "\x00\r\n\t") {
-		return problem(ctx, http.StatusBadRequest, "idempotency-key-invalid", "Idempotency-Key is invalid", nil)
+		return problem(ctx, http.StatusBadRequest, "request.validation_failed", "Idempotency-Key is invalid", nil)
 	}
 	return nil
 }
@@ -551,9 +545,13 @@ func stringField(value reflect.Value, name string) string {
 }
 
 func problemCode(err error) string {
+	var verselfErr *verselfProblem
+	if errors.As(err, &verselfErr) && verselfErr.Code != "" {
+		return verselfErr.Code
+	}
 	var model *huma.ErrorModel
 	if !errors.As(err, &model) {
-		return "operation-failed"
+		return "service.unavailable"
 	}
 	if len(model.Errors) > 0 && model.Errors[0] != nil {
 		if code := fmt.Sprint(model.Errors[0].Value); code != "" {
@@ -566,7 +564,7 @@ func problemCode(err error) string {
 		}
 		return model.Type
 	}
-	return "operation-failed"
+	return "service.unavailable"
 }
 
 func firstNonEmpty(values ...string) string {
@@ -586,7 +584,7 @@ var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[
 })
 
 func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
-	err := problem(ctx, http.StatusTooManyRequests, "rate-limit-exceeded", "rate limit exceeded", nil)
+	err := problem(ctx, http.StatusTooManyRequests, "quota.rate_limited", "rate limit exceeded", nil)
 	if retryAfter <= 0 {
 		return err
 	}

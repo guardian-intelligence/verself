@@ -176,7 +176,7 @@ func run() error {
 		AuthorizationGraph: authzService,
 		ProjectID:          authAudience,
 	}
-	api.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
+	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
 		PG:             pg,
 		Logger:         logger,

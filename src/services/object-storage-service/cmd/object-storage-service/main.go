@@ -175,7 +175,7 @@ func runAdmin(
 	}
 	cfg.ProxyAccessKeyID = proxyAccessKeyID
 
-	objectstorageapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
+	objectstorageapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	svc := &objectstorage.Service{
 		Store:   objectstorage.NewStore(pg),
 		Garage:  garageClient,
@@ -183,7 +183,7 @@ func runAdmin(
 		Logger:  logger,
 		Config:  cfg,
 	}
-	svc.SetAuditSink(func(ctx context.Context, record objectstorage.APIActivity) error {
+	svc.SetAPIActivitySink(func(ctx context.Context, record objectstorage.APIActivity) error {
 		return objectstorageapi.SendGovernanceAPIActivity(ctx, record)
 	})
 	if err := svc.AdminReady(ctx); err != nil {

@@ -51,7 +51,7 @@ func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 	}
 }
 
-func TestInternalAuthorizationResourceRefNormalizesAuditLogOrgID(t *testing.T) {
+func TestInternalAuthorizationResourceRefNormalizesAPIActivityOrgID(t *testing.T) {
 	resource := internalAuthorizationResourceRef(authz.ResourceRef{
 		Type: " api_activity ",
 		ID:   " 371564185181576922 ",

@@ -113,7 +113,7 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("profile readiness: %w", err)
 	}
-	profileapi.ConfigureAuditSink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
+	profileapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

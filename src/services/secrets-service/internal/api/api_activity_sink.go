@@ -15,28 +15,28 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-type auditSinkConfig struct {
+type apiActivitySinkConfig struct {
 	Client *governanceinternalclient.Client
 }
 
-var configuredAuditSink atomic.Pointer[auditSinkConfig]
+var configuredAPIActivitySink atomic.Pointer[apiActivitySinkConfig]
 
-func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
+func ConfigureAPIActivitySink(url string, source *workloadapi.X509Source) {
 	url = strings.TrimSpace(url)
 	if url == "" || source == nil {
 		return
 	}
 	httpClient, err := workloadauth.MTLSClientForService(source, workloadauth.ServiceGovernance, nil)
 	if err != nil {
-		slog.Default().Error("secrets governance audit mtls client init failed", "error", err)
+		slog.Default().Error("secrets governance API Activity mtls client init failed", "error", err)
 		return
 	}
 	sinkClient, err := governanceinternalclient.NewClient(url, governanceinternalclient.WithHTTPClient(httpClient))
 	if err != nil {
-		slog.Default().Error("secrets governance audit client init failed", "error", err)
+		slog.Default().Error("secrets governance API Activity client init failed", "error", err)
 		return
 	}
-	configuredAuditSink.Store(&auditSinkConfig{
+	configuredAPIActivitySink.Store(&apiActivitySinkConfig{
 		Client: sinkClient,
 	})
 }
@@ -63,7 +63,7 @@ type governanceAPIActivity struct {
 }
 
 func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity) {
-	sink := configuredAuditSink.Load()
+	sink := configuredAPIActivitySink.Load()
 	if sink == nil || record.OrgID == "" {
 		return
 	}
@@ -71,11 +71,11 @@ func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity
 	defer cancel()
 	resp, err := sink.Client.AppendAPIActivity(reqCtx, governanceinternalclient.AppendAPIActivityRequest{Body: governanceAPIActivityToContract(record)})
 	if err != nil {
-		slog.Default().ErrorContext(ctx, "secrets governance audit send failed", "error", err)
+		slog.Default().ErrorContext(ctx, "secrets governance API Activity send failed", "error", err)
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		slog.Default().ErrorContext(ctx, "secrets governance audit rejected", "status", resp.StatusCode)
+		slog.Default().ErrorContext(ctx, "secrets governance API Activity rejected", "status", resp.StatusCode)
 	}
 }
 
@@ -136,7 +136,7 @@ func optionalMap(value map[string]any) *map[string]any {
 	return &value
 }
 
-func hashTextForAudit(value string) string {
+func hashTextForAPIActivity(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
@@ -145,7 +145,7 @@ func hashTextForAudit(value string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func compactAuditDetail(values map[string]any) map[string]any {
+func compactAPIActivityUnmapped(values map[string]any) map[string]any {
 	detail := make(map[string]any, len(values))
 	for key, value := range values {
 		switch typed := value.(type) {
