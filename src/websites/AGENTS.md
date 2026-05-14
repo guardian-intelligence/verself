@@ -78,6 +78,14 @@ materializes its route tree plus OpenAPI clients and copied specs from service-o
 Bazel targets. Run the verself-web generator even when working on `apps/company`
 if `vp check` reports missing generated clients; workspace checks type both apps.
 
+Generated projections are allowed to persist in Verself golden workspaces. Do
+not delete `src/__generated` as a correctness fix. The correctness invariant is
+that every import from `src/__generated`, `routeTree.gen.ts`, or other generated
+source projections must be backed by a current Bazel generator target. If you
+remove or rename a generator, update the importing source in the same commit and
+run the owning `dev_update` target. See
+`docs/architecture/generated-artifact-governance.md`.
+
 On a local laptop without the hosted Verdaccio mirror, temporarily set
 `src/websites/.npmrc` to:
 

@@ -42,11 +42,25 @@ Layers:
 5. Curated SDK layer: stable hand-written exports that wrap transport clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
+IAM:
+
+GCP-style IAM API
+   `getIamPolicy` / `setIamPolicy` / `testIamPermissions`
+   predefined roles + custom roles + role bindings
+
+compiled by iam-service into
+
+Zanzibar/SpiceDB relationships
+   `resource#relation@subject`
+   `resource#relation@role#member`
+   parent edges
+
+Zitadel for human identity, organization multi-tenancy & OIDC/SAML with third parties.
+
 Tech Stack (partial description):
 
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
-* Zitadel for human identity & OIDC/SAML with third parties. We support multi-tenancy in that all users belong to an org (users belonging to multiple orgs not yet supported)
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
 * HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
@@ -69,6 +83,7 @@ Invariant patterns:
 * Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through the service-owned secrets-service client over SPIFFE.
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
+* Generated artifacts in ignored directories are cacheable infrastructure, not disposable outputs. Do not fix stale generated imports by deleting `__generated` or other golden workspace state. A source dependency on generated output must have a current generator owner/manifest in the build graph; when removing a generator, update every source import in the same change. See `docs/architecture/generated-artifact-governance.md`.
 
 Boundary components that sit outside the usual service shape:
 
