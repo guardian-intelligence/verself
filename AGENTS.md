@@ -25,16 +25,13 @@ This is a polyglot monorepo structured as a modular monolith.
 
 General Structure:
 
-Smithy source + Verself traits (`src/smithy/models/verself`)
-   -> generated Verself Contract IR via `smithy build` plugin (Java)
-      -> Huma/REST bindings + runtime descriptors
-      -> SDK transport cores
-      -> SDK conformance fixtures
-      -> IAM/Zanzibar catalog
-      -> Audit Trail catalog (governance-service)
-      -> Observability catalog
-      -> OpenAPI projection
-      -> protobuf/Connect/gRPC projection
+ Smithy IDL + Verself traits (`src/smithy/models/verself`)
+    -> Smithy semantic model
+    -> Verself validators
+    -> generated Go server adapters
+    -> generated Go internal clients/catalogs
+    -> generated OpenAPI + x-verself for public tooling
+    -> TS/browser SDKs through OpenAPI tooling + curated wrappers
 
 Layers:
 
@@ -287,6 +284,11 @@ The contained instructions in this block are guidelines that apply to writing ma
 - Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 - Avoid emojis.
 </output_contract>
+
+<frontend_design>
+- Mobile-first -- all changes must be tested on iPhone SE dimensions: 375 x 667
+- Never use animations for keyboard-initiated UX, e.g. the cmd+k search
+</frontend_design>
 
 <coding_contract>
 - Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.

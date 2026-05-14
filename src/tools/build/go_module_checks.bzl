@@ -1,5 +1,7 @@
 """Package-owned Go checks used by the Aspect verification lane."""
 
+load("//src/tools/build:check_tests.bzl", "stamp_test")
+
 GO_CHECK_TAG = "go_module_check"
 GOSEC_G115_TAG = "go_gosec_g115_check"
 GOLANGCI_LINT_TAG = "go_golangci_lint_check"
@@ -39,6 +41,14 @@ _CHECK_TAGS = [
     "no-sandbox",
 ]
 
+_CHECK_TEST_TAGS = [
+    "repo_check",
+    GO_CHECK_TAG,
+    "local",
+    "no-remote",
+    "no-sandbox",
+]
+
 def _check_cmd(package_name, setup, invocation):
     return """set -euo pipefail
 out="$$PWD/$@"
@@ -71,7 +81,7 @@ touch "$$out"
         setup = setup,
     )
 
-def _check(name, srcs, tag, setup, invocation, tools = []):
+def _check(name, test_name, srcs, tag, setup, invocation, tools = []):
     native.genrule(
         name = name,
         srcs = srcs,
@@ -79,6 +89,11 @@ def _check(name, srcs, tag, setup, invocation, tools = []):
         cmd = _check_cmd(native.package_name(), setup, invocation),
         tags = _CHECK_TAGS + [tag],
         tools = tools,
+    )
+    stamp_test(
+        name = test_name,
+        target = ":" + name,
+        tags = _CHECK_TEST_TAGS + [tag],
     )
 
 def go_module_checks(name = "go_checks"):
@@ -101,6 +116,7 @@ def go_module_checks(name = "go_checks"):
 
     _check(
         name = "go_vet_check",
+        test_name = "go_vet_test",
         srcs = sources,
         tag = GO_VET_TAG,
         setup = "",
@@ -109,6 +125,7 @@ def go_module_checks(name = "go_checks"):
 
     _check(
         name = "go_golangci_lint_check",
+        test_name = "go_golangci_lint_test",
         srcs = sources,
         tag = GOLANGCI_LINT_TAG,
         setup = 'tool="$$PWD/$(execpath @com_github_golangci_golangci_lint_v2//cmd/golangci-lint:golangci-lint)"',
@@ -118,6 +135,7 @@ def go_module_checks(name = "go_checks"):
 
     _check(
         name = "go_gosec_g115_check",
+        test_name = "go_gosec_g115_test",
         srcs = sources,
         tag = GOSEC_G115_TAG,
         setup = 'tool="$$PWD/$(execpath @com_github_securego_gosec_v2//cmd/gosec:gosec)"',

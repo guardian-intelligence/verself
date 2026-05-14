@@ -40,7 +40,9 @@ interoperability projections, not semantic authority.
 ## Verification
 
 - Validate the Smithy package with
-  `bazelisk build //src/smithy/models/verself:smithy_validate`.
+  `bazelisk test //src/smithy/models/verself:smithy_validate_test`.
+- Check Smithy Java formatting with
+  `bazelisk test //src/smithy/plugins/ir:java_format_test`.
 - Build Smithy projection artifacts with
   `bazelisk build //src/smithy/models/verself:smithy_build`.
 - Prove deployed behavior through ClickHouse traces/logs for behavior-affecting

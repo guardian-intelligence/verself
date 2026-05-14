@@ -1,5 +1,6 @@
 load("//src/smithy/build:ir_go.bzl", "ir_catalog_json", "ir_proto_projection", "smithy_projection_file")
 load("//src/smithy/build:smithy.bzl", "smithy_build", "smithy_validate")
+load("//src/tools/build:check_tests.bzl", "stamp_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,11 +14,6 @@ filegroup(
     srcs = ["smithy-build.json"],
 )
 
-filegroup(
-    name = "docs",
-    srcs = ["README.md"],
-)
-
 smithy_validate(
     name = "smithy_validate",
     srcs = [":smithy_sources"],
@@ -26,6 +22,15 @@ smithy_validate(
     plugins = [
         "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
     ],
+)
+
+stamp_test(
+    name = "smithy_validate_test",
+    tags = [
+        "repo_check",
+        "smithy_validate",
+    ],
+    target = ":smithy_validate",
 )
 
 smithy_build(

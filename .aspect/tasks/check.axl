@@ -1,7 +1,8 @@
-"""aspect check --kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|buildifier|bzlmod|all
+"""aspect check — run repo verification through Bazel's test graph.
 
-Cross-cutting verification gates used during PR review. The task delegates to
-Bazel-owned package targets so source relevance and cache reuse stay in Bazel's graph.
+The task names the whole repo and lets Bazel decide which test actions are stale.
+Language-specific lint, validation, and generated-output checks are modeled as
+Bazel test targets so warm CI runners reuse the local action/test cache.
 """
 
 load(".aspect/lib/helpers.axl", "bazel_tracked_files", "checked_spawn", "ws_path")
@@ -13,63 +14,6 @@ def _bazel(ctx, args, label):
         args,
         cwd = ws_path(ctx),
         label = label,
-    )
-
-def _build_tagged(ctx, tag, label):
-    r = (ctx.std.process.command("bazelisk")
-        .args(["query", "attr(tags, \"" + tag + "\", //...)"])
-        .current_dir(ws_path(ctx))
-        .stdout("piped").stderr("piped")
-        .spawn().wait_with_output())
-    if r.status.code != 0:
-        ctx.std.io.stderr.write(r.stderr)
-        return r.status.code
-    targets = []
-    for target in r.stdout.splitlines():
-        if target != "":
-            targets.append(target)
-    if len(targets) == 0:
-        ctx.std.io.stderr.write("ERROR: no Bazel targets found with tag " + tag + "\n")
-        return 1
-    return _bazel(
-        ctx,
-        ["build"] + targets,
-        label,
-    )
-
-def _go_test(ctx):
-    return _bazel(
-        ctx,
-        [
-            "test",
-            "--@io_bazel_rules_go//go/config:race",
-            "--build_tests_only",
-            "--test_lang_filters=go",
-            "//...",
-        ],
-        "bazelisk test Go graph with race",
-    )
-
-def _go_vet(ctx):
-    return _build_tagged(ctx, "go_vet_check", "bazelisk build Go vet checks")
-
-def _go_lint(ctx):
-    return _build_tagged(ctx, "go_golangci_lint_check", "bazelisk build Go lint checks")
-
-def _conversions(ctx):
-    return _build_tagged(ctx, "go_gosec_g115_check", "bazelisk build Go G115 security checks")
-
-def _ansible_lint(ctx):
-    return _bazel(ctx, ["build", "//src/host:ansible_lint_check"], "bazelisk build Ansible lint check")
-
-def _frontend(ctx):
-    return _bazel(
-        ctx,
-        [
-            "build",
-            "//src/websites:workspace_check",
-        ],
-        "bazelisk build frontend Vite+ check",
     )
 
 def _buildifier(ctx):
@@ -87,81 +31,26 @@ def _buildifier(ctx):
 def _bzlmod(ctx):
     return _bazel(ctx, ["mod", "tidy", "--lockfile_mode=error"], "bazelisk mod tidy --lockfile_mode=error")
 
-def _java(ctx):
-    return _bazel(
-        ctx,
-        [
-            "build",
-            "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
-            "//src/smithy/models/verself:smithy_validate",
-            "//src/smithy/models/verself:iam_public_ir",
-        ],
-        "bazelisk build Smithy Java lane",
-    )
-
-def _contracts(ctx):
-    rc = _bazel(
-        ctx,
-        [
-            "build",
-            "//src/smithy/models/verself:iam_public_ir",
-            "//src/smithy/models/verself:iam_audit_catalog",
-            "//src/smithy/models/verself:iam_observability_catalog",
-            "//src/smithy/models/verself:iam_proto_projection",
-            "//src/sdks/go/verself/internal/generated/iam:iam",
-            "//src/websites/packages/sdk:iam_transport_generated_sources",
-            "//src/websites/apps/verself-web:node_app_nomad_artifact",
-        ],
-        "bazelisk build IAM contract vertical",
-    )
-    if rc != 0:
-        return rc
+def _bazel_test(ctx):
     return _bazel(
         ctx,
         [
             "test",
-            "//src/sdks/go/verself:verself_test",
+            "--config=ci",
+            "//...",
         ],
-        "bazelisk test SDK facade",
+        "bazelisk test --config=ci //...",
     )
 
-_CHECKERS = {
-    "go-test": _go_test,
-    "go-vet": _go_vet,
-    "go-lint": _go_lint,
-    "java": _java,
-    "contracts": _contracts,
-    "conversions": _conversions,
-    "ansible": _ansible_lint,
-    "frontend": _frontend,
-    "buildifier": _buildifier,
-    "bzlmod": _bzlmod,
-}
-
-# Ordered for the --kind=all path so a fast failure surfaces early.
-_ALL_ORDER = ["buildifier", "bzlmod", "frontend", "java", "contracts", "ansible", "conversions", "go-vet", "go-lint", "go-test"]
-
 def _impl(ctx):
-    kind = ctx.args.kind
-    if kind == "all":
-        for k in _ALL_ORDER:
-            rc = _CHECKERS[k](ctx)
-            if rc != 0:
-                return rc
-        return 0
-    if kind not in _CHECKERS:
-        ctx.std.io.stderr.write("ERROR: unknown --kind=" + kind + "\n")
-        return 1
-    return _CHECKERS[kind](ctx)
+    for step in [_buildifier, _bzlmod, _bazel_test]:
+        rc = step(ctx)
+        if rc != 0:
+            return rc
+    return 0
 
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run a verification gate (--kind=frontend|go-test|go-vet|go-lint|java|contracts|conversions|ansible|buildifier|bzlmod|all).",
-    args = {
-        "kind": args.string(
-            default = "all",
-            description = "Which check to run.",
-        ),
-    },
+    summary = "Run Buildifier/Bzlmod preflights, then `bazelisk test --config=ci //...`.",
 )

@@ -1,5 +1,6 @@
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@rules_zig//zig:defs.bzl", "zig_binary", "zig_configure_binary", "zig_library", "zig_test")
+load("//src/tools/build:check_tests.bzl", "stamp_test")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -88,6 +89,22 @@ genrule(
     outs = ["vectors.generated.json"],
     cmd = "$(execpath :generate_vectors) > $@",
     tools = [":generate_vectors"],
+)
+
+genrule(
+    name = "vectors_match_check",
+    srcs = [
+        "protocol/vectors.json",
+        ":vectors_generated",
+    ],
+    outs = ["vectors_match_check.stamp"],
+    cmd = "cmp $(location :vectors_generated) $(location protocol/vectors.json) && touch $@",
+)
+
+stamp_test(
+    name = "vectors_test",
+    tags = ["repo_check"],
+    target = ":vectors_match_check",
 )
 
 write_source_files(

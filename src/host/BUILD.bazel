@@ -1,3 +1,4 @@
+load("//src/tools/build:check_tests.bzl", "stamp_test")
 load("//src/tools/deployment/components:substrate.bzl", "component_substrate_registry")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 
@@ -114,6 +115,18 @@ touch "$$out"
         "no-sandbox",
         "repo_check",
     ],
+)
+
+stamp_test(
+    name = "ansible_lint_test",
+    tags = [
+        "ansible_lint_check",
+        "local",
+        "no-remote",
+        "no-sandbox",
+        "repo_check",
+    ],
+    target = ":ansible_lint_check",
 )
 
 filegroup(

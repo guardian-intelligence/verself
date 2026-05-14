@@ -8,6 +8,6 @@ filegroup(
 
 filegroup(
     name = "smithy_docs",
-    srcs = glob(["**/*.md"]) + ["//src/smithy/models/verself:docs"],
+    srcs = glob(["**/*.md"]),
     visibility = ["//visibility:public"],
 )

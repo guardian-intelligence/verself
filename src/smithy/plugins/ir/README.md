@@ -56,9 +56,10 @@ The plugin compiles against repository-pinned Maven artifacts from the Smithy
 Use these targets while developing the plugin:
 
 ```shell
-aspect check --kind=java
+aspect check
+bazelisk test //src/smithy/plugins/ir:java_format_test
+bazelisk test //src/smithy/models/verself:smithy_validate_test
 bazelisk build //src/smithy/plugins/ir:verself_smithy_ir_plugin
-bazelisk build //src/smithy/models/verself:smithy_validate
 bazelisk build //src/smithy/models/verself:smithy_build
 bazelisk build //src/smithy/models/verself:iam_public_ir
 bazelisk build //src/smithy/models/verself:iam_audit_catalog

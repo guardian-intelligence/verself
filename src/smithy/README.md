@@ -48,8 +48,8 @@ validates the model, and emits IR-derived IAM artifacts before service or SDK
 integration is generated.
 
 ```shell
-aspect check --kind=java
-bazelisk build //src/smithy/models/verself:smithy_validate
+aspect check
+bazelisk test //src/smithy/models/verself:smithy_validate_test
 bazelisk build //src/smithy/models/verself:smithy_build
 ```
 

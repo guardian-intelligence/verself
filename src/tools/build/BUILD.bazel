@@ -1,5 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "check_tests.bzl",
     "go_module_checks.bzl",
 ])
