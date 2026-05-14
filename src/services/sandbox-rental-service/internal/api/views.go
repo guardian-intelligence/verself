@@ -464,19 +464,6 @@ func executionScheduleDispatchRecord(record recurring.DispatchRecord) contractap
 	}
 }
 
-func parseUnsignedDecimal(value string) (uint64, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, fmt.Errorf("empty decimal")
-	}
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return 0, fmt.Errorf("invalid decimal %q", value)
-		}
-	}
-	return strconv.ParseUint(value, 10, 64)
-}
-
 func resourceName(installationID string, segments ...resourcePathSegment) string {
 	parts := make([]string, 0, len(segments)*2)
 	for _, segment := range segments {
