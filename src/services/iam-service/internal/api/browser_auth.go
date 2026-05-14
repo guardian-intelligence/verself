@@ -37,6 +37,9 @@ const (
 	browserAuthRefreshLeeway   = 60 * time.Second
 	browserAuthCallbackPath    = "/api/v1/auth/callback"
 	browserAuthDefaultRedirect = "/"
+	zitadelResourceOwnerID     = "urn:zitadel:iam:user:resourceowner:id"
+	zitadelResourceOwnerName   = "urn:zitadel:iam:user:resourceowner:name"
+	accountOrganizationRetries = 8
 )
 
 var browserAuthTracer = otel.Tracer("github.com/verself/iam-service/browser-auth")
@@ -55,6 +58,7 @@ type BrowserAuthConfig struct {
 
 type BrowserAuth struct {
 	q                  *identitystore.Queries
+	store              identity.SQLStore
 	logger             *slog.Logger
 	provider           *oidc.Provider
 	verifier           *oidc.IDTokenVerifier
@@ -121,6 +125,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	postLogoutURL := publicBaseURL.String()
 	return &BrowserAuth{
 		q:        identitystore.New(cfg.PG),
+		store:    identity.SQLStore{PG: cfg.PG},
 		logger:   cfg.Logger,
 		provider: provider,
 		verifier: provider.Verifier(&oidc.Config{
@@ -656,14 +661,29 @@ func (a *BrowserAuth) userSnapshot(ctx context.Context, tokens tokenResponse, id
 	if name == nil {
 		name = firstString(preferredUsername, email, stringClaim(idClaims, "sub"))
 	}
-	providerHomeOrgID := stringClaim(claims, "urn:zitadel:iam:user:resourceowner:id")
+	providerHomeOrgID := stringClaim(claims, zitadelResourceOwnerID)
 	sub := stringValue(stringClaim(idClaims, "sub"))
 	if sub == "" {
 		return browserUser{}, errors.New("id_token subject is required")
 	}
+	if providerHomeOrgID == nil {
+		return browserUser{}, errors.New("id_token resource owner organization is required")
+	}
+	if _, err := a.ensureAccountOrganization(ctx, accountOrganizationInput{
+		Subject:             sub,
+		ProviderOrgID:       *providerHomeOrgID,
+		ProviderDisplayName: stringClaim(claims, zitadelResourceOwnerName),
+		Email:               email,
+		PreferredUsername:   preferredUsername,
+	}); err != nil {
+		return browserUser{}, err
+	}
 	organizations, err := a.publicOrganizationContexts(ctx, sub)
 	if err != nil {
 		return browserUser{}, err
+	}
+	if len(organizations) == 0 {
+		return browserUser{}, errors.New("signed-in subject has no accessible IAM organization")
 	}
 	homeOrgID := publicOrgIDForProviderOrgID(organizations, providerHomeOrgID)
 	selectedOrgID := selectInitialOrganizationID(organizations, providerHomeOrgID, previousSelectedOrgID)
@@ -693,6 +713,212 @@ func (a *BrowserAuth) fetchUserInfo(ctx context.Context, accessToken string) (ma
 		return nil, fmt.Errorf("decode oidc userinfo: %w", err)
 	}
 	return claims, nil
+}
+
+type accountOrganizationInput struct {
+	Subject             string
+	ProviderOrgID       string
+	ProviderDisplayName *string
+	Email               *string
+	PreferredUsername   *string
+}
+
+func (a *BrowserAuth) ensureAccountOrganization(ctx context.Context, input accountOrganizationInput) (profile identity.OrganizationProfile, err error) {
+	input.Subject = strings.TrimSpace(input.Subject)
+	input.ProviderOrgID = strings.TrimSpace(input.ProviderOrgID)
+	ctx, span := browserAuthTracer.Start(ctx, "iam.browser_auth.account_organization.ensure")
+	defer func() {
+		span.SetAttributes(
+			attribute.String("iam.identity_provider_org_id", input.ProviderOrgID),
+			attribute.String("enduser.id", input.Subject),
+		)
+		if profile.OrgID != "" {
+			span.SetAttributes(attribute.String("verself.org_id", profile.OrgID), attribute.String("iam.org_slug", profile.Slug))
+		}
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	if input.Subject == "" {
+		return identity.OrganizationProfile{}, errors.New("account organization subject is required")
+	}
+	if input.ProviderOrgID == "" {
+		return identity.OrganizationProfile{}, errors.New("account organization provider org id is required")
+	}
+	profile, err = a.store.ResolveOrganizationProfile(ctx, identity.ResolveOrganizationRequest{
+		IdentityProviderOrgID: input.ProviderOrgID,
+		RequireActive:         true,
+	})
+	if err == nil {
+		if profile.CreatedBy == input.Subject {
+			if repaired, repairErr := a.ensureCreatorOwnerPolicyIfEmpty(ctx, profile.OrgID, input.Subject); repairErr != nil {
+				return identity.OrganizationProfile{}, repairErr
+			} else if repaired {
+				span.SetAttributes(attribute.Bool("iam.account_organization.owner_policy_repaired", true))
+			}
+		}
+		span.SetAttributes(attribute.Bool("iam.account_organization.created", false))
+		return profile, nil
+	}
+	if !errors.Is(err, identity.ErrOrganizationMissing) {
+		return identity.OrganizationProfile{}, fmt.Errorf("resolve account organization: %w", err)
+	}
+	profile, err = a.createAccountOrganizationProfile(ctx, input)
+	if err != nil {
+		return identity.OrganizationProfile{}, err
+	}
+	if err := a.setInitialOwnerPolicy(ctx, profile.OrgID, input.Subject); err != nil {
+		return identity.OrganizationProfile{}, err
+	}
+	span.SetAttributes(attribute.Bool("iam.account_organization.created", true))
+	return profile, nil
+}
+
+func (a *BrowserAuth) createAccountOrganizationProfile(ctx context.Context, input accountOrganizationInput) (identity.OrganizationProfile, error) {
+	displayName := accountOrganizationDisplayName(input)
+	slugBase := accountOrganizationSlugBase(displayName, input)
+	for attempt := 0; attempt < accountOrganizationRetries; attempt++ {
+		orgID, err := randomPublicOrganizationID()
+		if err != nil {
+			return identity.OrganizationProfile{}, fmt.Errorf("generate account organization id: %w", err)
+		}
+		slug := slugBase
+		if attempt > 0 {
+			slug = accountOrganizationSlugWithSuffix(slugBase, orgID[len(orgID)-6:])
+		}
+		profile, err := a.store.CreateOrganizationProfile(ctx, identity.CreateOrganizationRequest{
+			OrgID:                 orgID,
+			IdentityProviderOrgID: input.ProviderOrgID,
+			DisplayName:           displayName,
+			Slug:                  slug,
+			ActorID:               input.Subject,
+		})
+		if err == nil {
+			return profile, nil
+		}
+		if !errors.Is(err, identity.ErrOrganizationConflict) {
+			return identity.OrganizationProfile{}, fmt.Errorf("create account organization profile: %w", err)
+		}
+	}
+	return identity.OrganizationProfile{}, fmt.Errorf("%w: account organization profile is unavailable", identity.ErrOrganizationConflict)
+}
+
+func (a *BrowserAuth) setInitialOwnerPolicy(ctx context.Context, orgID, subject string) (err error) {
+	ctx, span := browserAuthTracer.Start(ctx, "iam.browser_auth.account_owner_policy.set")
+	defer func() {
+		span.SetAttributes(attribute.String("verself.org_id", orgID), attribute.String("enduser.id", subject))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	_, err = a.authz.SetOrganizationPolicy(ctx, orgID, authz.Policy{
+		Bindings: []authz.PolicyBinding{{
+			Role:    "roles/owner",
+			Members: []string{"user:" + subject},
+		}},
+	}, "iam.browser_auth.account_organization_create")
+	if err != nil {
+		return fmt.Errorf("set initial account owner policy: %w", err)
+	}
+	return nil
+}
+
+func (a *BrowserAuth) ensureCreatorOwnerPolicyIfEmpty(ctx context.Context, orgID, subject string) (bool, error) {
+	policy, err := a.authz.GetOrganizationPolicy(ctx, orgID)
+	if err != nil {
+		return false, fmt.Errorf("read account organization owner policy: %w", err)
+	}
+	if len(policy.Bindings) > 0 {
+		return false, nil
+	}
+	return true, a.setInitialOwnerPolicy(ctx, orgID, subject)
+}
+
+func accountOrganizationDisplayName(input accountOrganizationInput) string {
+	for _, candidate := range []string{
+		stringValue(input.ProviderDisplayName),
+		domainFromEmail(input.Email),
+		stringValue(input.PreferredUsername),
+		stringValue(input.Email),
+		"Organization " + input.Subject,
+	} {
+		if value := fitOrganizationDisplayName(candidate); value != "" {
+			return value
+		}
+	}
+	return "Organization"
+}
+
+func accountOrganizationSlugBase(displayName string, input accountOrganizationInput) string {
+	for _, candidate := range []string{
+		displayName,
+		domainFromEmail(input.Email),
+		stringValue(input.PreferredUsername),
+		"organization",
+	} {
+		if slug := trimOrganizationSlug(identity.NormalizeOrganizationSlug(candidate)); slug != "" {
+			return slug
+		}
+	}
+	return "organization"
+}
+
+func accountOrganizationSlugWithSuffix(base, suffix string) string {
+	suffix = identity.NormalizeOrganizationSlug(suffix)
+	if suffix == "" {
+		suffix = "new"
+	}
+	maxBase := 80 - len(suffix) - 1
+	if maxBase < 1 {
+		maxBase = 1
+	}
+	base = trimOrganizationSlug(base)
+	if len(base) > maxBase {
+		base = strings.Trim(base[:maxBase], "-")
+	}
+	if base == "" {
+		base = "org"
+	}
+	return base + "-" + suffix
+}
+
+func trimOrganizationSlug(slug string) string {
+	if len(slug) <= 80 {
+		return strings.Trim(slug, "-")
+	}
+	return strings.Trim(slug[:80], "-")
+}
+
+func fitOrganizationDisplayName(value string) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) > 120 {
+		value = string(runes[:120])
+	}
+	for len(value) > 240 {
+		runes = []rune(value)
+		if len(runes) == 0 {
+			return ""
+		}
+		value = string(runes[:len(runes)-1])
+	}
+	return strings.TrimSpace(value)
+}
+
+func domainFromEmail(value *string) string {
+	raw := strings.TrimSpace(stringValue(value))
+	idx := strings.LastIndexByte(raw, '@')
+	if idx < 0 || idx == len(raw)-1 {
+		return ""
+	}
+	return raw[idx+1:]
 }
 
 func (a *BrowserAuth) exchangeToken(ctx context.Context, params url.Values) (tokenResponse, error) {
@@ -1128,6 +1354,14 @@ func randomToken(bytes int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func randomPublicOrganizationID() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return "org_" + crockfordEncodeBytes(raw)[:publicIDPayloadLength], nil
 }
 
 func hashToken(value string) string {

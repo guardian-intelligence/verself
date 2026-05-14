@@ -20,6 +20,12 @@ import (
 
 var organizationStoreTracer = otel.Tracer("iam-service/internal/identity/organization-store")
 
+const (
+	organizationPublicIDPrefix   = "org_"
+	organizationPublicIDLength   = len(organizationPublicIDPrefix) + 26
+	organizationPublicIDAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+)
+
 func (s SQLStore) GetOrganizationProfile(ctx context.Context, orgID, actorID string) (profile OrganizationProfile, err error) {
 	ctx, span := organizationStoreTracer.Start(ctx, "iam.pg.organization_profile.get")
 	defer finishOrganizationSpan(span, orgID, profile, err)
@@ -106,6 +112,36 @@ func (s SQLStore) ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, 
 		})
 	}
 	return organizations, nil
+}
+
+func (s SQLStore) CreateOrganizationProfile(ctx context.Context, input CreateOrganizationRequest) (profile OrganizationProfile, err error) {
+	input, err = normalizeCreateOrganizationRequest(input)
+	if err != nil {
+		return OrganizationProfile{}, err
+	}
+	ctx, span := organizationStoreTracer.Start(ctx, "iam.pg.organization_profile.create")
+	defer finishOrganizationSpan(span, input.OrgID, profile, err)
+	if s.PG == nil {
+		return OrganizationProfile{}, ErrStoreUnavailable
+	}
+	row, err := s.q().CreateOrganizationProfile(ctx, identitystore.CreateOrganizationProfileParams{
+		OrgID:                 input.OrgID,
+		IdentityProviderOrgID: input.IdentityProviderOrgID,
+		DisplayName:           input.DisplayName,
+		Slug:                  input.Slug,
+		ActorID:               input.ActorID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return OrganizationProfile{}, fmt.Errorf("%w: organization id, identity provider organization id, or slug is unavailable", ErrOrganizationConflict)
+	}
+	if err != nil {
+		if uniqueViolation(err) {
+			return OrganizationProfile{}, fmt.Errorf("%w: organization id, identity provider organization id, or slug is unavailable", ErrOrganizationConflict)
+		}
+		return OrganizationProfile{}, fmt.Errorf("%w: create organization profile: %v", ErrStoreUnavailable, err)
+	}
+	profile, err = organizationProfileFromCreateRow(row)
+	return profile, err
 }
 
 func (s SQLStore) UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (profile OrganizationProfile, err error) {
@@ -238,6 +274,10 @@ func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveO
 	return profile, nil
 }
 
+func organizationProfileFromCreateRow(row identitystore.CreateOrganizationProfileRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
 func organizationProfileFromGetRow(row identitystore.GetOrganizationProfileRow) (OrganizationProfile, error) {
 	return organizationProfileFromFields(row.OrgID, row.IdentityProviderOrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
@@ -293,6 +333,30 @@ func organizationProfileLoadError(err error) error {
 	return fmt.Errorf("%w: scan organization profile: %v", ErrStoreUnavailable, err)
 }
 
+func normalizeCreateOrganizationRequest(input CreateOrganizationRequest) (CreateOrganizationRequest, error) {
+	input.OrgID = strings.TrimSpace(input.OrgID)
+	input.IdentityProviderOrgID = strings.TrimSpace(input.IdentityProviderOrgID)
+	input.DisplayName = normalizeHumanText(input.DisplayName)
+	input.Slug = normalizeSlug(input.Slug)
+	input.ActorID = strings.TrimSpace(input.ActorID)
+	if err := validateOrganizationID("org_id", input.OrgID); err != nil {
+		return CreateOrganizationRequest{}, err
+	}
+	if err := validateProviderOrganizationID("identity_provider_org_id", input.IdentityProviderOrgID); err != nil {
+		return CreateOrganizationRequest{}, err
+	}
+	if err := validateHumanText("display_name", input.DisplayName, 1, 120, 240); err != nil {
+		return CreateOrganizationRequest{}, err
+	}
+	if err := validateSlug("slug", input.Slug); err != nil {
+		return CreateOrganizationRequest{}, err
+	}
+	if input.ActorID == "" {
+		return CreateOrganizationRequest{}, fmt.Errorf("%w: actor_id is required", ErrInvalidInput)
+	}
+	return input, nil
+}
+
 func normalizeUpdateOrganizationRequest(input UpdateOrganizationRequest) (UpdateOrganizationRequest, error) {
 	input.DisplayName = normalizeHumanText(input.DisplayName)
 	input.Slug = normalizeSlug(input.Slug)
@@ -333,6 +397,36 @@ func normalizeSlug(value string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
+}
+
+func NormalizeOrganizationSlug(value string) string {
+	return normalizeSlug(value)
+}
+
+func validateOrganizationID(field, value string) error {
+	if len(value) != organizationPublicIDLength || !strings.HasPrefix(value, organizationPublicIDPrefix) {
+		return fmt.Errorf("%w: %s must be a public organization id", ErrInvalidInput, field)
+	}
+	for _, r := range value[len(organizationPublicIDPrefix):] {
+		if strings.ContainsRune(organizationPublicIDAlphabet, r) {
+			continue
+		}
+		return fmt.Errorf("%w: %s contains unsupported characters", ErrInvalidInput, field)
+	}
+	return nil
+}
+
+func validateProviderOrganizationID(field, value string) error {
+	if value == "" {
+		return fmt.Errorf("%w: %s is required", ErrInvalidInput, field)
+	}
+	for _, r := range value {
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		return fmt.Errorf("%w: %s contains unsupported characters", ErrInvalidInput, field)
+	}
+	return nil
 }
 
 func validateSlug(field, value string) error {

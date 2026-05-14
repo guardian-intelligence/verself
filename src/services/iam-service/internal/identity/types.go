@@ -77,6 +77,14 @@ type OrganizationMetadata struct {
 	Version               int32
 }
 
+type CreateOrganizationRequest struct {
+	OrgID                 string
+	IdentityProviderOrgID string
+	DisplayName           string
+	Slug                  string
+	ActorID               string
+}
+
 type UpdateOrganizationRequest struct {
 	Version     int32
 	DisplayName string

@@ -62,51 +62,49 @@ type platformOptions struct {
 }
 
 type platformMainVars struct {
-	PlatformOrgID                string   `yaml:"platform_org_id"`
-	PlatformPublicOrgID          string   `yaml:"platform_public_org_id"`
-	SecretsServicePlatformOrgID  string   `yaml:"secrets_service_platform_org_id"`
-	PlatformOrganizationName     string   `yaml:"platform_organization_name"`
-	PlatformCompanySlug          string   `yaml:"platform_company_slug"`
-	PlatformCompanyDisplayName   string   `yaml:"platform_company_display_name"`
-	PlatformOwnerAlias           string   `yaml:"platform_owner_alias"`
-	PlatformOwnerName            string   `yaml:"platform_owner_name"`
-	PlatformOwnerEmail           string   `yaml:"platform_owner_email"`
-	PlatformOwnerBootstrapEmails []string `yaml:"platform_owner_bootstrap_emails"`
-	PlatformTrustTier            string   `yaml:"platform_trust_tier"`
-	PlatformRepoSlug             string   `yaml:"platform_repo_slug"`
-	PlatformRepoDisplayName      string   `yaml:"platform_repo_display_name"`
-	PlatformRepoDescription      string   `yaml:"platform_repo_description"`
-	PlatformGitHubAccountID      int64    `yaml:"platform_github_account_id"`
-	PlatformGitHubInstallationID int64    `yaml:"platform_github_installation_id"`
-	PlatformGitHubRepositoryID   int64    `yaml:"platform_github_repository_id"`
-	ForgejoDomain                string   `yaml:"forgejo_domain"`
-	ForgejoSubdomain             string   `yaml:"forgejo_subdomain"`
-	VerselfDomain                string   `yaml:"verself_domain"`
-	ZitadelDomain                string   `yaml:"zitadel_domain"`
-	ZitadelSubdomain             string   `yaml:"zitadel_subdomain"`
+	PlatformOrgID                string `yaml:"platform_org_id"`
+	PlatformPublicOrgID          string `yaml:"platform_public_org_id"`
+	SecretsServicePlatformOrgID  string `yaml:"secrets_service_platform_org_id"`
+	PlatformOrganizationName     string `yaml:"platform_organization_name"`
+	PlatformCompanySlug          string `yaml:"platform_company_slug"`
+	PlatformCompanyDisplayName   string `yaml:"platform_company_display_name"`
+	PlatformOwnerAlias           string `yaml:"platform_owner_alias"`
+	PlatformOwnerName            string `yaml:"platform_owner_name"`
+	PlatformOwnerEmail           string `yaml:"platform_owner_email"`
+	PlatformTrustTier            string `yaml:"platform_trust_tier"`
+	PlatformRepoSlug             string `yaml:"platform_repo_slug"`
+	PlatformRepoDisplayName      string `yaml:"platform_repo_display_name"`
+	PlatformRepoDescription      string `yaml:"platform_repo_description"`
+	PlatformGitHubAccountID      int64  `yaml:"platform_github_account_id"`
+	PlatformGitHubInstallationID int64  `yaml:"platform_github_installation_id"`
+	PlatformGitHubRepositoryID   int64  `yaml:"platform_github_repository_id"`
+	ForgejoDomain                string `yaml:"forgejo_domain"`
+	ForgejoSubdomain             string `yaml:"forgejo_subdomain"`
+	VerselfDomain                string `yaml:"verself_domain"`
+	ZitadelDomain                string `yaml:"zitadel_domain"`
+	ZitadelSubdomain             string `yaml:"zitadel_subdomain"`
 }
 
 type platformConfig struct {
-	OrgIDText            string   `json:"org_id"`
-	PublicOrgIDText      string   `json:"public_org_id"`
-	OrganizationName     string   `json:"organization_name"`
-	CompanySlug          string   `json:"company_slug"`
-	CompanyDisplayName   string   `json:"company_display_name"`
-	OwnerAlias           string   `json:"owner_alias"`
-	OwnerName            string   `json:"owner_name"`
-	OwnerEmail           string   `json:"owner_email"`
-	OwnerBootstrapEmails []string `json:"owner_bootstrap_emails,omitempty"`
-	TrustTier            string   `json:"trust_tier"`
-	RepoSlug             string   `json:"repo_slug"`
-	RepoDisplayName      string   `json:"repo_display_name"`
-	RepoDescription      string   `json:"repo_description"`
-	GitHubAccountID      int64    `json:"github_account_id,omitempty"`
-	GitHubInstallationID int64    `json:"github_installation_id,omitempty"`
-	GitHubRepositoryID   int64    `json:"github_repository_id,omitempty"`
-	ForgejoDomain        string   `json:"forgejo_domain"`
-	ZitadelHost          string   `json:"zitadel_host"`
-	CanonicalGitURL      string   `json:"canonical_git_url"`
-	ForgejoWebhookURL    string   `json:"forgejo_webhook_url"`
+	OrgIDText            string `json:"org_id"`
+	PublicOrgIDText      string `json:"public_org_id"`
+	OrganizationName     string `json:"organization_name"`
+	CompanySlug          string `json:"company_slug"`
+	CompanyDisplayName   string `json:"company_display_name"`
+	OwnerAlias           string `json:"owner_alias"`
+	OwnerName            string `json:"owner_name"`
+	OwnerEmail           string `json:"owner_email"`
+	TrustTier            string `json:"trust_tier"`
+	RepoSlug             string `json:"repo_slug"`
+	RepoDisplayName      string `json:"repo_display_name"`
+	RepoDescription      string `json:"repo_description"`
+	GitHubAccountID      int64  `json:"github_account_id,omitempty"`
+	GitHubInstallationID int64  `json:"github_installation_id,omitempty"`
+	GitHubRepositoryID   int64  `json:"github_repository_id,omitempty"`
+	ForgejoDomain        string `json:"forgejo_domain"`
+	ZitadelHost          string `json:"zitadel_host"`
+	CanonicalGitURL      string `json:"canonical_git_url"`
+	ForgejoWebhookURL    string `json:"forgejo_webhook_url"`
 }
 
 type platformReport struct {
@@ -299,7 +297,6 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 		OwnerAlias:           strings.TrimSpace(mainVars.PlatformOwnerAlias),
 		OwnerName:            strings.TrimSpace(mainVars.PlatformOwnerName),
 		OwnerEmail:           strings.TrimSpace(mainVars.PlatformOwnerEmail),
-		OwnerBootstrapEmails: append([]string(nil), mainVars.PlatformOwnerBootstrapEmails...),
 		TrustTier:            strings.TrimSpace(mainVars.PlatformTrustTier),
 		RepoSlug:             strings.TrimSpace(mainVars.PlatformRepoSlug),
 		RepoDisplayName:      strings.TrimSpace(mainVars.PlatformRepoDisplayName),
@@ -347,11 +344,6 @@ func (cfg *platformConfig) validate() error {
 	if _, err := mail.ParseAddress(cfg.OwnerEmail); err != nil {
 		return fmt.Errorf("platform config: platform_owner_email is invalid: %w", err)
 	}
-	ownerBootstrapEmails, err := normalizeEmailList(cfg.OwnerBootstrapEmails, "platform_owner_bootstrap_emails")
-	if err != nil {
-		return err
-	}
-	cfg.OwnerBootstrapEmails = ownerBootstrapEmails
 	if cfg.OwnerName == "" {
 		return fmt.Errorf("platform config: platform_owner_name is required")
 	}
@@ -433,28 +425,6 @@ func resolveForgejoWebhookURL(ops platformMainVars) string {
 		return ""
 	}
 	return "https://sandbox.api." + verselfDomain + "/webhooks/forgejo/actions"
-}
-
-func normalizeEmailList(values []string, field string) ([]string, error) {
-	out := make([]string, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		email := strings.TrimSpace(value)
-		if email == "" {
-			continue
-		}
-		if _, err := mail.ParseAddress(email); err != nil {
-			return nil, fmt.Errorf("platform config: %s contains invalid email %q: %w", field, email, err)
-		}
-		key := strings.ToLower(email)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, email)
-	}
-	sort.Strings(out)
-	return out, nil
 }
 
 func (r *platformRunner) seed() (platformReport, error) {

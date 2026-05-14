@@ -193,9 +193,6 @@ platform_company_display_name: Guardian Intelligence
 platform_owner_alias: shovon
 platform_owner_name: Shovon Hasan
 platform_owner_email: shovon@guardianintelligence.org
-platform_owner_bootstrap_emails:
-  - ceo@verself.sh
-  - agent@verself.sh
 platform_trust_tier: platform
 platform_repo_slug: verself
 platform_repo_display_name: Verself
