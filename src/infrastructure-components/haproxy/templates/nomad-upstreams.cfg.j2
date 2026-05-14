@@ -399,8 +399,8 @@ backend be_source_forgejo_webhook
   http-request deny deny_status 413 if { req.body_size gt 1048576 }
   http-request return status 503 content-type text/plain string "service unavailable"
 
-backend be_zitadel_action_api_credentials
-  guid be_zitadel_action_api_credentials
+backend be_zitadel_product_token_claims
+  guid be_zitadel_product_token_claims
   balance random
   http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
   http-response set-header Cross-Origin-Resource-Policy same-origin

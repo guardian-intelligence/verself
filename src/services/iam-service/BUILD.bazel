@@ -36,11 +36,7 @@ nomad_component(
 
 component_substrate_json(
     name = "component_substrate",
-    srcs = [
-        "nftables/iam-service.nft",
-        "//src/integrations/zitadel/project-tenants:browser_oidc.yml",
-        "//src/integrations/zitadel/project-tenants:iam_zitadel_actions.yml",
-    ],
+    srcs = ["nftables/iam-service.nft"],
     definition_json = """{
       "component": "iam_service",
       "kind": "service",
@@ -66,39 +62,6 @@ component_substrate_json(
         "auth": {
           "kind": "owned_project",
           "project_name": "verself-api"
-        },
-        "bootstrap": [
-          {
-            "class": "identity_provider",
-            "name": "iam_zitadel_actions",
-            "reason": "Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state.",
-            "source": "src/integrations/zitadel/project-tenants/iam_zitadel_actions.yml"
-          },
-          {
-            "class": "identity_provider",
-            "name": "browser_oidc",
-            "reason": "Reconciles the console OIDC application and persists runtime client credentials for iam-service browser auth.",
-            "source": "src/integrations/zitadel/project-tenants/browser_oidc.yml"
-          }
-        ],
-        "bootstrap_config": {
-          "browser_oidc": {
-            "app_name": "verself-web",
-            "credstore_dir": "/etc/credstore/iam-service",
-            "credstore_group": "iam_service",
-            "grant_types": [
-              "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
-              "OIDC_GRANT_TYPE_REFRESH_TOKEN",
-              "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"
-            ],
-            "post_logout_redirect_uris": [
-              "https://verself.sh"
-            ],
-            "project_name": "verself-api",
-            "redirect_uris": [
-              "https://verself.sh/api/v1/auth/callback"
-            ]
-          }
         },
         "clickhouse": {
           "grants": [

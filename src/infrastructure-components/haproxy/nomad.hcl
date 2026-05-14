@@ -612,8 +612,8 @@ backend be_source_forgejo_webhook
   http-request return status 503 content-type text/plain string "service unavailable"
 [[ end ]]
 
-backend be_zitadel_action_api_credentials
-  guid be_zitadel_action_api_credentials
+backend be_zitadel_product_token_claims
+  guid be_zitadel_product_token_claims
   balance random
   http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
   http-response set-header Cross-Origin-Resource-Policy same-origin
@@ -628,7 +628,7 @@ backend be_zitadel_action_api_credentials
   http-request deny deny_status 413 if { req.body_size gt 65536 }
 [[ with nomadService "iam-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_zitadel_action_api_credentials_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_zitadel_product_token_claims_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"
