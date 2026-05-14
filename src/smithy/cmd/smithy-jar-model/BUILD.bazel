@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "smithy-jar-model_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/verself/src/smithy/cmd/smithy-jar-model",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "smithy-jar-model",
+    embed = [":smithy-jar-model_lib"],
+    visibility = ["//visibility:public"],
+)

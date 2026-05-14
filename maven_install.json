@@ -8,10 +8,13 @@
     "com.google.guava:guava": 1943808618,
     "com.google.j2objc:j2objc-annotations": 2003271689,
     "repositories": -1949687017,
+    "software.amazon.smithy:smithy-aws-traits": -1440605567,
     "software.amazon.smithy:smithy-bom": -117063834,
     "software.amazon.smithy:smithy-build": 902145698,
     "software.amazon.smithy:smithy-cli": 1026574036,
     "software.amazon.smithy:smithy-model": -1940075491,
+    "software.amazon.smithy:smithy-openapi": 1928191812,
+    "software.amazon.smithy:smithy-openapi-traits": 1369910734,
     "software.amazon.smithy:smithy-utils": 697791397
   },
   "__RESOLVED_ARTIFACTS_HASH": {
@@ -24,19 +27,27 @@
     "com.google.guava:listenablefuture": 1079558157,
     "com.google.j2objc:j2objc-annotations": 248818742,
     "org.checkerframework:checker-qual": 1111580854,
+    "software.amazon.smithy:smithy-aws-traits": -1529786262,
     "software.amazon.smithy:smithy-build": 1543415201,
     "software.amazon.smithy:smithy-cli": -2128440763,
     "software.amazon.smithy:smithy-diff": 894264901,
+    "software.amazon.smithy:smithy-jsonschema": -1286187681,
     "software.amazon.smithy:smithy-model": -1115331963,
+    "software.amazon.smithy:smithy-openapi": 1696397612,
+    "software.amazon.smithy:smithy-openapi-traits": 304725348,
+    "software.amazon.smithy:smithy-protocol-traits": -1511102055,
     "software.amazon.smithy:smithy-syntax": 93404158,
     "software.amazon.smithy:smithy-utils": -523502161
   },
   "conflict_resolution": {
     "com.google.errorprone:error_prone_annotations:2.5.1": "com.google.errorprone:error_prone_annotations:2.47.0",
     "com.google.guava:guava:32.0.1-jre": "com.google.guava:guava:32.1.3-jre",
+    "software.amazon.smithy:smithy-aws-traits": "software.amazon.smithy:smithy-aws-traits:1.70.0",
     "software.amazon.smithy:smithy-build": "software.amazon.smithy:smithy-build:1.70.0",
     "software.amazon.smithy:smithy-cli": "software.amazon.smithy:smithy-cli:1.70.0",
     "software.amazon.smithy:smithy-model": "software.amazon.smithy:smithy-model:1.70.0",
+    "software.amazon.smithy:smithy-openapi": "software.amazon.smithy:smithy-openapi:1.70.0",
+    "software.amazon.smithy:smithy-openapi-traits": "software.amazon.smithy:smithy-openapi-traits:1.70.0",
     "software.amazon.smithy:smithy-utils": "software.amazon.smithy:smithy-utils:1.70.0"
   },
   "artifacts": {
@@ -94,6 +105,12 @@
       },
       "version": "3.37.0"
     },
+    "software.amazon.smithy:smithy-aws-traits": {
+      "shasums": {
+        "jar": "6ba9fc748279054ac64ece96c8b9632e4f2395f5b789c8ae0ff800fbd358536e"
+      },
+      "version": "1.70.0"
+    },
     "software.amazon.smithy:smithy-build": {
       "shasums": {
         "jar": "8e33b64a50e9bcda8536f4fbdb479067b816d2541c2349762a7223099853cc43"
@@ -112,9 +129,33 @@
       },
       "version": "1.70.0"
     },
+    "software.amazon.smithy:smithy-jsonschema": {
+      "shasums": {
+        "jar": "ffde2a3c17fa57322a619c63729490862c38bd5e719f5efe25fd59a80fdfbb98"
+      },
+      "version": "1.70.0"
+    },
     "software.amazon.smithy:smithy-model": {
       "shasums": {
         "jar": "a99adce97520b462409d2be98a8ca74101658990e5e19019bf0d76a108d47ff9"
+      },
+      "version": "1.70.0"
+    },
+    "software.amazon.smithy:smithy-openapi": {
+      "shasums": {
+        "jar": "e9e595834f8de5d0c1c2101b1577233635d3683e109a3d315db8b8749fb2cde8"
+      },
+      "version": "1.70.0"
+    },
+    "software.amazon.smithy:smithy-openapi-traits": {
+      "shasums": {
+        "jar": "ed6abfc798e5cc41c5ba1eeb7cf7d20abae7baeb260ba843621e3e7c32ab622a"
+      },
+      "version": "1.70.0"
+    },
+    "software.amazon.smithy:smithy-protocol-traits": {
+      "shasums": {
+        "jar": "e6d9d17c87aad22b87fc16cd6aac5d5331d046c626212b55f63e534bf00e4376"
       },
       "version": "1.70.0"
     },
@@ -143,6 +184,11 @@
       "com.google.j2objc:j2objc-annotations",
       "org.checkerframework:checker-qual"
     ],
+    "software.amazon.smithy:smithy-aws-traits": [
+      "software.amazon.smithy:smithy-diff",
+      "software.amazon.smithy:smithy-model",
+      "software.amazon.smithy:smithy-protocol-traits"
+    ],
     "software.amazon.smithy:smithy-build": [
       "software.amazon.smithy:smithy-model",
       "software.amazon.smithy:smithy-utils"
@@ -157,7 +203,26 @@
       "software.amazon.smithy:smithy-model",
       "software.amazon.smithy:smithy-utils"
     ],
+    "software.amazon.smithy:smithy-jsonschema": [
+      "software.amazon.smithy:smithy-model",
+      "software.amazon.smithy:smithy-utils"
+    ],
     "software.amazon.smithy:smithy-model": [
+      "software.amazon.smithy:smithy-utils"
+    ],
+    "software.amazon.smithy:smithy-openapi": [
+      "software.amazon.smithy:smithy-aws-traits",
+      "software.amazon.smithy:smithy-build",
+      "software.amazon.smithy:smithy-jsonschema",
+      "software.amazon.smithy:smithy-model",
+      "software.amazon.smithy:smithy-openapi-traits",
+      "software.amazon.smithy:smithy-protocol-traits"
+    ],
+    "software.amazon.smithy:smithy-openapi-traits": [
+      "software.amazon.smithy:smithy-model"
+    ],
+    "software.amazon.smithy:smithy-protocol-traits": [
+      "software.amazon.smithy:smithy-model",
       "software.amazon.smithy:smithy-utils"
     ],
     "software.amazon.smithy:smithy-syntax": [
@@ -249,6 +314,15 @@
       "org.checkerframework.common.value.qual",
       "org.checkerframework.dataflow.qual",
       "org.checkerframework.framework.qual"
+    ],
+    "software.amazon.smithy:smithy-aws-traits": [
+      "software.amazon.smithy.aws.traits",
+      "software.amazon.smithy.aws.traits.auth",
+      "software.amazon.smithy.aws.traits.auth.diff",
+      "software.amazon.smithy.aws.traits.clientendpointdiscovery",
+      "software.amazon.smithy.aws.traits.customizations",
+      "software.amazon.smithy.aws.traits.protocols",
+      "software.amazon.smithy.aws.traits.tagging"
     ],
     "software.amazon.smithy:smithy-build": [
       "software.amazon.smithy.build",
@@ -451,6 +525,9 @@
       "software.amazon.smithy.diff.evaluators",
       "software.amazon.smithy.diff.testrunner"
     ],
+    "software.amazon.smithy:smithy-jsonschema": [
+      "software.amazon.smithy.jsonschema"
+    ],
     "software.amazon.smithy:smithy-model": [
       "software.amazon.smithy.model",
       "software.amazon.smithy.model.knowledge",
@@ -473,6 +550,20 @@
       "software.amazon.smithy.model.validation.testrunner",
       "software.amazon.smithy.model.validation.validators"
     ],
+    "software.amazon.smithy:smithy-openapi": [
+      "software.amazon.smithy.openapi",
+      "software.amazon.smithy.openapi.fromsmithy",
+      "software.amazon.smithy.openapi.fromsmithy.mappers",
+      "software.amazon.smithy.openapi.fromsmithy.protocols",
+      "software.amazon.smithy.openapi.fromsmithy.security",
+      "software.amazon.smithy.openapi.model"
+    ],
+    "software.amazon.smithy:smithy-openapi-traits": [
+      "software.amazon.smithy.openapi.traits"
+    ],
+    "software.amazon.smithy:smithy-protocol-traits": [
+      "software.amazon.smithy.protocol.traits"
+    ],
     "software.amazon.smithy:smithy-syntax": [
       "software.amazon.smithy.syntax",
       "software.amazon.smithy.syntax.shaded.prettier4j",
@@ -493,10 +584,15 @@
       "com.google.guava:listenablefuture",
       "com.google.j2objc:j2objc-annotations",
       "org.checkerframework:checker-qual",
+      "software.amazon.smithy:smithy-aws-traits",
       "software.amazon.smithy:smithy-build",
       "software.amazon.smithy:smithy-cli",
       "software.amazon.smithy:smithy-diff",
+      "software.amazon.smithy:smithy-jsonschema",
       "software.amazon.smithy:smithy-model",
+      "software.amazon.smithy:smithy-openapi",
+      "software.amazon.smithy:smithy-openapi-traits",
+      "software.amazon.smithy:smithy-protocol-traits",
       "software.amazon.smithy:smithy-syntax",
       "software.amazon.smithy:smithy-utils"
     ]
@@ -508,6 +604,62 @@
       ],
       "javax.tools.Tool": [
         "com.google.googlejavaformat.java.GoogleJavaFormatTool"
+      ]
+    },
+    "software.amazon.smithy:smithy-aws-traits": {
+      "software.amazon.smithy.diff.DiffEvaluator": [
+        "software.amazon.smithy.aws.traits.auth.diff.SigV4Migration"
+      ],
+      "software.amazon.smithy.model.traits.TraitService": [
+        "software.amazon.smithy.aws.traits.ArnReferenceTrait$Provider",
+        "software.amazon.smithy.aws.traits.ArnTrait$Provider",
+        "software.amazon.smithy.aws.traits.AwsChunkedTrait$Provider",
+        "software.amazon.smithy.aws.traits.ControlPlaneTrait$Provider",
+        "software.amazon.smithy.aws.traits.DataPlaneTrait$Provider",
+        "software.amazon.smithy.aws.traits.DataTrait$Provider",
+        "software.amazon.smithy.aws.traits.HttpChecksumTrait$Provider",
+        "software.amazon.smithy.aws.traits.ServiceTrait$Provider",
+        "software.amazon.smithy.aws.traits.auth.CognitoUserPoolsTrait$Provider",
+        "software.amazon.smithy.aws.traits.auth.SigV4ATrait$Provider",
+        "software.amazon.smithy.aws.traits.auth.SigV4Trait$Provider",
+        "software.amazon.smithy.aws.traits.auth.UnsignedPayloadTrait$Provider",
+        "software.amazon.smithy.aws.traits.clientendpointdiscovery.ClientDiscoveredEndpointTrait$Provider",
+        "software.amazon.smithy.aws.traits.clientendpointdiscovery.ClientEndpointDiscoveryIdTrait$Provider",
+        "software.amazon.smithy.aws.traits.clientendpointdiscovery.ClientEndpointDiscoveryTrait$Provider",
+        "software.amazon.smithy.aws.traits.customizations.S3UnwrappedXmlOutputTrait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.AwsJson1_0Trait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.AwsJson1_1Trait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.AwsQueryCompatibleTrait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.AwsQueryErrorTrait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.AwsQueryTrait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.Ec2QueryNameTrait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.Ec2QueryTrait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.RestJson1Trait$Provider",
+        "software.amazon.smithy.aws.traits.protocols.RestXmlTrait$Provider",
+        "software.amazon.smithy.aws.traits.tagging.TagEnabledTrait$Provider",
+        "software.amazon.smithy.aws.traits.tagging.TaggableTrait$Provider"
+      ],
+      "software.amazon.smithy.model.transform.ModelTransformerPlugin": [
+        "software.amazon.smithy.aws.traits.clientendpointdiscovery.CleanClientDiscoveryTraitTransformer"
+      ],
+      "software.amazon.smithy.model.validation.Validator": [
+        "software.amazon.smithy.aws.traits.ArnTemplateValidator",
+        "software.amazon.smithy.aws.traits.ArnTraitValidator",
+        "software.amazon.smithy.aws.traits.CloudWatchNamespaceValidator",
+        "software.amazon.smithy.aws.traits.ErrorRenameValidator",
+        "software.amazon.smithy.aws.traits.EventSourceValidator",
+        "software.amazon.smithy.aws.traits.HttpChecksumTraitValidator",
+        "software.amazon.smithy.aws.traits.SdkServiceIdValidator",
+        "software.amazon.smithy.aws.traits.auth.SigV4TraitsValidator",
+        "software.amazon.smithy.aws.traits.clientendpointdiscovery.ClientEndpointDiscoveryValidator",
+        "software.amazon.smithy.aws.traits.protocols.ProtocolHttpPayloadValidator",
+        "software.amazon.smithy.aws.traits.protocols.ProtocolHttpValidator",
+        "software.amazon.smithy.aws.traits.protocols.QueryErrorCodeValidator",
+        "software.amazon.smithy.aws.traits.tagging.ServiceTaggingValidator",
+        "software.amazon.smithy.aws.traits.tagging.TagEnabledServiceValidator",
+        "software.amazon.smithy.aws.traits.tagging.TagResourcePropertyNameValidator",
+        "software.amazon.smithy.aws.traits.tagging.TagResourcePropertyTypeValidator",
+        "software.amazon.smithy.aws.traits.tagging.TaggableResourceValidator"
       ]
     },
     "software.amazon.smithy:smithy-build": {
@@ -745,6 +897,29 @@
         "software.amazon.smithy.model.validation.linters.EmitEachSelectorValidator$Provider",
         "software.amazon.smithy.model.validation.linters.EmitNoneSelectorValidator$Provider",
         "software.amazon.smithy.model.validation.linters.UnreferencedShapeValidator$Provider"
+      ]
+    },
+    "software.amazon.smithy:smithy-openapi": {
+      "software.amazon.smithy.build.SmithyBuildPlugin": [
+        "software.amazon.smithy.openapi.fromsmithy.Smithy2OpenApi"
+      ],
+      "software.amazon.smithy.openapi.fromsmithy.Smithy2OpenApiExtension": [
+        "software.amazon.smithy.openapi.fromsmithy.CoreExtension"
+      ]
+    },
+    "software.amazon.smithy:smithy-openapi-traits": {
+      "software.amazon.smithy.model.traits.TraitService": [
+        "software.amazon.smithy.openapi.traits.SpecificationExtensionTrait$Provider"
+      ]
+    },
+    "software.amazon.smithy:smithy-protocol-traits": {
+      "software.amazon.smithy.model.traits.TraitService": [
+        "software.amazon.smithy.protocol.traits.Rpcv2CborTrait$Provider",
+        "software.amazon.smithy.protocol.traits.Rpcv2JsonTrait$Provider"
+      ],
+      "software.amazon.smithy.model.validation.Validator": [
+        "software.amazon.smithy.protocol.traits.Rpcv2CborTraitValidator",
+        "software.amazon.smithy.protocol.traits.Rpcv2JsonTraitValidator"
       ]
     }
   },

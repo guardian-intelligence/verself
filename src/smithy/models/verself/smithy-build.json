@@ -15,13 +15,6 @@
     "secrets.smithy",
     "source.smithy"
   ],
-  "maven": {
-    "dependencies": [
-      "software.amazon.smithy:smithy-aws-traits:1.70.0",
-      "software.amazon.smithy:smithy-openapi:1.70.0",
-      "software.amazon.smithy:smithy-openapi-traits:1.70.0"
-    ]
-  },
   "projections": {
     "source": {},
     "analytics-public": {

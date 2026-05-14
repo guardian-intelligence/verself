@@ -25,9 +25,12 @@ maven.install(
     name = "maven",
     artifacts = [
         "com.google.googlejavaformat:google-java-format:1.35.0",
+        "software.amazon.smithy:smithy-aws-traits",
         "software.amazon.smithy:smithy-build",
         "software.amazon.smithy:smithy-cli",
         "software.amazon.smithy:smithy-model",
+        "software.amazon.smithy:smithy-openapi",
+        "software.amazon.smithy:smithy-openapi-traits",
         "software.amazon.smithy:smithy-utils",
     ],
     boms = [

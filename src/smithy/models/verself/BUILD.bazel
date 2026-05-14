@@ -1,4 +1,4 @@
-load("//src/smithy/build:smithy.bzl", "smithy_build", "smithy_validate")
+load("//src/smithy/build:smithy.bzl", "smithy_build", "smithy_jar_model", "smithy_validate")
 load("//src/tools/build:check_tests.bzl", "stamp_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -13,11 +13,58 @@ filegroup(
     srcs = ["smithy-build.json"],
 )
 
+smithy_jar_model(
+    name = "aws_api_model",
+    out = "smithy-deps/aws.api.smithy",
+    entry = "META-INF/smithy/aws.api.smithy",
+    jar = "@maven//:software_amazon_smithy_smithy_aws_traits",
+)
+
+smithy_jar_model(
+    name = "aws_auth_model",
+    out = "smithy-deps/aws.auth.smithy",
+    entry = "META-INF/smithy/aws.auth.smithy",
+    jar = "@maven//:software_amazon_smithy_smithy_aws_traits",
+)
+
+smithy_jar_model(
+    name = "aws_customizations_model",
+    out = "smithy-deps/aws.customizations.smithy",
+    entry = "META-INF/smithy/aws.customizations.smithy",
+    jar = "@maven//:software_amazon_smithy_smithy_aws_traits",
+)
+
+smithy_jar_model(
+    name = "aws_protocols_model",
+    out = "smithy-deps/aws.protocols.smithy",
+    entry = "META-INF/smithy/aws.protocols.smithy",
+    jar = "@maven//:software_amazon_smithy_smithy_aws_traits",
+)
+
+smithy_jar_model(
+    name = "smithy_openapi_model",
+    out = "smithy-deps/smithy.openapi.smithy",
+    entry = "META-INF/smithy/smithy.openapi.smithy",
+    jar = "@maven//:software_amazon_smithy_smithy_openapi_traits",
+)
+
+filegroup(
+    name = "smithy_dependency_models",
+    srcs = [
+        ":aws_api_model",
+        ":aws_auth_model",
+        ":aws_customizations_model",
+        ":aws_protocols_model",
+        ":smithy_openapi_model",
+    ],
+)
+
 smithy_validate(
     name = "smithy_validate",
     srcs = [":smithy_sources"],
     out = "smithy.validate",
     config = ":smithy_config",
+    model_deps = [":smithy_dependency_models"],
 )
 
 stamp_test(
@@ -34,4 +81,5 @@ smithy_build(
     srcs = [":smithy_sources"],
     out = "smithy-build",
     config = ":smithy_config",
+    model_deps = [":smithy_dependency_models"],
 )
