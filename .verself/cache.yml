@@ -2,10 +2,16 @@ version: 1
 
 cache:
   - name: bazel
-    size: 100GiB
+    size: 120GiB
     paths:
       - ~/.cache/bazel-disk
       - ~/.cache/bazel-repo
+      # The per-workspace action cache lives under the default Bazel output base
+      # (~/.cache/bazel/_bazel_<user>/<workspace-hash>/action_cache). Local-only
+      # actions like the per-module Go check genrules bypass --disk_cache and
+      # rely on this on-disk action cache for cross-invocation hits; without it
+      # every CI run re-runs every check from scratch.
+      - ~/.cache/bazel
   - name: pnpm
     size: 40GiB
     paths:
