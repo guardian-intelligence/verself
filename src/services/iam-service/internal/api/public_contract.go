@@ -604,35 +604,6 @@ func publicMemberResourceName(installationID string, orgID contractapi.OrgID, me
 	return contractapi.MemberResourceName(fmt.Sprintf("urn:verself:%s:orgs/%s/members/%s", strings.TrimSpace(installationID), orgID, memberID))
 }
 
-func organizationMetadataOrgIDs(organizations []identity.OrganizationMetadata) []string {
-	out := make([]string, 0, len(organizations))
-	for _, organization := range organizations {
-		if orgID := strings.TrimSpace(organization.OrgID); orgID != "" {
-			out = append(out, orgID)
-		}
-	}
-	return out
-}
-
-func filterOrganizationMetadataByOrgID(organizations []identity.OrganizationMetadata, orgIDs []string) []identity.OrganizationMetadata {
-	if len(organizations) == 0 || len(orgIDs) == 0 {
-		return nil
-	}
-	allowed := make(map[string]struct{}, len(orgIDs))
-	for _, orgID := range orgIDs {
-		if orgID = strings.TrimSpace(orgID); orgID != "" {
-			allowed[orgID] = struct{}{}
-		}
-	}
-	out := make([]identity.OrganizationMetadata, 0, len(organizations))
-	for _, organization := range organizations {
-		if _, ok := allowed[strings.TrimSpace(organization.OrgID)]; ok {
-			out = append(out, organization)
-		}
-	}
-	return out
-}
-
 func publicMemberID(userID string) contractapi.MemberID {
 	sum := sha256.Sum256([]byte("iam-member\x00" + strings.TrimSpace(userID)))
 	return contractapi.MemberID("member_" + crockfordEncodeBytes(sum[:])[:publicIDPayloadLength])

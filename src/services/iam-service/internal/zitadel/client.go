@@ -317,11 +317,6 @@ func (c *Client) createHumanUser(ctx context.Context, orgID string, input identi
 	return "", fmt.Errorf("%w: create user returned no user id", identity.ErrZitadelUnavailable)
 }
 
-type pagination struct {
-	Offset int `json:"offset,omitempty"`
-	Limit  int `json:"limit"`
-}
-
 type flexibleInt int
 
 func (n *flexibleInt) UnmarshalJSON(data []byte) error {

@@ -14,7 +14,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	governanceinternalclient "github.com/verself/governance-service/internalclient"
-	"github.com/verself/iam-service/internal/authz"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
@@ -49,34 +48,6 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 			MaxLength: &maxLength,
 		},
 	})
-}
-
-func authorizationActor(authIdentity *auth.Identity) string {
-	subject := authzSubjectFromIdentity(authIdentity)
-	if strings.TrimSpace(subject.ID) != "" {
-		return strings.TrimSpace(subject.ID)
-	}
-	if authIdentity == nil {
-		return ""
-	}
-	return strings.TrimSpace(authIdentity.Subject)
-}
-
-func authorizedOrgIDs(ctx context.Context, authzSvc *authz.Service, authIdentity *auth.Identity, orgIDs []string, required runtimeiam.Permission) ([]string, error) {
-	if required == "" {
-		return nil, nil
-	}
-	authorized := make([]string, 0, len(orgIDs))
-	for _, orgID := range orgIDs {
-		allowed, _, err := authzSvc.TestOrganizationPermissions(ctx, orgID, authzSubjectFromIdentity(authIdentity), []string{string(required)}, "")
-		if err != nil {
-			return nil, err
-		}
-		if stringSliceContains(allowed, string(required)) {
-			authorized = append(authorized, orgID)
-		}
-	}
-	return authorized, nil
 }
 
 func stringSliceContains(values []string, target string) bool {

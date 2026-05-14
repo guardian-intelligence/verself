@@ -54,43 +54,6 @@ type Service struct {
 	Now                func() time.Time
 }
 
-type providerOrgDirectory struct {
-	next          Directory
-	providerOrgID string
-}
-
-func directoryForProviderOrgID(next Directory, providerOrgID string) Directory {
-	return providerOrgDirectory{next: next, providerOrgID: strings.TrimSpace(providerOrgID)}
-}
-
-func (d providerOrgDirectory) ListMembers(ctx context.Context, _ string) ([]Member, error) {
-	return d.next.ListMembers(ctx, d.providerOrgID)
-}
-
-func (d providerOrgDirectory) InviteMember(ctx context.Context, _ string, input InviteMemberRequest) (InviteMemberResult, error) {
-	return d.next.InviteMember(ctx, d.providerOrgID, input)
-}
-
-func (d providerOrgDirectory) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {
-	return d.next.UpdateHumanProfile(ctx, subjectID, input)
-}
-
-func (d providerOrgDirectory) CreateServiceAccountCredential(ctx context.Context, _ string, input ServiceAccountCredentialInput) (string, APICredentialIssuedMaterial, error) {
-	return d.next.CreateServiceAccountCredential(ctx, d.providerOrgID, input)
-}
-
-func (d providerOrgDirectory) AddServiceAccountCredential(ctx context.Context, input AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error) {
-	return d.next.AddServiceAccountCredential(ctx, input)
-}
-
-func (d providerOrgDirectory) RemoveServiceAccountCredential(ctx context.Context, subjectID string, secret APICredentialSecret) error {
-	return d.next.RemoveServiceAccountCredential(ctx, subjectID, secret)
-}
-
-func (d providerOrgDirectory) DeactivateServiceAccount(ctx context.Context, subjectID string) error {
-	return d.next.DeactivateServiceAccount(ctx, subjectID)
-}
-
 func (s *Service) Organization(ctx context.Context, principal Principal) (Organization, error) {
 	if err := principal.validate(); err != nil {
 		return Organization{}, err
@@ -693,14 +656,6 @@ func (s *Service) normalizeCreateAPICredentialRequest(input CreateAPICredentialR
 		return CreateAPICredentialRequest{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
 	}
 	return input, nil
-}
-
-func (p Principal) authorizationSubject() AuthorizationSubject {
-	kind := p.SubjectKind
-	if kind == "" {
-		kind = AuthorizationSubjectKindUser
-	}
-	return AuthorizationSubject{Kind: kind, ID: p.Subject}
 }
 
 func normalizeAuthMethod(value string) APICredentialAuthMethod {
