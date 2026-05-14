@@ -1,6 +1,5 @@
 # Verself
 
-
 Verself is two things:
 
 1. Prima facie, a PaaS selling stateful, suspendable compute with near-serverless economics via fast-launching Firecracker VMs with hot-swappable filesystems via `zfs clone`.
