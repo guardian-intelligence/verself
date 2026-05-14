@@ -15,225 +15,452 @@
     "secrets.smithy",
     "source.smithy"
   ],
+  "maven": {
+    "dependencies": [
+      "software.amazon.smithy:smithy-aws-traits:1.70.0",
+      "software.amazon.smithy:smithy-openapi:1.70.0",
+      "software.amazon.smithy:smithy-openapi-traits:1.70.0"
+    ]
+  },
   "projections": {
     "source": {},
     "analytics-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.analytics.v1#Analytics",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/analytics-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://analytics.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "billing-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.billing.v1#Billing",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/billing-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://billing.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "billing-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.billing.v1#BillingInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/billing-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4255"
+              }
+            ]
+          }
         }
       }
     },
     "billing-ingress": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.billing.v1#BillingIngress",
-          "package": "verself",
-          "visibility": "ingress",
-          "filename": "ir/verself/billing-ingress.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4261"
+              }
+            ]
+          }
         }
       }
     },
     "governance-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.governance.v1#Governance",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/governance-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://governance.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "governance-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.governance.v1#GovernanceInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/governance-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4254"
+              }
+            ]
+          }
         }
       }
     },
     "iam-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.iam.v1#Iam",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/iam-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://iam.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "iam-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.iam.v1#IamInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/iam-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4260"
+              }
+            ]
+          }
         }
       }
     },
     "mailbox-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.mailbox.v1#Mailbox",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/mailbox-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://mail.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "notifications-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.notifications.v1#Notifications",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/notifications-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://notifications.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "notifications-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.notifications.v1#NotificationsInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/notifications-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4254"
+              }
+            ]
+          }
         }
       }
     },
     "object-storage-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.objectstorage.v1#ObjectStorage",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/object-storage-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://object-storage.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "profile-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.profile.v1#Profile",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/profile-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://profile.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "profile-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.profile.v1#ProfileInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/profile-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4254"
+              }
+            ]
+          }
         }
       }
     },
     "projects-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.projects.v1#Projects",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/projects-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://projects.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "projects-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.projects.v1#ProjectsInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/projects-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4265"
+              }
+            ]
+          }
         }
       }
     },
     "sandbox-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.sandbox.v1#SandboxRental",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/sandbox-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://sandbox.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "sandbox-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.sandbox.v1#SandboxRentalInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/sandbox-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4263"
+              }
+            ]
+          }
         }
       }
     },
     "secrets-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.secrets.v1#Secrets",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/secrets-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://secrets.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "secrets-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.secrets.v1#SecretsInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/secrets-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4253"
+              }
+            ]
+          }
         }
       }
     },
     "source-public": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.source.v1#SourceHosting",
-          "package": "verself",
-          "visibility": "public",
-          "filename": "ir/verself/source-public.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://source.api.verself.sh"
+              }
+            ]
+          }
         }
       }
     },
     "source-internal": {
       "plugins": {
-        "verself-ir": {
+        "openapi": {
           "service": "verself.source.v1#SourceHostingInternal",
-          "package": "verself",
-          "visibility": "internal",
-          "filename": "ir/verself/source-internal.json"
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4262"
+              }
+            ]
+          }
         }
       }
     }

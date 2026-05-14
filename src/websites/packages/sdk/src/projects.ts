@@ -24,11 +24,16 @@ import {
   vArchiveProjectBody,
   vArchiveProjectEnvironmentBody,
   vArchiveProjectEnvironmentPath,
+  vArchiveProjectEnvironmentResponse,
   vArchiveProjectPath,
+  vArchiveProjectResponse,
   vCreateProjectEnvironmentBody,
   vCreateProjectEnvironmentPath,
+  vCreateProjectEnvironmentResponse,
   vCreateProjectBody,
+  vCreateProjectResponse,
   vGetProjectPath,
+  vGetProjectResponse,
   vListProjectEnvironmentsPath,
   vListProjectEnvironmentsResponse,
   vListProjectsQuery,
@@ -36,11 +41,14 @@ import {
   vPatchProjectBody,
   vPatchProjectEnvironmentBody,
   vPatchProjectEnvironmentPath,
+  vPatchProjectEnvironmentResponse,
   vPatchProjectPath,
+  vPatchProjectResponse,
   vProjectEnvironmentSummary,
   vProjectSummary,
   vRestoreProjectBody,
   vRestoreProjectPath,
+  vRestoreProjectResponse,
 } from "./__generated/projects-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -188,7 +196,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProject(result.data);
+    return parseProject(v.parse(vCreateProjectResponse, result.data));
   }
 
   async get(projectId: string): Promise<Project> {
@@ -204,7 +212,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProject(result.data);
+    return parseProject(v.parse(vGetProjectResponse, result.data));
   }
 
   async update(
@@ -229,7 +237,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProject(result.data);
+    return parseProject(v.parse(vPatchProjectResponse, result.data));
   }
 
   async archive(
@@ -252,7 +260,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProject(result.data);
+    return parseProject(v.parse(vArchiveProjectResponse, result.data));
   }
 
   async restore(
@@ -275,7 +283,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProject(result.data);
+    return parseProject(v.parse(vRestoreProjectResponse, result.data));
   }
 
   async listEnvironments(projectId: string): Promise<ProjectEnvironmentList> {
@@ -316,7 +324,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProjectEnvironment(result.data);
+    return parseProjectEnvironment(v.parse(vCreateProjectEnvironmentResponse, result.data));
   }
 
   async updateEnvironment(
@@ -345,7 +353,7 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProjectEnvironment(result.data);
+    return parseProjectEnvironment(v.parse(vPatchProjectEnvironmentResponse, result.data));
   }
 
   async archiveEnvironment(
@@ -375,6 +383,6 @@ export class Projects {
     if (result.error !== undefined) {
       throwProjectsError(path, result.response, result.error);
     }
-    return parseProjectEnvironment(result.data);
+    return parseProjectEnvironment(v.parse(vArchiveProjectEnvironmentResponse, result.data));
   }
 }

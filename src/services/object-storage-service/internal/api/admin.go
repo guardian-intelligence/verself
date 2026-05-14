@@ -30,7 +30,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		if err != nil {
 			return nil, problem(ctx, http.StatusInternalServerError, "invalid-lifecycle-rules", "stored lifecycle_rules were invalid", err)
 		}
-		return &contractapi.ListObjectStorageBucketsOutput{Body: out}, nil
+		return &contractapi.ListObjectStorageBucketsOutput{Body: contractapi.ListObjectStorageBucketsOutputBody{Buckets: out}}, nil
 	})
 
 	op, policy = objectStorageContract(contractapi.CreateObjectStorageBucket.Descriptor, "Create object storage bucket")
@@ -141,7 +141,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		for _, alias := range aliases {
 			out = append(out, toAliasView(alias))
 		}
-		return &contractapi.ListObjectStorageBucketAliasesOutput{Body: out}, nil
+		return &contractapi.ListObjectStorageBucketAliasesOutput{Body: contractapi.ListObjectStorageBucketAliasesOutputBody{Aliases: out}}, nil
 	})
 
 	op, policy = objectStorageContract(contractapi.DeleteObjectStorageBucketAlias.Descriptor, "Delete object storage bucket alias")
@@ -176,7 +176,7 @@ func RegisterAdminRoutes(api huma.API, svc *objectstorage.Service, authorizer ru
 		for _, credential := range credentials {
 			out = append(out, toCredentialView(credential))
 		}
-		return &contractapi.ListObjectStorageCredentialsOutput{Body: out}, nil
+		return &contractapi.ListObjectStorageCredentialsOutput{Body: contractapi.ListObjectStorageCredentialsOutputBody{Credentials: out}}, nil
 	})
 
 	op, policy = objectStorageContract(contractapi.CreateObjectStorageAccessKey.Descriptor, "Create object storage access key")

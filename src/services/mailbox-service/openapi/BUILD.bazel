@@ -1,7 +1,7 @@
-load("//src/smithy/build:ir_go.bzl", "verself_ir_openapi_specs")
+load("//src/smithy/build:openapi.bzl", "verself_openapi_specs")
 
-verself_ir_openapi_specs(
+verself_openapi_specs(
     name = "mailbox_openapi",
-    public_ir = "//src/smithy/models/verself:mailbox_public_ir",
-    public_server_url = "https://mail.api.verself.sh",
+    public_projection = "mailbox-public",
+    public_service = "Mailbox",
 )

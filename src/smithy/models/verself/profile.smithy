@@ -1,5 +1,7 @@
 $version: "2"
 namespace verself.profile.v1
+
+use aws.protocols#restJson1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
@@ -30,7 +32,9 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 @serviceRuntime(serviceName: "profile-service", publicAudience: "profile-service", internalAudience: "profile-service")
+@restJson1
 service Profile {
     version: "2026-05-13"
     operations: [
@@ -45,6 +49,7 @@ service Profile {
     ]
 }
 @serviceRuntime(serviceName: "profile-service", publicAudience: "profile-service", internalAudience: "profile-service")
+@restJson1
 service ProfileInternal {
     version: "2026-05-13"
     operations: [
@@ -143,7 +148,7 @@ structure ProfileIdentityView {
     @protoField(number: 5)
     display_name: DisplayName
     @protoField(number: 6)
-    synced_at: Timestamp
+    synced_at: DateTime
 }
 structure ProfilePreferencesView {
     @required
@@ -161,7 +166,7 @@ structure ProfilePreferencesView {
     default_surface: ProfilePreferenceValue
     @required
     @protoField(number: 7)
-    updated_at: Timestamp
+    updated_at: DateTime
     @protoField(number: 8)
     updated_by: SubjectId
 }
@@ -242,7 +247,7 @@ structure ProfileDataRightsManifest {
     record_counts: Document
     @required
     @protoField(number: 10)
-    completed_at: Timestamp
+    completed_at: DateTime
 }
 structure EmptyInput {}
 structure ProfileOutput {
@@ -321,7 +326,7 @@ structure ProfileDataRightsInput {
     @required
     request_id: DataRightsRequestId
     @required
-    requested_at: Timestamp
+    requested_at: DateTime
     @required
     requested_by: SubjectId
     traceparent: TraceParent

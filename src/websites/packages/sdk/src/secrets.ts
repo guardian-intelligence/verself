@@ -13,14 +13,16 @@ import {
 import {
   vDeleteSecretPath,
   vDeleteSecretQuery,
+  vDeleteSecretResponse,
   vListSecretsQuery,
+  vListSecretsResponse,
   vPutSecretBody,
   vPutSecretPath,
+  vPutSecretResponse,
   vResolveSecretsBody,
-  vResolvedSecretsDto,
+  vResolveSecretsResponse,
   vSecretDto,
   vSecretValueDto,
-  vSecretsDto,
 } from "./__generated/secrets-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -76,7 +78,7 @@ function parseSecretValue(input: unknown) {
 export type SecretValue = ReturnType<typeof parseSecretValue>;
 
 function parseSecretList(input: unknown) {
-  const parsed = v.parse(vSecretsDto, input);
+  const parsed = v.parse(vListSecretsResponse, input);
   return {
     secrets: parsed.secrets.map((secret) => parseSecret(secret)),
   };
@@ -85,7 +87,7 @@ function parseSecretList(input: unknown) {
 export type SecretList = ReturnType<typeof parseSecretList>;
 
 function parseResolvedSecrets(input: unknown) {
-  const parsed = v.parse(vResolvedSecretsDto, input);
+  const parsed = v.parse(vResolveSecretsResponse, input);
   return {
     values: parsed.values.map((secret) => parseSecretValue(secret)),
   };
@@ -152,7 +154,7 @@ export class Secrets {
     if (result.error !== undefined) {
       throwSecretsError(path, result.response, result.error);
     }
-    return parseSecret(result.data);
+    return parseSecret(v.parse(vPutSecretResponse, result.data));
   }
 
   async resolve(body: ResolveSecretsRequest = {}): Promise<ResolvedSecrets> {
@@ -195,6 +197,6 @@ export class Secrets {
     if (result.error !== undefined) {
       throwSecretsError(path, result.response, result.error);
     }
-    return parseSecret(result.data);
+    return parseSecret(v.parse(vDeleteSecretResponse, result.data));
   }
 }

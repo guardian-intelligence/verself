@@ -1,20 +1,19 @@
 # Smithy Contracts
 
-`src/smithy` is the canonical contract source for Verself product APIs.
+`src/smithy` owns the canonical contract source for Verself product APIs.
 Smithy models define service operations, resource DTOs, validation constraints,
-auth expectations, IAM policy metadata, audit metadata, SDK behavior, and
-OpenAPI is generated from the Smithy model for documentation and ecosystem
-tooling.
+auth expectations, IAM policy metadata, audit metadata, SDK behavior, and HTTP
+bindings. OpenAPI is generated from the Smithy model for documentation,
+ecosystem tooling, and TypeScript transport generation.
 
 The target layering is:
 
 ```text
 Smithy model in src/smithy/models
-  -> generated Verself contract IR
-  -> service handler bindings and DTO validation
-  -> generated public SDK transport cores
-  -> generated service-to-service clients
-  -> generated OpenAPI projections for docs/import tooling
+  -> official Smithy OpenAPI projection
+  -> hand-written Huma service routes that conform to the projection
+  -> OpenAPI-based TypeScript transport clients
+  -> curated SDK adapters
 ```
 
 Connect/protobuf remains available for internal RPC, streaming, and binary
@@ -25,27 +24,22 @@ control-plane APIs.
 ## Directory Map
 
 - `models/` - Smithy source of truth.
-- `plugins/` - Smithy-Build plugins that compile generated artifacts from the
-  projected semantic Smithy model.
-- `ir/` - generated normalization boundary consumed by Huma, SDK, OpenAPI,
-  IAM, audit, and observability generators.
-- `internal/contract/` - Go domain model for tools that consume generated IR.
-- `openapi/` - generated compatibility projections.
+- `build/` - Bazel rules for Smithy validation and projection artifacts.
+- `cmd/smithy-artifact/` - small extractor used to expose files from a
+  `smithy build` output tree as Bazel outputs.
+- `openapi/` - generated compatibility projections when materialized.
 - `proto/` - Connect/protobuf contracts for RPC-shaped internal surfaces.
 
-## Cutover Rule
+## Contract Rule
 
-New product API work starts in Smithy. Current Huma/OpenAPI services can keep
-their existing emitted specs during migration, but the settled contract should
-move here before SDKs, docs, CLI commands, or browser server functions depend on
-the shape.
+New product API work starts in Smithy. Service code owns route implementation
+and boundary conversion, while Smithy owns the wire contract, operation
+metadata, and generated OpenAPI projection consumed by tooling.
 
 ## Current Tooling
 
-The first package-local contract target is `src/smithy/models/verself`.
-It pins Smithy through Maven coordinates resolved by `rules_jvm_external`,
-validates the model, and emits IR-derived IAM artifacts before service or SDK
-integration is generated.
+The package-local contract target is `src/smithy/models/verself`. It validates
+the model and emits official Smithy OpenAPI projection artifacts.
 
 ```shell
 aspect check
@@ -53,7 +47,6 @@ bazelisk test //src/smithy/models/verself:smithy_validate_test
 bazelisk build //src/smithy/models/verself:smithy_build
 ```
 
-`smithy_validate` runs Smithy core validation. `smithy_build` runs the
-configured Smithy projections through repo-owned Bazel rules and exposes the
-projection output tree for downstream generators. The Verself contract IR is the
-first downstream artifact that generators should consume.
+Service OpenAPI packages expose `openapi-3.1.yaml` targets extracted from the
+Smithy build output. The files contain the official OpenAPI 3.1 projection for
+the service.

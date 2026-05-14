@@ -1,13 +1,15 @@
 $version: "2"
 namespace verself.objectstorage.v1
+
+use aws.protocols#restJson1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#pattern
 use smithy.api#readonly
 use smithy.api#required
@@ -33,7 +35,9 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 @serviceRuntime(serviceName: "object-storage-service", publicAudience: "object-storage-service", internalAudience: "object-storage-service")
+@restJson1
 service ObjectStorage {
     version: "2026-05-13"
     operations: [
@@ -165,10 +169,10 @@ structure BucketView {
     lifecycle_rules: ObjectStorageLifecycleRules
     @required
     @protoField(number: 8)
-    created_at: Timestamp
+    created_at: DateTime
     @required
     @protoField(number: 9)
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 structure BucketAliasView {
     @required
@@ -183,7 +187,7 @@ structure BucketAliasView {
     service_tag: ServiceTag
     @required
     @protoField(number: 5)
-    created_at: Timestamp
+    created_at: DateTime
 }
 structure ObjectStorageCredentialView {
     @required
@@ -208,12 +212,12 @@ structure ObjectStorageCredentialView {
     @protoField(number: 8)
     status: CredentialStatus
     @protoField(number: 9)
-    expires_at: Timestamp
+    expires_at: DateTime
     @required
     @protoField(number: 10)
-    created_at: Timestamp
+    created_at: DateTime
     @protoField(number: 11)
-    revoked_at: Timestamp
+    revoked_at: DateTime
 }
 structure ObjectStorageAccessKeySecret {
     @required
@@ -246,6 +250,7 @@ structure BucketIdempotentInput {
 }
 structure BucketOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     bucket: BucketView
@@ -266,7 +271,6 @@ operation ListObjectStorageBuckets {
 }
 structure ListObjectStorageBucketsOutput {
     @required
-    @httpPayload
     @protoField(number: 1)
     buckets: Buckets
 }
@@ -373,6 +377,7 @@ structure CreateObjectStorageBucketAliasInput {
 }
 structure BucketAliasOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     alias: BucketAliasView
@@ -392,7 +397,6 @@ operation ListObjectStorageBucketAliases {
 }
 structure ListObjectStorageBucketAliasesOutput {
     @required
-    @httpPayload
     @protoField(number: 1)
     aliases: BucketAliases
 }
@@ -436,7 +440,6 @@ operation ListObjectStorageCredentials {
 }
 structure ListObjectStorageCredentialsOutput {
     @required
-    @httpPayload
     @protoField(number: 1)
     credentials: ObjectStorageCredentials
 }
@@ -463,10 +466,11 @@ structure CreateObjectStorageAccessKeyInput {
     idempotencyKey: IdempotencyKey
     @required
     display_name: DisplayName
-    expires_at: Timestamp
+    expires_at: DateTime
 }
 structure ObjectStorageAccessKeySecretOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     access_key: ObjectStorageAccessKeySecret

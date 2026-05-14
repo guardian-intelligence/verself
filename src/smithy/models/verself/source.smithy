@@ -1,16 +1,18 @@
 $version: "2"
 namespace verself.source.v1
 
+use aws.protocols#restJson1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
 use smithy.api#mediaType
-use smithy.api#nestedProperties
 use smithy.api#pattern
 use smithy.api#range
 use smithy.api#readonly
@@ -36,8 +38,10 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 
 @serviceRuntime(serviceName: "source-code-hosting-service", publicAudience: "source-code-hosting-service", internalAudience: "source-code-hosting-service")
+@restJson1
 service SourceHosting {
     version: "2026-05-13"
     operations: [
@@ -65,6 +69,7 @@ service SourceHosting {
 }
 
 @serviceRuntime(serviceName: "source-code-hosting-service", publicAudience: "source-code-hosting-service", internalAudience: "source-code-hosting-service")
+@restJson1
 service SourceHostingInternal {
     version: "2026-05-13"
     operations: [
@@ -344,13 +349,13 @@ structure RepositorySummary {
     @protoField(number: 15)
     version: RepositoryVersion
     @protoField(number: 16)
-    last_pushed_at: Timestamp
+    last_pushed_at: DateTime
     @required
     @protoField(number: 17)
-    created_at: Timestamp
+    created_at: DateTime
     @required
     @protoField(number: 18)
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 structure GitCredentialSummary {
@@ -377,10 +382,10 @@ structure GitCredentialSummary {
     token_prefix: GitTokenPrefix
     @required
     @protoField(number: 8)
-    expires_at: Timestamp
+    expires_at: DateTime
     @required
     @protoField(number: 9)
-    created_at: Timestamp
+    created_at: DateTime
 }
 
 structure SourceRefView {
@@ -448,7 +453,7 @@ structure CheckoutGrantSummary {
     token: CheckoutGrantToken
     @required
     @protoField(number: 6)
-    expires_at: Timestamp
+    expires_at: DateTime
 }
 
 structure WorkflowRunSummary {
@@ -498,13 +503,13 @@ structure WorkflowRunSummary {
     @protoField(number: 16)
     trace_id: TraceId
     @protoField(number: 17)
-    dispatched_at: Timestamp
+    dispatched_at: DateTime
     @required
     @protoField(number: 18)
-    created_at: Timestamp
+    created_at: DateTime
     @required
     @protoField(number: 19)
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 @idempotent
@@ -572,6 +577,7 @@ operation GetSourceRepository {
 
 structure RepositoryOutput {
     @required
+    @httpPayload
     @nestedProperties
     repository: RepositorySummary
 }
@@ -609,6 +615,7 @@ structure CreateSourceGitCredentialInput {
 
 structure GitCredentialOutput {
     @required
+    @httpPayload
     @nestedProperties
     credential: GitCredentialSummary
 }
@@ -688,6 +695,7 @@ structure GetSourceBlobInput {
 
 structure GetSourceBlobOutput {
     @required
+    @httpPayload
     @nestedProperties
     blob: SourceBlobView
 }
@@ -719,6 +727,7 @@ structure CreateSourceCheckoutGrantInput {
 
 structure CheckoutGrantOutput {
     @required
+    @httpPayload
     @nestedProperties
     grant: CheckoutGrantSummary
 }
@@ -794,6 +803,7 @@ structure WorkflowRunPathInput {
 
 structure WorkflowRunOutput {
     @required
+    @httpPayload
     @nestedProperties
     workflow_run: WorkflowRunSummary
 }

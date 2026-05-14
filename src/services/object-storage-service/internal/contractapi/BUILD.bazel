@@ -1,21 +1,4 @@
-load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//src/smithy/build:ir_go.bzl", "ir_contract_go")
-
-ir_contract_go(
-    name = "object_storage_contract_go",
-    out = "__generated_sources/object_storage_contract.gen.go",
-    ir = "//src/smithy/models/verself:object_storage_public_ir",
-    package = "contractapi",
-)
-
-write_source_files(
-    name = "generated_sources",
-    files = {
-        "object_storage_contract.gen.go": ":object_storage_contract_go",
-    },
-    tags = ["manual"],
-)
 
 go_library(
     name = "contractapi",

@@ -7,10 +7,10 @@ relationship authorization database. `iam-service` owns the product semantics
 layer over SpiceDB: schemas, relationship writes, consistency policy,
 authorization APIs, projection invalidation, audit, and reconciliation.
 
-Product services remain enforcement points. They enforce by calling generated
-`iam-service` clients over SPIFFE mTLS or by using a narrow repo-owned IAM
-client package that itself calls those generated clients. Product services do
-not receive SpiceDB credentials, construct raw SpiceDB tuples, choose SpiceDB
+Product services remain enforcement points. They enforce by calling the
+service-owned `iam-service` client over SPIFFE mTLS or by using a narrow
+repo-owned IAM client package that itself calls that transport. Product services
+do not receive SpiceDB credentials, construct raw SpiceDB tuples, choose SpiceDB
 consistency modes directly, or infer product authorization from browser state.
 
 ## Authority Boundaries
@@ -208,10 +208,10 @@ scope epoch and forces affected active streams to recheck.
 ## Go Service Shape
 
 `iam-service` is a Go service using the same service contract as the rest of
-the product surface: Smithy-modeled HTTP contracts, generated transport
+the product surface: Smithy-modeled HTTP contracts, service-owned transport
 clients, SPIFFE mTLS for internal calls, sqlc for PostgreSQL, and OpenTelemetry
-spans that land in ClickHouse. Public Huma route bindings and the internal
-service client are generated from the Smithy IR.
+spans that land in ClickHouse. Public Huma routes are implemented by the
+service and checked against the Smithy/OpenAPI contract boundary.
 
 Repository layout:
 
@@ -316,13 +316,12 @@ Wire contract locations:
 
 | Contract | Location | Bazel owner |
 | --- | --- | --- |
-| Canonical IAM API Smithy model | `src/smithy/models/verself/iam.smithy` | `//src/smithy:smithy_models` |
-| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.0.yaml`, `src/services/iam-service/openapi/openapi-3.1.yaml`; target generated projection under `src/smithy/openapi/` | `//src/services/iam-service/openapi` |
-| SPIFFE-only internal IAM API IR projection | `//src/smithy/models/verself:iam_internal_ir` | `//src/smithy/models/verself:iam_internal_ir` |
-| Generated service Go transport client | generated from `//src/smithy/models/verself:iam_internal_ir` | `//src/services/iam-service/client:client` |
+| Canonical IAM API Smithy model | `src/smithy/models/verself/iam.smithy` | `//src/smithy/models/verself:smithy_validate` |
+| Public IAM API OpenAPI compatibility projection | `src/services/iam-service/openapi/openapi-3.1.yaml` | `//src/services/iam-service/openapi:openapi-3.1.yaml` |
+| Service Go transport client | `src/services/iam-service/client` | `//src/services/iam-service/client:client` |
 | Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
 | Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
-| Generated SDK TypeScript transport clients | `src/websites/packages/sdk/src/__generated/iam-transport/` | `//src/websites/packages/sdk:iam_transport_gen` |
+| TypeScript transport support | `src/websites/packages/sdk/src/__generated/iam-transport/` | `//src/websites/packages/sdk:pkg` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema validation | `src/services/iam-service/schema/verself.zed`, pinned `zed` CLI from the server-tool catalog | `//src/services/iam-service/schema:schema_tests` |
 | Shared API shapes used by services, SDK transports, and frontend wrappers | `src/smithy/models/verself/` | `//src/smithy/models/verself:smithy_validate` |
@@ -346,7 +345,7 @@ The product surface is organized in four layers:
 
 1. `iam-service` exposes Smithy-modeled HTTP JSON APIs. Internal
    product-service operations use the SPIFFE-only internal projection.
-2. Language SDKs wrap generated clients. SDKs own retries, idempotency key
+2. Language SDKs wrap generated transport clients. SDKs own retries, idempotency key
    generation, auto-pagination, resource-name helpers, error normalization,
    request tracing headers, and DTO conversion.
 3. The console uses TanStack server functions as web adapters. Server
@@ -544,15 +543,13 @@ The service should create these targets:
 //src/services/iam-service/cmd/iam-openapi:iam-openapi              # transitional projection
 //src/services/iam-service/cmd/iam-schema-gen:iam-schema-gen
 
-//src/smithy:smithy_models
-//src/smithy/models/verself:iam_public_ir
-//src/smithy/models/verself:iam_internal_ir
-//src/services/iam-service/openapi:openapi-3.0.yaml
+//src/smithy/models/verself:smithy_validate
+//src/smithy/models/verself:smithy_build
 //src/services/iam-service/openapi:openapi-3.1.yaml
 
 //src/services/iam-service/client:client
 //src/sdks/go/verself:verself
-//src/websites/packages/sdk:iam_transport_gen
+//src/websites/packages/sdk:pkg
 //src/services/iam-service/migrations:migrations
 //src/services/iam-service/schema:schema
 //src/services/iam-service/schema:schema_tests
@@ -596,7 +593,7 @@ The root `BUILD.bazel` contains only the Gazelle prefix:
 ```
 
 Package visibility should enforce the dependency rules below. Public visibility
-belongs only on generated clients, contract/projection artifacts, and any
+belongs only on service-owned clients, contract/projection artifacts, and any
 explicit shared contract package.
 
 The generated model package is the only ergonomic way to refer to schema
@@ -642,7 +639,7 @@ surface:
 
 Feature parity does not mean preserving old route names, database tables,
 package names, or implementation structure. The public and internal API shapes
-should be cut over cleanly through regenerated clients and frontend server
+should be cut over cleanly through updated clients and frontend server
 functions.
 
 ## Package Boundaries
@@ -744,8 +741,8 @@ codes or serialize problem documents.
   small interfaces declared by the caller or through `internal/commands`
   envelopes.
 - No package imports from `cmd/`.
-- Generated clients are the only supported cross-service API surface. Curated
-  SDKs wrap generated clients; they do not bypass them.
+- Service-owned clients are the only supported cross-service API surface.
+  Curated SDKs wrap public generated transport clients; they do not bypass them.
 
 These rules should be enforced with Bazel package visibility or a static import
 check. A compile-time failure is preferable to a code review convention.
@@ -1060,7 +1057,7 @@ command ID, idempotency key hash, origin subject, and traceparent.
 
 ## Query APIs
 
-`iam-service` exposes typed internal APIs over generated clients:
+`iam-service` exposes typed internal APIs over service-owned clients:
 
 - `Check`: one request gate.
 - `CheckBulk`: table rows, command affordances, dashboard cards, and batch
@@ -1350,9 +1347,9 @@ Pre-deploy checks:
 - `zed validate` for schema syntax and typechecking.
 - Schema assertions and expected-relations tests.
 - Generated Go model freshness check.
-- Smithy validation, projection generation, and generated-client contract check.
+- Smithy validation, projection generation, and service-client contract check.
 - Static scan proving only `internal/spicedb` imports the AuthZed Go client.
-- Static scan proving product services use generated IAM clients or the
+- Static scan proving product services use service-owned IAM clients or the
   approved IAM client package.
 
 The service should preserve the intended complexity bounds:

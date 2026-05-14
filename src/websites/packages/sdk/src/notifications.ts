@@ -16,12 +16,12 @@ import type {
   PutNotificationPreferencesData,
 } from "./__generated/notifications-api/types.gen.js";
 import {
-  vNotificationAccepted,
-  vListNotificationsOutput,
   vAdvanceNotificationReadCursorBody,
+  vListNotificationsResponse,
   vPutNotificationPreferencesBody,
   vNotificationSummary,
   vPublishTestNotificationBody,
+  vPublishTestNotificationResponse,
 } from "./__generated/notifications-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -107,7 +107,7 @@ function removeUndefined<T extends Record<string, unknown>>(input: T): Record<st
 }
 
 function parseNotificationList(input: unknown) {
-  const list = v.parse(vListNotificationsOutput, input);
+  const list = v.parse(vListNotificationsResponse, input);
   return {
     ...list,
     notifications: list.notifications ?? [],
@@ -119,7 +119,7 @@ function parseNotificationSummary(input: unknown) {
 }
 
 function parseNotificationAccepted(input: unknown) {
-  return v.parse(vNotificationAccepted, input);
+  return v.parse(vPublishTestNotificationResponse, input);
 }
 
 export type NotificationList = ReturnType<typeof parseNotificationList>;

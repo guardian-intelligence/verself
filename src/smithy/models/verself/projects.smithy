@@ -1,13 +1,16 @@
 $version: "2"
 namespace verself.projects.v1
+
+use aws.protocols#restJson1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#paginated
 use smithy.api#pattern
 use smithy.api#readonly
@@ -35,7 +38,9 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 @serviceRuntime(serviceName: "projects-service", publicAudience: "projects-service", internalAudience: "projects-service")
+@restJson1
 service Projects {
     version: "2026-05-13"
     operations: [
@@ -53,6 +58,7 @@ service Projects {
     resources: [Project]
 }
 @serviceRuntime(serviceName: "projects-service", publicAudience: "projects-service", internalAudience: "projects-service")
+@restJson1
 service ProjectsInternal {
     version: "2026-05-13"
     operations: [
@@ -192,12 +198,12 @@ structure ProjectSummary {
     updated_by: ActorId
     @required
     @protoField(number: 12)
-    created_at: Timestamp
+    created_at: DateTime
     @required
     @protoField(number: 13)
-    updated_at: Timestamp
+    updated_at: DateTime
     @protoField(number: 14)
-    archived_at: Timestamp
+    archived_at: DateTime
 }
 structure ProjectEnvironmentSummary {
     @required
@@ -240,12 +246,12 @@ structure ProjectEnvironmentSummary {
     updated_by: ActorId
     @required
     @protoField(number: 14)
-    created_at: Timestamp
+    created_at: DateTime
     @required
     @protoField(number: 15)
-    updated_at: Timestamp
+    updated_at: DateTime
     @protoField(number: 16)
-    archived_at: Timestamp
+    archived_at: DateTime
 }
 structure ProjectEventSummary {
     @required
@@ -272,7 +278,7 @@ structure ProjectEventSummary {
     actor_id: ActorId
     @required
     @protoField(number: 9)
-    created_at: Timestamp
+    created_at: DateTime
     @protoField(number: 10)
     payload: ProjectEventPayload
     @protoField(number: 11)
@@ -431,6 +437,7 @@ structure ProjectLifecycleInput {
 }
 structure ProjectOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     project: ProjectSummary
@@ -562,6 +569,7 @@ structure ProjectEnvironmentLifecycleInput {
 }
 structure ProjectEnvironmentOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     environment: ProjectEnvironmentSummary

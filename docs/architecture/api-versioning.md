@@ -25,7 +25,7 @@ Service handlers, DB queries, business logic — all of these only ever know the
 This is Cadwyn's mental model verbatim. Go semantics force one major divergence: **we do not generate per-version Go structs.** Cadwyn produces a fresh Pydantic model per version via runtime metaclass; Go has no equivalent and codegen would explode the package graph. Instead:
 
 - Per-version *OpenAPI specs* are generated mechanically from the HEAD spec + change chain.
-- Per-version *typed clients* (TS, Python, Swift, Go-external) are generated from Smithy IR SDK transports or language-specific OpenAPI projections per version.
+- Per-version *typed clients* (TS, Python, Swift, Go-external) are generated from language-specific OpenAPI projections per version.
 - Per-version *server-side validation* is JSON Schema against the requested version's spec, performed on raw bytes before unmarshalling. Once migrated, the handler's HEAD struct receives a payload Huma already knows how to validate.
 
 The Go server therefore deals in three representations: raw bytes (wire), `map[string]any` (during migration), and HEAD typed structs (handler). It never holds an old-version typed struct.
@@ -228,7 +228,7 @@ func applyInstruction(spec *huma.OpenAPI, ins SchemaInstruction) error {
 
 Mutators operate on Huma's `*huma.OpenAPI` value (which round-trips JSON faithfully), then `.YAML()` / `.DowngradeYAML()` emit the per-version artifact. Each service's `cmd/<svc>-openapi/main.go` gains a `--version=<date>` flag; with no flag it emits HEAD as today.
 
-Per-version specs are also served live at `/openapi.json?version=<date>` and `/openapi-3.0.yaml?version=<date>` on each Huma API. A `/openapi-versions` index lists available versions.
+Per-version specs are also served live at `/openapi.json?version=<date>` and `/openapi-3.1.yaml?version=<date>` on each Huma API. A `/openapi-versions` index lists available versions.
 
 ## 7. Validation Strategy
 
@@ -356,18 +356,17 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 }
 ```
 
-The service owns its own `Bundle` (e.g. `src/services/billing-service/internal/billing/versions.go`). Cross-service shared changes are modeled in Smithy under `src/smithy/models/verself` and flow through IR projections before service adapters or SDK transports consume them. The generated contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
+The service owns its own `Bundle` (e.g. `src/services/billing-service/internal/billing/versions.go`). Cross-service shared changes are modeled in Smithy under `src/smithy/models/verself` and flow through official OpenAPI projections before SDK transports consume them. The contract gate gains awareness of the per-version specs to keep the wire-contract checks honest.
 
 ## 14. Generated Client Implications
 
-Smithy IR SDK transports and OpenAPI projections already run against committed contract artifacts. Per-version specs check in alongside:
+Smithy OpenAPI projections run against committed contract artifacts. Per-version specs check in alongside:
 
 ```
 src/services/billing-service/openapi/
-  openapi-3.0.yaml                          # HEAD (existing)
   openapi-3.1.yaml                          # HEAD (existing)
-  versions/2026-04-25/openapi-3.0.yaml      # NEW
-  versions/2026-01-01/openapi-3.0.yaml      # NEW
+  versions/2026-04-25/openapi-3.1.yaml      # NEW
+  versions/2026-01-01/openapi-3.1.yaml      # NEW
 ```
 
 Generated client packages namespace by version: `client/v20260425/billing`, `client/v20260101/billing`. SDK consumers pin a version explicitly. The "latest" client is an alias to whichever version ships in the latest stable SDK release.

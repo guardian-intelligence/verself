@@ -23,7 +23,6 @@ exports_files(["bazel.go.work"])
 # gazelle:resolve go github.com/verself/verself-go/internal/generated/sandbox //src/sdks/go/verself/internal/generated/sandbox
 # gazelle:resolve go github.com/verself/verself-go/internal/generated/secrets //src/sdks/go/verself/internal/generated/secrets
 # gazelle:resolve go github.com/verself/verself-go/internal/generated/source //src/sdks/go/verself/internal/generated/source
-# gazelle:resolve go github.com/verself/verself/src/smithy/internal/contract //src/smithy/internal/contract
 
 gazelle(
     name = "gazelle",

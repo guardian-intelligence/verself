@@ -542,7 +542,7 @@ func (c *SandboxClient) ListGitHubInstallations(ctx context.Context) ([]SandboxG
 	if response.Result == nil {
 		return nil, sandboxAPIError("list GitHub installations", response.StatusCode, response.Problem, response.Body)
 	}
-	return sandboxFromGenerated[[]SandboxGitHubInstallation](response.Result.Body)
+	return sandboxFromGenerated[[]SandboxGitHubInstallation](response.Result.Installations)
 }
 
 func (c *SandboxClient) BeginGitHubInstallation(ctx context.Context, options SandboxMutationOptions) (SandboxGitHubInstallationConnect, error) {

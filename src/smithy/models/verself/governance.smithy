@@ -1,5 +1,7 @@
 $version: "2"
 namespace verself.governance.v1
+
+use aws.protocols#restJson1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
@@ -35,7 +37,9 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 @serviceRuntime(serviceName: "governance-service", publicAudience: "governance-service", internalAudience: "governance-service")
+@restJson1
 service Governance {
     version: "2026-05-13"
     operations: [
@@ -51,6 +55,7 @@ service Governance {
     ]
 }
 @serviceRuntime(serviceName: "governance-service", publicAudience: "governance-service", internalAudience: "governance-service")
+@restJson1
 service GovernanceInternal {
     version: "2026-05-13"
     operations: [AppendAuditEvent]
@@ -171,7 +176,7 @@ structure AuditEvent {
     event_id: AuditEventId
     @required
     @protoField(number: 2)
-    recorded_at: Timestamp
+    recorded_at: DateTime
     @required
     @protoField(number: 3)
     org_id: GovernanceOrgId
@@ -298,15 +303,15 @@ structure DataExportJob {
     files: DataExportFiles
     @required
     @protoField(number: 13)
-    created_at: Timestamp
+    created_at: DateTime
     @required
     @protoField(number: 14)
-    updated_at: Timestamp
+    updated_at: DateTime
     @protoField(number: 15)
-    completed_at: Timestamp
+    completed_at: DateTime
     @required
     @protoField(number: 16)
-    expires_at: Timestamp
+    expires_at: DateTime
     @protoField(number: 17)
     error_code: ExportErrorCode
     @protoField(number: 18)
@@ -355,7 +360,7 @@ structure AuditRecord {
     @protoField(number: 16)
     hmac_key_id: AuditHMACKeyId
     @protoField(number: 17)
-    recorded_at: Timestamp
+    recorded_at: DateTime
     detail: Document
 }
 structure AppendAuditEventAccepted {

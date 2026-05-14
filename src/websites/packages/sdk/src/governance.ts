@@ -13,11 +13,11 @@ import type {
 } from "./__generated/governance-api/types.gen.js";
 import {
   vAuditEvent,
-  vCreateDataExportOutput,
+  vCreateDataExportResponse,
   vDataExportJob,
-  vGetDataExportOutput,
-  vListAuditEventsOutput,
-  vListDataExportsOutput,
+  vGetDataExportResponse,
+  vListAuditEventsResponse,
+  vListDataExportsResponse,
 } from "./__generated/governance-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -97,7 +97,7 @@ function parseAuditEvent(input: unknown) {
 export type GovernanceAuditEvent = ReturnType<typeof parseAuditEvent>;
 
 function parseAuditEvents(input: unknown) {
-  const parsed = v.parse(vListAuditEventsOutput, input);
+  const parsed = v.parse(vListAuditEventsResponse, input);
   return {
     events: parsed.events.map((event) => parseAuditEvent(event)),
     filters: parsed.filters,
@@ -120,7 +120,7 @@ function parseExportJob(input: unknown) {
 export type GovernanceExportJob = ReturnType<typeof parseExportJob>;
 
 function parseExportJobs(input: unknown): Array<GovernanceExportJob> {
-  const parsed = v.parse(vListDataExportsOutput, input);
+  const parsed = v.parse(vListDataExportsResponse, input);
   return parsed.exports.map((job) => parseExportJob(job));
 }
 
@@ -228,7 +228,7 @@ export class Governance {
       throwGovernanceError(path, result.response, result.error);
     }
 
-    return parseExportJob(v.parse(vCreateDataExportOutput, result.data).export);
+    return parseExportJob(v.parse(vCreateDataExportResponse, result.data).export);
   }
 
   async getDataExport(exportId: string): Promise<GovernanceExportJob> {
@@ -246,7 +246,7 @@ export class Governance {
       throwGovernanceError(path, result.response, result.error);
     }
 
-    return parseExportJob(v.parse(vGetDataExportOutput, result.data).export);
+    return parseExportJob(v.parse(vGetDataExportResponse, result.data).export);
   }
 
   async downloadDataExport(exportId: string): Promise<GovernanceExportArtifact> {

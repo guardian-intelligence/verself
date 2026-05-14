@@ -821,11 +821,11 @@ WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
 ORDER BY Timestamp, ServiceName, SpanName
 LIMIT {row_limit:UInt32}`
 
-// deployCodegenActionsSQL surfaces every codegen Bazel spawn that ran
-// for one deploy. The spans are emitted by
+// deployCodegenActionsSQL surfaces every projection/codegen Bazel spawn that
+// ran for one deploy. The spans are emitted by
 // src/tools/observability/go/cmd/bazel-execlog-to-otel from --execution_log_json_file.
-// Mnemonics come from legacy OpenAPI genrules, IR projections, SDK generators,
-// and src/websites/viteplus_rules.bzl. The cache_hit column distinguishes "the action
+// Mnemonics come from official Smithy OpenAPI projections, SDK generators, and
+// src/websites/viteplus_rules.bzl. The cache_hit column distinguishes "the action
 // graph correctly invalidated and re-ran" (cache_hit=0) from "every
 // codegen target was already cached" (cache_hit=1) — both are valid
 // outcomes for a deploy, but they answer different operator questions.
@@ -841,7 +841,7 @@ FROM default.otel_traces
 WHERE ServiceName = 'bazel'
   AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
   AND startsWith(SpanName, 'bazel.spawn.')
-  AND SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage', 'VerselfIrContractGo', 'VerselfIrIdentityCatalogGo', 'VerselfIrCatalogJson', 'VerselfIrProtoProjection', 'VerselfIrOpenAPI', 'VerselfIrSdkGo', 'VerselfIrSdkTs', 'SmithyProjectionFile')
+  AND SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage', 'SmithyProjectionFile')
 ORDER BY Timestamp
 LIMIT {row_limit:UInt32}`
 
@@ -859,7 +859,7 @@ SELECT
   countIf(SpanAttributes['bazel.cache_hit'] = 'true') AS cached_spawns,
   countIf(SpanAttributes['bazel.mnemonic'] = 'GoCompilePkg') AS go_compiles,
   countIf(SpanAttributes['bazel.mnemonic'] = 'GoLink') AS go_links,
-  countIf(SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage', 'VerselfIrContractGo', 'VerselfIrIdentityCatalogGo', 'VerselfIrCatalogJson', 'VerselfIrProtoProjection', 'VerselfIrOpenAPI', 'VerselfIrSdkGo', 'VerselfIrSdkTs', 'SmithyProjectionFile')) AS codegen_spawns,
+  countIf(SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'OpenapiTsPostprocess', 'NpmPackage', 'SmithyProjectionFile')) AS codegen_spawns,
   count() AS total_spawns,
   sum(toUInt64OrZero(SpanAttributes['bazel.duration_ms'])) AS total_ms
 FROM default.otel_traces

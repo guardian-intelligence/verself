@@ -5,6 +5,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/verself/src/smithy/cmd/smithy-artifact",
     visibility = ["//visibility:private"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
 )
 
 go_binary(

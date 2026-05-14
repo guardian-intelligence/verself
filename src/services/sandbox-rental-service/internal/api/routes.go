@@ -97,7 +97,11 @@ func listGitHubInstallations(svc *jobs.Service, installationID string) func(cont
 		if err != nil {
 			return nil, internalFailure(ctx, "github-installation-list-failed", "list github installations failed", err)
 		}
-		return &contractapi.ListGithubInstallationsOutput{Body: githubInstallationRecords(records, installationID)}, nil
+		return &contractapi.ListGithubInstallationsOutput{
+			Body: contractapi.ListGithubInstallationsOutputBody{
+				Installations: githubInstallationRecords(records, installationID),
+			},
+		}, nil
 	}
 }
 

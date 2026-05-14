@@ -19,9 +19,8 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   Zitadel, NATS, TigerBeetle, Electric, ClickHouse migrations, and HAProxy
   upstream reconciliation. Component Nomad descriptors live with their owning
   component.
-- `smithy/` — canonical Smithy API models, generated IR projections,
-  generated OpenAPI compatibility projections, and Connect/protobuf contracts
-  for RPC-shaped surfaces.
+- `smithy/` — canonical Smithy API models, official OpenAPI compatibility
+  projections, and Connect/protobuf contracts for RPC-shaped surfaces.
 - `websites/` — browser applications and shared web packages.
 - `sdks/` — generated and curated client layers, transport cores, and package-local
   SDK adapters.

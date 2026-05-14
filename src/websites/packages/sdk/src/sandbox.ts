@@ -31,6 +31,7 @@ import {
   vGetCostsAnalyticsQuery,
   vGetCostsAnalyticsResponse,
   vGetExecutionPath,
+  vGetExecutionResponse,
   vGetExecutionLogsPath,
   vGetExecutionLogsResponse,
   vGetExecutionSchedulePath,
@@ -258,7 +259,7 @@ function parseExecutionLogs(input: unknown) {
 export type ExecutionLogs = ReturnType<typeof parseExecutionLogs>;
 
 function parseGitHubInstallations(input: unknown) {
-  return v.parse(vListGithubInstallationsResponse, input) ?? [];
+  return v.parse(vListGithubInstallationsResponse, input).installations ?? [];
 }
 
 export type GitHubInstallation = ReturnType<typeof parseGitHubInstallations>[number];
@@ -662,7 +663,7 @@ export async function getExecution(
     throwSandboxRentalError(path, result.response, result.error);
   }
 
-  return parseExecution(result.data);
+  return parseExecution(v.parse(vGetExecutionResponse, result.data));
 }
 
 export async function getExecutionLogs(

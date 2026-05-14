@@ -3,7 +3,6 @@ load(
     "@npm//src/websites/packages/sdk:@hey-api/openapi-ts/package_json.bzl",
     openapi_ts_bin = "bin",
 )
-load("//src/smithy/build:ir_sdk.bzl", "ir_sdk_ts")
 load("//src/websites:viteplus_rules.bzl", "viteplus_openapi_clients", "viteplus_source_package")
 
 package(default_visibility = ["//visibility:public"])
@@ -32,30 +31,8 @@ viteplus_openapi_clients(
     ],
 )
 
-ir_sdk_ts(
-    name = "iam_transport_gen",
-    out = "__generated_sources/src/__generated/iam-transport/client.gen.ts",
-    ir = "//src/smithy/models/verself:iam_public_ir",
-)
-
-filegroup(
-    name = "iam_transport_generated_sources",
-    srcs = [":iam_transport_gen"],
-)
-
-write_source_files(
-    name = "iam_transport",
-    files = {
-        "src/__generated/iam-transport/client.gen.ts": ":iam_transport_gen",
-    },
-    tags = ["manual"],
-)
-
 write_source_files(
     name = "dev_update",
-    additional_update_targets = [
-        ":iam_transport",
-        ":openapi_clients",
-    ],
+    additional_update_targets = [":openapi_clients"],
     tags = ["manual"],
 )

@@ -31,21 +31,22 @@ Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<s
 Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth
 expectations, Zanzibar permissions, audit metadata, rate-limit classes,
-idempotency, pagination, problem details, SDK behavior, generated clients, and
-runtime descriptors. OpenAPI is generated from the model for documentation,
-API explorers, and ecosystem importers. Go services may continue to serve those
-HTTP APIs with Huma v2 during cutover, but Huma/OpenAPI output is not the source
-of truth. Do not write custom clients for repo-owned service calls; generate
-them from the contract model. Public route shape is designed from the SDK
-resource method outward; durable customer-facing resources return immutable IDs
-and globally unique URN resource names; see
+idempotency, pagination, problem details, SDK behavior, and runtime
+descriptors. OpenAPI is generated from the model for documentation, API
+explorers, TypeScript transport generation, and ecosystem importers. Go
+services may continue to serve those HTTP APIs with Huma v2 during cutover, but
+Huma/OpenAPI output is not the source of truth. Do not write ad hoc
+`http.NewRequest` calls for repo-owned service calls; use service-owned clients
+that implement the Smithy-modeled HTTP surface. Public route shape is designed
+from the SDK resource method outward; durable customer-facing resources return
+immutable IDs and globally unique URN resource names; see
 [`docs/architecture/sdk-api-surface.md`](architecture/sdk-api-surface.md).
-Services with repo-owned operations expose internal projections that use SPIFFE
-mTLS and may include repo-only routes. Repo-owned service callers pass a
-`workloadauth.MTLSClientForService` HTTP client into the generated service
-client so trace propagation and peer authorization stay centralized. Smithy
-models under `src/smithy/models/verself` own boundary types, generated-client
-contracts, and numeric wire encodings.
+Services with repo-owned operations expose internal HTTP routes that use SPIFFE
+mTLS and may include repo-only operations. Repo-owned service callers pass a
+`workloadauth.MTLSClientForService` HTTP client into the service-owned client so
+trace propagation and peer authorization stay centralized. Smithy models under
+`src/smithy/models/verself` own boundary types, operation contracts, and numeric
+wire encodings.
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):
@@ -136,10 +137,9 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 - Service-to-service and product integrations use HTTP APIs, not ad hoc CLIs.
   Customer/operator CLIs are a generated-client surface over those same APIs,
   not a private control plane.
-- Repo-owned service-to-service calls use generated Go clients plus SPIFFE mTLS
-  HTTP clients. Smithy public projections feed SDK-layer generated code;
-  internal projections feed service-owned `client` packages that may include
-  SPIFFE-only operations and origin-attribution headers. OpenAPI is a generated
-  compatibility projection.
+- Repo-owned service-to-service calls use service-owned Go clients plus SPIFFE
+  mTLS HTTP clients. Smithy public projections feed SDK-layer generated code;
+  internal Smithy-modeled HTTP surfaces may include SPIFFE-only operations and
+  origin-attribution headers. OpenAPI is a generated compatibility projection.
 - Start telemetry investigation with `aspect observe` — discoverability-first.
 - `aspect db ch schemas` reads all ClickHouse tables (ground truth). Prefer `aspect observe` first, fall back to raw `aspect db ch query --query='...'` when observe has no named query.

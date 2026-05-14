@@ -1,12 +1,15 @@
 $version: "2"
 namespace verself.mailbox.v1
+
+use aws.protocols#restJson1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#readonly
 use smithy.api#required
 use verself.common.v1#ConflictError
@@ -28,7 +31,9 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 @serviceRuntime(serviceName: "mailbox-service", publicAudience: "mailbox-service", internalAudience: "mailbox-service")
+@restJson1
 service Mailbox {
     version: "2026-05-13"
     operations: [
@@ -122,7 +127,7 @@ structure MailBodyResult {
     html_body: MailBodyHTML
     @required
     @protoField(number: 5)
-    fetched_at: Timestamp
+    fetched_at: DateTime
 }
 structure MailboxAccountView {
     @required
@@ -153,9 +158,9 @@ structure MailboxForwarderStatusView {
     @protoField(number: 5)
     last_error: MailboxStatusError
     @protoField(number: 6)
-    last_sync_at: Timestamp
+    last_sync_at: DateTime
     @protoField(number: 7)
-    last_forwarded_at: Timestamp
+    last_forwarded_at: DateTime
     @protoField(number: 8)
     last_forwarded_email_id: ForwardedEmailId
 }
@@ -170,11 +175,11 @@ structure MailboxSyncAccountStatusView {
     @protoField(number: 3)
     connected: Boolean
     @protoField(number: 4)
-    last_sync_at: Timestamp
+    last_sync_at: DateTime
     @protoField(number: 5)
-    last_event_at: Timestamp
+    last_event_at: DateTime
     @protoField(number: 6)
-    last_connected_at: Timestamp
+    last_connected_at: DateTime
     @protoField(number: 7)
     last_error: MailboxStatusError
 }
@@ -187,7 +192,7 @@ structure MailboxSyncWorkerStatusView {
     @protoField(number: 1)
     running: Boolean
     @protoField(number: 2)
-    last_discovery_at: Timestamp
+    last_discovery_at: DateTime
     @protoField(number: 3)
     last_error: MailboxStatusError
     @required
@@ -197,7 +202,7 @@ structure MailboxSyncWorkerStatusView {
 structure MailboxSyncStatusView {
     @required
     @protoField(number: 1)
-    started_at: Timestamp
+    started_at: DateTime
     @required
     @protoField(number: 2)
     stalwart_base_url: MailboxServiceURL
@@ -245,6 +250,7 @@ structure MailMoveInput {
 structure EmptyInput {}
 structure MailMutationOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     result: MailMutationResult
@@ -342,7 +348,7 @@ operation MailBody {
 }
 structure MailBodyOutput {
     @required
-    @nestedProperties
+    @httpPayload
     @protoField(number: 1)
     body: MailBodyResult
 }
@@ -361,6 +367,7 @@ operation MailAccount {
 }
 structure MailAccountOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     account: MailboxAccountView

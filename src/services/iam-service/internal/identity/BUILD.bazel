@@ -1,6 +1,4 @@
-load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//src/smithy/build:ir_go.bzl", "ir_identity_catalog_go")
 
 go_library(
     name = "identity",
@@ -33,21 +31,6 @@ go_library(
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
-)
-
-ir_identity_catalog_go(
-    name = "iam_catalog_go",
-    out = "__generated_sources/iam_catalog.gen.go",
-    ir = "//src/smithy/models/verself:iam_public_ir",
-    package = "identity",
-)
-
-write_source_files(
-    name = "generated_sources",
-    files = {
-        "iam_catalog.gen.go": ":iam_catalog_go",
-    },
-    tags = ["manual"],
 )
 
 go_test(

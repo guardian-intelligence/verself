@@ -13,8 +13,8 @@ classified an event as user-visible.
 ## HTTP API
 
 The HTTP API is the authenticated human inbox API described by the Smithy models
-under `src/smithy/models/verself/notifications.smithy`, projected through the
-Verself Contract IR, and implemented by handwritten Huma routes in
+under `src/smithy/models/verself/notifications.smithy`, projected to OpenAPI
+through official Smithy tooling, and implemented by handwritten Huma routes in
 `internal/api/routes.go`.
 
 | Method | Path | Behavior |

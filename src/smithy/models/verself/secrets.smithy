@@ -1,14 +1,17 @@
 $version: "2"
 namespace verself.secrets.v1
 
+use aws.protocols#restJson1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#pattern
 use smithy.api#range
 use smithy.api#readonly
@@ -34,8 +37,10 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 
 @serviceRuntime(serviceName: "secrets-service", publicAudience: "secrets-service", internalAudience: "secrets-service")
+@restJson1
 service Secrets {
     version: "2026-05-13"
     operations: [
@@ -69,6 +74,7 @@ service Secrets {
 }
 
 @serviceRuntime(serviceName: "secrets-service", publicAudience: "secrets-service", internalAudience: "secrets-service")
+@restJson1
 service SecretsInternal {
     version: "2026-05-13"
     operations: [
@@ -370,11 +376,11 @@ structure SecretDTO {
 
     @required
     @protoField(number: 10)
-    created_at: Timestamp
+    created_at: DateTime
 
     @required
     @protoField(number: 11)
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 structure SecretValueDTO {
@@ -393,9 +399,9 @@ structure SecretValueDTO {
     @required
     current_version: SecretVersion
     @required
-    created_at: Timestamp
+    created_at: DateTime
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
     @required
     value: SecretValue
 }
@@ -416,9 +422,9 @@ structure VariableDTO {
     @required
     current_version: SecretVersion
     @required
-    created_at: Timestamp
+    created_at: DateTime
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 structure VariableValueDTO {
@@ -437,9 +443,9 @@ structure VariableValueDTO {
     @required
     current_version: SecretVersion
     @required
-    created_at: Timestamp
+    created_at: DateTime
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
     @required
     value: SecretValue
 }
@@ -482,13 +488,13 @@ structure OpaqueCredentialDTO {
     @required
     current_version: SecretVersion
     @required
-    expires_at: Timestamp
-    last_used_at: Timestamp
+    expires_at: DateTime
+    last_used_at: DateTime
     @required
-    created_at: Timestamp
+    created_at: DateTime
     @required
-    updated_at: Timestamp
-    revoked_at: Timestamp
+    updated_at: DateTime
+    revoked_at: DateTime
 }
 
 structure OpaqueCredentialMaterialDTO {
@@ -515,9 +521,9 @@ structure TransitKeyDTO {
     @required
     public_key: String
     @required
-    created_at: Timestamp
+    created_at: DateTime
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 structure SecretPathInput {
@@ -596,66 +602,77 @@ structure ResolveSecretsInput {
 
 structure SecretOutput {
     @required
+    @httpPayload
     @nestedProperties
     secret: SecretDTO
 }
 
 structure SecretValueOutput {
     @required
+    @httpPayload
     @nestedProperties
     secret: SecretValueDTO
 }
 
 structure SecretsOutput {
     @required
+    @httpPayload
     @nestedProperties
     secrets: SecretsDTO
 }
 
 structure ResolvedSecretsOutput {
     @required
+    @httpPayload
     @nestedProperties
     resolved: ResolvedSecretsDTO
 }
 
 structure VariableOutput {
     @required
+    @httpPayload
     @nestedProperties
     variable: VariableDTO
 }
 
 structure VariableValueOutput {
     @required
+    @httpPayload
     @nestedProperties
     variable: VariableValueDTO
 }
 
 structure VariablesOutput {
     @required
+    @httpPayload
     @nestedProperties
     variables: VariablesDTO
 }
 
 structure OpaqueCredentialOutput {
     @required
+    @httpPayload
     @nestedProperties
     credential: OpaqueCredentialDTO
 }
 
 structure OpaqueCredentialMaterialOutput {
     @required
+    @httpPayload
     @nestedProperties
     material: OpaqueCredentialMaterialDTO
 }
 
 structure OpaqueCredentialsOutput {
     @required
+    @httpPayload
     @nestedProperties
     credentials: OpaqueCredentialsDTO
 }
 
 structure TransitKeyOutput {
     @required
+    @httpPayload
     @nestedProperties
     key: TransitKeyDTO
 }
@@ -1153,7 +1170,7 @@ structure InternalOpaqueCredentialInput {
 
     metadata: CredentialMetadata
 
-    expires_at: Timestamp
+    expires_at: DateTime
 }
 
 structure InternalOpaqueCredentialOutput {

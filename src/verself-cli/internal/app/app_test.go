@@ -805,7 +805,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
 			_, _ = w.Write([]byte(analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
-			_, _ = w.Write([]byte(`[` + githubInstallationJSON + `]`))
+			_, _ = w.Write([]byte(`{"installations":[` + githubInstallationJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/github/installations/connect":
 			githubInstallKey = r.Header.Get("Idempotency-Key")
 			w.WriteHeader(http.StatusCreated)

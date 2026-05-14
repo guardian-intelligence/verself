@@ -2,18 +2,21 @@ $version: "2"
 
 namespace verself.iam.v1
 
+use aws.protocols#restJson1
+
 use smithy.api#auth
 use smithy.api#enumValue
 use smithy.api#http
 use smithy.api#httpBearerAuth
 use smithy.api#httpHeader
 use smithy.api#httpLabel
+use smithy.api#httpPayload
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#input
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#notProperty
+use smithy.api#nestedProperties
 use smithy.api#output
 use smithy.api#paginated
 use smithy.api#pattern
@@ -44,16 +47,19 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 
 @httpBearerAuth
 @auth([smithy.api#httpBearerAuth])
 @serviceRuntime(serviceName: "iam-service", publicAudience: "iam-service")
+@restJson1
 service Iam {
     version: "2026-05-12"
     resources: [Organization]
 }
 
 @serviceRuntime(serviceName: "iam-service", publicAudience: "iam-service", internalAudience: "iam-service")
+@restJson1
 service IamInternal {
     version: "2026-05-12"
     operations: [
@@ -374,7 +380,9 @@ structure GetOrganizationInput for Organization {
 @output
 structure GetOrganizationOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     organization: OrganizationSummary
 }
@@ -430,7 +438,9 @@ structure UpdateOrganizationInput for Organization {
 @output
 structure UpdateOrganizationOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     organization: OrganizationSummary
 }
@@ -511,7 +521,9 @@ structure GetMemberInput for Member {
 @output
 structure GetMemberOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     member: MemberSummary
 }
@@ -576,7 +588,9 @@ structure UpdateMemberRoleInput for Member {
 @output
 structure UpdateMemberRoleOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     member: MemberSummary
 }
@@ -624,7 +638,7 @@ structure OrganizationProfile {
 
     @required
     @protoField(number: 6)
-    updated_at: Timestamp
+    updated_at: DateTime
 
     @protoField(number: 7)
     redirected_from: OrgSlug
@@ -657,7 +671,7 @@ structure HumanProfileSummary {
 
     @required
     @protoField(number: 6)
-    synced_at: Timestamp
+    synced_at: DateTime
 }
 
 structure AuthorizeOperationResult {
@@ -801,7 +815,9 @@ structure UpdateHumanProfileInput {
 @output
 structure UpdateHumanProfileOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     profile: HumanProfileSummary
 }
@@ -845,7 +861,9 @@ structure AuthorizeOperationInput {
 @output
 structure AuthorizeOperationOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     authorization: AuthorizeOperationResult
 }
@@ -896,7 +914,9 @@ structure AuthorizeResourceInput {
 @output
 structure AuthorizeResourceOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     authorization: AuthorizeResourceResult
 }
@@ -945,7 +965,9 @@ structure WriteResourceParentEdgeInput {
 @output
 structure WriteResourceParentEdgeOutput {
     @required
+    @httpPayload
     @nestedProperties
+    @notProperty
     @protoField(number: 1)
     edge: WriteResourceParentEdgeResult
 }

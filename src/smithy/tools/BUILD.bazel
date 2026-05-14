@@ -6,7 +6,6 @@ java_binary(
     name = "smithy_cli",
     main_class = "software.amazon.smithy.cli.SmithyCli",
     runtime_deps = [
-        "//src/smithy/plugins/ir:verself_smithy_ir_plugin",
         "@maven//:software_amazon_smithy_smithy_cli",
     ],
 )

@@ -1,16 +1,18 @@
 $version: "2"
 namespace verself.billing.v1
 
+use aws.protocols#restJson1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
 use smithy.api#mediaType
-use smithy.api#nestedProperties
 use smithy.api#pattern
 use smithy.api#range
 use smithy.api#readonly
@@ -37,8 +39,10 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 
 @serviceRuntime(serviceName: "billing-service", publicAudience: "billing-service", internalAudience: "billing-service")
+@restJson1
 service Billing {
     version: "2026-05-13"
     operations: [
@@ -64,6 +68,7 @@ service Billing {
 }
 
 @serviceRuntime(serviceName: "billing-service", publicAudience: "billing-service", internalAudience: "billing-service")
+@restJson1
 service BillingInternal {
     version: "2026-05-13"
     operations: [
@@ -76,6 +81,7 @@ service BillingInternal {
 }
 
 @serviceRuntime(serviceName: "billing-service", publicAudience: "billing-service", internalAudience: "billing-service")
+@restJson1
 service BillingIngress {
     version: "2026-05-13"
     operations: [StripeWebhook]
@@ -352,14 +358,14 @@ structure BillingGrant {
     @required
     policy_version: BillingPolicyVersion
     @required
-    starts_at: Timestamp
-    period_start: Timestamp
-    period_end: Timestamp
+    starts_at: DateTime
+    period_start: DateTime
+    period_end: DateTime
     @required
     available: DecimalUint64
     @required
     pending: DecimalUint64
-    expires_at: Timestamp
+    expires_at: DateTime
 }
 
 structure BillingPlan {
@@ -405,12 +411,12 @@ structure BillingContract {
     pending_change_id: BillingChangeId
     pending_change_type: BillingState
     pending_change_target_plan_id: PlanId
-    pending_change_effective_at: Timestamp
+    pending_change_effective_at: DateTime
     @required
-    starts_at: Timestamp
-    ends_at: Timestamp
-    phase_start: Timestamp
-    phase_end: Timestamp
+    starts_at: DateTime
+    ends_at: DateTime
+    phase_start: DateTime
+    phase_end: DateTime
 }
 
 structure BillingDocument {
@@ -433,10 +439,10 @@ structure BillingDocument {
     @required
     payment_status: PaymentState
     @required
-    period_start: Timestamp
+    period_start: DateTime
     @required
-    period_end: Timestamp
-    issued_at: Timestamp
+    period_end: DateTime
+    issued_at: DateTime
     @required
     currency: Currency
     @required
@@ -523,7 +529,7 @@ structure BillingEntitlementSourceTotal {
     available_units: DecimalUint64
     @required
     pending_units: DecimalUint64
-    inline_expires_at: Timestamp
+    inline_expires_at: DateTime
 }
 
 structure BillingStatement {
@@ -532,13 +538,13 @@ structure BillingStatement {
     @required
     product_id: ProductId
     @required
-    period_start: Timestamp
+    period_start: DateTime
     @required
-    period_end: Timestamp
+    period_end: DateTime
     @required
     period_source: String
     @required
-    generated_at: Timestamp
+    generated_at: DateTime
     @required
     currency: Currency
     @required
@@ -681,11 +687,11 @@ structure BillingWindowReservation {
     @required
     cost_per_unit: DecimalUint64
     @required
-    window_start: Timestamp
-    activated_at: Timestamp
+    window_start: DateTime
+    activated_at: DateTime
     @required
-    expires_at: Timestamp
-    renew_by: Timestamp
+    expires_at: DateTime
+    renew_by: DateTime
 }
 
 structure BillingSettleResult {
@@ -702,7 +708,7 @@ structure BillingSettleResult {
     @required
     writeoff_charge_units: DecimalUint64
     @required
-    settled_at: Timestamp
+    settled_at: DateTime
 }
 
 @readonly
@@ -723,6 +729,7 @@ structure EmptyInput {}
 
 structure GetBillingEntitlementsOutput {
     @required
+    @httpPayload
     @nestedProperties
     entitlements: BillingEntitlementsView
 }
@@ -799,6 +806,7 @@ structure ProductQueryInput {
 
 structure GetBillingStatementOutput {
     @required
+    @httpPayload
     @nestedProperties
     statement: BillingStatement
 }
@@ -930,6 +938,7 @@ structure CreateBillingContractChangeInput {
 
 structure CreateBillingContractChangeOutput {
     @required
+    @httpPayload
     @nestedProperties
     change: BillingContractChangeResponse
 }
@@ -988,6 +997,7 @@ structure CreateBillingPortalInput {
 
 structure BillingURLResponseOutput {
     @required
+    @httpPayload
     @nestedProperties
     response: BillingURLResponse
 }
@@ -1051,7 +1061,7 @@ structure ActivateWindowInput {
     @required
     window_id: BillingWindowId
     @required
-    activated_at: Timestamp
+    activated_at: DateTime
 }
 
 @http(method: "POST", uri: "/internal/billing/v1/settle")
@@ -1077,6 +1087,7 @@ structure SettleWindowInput {
 
 structure SettleWindowOutput {
     @required
+    @httpPayload
     @nestedProperties
     settlement: BillingSettleResult
 }

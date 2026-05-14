@@ -28,9 +28,9 @@ General Structure:
  Smithy IDL + Verself traits (`src/smithy/models/verself`)
     -> Smithy semantic model
     -> Verself validators
-    -> generated Go server adapters
-    -> generated Go internal clients/catalogs
-    -> generated OpenAPI + x-verself for public tooling
+    -> official Smithy OpenAPI + x-verself extensions for public tooling
+    -> hand-written Huma routes that conform to the Smithy projection
+    -> service-owned internal transport clients
     -> TS/browser SDKs through OpenAPI tooling + curated wrappers
 
 Layers:
@@ -38,7 +38,7 @@ Layers:
 1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, generated projections, and conformance cases.
 3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Go services may use Huma during the cutover, but Huma/OpenAPI output is an implementation/projection artifact rather than the semantic contract.
-4. Generated client layer: pure transport clients, validators, DTOs, schemas, OpenAPI compatibility artifacts, and conformance fixtures are generated from the contract model. Cross service calls happen via generated clients authenticating to each other via SPIFFE mTLS.
+4. Client/projection layer: OpenAPI compatibility artifacts and TypeScript transport clients are generated from the contract model. Repo-owned service calls use service-owned transport clients authenticating to each other via SPIFFE mTLS.
 5. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
@@ -62,11 +62,11 @@ Invariant patterns:
 * Canonical API contracts live under `src/smithy/models/verself` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
 * Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
 
-* Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through internal projections generated from the same Smithy model that produces public API projections. Internal projections use SPIFFE mTLS and may include repo-only operations; public projections use Zitadel bearer auth.
+* Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through service-owned transport clients that implement the Smithy-modeled internal HTTP surface. Internal routes use SPIFFE mTLS and may include repo-only operations; public routes use Zitadel bearer auth.
 * Every modeled operation should declare auth scheme, audience, permission, resource kind, action, org-scope derivation, rate-limit class, idempotency policy, audit event, request body budget, stable error set, SDK behavior, and conformance case coverage. Missing metadata is a contract bug, not a documentation gap.
-* Service-owned generated Go clients are transport clients for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public contract projections, and product services must not import those SDKs.
-* Connect/protobuf belongs under `src/smithy/proto` for RPC-shaped internal surfaces, streaming, binary payloads, and privileged substrate protocols where protobuf is the primary protocol. For the public product-control-plane contract we project OpenAPI in as many versions as possible.
-* Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through generated secrets-service clients over SPIFFE.
+* Service-owned Go transport clients are the boundary for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public contract projections, and product services must not import those SDKs.
+* Connect/protobuf belongs under `src/smithy/proto` for RPC-shaped internal surfaces, streaming, binary payloads, and privileged substrate protocols where protobuf is the primary protocol. For the public product-control-plane contract we project OpenAPI 3.1.
+* Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through the service-owned secrets-service client over SPIFFE.
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
 

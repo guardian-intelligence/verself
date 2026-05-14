@@ -1,10 +1,10 @@
 # sandbox-rental-service
 
-Public `/api/*` Huma routes must use the secured-operation registration pattern in `internal/api`: keep the method/path/OpenAPI declaration and `operationPolicy` together in `RegisterRoutes` so IAM, rate-limit, idempotency, audit, and generated-client contracts cannot drift.
+Public `/api/*` Huma routes must use the secured-operation registration pattern in `internal/api`: keep the method/path/OpenAPI declaration and `operationPolicy` together in `RegisterRoutes` so IAM, rate-limit, idempotency, audit, and service-client contracts cannot drift.
 
 SPIFFE-only service APIs belong on the internal Huma API, committed
-`openapi/internal-openapi-3.0.yaml`, and the generated `client` package.
-Callers must inject `workloadauth.MTLSClientForService` into that generated
+`openapi/internal-openapi-3.1.yaml`, and the service-owned `client` package.
+Callers must inject `workloadauth.MTLSClientForService` into that
 client; do not add handwritten service HTTP calls or repo-owned Zitadel bearer
 tokens to reach sandbox-rental-service.
 

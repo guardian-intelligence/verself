@@ -1,9 +1,9 @@
-load("//src/smithy/build:ir_go.bzl", "verself_ir_openapi_specs")
+load("//src/smithy/build:openapi.bzl", "verself_openapi_specs")
 
-verself_ir_openapi_specs(
+verself_openapi_specs(
     name = "projects_openapi",
-    internal_ir = "//src/smithy/models/verself:projects_internal_ir",
-    internal_server_url = "https://127.0.0.1:4265",
-    public_ir = "//src/smithy/models/verself:projects_public_ir",
-    public_server_url = "https://projects.api.verself.sh",
+    internal_projection = "projects-internal",
+    internal_service = "ProjectsInternal",
+    public_projection = "projects-public",
+    public_service = "Projects",
 )

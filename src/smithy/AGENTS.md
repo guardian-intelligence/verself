@@ -10,16 +10,15 @@ interoperability projections, not semantic authority.
 
 - Put customer-facing and repo-owned HTTP/JSON service contracts under
   `models/`.
-- Put generated contract IR artifacts and IR documentation under `ir/`. The IR
-  is generated from Smithy and must not become a hand-authored contract source.
-- Put generated OpenAPI compatibility artifacts under `openapi/` only after the
-  Smithy-to-OpenAPI projection is wired.
+- Put official Smithy OpenAPI compatibility artifacts under `openapi/` only
+  when they need to be materialized for docs or packaging.
 - Put Connect/protobuf contracts under `proto/` only for RPC, streaming, or
   binary transport surfaces where protobuf is the primary protocol.
-- Do not make product services import curated SDKs. Services consume generated
-  transport clients or generated handler bindings from this contract model.
-- Downstream generators should consume the Verself contract IR rather than
-  parsing Smithy traits independently.
+- Do not make product services import curated SDKs. Repo-owned service calls use
+  service-owned transport clients; public SDKs live under `src/sdks/` and
+  frontend packages.
+- Downstream tooling should consume Smithy directly or the official OpenAPI
+  projection rather than inventing another semantic contract format.
 
 ## Modeling Rules
 
@@ -41,8 +40,6 @@ interoperability projections, not semantic authority.
 
 - Validate the Smithy package with
   `bazelisk test //src/smithy/models/verself:smithy_validate_test`.
-- Check Smithy Java formatting with
-  `bazelisk test //src/smithy/plugins/ir:java_format_test`.
 - Build Smithy projection artifacts with
   `bazelisk build //src/smithy/models/verself:smithy_build`.
 - Prove deployed behavior through ClickHouse traces/logs for behavior-affecting

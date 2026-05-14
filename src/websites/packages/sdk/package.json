@@ -2,7 +2,7 @@
   "name": "@verself/sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Curated Verself SDK over generated service transports.",
+  "description": "Curated Verself SDK over generated OpenAPI transports.",
   "files": [
     "src"
   ],

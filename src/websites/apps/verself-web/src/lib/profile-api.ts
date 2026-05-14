@@ -10,8 +10,8 @@ import type {
   PutProfilePreferencesData,
 } from "../__generated/profile-api/types.gen.js";
 import {
+  vGetProfileResponse,
   vPatchProfileIdentityBody,
-  vProfileOutput,
   vPutProfilePreferencesBody,
 } from "../__generated/profile-api/valibot.gen.js";
 import {
@@ -73,7 +73,7 @@ export const putProfilePreferencesRequestSchema = v.strictObject({
 export type PutProfilePreferencesRequest = v.InferInput<typeof putProfilePreferencesRequestSchema>;
 
 function parseProfileSnapshot(input: unknown) {
-  return v.parse(vProfileOutput, input).profile;
+  return v.parse(vGetProfileResponse, input).profile;
 }
 
 export type ProfileSnapshot = ReturnType<typeof parseProfileSnapshot>;

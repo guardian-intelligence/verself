@@ -1,15 +1,17 @@
 $version: "2"
 namespace verself.notifications.v1
 
+use aws.protocols#restJson1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#paginated
 use smithy.api#pattern
 use smithy.api#range
@@ -37,8 +39,10 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 
 @serviceRuntime(serviceName: "notifications-service", publicAudience: "notifications-service", internalAudience: "notifications-service")
+@restJson1
 service Notifications {
     version: "2026-05-13"
     operations: [
@@ -59,6 +63,7 @@ service Notifications {
 }
 
 @serviceRuntime(serviceName: "notifications-service", publicAudience: "notifications-service", internalAudience: "notifications-service")
+@restJson1
 service NotificationsInternal {
     version: "2026-05-13"
     operations: [
@@ -255,16 +260,16 @@ structure NotificationRecord {
 
     @required
     @protoField(number: 12)
-    created_at: Timestamp
+    created_at: DateTime
 
     @protoField(number: 13)
-    expires_at: Timestamp
+    expires_at: DateTime
 
     @protoField(number: 14)
-    read_at: Timestamp
+    read_at: DateTime
 
     @protoField(number: 15)
-    dismissed_at: Timestamp
+    dismissed_at: DateTime
 }
 
 structure NotificationSummary {
@@ -323,7 +328,7 @@ structure NotificationPreferencesView {
 
     @required
     @protoField(number: 7)
-    updated_at: Timestamp
+    updated_at: DateTime
 
     @protoField(number: 8)
     updated_by: SubjectId
@@ -361,7 +366,7 @@ structure NotificationWorkflowTriggerResult {
 
     @required
     @protoField(number: 4)
-    accepted_at: Timestamp
+    accepted_at: DateTime
 
     @required
     @protoField(number: 5)
@@ -426,10 +431,10 @@ structure GrafanaAlert {
     annotations: GrafanaLabelMap
 
     @protoField(number: 4)
-    startsAt: Timestamp
+    startsAt: DateTime
 
     @protoField(number: 5)
-    endsAt: Timestamp
+    endsAt: DateTime
 
     @protoField(number: 6)
     generatorURL: GrafanaURL
@@ -501,6 +506,7 @@ operation GetNotificationSummary {
 
 structure NotificationSummaryOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     summary: NotificationSummary
@@ -654,6 +660,7 @@ structure PublishTestNotificationInput {
 
 structure NotificationAcceptedOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     accepted: NotificationAccepted
@@ -707,6 +714,7 @@ structure TriggerNotificationWorkflowInput {
 
 structure NotificationWorkflowTriggerOutput {
     @required
+    @httpPayload
     @nestedProperties
     @protoField(number: 1)
     result: NotificationWorkflowTriggerResult

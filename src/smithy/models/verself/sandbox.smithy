@@ -1,15 +1,17 @@
 $version: "2"
 namespace verself.sandbox.v1
 
+use aws.protocols#restJson1
+
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
+use smithy.api#nestedProperties
 use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
-use smithy.api#nestedProperties
 use smithy.api#paginated
 use smithy.api#pattern
 use smithy.api#range
@@ -36,8 +38,10 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 
 @serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "sandbox-rental-service", internalAudience: "sandbox-rental-service")
+@restJson1
 service SandboxRental {
     version: "2026-05-13"
     operations: [
@@ -73,6 +77,7 @@ service SandboxRental {
 }
 
 @serviceRuntime(serviceName: "sandbox-rental-service", publicAudience: "sandbox-rental-service", internalAudience: "sandbox-rental-service")
+@restJson1
 service SandboxRentalInternal {
     version: "2026-05-13"
     operations: [InternalRegisterRunnerRepository]
@@ -407,7 +412,7 @@ structure SandboxGitHubInstallationConnectResponse {
     setup_url: SetupURL
 
     @required
-    expires_at: Timestamp
+    expires_at: DateTime
 }
 
 structure SandboxGitHubInstallationRecord {
@@ -430,10 +435,10 @@ structure SandboxGitHubInstallationRecord {
     active: Boolean
 
     @required
-    created_at: Timestamp
+    created_at: DateTime
 
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 structure GitHubInstallationRepository {
@@ -456,7 +461,7 @@ structure GitHubInstallationRepository {
     active: Boolean
 
     @required
-    synced_at: Timestamp
+    synced_at: DateTime
 }
 
 structure SandboxExecutionRecord {
@@ -500,10 +505,10 @@ structure SandboxExecutionRecord {
     latest_attempt: SandboxAttemptRecord
 
     @required
-    created_at: Timestamp
+    created_at: DateTime
 
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
 
     billing_windows: SandboxBillingWindows
     billing_summary: SandboxRunBillingSummary
@@ -539,14 +544,14 @@ structure SandboxAttemptRecord {
     net_tx_bytes: SafeNonNegativeLong
     vcpu_exit_count: SafeNonNegativeLong
     trace_id: TraceId
-    started_at: Timestamp
-    completed_at: Timestamp
+    started_at: DateTime
+    completed_at: DateTime
 
     @required
-    created_at: Timestamp
+    created_at: DateTime
 
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
 }
 
 structure SandboxBillingWindow {
@@ -585,12 +590,12 @@ structure SandboxBillingWindow {
     state: String
 
     @required
-    window_start: Timestamp
+    window_start: DateTime
 
     @required
-    created_at: Timestamp
+    created_at: DateTime
 
-    settled_at: Timestamp
+    settled_at: DateTime
 }
 
 structure SandboxRunBillingSummary {
@@ -700,7 +705,7 @@ structure SandboxRunLogSearchResult {
     chunk: LogChunk
 
     @required
-    created_at: Timestamp
+    created_at: DateTime
 }
 
 structure SandboxRunLogSearchFilters {
@@ -755,15 +760,15 @@ structure SandboxRunDurationSample {
     duration_ms: SafeNonNegativeLong
 
     @required
-    completed_at: Timestamp
+    completed_at: DateTime
 }
 
 structure SandboxJobsAnalytics {
     @required
-    window_start: Timestamp
+    window_start: DateTime
 
     @required
-    window_end: Timestamp
+    window_end: DateTime
 
     @required
     total_runs: DecimalUint64
@@ -795,10 +800,10 @@ structure SandboxJobsAnalytics {
 
 structure SandboxCostsAnalytics {
     @required
-    window_start: Timestamp
+    window_start: DateTime
 
     @required
-    window_end: Timestamp
+    window_end: DateTime
 
     @required
     reserved_charge_units: DecimalUint64
@@ -844,10 +849,10 @@ structure SandboxRunnerSizingSample {
 
 structure SandboxRunnerSizingAnalytics {
     @required
-    window_start: Timestamp
+    window_start: DateTime
 
     @required
-    window_end: Timestamp
+    window_end: DateTime
 
     @required
     by_runner_class: SandboxRunnerSizingSamples
@@ -903,10 +908,10 @@ structure SandboxExecutionScheduleRecord {
     interval_seconds: IntervalSeconds
 
     @required
-    created_at: Timestamp
+    created_at: DateTime
 
     @required
-    updated_at: Timestamp
+    updated_at: DateTime
 
     dispatches: SandboxExecutionScheduleDispatches
 }
@@ -933,15 +938,15 @@ structure SandboxExecutionScheduleDispatchRecord {
     failure_reason: FailureReason
 
     @required
-    scheduled_at: Timestamp
+    scheduled_at: DateTime
 
-    submitted_at: Timestamp
-
-    @required
-    created_at: Timestamp
+    submitted_at: DateTime
 
     @required
-    updated_at: Timestamp
+    created_at: DateTime
+
+    @required
+    updated_at: DateTime
 }
 
 structure RunnerRepositoryRegistration {
@@ -983,6 +988,7 @@ structure BeginGithubInstallationInput {
 
 structure BeginGithubInstallationOutput {
     @required
+    @httpPayload
     @nestedProperties
     connect: SandboxGitHubInstallationConnectResponse
 }
@@ -1005,7 +1011,6 @@ structure EmptyInput {}
 
 structure ListGithubInstallationsOutput {
     @required
-    @httpPayload
     installations: GitHubInstallations
 }
 
@@ -1039,7 +1044,7 @@ structure SyncGithubInstallationRepositoriesOutput {
     installation_id: DecimalUint64
 
     @required
-    synced_at: Timestamp
+    synced_at: DateTime
 
     @required
     repositories: InstallationRepositories
@@ -1067,6 +1072,7 @@ structure ExecutionPathInput {
 
 structure SandboxExecutionOutput {
     @required
+    @httpPayload
     @nestedProperties
     execution: SandboxExecutionRecord
 }
@@ -1087,6 +1093,7 @@ operation GetExecutionLogs {
 
 structure SandboxExecutionLogsOutput {
     @required
+    @httpPayload
     @nestedProperties
     logs: SandboxExecutionLogs
 }
@@ -1243,26 +1250,29 @@ operation GetRunnerSizingAnalytics {
 
 structure AnalyticsWindowInput {
     @httpQuery("start")
-    start: Timestamp
+    start: DateTime
 
     @httpQuery("end")
-    end: Timestamp
+    end: DateTime
 }
 
 structure SandboxJobsAnalyticsOutput {
     @required
+    @httpPayload
     @nestedProperties
     analytics: SandboxJobsAnalytics
 }
 
 structure SandboxCostsAnalyticsOutput {
     @required
+    @httpPayload
     @nestedProperties
     analytics: SandboxCostsAnalytics
 }
 
 structure SandboxRunnerSizingAnalyticsOutput {
     @required
+    @httpPayload
     @nestedProperties
     analytics: SandboxRunnerSizingAnalytics
 }
@@ -1351,6 +1361,7 @@ structure ExecutionSchedulePathInput {
 
 structure SandboxExecutionScheduleOutput {
     @required
+    @httpPayload
     @nestedProperties
     schedule: SandboxExecutionScheduleRecord
 }

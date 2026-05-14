@@ -3,26 +3,26 @@
 The curated SDK is the public programming contract for Verself. The CLI,
 browser server routes, customer automation, agent workflows, docs examples, and
 future provider-style integrations use the SDK. Product APIs are modeled in
-Smithy under `src/smithy`, and services implement generated or mirrored HTTP
-bindings from that model. Public OpenAPI remains a generated compatibility
-projection for docs and ecosystem tooling.
+Smithy under `src/smithy`, and services implement the Smithy-modeled HTTP
+surface. Public OpenAPI remains a generated compatibility projection for docs,
+TypeScript transports, and ecosystem tooling.
 
 The layering is:
 
 ```text
 facade: CLI, browser server route, customer automation, agent
   -> curated SDK resource method
-  -> SDK-owned generated transport from Smithy
+  -> SDK-owned generated transport from official OpenAPI projection
   -> public service API
   -> service-owned state and integrations
 ```
 
 Product services expose public and internal contract projections. Product
-services do not import curated SDK packages. Generated service clients remain
+services do not import curated SDK packages. Service-owned Go clients remain
 service-facing transport clients. SDK packages generate their own transport
-cores from public projections and wrap them with customer-facing resource
-modules. OpenAPI projections are downstream artifacts, not the API source of
-truth.
+cores from public OpenAPI projections and wrap them with customer-facing
+resource modules. OpenAPI projections are downstream artifacts, not the API
+source of truth.
 
 Missing SDK coverage blocks public CLI commands and docs examples. If the SDK
 method would be awkward, the public API shape should be revisited before the
@@ -273,7 +273,7 @@ and maximum token lifetime. SPIFFE JWT-SVID assertions should be minted for a
 single audience.
 
 SDKs do not implement SPIFFE mTLS. Repo-owned service-to-service traffic uses
-generated service clients with workload-owned mTLS transports.
+service-owned clients with workload-owned mTLS transports.
 
 ## Credentials
 

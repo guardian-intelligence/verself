@@ -68,6 +68,10 @@ def _generated_source_sync_cmds(generated_srcs, package_dir):
         return ""
     generated_locations = " ".join(["$(locations %s)" % src for src in generated_srcs])
     return """
+generated_sync_lock="$$execroot/bazel-out/viteplus-generated-source-sync.lock"
+mkdir -p "$$(dirname "$$generated_sync_lock")"
+(
+flock 9
 for generated in {generated_locations}; do
   case "$$generated" in
     /*) generated_abs="$$generated" ;;
@@ -102,10 +106,20 @@ for generated in {generated_locations}; do
     # Bazel refuses to cache actions that rewrite declared inputs mid-build.
     chmod -R u+w "$$generated_dest"
   fi
+  generated_dest_parent="$$(dirname "$$generated_dest")"
+  if [ -e "$$generated_dest_parent" ]; then
+    chmod -R u+w "$$generated_dest_parent"
+  fi
   rm -rf "$$generated_dest"
-  mkdir -p "$$(dirname "$$generated_dest")"
-  cp -a "$$generated_abs" "$$generated_dest"
+  mkdir -p "$$generated_dest_parent"
+  if [ -d "$$generated_abs" ]; then
+    cp -R -L --no-preserve=mode,ownership,timestamps "$$generated_abs" "$$generated_dest"
+  else
+    cp -L --no-preserve=mode,ownership,timestamps "$$generated_abs" "$$generated_dest"
+  fi
+  chmod -R u+w "$$generated_dest"
 done
+) 9>"$$generated_sync_lock"
 """.format(
         generated_locations = generated_locations,
         package_dir = package_dir,

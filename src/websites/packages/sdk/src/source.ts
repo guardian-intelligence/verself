@@ -36,29 +36,30 @@ import {
   vCheckoutGrantSummary,
   vCreateSourceCheckoutGrantBody,
   vCreateSourceCheckoutGrantPath,
+  vCreateSourceCheckoutGrantResponse,
+  vCreateSourceGitCredentialResponse,
   vCreateSourceRepositoryBody,
+  vCreateSourceRepositoryResponse,
   vCreateSourceWorkflowRunPath,
-  vGetSourceBlobResponse,
+  vCreateSourceWorkflowRunResponse,
   vGetSourceBlobPath,
   vGetSourceBlobQuery,
+  vGetSourceBlobResponse,
   vGetSourceRepositoryPath,
+  vGetSourceRepositoryResponse,
   vGetSourceTreePath,
   vGetSourceTreeQuery,
-  vGetSourceWorkflowRunPath,
   vGetSourceTreeResponse,
-  vGitCredentialLabel,
+  vGetSourceWorkflowRunPath,
+  vGetSourceWorkflowRunResponse,
   vGitCredentialSummary,
-  vGitRef,
-  vGitScope,
   vListSourceRefsResponse,
   vListSourceRefsPath,
   vListSourceRepositoriesQuery,
   vListSourceRepositoriesResponse,
   vListSourceWorkflowRunsResponse,
   vListSourceWorkflowRunsPath,
-  vProjectId,
   vRepositorySummary,
-  vWorkflowPath,
   vWorkflowRunSummary,
 } from "./__generated/source-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
@@ -184,6 +185,12 @@ function parseGitCredential(input: unknown) {
 
 export type SourceGitCredential = GitCredentialSummary;
 
+const gitCredentialLabelSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(128));
+const gitRefSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(1024));
+const gitScopeSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(128));
+const projectIdSchema = v.pipe(v.string(), v.uuid());
+const workflowPathSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(4096));
+
 const workflowInputsSchema = v.record(
   v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
   v.pipe(v.string(), v.maxLength(4096)),
@@ -192,16 +199,16 @@ const workflowInputsSchema = v.record(
 export const createRepositoryRequestSchema = vCreateSourceRepositoryBody;
 export const createCheckoutGrantRequestSchema = vCreateSourceCheckoutGrantBody;
 export const createGitCredentialRequestSchema = v.object({
-  label: v.optional(vGitCredentialLabel),
+  label: v.optional(gitCredentialLabelSchema),
   expires_in_seconds: v.optional(
     v.pipe(v.number(), v.integer(), v.minValue(60), v.maxValue(7776000)),
   ),
-  scopes: v.array(vGitScope),
+  scopes: v.array(gitScopeSchema),
 });
 export const createWorkflowRunRequestSchema = v.object({
-  project_id: vProjectId,
-  workflow_path: vWorkflowPath,
-  ref: v.optional(vGitRef),
+  project_id: projectIdSchema,
+  workflow_path: workflowPathSchema,
+  ref: v.optional(gitRefSchema),
   inputs: v.optional(workflowInputsSchema),
 });
 
@@ -271,7 +278,7 @@ export class Source {
     if (result.error !== undefined) {
       throwSourceError(path, result.response, result.error);
     }
-    return parseRepository(result.data);
+    return parseRepository(v.parse(vCreateSourceRepositoryResponse, result.data));
   }
 
   async createGitCredential(
@@ -293,7 +300,7 @@ export class Source {
     if (result.error !== undefined) {
       throwSourceError(path, result.response, result.error);
     }
-    return parseGitCredential(result.data);
+    return parseGitCredential(v.parse(vCreateSourceGitCredentialResponse, result.data));
   }
 
   async getRepository(repoId: string): Promise<SourceRepository> {
@@ -309,7 +316,7 @@ export class Source {
     if (result.error !== undefined) {
       throwSourceError(path, result.response, result.error);
     }
-    return parseRepository(result.data);
+    return parseRepository(v.parse(vGetSourceRepositoryResponse, result.data));
   }
 
   async listRefs(repoId: string): Promise<SourceRefs> {
@@ -390,7 +397,7 @@ export class Source {
     if (result.error !== undefined) {
       throwSourceError(path, result.response, result.error);
     }
-    return parseCheckoutGrant(result.data);
+    return parseCheckoutGrant(v.parse(vCreateSourceCheckoutGrantResponse, result.data));
   }
 
   async listWorkflowRuns(repoId: string): Promise<SourceWorkflowRunList> {
@@ -431,7 +438,7 @@ export class Source {
     if (result.error !== undefined) {
       throwSourceError(path, result.response, result.error);
     }
-    return parseWorkflowRun(result.data);
+    return parseWorkflowRun(v.parse(vCreateSourceWorkflowRunResponse, result.data));
   }
 
   async getWorkflowRun(workflowRunId: string): Promise<SourceWorkflowRun> {
@@ -447,6 +454,6 @@ export class Source {
     if (result.error !== undefined) {
       throwSourceError(path, result.response, result.error);
     }
-    return parseWorkflowRun(result.data);
+    return parseWorkflowRun(v.parse(vGetSourceWorkflowRunResponse, result.data));
   }
 }

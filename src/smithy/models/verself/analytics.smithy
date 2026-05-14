@@ -1,5 +1,7 @@
 $version: "2"
 namespace verself.analytics.v1
+
+use aws.protocols#restJson1
 use smithy.api#http
 use smithy.api#httpHeader
 use smithy.api#idempotencyToken
@@ -27,7 +29,9 @@ use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
 use verself.common.v1#sdk
 use verself.common.v1#serviceRuntime
+use verself.common.v1#DateTime
 @serviceRuntime(serviceName: "analytics-service", publicAudience: "analytics-service", internalAudience: "analytics-service")
+@restJson1
 service Analytics {
     version: "2026-05-13"
     operations: [
@@ -75,7 +79,7 @@ structure AnalyticsEvent {
     name: EventName
     @required
     @protoField(number: 2)
-    observed_at: Timestamp
+    observed_at: DateTime
     @required
     @protoField(number: 3)
     body: String

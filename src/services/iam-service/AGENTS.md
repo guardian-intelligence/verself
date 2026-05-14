@@ -17,11 +17,11 @@ Verself-owned concerns.
 
 Go product services remain authorization enforcement points. Each service owns
 its operation catalog through Smithy contract metadata under `src/smithy`.
-Generated contract packages expose DTOs, operation descriptors, and handler
-types; handwritten Huma route registration consumes those types and projects the
-same metadata into OpenAPI. Runtime authorization decisions are delegated to
+Contract packages expose DTOs, operation descriptors, and handler types;
+handwritten Huma route registration consumes those types and projects the same
+metadata into OpenAPI. Runtime authorization decisions are delegated to
 `iam-service` over SPIFFE mTLS. Public API packages depend on the narrow
-`service-runtime/iam` interface; service entrypoints wire generated
+`service-runtime/iam` interface; service entrypoints wire service-owned
 `iam-service` internal clients.
 
 ## Product Surface
@@ -34,16 +34,16 @@ read or persist Zitadel bearer tokens.
 
 Do not model this as an iframe, a Zitadel console extension, or a dedicated shell
 app unless the product surface later needs to stand alone. The product contract
-is the shared component plus generated service clients, not a specific hosting
+is the shared component plus service-owned clients, not a specific hosting
 route.
 
 ## API Shape
 
-Customer-facing `/api/*` routes use the generated `internal/contractapi` DTOs,
+Customer-facing `/api/*` routes use `internal/contractapi` DTOs,
 operation descriptors, and handler types. Handwritten route registration owns
 the Huma wiring. The Smithy operation model, Huma method/path registration, IAM
 metadata, rate limits, idempotency, audit events, body limits, OpenAPI
-projection, and generated-client contracts must not drift.
+projection, and service-client contracts must not drift.
 
 Public route policy metadata uses the shared `service-runtime/iam.OperationPolicy`
 vocabulary. `Permission` is the product permission sent to the Zanzibar-backed
@@ -59,7 +59,7 @@ browser request bodies as evidence of authority. Handlers must still validate
 resource ownership against Zitadel or Verself-owned storage after the
 operation permission check passes.
 
-Use generated contract DTOs for public request/response payloads. Handwritten
+Use contract DTOs for public request/response payloads. Handwritten
 DTOs remain appropriate for internal-only data structures that do not cross the
 public contract boundary. Smithy operation traits are the settled metadata home;
 Huma route metadata exposes `x-verself-contract` as a projection of the same

@@ -4,27 +4,26 @@ Projects uses public and internal projections from one canonical Smithy model.
 
 ```text
 src/smithy/models/verself/projects.smithy
-  -> public projection
-     -> SDK-layer generated transports
-     -> generated OpenAPI compatibility artifacts
-     -> SDK and server runtime descriptors
-  -> internal projection
-     -> src/services/projects-service/client
-     -> generated OpenAPI compatibility artifacts
+  -> official public OpenAPI 3.1 projection
+     -> SDK-layer TypeScript transport
+     -> public docs and ecosystem tooling
+  -> hand-written Huma routes and service-owned Go clients
+     -> conformance against the Smithy/OpenAPI HTTP surface
 ```
 
-The public projection is the customer contract. It uses bearer authentication,
-omits service-origin headers, and feeds public docs plus SDK-layer code.
+The public Smithy service is the customer contract. It uses bearer
+authentication, omits service-origin headers, and feeds public docs plus
+SDK-layer code through the official OpenAPI projection.
 
-The internal projection is the repo-owned service-to-service contract. It uses
-SPIFFE mTLS, includes public-shaped operations for service callers, and includes
-service-only operations such as project resolution and domain-event listing.
-Generated service clients are transport packages; callers own auth by providing
-an mTLS `http.Client`.
+The internal Smithy service is the repo-owned service-to-service contract. It
+uses SPIFFE mTLS, includes public-shaped operations for service callers, and
+includes service-only operations such as project resolution and domain-event
+listing. Service-owned Go clients are transport packages; callers own auth by
+providing an mTLS `http.Client`.
 
-`src/services/projects-service/client` is generated from the internal
-projection and is visible only to service packages. SDKs generate their own code
-from the public projection under `src/sdks/` or frontend SDK packages.
+`src/services/projects-service/client` is visible only to service packages.
+SDKs generate their own transport code from the public OpenAPI projection under
+`src/sdks/` or frontend SDK packages.
 
 During cutover, the existing Huma route catalog and committed OpenAPI files may
 mirror this model. They are compatibility artifacts and implementation inputs,
@@ -35,7 +34,7 @@ not the settled contract authority.
 - `public` means customer, CLI, browser server route, documentation, and SDK
   contract.
 - `internal` means repo-owned service-to-service contract over SPIFFE mTLS.
-- `client` under a service directory means generated service transport client.
+- `client` under a service directory means service-owned transport client.
 - SDK generated code lives under the SDK package that consumes it.
 
 ## Invariants
@@ -48,8 +47,7 @@ rg -n "unknown module path version unknown version" src/services/projects-servic
 ```
 
 The first command must return no matches. The second command should return the
-canonical contract model and generated projection paths once the cutover is
-wired. The remaining commands cover transitional OpenAPI emitters and generated
-SDK paths that still define the current projection boundary. The Go `internal/`
-package path remains normal Go visibility and is unrelated to the contract
-projection model.
+canonical contract model and projection paths. The remaining commands cover
+OpenAPI emitters and SDK paths that define the current projection boundary. The
+Go `internal/` package path remains normal Go visibility and is unrelated to the
+contract projection model.
