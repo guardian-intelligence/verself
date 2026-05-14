@@ -1,5 +1,3 @@
-common --enable_bzlmod
-common --noenable_workspace
 common --announce_rc
 common --lockfile_mode=error
 
@@ -14,16 +12,28 @@ startup --max_idle_secs=1800
 
 # Bazel caching is local-only. A shared remote cache couples bootstrap and deploy
 # to a host service; keep cache state inside the invoking user's home directory.
+# The disk and action caches collect on the idle server so the local cache
+# directory is bounded without an external sweeper.
 build --disk_cache=~/.cache/bazel-disk
 build --repository_cache=~/.cache/bazel-repo
+build --experimental_disk_cache_gc_max_size=50G
+build --experimental_disk_cache_gc_idle_delay=5m
+build --experimental_action_cache_gc_threshold=10
+build --experimental_action_cache_gc_idle_delay=5m
 build --incompatible_strict_action_env
 build --jobs=auto
+# Reuse sandbox directories across actions; cuts setup/teardown cost on
+# incremental builds.
+build --reuse_sandbox_directories
 # The repository does not assume a host-installed JDK. Java tool actions run on
 # the newest Bazel-managed JDK while emitted bytecode stays at the repo baseline.
 build --java_runtime_version=remotejdk_17
 build --tool_java_runtime_version=remotejdk_25
 build --java_language_version=17
 build --tool_java_language_version=17
+# Use the prebuilt protoc shipped with the protobuf module instead of building
+# the C++ compiler from source.
+build --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
 # Subscribe to kernel filesystem events for source-file invalidation instead
 # of relying on stat-deltas at command start. Closes the stat-collision window
 # that the prior --max_idle_secs=86400 footgun depended on.
@@ -32,4 +42,12 @@ build --watchfs
 test --test_output=errors
 test --test_summary=terse
 
+# CI runners are ephemeral, do not benefit from incremental Skyframe state, and
+# need machine-parseable timestamps with periodic thread dumps so unsupervised
+# hangs are diagnosable from the recorded log.
 build:ci --build_metadata=ROLE=CI
+build:ci --experimental_thread_dump_interval=10m
+build:ci --show_timestamps
+build:ci --noshow_progress
+build:ci --curses=no
+build:ci --keep_state_after_build=false
