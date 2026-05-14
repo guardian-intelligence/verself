@@ -103,8 +103,11 @@ genrule(
     cmd = """
 set -euo pipefail
 out="$$PWD/$@"
+uv_tmp="$$(mktemp -d)"
+trap 'rm -rf "$$uv_tmp"' EXIT
+tar -xzf "$(location @dev_tool_uv//file)" -C "$$uv_tmp" --strip-components=1
 cd src/host/ansible
-uvx --from ansible-lint==26.4.0 --with ansible-core==2.20.3 ansible-lint playbooks roles
+"$$uv_tmp/uvx" --from ansible-lint==26.4.0 --with ansible-core==2.20.3 ansible-lint playbooks roles
 touch "$$out"
 """,
     tags = [
@@ -115,6 +118,7 @@ touch "$$out"
         "no-sandbox",
         "repo_check",
     ],
+    tools = ["@dev_tool_uv//file"],
 )
 
 stamp_test(

@@ -52,7 +52,11 @@ _CHECK_TEST_TAGS = [
 def _check_cmd(package_name, setup, invocation):
     return """set -euo pipefail
 out="$$PWD/$@"
-go_tool="/usr/local/go/bin/go"
+go_archive="$$PWD/$(location @dev_tool_go//file)"
+go_tmp="$$(mktemp -d)"
+trap 'rm -rf "$$go_tmp"' EXIT
+tar -xzf "$$go_archive" -C "$$go_tmp"
+go_tool="$$go_tmp/go/bin/go"
 test -x "$$go_tool"
 go_tool_dir="$$(dirname "$$go_tool")"
 export PATH="$$go_tool_dir:$${{PATH:-}}"
@@ -88,7 +92,7 @@ def _check(name, test_name, srcs, tag, setup, invocation, tools = []):
         outs = [name + ".stamp"],
         cmd = _check_cmd(native.package_name(), setup, invocation),
         tags = _CHECK_TAGS + [tag],
-        tools = tools,
+        tools = ["@dev_tool_go//file"] + tools,
     )
     stamp_test(
         name = test_name,
