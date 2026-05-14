@@ -85,11 +85,13 @@ filegroup(
     srcs = [
         "ansible/.ansible-lint.yml",
         "ansible/ansible.cfg",
+        "ansible/requirements.yml",
     ] + glob(
         [
             "ansible/group_vars/**",
             "ansible/host-files/**",
             "ansible/playbooks/**",
+            "ansible/rules/**",
             "ansible/roles/**",
         ],
         allow_empty = False,
@@ -107,6 +109,10 @@ uv_tmp="$$(mktemp -d)"
 trap 'rm -rf "$$uv_tmp"' EXIT
 tar -xzf "$(location @dev_tool_uv//file)" -C "$$uv_tmp" --strip-components=1
 cd src/host/ansible
+collections_tmp="$$(mktemp -d)"
+trap 'rm -rf "$$uv_tmp" "$$collections_tmp"' EXIT
+export ANSIBLE_COLLECTIONS_PATH="$$collections_tmp"
+"$$uv_tmp/uvx" --from ansible-core==2.20.3 ansible-galaxy collection install -r requirements.yml -p "$$collections_tmp"
 "$$uv_tmp/uvx" --from ansible-lint==26.4.0 --with ansible-core==2.20.3 ansible-lint playbooks roles
 touch "$$out"
 """,
