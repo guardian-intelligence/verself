@@ -312,7 +312,7 @@ helper unit. Current consumers:
 | Consumer | Rotation contract |
 | --- | --- |
 | NATS | `spiffe-helper` writes server SVID/key/bundle and sends `SIGHUP` via `/run/nats/nats.pid`; `nats-server` reloads in place. |
-| ClickHouse server | `spiffe-helper` writes the SPIRE trust bundle consumed by `<openSSL><server><caConfig>` and sends `SIGHUP` via `/run/clickhouse-server/clickhouse-server.pid`; ClickHouse reloads in place. |
+| ClickHouse server | `spiffe-helper` writes the SPIRE trust bundle consumed by `<openSSL><server><caConfig>`. A systemd path unit runs the root-owned bundle reloader when the bundle file changes; the reloader restarts ClickHouse only when the bundle content hash differs from the last successfully loaded hash. |
 | ClickHouse operator client | `spiffe-helper` keeps client SVID/key/bundle fresh; each `clickhouse-client` invocation reads current files. |
 | OTel collector | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh; exporter TLS uses `reload_interval: 60s`. |
 | Grafana | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh and runs the datasource provisioning refresh command on renewal. |

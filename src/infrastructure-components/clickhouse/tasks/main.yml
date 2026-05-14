@@ -358,6 +358,22 @@
     mode: "0640"
   notify: restart clickhouse
 
+- name: Deploy ClickHouse SPIFFE bundle reload service
+  ansible.builtin.template:
+    src: clickhouse-server-spiffe-bundle-reload.service.j2
+    dest: /etc/systemd/system/clickhouse-server-spiffe-bundle-reload.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy ClickHouse SPIFFE bundle reload path
+  ansible.builtin.template:
+    src: clickhouse-server-spiffe-bundle-reload.path.j2
+    dest: /etc/systemd/system/clickhouse-server-spiffe-bundle-reload.path
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Apply ClickHouse config changes before proceeding
   ansible.builtin.meta: flush_handlers
 
@@ -384,6 +400,37 @@
   delay: 3
   until: clickhouse_ready.rc == 0
   changed_when: false
+
+- name: Converge current ClickHouse SPIFFE bundle restart state
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/clickhouse-spiffe-bundle-reload"
+      - --bundle
+      - "{{ clickhouse_server_spiffe_dir }}/bundle.pem"
+      - --state-path
+      - "{{ clickhouse_server_bundle_reload_state_path }}"
+      - --unit
+      - clickhouse-server.service
+  register: clickhouse_spiffe_bundle_reload
+  changed_when: "'restarted clickhouse-server.service' in clickhouse_spiffe_bundle_reload.stdout"
+
+- name: Wait for ClickHouse after SPIFFE bundle restart
+  ansible.builtin.shell: >
+    {{ clickhouse_operator_client_command }}
+    --query 'SELECT 1'
+  register: clickhouse_ready_after_spiffe_bundle_reload
+  retries: 10
+  delay: 3
+  until: clickhouse_ready_after_spiffe_bundle_reload.rc == 0
+  changed_when: false
+  when: clickhouse_spiffe_bundle_reload.changed
+
+- name: Enable and start ClickHouse SPIFFE bundle reload watcher
+  ansible.builtin.systemd:
+    name: clickhouse-server-spiffe-bundle-reload.path
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Flush system logs (creates query_log table if query logging just enabled)
   ansible.builtin.shell: >

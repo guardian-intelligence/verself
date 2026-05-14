@@ -105,6 +105,7 @@ SERVER_TOOL_DEPS = [
 ]
 
 PROFILE_GO_TOOLS = [
+    ("//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload", "clickhouse-spiffe-bundle-reload"),
     ("//src/infrastructure-components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew", "haproxy-lego-renew"),
     ("//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply", "haproxy-upstreams-apply"),
     ("//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd", "zot-htpasswd"),
