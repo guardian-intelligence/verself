@@ -7,7 +7,7 @@ go_library(
         "catalog.go",
         "command_store.go",
         "errors.go",
-        "iam_catalog.gen.go",
+        "operation_catalog.go",
         "organization_store.go",
         "safeconv.go",
         "service.go",

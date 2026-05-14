@@ -277,7 +277,7 @@ structure requestBudget {
     maxBytes: Long
 }
 
-/// SDK operation placement and generated transport behavior.
+/// SDK operation placement and transport behavior.
 @trait(selector: "operation")
 @specificationExtension(as: "x-verself-sdk")
 structure sdk {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	sandboxcore "github.com/verself/verself-go/internal/generated/sandbox"
+	sandboxcore "github.com/verself/verself-go/internal/transport/sandbox"
 )
 
 type SandboxAttempt struct {

@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "internalcontractapi",
-    srcs = ["notifications_internal_contract.gen.go"],
+    srcs = ["contract.go"],
     importpath = "github.com/verself/notifications-service/internal/internalcontractapi",
     visibility = ["//src/services/notifications-service:__subpackages__"],
 )

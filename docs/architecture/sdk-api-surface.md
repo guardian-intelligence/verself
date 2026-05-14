@@ -12,7 +12,7 @@ The layering is:
 ```text
 facade: CLI, browser server route, customer automation, agent
   -> curated SDK resource method
-  -> SDK-owned generated transport from official OpenAPI projection
+  -> SDK-owned transport core from official OpenAPI projection
   -> public service API
   -> service-owned state and integrations
 ```
@@ -146,7 +146,7 @@ accepted by APIs that take cross-resource references. Parent-scoped APIs may
 still use short IDs or slugs in path parameters when that improves CLI
 ergonomics. SDKs normalize resource references into typed `ResourceRef` values
 that can carry a resource name, typed ID, or parent-scoped slug before calling
-the generated transport.
+the SDK transport core.
 
 Resource names are not primary database keys. Hot OLTP tables use typed
 immutable IDs. High-volume event tables store installation ID, resource type,
@@ -428,9 +428,9 @@ bearer token material.
 
 SDK releases pin default API versions. The API version header remains available
 for staged rollouts, canaries, and compatibility testing. Contract evolution is
-modeled in Smithy and projected into generated transports, OpenAPI artifacts,
-and runtime descriptors. Curated SDK methods define the public compatibility
-surface.
+modeled in Smithy and projected into OpenAPI artifacts, transport bindings where
+tooling is reliable, and runtime descriptors. Curated SDK methods define the
+public compatibility surface.
 
 TypeScript and Go are the first curated SDKs. Python, Rust, and Terraform
 provider surfaces should follow only after the public API and first two SDKs

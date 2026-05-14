@@ -1,0 +1,250 @@
+package internalcontractapi
+
+import (
+	"context"
+)
+
+type OperationDescriptor struct {
+	ShapeID             string
+	OperationID         string
+	Method              string
+	Path                string
+	DefaultStatus       int
+	Readonly            bool
+	Paginated           bool
+	Identity            IdentityDescriptor
+	Authorization       AuthorizationDescriptor
+	Audit               AuditDescriptor
+	RateLimitBucket     string
+	RequestBodyMaxBytes int64
+	RequestPayload      PayloadDescriptor
+	ResponsePayload     PayloadDescriptor
+	ResponseHeaders     []HeaderDescriptor
+	Idempotency         IdempotencyDescriptor
+	SDK                 SDKDescriptor
+	Problems            []ProblemDescriptor
+}
+
+type IdentityDescriptor struct {
+	Mode       string
+	Audience   string
+	Principals []string
+}
+
+type AuthorizationDescriptor struct {
+	Permission         string
+	OrganizationSource string
+	OrganizationMember string
+}
+
+type AuditDescriptor struct {
+	Event    string
+	Resource string
+	Action   string
+}
+
+type IdempotencyDescriptor struct {
+	Policy string
+	Header string
+	Member string
+}
+
+type PayloadDescriptor struct {
+	Member    string
+	Target    string
+	Kind      string
+	MediaType string
+	Streaming bool
+	Sensitive bool
+	Required  bool
+}
+
+type HeaderDescriptor struct {
+	Member string
+	Name   string
+}
+
+type SDKDescriptor struct {
+	Module    string
+	Method    string
+	Paginated bool
+	Retryable bool
+}
+
+type ProblemDescriptor struct {
+	ShapeID string
+	Type    string
+	Code    string
+	Status  int
+}
+
+type Operation[Input any, Output any] struct {
+	Descriptor OperationDescriptor
+}
+
+type Handler[Input any, Output any] func(context.Context, *Input) (*Output, error)
+
+type ProblemCode string
+
+type ProblemDetail string
+
+type ProblemType string
+
+type RequestID string
+
+type ResourceName string
+
+type TraceParent string
+
+type AuditActorID string
+
+type AuditActorType string
+
+type AuditCredentialID string
+
+type AuditErrorCode string
+
+type AuditEventID string
+
+type AuditEventOperationName string
+
+type AuditEventSource string
+
+type AuditHMACKeyID string
+
+type AuditSchemaVersion string
+
+type AuditTargetID string
+
+type AuditTargetType string
+
+type DecimalUint64 string
+
+type GovernanceAuditEventName string
+
+type GovernanceOrgID string
+
+type GovernancePermissionName string
+
+type HMACHex string
+
+type TraceID string
+
+type AuditOutcome string
+
+const (
+	AuditOutcomeAllowed AuditOutcome = "allowed"
+	AuditOutcomeDenied  AuditOutcome = "denied"
+	AuditOutcomeError   AuditOutcome = "error"
+)
+
+type PermissionDeniedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ServiceUnavailableError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ValidationFailedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type AppendAuditEventAccepted struct {
+	EventID  AuditEventID  `json:"event_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	Sequence DecimalUint64 `json:"sequence" required:"true" pattern:"^[0-9]+$"`
+	RowHMAC  HMACHex       `json:"row_hmac" required:"true" pattern:"^[0-9a-f]{64}$"`
+}
+
+type AppendAuditEventInput struct {
+	Body AuditRecord
+}
+
+type AuditRecord struct {
+	SchemaVersion      *AuditSchemaVersion      `json:"schema_version,omitempty" minLength:"1" maxLength:"128"`
+	OrgID              GovernanceOrgID          `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
+	EventSource        AuditEventSource         `json:"event_source" required:"true" minLength:"1" maxLength:"128"`
+	EventName          AuditEventOperationName  `json:"event_name" required:"true" minLength:"1" maxLength:"128"`
+	AuditEvent         GovernanceAuditEventName `json:"audit_event" required:"true" minLength:"1" maxLength:"255"`
+	ActorType          AuditActorType           `json:"actor_type" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_.-]*$"`
+	ActorID            AuditActorID             `json:"actor_id" required:"true" minLength:"1" maxLength:"512"`
+	CredentialID       *AuditCredentialID       `json:"credential_id,omitempty" maxLength:"512"`
+	TargetType         AuditTargetType          `json:"target_type" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
+	TargetID           *AuditTargetID           `json:"target_id,omitempty" maxLength:"512"`
+	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	Permission         GovernancePermissionName `json:"permission" required:"true" minLength:"1" maxLength:"255"`
+	Outcome            AuditOutcome             `json:"outcome" required:"true"`
+	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty" maxLength:"128"`
+	TraceID            *TraceID                 `json:"trace_id,omitempty" pattern:"^[0-9a-f]{32}$"`
+	HMACKeyID          *AuditHMACKeyID          `json:"hmac_key_id,omitempty" maxLength:"128"`
+	RecordedAt         *string                  `json:"recorded_at,omitempty"`
+	Detail             *map[string]any          `json:"detail,omitempty"`
+}
+
+type AppendAuditEventOutputBody struct {
+	Accepted AppendAuditEventAccepted `json:"accepted" required:"true"`
+}
+
+type AppendAuditEventOutput struct {
+	Body AppendAuditEventOutputBody
+}
+
+var Operations = []OperationDescriptor{
+	AppendAuditEvent.Descriptor,
+}
+
+var AppendAuditEvent = Operation[AppendAuditEventInput, AppendAuditEventOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.governance.v1#AppendAuditEvent",
+		OperationID:         "append-audit-event",
+		Method:              "POST",
+		Path:                "/internal/v1/audit/events",
+		DefaultStatus:       202,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "governance-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "governance:audit_log:append", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "governance.audit_log.append", Resource: "audit_log", Action: "write"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 32768,
+		RequestPayload:      PayloadDescriptor{Member: "record", Target: "verself.governance.v1#AuditRecord", Kind: "structure", MediaType: "", Streaming: false, Sensitive: false, Required: true},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "governanceInternal.audit", Method: "append", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+type Handlers = InternalHandlers
+
+type InternalHandlers interface {
+	AppendAuditEvent(context.Context, *AppendAuditEventInput) (*AppendAuditEventOutput, error)
+}
+
+type AppendAuditEventHandler = Handler[AppendAuditEventInput, AppendAuditEventOutput]

@@ -1,0 +1,367 @@
+package contractapi
+
+import (
+	"context"
+)
+
+type OperationDescriptor struct {
+	ShapeID             string
+	OperationID         string
+	Method              string
+	Path                string
+	DefaultStatus       int
+	Readonly            bool
+	Paginated           bool
+	Identity            IdentityDescriptor
+	Authorization       AuthorizationDescriptor
+	Audit               AuditDescriptor
+	RateLimitBucket     string
+	RequestBodyMaxBytes int64
+	RequestPayload      PayloadDescriptor
+	ResponsePayload     PayloadDescriptor
+	ResponseHeaders     []HeaderDescriptor
+	Idempotency         IdempotencyDescriptor
+	SDK                 SDKDescriptor
+	Problems            []ProblemDescriptor
+}
+
+type IdentityDescriptor struct {
+	Mode       string
+	Audience   string
+	Principals []string
+}
+
+type AuthorizationDescriptor struct {
+	Permission         string
+	OrganizationSource string
+	OrganizationMember string
+}
+
+type AuditDescriptor struct {
+	Event    string
+	Resource string
+	Action   string
+}
+
+type IdempotencyDescriptor struct {
+	Policy string
+	Header string
+	Member string
+}
+
+type PayloadDescriptor struct {
+	Member    string
+	Target    string
+	Kind      string
+	MediaType string
+	Streaming bool
+	Sensitive bool
+	Required  bool
+}
+
+type HeaderDescriptor struct {
+	Member string
+	Name   string
+}
+
+type SDKDescriptor struct {
+	Module    string
+	Method    string
+	Paginated bool
+	Retryable bool
+}
+
+type ProblemDescriptor struct {
+	ShapeID string
+	Type    string
+	Code    string
+	Status  int
+}
+
+type Operation[Input any, Output any] struct {
+	Descriptor OperationDescriptor
+}
+
+type Handler[Input any, Output any] func(context.Context, *Input) (*Output, error)
+
+type DisplayName string
+
+type IdempotencyKey string
+
+type ProblemCode string
+
+type ProblemDetail string
+
+type ProblemType string
+
+type RequestID string
+
+type TraceParent string
+
+type DecimalInt64 string
+
+type EmailAddress string
+
+type FamilyName string
+
+type GivenName string
+
+type Locale string
+
+type OrgID string
+
+type ProfilePreferenceValue string
+
+type SubjectID string
+
+type Timezone string
+
+type ConflictError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type IdempotencyPayloadMismatchError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type PermissionDeniedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type RateLimitedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ServiceUnavailableError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type UnauthenticatedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ValidationFailedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type EmptyInput struct{}
+
+type PatchProfileIdentityInputBody struct {
+	DisplayName *DisplayName `json:"display_name,omitempty" minLength:"1" maxLength:"120"`
+	FamilyName  FamilyName   `json:"family_name" required:"true" maxLength:"100"`
+	GivenName   GivenName    `json:"given_name" required:"true" maxLength:"100"`
+	Version     DecimalInt64 `json:"version" required:"true" pattern:"^-?[0-9]+$"`
+}
+
+type PatchProfileIdentityInput struct {
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           PatchProfileIdentityInputBody
+}
+
+type ProfileIdentityView struct {
+	Version     DecimalInt64  `json:"version" required:"true" pattern:"^-?[0-9]+$"`
+	Email       *EmailAddress `json:"email,omitempty" maxLength:"320"`
+	GivenName   *GivenName    `json:"given_name,omitempty" maxLength:"100"`
+	FamilyName  *FamilyName   `json:"family_name,omitempty" maxLength:"100"`
+	DisplayName *DisplayName  `json:"display_name,omitempty" minLength:"1" maxLength:"120"`
+	SyncedAt    *string       `json:"synced_at,omitempty"`
+}
+
+type ProfilePreferencesView struct {
+	Version        DecimalInt64            `json:"version" required:"true" pattern:"^-?[0-9]+$"`
+	Locale         *Locale                 `json:"locale,omitempty" minLength:"1" maxLength:"80"`
+	Timezone       *Timezone               `json:"timezone,omitempty" minLength:"1" maxLength:"80"`
+	TimeDisplay    *ProfilePreferenceValue `json:"time_display,omitempty" minLength:"1" maxLength:"64"`
+	Theme          *ProfilePreferenceValue `json:"theme,omitempty" minLength:"1" maxLength:"64"`
+	DefaultSurface *ProfilePreferenceValue `json:"default_surface,omitempty" minLength:"1" maxLength:"64"`
+	UpdatedAt      string                  `json:"updated_at" required:"true"`
+	UpdatedBy      *SubjectID              `json:"updated_by,omitempty" minLength:"1" maxLength:"512"`
+}
+
+type ProfileSnapshot struct {
+	SubjectID   SubjectID              `json:"subject_id" required:"true" minLength:"1" maxLength:"512"`
+	OrgID       OrgID                  `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
+	Identity    ProfileIdentityView    `json:"identity" required:"true"`
+	Preferences ProfilePreferencesView `json:"preferences" required:"true"`
+}
+
+type PutProfilePreferencesInputBody struct {
+	DefaultSurface *ProfilePreferenceValue `json:"default_surface,omitempty" minLength:"1" maxLength:"64"`
+	Locale         *Locale                 `json:"locale,omitempty" minLength:"1" maxLength:"80"`
+	Theme          *ProfilePreferenceValue `json:"theme,omitempty" minLength:"1" maxLength:"64"`
+	TimeDisplay    *ProfilePreferenceValue `json:"time_display,omitempty" minLength:"1" maxLength:"64"`
+	Timezone       *Timezone               `json:"timezone,omitempty" minLength:"1" maxLength:"80"`
+	Version        DecimalInt64            `json:"version" required:"true" pattern:"^-?[0-9]+$"`
+}
+
+type PutProfilePreferencesInput struct {
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           PutProfilePreferencesInputBody
+}
+
+type ProfileOutputBody struct {
+	Profile ProfileSnapshot `json:"profile" required:"true"`
+}
+
+type ProfileOutput struct {
+	Body ProfileOutputBody
+}
+
+var Operations = []OperationDescriptor{
+	GetProfile.Descriptor,
+	PatchProfileIdentity.Descriptor,
+	PutProfilePreferences.Descriptor,
+}
+
+var GetProfile = Operation[EmptyInput, ProfileOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.profile.v1#GetProfile",
+		OperationID:         "get-profile",
+		Method:              "GET",
+		Path:                "/api/v1/profile",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "profile-service", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "profile:self:read", OrganizationSource: "request_subject", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "profile.subject.read", Resource: "profile_subject", Action: "read"},
+		RateLimitBucket:     "read",
+		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "profile", Method: "get", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+		},
+	},
+}
+
+var PatchProfileIdentity = Operation[PatchProfileIdentityInput, ProfileOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.profile.v1#PatchProfileIdentity",
+		OperationID:         "patch-profile-identity",
+		Method:              "PATCH",
+		Path:                "/api/v1/profile/identity",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "profile-service", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "profile:self:identity:write", OrganizationSource: "request_subject", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "profile.subject.identity.write", Resource: "profile_identity", Action: "write"},
+		RateLimitBucket:     "profile_mutation",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "profile.identity", Method: "update", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var PutProfilePreferences = Operation[PutProfilePreferencesInput, ProfileOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.profile.v1#PutProfilePreferences",
+		OperationID:         "put-profile-preferences",
+		Method:              "PUT",
+		Path:                "/api/v1/profile/preferences",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "profile-service", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "profile:self:preferences:write", OrganizationSource: "request_subject", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "profile.preferences.write", Resource: "profile_preferences", Action: "write"},
+		RateLimitBucket:     "profile_mutation",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "profile.preferences", Method: "put", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+type Handlers = PublicHandlers
+
+type PublicHandlers interface {
+	GetProfile(context.Context, *EmptyInput) (*ProfileOutput, error)
+	PatchProfileIdentity(context.Context, *PatchProfileIdentityInput) (*ProfileOutput, error)
+	PutProfilePreferences(context.Context, *PutProfilePreferencesInput) (*ProfileOutput, error)
+}
+
+type GetProfileHandler = Handler[EmptyInput, ProfileOutput]
+
+type PatchProfileIdentityHandler = Handler[PatchProfileIdentityInput, ProfileOutput]
+
+type PutProfilePreferencesHandler = Handler[PutProfilePreferencesInput, ProfileOutput]

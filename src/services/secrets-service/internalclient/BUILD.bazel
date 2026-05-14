@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "internalclient",
-    srcs = ["client.gen.go"],
+    srcs = ["transport.go"],
     importpath = "github.com/verself/secrets-service/internalclient",
     visibility = ["//visibility:public"],
 )

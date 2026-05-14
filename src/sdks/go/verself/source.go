@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	sourcecore "github.com/verself/verself-go/internal/generated/source"
+	sourcecore "github.com/verself/verself-go/internal/transport/source"
 )
 
 const (

@@ -1,0 +1,1402 @@
+package objectstorageclient
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+const ServiceName = "object-storage-service"
+
+type AccessKeyId = string
+
+type AuthMode = string
+
+type BucketAliasName = string
+
+type BucketId = string
+
+type BucketName = string
+
+type CredentialFingerprint = string
+
+type CredentialId = string
+
+type CredentialStatus = string
+
+type DecimalUint64 = string
+
+type DisplayName = string
+
+type IdempotencyKey = string
+
+type ObjectPrefix = string
+
+type OrgId = string
+
+type ProblemCode = string
+
+type ProblemDetail = string
+
+type ProblemType = string
+
+type RequestId = string
+
+type ResourceName = string
+
+type SPIFFESubject = string
+
+type SecretAccessKey = string
+
+type ServiceTag = string
+
+type TraceParent = string
+
+type BucketAliases []BucketAliasView
+
+type Buckets []BucketView
+
+type ObjectStorageCredentials []ObjectStorageCredentialView
+
+type ObjectStorageLifecycleRules []map[string]any
+
+type BucketAliasView struct {
+	BucketID   BucketId        `json:"bucket_id"`
+	Alias      BucketAliasName `json:"alias"`
+	Prefix     *ObjectPrefix   `json:"prefix,omitempty"`
+	ServiceTag *ServiceTag     `json:"service_tag,omitempty"`
+	CreatedAt  string          `json:"created_at"`
+}
+
+type BucketView struct {
+	BucketID       BucketId                    `json:"bucket_id"`
+	ResourceName   ResourceName                `json:"resourceName"`
+	OrgID          OrgId                       `json:"org_id"`
+	BucketName     BucketName                  `json:"bucket_name"`
+	QuotaBytes     *DecimalUint64              `json:"quota_bytes,omitempty"`
+	QuotaObjects   *DecimalUint64              `json:"quota_objects,omitempty"`
+	LifecycleRules ObjectStorageLifecycleRules `json:"lifecycle_rules"`
+	CreatedAt      string                      `json:"created_at"`
+	UpdatedAt      string                      `json:"updated_at"`
+}
+
+type ConflictError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type IdempotencyPayloadMismatchError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type ObjectStorageAccessKeySecret struct {
+	AccessKeyID           AccessKeyId                 `json:"access_key_id"`
+	SecretAccessKey       SecretAccessKey             `json:"secret_access_key"`
+	CredentialFingerprint CredentialFingerprint       `json:"credential_fingerprint"`
+	Credential            ObjectStorageCredentialView `json:"credential"`
+}
+
+type ObjectStorageCredentialView struct {
+	CredentialID          CredentialId           `json:"credential_id"`
+	BucketID              BucketId               `json:"bucket_id"`
+	AuthMode              AuthMode               `json:"auth_mode"`
+	DisplayName           DisplayName            `json:"display_name"`
+	AccessKeyID           *AccessKeyId           `json:"access_key_id,omitempty"`
+	SpiffeSubject         *SPIFFESubject         `json:"spiffe_subject,omitempty"`
+	CredentialFingerprint *CredentialFingerprint `json:"credential_fingerprint,omitempty"`
+	Status                CredentialStatus       `json:"status"`
+	ExpiresAt             *string                `json:"expires_at,omitempty"`
+	CreatedAt             string                 `json:"created_at"`
+	RevokedAt             *string                `json:"revoked_at,omitempty"`
+}
+
+type PermissionDeniedError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type RateLimitedError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type ResourceNotFoundError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type ServiceUnavailableError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type UnauthenticatedError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type ValidationFailedError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type CreateObjectStorageAccessKeyInputBody struct {
+	DisplayName DisplayName `json:"display_name"`
+	ExpiresAt   *string     `json:"expires_at,omitempty"`
+}
+
+type CreateObjectStorageAccessKeyRequest struct {
+	BucketID       BucketId
+	IdempotencyKey IdempotencyKey
+	Body           CreateObjectStorageAccessKeyInputBody `json:"body"`
+}
+
+type CreateObjectStorageAccessKeyResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ObjectStorageAccessKeySecret
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type CreateObjectStorageBucketInputBody struct {
+	BucketName     BucketName                   `json:"bucket_name"`
+	LifecycleRules *ObjectStorageLifecycleRules `json:"lifecycle_rules,omitempty"`
+	QuotaBytes     *DecimalUint64               `json:"quota_bytes,omitempty"`
+	QuotaObjects   *DecimalUint64               `json:"quota_objects,omitempty"`
+}
+
+type CreateObjectStorageBucketRequest struct {
+	IdempotencyKey IdempotencyKey
+	Body           CreateObjectStorageBucketInputBody `json:"body"`
+}
+
+type CreateObjectStorageBucketResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BucketView
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type CreateObjectStorageBucketAliasInputBody struct {
+	Alias      BucketAliasName `json:"alias"`
+	Prefix     *ObjectPrefix   `json:"prefix,omitempty"`
+	ServiceTag *ServiceTag     `json:"service_tag,omitempty"`
+}
+
+type CreateObjectStorageBucketAliasRequest struct {
+	BucketID       BucketId
+	IdempotencyKey IdempotencyKey
+	Body           CreateObjectStorageBucketAliasInputBody `json:"body"`
+}
+
+type CreateObjectStorageBucketAliasResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BucketAliasView
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type CreateObjectStorageMTLSPrincipalInputBody struct {
+	DisplayName   DisplayName   `json:"display_name"`
+	SpiffeSubject SPIFFESubject `json:"spiffe_subject"`
+}
+
+type CreateObjectStorageMtlsPrincipalRequest struct {
+	BucketID       BucketId
+	IdempotencyKey IdempotencyKey
+	Body           CreateObjectStorageMTLSPrincipalInputBody `json:"body"`
+}
+
+type CreateObjectStorageMtlsPrincipalResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BucketView
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type DeleteObjectStorageAccessKeyRequest struct {
+	AccessKeyID    AccessKeyId
+	IdempotencyKey IdempotencyKey
+}
+
+type EmptyOutputBody struct{}
+
+type DeleteObjectStorageAccessKeyResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *EmptyOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type DeleteObjectStorageBucketRequest struct {
+	BucketID       BucketId
+	IdempotencyKey IdempotencyKey
+}
+
+type DeleteObjectStorageBucketResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *EmptyOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type DeleteObjectStorageBucketAliasRequest struct {
+	Alias          BucketAliasName
+	BucketID       BucketId
+	IdempotencyKey IdempotencyKey
+}
+
+type DeleteObjectStorageBucketAliasResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *EmptyOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type DeleteObjectStorageMtlsPrincipalRequest struct {
+	BucketID       BucketId
+	CredentialID   CredentialId
+	IdempotencyKey IdempotencyKey
+}
+
+type DeleteObjectStorageMtlsPrincipalResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *EmptyOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type GetObjectStorageBucketRequest struct {
+	BucketID BucketId
+}
+
+type GetObjectStorageBucketResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BucketView
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type ListObjectStorageBucketAliasesRequest struct {
+	BucketID BucketId
+}
+
+type ListObjectStorageBucketAliasesOutput struct {
+	Aliases BucketAliases `json:"aliases"`
+}
+
+type ListObjectStorageBucketAliasesResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ListObjectStorageBucketAliasesOutput
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type ListObjectStorageBucketsRequest struct{}
+
+type ListObjectStorageBucketsOutput struct {
+	Buckets Buckets `json:"buckets"`
+}
+
+type ListObjectStorageBucketsResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ListObjectStorageBucketsOutput
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type ListObjectStorageCredentialsRequest struct {
+	BucketID BucketId
+}
+
+type ListObjectStorageCredentialsOutput struct {
+	Credentials ObjectStorageCredentials `json:"credentials"`
+}
+
+type ListObjectStorageCredentialsResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ListObjectStorageCredentialsOutput
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type RollObjectStorageAccessKeyRequest struct {
+	AccessKeyID    AccessKeyId
+	IdempotencyKey IdempotencyKey
+}
+
+type RollObjectStorageAccessKeyResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ObjectStorageAccessKeySecret
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type UpdateObjectStorageBucketInputBody struct {
+	LifecycleRules *ObjectStorageLifecycleRules `json:"lifecycle_rules,omitempty"`
+	QuotaBytes     *DecimalUint64               `json:"quota_bytes,omitempty"`
+	QuotaObjects   *DecimalUint64               `json:"quota_objects,omitempty"`
+}
+
+type UpdateObjectStorageBucketRequest struct {
+	BucketID       BucketId
+	IdempotencyKey IdempotencyKey
+	Body           UpdateObjectStorageBucketInputBody `json:"body"`
+}
+
+type UpdateObjectStorageBucketResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BucketView
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+type HTTPRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type ClientOption func(*Client)
+
+type Client struct {
+	server         string
+	client         HTTPRequestDoer
+	requestEditors []RequestEditorFn
+}
+
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	server = strings.TrimRight(strings.TrimSpace(server), "/")
+	if server == "" {
+		return nil, fmt.Errorf("%s SDK transport: server URL is required", ServiceName)
+	}
+	client := &Client{server: server, client: http.DefaultClient}
+	for _, opt := range opts {
+		opt(client)
+	}
+	if client.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: HTTP client is required", ServiceName)
+	}
+	return client, nil
+}
+
+func WithHTTPClient(client HTTPRequestDoer) ClientOption {
+	return func(c *Client) { c.client = client }
+}
+
+func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
+	return func(c *Client) {
+		if editor != nil {
+			c.requestEditors = append(c.requestEditors, editor)
+		}
+	}
+}
+
+func (c *Client) CreateObjectStorageAccessKey(ctx context.Context, request CreateObjectStorageAccessKeyRequest, reqEditors ...RequestEditorFn) (*CreateObjectStorageAccessKeyResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newCreateObjectStorageAccessKeyRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseCreateObjectStorageAccessKeyResponse(resp)
+}
+
+func (c *Client) newCreateObjectStorageAccessKeyRequest(ctx context.Context, request CreateObjectStorageAccessKeyRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/access-keys"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) CreateObjectStorageBucket(ctx context.Context, request CreateObjectStorageBucketRequest, reqEditors ...RequestEditorFn) (*CreateObjectStorageBucketResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newCreateObjectStorageBucketRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseCreateObjectStorageBucketResponse(resp)
+}
+
+func (c *Client) newCreateObjectStorageBucketRequest(ctx context.Context, request CreateObjectStorageBucketRequest) (*http.Request, error) {
+	path := "/api/v1/buckets"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) CreateObjectStorageBucketAlias(ctx context.Context, request CreateObjectStorageBucketAliasRequest, reqEditors ...RequestEditorFn) (*CreateObjectStorageBucketAliasResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newCreateObjectStorageBucketAliasRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseCreateObjectStorageBucketAliasResponse(resp)
+}
+
+func (c *Client) newCreateObjectStorageBucketAliasRequest(ctx context.Context, request CreateObjectStorageBucketAliasRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/aliases"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) CreateObjectStorageMtlsPrincipal(ctx context.Context, request CreateObjectStorageMtlsPrincipalRequest, reqEditors ...RequestEditorFn) (*CreateObjectStorageMtlsPrincipalResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newCreateObjectStorageMtlsPrincipalRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseCreateObjectStorageMtlsPrincipalResponse(resp)
+}
+
+func (c *Client) newCreateObjectStorageMtlsPrincipalRequest(ctx context.Context, request CreateObjectStorageMtlsPrincipalRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/mtls-principals"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) DeleteObjectStorageAccessKey(ctx context.Context, request DeleteObjectStorageAccessKeyRequest, reqEditors ...RequestEditorFn) (*DeleteObjectStorageAccessKeyResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newDeleteObjectStorageAccessKeyRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseDeleteObjectStorageAccessKeyResponse(resp)
+}
+
+func (c *Client) newDeleteObjectStorageAccessKeyRequest(ctx context.Context, request DeleteObjectStorageAccessKeyRequest) (*http.Request, error) {
+	path := "/api/v1/access-keys/{access_key_id}"
+	path = strings.ReplaceAll(path, "{access_key_id}", url.PathEscape(fmt.Sprint(request.AccessKeyID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) DeleteObjectStorageBucket(ctx context.Context, request DeleteObjectStorageBucketRequest, reqEditors ...RequestEditorFn) (*DeleteObjectStorageBucketResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newDeleteObjectStorageBucketRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseDeleteObjectStorageBucketResponse(resp)
+}
+
+func (c *Client) newDeleteObjectStorageBucketRequest(ctx context.Context, request DeleteObjectStorageBucketRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) DeleteObjectStorageBucketAlias(ctx context.Context, request DeleteObjectStorageBucketAliasRequest, reqEditors ...RequestEditorFn) (*DeleteObjectStorageBucketAliasResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newDeleteObjectStorageBucketAliasRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseDeleteObjectStorageBucketAliasResponse(resp)
+}
+
+func (c *Client) newDeleteObjectStorageBucketAliasRequest(ctx context.Context, request DeleteObjectStorageBucketAliasRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/aliases/{alias}"
+	path = strings.ReplaceAll(path, "{alias}", url.PathEscape(fmt.Sprint(request.Alias)))
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) DeleteObjectStorageMtlsPrincipal(ctx context.Context, request DeleteObjectStorageMtlsPrincipalRequest, reqEditors ...RequestEditorFn) (*DeleteObjectStorageMtlsPrincipalResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newDeleteObjectStorageMtlsPrincipalRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseDeleteObjectStorageMtlsPrincipalResponse(resp)
+}
+
+func (c *Client) newDeleteObjectStorageMtlsPrincipalRequest(ctx context.Context, request DeleteObjectStorageMtlsPrincipalRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	path = strings.ReplaceAll(path, "{credential_id}", url.PathEscape(fmt.Sprint(request.CredentialID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) GetObjectStorageBucket(ctx context.Context, request GetObjectStorageBucketRequest, reqEditors ...RequestEditorFn) (*GetObjectStorageBucketResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newGetObjectStorageBucketRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseGetObjectStorageBucketResponse(resp)
+}
+
+func (c *Client) newGetObjectStorageBucketRequest(ctx context.Context, request GetObjectStorageBucketRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func (c *Client) ListObjectStorageBucketAliases(ctx context.Context, request ListObjectStorageBucketAliasesRequest, reqEditors ...RequestEditorFn) (*ListObjectStorageBucketAliasesResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newListObjectStorageBucketAliasesRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseListObjectStorageBucketAliasesResponse(resp)
+}
+
+func (c *Client) newListObjectStorageBucketAliasesRequest(ctx context.Context, request ListObjectStorageBucketAliasesRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/aliases"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func (c *Client) ListObjectStorageBuckets(ctx context.Context, request ListObjectStorageBucketsRequest, reqEditors ...RequestEditorFn) (*ListObjectStorageBucketsResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newListObjectStorageBucketsRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseListObjectStorageBucketsResponse(resp)
+}
+
+func (c *Client) newListObjectStorageBucketsRequest(ctx context.Context, request ListObjectStorageBucketsRequest) (*http.Request, error) {
+	path := "/api/v1/buckets"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func (c *Client) ListObjectStorageCredentials(ctx context.Context, request ListObjectStorageCredentialsRequest, reqEditors ...RequestEditorFn) (*ListObjectStorageCredentialsResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newListObjectStorageCredentialsRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseListObjectStorageCredentialsResponse(resp)
+}
+
+func (c *Client) newListObjectStorageCredentialsRequest(ctx context.Context, request ListObjectStorageCredentialsRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}/credentials"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func (c *Client) RollObjectStorageAccessKey(ctx context.Context, request RollObjectStorageAccessKeyRequest, reqEditors ...RequestEditorFn) (*RollObjectStorageAccessKeyResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newRollObjectStorageAccessKeyRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseRollObjectStorageAccessKeyResponse(resp)
+}
+
+func (c *Client) newRollObjectStorageAccessKeyRequest(ctx context.Context, request RollObjectStorageAccessKeyRequest) (*http.Request, error) {
+	path := "/api/v1/access-keys/{access_key_id}/roll"
+	path = strings.ReplaceAll(path, "{access_key_id}", url.PathEscape(fmt.Sprint(request.AccessKeyID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) UpdateObjectStorageBucket(ctx context.Context, request UpdateObjectStorageBucketRequest, reqEditors ...RequestEditorFn) (*UpdateObjectStorageBucketResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newUpdateObjectStorageBucketRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseUpdateObjectStorageBucketResponse(resp)
+}
+
+func (c *Client) newUpdateObjectStorageBucketRequest(ctx context.Context, request UpdateObjectStorageBucketRequest) (*http.Request, error) {
+	path := "/api/v1/buckets/{bucket_id}"
+	path = strings.ReplaceAll(path, "{bucket_id}", url.PathEscape(fmt.Sprint(request.BucketID)))
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "PUT", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func parseCreateObjectStorageAccessKeyResponse(resp *http.Response) (*CreateObjectStorageAccessKeyResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &CreateObjectStorageAccessKeyResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded ObjectStorageAccessKeySecret
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseCreateObjectStorageBucketResponse(resp *http.Response) (*CreateObjectStorageBucketResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &CreateObjectStorageBucketResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BucketView
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseCreateObjectStorageBucketAliasResponse(resp *http.Response) (*CreateObjectStorageBucketAliasResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &CreateObjectStorageBucketAliasResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BucketAliasView
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseCreateObjectStorageMtlsPrincipalResponse(resp *http.Response) (*CreateObjectStorageMtlsPrincipalResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &CreateObjectStorageMtlsPrincipalResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BucketView
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseDeleteObjectStorageAccessKeyResponse(resp *http.Response) (*DeleteObjectStorageAccessKeyResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &DeleteObjectStorageAccessKeyResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded EmptyOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseDeleteObjectStorageBucketResponse(resp *http.Response) (*DeleteObjectStorageBucketResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &DeleteObjectStorageBucketResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded EmptyOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseDeleteObjectStorageBucketAliasResponse(resp *http.Response) (*DeleteObjectStorageBucketAliasResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &DeleteObjectStorageBucketAliasResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded EmptyOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseDeleteObjectStorageMtlsPrincipalResponse(resp *http.Response) (*DeleteObjectStorageMtlsPrincipalResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &DeleteObjectStorageMtlsPrincipalResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded EmptyOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseGetObjectStorageBucketResponse(resp *http.Response) (*GetObjectStorageBucketResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &GetObjectStorageBucketResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BucketView
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseListObjectStorageBucketAliasesResponse(resp *http.Response) (*ListObjectStorageBucketAliasesResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &ListObjectStorageBucketAliasesResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		decoded := ListObjectStorageBucketAliasesOutput{}
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseListObjectStorageBucketsResponse(resp *http.Response) (*ListObjectStorageBucketsResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &ListObjectStorageBucketsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		decoded := ListObjectStorageBucketsOutput{}
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseListObjectStorageCredentialsResponse(resp *http.Response) (*ListObjectStorageCredentialsResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &ListObjectStorageCredentialsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		decoded := ListObjectStorageCredentialsOutput{}
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseRollObjectStorageAccessKeyResponse(resp *http.Response) (*RollObjectStorageAccessKeyResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &RollObjectStorageAccessKeyResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded ObjectStorageAccessKeySecret
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseUpdateObjectStorageBucketResponse(resp *http.Response) (*UpdateObjectStorageBucketResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &UpdateObjectStorageBucketResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BucketView
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+type ErrorModel struct {
+	Schema      *string          `json:"$schema,omitempty"`
+	Type        *string          `json:"type,omitempty"`
+	Title       *string          `json:"title,omitempty"`
+	Status      *int64           `json:"status,omitempty"`
+	Detail      *string          `json:"detail,omitempty"`
+	Instance    *string          `json:"instance,omitempty"`
+	Code        *string          `json:"code,omitempty"`
+	RequestID   *string          `json:"requestId,omitempty"`
+	Traceparent *string          `json:"traceparent,omitempty"`
+	Errors      []map[string]any `json:"errors,omitempty"`
+}
+
+func decodeProblem(body []byte) *ErrorModel {
+	if len(body) == 0 {
+		return nil
+	}
+	var problem ErrorModel
+	if err := json.Unmarshal(body, &problem); err != nil {
+		return nil
+	}
+	return &problem
+}

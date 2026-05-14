@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	iamcore "github.com/verself/verself-go/internal/generated/iam"
+	iamcore "github.com/verself/verself-go/internal/transport/iam"
 )
 
 type OrganizationRole string

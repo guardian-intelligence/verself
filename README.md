@@ -22,7 +22,7 @@ a. Internal Core -- Infrastructure, bootstrap configuration, integration with 3p
 
 b. Services -- Smithy-modeled HTTP APIs implemented by product services. Public projections feed SDKs and facades; internal projections use SPIFFE mTLS for repo-owned cross-service calls. OpenAPI is generated for documentation and ecosystem tooling.
 
-c. SDK -- Customer-facing multi-language resource API. The SDK shape drives public API design and wraps SDK-owned generated transports derived from the canonical contract model. See [`docs/architecture/sdk-api-surface.md`](docs/architecture/sdk-api-surface.md).
+c. SDK -- Customer-facing multi-language resource API. The SDK shape drives public API design and wraps SDK-owned transport cores, using generated code only where OpenAPI tooling is reliable. See [`docs/architecture/sdk-api-surface.md`](docs/architecture/sdk-api-surface.md).
 
 d. Clients -- websites, mobile apps, CLI. Call the SDK under the hood. See [`docs/verself-cli.md`](docs/verself-cli.md) for more on the CLI.
 

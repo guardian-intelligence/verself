@@ -4,7 +4,7 @@ go_library(
     name = "client",
     srcs = [
         "authorization.go",
-        "client.gen.go",
+        "transport.go",
     ],
     importpath = "github.com/verself/iam-service/client",
     visibility = [

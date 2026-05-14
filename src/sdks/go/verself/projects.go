@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	projectscore "github.com/verself/verself-go/internal/generated/projects"
+	projectscore "github.com/verself/verself-go/internal/transport/projects"
 )
 
 type ProjectState string

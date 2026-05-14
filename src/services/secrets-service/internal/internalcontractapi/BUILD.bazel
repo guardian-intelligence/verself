@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "internalcontractapi",
-    srcs = ["secrets_internal_contract.gen.go"],
+    srcs = ["contract.go"],
     importpath = "github.com/verself/secrets-service/internal/internalcontractapi",
     visibility = ["//src/services/secrets-service:__subpackages__"],
 )

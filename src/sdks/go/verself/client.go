@@ -10,14 +10,14 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
-	billingcore "github.com/verself/verself-go/internal/generated/billing"
-	governancecore "github.com/verself/verself-go/internal/generated/governance"
-	iamcore "github.com/verself/verself-go/internal/generated/iam"
-	notificationscore "github.com/verself/verself-go/internal/generated/notifications"
-	projectscore "github.com/verself/verself-go/internal/generated/projects"
-	sandboxcore "github.com/verself/verself-go/internal/generated/sandbox"
-	secretscore "github.com/verself/verself-go/internal/generated/secrets"
-	sourcecore "github.com/verself/verself-go/internal/generated/source"
+	billingcore "github.com/verself/verself-go/internal/transport/billing"
+	governancecore "github.com/verself/verself-go/internal/transport/governance"
+	iamcore "github.com/verself/verself-go/internal/transport/iam"
+	notificationscore "github.com/verself/verself-go/internal/transport/notifications"
+	projectscore "github.com/verself/verself-go/internal/transport/projects"
+	sandboxcore "github.com/verself/verself-go/internal/transport/sandbox"
+	secretscore "github.com/verself/verself-go/internal/transport/secrets"
+	sourcecore "github.com/verself/verself-go/internal/transport/source"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	secretscore "github.com/verself/verself-go/internal/generated/secrets"
+	secretscore "github.com/verself/verself-go/internal/transport/secrets"
 )
 
 type SecretScopeLevel string

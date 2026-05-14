@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "contractapi",
-    srcs = ["object_storage_contract.gen.go"],
+    srcs = ["contract.go"],
     importpath = "github.com/verself/object-storage-service/internal/contractapi",
     visibility = ["//src/services/object-storage-service:__subpackages__"],
 )

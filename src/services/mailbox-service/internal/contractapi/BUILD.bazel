@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "contractapi",
-    srcs = ["mailbox_contract.gen.go"],
+    srcs = ["contract.go"],
     importpath = "github.com/verself/mailbox-service/internal/contractapi",
     visibility = ["//src/services/mailbox-service:__subpackages__"],
 )

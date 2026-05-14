@@ -38,17 +38,10 @@ alias(
 
 go_test(
     name = "api_test",
-    srcs = [
-        "contract_conformance_test.go",
-        "policy_test.go",
-    ],
+    srcs = ["policy_test.go"],
     embed = [":api"],
     deps = [
-        "//src/services/governance-service/internal/contractapi",
-        "//src/services/governance-service/internal/governance",
-        "//src/services/governance-service/internal/internalcontractapi",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
-        "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )

@@ -1,7 +1,7 @@
 # Verself CLI
 
 `verself` is the public CLI and SDK facade for hosted Verself APIs. It sits
-above curated SDKs, which wrap generated contract clients for product services.
+above curated SDKs, which wrap SDK transport clients for product services.
 Browser server functions, the CLI, and customer automation use the same service
 contracts with different auth flows and local state handling.
 
@@ -26,13 +26,14 @@ The command pipeline is:
 CLI command
   -> local profile and project resolution
   -> curated SDK operation
-  -> generated contract client
+  -> SDK transport client
   -> service API
   -> service-owned PostgreSQL, Zitadel, SpiceDB, ClickHouse, or external adapter
 ```
 
 Service calls go through SDK operations. Missing service behavior is added at
-the Smithy contract layer, regenerated into clients, and wrapped by the SDK.
+the Smithy contract layer, projected into OpenAPI where needed, and wrapped by
+the SDK transport core.
 
 Bootstrap has a bounded artifact path:
 
@@ -127,7 +128,7 @@ The CLI boundary has these major pieces:
 | Piece | Owns |
 | --- | --- |
 | CLI facade | Command grammar, local profile resolution, interactive UX, JSON output, company option capture, and command orchestration. |
-| Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above generated clients. |
+| Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above SDK transport clients. |
 | XDG file store | Non-secret profiles, company records, active context, bootstrap run records, cached discovery documents, and local locks across config, data, state, cache, and runtime directories. |
 | Credential store | Machine credential bundles, provider tokens, and company option secret values when they are not rendered into SOPS bags. |
 | Company store | Durable local company intent, owner defaults, CLI name, site defaults, provider options, runtime integration options, and secret references. |

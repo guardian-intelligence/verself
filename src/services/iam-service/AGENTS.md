@@ -148,7 +148,7 @@ Public errors should be stable problem responses with trace-backed instances and
 redacted internal causes. Audit logs should capture the operation, permission,
 organization scope, subject, outcome, and stable failure code.
 
-Tests and live rehearsal should prove that public operations declare the
-canonical generated contract metadata, require bearer auth, enforce idempotency
-where applicable, and deny callers whose current organization role assignments
-do not grant the required permission.
+Live rehearsal should prove that public operations declare the canonical
+contract metadata, require bearer auth, enforce idempotency where applicable,
+and deny callers whose current organization role assignments do not grant the
+required permission.

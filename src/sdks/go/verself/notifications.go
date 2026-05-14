@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	notificationscore "github.com/verself/verself-go/internal/generated/notifications"
+	notificationscore "github.com/verself/verself-go/internal/transport/notifications"
 )
 
 type NotificationPriority string

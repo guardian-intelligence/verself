@@ -189,7 +189,7 @@ aspect mail list --mailbox=ceo                # Switch to ceo@
 - `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
-- `src/smithy/models/verself/mailbox.smithy` + `client/` — Smithy-owned authenticated mailbox contract and generated transport client
+- `src/smithy/models/verself/mailbox.smithy` + `client/` — Smithy-owned authenticated mailbox contract and service-owned transport client
 - `aspect mail` task group — operator shortcuts for outbound mail and mailbox credentials
 
 ## Product evolution

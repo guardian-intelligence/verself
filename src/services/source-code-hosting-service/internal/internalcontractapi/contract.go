@@ -1,0 +1,333 @@
+package internalcontractapi
+
+import (
+	"context"
+)
+
+type OperationDescriptor struct {
+	ShapeID             string
+	OperationID         string
+	Method              string
+	Path                string
+	DefaultStatus       int
+	Readonly            bool
+	Paginated           bool
+	Identity            IdentityDescriptor
+	Authorization       AuthorizationDescriptor
+	Audit               AuditDescriptor
+	RateLimitBucket     string
+	RequestBodyMaxBytes int64
+	RequestPayload      PayloadDescriptor
+	ResponsePayload     PayloadDescriptor
+	ResponseHeaders     []HeaderDescriptor
+	Idempotency         IdempotencyDescriptor
+	SDK                 SDKDescriptor
+	Problems            []ProblemDescriptor
+}
+
+type IdentityDescriptor struct {
+	Mode       string
+	Audience   string
+	Principals []string
+}
+
+type AuthorizationDescriptor struct {
+	Permission         string
+	OrganizationSource string
+	OrganizationMember string
+}
+
+type AuditDescriptor struct {
+	Event    string
+	Resource string
+	Action   string
+}
+
+type IdempotencyDescriptor struct {
+	Policy string
+	Header string
+	Member string
+}
+
+type PayloadDescriptor struct {
+	Member    string
+	Target    string
+	Kind      string
+	MediaType string
+	Streaming bool
+	Sensitive bool
+	Required  bool
+}
+
+type HeaderDescriptor struct {
+	Member string
+	Name   string
+}
+
+type SDKDescriptor struct {
+	Module    string
+	Method    string
+	Paginated bool
+	Retryable bool
+}
+
+type ProblemDescriptor struct {
+	ShapeID string
+	Type    string
+	Code    string
+	Status  int
+}
+
+type Operation[Input any, Output any] struct {
+	Descriptor OperationDescriptor
+}
+
+type Handler[Input any, Output any] func(context.Context, *Input) (*Output, error)
+
+type IdempotencyKey string
+
+type ProblemCode string
+
+type ProblemDetail string
+
+type ProblemType string
+
+type RequestID string
+
+type ResourceName string
+
+type TraceParent string
+
+type ActorID string
+
+type BackendDispatchID string
+
+type CheckoutGrantID string
+
+type CheckoutGrantToken string
+
+type ContentDisposition string
+
+type FailureReason string
+
+type GitRef string
+
+type MediaType string
+
+type OrgID string
+
+type ProjectID string
+
+type RepositoryID string
+
+type SourceArchive []byte
+
+type SourceBackend string
+
+type SourceState string
+
+type TraceID string
+
+type WorkflowInputName string
+
+type WorkflowInputValue string
+
+type WorkflowPath string
+
+type WorkflowRunID string
+
+type WorkflowInputs map[string]WorkflowInputValue
+
+type ConflictError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type PermissionDeniedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type RateLimitedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ResourceNotFoundError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ServiceUnavailableError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type ValidationFailedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"4096"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type DownloadSourceCheckoutArchiveInput struct {
+	GrantID CheckoutGrantID    `path:"grant_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	Token   CheckoutGrantToken `header:"X-Verself-Checkout-Token" required:"true" minLength:"1" maxLength:"4096"`
+}
+
+type InternalCreateSourceWorkflowRunInputBody struct {
+	ActorID        ActorID         `json:"actor_id" required:"true" minLength:"1" maxLength:"512"`
+	IdempotencyKey IdempotencyKey  `json:"idempotency_key" required:"true" minLength:"8" maxLength:"128"`
+	Inputs         *WorkflowInputs `json:"inputs,omitempty" maxLength:"64"`
+	OrgID          OrgID           `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
+	ProjectID      ProjectID       `json:"project_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	Ref            *GitRef         `json:"ref,omitempty" minLength:"1" maxLength:"1024"`
+	RepoID         RepositoryID    `json:"repo_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	WorkflowPath   WorkflowPath    `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
+}
+
+type InternalCreateSourceWorkflowRunInput struct {
+	Body InternalCreateSourceWorkflowRunInputBody
+}
+
+type WorkflowRunSummary struct {
+	WorkflowRunID          WorkflowRunID      `json:"workflow_run_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	ResourceName           ResourceName       `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	OrgID                  OrgID              `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
+	ProjectID              ProjectID          `json:"project_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	ProjectResourceName    ResourceName       `json:"projectResourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	RepoID                 RepositoryID       `json:"repo_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	RepositoryResourceName ResourceName       `json:"repositoryResourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	ActorID                ActorID            `json:"actor_id" required:"true" minLength:"1" maxLength:"512"`
+	Backend                SourceBackend      `json:"backend" required:"true" minLength:"1" maxLength:"128"`
+	WorkflowPath           WorkflowPath       `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
+	Ref                    GitRef             `json:"ref" required:"true" minLength:"1" maxLength:"1024"`
+	Inputs                 WorkflowInputs     `json:"inputs" required:"true" maxLength:"64"`
+	State                  SourceState        `json:"state" required:"true" minLength:"1" maxLength:"128"`
+	BackendDispatchID      *BackendDispatchID `json:"backend_dispatch_id,omitempty" minLength:"1" maxLength:"1024"`
+	FailureReason          *FailureReason     `json:"failure_reason,omitempty" maxLength:"8192"`
+	TraceID                *TraceID           `json:"trace_id,omitempty" minLength:"1" maxLength:"128"`
+	DispatchedAt           *string            `json:"dispatched_at,omitempty"`
+	CreatedAt              string             `json:"created_at" required:"true"`
+	UpdatedAt              string             `json:"updated_at" required:"true"`
+}
+
+type DownloadSourceCheckoutArchiveOutput struct {
+	ContentDisposition ContentDisposition `header:"Content-Disposition" required:"true" minLength:"1" maxLength:"1024"`
+	ContentType        MediaType          `header:"Content-Type" required:"true" minLength:"1" maxLength:"128"`
+	Body               []byte
+}
+
+type WorkflowRunOutput struct {
+	Body WorkflowRunSummary
+}
+
+var Operations = []OperationDescriptor{
+	DownloadSourceCheckoutArchive.Descriptor,
+	InternalCreateSourceWorkflowRun.Descriptor,
+}
+
+var DownloadSourceCheckoutArchive = Operation[DownloadSourceCheckoutArchiveInput, DownloadSourceCheckoutArchiveOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.source.v1#DownloadSourceCheckoutArchive",
+		OperationID:         "download-source-checkout-archive",
+		Method:              "GET",
+		Path:                "/internal/v1/checkouts/{grant_id}/archive",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "checkout_grant", Audience: "source-code-hosting-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "source:checkout:write", OrganizationSource: "checkout_grant", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "source.archive.stream", Resource: "source_checkout_archive", Action: "download"},
+		RateLimitBucket:     "checkout_download",
+		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{Member: "body", Target: "verself.source.v1#SourceArchive", Kind: "blob", MediaType: "application/gzip", Streaming: false, Sensitive: false, Required: true},
+		ResponseHeaders: []HeaderDescriptor{
+			{Member: "contentDisposition", Name: "Content-Disposition"},
+			{Member: "contentType", Name: "Content-Type"},
+		},
+		Idempotency: IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:         SDKDescriptor{Module: "sourceInternal.checkouts", Method: "downloadArchive", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+		},
+	},
+}
+
+var InternalCreateSourceWorkflowRun = Operation[InternalCreateSourceWorkflowRunInput, WorkflowRunOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.source.v1#InternalCreateSourceWorkflowRun",
+		OperationID:         "internal-create-source-workflow-run",
+		Method:              "POST",
+		Path:                "/internal/v1/workflow-runs",
+		DefaultStatus:       201,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "source-code-hosting-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "source:workflow:write", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "source.workflow.dispatch.internal", Resource: "source_workflow_run", Action: "create"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 262144,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "sourceInternal.workflowRuns", Method: "create", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+type Handlers = InternalHandlers
+
+type InternalHandlers interface {
+	DownloadSourceCheckoutArchive(context.Context, *DownloadSourceCheckoutArchiveInput) (*DownloadSourceCheckoutArchiveOutput, error)
+	InternalCreateSourceWorkflowRun(context.Context, *InternalCreateSourceWorkflowRunInput) (*WorkflowRunOutput, error)
+}
+
+type DownloadSourceCheckoutArchiveHandler = Handler[DownloadSourceCheckoutArchiveInput, DownloadSourceCheckoutArchiveOutput]
+
+type InternalCreateSourceWorkflowRunHandler = Handler[InternalCreateSourceWorkflowRunInput, WorkflowRunOutput]

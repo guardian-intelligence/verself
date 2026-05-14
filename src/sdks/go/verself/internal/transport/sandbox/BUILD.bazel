@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+# gazelle:ignore
+
+go_library(
+    name = "sandbox",
+    srcs = ["client.go"],
+    importpath = "github.com/verself/verself-go/internal/transport/sandbox",
+    visibility = ["//src/sdks/go/verself:__pkg__"],
+)

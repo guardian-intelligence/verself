@@ -1,0 +1,276 @@
+package governanceinternalclient
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+const ServiceName = "governance-service"
+
+type AuditActorId = string
+
+type AuditActorType = string
+
+type AuditCredentialId = string
+
+type AuditErrorCode = string
+
+type AuditEventId = string
+
+type AuditEventOperationName = string
+
+type AuditEventSource = string
+
+type AuditHMACKeyId = string
+
+type AuditSchemaVersion = string
+
+type AuditTargetId = string
+
+type AuditTargetType = string
+
+type DecimalUint64 = string
+
+type GovernanceAuditEventName = string
+
+type GovernanceOrgId = string
+
+type GovernancePermissionName = string
+
+type HMACHex = string
+
+type ProblemCode = string
+
+type ProblemDetail = string
+
+type ProblemType = string
+
+type RequestId = string
+
+type ResourceName = string
+
+type TraceId = string
+
+type TraceParent = string
+
+type AuditOutcome string
+
+const (
+	AuditOutcomeALLOWED AuditOutcome = "allowed"
+	AuditOutcomeDENIED  AuditOutcome = "denied"
+	AuditOutcomeERROR   AuditOutcome = "error"
+)
+
+type AppendAuditEventAccepted struct {
+	EventID  AuditEventId  `json:"event_id"`
+	Sequence DecimalUint64 `json:"sequence"`
+	RowHMAC  HMACHex       `json:"row_hmac"`
+}
+
+type AuditRecord struct {
+	SchemaVersion      *AuditSchemaVersion      `json:"schema_version,omitempty"`
+	OrgID              GovernanceOrgId          `json:"org_id"`
+	EventSource        AuditEventSource         `json:"event_source"`
+	EventName          AuditEventOperationName  `json:"event_name"`
+	AuditEvent         GovernanceAuditEventName `json:"audit_event"`
+	ActorType          AuditActorType           `json:"actor_type"`
+	ActorID            AuditActorId             `json:"actor_id"`
+	CredentialID       *AuditCredentialId       `json:"credential_id,omitempty"`
+	TargetType         AuditTargetType          `json:"target_type"`
+	TargetID           *AuditTargetId           `json:"target_id,omitempty"`
+	TargetResourceName *ResourceName            `json:"targetResourceName,omitempty"`
+	Permission         GovernancePermissionName `json:"permission"`
+	Outcome            AuditOutcome             `json:"outcome"`
+	ErrorCode          *AuditErrorCode          `json:"error_code,omitempty"`
+	TraceID            *TraceId                 `json:"trace_id,omitempty"`
+	HMACKeyID          *AuditHMACKeyId          `json:"hmac_key_id,omitempty"`
+	RecordedAt         *string                  `json:"recorded_at,omitempty"`
+	Detail             *map[string]any          `json:"detail,omitempty"`
+}
+
+type PermissionDeniedError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type ServiceUnavailableError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type ValidationFailedError struct {
+	Type        ProblemType    `json:"type"`
+	Title       string         `json:"title"`
+	Status      int64          `json:"status"`
+	Detail      *ProblemDetail `json:"detail,omitempty"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code"`
+	RequestID   *RequestId     `json:"requestId,omitempty"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type AppendAuditEventRequest struct {
+	Body AuditRecord `json:"body"`
+}
+
+type AppendAuditEventOutputBody struct {
+	Accepted AppendAuditEventAccepted `json:"accepted"`
+}
+
+type AppendAuditEventResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *AppendAuditEventOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+type HTTPRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type ClientOption func(*Client)
+
+type Client struct {
+	server         string
+	client         HTTPRequestDoer
+	requestEditors []RequestEditorFn
+}
+
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	server = strings.TrimRight(strings.TrimSpace(server), "/")
+	if server == "" {
+		return nil, fmt.Errorf("%s SDK transport: server URL is required", ServiceName)
+	}
+	client := &Client{server: server, client: http.DefaultClient}
+	for _, opt := range opts {
+		opt(client)
+	}
+	if client.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: HTTP client is required", ServiceName)
+	}
+	return client, nil
+}
+
+func WithHTTPClient(client HTTPRequestDoer) ClientOption {
+	return func(c *Client) { c.client = client }
+}
+
+func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
+	return func(c *Client) {
+		if editor != nil {
+			c.requestEditors = append(c.requestEditors, editor)
+		}
+	}
+}
+
+func (c *Client) AppendAuditEvent(ctx context.Context, request AppendAuditEventRequest, reqEditors ...RequestEditorFn) (*AppendAuditEventResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newAppendAuditEventRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseAppendAuditEventResponse(resp)
+}
+
+func (c *Client) newAppendAuditEventRequest(ctx context.Context, request AppendAuditEventRequest) (*http.Request, error) {
+	path := "/internal/v1/audit/events"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+func parseAppendAuditEventResponse(resp *http.Response) (*AppendAuditEventResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &AppendAuditEventResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 202 {
+		var decoded AppendAuditEventOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+type ErrorModel struct {
+	Schema      *string          `json:"$schema,omitempty"`
+	Type        *string          `json:"type,omitempty"`
+	Title       *string          `json:"title,omitempty"`
+	Status      *int64           `json:"status,omitempty"`
+	Detail      *string          `json:"detail,omitempty"`
+	Instance    *string          `json:"instance,omitempty"`
+	Code        *string          `json:"code,omitempty"`
+	RequestID   *string          `json:"requestId,omitempty"`
+	Traceparent *string          `json:"traceparent,omitempty"`
+	Errors      []map[string]any `json:"errors,omitempty"`
+}
+
+func decodeProblem(body []byte) *ErrorModel {
+	if len(body) == 0 {
+		return nil
+	}
+	var problem ErrorModel
+	if err := json.Unmarshal(body, &problem); err != nil {
+		return nil
+	}
+	return &problem
+}

@@ -38,8 +38,8 @@ Layers:
 1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, generated projections, and conformance cases.
 3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Go services may use Huma during the cutover, but Huma/OpenAPI output is an implementation/projection artifact rather than the semantic contract.
-4. Client/projection layer: OpenAPI compatibility artifacts and TypeScript transport clients are generated from the contract model. Repo-owned service calls use service-owned transport clients authenticating to each other via SPIFFE mTLS.
-5. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
+4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model. Repo-owned service calls use service-owned transport clients authenticating to each other via SPIFFE mTLS.
+5. Curated SDK layer: stable hand-written exports that wrap transport clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
 Tech Stack (partial description):
@@ -179,7 +179,7 @@ See `docs/product-direction.md`.
 Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
 - See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
-- Verself Go service clients and SDK transport cores are generated from canonical Smithy contracts under `src/smithy/models/verself`. OpenAPI projections are generated compatibility artifacts. SDK packages are generated separately under `src/sdks/` or frontend SDK packages from public projections; services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and regenerate instead of bypassing the contract.
+- Verself Go service clients and Go SDK transport cores are hand-maintained transport layers for canonical Smithy contracts under `src/smithy/models/verself`. OpenAPI projections are generated compatibility artifacts, and frontend SDK packages may generate transport code from public projections. Services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and update the relevant transport wrapper instead of bypassing the contract.
 - Services can be in any language as long as they implement the Smithy-modeled HTTP bindings and generated compatibility projections.
 - Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
 - Python package management is done through `uv`.

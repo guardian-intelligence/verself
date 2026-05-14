@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "contractapi",
-    srcs = ["source_contract.gen.go"],
+    srcs = ["contract.go"],
     importpath = "github.com/verself/source-code-hosting-service/internal/contractapi",
     visibility = ["//src/services/source-code-hosting-service:__subpackages__"],
 )

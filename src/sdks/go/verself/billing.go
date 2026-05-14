@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	billingcore "github.com/verself/verself-go/internal/generated/billing"
+	billingcore "github.com/verself/verself-go/internal/transport/billing"
 )
 
 type BillingGrant struct {

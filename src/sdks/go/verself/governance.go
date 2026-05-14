@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	governancecore "github.com/verself/verself-go/internal/generated/governance"
+	governancecore "github.com/verself/verself-go/internal/transport/governance"
 )
 
 type GovernanceAuditOutcome string
